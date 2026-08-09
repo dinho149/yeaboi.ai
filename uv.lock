@@ -3382,6 +3382,9 @@ bedrock = [
 charts = [
     { name = "matplotlib" },
 ]
+core = [
+    { name = "yeaboi-core" },
+]
 dev = [
     { name = "matplotlib" },
     { name = "mcp" },
@@ -3464,11 +3467,17 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "segno" },
     { name = "sounddevice", marker = "extra == 'voice'" },
+    { name = "yeaboi-core", marker = "extra == 'core'", directory = "packaging/yeaboi-core" },
 ]
-provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "all-providers", "dev"]
+provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "core", "all-providers", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "syrupy", specifier = ">=5.1.0" }]
+
+[[package]]
+name = "yeaboi-core"
+version = "0.1.0"
+source = { directory = "packaging/yeaboi-core" }
 
 [[package]]
 name = "zstandard"

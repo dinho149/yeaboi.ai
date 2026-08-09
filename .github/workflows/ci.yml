@@ -64,6 +64,30 @@ jobs:
           name: yeaboi-core
           path: bin/yeaboi-core
           retention-days: 1
+      # The yeaboi[core] wheel end-to-end: build it for this platform via the
+      # hatch_build.py hook, install it into a clean venv, and prove the two
+      # things a user's install depends on — binary_path() resolves inside the
+      # wheel and the binary answers core.hello. publish-core.yml builds with
+      # the same hook, so a hook regression fails PRs here, not the release.
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Wheel smoke (yeaboi-core)
+        run: |
+          uv python install 3.12
+          uv build --wheel packaging/yeaboi-core -o dist-core
+          uv venv --python 3.12 wheel-smoke-venv
+          uv pip install --python wheel-smoke-venv/bin/python dist-core/*.whl
+          wheel-smoke-venv/bin/python - <<'EOF'
+          import json, subprocess
+          from yeaboi_core import binary_path
+          path = binary_path()
+          proc = subprocess.run(
+              [path], input='{"jsonrpc": "2.0", "id": 1, "method": "core.hello", "params": {}}\n',
+              capture_output=True, text=True, timeout=30, check=True,
+          )
+          result = json.loads(proc.stdout.splitlines()[0])["result"]
+          assert result["contract_version"] == 1, result
+          print(f"wheel smoke ok: {path} -> {result['name']} {result['version']}")
+          EOF
 
   # ── Python ↔ Go parity ───────────────────────────────────────────────────
   # tests/parity skips itself when the binary is absent (keeping `make test`

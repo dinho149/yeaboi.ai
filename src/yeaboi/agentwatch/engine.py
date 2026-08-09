@@ -126,17 +126,18 @@ def _resolve_db_path(db_path):
 
 
 # ---------------------------------------------------------------------------
-# Go core dispatch (the YEABOI_GO pilot — see contracts/v1/rpc.md)
+# Go core dispatch (see contracts/v1/rpc.md; YEABOI_GO=0 opts out)
 # ---------------------------------------------------------------------------
 # The sidecar serves each pipeline's deterministic half: transcript scanning,
 # usage aggregation/pricing, the standup session rollup, and the security
-# audit. The LLM prose calls, tracker scans, delivery, history and exports all
-# stay in Python. Every failure downgrades to the Python path with one log
-# line — the Go path is never the only path.
+# audit. Discovery is automatic — installing the yeaboi[core] wheel is enough.
+# The LLM prose calls, tracker scans, delivery, history and exports all stay
+# in Python. Every failure downgrades to the Python path with one log line —
+# the Go path is never the only path.
 
 
 def _go_client():
-    """The sidecar client when the pilot flag is active and healthy, else None."""
+    """The sidecar client when one is discovered and healthy, else None."""
     try:
         from yeaboi import gocore
 
@@ -501,9 +502,10 @@ def run_agent_usage(
 
     Deterministic gather: refresh the collector's ingest, aggregate the stored
     session rollups over the window, and price every (model, session) pair from
-    the shared pricing table — served by the Go core when the YEABOI_GO pilot
-    is active, by ``_deterministic_usage_report`` otherwise, with identical
-    results (tests/parity). The single LLM call then writes ``insights`` and
+    the shared pricing table — served by the Go core when a sidecar binary is
+    discovered (yeaboi[core]; YEABOI_GO=0 opts out), by
+    ``_deterministic_usage_report`` otherwise, with identical results
+    (tests/parity). The single LLM call then writes ``insights`` and
     ``recommendations`` prose over the computed aggregates — never numbers.
 
     project: substring filter on the session's project directory name.

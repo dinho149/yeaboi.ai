@@ -14,7 +14,7 @@ import textwrap
 
 import pytest
 
-from yeaboi.gocore.client import CoreClient, CoreError, is_enabled
+from yeaboi.gocore.client import CoreClient, CoreError, enabled_state
 
 _FAKE_SIDECAR = textwrap.dedent(
     """\
@@ -52,13 +52,23 @@ def fake_sidecar(tmp_path):
     return build
 
 
-class TestIsEnabled:
+class TestEnabledState:
     def test_flag_values(self, monkeypatch):
-        for value, expected in [("1", True), ("true", True), ("YES", True), ("on", True), ("0", False), ("", False)]:
+        for value, expected in [
+            ("1", "on"),
+            ("true", "on"),
+            ("YES", "on"),
+            ("on", "on"),
+            ("0", "off"),
+            ("false", "off"),
+            ("banana", "off"),  # explicit-but-unrecognised is off, never a silent auto
+            ("", "auto"),
+            ("  ", "auto"),
+        ]:
             monkeypatch.setenv("YEABOI_GO", value)
-            assert is_enabled() is expected, value
+            assert enabled_state() == expected, value
         monkeypatch.delenv("YEABOI_GO")
-        assert is_enabled() is False
+        assert enabled_state() == "auto"
 
 
 class TestCoreClient:
@@ -116,13 +126,47 @@ class TestCoreClient:
 
 
 class TestGetClient:
-    def test_disabled_flag_returns_none_without_spawning(self, monkeypatch):
+    def test_disabled_flag_returns_none_without_looking_for_a_binary(self, monkeypatch):
+        import yeaboi.gocore.client as client_mod
+
+        monkeypatch.setenv("YEABOI_GO", "0")
+        monkeypatch.setattr(client_mod, "_client", None)
+        monkeypatch.setattr(client_mod, "_client_failed", False)
+
+        def unexpected():
+            raise AssertionError("off must not reach binary discovery")
+
+        monkeypatch.setattr(client_mod, "find_core_binary", unexpected)
+        assert client_mod.get_client() is None
+
+    def test_auto_without_a_binary_is_silently_python(self, monkeypatch, caplog):
+        import logging
+
+        import yeaboi.gocore.client as client_mod
+
+        monkeypatch.delenv("YEABOI_GO", raising=False)  # overrides the conftest guard: real default
+        monkeypatch.setattr(client_mod, "_client", None)
+        monkeypatch.setattr(client_mod, "_client_failed", False)
+        monkeypatch.setattr(client_mod, "find_core_binary", lambda: None)
+        with caplog.at_level(logging.INFO, logger="yeaboi.gocore.client"):
+            assert client_mod.get_client() is None
+        # Auto mode without the wheel is the common case — nothing at INFO or above.
+        assert not caplog.records
+
+    def test_auto_with_a_binary_spawns_the_sidecar(self, monkeypatch, fake_sidecar):
         import yeaboi.gocore.client as client_mod
 
         monkeypatch.delenv("YEABOI_GO", raising=False)
         monkeypatch.setattr(client_mod, "_client", None)
         monkeypatch.setattr(client_mod, "_client_failed", False)
-        assert client_mod.get_client() is None
+        monkeypatch.setattr(client_mod, "find_core_binary", lambda: fake_sidecar())
+        client = client_mod.get_client()
+        try:
+            assert client is not None
+        finally:
+            if client is not None:
+                client.close()
+            monkeypatch.setattr(client_mod, "_client", None)
 
     def test_missing_binary_fails_once_and_caches(self, monkeypatch):
         import yeaboi.gocore.client as client_mod

@@ -37,9 +37,21 @@ class CoreError(Exception):
     """
 
 
-def is_enabled() -> bool:
-    """The ``YEABOI_GO`` opt-in flag (pilot phase: off by default)."""
-    return os.environ.get("YEABOI_GO", "").strip().lower() in {"1", "true", "yes", "on"}
+def enabled_state() -> str:
+    """The ``YEABOI_GO`` switch: ``"on"``, ``"off"``, or ``"auto"``.
+
+    Unset (or empty) means **auto** — the default since the yeaboi[core] wheel
+    shipped: use the sidecar iff a binary is discovered, silently otherwise.
+    A truthy value forces it on (a missing binary is then worth a log line);
+    any other explicit value is off. The Python path remains complete either
+    way — the sidecar is an accelerator, never the only path.
+    """
+    value = os.environ.get("YEABOI_GO", "").strip().lower()
+    if not value:
+        return "auto"
+    if value in {"1", "true", "yes", "on"}:
+        return "on"
+    return "off"
 
 
 class CoreClient:
@@ -188,12 +200,14 @@ _client_failed = False
 def get_client() -> CoreClient | None:
     """The process-wide sidecar client, or None when the Go path is unavailable.
 
-    None when: the YEABOI_GO flag is off, no binary is found, or the spawn or
-    handshake failed earlier in this process (one attempt per process — a
-    broken binary must not add spawn latency to every engine run).
+    None when: YEABOI_GO is off, no binary is found, or the spawn or handshake
+    failed earlier in this process (one attempt per process — a broken binary
+    must not add spawn latency to every engine run; in auto mode the same latch
+    also caps binary discovery at one lookup).
     """
     global _client, _client_failed
-    if not is_enabled():
+    state = enabled_state()
+    if state == "off":
         return None
     with _client_lock:
         if _client is not None and _client.alive:
@@ -202,7 +216,11 @@ def get_client() -> CoreClient | None:
             return None
         binary = find_core_binary()
         if binary is None:
-            logger.info("gocore: YEABOI_GO is on but no yeaboi-core binary found — using the Python path")
+            if state == "on":
+                logger.info("gocore: YEABOI_GO is on but no yeaboi-core binary found — using the Python path")
+            else:
+                # Auto mode without the wheel is the common case — not log-worthy.
+                logger.debug("gocore: no yeaboi-core binary found — using the Python path")
             _client_failed = True
             return None
         try:
