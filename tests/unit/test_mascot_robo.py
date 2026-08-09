@@ -15,7 +15,11 @@ from yeaboi.ui.shared._mascot import (
 
 
 def _render(group) -> str:
-    console = Console(width=40, force_terminal=True)
+    # color_system is pinned, never left to auto-detection: these tests assert
+    # truecolor SGR fragments ("34;158;122"), and Rich picks the system from
+    # COLORTERM/TERM. A dev shell exports COLORTERM=truecolor and CI does not,
+    # so an unpinned console passes locally and downgrades to 8-colour on CI.
+    console = Console(width=40, force_terminal=True, color_system="truecolor")
     with console.capture() as cap:
         console.print(group)
     return cap.get()

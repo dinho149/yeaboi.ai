@@ -14,7 +14,9 @@ from yeaboi.ui.mode_select.screens._screens_category import (
 # 40 rows is the app's own floor (_MIN_HEIGHT); below it the caller shows the
 # too-small guard screen instead, so the category screen never renders shorter.
 def _render(width=110, height=40, selected=0, **kwargs) -> str:
-    console = Console(width=width, height=height, force_terminal=True)
+    # Pinned truecolor (see TestTruecolorConsoles in test_screen_backgrounds):
+    # auto-detection reads COLORTERM, which dev shells set and CI does not.
+    console = Console(width=width, height=height, force_terminal=True, color_system="truecolor")
     with console.capture() as cap:
         console.print(_build_category_screen(selected, width=width, height=height, **kwargs))
     return cap.get()

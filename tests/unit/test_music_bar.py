@@ -772,7 +772,9 @@ def test_controls_tab_advertises_the_letter_and_the_drawer_lists_it():
 
 def _styled_frame_text(frame, width=120, height=24):
     """ANSI-styled render of a pocket frame (rgb assertions, not glyphs)."""
-    console = Console(width=width, height=height, file=StringIO(), force_terminal=True)
+    # Pinned truecolor: auto-detection reads COLORTERM (set in dev shells,
+    # unset on CI), which would downgrade these rgb assertions to 8-colour.
+    console = Console(width=width, height=height, file=StringIO(), force_terminal=True, color_system="truecolor")
     with console.capture() as cap:
         console.print(frame)
     return cap.get()

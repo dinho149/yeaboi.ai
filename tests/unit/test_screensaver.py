@@ -199,7 +199,9 @@ class TestSaverMascot:
         from yeaboi.ui.shared import _music_bar, _screensaver
 
         monkeypatch.setattr(_music_bar, "_chrome_mascot", mascot)
-        console = Console(width=width, height=height, file=StringIO(), force_terminal=True)
+        # Pinned truecolor: auto-detection reads COLORTERM (set in dev shells,
+        # unset on CI), which would downgrade these rgb assertions to 8-colour.
+        console = Console(width=width, height=height, file=StringIO(), force_terminal=True, color_system="truecolor")
         with console.capture() as cap:
             console.print(_screensaver.build_screensaver(width=width, height=height, elapsed=1.0))
         return cap.get()
