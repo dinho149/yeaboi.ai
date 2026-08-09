@@ -44,10 +44,15 @@ So:
   looks like. The digest owns all of that and posts three hours later.
 - **Never edit a file, open an issue, or touch Linear.** It has no `Write` or `Edit` grant, and
   the one thing it may spawn is the scribe.
+- **Never reformat it either.** The lines are finished Markdown — bold headings, four fixed section
+  anchors, backticked times — in the dialect the connector actually reads, which is not Slack's
+  mrkdwn. `agenda_lines()` owns that, and `tests/unit/test_cowork_setup.py` fails if it drifts back.
+  Escaping a character or dropping an emoji on the way out is the same edit as re-timing a line: it
+  changes what was tested into something that was not.
 
 ## Post every day
 
-Including Sundays, when no sweep fires at all and the message is four lines. This is the one
+Including Sundays, when no sweep fires at all and the message is a short one. This is the one
 routine in the fleet exempt from "nothing to do is a valid outcome, exit quietly", and
 deliberately so: silence from a *findings* routine means it found nothing, which is
 information. Silence from a *schedule* routine is ambiguous — nothing scheduled, or the

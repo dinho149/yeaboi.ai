@@ -707,6 +707,18 @@ BACKGROUND_AFTER = 3
 # genuinely part of it; `/cowork status` is what audits whether it is registered.
 MESSENGER = "day-ahead"
 
+# One fixed emoji per section, which is `cron/digest.md`'s convention and the only
+# decoration `.claude/agents/cowork-scribe.md` permits: constant per section, so a
+# reader who gets this every morning finds the part they want by shape before they
+# read a word. Four rules held them to these four codepoints. None is a variation
+# sequence — a trailing U+FE0F that one client needs and another drops is a heading
+# that renders two ways, which `TestAgenda` pins by length rather than by trusting
+# this comment. None is `✅` or `❌`, which `cron/slack-relay.md` parses as
+# the approval verbs. None collides with the digest's eleven, so the two daily posts
+# are never confusable at a glance. And all four sit inside one Unicode block, which
+# is what keeps them legible beside each other at Slack's heading size.
+SECTION_EMOJI = {"today": "📅", "background": "🔁", "events": "🔔", "ahead": "📆"}
+
 # How far the tail looks. A week is what makes the fortnightly and monthly sweeps
 # visible: `30 7 11,25 * *` is unreadable, "Tue 11  poker-sweep" is not.
 HORIZON_DAYS = 7
@@ -930,18 +942,47 @@ def agenda(day: date, horizon: int = HORIZON_DAYS) -> dict:
     return payload
 
 
+def _joined(stamps: Sequence[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c`` — the quiet days named in one clause.
+
+    ``stamps`` must be non-empty. Returning ``""`` for an empty one would render
+    " is clear." out of a caller that had nothing to say, so the caller checks.
+    """
+    if len(stamps) == 1:
+        return stamps[0]
+    return ", ".join(stamps[:-1]) + " and " + stamps[-1]
+
+
 def agenda_lines(payload: dict) -> list[str]:
     """The finished Slack message, one string per line.
 
-    Bold headings, no emoji, no bare URLs — ``.claude/agents/cowork-scribe.md``'s
-    format contract, met here so the routine has nothing left to compose and
-    nothing left to get wrong.
+    **Standard Markdown, not Slack mrkdwn.** The connector takes ``**bold**``,
+    ``_italic_`` and ``` `code` ```. Slack's own ``*bold*`` is Markdown's *italic*,
+    so the two do not fail against each other — they quietly render the wrong
+    thing, which is how the daily digest shipped italic headings for weeks
+    (``.claude/agents/cowork-scribe.md`` keeps that account). This renderer made
+    the identical mistake and outlived the digest's fix, because it is the one
+    message composed in Python: the fix went to a routine file, and the test here
+    pinned ``*Today*`` as though it were correct.
+
+    Each section heading carries one fixed emoji from ``SECTION_EMOJI`` — the
+    digest's anchor convention, and the only decoration the scribe permits. Still
+    no bare URLs: the schedule links to nothing.
     """
     day = date.fromisoformat(payload["date"])
     zone = payload["display_timezone"] or "UTC"
-    lines = [f"*Today* — {day:%a} {day.day} {day:%b} ({zone})"]
+    lines = [f"{SECTION_EMOJI['today']} **Today** — {day:%a} {day.day} {day:%b} ({zone})"]
     if payload["note"]:
+        # Above the blank line, so it reads as a qualification of the heading it
+        # follows rather than as the first entry of the list it precedes.
+        #
+        # Deliberately unemphasised. The note embeds DISPLAY_TZ, and a zone name
+        # carries underscores (`America/Los_Angeles`) — wrapping it in `_…_` is
+        # how you leak a stray underscore mid-line, which is the *other* half of
+        # the dialect bug the scribe file records. A caveat nobody ever sees is
+        # not worth that.
         lines.append(payload["note"])
+    lines.append("")
 
     listed = [entry for entry in payload["today"] if entry["name"] != MESSENGER]
     if listed:
@@ -953,30 +994,90 @@ def agenda_lines(payload: dict) -> list[str]:
             # sits beside is noise. The heading already names the zone, so the
             # bracket only appears when it has something to say.
             gloss = "" if local == utc else f" ({utc} UTC)"
-            lines.append(f"{local}  {entry['name']}{summary}{gloss}")
+            # Code style on the time and bold on the name. Slack renders in a
+            # proportional font, where the two spaces that used to align this
+            # column do not; monospace is the only alignment this dialect offers.
+            # The name is bold because it is what somebody scanning for one
+            # routine is looking for — the summary beside it is the answer to a
+            # question they only ask once.
+            lines.append(f"`{local}`  **{entry['name']}**{summary}{gloss}")
     else:
-        lines.append("No routines fire today.")
+        lines.append("_No routines fire today._")
 
-    for entry in payload["background"]:
-        gloss = "" if entry["window_local"] == entry["window_utc"] else f" ({entry['window_utc']} UTC)"
-        lines.append(f"Background: {entry['name']}, {entry['firings']} runs {entry['window_local']}{gloss}")
+    standing = []
+    if payload["background"]:
+        # One anchor for the section, never one per entry: an emoji that repeats
+        # down a column has stopped being a heading and become a bullet, which is
+        # the opposite of the rule `.claude/agents/cowork-scribe.md` states. The
+        # fleet has exactly one background routine today, and `BACKGROUND_AFTER`
+        # is a threshold rather than a name check precisely so the second one
+        # needs no edit here — so the single case keeps its one-line form and the
+        # plural case grows a heading rather than a second anchor.
+        spans = []
+        for entry in payload["background"]:
+            gloss = "" if entry["window_local"] == entry["window_utc"] else f" ({entry['window_utc']} UTC)"
+            spans.append((entry["name"], f"{entry['firings']} runs `{entry['window_local']}`{gloss}"))
+        head = f"{SECTION_EMOJI['background']} **Background**"
+        if len(spans) == 1:
+            name, body = spans[0]
+            standing.append(f"{head} — {name}, {body}")
+        else:
+            standing.append(head)
+            standing.extend(f"**{name}** — {body}" for name, body in spans)
     if payload["events"]:
-        lines.append("On GitHub events: " + ", ".join(entry["name"] for entry in payload["events"]))
+        standing.append(
+            f"{SECTION_EMOJI['events']} **On GitHub events** — "
+            + ", ".join(entry["name"] for entry in payload["events"])
+        )
+    if standing:
+        # Split off by a blank line: these two are not entries in today's list,
+        # they are the things that are true all day, and run together with the
+        # timed lines they read as two more of them.
+        lines.append("")
+        lines.extend(standing)
 
-    lines.append("")
-    lines.append(f"*Next {len(payload['ahead'])} days*")
-    month = day.month
+    upcoming_lines: list[str] = []
+    quiet: list[str] = []
+    # The month of the last day actually *rendered* into the sequence, which is not
+    # the same as the last day walked. Advancing this on a quiet day spends the
+    # month marker on a line that gets collapsed into the closing sentence, and the
+    # next rendered day inherits a month it never named: `**Sat 31**` followed by
+    # `**Mon 2**`, with November announced only in an aside underneath. That is the
+    # ambiguity the marker exists to prevent, and it fires every month whose 1st
+    # falls on a Sunday. A quiet day still gets its own month when it changes —
+    # it is read in the closing sentence, where there is no sequence to infer from.
+    shown = day.month
     for entry in payload["ahead"]:
-        upcoming = [name for name in entry["names"] if name != MESSENGER]
-        names = ", ".join(upcoming) if upcoming else "nothing"
         future = date.fromisoformat(entry["date"])
         # Only when it changes: "Tue 1" a week out is ambiguous, "Tue 1 Sep" is not.
-        stamp = f"{entry['weekday']} {future.day}" + (f" {future:%b}" if future.month != month else "")
-        month = future.month
-        lines.append(f"{stamp}  {names}")
+        stamp = f"{entry['weekday']} {future.day}" + (f" {future:%b}" if future.month != shown else "")
+        names = [name for name in entry["names"] if name != MESSENGER]
+        if names:
+            upcoming_lines.append(f"**{stamp}** — " + ", ".join(names))
+            shown = future.month
+        else:
+            quiet.append(stamp)
+
+    lines.append("")
+    lines.append(f"{SECTION_EMOJI['ahead']} **Next {len(payload['ahead'])} days**")
+    if upcoming_lines:
+        lines.append("")
+        lines.extend(upcoming_lines)
+
+    # An empty day written as its own line reads as a routine called "nothing", and
+    # spends a line of a fifteen-line post saying so. Folded into one closing
+    # sentence with the dailies instead — same two facts, both of them asides.
+    # Safe to italicise where the note above was not: every name here matches
+    # `[a-z0-9-]+` (see `_ROUTINE_ROW`), so none can carry an underscore.
+    closing = []
+    if quiet:
+        closing.append(f"{_joined(quiet)} {'is' if len(quiet) == 1 else 'are'} clear.")
     daily = [name for name in payload["daily"] if name != MESSENGER]
     if daily:
-        lines.append("Every day: " + ", ".join(daily) + ".")
+        closing.append("Every day: " + ", ".join(daily) + ".")
+    if closing:
+        lines.append("")
+        lines.append("_" + " ".join(closing) + "_")
     return lines
 
 
