@@ -400,6 +400,29 @@ _TIP_KEY = (210, 210, 220)  # the "t" keycap glyph
 _TIP_BETA = BETA_RGB
 
 
+def tip_badge(tip, *, brightness: float = 1.0) -> Text | None:
+    """A tip's BETA/NEW chip, or None. Shared by the inline row and the bubble.
+
+    BETA wins over NEW: a maturity caveat outranks a freshness cue, and two
+    badges would push the centred line out of the companion duck's lane.
+    """
+    if getattr(tip, "is_beta", False):
+        return Text(f" {BETA_LABEL} ", style=f"bold {lerp_color(brightness, _TIP_BG, _TIP_BETA)}")
+    if getattr(tip, "is_new", False):
+        return Text(" NEW ", style=f"bold {lerp_color(brightness, _TIP_BG, _TIP_DOT_ON)}")
+    return None
+
+
+def current_tip_badge(shimmer_tick: float, *, tip_offset: int = 0) -> Text | None:
+    """The badge for whichever tip is showing, for callers that box the tip."""
+    from yeaboi.config import is_tips_enabled
+    from yeaboi.ui.shared._tips import resolve_index, tip_at
+
+    if not is_tips_enabled():
+        return None
+    return tip_badge(tip_at(resolve_index(shimmer_tick, tip_offset)))
+
+
 def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
     """Build the bottom tip block: a rotating, cross-fading tip + a control row.
 
@@ -438,11 +461,9 @@ def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
     # BETA wins over NEW: a maturity caveat outranks a freshness cue, and two
     # badges would push the centred line out of the companion duck's lane.
     tip_line = Text(justify="center")
-    if tip.is_beta:
-        tip_line.append(f" {BETA_LABEL} ", style=f"bold {lerp_color(b, _TIP_BG, _TIP_BETA)}")
-        tip_line.append("  ")
-    elif tip.is_new:
-        tip_line.append(" NEW ", style=f"bold {lerp_color(b, _TIP_BG, _TIP_DOT_ON)}")
+    _badge = tip_badge(tip, brightness=b)
+    if _badge is not None:
+        tip_line.append_text(_badge)
         tip_line.append("  ")
     tip_line.append(tip.text, style=body_style)
 
@@ -737,6 +758,7 @@ def _build_mode_screen(
             _build_companion(
                 tip_rows[0],
                 controls=tip_rows[1],
+                badge=current_tip_badge(shimmer_tick, tip_offset=tip_offset),
                 beak_open=beak_open,
                 update_box=update_box,
                 duck_lift=duck_lift,
@@ -1169,6 +1191,7 @@ def _build_companion(
     controls: Text | None = None,
     beak_open: bool = False,
     update_box: Panel | None = None,
+    badge: Text | None = None,
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
@@ -1245,6 +1268,13 @@ def _build_companion(
         parts.extend([update_box, Text("")])
 
     tip = tip_line.plain.strip()
+    # The chip rides the border now, so strip it off the front of the sentence —
+    # left in, it read twice, once above the box and once inside it.
+    if badge is not None:
+        _chip = badge.plain.strip()
+        if _chip and tip.startswith(_chip):
+            tip = tip[len(_chip) :]
+    tip = tip.lstrip()
     while tip and not (tip[0].isascii() and tip[0].isalnum()):  # drop a leading emoji/glyph
         tip = tip[1:]
     tip = tip.strip()
@@ -1259,6 +1289,11 @@ def _build_companion(
             padding=(0, 1),
             width=_COMPANION_COLS - 2,
         )
+        # The chip rides the top border, where the controls ride the bottom one.
+        # Inline it was the first thing in the sentence, and read as a word of it.
+        if badge is not None:
+            bubble.title = badge
+            bubble.title_align = "left"
         # The browse/hide controls live ON the bubble's bottom border (subtitle),
         # so they read as part of the tip box rather than a separate row.
         if has_controls:
@@ -1267,7 +1302,10 @@ def _build_companion(
         # A small nub centred under the bubble that points down at the duck — a
         # tidy speech-bubble tail rather than a stray diagonal slash.
         tail = Align.center(Text("▾", style=border_color))
-        parts.extend([bubble, tail])  # extend, not reassign — keep any update_box above
+        # Flush with the lane's right edge. Any spare column left between this
+        # border and the page's own reads as one border drawn twice, so there is
+        # none: the page's padding is the only gap.
+        parts.extend([Align.right(bubble), tail])
     elif has_controls and show_extras:
         # Tips hidden → no bubble to carry the "t show tips" hint; keep it visible.
         parts.append(controls)

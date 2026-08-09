@@ -216,8 +216,11 @@ def _all_tips_rendered(**kwargs) -> str:
 
     from rich.console import Console
 
+    # Colour OFF, pinned. Rich auto-detects from COLORTERM, which dev shells set
+    # and CI does not — so these assertions read plain text on one machine and
+    # text interleaved with escape sequences on the other.
     buf = io.StringIO()
-    Console(file=buf, width=100, height=30).print(_build_all_tips_screen(**kwargs))
+    Console(file=buf, width=100, height=30, force_terminal=False, no_color=True).print(_build_all_tips_screen(**kwargs))
     return buf.getvalue()
 
 
@@ -262,7 +265,10 @@ def test_all_tips_screen_groups_every_tip_once(monkeypatch):
     tips = _tips.get_tips()
     out = _all_tips_rendered(height=200, shimmer_tick=0.0, sub_reveal=99)
     assert out.index("Modes") < out.index("More workflows") < out.index("Shortcuts & setup")
-    content_lines = [line.strip().strip("│").strip() for line in out.splitlines()[1:-1]]
+    # Drop every border column, not just the outermost: the viewport sets the
+    # body in a table beside the scrollbar, so a row carries the panel's borders
+    # AND that table's, and a stray one left mid-string breaks the join below.
+    content_lines = [line.replace("│", " ").strip() for line in out.splitlines()[1:-1]]
     normalized_out = " ".join(" ".join(content_lines).split())
     for tip in tips:
         _prefix, marker, display_text = tip.text.partition("Tip: ")
@@ -346,8 +352,11 @@ class TestFeedbackComposeBubble:
 
         from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
 
+        # Colour OFF, pinned: Rich auto-detects from COLORTERM, which dev shells
+        # set and CI does not, so these substring assertions read plain text on
+        # one machine and text interleaved with escapes on the other.
         buf = io.StringIO()
-        Console(file=buf, width=width, height=height, legacy_windows=False).print(
+        Console(file=buf, width=width, height=height, legacy_windows=False, force_terminal=False, no_color=True).print(
             _build_mode_screen(0, width=width, height=height, shimmer_tick=1.0, desc_reveal=999, compose=state)
         )
         return buf.getvalue()
@@ -404,8 +413,11 @@ class TestFeedbackComposeBubble:
             # Pin both to rest so the only variable left is `compose`.
             _music_bar._back_presence = 0.0
             _music_bar._controls_tab_presence = 0.0
+            # Colour OFF, pinned — see _render above: with it on, a row differs
+            # by its escape sequences as well as its glyphs, and the band this
+            # test measures stops being contiguous.
             buf = io.StringIO()
-            Console(file=buf, width=140, height=44, legacy_windows=False).print(
+            Console(file=buf, width=140, height=44, legacy_windows=False, force_terminal=False, no_color=True).print(
                 _build_mode_screen(2, width=140, height=44, shimmer_tick=1.0, desc_reveal=999, compose=compose)
             )
             return buf.getvalue().splitlines()
