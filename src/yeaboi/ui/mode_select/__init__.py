@@ -63,12 +63,17 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     welcome_shows_companion,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
+    ANALYSIS_NAV_ACTIONS,
+    SETUP_STAGE_STEPS,
     _build_export_success_screen,
     _build_import_screen,
     _build_intake_screen,
     _build_offline_screen,
     _build_project_export_success_screen,
     _build_team_analysis_screen,
+    reset_setup_rule,
+    results_body_actions,
+    section_tab_click,
 )
 from yeaboi.ui.shared._animations import (
     COLOR_RGB,
@@ -77,8 +82,9 @@ from yeaboi.ui.shared._animations import (
     ease_out_cubic,
 )
 from yeaboi.ui.shared._beta_notice import show_beta_notice
-from yeaboi.ui.shared._click import button_click, parse_click
-from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+from yeaboi.ui.shared._click import button_click, option_click, parse_click, stage_click
+from yeaboi.ui.shared._components import remember_tab, remembered_tab
+from yeaboi.ui.shared._input import esc_came_from_back_tab, last_wheel_pos, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
@@ -222,6 +228,15 @@ def _next_log_level(current: str) -> str:
 _ana_sid = ""  # module-level analysis session ID
 _ana_dbp = _get_db_path()  # module-level DB path
 
+# Unpacked once, so a branch below can't compare against a name the strip
+# doesn't draw.
+_ANA_SWITCH, _ANA_NEW, _ANA_SETUP = ANALYSIS_NAV_ACTIONS
+
+# Names for the two strips in the analysis flow, so each remembers its own
+# position and neither can remember for the other.
+_SECTION_STRIP = "analysis-sections"
+_PREVIEW_STRIP = "analysis-preview"
+
 
 def _load_ana_session(project_key: str) -> dict | None:
     """Load the most recent analysis session for a project, or None."""
@@ -248,6 +263,37 @@ def _load_ana_session(project_key: str) -> dict | None:
     return None
 
 
+_PLAN_KEYS = ("sample_epic", "sample_stories", "sample_tasks", "sample_sprint")
+
+
+def _load_ana_plan(project_key: str) -> dict | None:
+    """The saved work items for a project, finished or not.
+
+    ``_load_ana_session`` answers "is there somewhere to resume to", and a plan
+    seen all the way through is deliberately not resumable. That is a different
+    question from "does a plan exist" — the answer to which is simply whether
+    any of the four artifacts were saved. Asking the first question in place of
+    the second is how a finished plan came back as an offer to generate one,
+    and got regenerated from scratch when taken up.
+    """
+    try:
+        from yeaboi.sessions import SessionStore
+
+        with SessionStore(_ana_dbp) as store:
+            for sess in store.list_analysis_sessions():
+                if project_key not in sess.get("project_name", ""):
+                    continue
+                state = store.load_state(sess["session_id"])
+                if state and any(state.get(k) for k in _PLAN_KEYS):
+                    global _ana_sid  # noqa: PLW0603
+                    _ana_sid = sess["session_id"]
+                    logger.info("Found a saved plan for %s (page %r)", project_key, state.get("last_page"))
+                    return state
+    except Exception:
+        logger.debug("Analysis plan load failed", exc_info=True)
+    return None
+
+
 def _save_ana(state: dict, node: str) -> None:
     """Save analysis session state (extracted to reduce nesting depth)."""
     if not _ana_sid:
@@ -271,12 +317,16 @@ def _confirm_ticket_generation(
     supports_timeout,
     *,
     subtitle: str = "",
-) -> bool:
+) -> bool | str:
     """Ask the user whether to generate sample tickets from the team analysis.
 
     Renders a dedicated confirmation screen (separating "analyse the team/board"
     from "create sample tickets") and drives a thin frame loop. Returns True if
-    the user chooses to generate, False if they decline (Not now / Esc).
+    the user chooses to generate, False if they decline (Not now), and the
+    string ``"back"`` on Esc. Declining and going back are not the same answer:
+    "Not now" is done with the analysis, Esc is "show me that page again", and
+    treating both as a decline dropped you out to the mode menu from a gate you
+    had only glanced at.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_generate_confirm_screen
 
@@ -293,14 +343,13 @@ def _confirm_ticket_generation(
         )
         live.update(_panel)
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        _clicked = parse_click(k)
-        if _clicked is not None:
-            _idx = button_click(console, _panel, *_clicked, _labels)
-            if _idx is not None:
-                sel = _idx
-                k = "enter"  # fall through to the existing Enter handling
-            else:
-                continue  # click missed the buttons — ignore it
+        # The gate's two choices are chrome tabs, so a click on one arrives as
+        # its own name rather than as coordinates over a button row.
+        if isinstance(k, str) and k.startswith("act:") and k[4:] in _labels:
+            sel = _labels.index(k[4:])
+            k = "enter"
+        elif parse_click(k) is not None:
+            continue  # a click on the page itself is not a keystroke
         if k == "left":
             sel = max(0, sel - 1)
         elif k == "right":
@@ -310,8 +359,8 @@ def _confirm_ticket_generation(
             logger.info("Analysis: ticket generation %s", "confirmed" if proceed else "declined")
             return proceed
         elif k in ("esc", "q"):
-            logger.info("Analysis: ticket generation declined (esc)")
-            return False
+            logger.info("Analysis: ticket generation gate dismissed (esc) — back")
+            return "back"
 
 
 def _run_preview_flow(
@@ -326,22 +375,39 @@ def _run_preview_flow(
     *,
     resume_state: dict | None = None,
 ):
-    """Run the analysis preview flow (Instructions → Epic → Stories → Tasks → Sprint).
+    """Run the analysis preview: Instructions, Epic, Stories, Tasks and Sprint,
+    as five tabs of one page rather than five pages in a row.
 
-    If resume_state is provided, jumps to the appropriate page.
+    ``resume_state`` opens on the tab it was left on. Stepping back used to mean
+    re-entering the whole flow at an earlier page — with one page and a tab
+    index, it is just moving the index, so the outer re-entry loop is gone.
     """
+    from rich.text import Text
+
     from yeaboi.tools.team_learning import (
         generate_sample_epic,
+        generate_sample_sprint,
         generate_sample_stories,
         generate_sample_tasks,
     )
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _build_analysis_progress_screen,
         _build_instructions_review_screen,
+        _build_preview_split_screen,
         _build_sample_epic_screen,
+        _build_sample_sprint_screen,
         _build_sample_stories_screen,
         _build_sample_tasks_screen,
+        _instructions_body,
+        _sample_epic_body,
+        _sample_sprint_body,
+        _sample_stories_body,
+        _sample_tasks_body,
+        preview_is_split,
+        preview_split_widths,
+        section_tab_click,
     )
+    from yeaboi.ui.shared._components import PAD as _PAD_
 
     # Accepts an optional timeout so coalesce_scroll() can poll non-blocking
     # (timeout=0.0); a bare _rk() keeps the original per-frame/blocking behaviour.
@@ -701,566 +767,393 @@ def _run_preview_flow(
     # sequential pages (repopulated on every render before any key is handled).
     _scroll_meta: dict = {}
 
-    # ── Page 1: Instructions ──────────────────────────────────────
-    logger.info("Preview: entering Instructions page")
-    if last_page not in ("epic", "stories", "tasks", "sprint"):
-        scroll, sel = 0, 0
-        _panel = None  # most recently rendered page panel, for click hit-testing
-        _labels = ["Accept", "Edit", "Export"]
-        while True:
-            k = _rk()
-            _clicked = parse_click(k)
-            if _clicked is not None:
-                if _panel is None:
-                    continue
-                _idx = button_click(console, _panel, *_clicked, _labels)
-                if _idx is None:
-                    continue  # click missed the buttons — ignore it
-                sel = _idx
-                k = "enter"  # fall through to the existing Enter handling
-            if k in SCROLL_KEYS:
-                _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
-                if _ns == scroll:
-                    continue
-                scroll = _ns
-            elif k == "left":
-                sel = max(0, sel - 1)
-            elif k == "right":
-                sel = min(2, sel + 1)
-            elif k in ("enter", " "):
-                if sel == 0:
-                    _save_ana({"instructions": _instr, "last_page": "instructions"}, "instructions")
-                    break  # → epic
-                elif sel == 1:
-                    # Edit — inline buffer editor (matches planning mode)
-                    logger.info("Preview: user editing instructions")
-                    from yeaboi.ui.session.editor._editor_core import edit_buffer_loop, render_editor_panel
-                    from yeaboi.ui.shared._components import analysis_title as _a_title
+    # ── The whole plan, in one call, started up front ─────────────
+    # It used to be four chained LLM calls — epic, then stories, then tasks, then
+    # sprint — each fired on arriving at its page. Four round trips to sit
+    # through, and three of them stalled a page the user had already asked for.
+    # ``generate_sample_plan`` writes all four in one request, and it starts the
+    # moment the flow opens, so the wait overlaps with reading the instructions
+    # instead of following it.
+    _plan: dict = {"thread": None, "for": "", "box": [None, None]}
 
-                    _buf = _instr.split("\n")
-                    _cr, _cc = 0, 0
-                    _atitle = _a_title()
+    def _start_plan(text: str) -> None:
+        from yeaboi.tools.team_learning import generate_sample_plan
 
-                    def _instr_render(buf, cr, cc, so, rw, rh):
-                        return render_editor_panel(
-                            buf,
-                            cr,
-                            cc,
-                            so,
-                            width=rw,
-                            height=rh,
-                            editor_label="instructions",
-                            title_override=_atitle,
-                        )
+        box: list = [None, None]
 
-                    _edited = edit_buffer_loop(
-                        live,
-                        console,
-                        _buf,
-                        _cr,
-                        _cc,
-                        _rk,
-                        editable_start_fn=lambda line: 0,
-                        render_fn=_instr_render,
-                    )
-                    if _edited is not None:
-                        _instr = "\n".join(_edited)
-                elif sel == 2:
-                    _do_export()
-            elif k in ("esc", "q"):
-                _save_ana({"instructions": _instr, "last_page": "instructions"}, "instructions")
-                return
-            w, h = console.size
-            _panel = _build_instructions_review_screen(
-                _instr,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-            )
-            live.update(_panel)
+        def _worker():
+            try:
+                box[0] = generate_sample_plan(text, ta_examples)
+            except Exception as exc:  # each page still has its own generator
+                box[1] = exc
 
-    # ── Page 2: Epic ──────────────────────────────────────────────
-    logger.info("Preview: entering Epic page")
-    if not _epic:
-        w, h = console.size
-        live.update(
-            _build_analysis_progress_screen(
-                ["Generating sample epic\u2026"],
-                width=w,
-                height=h,
-                elapsed=0,
-                anim_tick=0,
-                source="",
-                mode="analysis",
-            )
-        )
-        logger.info("Preview: generating sample epic via LLM")
-        result = _regenerate(lambda: generate_sample_epic(_instr, ta_examples), "epic")
-        if result is not None:
-            _epic = result
-        logger.info("Preview: sample epic generated: %s", _epic.get("title", "?"))
-        # Persist the moment generation completes — not only on the Accept/next
-        # keypress — so quitting here still leaves a resumable session (matches the
-        # Accept-handler save dict below).
-        _save_ana({"instructions": _instr, "sample_epic": _epic, "last_page": "epic"}, "epic")
+        thread = duck_working_thread(_worker, name="planning-sample-plan")
+        _plan.update({"thread": thread, "for": text, "box": box})
+        thread.start()
+        logger.info("Preview: sample plan generation started in the background")
 
-    if last_page not in ("stories", "tasks", "sprint"):
-        scroll, sel = 0, 0
-        _panel = None  # most recently rendered page panel, for click hit-testing
-        _labels = ["Accept", "Edit", "Regenerate", "Export"]
-        while True:
-            k = _rk()
-            _clicked = parse_click(k)
-            if _clicked is not None:
-                if _panel is None:
-                    continue
-                _idx = button_click(console, _panel, *_clicked, _labels)
-                if _idx is None:
-                    continue  # click missed the buttons — ignore it
-                sel = _idx
-                k = "enter"  # fall through to the existing Enter handling
-            if k in SCROLL_KEYS:
-                _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
-                if _ns == scroll:
-                    continue
-                scroll = _ns
-            elif k == "left":
-                sel = max(0, sel - 1)
-            elif k == "right":
-                sel = min(3, sel + 1)
-            elif k in ("enter", " "):
-                if sel == 0:
-                    _save_ana({"instructions": _instr, "sample_epic": _epic, "last_page": "epic"}, "epic")
-                    break  # → stories
-                elif sel == 1:
-                    logger.info("Preview: user editing epic")
-                    edited = _edit_epic_dict(_epic)
-                    if edited is not None:
-                        _epic = edited
-                elif sel == 2:
-                    # Ask what should change first (Esc cancels, empty Enter = plain regenerate).
-                    fb = _ask_regen_feedback(console, live, read_key, frame_time, supports_timeout, "epic")
-                    if fb is not None:
-                        result = _regenerate(
-                            lambda: generate_sample_epic(_instr, ta_examples, feedback=fb or None, previous=_epic),
-                            "epic",
-                        )
-                        if result is not None:
-                            _epic = result
-                elif sel == 3:
-                    _do_export()
-            elif k in ("esc", "q"):
-                _save_ana({"instructions": _instr, "sample_epic": _epic, "last_page": "epic"}, "epic")
-                return
-            w, h = console.size
-            _panel = _build_sample_epic_screen(
-                _epic,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-                examples=ta_examples,
-            )
-            live.update(_panel)
+    def _poll_plan() -> None:
+        """Collect the background plan if it has landed. Never blocks.
 
-    # ── Page 3: Stories ───────────────────────────────────────────
-    logger.info("Preview: entering Stories page")
-    if not _stories:
-        w, h = console.size
-        live.update(
-            _build_analysis_progress_screen(
-                ["Generating sample stories\u2026"],
-                width=w,
-                height=h,
-                elapsed=0,
-                anim_tick=0,
-                source="",
-                mode="analysis",
-            )
-        )
-        logger.info("Preview: generating sample stories via LLM")
-        result = _regenerate(lambda: generate_sample_stories(_instr, _epic, ta_examples), "stories")
-        if result is not None:
-            _stories = result
-        logger.info("Preview: %d sample stories generated", len(_stories))
-        # Persist on generation (see Epic page) so a mid-flow quit stays resumable.
-        _save_ana(
-            {
-                "instructions": _instr,
-                "sample_epic": _epic,
-                "sample_stories": _stories,
-                "last_page": "stories",
-            },
-            "stories",
-        )
+        Not a wait: the page draws every frame with the calibration on the left
+        and "Generating…" under whichever tab is open, and the four tabs fill in
+        together the moment the one call returns. Blocking on it instead would
+        put a progress screen over the very reference material the left column
+        exists to keep on screen.
 
-    if last_page not in ("tasks", "sprint"):
-        scroll, sel = 0, 0
-        _panel = None  # most recently rendered page panel, for click hit-testing
-        _labels = ["Accept", "Edit", "Regenerate", "Export"]
-        while True:
-            k = _rk()
-            _clicked = parse_click(k)
-            if _clicked is not None:
-                if _panel is None:
-                    continue
-                _idx = button_click(console, _panel, *_clicked, _labels)
-                if _idx is None:
-                    continue  # click missed the buttons — ignore it
-                sel = _idx
-                k = "enter"  # fall through to the existing Enter handling
-            if k in SCROLL_KEYS:
-                _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
-                if _ns == scroll:
-                    continue
-                scroll = _ns
-            elif k == "left":
-                sel = max(0, sel - 1)
-            elif k == "right":
-                sel = min(3, sel + 1)
-            elif k in ("enter", " "):
-                if sel == 0:
-                    _st = {
-                        "instructions": _instr,
-                        "sample_epic": _epic,
-                        "sample_stories": _stories,
-                        "last_page": "stories",
-                    }  # noqa: E501
-                    _save_ana(_st, "stories")
-                    break  # → tasks
-                elif sel == 1:
-                    logger.info("Preview: user editing stories")
-                    for si, _s in enumerate(_stories):
-                        edited = _edit_story_dict(_s)
-                        if edited is not None:
-                            _stories[si] = edited
-                        else:
-                            break  # Esc cancels remaining edits
-                elif sel == 2:
-                    fb = _ask_regen_feedback(console, live, read_key, frame_time, supports_timeout, "stories")
-                    if fb is not None:
-                        result = _regenerate(
-                            lambda: generate_sample_stories(
-                                _instr, _epic, ta_examples, feedback=fb or None, previous=_stories
-                            ),
-                            "stories",
-                        )
-                        if result is not None:
-                            _stories = result
-                elif sel == 3:
-                    _do_export()
-            elif k in ("esc", "q"):
-                _save_ana(
-                    {"instructions": _instr, "sample_epic": _epic, "sample_stories": _stories, "last_page": "stories"},
-                    "stories",
-                )
-                return
-            w, h = console.size
-            _panel = _build_sample_stories_screen(
-                _stories,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-                epic_title=_epic.get("title", ""),
-                examples=ta_examples,
-            )
-            live.update(_panel)
+        It fills only what is still missing — a resumed artifact is never
+        overwritten by a fresh one.
+        """
+        nonlocal _epic, _stories, _tasks, _sprint
 
-    # ── Page 4: Tasks ─────────────────────────────────────────────
-    logger.info("Preview: entering Tasks page")
-    if not _tasks:
-        w, h = console.size
-        live.update(
-            _build_analysis_progress_screen(
-                ["Generating sample tasks\u2026"],
-                width=w,
-                height=h,
-                elapsed=0,
-                anim_tick=0,
-                source="",
-                mode="analysis",
-            )
-        )
-        logger.info("Preview: generating sample tasks via LLM")
-        result = _regenerate(lambda: generate_sample_tasks(_instr, _stories, ta_examples), "tasks")
-        if result is not None:
-            _tasks = result
-        logger.info("Preview: %d sample tasks generated", len(_tasks))
-        # Persist on generation (see Epic page) so a mid-flow quit stays resumable.
+        thread = _plan["thread"]
+        if thread is None or thread.is_alive():
+            return
+        thread.join()
+        _plan["thread"] = None
+        if _plan["box"][1] is not None:
+            logger.warning("Preview: sample plan generation failed: %s", _plan["box"][1])
+            return  # each page falls back to generating its own artifact
+        plan = _plan["box"][0] or {}
+        _epic = _epic or plan.get("epic")
+        _stories = _stories or plan.get("stories")
+        _tasks = _tasks or plan.get("tasks")
+        _sprint = _sprint or plan.get("sprint")
+        logger.info("Preview: sample plan ready (%d stories, %d tasks)", len(_stories or []), len(_tasks or []))
         _save_ana(
             {
                 "instructions": _instr,
                 "sample_epic": _epic,
                 "sample_stories": _stories,
                 "sample_tasks": _tasks,
-                "last_page": "tasks",
+                "sample_sprint": _sprint,
+                "last_page": "epic",
             },
-            "tasks",
+            "epic",
         )
 
-    if last_page != "sprint":
-        scroll, sel = 0, 0
-        _panel = None  # most recently rendered page panel, for click hit-testing
-        _labels = ["Accept", "Edit", "Regenerate", "Export"]
-        while True:
-            k = _rk()
-            _clicked = parse_click(k)
-            if _clicked is not None:
-                if _panel is None:
-                    continue
-                _idx = button_click(console, _panel, *_clicked, _labels)
-                if _idx is None:
-                    continue  # click missed the buttons — ignore it
-                sel = _idx
-                k = "enter"  # fall through to the existing Enter handling
-            if k in SCROLL_KEYS:
-                _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
-                if _ns == scroll:
-                    continue
-                scroll = _ns
-            elif k == "left":
-                sel = max(0, sel - 1)
-            elif k == "right":
-                sel = min(3, sel + 1)
-            elif k in ("enter", " "):
-                if sel == 0:
-                    _st = {
-                        "instructions": _instr,
-                        "sample_epic": _epic,
-                        "sample_stories": _stories,
-                        "sample_tasks": _tasks,
-                        "last_page": "tasks",
-                    }  # noqa: E501
-                    _save_ana(_st, "tasks")
-                    break  # → sprint
-                elif sel == 1:
-                    logger.info("Preview: user editing tasks")
-                    # Group tasks by story and edit each group
-                    _by_story: dict[str, list[tuple[int, dict]]] = {}
-                    for ti, _t in enumerate(_tasks):
-                        sid = _t.get("story_id", "?")
-                        _by_story.setdefault(sid, []).append((ti, _t))
-                    _cancelled = False
-                    for sid, group in _by_story.items():
-                        group_tasks = [t for _, t in group]
-                        edited_group = _edit_task_dict(group_tasks, sid)
-                        if edited_group is None:
-                            _cancelled = True
-                            break
-                        for (ti, _), et in zip(group, edited_group):
-                            _tasks[ti] = et
-                elif sel == 2:
-                    fb = _ask_regen_feedback(console, live, read_key, frame_time, supports_timeout, "tasks")
-                    if fb is not None:
-                        result = _regenerate(
-                            lambda: generate_sample_tasks(
-                                _instr, _stories, ta_examples, feedback=fb or None, previous=_tasks
-                            ),
-                            "tasks",
-                        )
-                        if result is not None:
-                            _tasks = result
-                elif sel == 3:
-                    _do_export()
-            elif k in ("esc", "q"):
-                _save_ana(
-                    {
-                        "instructions": _instr,
-                        "sample_epic": _epic,
-                        "sample_stories": _stories,
-                        "sample_tasks": _tasks,
-                        "last_page": "tasks",
-                    },
-                    "tasks",
-                )
-                return
-            w, h = console.size
-            _panel = _build_sample_tasks_screen(
-                _tasks,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-                stories=_stories,
-            )
-            live.update(_panel)
+    # Only for a flow with nothing generated yet. Resuming half-way through, the
+    # tail must be chained onto the epic already on screen — a fresh plan would
+    # hand it stories belonging to a different epic.
+    if not (_epic or _stories or _tasks or _sprint):
+        _start_plan(_instr)
 
-    # ── Page 5: Sprint ────────────────────────────────────────────
-    logger.info(
-        "Preview: entering Sprint page (%.1fs elapsed)",
-        time.monotonic() - _flow_start,
-    )
-    _finished = _run_sprint_review(
-        live,
-        console,
-        read_key,
-        frame_time,
-        supports_timeout,
-        _instr,
-        _epic,
-        _stories,
-        _tasks,
-        ta_examples,
-        resume_sprint=_sprint,
-    )
-    # Only mark the session complete (non-resumable) when the user actually
-    # finished the Sprint page. On a quit, _run_sprint_review has already saved
-    # the sprint with last_page="sprint", so the analysis resumes straight here.
-    if _finished:
-        _save_ana({"last_page": "complete"}, "complete")
-    logger.info(
-        "Preview flow completed in %.1fs",
-        time.monotonic() - _flow_start,
-    )
+    # ── One page: the calibration beside the work item ────────────
+    # The four generated artifacts used to be tabs of the same column as the
+    # instructions, so opening one REPLACED the calibration it was generated
+    # from — the exact thing you want in front of you while judging whether it
+    # matches the team. The instructions hold the left column now and never
+    # leave; the strip and whichever work item it selects own the right.
+    _all_tabs = ("instructions", "epic", "stories", "tasks", "sprint")
+    # A saved session's page wins; failing that, where the strip was left last
+    # time — crossing to the analysis and back used to drop you on Epic however
+    # far through the plan you were.
+    stage = last_page if last_page in _all_tabs else remembered_tab(_PREVIEW_STRIP, _all_tabs, "instructions")
+    instr_scroll = item_scroll = 0
+    focus_instr = False
+    _instr_meta: dict = {}
+    _panel = None
+    _finished = False
 
+    def _tabs_for(w: int) -> tuple:
+        """The strip at this width — four tabs when there is room for two
+        columns, five when the instructions have to be one of them instead."""
+        return _all_tabs[1:] if preview_is_split(w) else _all_tabs
 
-def _run_sprint_review(
-    live,
-    console,
-    read_key,
-    frame_time,
-    supports_timeout,
-    instr_text,
-    sample_epic,
-    sample_stories,
-    sample_tasks,
-    ta_examples,
-    resume_sprint=None,
-):
-    """Run the sample sprint review loop (extracted to reduce nesting depth).
+    def _snapshot(page: str) -> dict:
+        """Everything generated so far, tagged with the tab it was left on."""
+        return {
+            "instructions": _instr,
+            "sample_epic": _epic,
+            "sample_stories": _stories,
+            "sample_tasks": _tasks,
+            "sample_sprint": _sprint,
+            "last_page": page,
+        }
 
-    Returns True if the user finished the page (chose "Done"), False if they quit
-    (Esc). The caller uses this to decide whether to mark the session complete.
-    """
-    logger.info("Sprint review: generating sample sprint via LLM")
+    def _artifact(name: str):
+        return {"epic": _epic, "stories": _stories, "tasks": _tasks, "sprint": _sprint}.get(name)
 
-    from yeaboi.tools.team_learning import generate_sample_sprint
-    from yeaboi.ui.mode_select.screens._screens_secondary import (
-        _build_analysis_progress_screen,
-        _build_sample_sprint_screen,
-    )
+    def _ensure_sprint() -> None:
+        """The sprint arrives with the plan. A session resumed from before it
+        existed still needs one, chained onto the stories and tasks on screen —
+        a fresh plan here would replace what the user has already accepted."""
+        nonlocal _sprint
 
-    def _save_sprint(sprint_obj: dict) -> None:
-        # Persist the sprint the moment it is generated (see the Epic page), with
-        # last_page="sprint" so a quit here resumes to this page without a re-run.
-        _save_ana(
-            {
-                "instructions": instr_text,
-                "sample_epic": sample_epic,
-                "sample_stories": sample_stories,
-                "sample_tasks": sample_tasks,
-                "sample_sprint": sprint_obj,
-                "last_page": "sprint",
-            },
-            "sprint",
-        )
-
-    def _regen_sprint(feedback=None, previous=None):
-        result_box: list = [None, None]
-
-        def _worker():
-            try:
-                result_box[0] = generate_sample_sprint(
-                    instr_text, sample_stories, sample_tasks, ta_examples, feedback=feedback, previous=previous
-                )
-            except Exception as exc:
-                result_box[1] = exc
-
-        thread = duck_working_thread(_worker, name="sprint-sample-regenerate")
-        thread.start()
-        start = time.monotonic()
-        while thread.is_alive():
-            elapsed = time.monotonic() - start
-            w, h = console.size
-            live.update(
-                _build_analysis_progress_screen(
-                    ["Regenerating sprint\u2026"],
-                    width=w,
-                    height=h,
-                    elapsed=elapsed,
-                    anim_tick=elapsed,
-                    source="",
-                    mode="analysis",
-                )
-            )
-            time.sleep(1 / 30)
-        thread.join()
-        if result_box[1] is not None:
-            logger.warning("Sprint regeneration failed: %s", result_box[1])
-            return None
-        return result_box[0]
-
-    if resume_sprint:
-        # Resumed session — reuse the saved sprint, skip the (expensive) LLM call.
-        sprint = resume_sprint
-    else:
-        sprint = _regen_sprint() or {
+        if _sprint or _plan["thread"] is not None:
+            return  # still generating: the plan will bring one
+        logger.info("Preview: no saved sprint — generating one for the resumed plan")
+        _sprint = _regenerate(
+            lambda: generate_sample_sprint(_instr, _stories or [], _tasks or [], ta_examples), "sprint"
+        ) or {
             "sprint_name": "Sprint 1",
             "velocity_target": 20,
-            "stories_included": [s.get("id", "") for s in sample_stories],
-            "total_points": sum(s.get("story_points", 0) for s in sample_stories),
+            "stories_included": [s.get("id", "") for s in (_stories or [])],
+            "total_points": sum(s.get("story_points", 0) for s in (_stories or [])),
             "capacity_notes": "Fallback — generation failed.",
             "risks": [],
             "rationale": "Fallback sprint plan.",
         }
-        _save_sprint(sprint)
-    scroll = 0
-    sel = 0
-    _scroll_meta: dict = {}
-    _panel = None  # most recently rendered sprint panel, for click hit-testing
-    _labels = ["Done", "Regenerate", "Export"]
+        _save_ana(_snapshot("sprint"), "sprint")
+
+    def _item_body(name: str, w: int) -> list:
+        """The right column's body for one tab, or a line saying it is coming."""
+        if not _artifact(name):
+            return [Text(""), Text(_PAD_ + "Generating\u2026", style="rgb(120,120,140)")]
+        if name == "epic":
+            return _sample_epic_body(_epic, width=w, examples=ta_examples)
+        if name == "stories":
+            return _sample_stories_body(
+                _stories, width=w, epic_title=(_epic or {}).get("title", ""), examples=ta_examples
+            )
+        if name == "tasks":
+            return _sample_tasks_body(_tasks, width=w, stories=_stories or [])
+        return _sample_sprint_body(_sprint, _stories or [], width=w)
+
+    def _render(name: str, w: int, h: int):
+        """The panel for one tab.
+
+        ``ready`` dims the tabs the background plan has not filled in yet. They
+        are shown either way — a tab that appears when its content does is a
+        menu that moves under you.
+        """
+        remember_tab(_PREVIEW_STRIP, name)
+        _rdy = (True, bool(_epic), bool(_stories), bool(_tasks), bool(_sprint))
+        if preview_is_split(w):
+            left_w, right_w = preview_split_widths(w)
+            return _build_preview_split_screen(
+                _instructions_body(_instr, width=left_w),
+                _item_body(name, right_w),
+                stage_index=_all_tabs[1:].index(name),
+                instr_scroll=instr_scroll,
+                item_scroll=item_scroll,
+                instr_meta=_instr_meta,
+                item_meta=_scroll_meta,
+                focus_instructions=focus_instr,
+                width=w,
+                height=h,
+                ready=_rdy[1:],
+                shimmer_tick=time.monotonic() - _flow_start,
+            )
+        _kw = {
+            "scroll_offset": instr_scroll if name == "instructions" else item_scroll,
+            "scroll_meta": _instr_meta if name == "instructions" else _scroll_meta,
+            "width": w,
+            "height": h,
+            "ready": _rdy,
+        }
+        if name == "instructions":
+            return _build_instructions_review_screen(_instr, **_kw)
+        if name == "epic":
+            return _build_sample_epic_screen(_epic or {}, examples=ta_examples, **_kw)
+        if name == "stories":
+            return _build_sample_stories_screen(
+                _stories or [], epic_title=(_epic or {}).get("title", ""), examples=ta_examples, **_kw
+            )
+        if name == "tasks":
+            return _build_sample_tasks_screen(_tasks or [], stories=_stories or [], **_kw)
+        return _build_sample_sprint_screen(_sprint or {}, _stories or [], **_kw)
+
+    def _edit_instructions() -> None:
+        """The inline editor for the calibration in the left column."""
+        nonlocal _instr
+
+        from yeaboi.ui.session.editor._editor_core import edit_buffer_loop, render_editor_panel
+        from yeaboi.ui.shared._components import analysis_title as _a_title
+
+        _atitle = _a_title()
+
+        def _instr_render(buf, cr, cc, so, rw, rh):
+            return render_editor_panel(
+                buf, cr, cc, so, width=rw, height=rh, editor_label="instructions", title_override=_atitle
+            )
+
+        _edited = edit_buffer_loop(
+            live, console, _instr.split("\n"), 0, 0, _rk, editable_start_fn=lambda line: 0, render_fn=_instr_render
+        )
+        if _edited is None:
+            return
+        _instr = "\n".join(_edited)
+        # The plan running behind this page was asked for the old instructions.
+        # Abandon it and re-ask — the edit is the user telling us what they want
+        # generated, and honouring it is worth the one extra call it costs.
+        if _plan["thread"] is not None and _instr != _plan["for"]:
+            logger.info("Preview: instructions edited — restarting sample plan generation")
+            _start_plan(_instr)
+
+    def _edit_stage(name: str) -> None:
+        """Open the inline editor for whichever column is focused."""
+        nonlocal _epic, _stories, _tasks
+
+        if focus_instr or name == "instructions":
+            logger.info("Preview: user editing instructions")
+            _edit_instructions()
+            return
+        logger.info("Preview: user editing %s", name)
+        if name == "epic":
+            edited = _edit_epic_dict(_epic or {})
+            if edited is not None:
+                _epic = edited
+        elif name == "stories":
+            for si, _s in enumerate(_stories or []):
+                edited = _edit_story_dict(_s)
+                if edited is None:
+                    break  # Esc cancels the remaining stories
+                _stories[si] = edited
+        elif name == "tasks":
+            # Tasks are edited a story at a time, so group them by their story
+            # first and keep each task's index to write the edit back.
+            _by_story: dict[str, list[tuple[int, dict]]] = {}
+            for ti, _t in enumerate(_tasks or []):
+                _by_story.setdefault(_t.get("story_id", "?"), []).append((ti, _t))
+            for sid, group in _by_story.items():
+                edited_group = _edit_task_dict([t for _, t in group], sid)
+                if edited_group is None:
+                    break  # Esc cancels the remaining stories' tasks
+                for (ti, _), et in zip(group, edited_group, strict=False):
+                    _tasks[ti] = et
+
+    def _regen_stage(name: str) -> None:
+        """Re-ask for THIS tab's artifact only — the whole plan came in one call,
+        but a regenerate is about the page in front of you."""
+        nonlocal _epic, _stories, _tasks, _sprint
+
+        # Ask what should change first (Esc cancels, empty Enter = plain regenerate).
+        fb = _ask_regen_feedback(console, live, read_key, frame_time, supports_timeout, name)
+        if fb is None:
+            return
+        fb = fb or None
+        if name == "epic":
+            result = _regenerate(lambda: generate_sample_epic(_instr, ta_examples, feedback=fb, previous=_epic), name)
+            if result is not None:
+                _epic = result
+        elif name == "stories":
+            result = _regenerate(
+                lambda: generate_sample_stories(_instr, _epic or {}, ta_examples, feedback=fb, previous=_stories), name
+            )
+            if result is not None:
+                _stories = result
+        elif name == "tasks":
+            result = _regenerate(
+                lambda: generate_sample_tasks(_instr, _stories or [], ta_examples, feedback=fb, previous=_tasks), name
+            )
+            if result is not None:
+                _tasks = result
+        elif name == "sprint":
+            result = _regenerate(
+                lambda: generate_sample_sprint(
+                    _instr, _stories or [], _tasks or [], ta_examples, feedback=fb, previous=_sprint
+                ),
+                name,
+            )
+            if result is not None:
+                _sprint = result
+
     while True:
-        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _poll_plan()
+        w, h = console.size
+        tabs = _tabs_for(w)
+        if stage not in tabs:
+            # The terminal was resized across the split threshold and the tab
+            # that was open is now the left column (or has just reappeared).
+            stage = tabs[0]
+        if stage == "sprint":
+            _ensure_sprint()
+        _panel = _render(stage, w, h)
+        live.update(_panel)
+
+        k = _rk()
         _clicked = parse_click(k)
         if _clicked is not None:
-            if _panel is None:
-                continue
-            _idx = button_click(console, _panel, *_clicked, _labels)
-            if _idx is None:
-                continue  # click missed the buttons — ignore it
-            sel = _idx
-            k = "enter"  # fall through to the existing Enter handling
+            # Only the strip is clickable on these pages — the actions are chrome
+            # tabs, and a chrome tab click arrives as its own "act:" key instead.
+            _hit = section_tab_click(_panel, *_clicked)
+            if _hit in tabs:
+                stage, item_scroll = _hit, 0
+            continue
         if k in SCROLL_KEYS:
-            _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
-            if _ns == scroll:
-                continue
-            scroll = _ns
-        elif k == "left":
-            sel = max(0, sel - 1)
-        elif k == "right":
-            sel = min(2, sel + 1)
-        elif k in ("enter", " "):
-            if sel == 0:
-                return True  # Done — caller marks the session complete
-            elif sel == 1:
-                # Ask what should change first (Esc cancels, empty Enter = plain regenerate).
-                fb = _ask_regen_feedback(console, live, read_key, frame_time, supports_timeout, "sprint")
-                if fb is not None:
-                    result = _regen_sprint(feedback=fb or None, previous=sprint)
-                    if result is not None:
-                        sprint = result
-                        _save_sprint(sprint)
-            elif sel == 2:
-                pass  # Export (handled at report level)
-        elif k in ("esc", "q"):
-            return False  # Quit — keep last_page="sprint" so it stays resumable
-        w, h = console.size
-        _panel = _build_sample_sprint_screen(
-            sprint,
-            sample_stories,
-            scroll_offset=scroll,
-            scroll_meta=_scroll_meta,
-            width=w,
-            height=h,
-            action_sel=sel,
-        )
-        live.update(_panel)
+            # Both columns are longer than a screen and there is one set of
+            # arrows, so the keys drive whichever column is focused — but a wheel
+            # tick knows where the pointer was, and scrolling the column you are
+            # NOT pointing at is never what was meant. It takes the focus with
+            # it, so the highlighted column is always the one that just moved.
+            if k in ("scroll_up", "scroll_down"):
+                _wx, _ = last_wheel_pos()
+                _edge = getattr(_panel, "_split_left_end", 0)
+                if _wx and _edge:
+                    focus_instr = _wx <= _edge
+            if focus_instr and preview_is_split(w) or stage == "instructions":
+                instr_scroll = coalesce_scroll(instr_scroll, k, _instr_meta, _rk)
+            else:
+                item_scroll = coalesce_scroll(item_scroll, k, _scroll_meta, _rk)
+            continue
+        if k == "tab":
+            focus_instr = not focus_instr and preview_is_split(w)
+            continue
+        if k in ("left", "right"):
+            from yeaboi.ui.shared._components import step_tab
+
+            stage, item_scroll = step_tab(tabs, stage, k), 0
+            continue
+        if k == "pager:1":
+            continue  # already here
+        if k == "pager:0":
+            # Crossing to Work items is a move WITHIN the flow, so it hands the
+            # caller "back" and gets re-entered when you cross the other way —
+            # it used to fall out of the flow entirely and land on the analyses
+            # list, which is why Tab could not be trusted with it.
+            logger.info("Preview: pager → insights")
+            _save_ana(_snapshot(stage), stage)
+            return "back"
+        if k in ("esc", "q"):
+            # Leaving from the LAST tab is what finishing means now that there is
+            # no Accept to press: you have seen the whole plan, so the session
+            # stops being resumable. Leaving from any other tab keeps it.
+            if stage == tabs[-1]:
+                _finished = True
+            # Esc leaves, from any tab. It used to walk back a tab at a time,
+            # which was right while these were pages you had to accept your way
+            # through — a stray Esc on page four would otherwise have thrown away
+            # three you could not get back to. They are tabs now: going back one
+            # is what left-arrow and the strip are for, and Esc closing the page
+            # is the same thing it means everywhere else in the app.
+            logger.info("Preview: left the flow from the %s tab", stage)
+            _save_ana(_snapshot(stage), stage)
+            break  # not return: the completion save below has to run
+        if k in ("enter", " "):
+            # The forward action lives in the left strip with the others now, so
+            # its name comes off the panel rather than off the rendered tab.
+            _fwd = getattr(_panel, "_forward_action", "") or getattr(_panel, "_next_tab", "")
+            k = f"act:{_fwd}" if _fwd else ""
+        if not (isinstance(k, str) and k.startswith("act:")):
+            continue
+
+        # Dispatched by NAME, not by a selection index: the actions differ per
+        # tab (no Regenerate on Instructions, no Edit on Sprint), and an index
+        # into five different lists is a bug waiting for a reorder.
+        _action = k[4:]
+        if _action == "Edit":
+            _edit_stage(stage)
+        elif _action == "Regenerate":
+            _regen_stage(stage)
+        elif _action == "Export":
+            _do_export()
+        _save_ana(_snapshot(stage), stage)
+
+    # Only mark the session complete (non-resumable) when the user left from the
+    # LAST tab — the whole plan seen. Every other exit has just saved a snapshot
+    # with the tab it was on, so the analysis resumes straight back to it.
+    #
+    # Complete means finished, NOT forgotten: the four artifacts are saved with
+    # it. Writing the marker on its own threw the plan away, so coming back
+    # offered to generate the one you had just read and then made a second one
+    # from scratch — including over the edits.
+    if _finished:
+        _save_ana({**_snapshot(stage), "last_page": "complete"}, "complete")
+    logger.info(
+        "Preview flow completed in %.1fs",
+        time.monotonic() - _flow_start,
+    )
 
 
 def _collect_usage_data() -> dict:
@@ -1451,6 +1344,7 @@ def _collect_settings_data() -> dict:
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
+        "SCREENSAVER_STYLE",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
         "SLACK_WEBHOOK_URL",
@@ -2169,8 +2063,15 @@ def _run_anonymize_pass(
     source_mode: str,
     theme,
     title,
+    page=None,
 ):
     """Run ``run_anonymize`` on a worker thread behind the consistent progress screen.
+
+    ``page`` is a ``(width, height) -> Panel`` for callers that want to STAY PUT.
+    Masking is done in place — the same page re-rendered from masked data — so
+    swapping the whole terminal to a progress screen and back reprints a screen
+    that never actually changed. Given one, the page keeps rendering and the
+    worker speaks through the duck instead.
 
     This is the loading-screen half of the old ``_anonymize_flow``: the *review* is now
     the mode's own screen re-rendered from masked data (``anonymize.apply.mask_artifact`` /
@@ -2208,18 +2109,24 @@ def _run_anonymize_pass(
     while thread.is_alive():
         elapsed = time.monotonic() - start
         w, h = console.size
-        live.update(
-            _build_standup_progress_screen(
-                list(progress),
-                width=w,
-                height=max(10, h - 1),
-                elapsed=elapsed,
-                anim_tick=elapsed,
-                theme=theme,
-                title=title,
-                label="Anonymizing output",
+        if page is not None:
+            panel = page(w, h)
+            panel._duck_say = f"Anonymizing\u2026 {progress[-1]}" if progress else "Anonymizing\u2026"
+            panel._duck_say_sticky = True
+            live.update(panel)
+        else:
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=theme,
+                    title=title,
+                    label="Anonymizing output",
+                )
             )
-        )
         time.sleep(1 / 30)
     thread.join()
     res = result_box[0]
@@ -6785,6 +6692,53 @@ def _move_analysis_list_cursor(cursor: int, key: str, count: int) -> int:
     return cursor
 
 
+def _setup_click(panel, key: str, jump_box: list | None) -> tuple[str, object]:
+    """Resolve a click on the setup page into ``(key, option)`` for a stage loop.
+
+    Two things are clickable, and they mean different things:
+
+    * an option in the set you are editing → returned as the cursor value it
+      stands for, with ``" "`` for the key. The loop moves its cursor there and
+      runs its own select/toggle, so a click and a keystroke cannot diverge.
+    * any column of a set you are NOT editing → "commit, then go there". The set
+      you are standing on is mid-edit, and throwing that away because you
+      reached for another column would be its own surprise, so the destination
+      is recorded and ``"enter"`` returned: the loop commits through its own
+      validation (Areas still refuses an empty selection, and the jump is
+      dropped with it), and the sequencer honours ``jump_box`` on the way out.
+
+    ←/→ move between the columns the same way, once the page is laid out side by
+    side. Their in-list meaning is redundant there (↑/↓ already walk the options,
+    and the sets stand beside each other), and on a narrow terminal the page
+    publishes no neighbours, so the arrows keep it.
+
+    Anything that is not a click, and any click that missed both, passes through
+    with no option — a click on nothing is not a keystroke.
+    """
+    neighbours = getattr(panel, "_stage_neighbours", None)
+    if neighbours and key in ("left", "right"):
+        target = neighbours[0] if key == "left" else neighbours[1]
+        if target is None:
+            return "", None  # the ends do not wrap: there is nowhere further to go
+        if jump_box is not None:
+            jump_box.clear()
+            jump_box.append(target)
+        return "enter", None
+    click = parse_click(key)
+    if click is None:
+        return key, None
+    option = option_click(panel, *click)
+    if option is not None:
+        return " ", option
+    stage = stage_click(panel, *click)
+    if stage is None:
+        return "", None
+    if jump_box is not None:
+        jump_box.clear()
+        jump_box.append(stage)
+    return "enter", None
+
+
 def _run_analysis_feature_select(
     live,
     console: Console,
@@ -6793,6 +6747,9 @@ def _run_analysis_feature_select(
     supports_timeout: bool,
     available: dict[str, bool],
     initial_features: list[str] | None = None,
+    setup_state: dict | None = None,
+    setup_state_for=None,
+    jump_box: list | None = None,
 ):
     """Choose analysis result areas; every runnable area starts selected.
 
@@ -6812,17 +6769,24 @@ def _run_analysis_feature_select(
     message = ""
     while True:
         w, h = console.size
-        live.update(
-            _build_analysis_feature_screen(
-                available,
-                checked,
-                cursor,
-                width=w,
-                height=h,
-                message=message,
-            )
+        # Rebuilt per frame, not once on the way in: which sources exist is
+        # derived from the areas being ticked right here, so a snapshot would
+        # draw the Sources column empty the whole time you were filling it.
+        view = setup_state_for(checked) if setup_state_for is not None else setup_state
+        panel = _build_analysis_feature_screen(
+            available,
+            checked,
+            cursor,
+            width=w,
+            height=h,
+            message=message,
+            state=view,
         )
+        live.update(panel)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        key, option = _setup_click(panel, key, jump_box)
+        if option is not None:
+            cursor = option  # click the row, then toggle it exactly as Space does
         if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
             cursor = _move_analysis_list_cursor(cursor, key, len(rows))
         elif key in (" ", "a", "A"):
@@ -6856,6 +6820,8 @@ def _run_component_select(
     title_builder=None,
     footer_verb: str = "analyse",
     required: dict[str, str] | None = None,
+    setup_state: dict | None = None,
+    jump_box: list | None = None,
 ):
     """Blocking ragged component × sub-source picker.
 
@@ -6893,32 +6859,36 @@ def _run_component_select(
     while True:
         col_idx = min(col_idx, _ncols(row_idx) - 1)
         w, h = console.size
-        live.update(
-            _build_component_select_screen(
-                grid,
-                rows,
-                checked,
-                row_idx,
-                col_idx,
-                width=w,
-                height=h,
-                message=message,
-                descriptions=descriptions,
-                theme=theme,
-                brand=brand,
-                title_builder=title_builder,
-                footer_verb=footer_verb,
-            )
+        panel = _build_component_select_screen(
+            grid,
+            rows,
+            checked,
+            row_idx,
+            col_idx,
+            width=w,
+            height=h,
+            message=message,
+            descriptions=descriptions,
+            theme=theme,
+            brand=brand,
+            title_builder=title_builder,
+            footer_verb=footer_verb,
+            state=setup_state,
         )
+        live.update(panel)
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if kk in ("up", "scroll_up"):
-            row_idx = (row_idx - 1) % len(rows)
-        elif kk in ("down", "scroll_down"):
-            row_idx = (row_idx + 1) % len(rows)
-        elif kk == "left":
-            col_idx = (col_idx - 1) % _ncols(row_idx)
-        elif kk == "right":
-            col_idx = (col_idx + 1) % _ncols(row_idx)
+        kk, option = _setup_click(panel, kk, jump_box)
+        if option is not None:
+            row_idx, col_idx = option
+        if kk in ("up", "scroll_up", "down", "scroll_down"):
+            # Walk the FLATTENED (component, sub-source) list. The grid is ragged
+            # and drawn as one column of groups, so up/down reading as "down the
+            # page" is what it looks like — and it frees ←/→ for walking the
+            # config sets, which is what they do everywhere else on this page.
+            flat = [(r, c) for r in range(len(rows)) for c in range(_ncols(r))]
+            at = flat.index((row_idx, col_idx))
+            step = -1 if kk in ("up", "scroll_up") else 1
+            row_idx, col_idx = flat[(at + step) % len(flat)]
         elif kk == " ":
             checked[rows[row_idx]].symmetric_difference_update({col_idx})
             message = ""
@@ -6936,6 +6906,245 @@ def _run_component_select(
             return "cancel"
 
 
+def _board_field_click(console: Console, panel, x: int, y: int, fields: list[dict]) -> int | None:
+    """Map a click at 1-based ``(x, y)`` to a board-setup field index, or None.
+
+    Render-based like :func:`button_click` rather than arithmetic over the
+    layout: the rows are found by their own text, so the hit test survives the
+    header, blurb or hint changing height (an unset tracker shows a different
+    status line than a ready one).
+    """
+    try:
+        lines = console.render_lines(panel, console.options, pad=True)
+    except Exception:  # noqa: BLE001 - a render hiccup must never break input handling
+        return None
+    for r, line in enumerate(lines):
+        text = "".join(seg.text for seg in line)
+        if r + 1 != y:
+            continue
+        for i, field in enumerate(fields):
+            marker = f"● {field['label']}"
+            if marker in text or f"○ {field['label']}" in text:
+                start = text.find(marker[0:1] + " " + field["label"])
+                if start == -1 or x >= start:  # anywhere from the marker rightwards
+                    return i
+    return None
+
+
+def _board_tab_click(console: Console, panel, x: int, y: int) -> int | None:
+    """Map a click at 1-based ``(x, y)`` to a tracker index on the switch row.
+
+    Render-based for the same reason as :func:`_board_field_click` — the row's
+    position depends on how tall the header above it wrapped.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _BOARD_TRACKERS
+
+    try:
+        lines = console.render_lines(panel, console.options, pad=True)
+    except Exception:  # noqa: BLE001 - a render hiccup must never break input handling
+        return None
+    for r, line in enumerate(lines):
+        if r + 1 != y:
+            continue
+        text = "".join(seg.text for seg in line)
+        if not all(name in text for name in _BOARD_TRACKERS):
+            continue  # not the switch row
+        for i, name in enumerate(_BOARD_TRACKERS):
+            start = text.find(name)
+            # Widen by the "[ ]" the selected option wears, so clicking a bracket
+            # counts as clicking its option.
+            if start - 2 <= x - 1 <= start + len(name) + 1:
+                return i
+        return None
+    return None
+
+
+def _run_analysis_board_setup(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+) -> str:
+    """Analysis's entry gate when no tracker is configured — fill the fields here.
+
+    This replaces a dead end: the old screen printed "set JIRA_BASE_URL … in your
+    .env file" and returned to the menu on any key, so the one thing you needed to
+    do was the one thing you couldn't do from it. Values save through
+    ``apply_config_value`` (file + ``os.environ``), so the analysis flow that runs
+    straight after picks them up without a restart.
+
+    Returns ``"connected"`` once the chosen tracker's board check passes, or
+    ``"cancel"`` on Esc / Back.
+    """
+    import os
+
+    from yeaboi.config import apply_config_value
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _BOARD_TRACKERS,
+        _build_analysis_board_setup_screen,
+        board_setup_fields,
+    )
+    from yeaboi.ui.shared._click import button_click, parse_click
+    from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+    from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+    tracker, selected, action_sel = 0, 0, 0
+    zone = "fields"  # "fields" (arrow through the list) or "actions" (the button row)
+    edit: dict | None = None
+    message = ""
+    anim0 = time.monotonic()
+    logger.info("analysis board setup: opened (no tracker configured)")
+
+    def _values() -> dict[str, str]:
+        # Read the environment fresh each frame: apply_config_value mirrors saves
+        # into os.environ, so this is what makes a just-typed value show up.
+        return {f["env_var"]: os.environ.get(f["env_var"], "") or "" for t in (0, 1) for f in board_setup_fields(t)}
+
+    def _render():
+        w, h = console.size
+        panel = _build_analysis_board_setup_screen(
+            _values(),
+            tracker=tracker,
+            selected=selected if zone == "fields" else -1,
+            editing=(edit["env"], edit["buf"], edit["cur"]) if edit else None,
+            action_sel=action_sel,
+            message=message,
+            width=w,
+            height=h,
+            shimmer_tick=time.monotonic() - anim0,
+        )
+        live.update(panel)
+        return panel
+
+    def _begin_edit(idx: int) -> None:
+        nonlocal edit, selected, zone
+        field = board_setup_fields(tracker)[idx]
+        env, masked = field["env_var"], field.get("masked", False)
+        # Masked fields start blank (type a new one); the rest start at the current
+        # value so you can correct a typo instead of retyping the whole URL.
+        start = "" if masked else (os.environ.get(env, "") or "")
+        edit = {"env": env, "masked": masked, "buf": start, "cur": len(start)}
+        selected, zone = idx, "fields"
+        set_text_entry(True)  # so 'c' types a 'c' rather than opening the controls drawer
+        logger.info("analysis board setup: editing %s", env)
+
+    def _commit_edit() -> None:
+        nonlocal edit, message
+        if edit is None:
+            return
+        set_text_entry(False)
+        env, masked, val = edit["env"], edit["masked"], edit["buf"].strip()
+        edit = None
+        if val == "-":
+            val = ""  # explicit clear, same convention as the settings page
+        elif masked and val == "":
+            return  # empty on a hidden field means "keep what's there"
+        apply_config_value(env, val)
+        message = ""
+        logger.info("analysis board setup: saved %s", env)
+
+    while True:
+        panel = _render()
+        fields = board_setup_fields(tracker)
+        actions = getattr(panel, "_board_actions", [])  # empty until the fields are complete
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if not key:
+            continue
+
+        if edit is not None:
+            click = parse_click(key)
+            if click is not None:
+                # Clicking away commits, the way a form field blurs — no Esc first.
+                cx, cy = click
+                hit = _board_field_click(console, panel, cx, cy, fields)
+                if hit is None and button_click(console, panel, cx, cy, actions) is None:
+                    continue  # a click on empty space leaves the edit alone
+                _commit_edit()
+            elif key == "enter":
+                _commit_edit()
+                continue
+            elif key == "esc" and esc_came_from_back_tab():
+                _commit_edit()
+                logger.info("analysis board setup: back tab clicked")
+                return "cancel"
+            elif key == "esc":
+                # Cancel the edit only. The Esc chokepoint armed the back tab's
+                # retract before we got a say, so stand it back up.
+                cancel_back_retract()
+                set_text_entry(False)
+                edit = None
+                continue
+            else:
+                _settings_edit_keypress(key, edit)
+                continue
+
+        click = parse_click(key)
+        if click is not None:
+            cx, cy = click
+            tab_hit = _board_tab_click(console, panel, cx, cy)
+            if tab_hit is not None:
+                if tab_hit != tracker:
+                    tracker, selected, message = tab_hit, 0, ""
+                continue
+            hit = _board_field_click(console, panel, cx, cy, fields)
+            if hit is not None:
+                _begin_edit(hit)
+                continue
+            btn = button_click(console, panel, cx, cy, actions)
+            if btn is not None:
+                zone, action_sel = "actions", btn
+                key = "enter"
+            else:
+                continue
+
+        if key in ("tab", "shift_tab"):
+            tracker = (tracker + 1) % len(_BOARD_TRACKERS)
+            selected, message = 0, ""
+        elif key in ("down", "scroll_down"):
+            if zone == "fields" and selected + 1 < len(fields):
+                selected += 1
+            elif actions:
+                zone, action_sel = "actions", 0
+        elif key in ("up", "scroll_up"):
+            if zone == "actions":
+                zone, selected = "fields", len(fields) - 1
+            else:
+                selected = max(0, selected - 1)
+        elif key in ("left", "right") and zone == "actions" and len(actions) < 2:
+            pass  # a single button has nowhere to move to
+        elif key in ("left", "right") and zone == "actions":
+            step = 1 if key == "right" else -1
+            action_sel = (action_sel + step) % len(actions)
+        elif key in ("left", "right"):
+            # In the field list, left/right flick between the trackers — the switch
+            # is a horizontal row, so that is the direction it reads as. Tab does
+            # the same thing for anyone who reaches for it first.
+            step = 1 if key == "right" else -1
+            tracker = (tracker + step) % len(_BOARD_TRACKERS)
+            selected, message = 0, ""
+        elif key == "enter":
+            if zone == "fields":
+                _begin_edit(selected)
+                continue
+            if not actions:
+                continue
+            # "Continue" — re-check with the real board predicates rather than
+            # trusting the required-fields tally, so a value that looks filled but
+            # doesn't satisfy the checker says so here instead of failing later.
+            from yeaboi.azdevops_sync import is_azdevops_board_configured
+            from yeaboi.jira_sync import is_jira_configured
+
+            if (tracker == 0 and is_jira_configured()) or (tracker == 1 and is_azdevops_board_configured()):
+                logger.info("analysis board setup: connected via %s", _BOARD_TRACKERS[tracker])
+                return "connected"
+            message = "That doesn't look complete yet — check the values above."
+            logger.warning("analysis board setup: continue pressed but the board check still fails")
+        elif key in ("esc", "q"):
+            logger.info("analysis board setup: cancelled")
+            return "cancel"
+
+
 def _run_analysis_depth_select(
     live,
     console: Console,
@@ -6943,6 +7152,8 @@ def _run_analysis_depth_select(
     frame_time: float,
     supports_timeout: bool,
     initial_depth: str = "deep",
+    setup_state: dict | None = None,
+    jump_box: list | None = None,
 ):
     """Choose Quick/Deep analysis. Deep is preselected; Esc returns ``cancel``."""
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_depth_screen
@@ -6950,8 +7161,14 @@ def _run_analysis_depth_select(
     selected = 0 if initial_depth == "quick" else 1
     while True:
         w, h = console.size
-        live.update(_build_analysis_depth_screen(selected, width=w, height=h))
+        panel = _build_analysis_depth_screen(selected, width=w, height=h, state=setup_state)
+        live.update(panel)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        key, option = _setup_click(panel, key, jump_box)
+        if option is not None:
+            # A single-choice set: landing the cursor on a row IS choosing it.
+            selected = option
+            continue
         if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
             selected = _move_analysis_list_cursor(selected, key, 2)
         elif key == "enter":
@@ -7005,6 +7222,8 @@ def _run_analysis_window_select(
     frame_time: float,
     supports_timeout: bool,
     initial_days: int = 120,
+    setup_state: dict | None = None,
+    jump_box: list | None = None,
 ):
     """Choose the changed-content window. 120 days is preselected."""
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_window_screen
@@ -7013,8 +7232,13 @@ def _run_analysis_window_select(
     selected = options.index(initial_days) if initial_days in options else 2
     while True:
         w, h = console.size
-        live.update(_build_analysis_window_screen(selected, width=w, height=h))
+        panel = _build_analysis_window_screen(selected, width=w, height=h, state=setup_state)
+        live.update(panel)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        key, option = _setup_click(panel, key, jump_box)
+        if option is not None:
+            selected = option  # single choice: the cursor is the selection
+            continue
         if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
             selected = _move_analysis_list_cursor(selected, key, len(options))
         elif key == "enter":
@@ -7031,6 +7255,8 @@ def _run_member_select(
     supports_timeout: bool,
     roster: list,
     initial_members: list[str] | None = None,
+    setup_state: dict | None = None,
+    jump_box: list | None = None,
 ):
     """Blocking roster picker.
 
@@ -7045,8 +7271,14 @@ def _run_member_select(
     message = ""
     while True:
         w, h = console.size
-        live.update(_build_member_select_screen(roster, checked, cursor, width=w, height=h, message=message))
+        panel = _build_member_select_screen(
+            roster, checked, cursor, width=w, height=h, message=message, state=setup_state
+        )
+        live.update(panel)
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        kk, option = _setup_click(panel, kk, jump_box)
+        if option is not None:
+            cursor = option
         if kk in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
             cursor = _move_analysis_list_cursor(cursor, kk, len(roster)) if roster else 0
         elif kk == " " and roster:
@@ -7243,61 +7475,6 @@ def _run_code_scope_select(
             return selected
         elif key in ("esc", "q"):
             return "cancel"
-
-
-def _run_analysis_setup_review(
-    live,
-    console: Console,
-    read_key,
-    frame_time: float,
-    supports_timeout: bool,
-    *,
-    features: list[str],
-    components: dict[str, list[str]],
-    members: list[str] | None,
-    analysis_scope: dict[str, list[str]],
-    depth: str,
-    window_days: int,
-    model: str | None,
-) -> str:
-    """Review the exact setup payload before starting any analysis work."""
-    from yeaboi.ui.mode_select.screens._screens_secondary import (
-        _build_analysis_setup_review_screen,
-    )
-
-    selected = 0
-    _labels = ["Run Analysis", "Back"]
-    while True:
-        w, h = console.size
-        _panel = _build_analysis_setup_review_screen(
-            features=features,
-            components=components,
-            members=members,
-            analysis_scope=analysis_scope,
-            depth=depth,
-            window_days=window_days,
-            model=model,
-            action_sel=selected,
-            width=w,
-            height=h,
-        )
-        live.update(_panel)
-        key = read_key(timeout=frame_time) if supports_timeout else read_key()
-        _clicked = parse_click(key)
-        if _clicked is not None:
-            _idx = button_click(console, _panel, *_clicked, _labels)
-            if _idx is None:
-                continue  # click missed the buttons — ignore it
-            selected = _idx
-            key = "enter"  # fall through to the existing Enter handling
-        if key in ("left", "up", "scroll_up"):
-            selected = 0
-        elif key in ("right", "down", "scroll_down"):
-            selected = 1
-        elif key == "enter":
-            return ("run", "back")[selected]
-        elif key in ("esc", "q"):
-            return "back"
 
 
 def _prefetch_roster(live, console: Console, sources: list, project_key: str, db_path) -> list:
@@ -7497,6 +7674,10 @@ def _run_analysis_roster_lookup(
 # One entry per SCREEN — the walker below expresses "back" only as index -= 1, so
 # a step that ran two pickers could not offer Esc between them. Hence one scope
 # step per code host, ordered github-then-azdo to match the Code row's order.
+# Trail name (what the setup page labels a column) → the step key the sequencer
+# indexes by. Owned by the screens module, since it is the page that names them.
+_WIZARD_STEP_FOR_STAGE = SETUP_STAGE_STEPS
+
 _WIZARD_STEPS = (
     "features",
     "sources",
@@ -7506,7 +7687,6 @@ _WIZARD_STEPS = (
     "model",
     "window",
     "members",
-    "review",
 )
 
 
@@ -7546,12 +7726,33 @@ def _run_analysis_setup_wizard(
         "roster_key": None,
     }
     preflight_box: list = [None]  # ollama preflight, probed at most once per wizard run
+    # A fresh wizard draws its rule in place; sliding in from whichever set the
+    # last run happened to end on is motion that means nothing.
+    reset_setup_rule()
+    # Set by _setup_click when a click or ←/→ picks another set's column; read
+    # and cleared by the sequencer once the step it was clicked from has committed.
+    jump_box: list = []
+    # Steps that are PAGES of their own rather than columns on the setup page.
+    # Every column has a working default and is visible from every other one, so
+    # walking them in order is a ritual; these three are not on the page at all
+    # (they discover their options over the network) and the code-scope pickers
+    # start empty on purpose, so an Enter that ran without them would scan
+    # nothing. Enter goes to whichever of these still needs an answer, and runs
+    # when none do.
+    off_page_steps = ("github_owners", "azdo_projects", "model")
+    answered: set[str] = set()
+    # The roster is a network call, so it used to happen the moment you ARRIVED
+    # at People — which meant the People column read "everyone on the board"
+    # until you clicked it, on a page whose whole point is showing every set at
+    # once. It runs in the background from the first frame instead, keyed by the
+    # trackers it was fetched for so a change at Sources re-fetches.
+    roster_bg: dict = {"key": None, "names": None}
 
     def _feature_set() -> set[str]:
         return set(state["features"] or [])
 
-    def _filtered_grid() -> dict[str, list[str]]:
-        fs = _feature_set()
+    def _filtered_grid(fs: set[str] | None = None) -> dict[str, list[str]]:
+        fs = _feature_set() if fs is None else fs
         return {
             "delivery": grid["delivery"] if "delivery" in fs else [],
             "code": grid["code"] if fs & {"ai_footprint", "code_health"} else [],
@@ -7565,6 +7766,108 @@ def _run_analysis_setup_wizard(
             preflight_box[0] = get_ollama_analysis_preflight(db_path)
         return preflight_box[0]
 
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _ANALYSIS_WINDOW_OPTIONS as _WINDOW_OPTIONS,
+    )
+
+    def _pending_page() -> str | None:
+        """The next off-page step still needing an answer, or None to run."""
+        return next((s for s in off_page_steps if s not in answered and _applicable(s)), None)
+
+    def _view_state(features: set[str] | None = None, step: str | None = None) -> dict:
+        """Wizard state translated into what the setup page draws for every set.
+
+        The page shows all five sets at once, so each stage's builder needs the
+        others' values — not just its own. Indexes (depth, window) rather than
+        values, because the collapsed line marks which OPTION is chosen and the
+        option lists live in the screens module.
+
+        ``features`` overrides the COMMITTED feature set. Which sources exist is
+        derived from it, and a value is only committed on Enter — so while you
+        are still ticking areas, a snapshot taken on the way in shows the Sources
+        column empty however many you have ticked. The areas step passes its live
+        selection here every frame; the rest have nothing derived from them.
+        """
+        fs = set(features) if features is not None else _feature_set()
+        _prefetch_roster()
+        # Sets this configuration does not use. Their columns are still drawn —
+        # the trail is the whole trail — but they are not somewhere ←/→ or a
+        # click may land, since the wizard would skip straight past them.
+        skip = {name for name, key in SETUP_STAGE_STEPS.items() if key != "features" and not _applicable(key)}
+
+        def _after(stage: str) -> list[str]:
+            order = list(SETUP_STAGE_STEPS)
+            return order[order.index(stage) + 1 :] if stage in order else []
+
+        return {
+            "available": {
+                "delivery": bool(grid["delivery"]),
+                "ai_footprint": bool(grid["code"]),
+                "code_health": bool(grid["code"]),
+                "documentation": bool(grid["docs"]),
+            },
+            "features": fs,
+            "grid": _filtered_grid(fs),
+            "components": state["components"] or {},
+            "depth": 1 if _effective_depth() == "deep" else 0,
+            "window": next(
+                (i for i, (days, _l) in enumerate(_WINDOW_OPTIONS) if days == state["window_days"]),
+                2,
+            ),
+            # The committed roster once People has been visited; the background
+            # preview before that, and an empty list while it is still in flight.
+            "roster": state["roster"] or roster_bg["names"] or [],
+            "members": state["members"],
+            # Sets this configuration does not use. Their columns are still
+            # drawn — the trail is the whole trail — but they are not somewhere
+            # ←/→ or a click may land, since the wizard would skip straight past.
+            "skip": skip,
+            # True on the last set still in play: Enter there runs the analysis,
+            # so the forward tab has to say so rather than promising a "next".
+            # The forward action is the RUN unless something off-page is still
+            # unanswered — not "unless there is a set after this one". Every set
+            # is on the page already, so being on the first one says nothing
+            # about whether the analysis is ready to start.
+            "last": _pending_page() is None,
+        }
+
+    def _prefetch_roster() -> None:
+        """Start (or restart) the background roster fetch for the current trackers."""
+        import threading
+
+        sources = (_effective_components() or {}).get("delivery") or roster_fallback
+        key = tuple(sources)
+        if roster_bg["key"] == key:
+            return
+        roster_bg["key"] = key
+        roster_bg["names"] = None
+
+        def _work(key=key, sources=list(sources)) -> None:
+            from yeaboi.analysis import get_team_roster_result
+
+            names: list[str] = []
+            for source in sources:
+                try:
+                    result = get_team_roster_result(source, project_key if len(sources) == 1 else "", db_path=db_path)
+                except Exception as exc:  # noqa: BLE001 - a preview must never break setup
+                    logger.warning("Roster preview failed for %s: %s", source, exc)
+                    continue
+                names += [member.name for member in result.members]
+            if roster_bg["key"] == key:  # a later change already superseded this
+                roster_bg["names"] = sorted(dict.fromkeys(names), key=str.casefold)
+
+        threading.Thread(target=_work, name="analysis-roster-preview", daemon=True).start()
+
+    def _effective_components() -> dict[str, list[str]]:
+        """What is actually selected under Sources, visited or not.
+
+        The set is on the page with everything ticked, which is also where the
+        picker starts — so a run that never opened it has to mean what the page
+        said. Applicability reads this too: a code host that has not been
+        de-selected is still in play, and its scope screen still needs asking.
+        """
+        return state["components"] or {k: list(v) for k, v in _filtered_grid().items() if v}
+
     def _depth_applicable() -> bool:
         return bool(_feature_set() & {"delivery", "ai_footprint"})
 
@@ -7573,8 +7876,8 @@ def _run_analysis_setup_wizard(
 
     def _applicable(step: str) -> bool:
         fs = _feature_set()
-        comps = state["components"] or {}
-        if step in ("features", "sources", "review"):
+        comps = _effective_components()
+        if step in ("features", "sources"):
             return True
         if step in ("github_owners", "azdo_projects"):
             host = "github" if step == "github_owners" else "azdo"
@@ -7590,7 +7893,10 @@ def _run_analysis_setup_wizard(
         return False
 
     def _config() -> dict:
-        comps = state["components"] or {}
+        # Never visited the Sources set? It is on the page with everything
+        # selected, which is also what the picker starts at — so running without
+        # opening it has to mean what the page said, not "no sources at all".
+        comps = _effective_components()
         members = state["members"] if _applicable("members") else None
         trackers = comps.get("delivery") or roster_fallback
         # Each host's scope is gated on its OWN applicability, so de-selecting a
@@ -7633,6 +7939,8 @@ def _run_analysis_setup_wizard(
             supports_timeout,
             state["roster"],
             initial_members=state["members"],
+            setup_state=_view_state(step="People"),
+            jump_box=jump_box,
         )
         if selected == "cancel":
             return "back"
@@ -7654,6 +7962,8 @@ def _run_analysis_setup_wizard(
                     "documentation": bool(grid["docs"]),
                 },
                 initial_features=state["features"],
+                setup_state_for=lambda picked: _view_state(features=picked, step="Areas"),
+                jump_box=jump_box,
             )
             if chosen == "cancel":
                 return "back"
@@ -7678,6 +7988,8 @@ def _run_analysis_setup_wizard(
                     )
                 },
                 initial=state["components"],
+                setup_state=_view_state(step="Sources"),
+                jump_box=jump_box,
             )
             if chosen == "cancel":
                 return "back"
@@ -7699,7 +8011,14 @@ def _run_analysis_setup_wizard(
             return "next"
         if step == "depth":
             chosen = _run_analysis_depth_select(
-                live, console, read_key, frame_time, supports_timeout, initial_depth=state["depth"]
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                initial_depth=state["depth"],
+                setup_state=_view_state(step="Depth"),
+                jump_box=jump_box,
             )
             if chosen == "cancel":
                 return "back"
@@ -7715,50 +8034,61 @@ def _run_analysis_setup_wizard(
             return "next"
         if step == "window":
             chosen = _run_analysis_window_select(
-                live, console, read_key, frame_time, supports_timeout, initial_days=state["window_days"]
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                initial_days=state["window_days"],
+                setup_state=_view_state(step="Time window"),
+                jump_box=jump_box,
             )
             if chosen == "cancel":
                 return "back"
             state["window_days"] = chosen
             return "next"
-        if step == "members":
-            return _members_step(direction)
-        config = _config()
-        verdict = _run_analysis_setup_review(
-            live,
-            console,
-            read_key,
-            frame_time,
-            supports_timeout,
-            features=config["features"],
-            components=config["components"],
-            members=config["members"],
-            analysis_scope=config["analysis_scope"],
-            depth=config["depth"],
-            window_days=config["window_days"],
-            model=config["model"],
-        )
-        return "run" if verdict == "run" else "back"
+        return _members_step(direction)
 
     index = 0
     direction = 1
     while True:
+        if index >= len(_WIZARD_STEPS):
+            return _config()  # past the last set — there is nothing left to ask
         step = _WIZARD_STEPS[index]
         if not _applicable(step):
             index += direction  # inapplicable steps are transparent in both directions
             continue
         outcome = _run_step(step, direction)
+        answered.add(step)
         logger.info("Analysis setup wizard: step=%s outcome=%s", step, outcome)
         if outcome == "run":
             return _config()
+        # Esc LEAVES the setup, from any step — it does not walk back one.
+        # Stepping backwards was the only way to re-edit a set when the wizard
+        # was one set per page; now every set is on the page at once and ←/→ or a
+        # click goes straight to the one you want, so an Esc that undid a single
+        # step meant pressing it five times to get out of a screen you can see
+        # all of. The chrome's back tab sends Esc, so it leaves too.
         if outcome == "back":
-            if index == 0:
-                return None  # Esc on the first step → analysis landing screen
-            direction = -1
-            index -= 1
-        else:
-            direction = 1
-            index += 1
+            return None
+        # A click on another set's column, committed by the step it came from.
+        # Dropped when the target does not apply to this configuration — that
+        # column is drawn either way, and walking to a step _applicable() would
+        # skip is not what the click asked for.
+        target = _WIZARD_STEP_FOR_STAGE.get(jump_box.pop() if jump_box else "")
+        if target and _applicable(target):
+            logger.info("Analysis setup wizard: jumping to step=%s", target)
+            index = _WIZARD_STEPS.index(target)
+            continue
+        if target:
+            continue  # the target stopped applying between drawing it and pressing
+        # Forward is not "the next set" — it is whatever still needs answering,
+        # and the run when nothing does. The sets themselves are reached with
+        # ←/→ or a click, in whatever order you want them.
+        pending = _pending_page()
+        if pending is None:
+            return _config()
+        index = _WIZARD_STEPS.index(pending)
 
 
 def _run_team_analysis_results(
@@ -7781,6 +8111,9 @@ def _run_team_analysis_results(
     source: str = "",
     project_key: str = "",
     retry_config: dict | None = None,
+    nav_actions: tuple[str, ...] = (),
+    initial_view: str = "",
+    view_box: list | None = None,
 ) -> str:
     """Event loop for the team-analysis results screen (overview + section cards).
 
@@ -7811,7 +8144,11 @@ def _run_team_analysis_results(
     base_source = source or getattr(profile, "source", "")
     base_project = project_key or getattr(profile, "project_key", "")
 
-    view = "overview"
+    # Crossing to the work items and back should land where you left, not at
+    # the first tab: the pager moves between pages, and a page you return to
+    # having forgotten what you were reading is a page you have to find again.
+    view = initial_view or "overview"
+    say, say_at = "", 0.0  # what the duck is telling you about what just happened
     card_idx = 0
     scroll = 0
     scroll_meta: dict = {}
@@ -7871,20 +8208,24 @@ def _run_team_analysis_results(
 
         # A code/docs-only view (no delivery profile) has no velocity profile to
         # export, anonymize or drive ticket generation from — offer only navigation.
+        # No Open and no Back: the sections are tabs, so there is nothing to open
+        # and nothing to close, and the chrome's back tab covers leaving.
         if profile is None:
-            actions = ["Open"] if view == "overview" else ["Back"]
+            actions = []
         else:
-            actions = (
-                ["Open", "Export", "Share Online", "Anonymize", "Continue"]
-                if view == "overview"
-                else ["Back", "Export", "Share Online", "Anonymize", "Continue"]
-            )
+            # No Continue: the pager in the bottom centre already moves to the
+            # page after this one, and offering the same move twice on one
+            # screen only raises the question of whether they differ.
+            actions = ["Export", "Share Online", "Anonymize"]
         retry_features = _failed_features()
         if retry_config and retry_features:
             actions.insert(1, "Retry failed")
         if anon is not None and "Anonymize" in actions:  # swap Anonymize → Adjust + Revert while masked
             i = actions.index("Anonymize")
             actions[i : i + 1] = ["Adjust", "Revert"]
+        # Caller-owned navigation (switch analysis, start a new one) lives last:
+        # it leaves the page, and the rest act on what's on it.
+        actions.extend(a for a in nav_actions if a not in actions)
 
         _pa = getattr(profile, "ai_adoption", None)
         _pd = getattr(profile, "doc_quality", None)
@@ -7903,6 +8244,14 @@ def _run_team_analysis_results(
             analysis_features=analysis_features,
         )
 
+        # A remembered tab can name a section this run does not have (a different
+        # tracker, a scan that did not happen), and the card lookup would raise.
+        if view not in ("overview", *order):
+            view = remembered_tab(_SECTION_STRIP, order, "overview")
+        remember_tab(_SECTION_STRIP, view)
+        if view_box is not None:
+            view_box[:] = [view]
+
         # When anonymized, render from a masked copy of the profile (and its sample
         # ``examples``) so the SAME cards/tables re-render with only the words swapped.
         render_profile = profile
@@ -7912,6 +8261,34 @@ def _run_team_analysis_results(
 
             render_profile = mask_artifact(profile, anon.replacements)
             render_examples = mask_obj(examples, anon.replacements)
+
+        def _page(w: int, h: int):
+            return _build_team_analysis_screen(
+                render_profile,
+                scroll_offset=scroll,
+                scroll_meta=scroll_meta,
+                width=w,
+                height=h,
+                export_sel=sel,
+                examples=render_examples,
+                sprint_names=sprint_names,
+                team_name=team_name,
+                view=view,
+                selected_card=card_idx,
+                actions=actions,
+                shimmer_tick=time.monotonic() - anim0,
+                anon_note=_anon_note(anon),
+                source_toggle=delivery_order or None,
+                active_source=(delivery_order[src_idx] if delivery_order else ""),
+                comparison=comparison if view == "overview" else None,
+                source=cur_source,
+                project_key=cur_project,
+                code_signal=code_signal,
+                code_examples=code_examples,
+                doc_signal=doc_signal,
+                doc_examples=doc_examples,
+                analysis_features=analysis_features,
+            )
 
         w, h = console.size
         _panel = _build_team_analysis_screen(
@@ -7940,16 +8317,45 @@ def _run_team_analysis_results(
             doc_examples=doc_examples,
             analysis_features=analysis_features,
         )
+        # A line for the duck, for a few seconds: the page has no status row
+        # and the actions are in the chrome, so an action that changes the
+        # report used to change it silently.
+        if say and time.monotonic() - say_at < 4.0:
+            _panel._duck_say = say
+        elif say:
+            say = ""
         live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        # Whether this Enter is one the user aimed at an action. Every action on
+        # this page lives in the chrome, and the chrome sends the action's own
+        # name — so a bare Enter is aimed at nothing, and running actions[sel]
+        # for it meant the page had a hidden default. It was Export.
+        _take = False
         _clicked = parse_click(kk)
         if _clicked is not None:
-            _idx = button_click(console, _panel, *_clicked, actions)
+            # A tab first: it is the page's primary navigation now.
+            _tab = section_tab_click(_panel, *_clicked)
+            if _tab is not None:
+                view = _tab
+                card_idx = max(0, (["overview", *order]).index(_tab) - 1)
+                scroll = 0
+                sel = 0
+                continue
+            _body = results_body_actions(actions)
+            _idx = button_click(console, _panel, *_clicked, _body) if _body else None
             if _idx is None:
-                continue  # click missed the buttons — ignore it
-            sel = _idx
-            kk = "enter"  # fall through to the existing Enter handling
+                continue  # click missed everything — ignore it
+            sel = actions.index(_body[_idx])
+            kk, _take = "enter", True  # fall through to the existing Enter handling
+        if isinstance(kk, str) and kk.startswith("act:"):
+            # A chrome tab was clicked. It carries the action's own name, so it
+            # rejoins the keyboard path rather than getting a dispatch of its own.
+            _named = kk[4:]
+            if _named not in actions:
+                continue
+            sel = actions.index(_named)
+            kk, _take = "enter", True
         if delivery_order and len(delivery_order) > 1 and kk == "tab":
             # Switch delivery tracker: reset the view/scroll and drop any mask (the
             # replacements were computed for the other profile).
@@ -7960,18 +8366,28 @@ def _run_team_analysis_results(
             card_idx = 0
             anon = None
             continue
-        if view == "overview" and kk in SCROLL_KEYS:
-            # On the overview, Up/Down moves the card selection (the screen
-            # auto-scrolls the selected row into view).
-            card_idx += 1 if kk in ("down", "scroll_down", "pagedown") else -1
-            card_idx %= len(order)
-        elif kk in SCROLL_KEYS:
+        if kk in SCROLL_KEYS:
             scroll = coalesce_scroll(scroll, kk, scroll_meta, read_key)
-        elif kk == "left":
-            sel = max(0, sel - 1)
-        elif kk == "right":
-            sel = min(len(actions) - 1, sel + 1)
-        elif kk in ("enter", " "):
+        elif kk in ("left", "right"):
+            # ←/→ change section. Each tab shows different content, so choosing
+            # one and opening it were the same intent expressed twice; there is
+            # no "Open" left to walk to, and the body has no buttons to cycle.
+            # The list is exactly the strip that is drawn. "overview" is not a
+            # tab in it — it is the first section with nothing chosen yet, and
+            # while it counted as an entry of its own the first → landed on the
+            # tab already lit, so the first press of the key did nothing.
+            # The list is exactly the strip that is drawn — "overview" is not a
+            # tab in it, it is the first section with nothing chosen yet, so it
+            # resolves to that tab before stepping. Otherwise the first press
+            # landed on the tab already lit and looked dead.
+            from yeaboi.ui.shared._components import step_tab
+
+            _tabs = list(order)
+            view = step_tab(_tabs, view if view in _tabs else _tabs[0], kk)
+            card_idx = _tabs.index(view)
+            scroll = 0
+            sel = 0
+        elif kk in ("enter", " ") and _take:
             act = actions[sel]
             if act == "Open":
                 view = order[card_idx % len(order)]
@@ -8125,9 +8541,18 @@ def _run_team_analysis_results(
                     source_mode="analysis",
                     theme=ANALYSIS_THEME,
                     title=analysis_title(),
+                    # Stay on the page: masking re-renders THIS report from
+                    # masked data, so swapping the terminal to a progress screen
+                    # and back reprinted a screen that never changed.
+                    page=_page,
                 )
                 if res is not None:
                     anon, anon_instruction = res, ""
+                    _n = len(getattr(res, "replacements", ()) or ())
+                    say = f"Output masked — {_n} replacement{'' if _n == 1 else 's'}."
+                else:
+                    say = "Anonymize failed — see the log."
+                say_at = time.monotonic()
             elif act == "Adjust":  # refine the mask with a free-text instruction
                 from yeaboi.ui.shared._components import ANALYSIS_THEME, analysis_title
 
@@ -8166,7 +8591,23 @@ def _run_team_analysis_results(
             elif act == "Continue":
                 logger.info("Analysis results: continue to ticket generation")
                 return "continue"
+            elif act in nav_actions:
+                logger.info("Analysis results: nav action %s", act)
+                return act
+        elif kk == "pager:1":
+            logger.info("Analysis results: pager → insights")
+            return "continue"
+        elif kk == "pager:0":
+            pass  # already here
         elif kk in ("esc", "q"):
+            if anon is not None:
+                # Masked: Esc takes the mask off. Leaving the whole of Analysis
+                # because you wanted the real names back is a long way from what
+                # the key was for, and the mask is the most recent thing you did.
+                logger.info("Analysis results: Esc cleared the mask")
+                anon, anon_instruction = None, ""
+                say, say_at = "Mask removed — showing the real names.", time.monotonic()
+                continue
             if view == "overview":
                 logger.info("Analysis results: closed")
                 return "back"
@@ -8192,6 +8633,9 @@ def _performance_document(engineer: str) -> tuple[str, str] | str:
     return f"{label} — {engineer}", build(artifact)
 
 
+_ana_generated = False  # a sample plan exists for this analysis session
+
+
 def _run_team_insights(
     live,
     console: Console,
@@ -8203,20 +8647,31 @@ def _run_team_insights(
     *,
     sprint_names: list[str] | None = None,
 ) -> str:
-    """Event loop for the coaching-insights screen (results → insights → confirm).
+    """Event loop for the Work items page — the offer to draft a sample plan.
 
-    Shows the AI's start/stop/keep/try advice before the app suggests
-    generating sample tickets. Up/Down scroll, Left/Right pick an action,
-    Enter runs it. Returns ``"continue"`` to proceed to ticket generation
-    and ``"back"`` (Back/Esc) to return to the results overview.
+    Up/Down scroll, Left/Right pick an action, Enter runs it. Returns
+    ``"continue"`` to proceed to ticket generation and ``"back"`` (Back/Esc) to
+    return to the results overview.
+
+    Draws nothing once a plan exists. Crossing to Work items IS the plan by
+    then, so this page would be a gate whose only content was that the thing
+    behind it was ready — you asked for the tickets, not for an announcement
+    about them.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_team_insights_screen
+
+    if _ana_generated:
+        logger.info("Work items: a plan already exists — straight through to it")
+        return "continue"
 
     scroll = 0
     scroll_meta: dict = {}
     sel = 0
-    actions = ["Continue", "Export", "Back"]
-    subtitle = f"{profile.source}/{profile.project_key}  ·  Team Insights" if profile else "Team Insights"
+    anim0 = time.monotonic()  # shimmer title clock, like every other page's
+    actions = ["Continue", "Export"]  # the chrome's back tab covers Back
+    # No subtitle at all: "How to improve this team" is the very next line, and
+    # a crumb above it repeating the page's own name said nothing twice.
+    subtitle = ""
     logger.info("Team insights: showing for %s/%s", profile.source, profile.project_key)
 
     while True:
@@ -8230,23 +8685,26 @@ def _run_team_insights(
             height=h,
             action_sel=sel,
             subtitle=subtitle,
+            shimmer_tick=time.monotonic() - anim0,
         )
         live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
-        _clicked = parse_click(kk)
-        if _clicked is not None:
-            _idx = button_click(console, _panel, *_clicked, actions)
-            if _idx is None:
-                continue  # click missed the buttons — ignore it
-            sel = _idx
-            kk = "enter"  # fall through to the existing Enter handling
+        # The actions are chrome tabs, so a click on one arrives as "act:<name>"
+        # and there are no body buttons left to hit-test. Without this the
+        # Continue tab drew, highlighted and did nothing.
+        if isinstance(kk, str) and kk.startswith("act:") and kk[4:] in actions:
+            sel = actions.index(kk[4:])
+            kk = "enter"
+        elif parse_click(kk) is not None:
+            continue  # a click on the page itself is not a keystroke
+        if kk == "pager:0":
+            logger.info("Team insights: pager → results")
+            return "back"
+        if kk == "pager:1":
+            continue  # already here
         if kk in SCROLL_KEYS:
             scroll = coalesce_scroll(scroll, kk, scroll_meta, read_key)
-        elif kk == "left":
-            sel = max(0, sel - 1)
-        elif kk == "right":
-            sel = min(len(actions) - 1, sel + 1)
         elif kk in ("enter", " "):
             act = actions[sel]
             if act == "Continue":
@@ -8338,6 +8796,128 @@ def _ensure_insights(
         except Exception as exc:
             logger.warning("Team insights: backfill save failed: %s", exc)
     return ex
+
+
+def _run_profile_dashboard(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    team_id: str,
+    *,
+    nav_actions: tuple[str, ...] = (),
+) -> str:
+    """Open a saved analysis: the Analysis ⇄ Work items dashboard, then ticket generation.
+
+    This is the whole of a stored analysis in one call — the two pager pages and
+    what lies past them — so the mode can open straight onto it instead of
+    routing through a list first. ``nav_actions`` are extra chrome actions the
+    caller handles itself (switching analysis, starting a new one); the dashboard
+    returns the chosen name verbatim. Returns ``"back"`` on Esc, and also when
+    the profile can't be loaded, so the caller's fallback is the one it already
+    has for leaving.
+    """
+    from yeaboi.team_profile import TeamProfileStore
+
+    profile = None
+    examples: dict | None = None
+    if _ana_dbp.exists():
+        with TeamProfileStore(_ana_dbp) as store:
+            profile, examples = store.load_with_examples(team_id)
+    if not profile:
+        logger.warning("Analysis dashboard: profile %s could not be loaded", team_id)
+        return "back"
+
+    global _ana_generated  # noqa: PLW0603
+
+    # Whether a plan exists is a fact about THIS analysis, not about the run of
+    # the app, and not about whether it is resumable — a plan you read to the
+    # end is finished, not gone. Read it back on the way in, or the Work items
+    # page offers to make a plan that is already made, and offers it again
+    # every time you restart.
+    _saved = _load_ana_plan(profile.project_key)
+    _ana_generated = _saved is not None
+
+    # The section tab the analysis page was last on, kept across a crossing to
+    # the work items and back.
+    _view_box: list = [""]
+
+    while True:
+        res = _run_team_analysis_results(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            profile,
+            examples,
+            nav_actions=nav_actions,
+            initial_view=_view_box[0],
+            view_box=_view_box,
+        )
+        if res in nav_actions:
+            return res
+        if res != "continue":
+            return "back"
+
+        # Backfill insights for profiles saved before they existed, then show
+        # them; Back returns to the results overview.
+        examples = _ensure_insights(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            profile,
+            examples,
+        )
+        if (
+            _run_team_insights(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                profile,
+                examples,
+            )
+            == "back"
+        ):
+            continue
+
+        from yeaboi.agent.nodes import _format_team_calibration
+
+        calibration = _format_team_calibration(profile, examples=examples)
+        if calibration.strip():
+            # Read back, not the copy loaded on the way in. Crossing out of the
+            # plan saves a snapshot, so the copy from the top of this visit is
+            # a page or two behind by the second crossing — it reopened on the
+            # tab you left on the FIRST pass, and handed back the artifacts as
+            # they were then, discarding anything edited since.
+            resume = _load_ana_plan(profile.project_key)
+            # Straight in: the Work items page asked "generate sample tickets
+            # from this?" and Continue is the answer. A confirmation screen
+            # after it put the same decision on two screens in a row — the same
+            # doubling the results page's own Continue was removed for.
+            _run_preview_flow(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                calibration,
+                profile,
+                examples,
+                resume_state=resume,
+            )
+            _ana_generated = True  # you have been through the tabs; stop offering
+            # However you left the work items — Tab back across the pager, or
+            # Esc — the page behind them is this analysis. Returning here sent
+            # you out to the mode menu instead, which made Tab unusable on the
+            # one page it was most needed.
+            continue
+        return "back"
 
 
 def _run_performance_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -11762,7 +12342,9 @@ def _run_category_screen(
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
-        if key in ("left", "right", "up", "down", "tab"):
+        # Side by side, so only the keys that mean sideways. Up and down moved
+        # the choice too, which is a key doing something its arrow disagrees with.
+        if key in ("left", "right", "tab"):
             selected = 1 - selected
         elif key == "enter":
             chosen = _CATEGORY_CARDS[selected]["key"]
@@ -12266,12 +12848,10 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
-            # The duck walks into the corner of whichever page the card opens —
-            # the chat-greeting entrance, replayed per card entry. Any keypress
-            # skips it (read_key calls skip_duck_entrance app-wide).
-            from yeaboi.ui.shared._music_bar import start_duck_entrance
-
-            start_duck_entrance(replay=True)
+            # No entrance replay here. The waddle-in is the planning chat's
+            # greeting and stays a once-per-process moment; replaying it on every
+            # card entry made a walk across the screen the first thing that
+            # happened on each page, which is a wait, not a greeting.
 
             # ── Route: the Agents family → one prefix dispatch, not three more
             # chain branches. route_agent_mode wraps each mode in mode_log() and
@@ -12306,28 +12886,18 @@ def select_mode(
                 _board_configured = _jira_ok or _azdevops_ok
 
                 if not _board_configured:
-                    # No board configured — show message and return to mode select.
-                    # Re-render each frame so the ANALYSIS title keeps shimmering.
-                    _br_anim0 = time.monotonic()  # shimmer title clock
-                    while True:
-                        w, h = console.size
-                        live.update(
-                            _build_project_export_success_screen(
-                                "No board configured.\n\n"
-                                "Set JIRA_BASE_URL + JIRA_API_TOKEN\n"
-                                "or AZURE_DEVOPS_ORG_URL + AZURE_DEVOPS_TOKEN\n"
-                                "in your .env file.",
-                                width=w,
-                                height=h,
-                                subtitle="Board required",
-                                hint="",  # the back tab now shows the go-back affordance
-                                mode="analysis",
-                                shimmer_tick=time.monotonic() - _br_anim0,
-                            )
-                        )
-                        k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
-                        if k:
-                            break
+                    # No board yet — offer the fields instead of a dead end. This used
+                    # to print "set these in your .env" and bounce back to the menu on
+                    # any key, which named the fix without letting you make it.
+                    _bs = _run_analysis_board_setup(live, console, read_key, _FRAME_TIME, _supports_timeout)
+                    if _bs == "connected":
+                        # Saved values land in os.environ too, so re-asking the same
+                        # predicates is enough to carry straight on into the flow.
+                        _jira_ok = _jira_check()
+                        _azdevops_ok = _azdevops_check()
+                        _board_configured = _jira_ok or _azdevops_ok
+
+                if not _board_configured:
                     _restart_mode_select = True
                     _skip_fade_in = True
                     detach_mode_handler("analysis")
@@ -12409,12 +12979,80 @@ def select_mode(
                 _ana_selected = 0
                 _ana_n = len(_profiles_for_analysis) + len(_ana_labels)
 
+                # Analysis mode IS the dashboard. Land on the analysis you ran
+                # last (list_profiles orders by updated_at DESC) rather than on a
+                # lobby listing them; the list is still there behind "Switch
+                # analysis", which is where a thing you rarely do belongs. With
+                # nothing stored there is nothing to land on, so go straight to
+                # the run itself instead of showing a page holding one button.
+                _team_popup_result = ""
+                _ana_skip_list = False
+
+                def _open_dash() -> str:
+                    """Show the newest analysis and say what to do next.
+
+                    ``"analyse"`` for the setup, ``"list"`` for the analyses
+                    list, ``"leave"`` for the mode menu. One definition because
+                    the dashboard is opened twice — on the way in, and again
+                    when you back out of a setup it sent you to.
+                    """
+                    nav = _run_profile_dashboard(
+                        live,
+                        console,
+                        read_key,
+                        _FRAME_TIME,
+                        _supports_timeout,
+                        _profiles_for_analysis[0].team_id,
+                        # "Switch" only where there is something to switch to.
+                        nav_actions=(
+                            ANALYSIS_NAV_ACTIONS if len(_profiles_for_analysis) > 1 else ANALYSIS_NAV_ACTIONS[1:]
+                        ),
+                    )
+                    # Both open the analysis setup — the screen a first run puts
+                    # you through. "New analysis" is the first-run path taken
+                    # again; "Settings" is the same screen reached to change how
+                    # this analysis is run, so it is the one you reach for when
+                    # the settings are the point rather than the new analysis.
+                    if nav in (_ANA_NEW, _ANA_SETUP):
+                        return "analyse"
+                    return "list" if nav == _ANA_SWITCH else "leave"
+
+                def _ana_leave_setup() -> bool:
+                    """Back out of a setup the dashboard sent you to.
+
+                    Reopens the dashboard and arranges the next pass, returning
+                    True. Returns False when there is nothing behind the setup
+                    but the mode menu — which is only ever a first run, since
+                    with an analysis saved the dashboard is where you came from.
+                    """
+                    nonlocal _team_popup_result, _ana_skip_list
+                    if not _profiles_for_analysis:
+                        return False
+                    _next = _open_dash()
+                    if _next == "leave":
+                        return False
+                    _team_popup_result = "analyse" if _next == "analyse" else ""
+                    _ana_skip_list = _next == "analyse"
+                    return True
+
+                if _profiles_for_analysis:
+                    _dash_next = _open_dash()
+                    if _dash_next == "analyse":
+                        _team_popup_result, _ana_skip_list = "analyse", True
+                    elif _dash_next == "leave":
+                        _restart_mode_select = True
+                        _skip_fade_in = True
+                        detach_mode_handler("analysis")
+                        continue
+                else:
+                    _team_popup_result, _ana_skip_list = "analyse", True
+
                 # Stagger reveal
                 _reveal_target = float(_ana_n)
                 _cards_visible = 0.0
                 _reveal_speed = 15.0
                 _reveal_start = time.monotonic()
-                while _cards_visible < _reveal_target:
+                while not _ana_skip_list and _cards_visible < _reveal_target:
                     dt_r = time.monotonic() - _reveal_start
                     _cards_visible = min(_reveal_target, dt_r * _reveal_speed)
                     w, h = console.size
@@ -12436,8 +13074,8 @@ def select_mode(
                     )
                     time.sleep(_FRAME_TIME)
 
-                # Analysis mode interaction loop
-                _team_popup_result = ""
+                # Analysis mode interaction loop — skipped entirely when the
+                # dashboard already decided where to go.
                 _ana_focus = 0
                 _ana_card_fade = 1.0
                 _ana_restart = True
@@ -12466,7 +13104,7 @@ def select_mode(
                     _ana_anim0 = _ana_prev  # shimmer title clock
                     _ana_last_panel = None  # most recent list panel, for click hit-testing
 
-                    while True:
+                    while not _ana_skip_list:
                         key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
                         _is_profile = _ana_selected < len(_profiles_for_analysis)
                         _is_analysis_btn = _ana_selected >= len(_profiles_for_analysis)
@@ -12555,97 +13193,16 @@ def select_mode(
                             _ana_exp_fade = 0.0 if _ana_focus != 2 else 1.0
                         elif key == "enter":
                             if _is_profile and _ana_focus == 0:
-                                # View profile results
-                                _sel_p = _profiles_for_analysis[_ana_selected]
-                                from yeaboi.team_profile import TeamProfileStore
-
-                                _tp_db = _ana_dbp
-                                _full = None
-                                _stored_ex: dict | None = None
-                                if _tp_db.exists():
-                                    with TeamProfileStore(_tp_db) as _s:
-                                        _full, _stored_ex = _s.load_with_examples(
-                                            _sel_p.team_id,
-                                        )
-                                if _full:
-                                    while True:
-                                        _res = _run_team_analysis_results(
-                                            live,
-                                            console,
-                                            read_key,
-                                            _FRAME_TIME,
-                                            _supports_timeout,
-                                            _full,
-                                            _stored_ex,
-                                        )
-                                        if _res != "continue":
-                                            break
-
-                                        # Backfill insights for profiles saved before
-                                        # they existed, then show them; Back returns
-                                        # to the results overview.
-                                        _stored_ex = _ensure_insights(
-                                            live,
-                                            console,
-                                            read_key,
-                                            _FRAME_TIME,
-                                            _supports_timeout,
-                                            _full,
-                                            _stored_ex,
-                                        )
-                                        if (
-                                            _run_team_insights(
-                                                live,
-                                                console,
-                                                read_key,
-                                                _FRAME_TIME,
-                                                _supports_timeout,
-                                                _full,
-                                                _stored_ex,
-                                            )
-                                            == "back"
-                                        ):
-                                            continue
-
-                                        from yeaboi.agent.nodes import _format_team_calibration
-
-                                        _si_text = _format_team_calibration(
-                                            _full,
-                                            examples=_stored_ex,
-                                        )
-                                        if _si_text.strip():
-                                            _si_resume = _load_ana_session(
-                                                _full.project_key if _full else "",
-                                            )
-                                            # Skip the confirmation when resuming a
-                                            # ticket session already mid-generation —
-                                            # the user confirmed on the first pass.
-                                            _resuming = bool(_si_resume) and _si_resume.get("last_page") in (
-                                                "epic",
-                                                "stories",
-                                                "tasks",
-                                                "sprint",
-                                            )
-                                            if _resuming or _confirm_ticket_generation(
-                                                live,
-                                                console,
-                                                read_key,
-                                                _FRAME_TIME,
-                                                _supports_timeout,
-                                                subtitle=f"{_full.source}/{_full.project_key}" if _full else "",
-                                            ):
-                                                _run_preview_flow(
-                                                    live,
-                                                    console,
-                                                    read_key,
-                                                    _FRAME_TIME,
-                                                    _supports_timeout,
-                                                    _si_text,
-                                                    _full,
-                                                    _stored_ex,
-                                                    resume_state=_si_resume,
-                                                )
-                                        break
+                                # Open the analysis. Reached from the list, so Back
+                                # belongs here — no nav actions.
+                                _run_profile_dashboard(
+                                    live,
+                                    console,
+                                    read_key,
+                                    _FRAME_TIME,
+                                    _supports_timeout,
+                                    _profiles_for_analysis[_ana_selected].team_id,
+                                )
                                 continue
                             elif _is_profile and _ana_focus == 1:
                                 # Delete profile — open confirmation popup
@@ -12786,6 +13343,21 @@ def select_mode(
                             db_path=_ana_dbp,
                         )
                         if _ta_setup is None:
+                            if _ana_skip_list:
+                                # Never showed the list, so backing out of the
+                                # setup can't land on it — that empty page is
+                                # what opening on the dashboard got rid of.
+                                # Where it lands instead is wherever it came
+                                # from: the dashboard sent you here whenever
+                                # there is an analysis to go back to, and only
+                                # a first run has none.
+                                if _ana_leave_setup():
+                                    _ana_restart = True
+                                    continue
+                                _restart_mode_select = True
+                                _skip_fade_in = True
+                                _ana_restart = False
+                                break
                             _ana_restart = True
                             _team_popup_result = ""
                             continue
@@ -12916,6 +13488,14 @@ def select_mode(
                                 _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
                                 if _k:
                                     break
+                            if _ana_skip_list:
+                                if _ana_leave_setup():
+                                    _ana_restart = True
+                                    continue
+                                _restart_mode_select = True
+                                _skip_fade_in = True
+                                _ana_restart = False
+                                break
                             _ana_restart = True
                             _team_popup_result = ""
                             continue
@@ -13008,47 +13588,46 @@ def select_mode(
 
                                 global _ana_sid  # noqa: PLW0603
 
-                                # Ask before generating tickets — separate the
-                                # team/board analysis from ticket creation.
-                                if _confirm_ticket_generation(
-                                    live,
-                                    console,
-                                    read_key,
-                                    _FRAME_TIME,
-                                    _supports_timeout,
-                                    subtitle=_ta_sub,
-                                ):
-                                    from yeaboi.agent.nodes import _format_team_calibration
-                                    from yeaboi.sessions import SessionStore as _AStore
-                                    from yeaboi.sessions import make_session_id
+                                # The insights page asks this now — it was one
+                                # decision across two screens, and its Continue
+                                # only ever led to a page asking whether you meant it.
+                                from yeaboi.agent.nodes import _format_team_calibration
+                                from yeaboi.sessions import SessionStore as _AStore
+                                from yeaboi.sessions import make_session_id
 
-                                    _ana_sid = make_session_id()
-                                    try:
-                                        with _AStore(_ana_dbp) as _as:
-                                            _as.create_session(
-                                                _ana_sid,
-                                                _ta_profile.project_key if _ta_profile else "",
-                                                mode="analysis",
-                                            )
-                                    except Exception:
-                                        pass
-
-                                    _instr_text = _format_team_calibration(
-                                        _ta_profile,
-                                        examples=_ta_examples,
-                                    )
-                                    if _instr_text.strip():
-                                        _run_preview_flow(
-                                            live,
-                                            console,
-                                            read_key,
-                                            _FRAME_TIME,
-                                            _supports_timeout,
-                                            _instr_text,
-                                            _ta_profile,
-                                            _ta_examples,
-                                            resume_state=None,
+                                _ana_sid = make_session_id()
+                                try:
+                                    with _AStore(_ana_dbp) as _as:
+                                        _as.create_session(
+                                            _ana_sid,
+                                            _ta_profile.project_key if _ta_profile else "",
+                                            mode="analysis",
                                         )
+                                except Exception:
+                                    pass
+
+                                global _ana_generated  # noqa: PLW0603
+
+                                _ana_generated = True
+                                _instr_text = _format_team_calibration(
+                                    _ta_profile,
+                                    examples=_ta_examples,
+                                )
+                                if _instr_text.strip() and (
+                                    _run_preview_flow(
+                                        live,
+                                        console,
+                                        read_key,
+                                        _FRAME_TIME,
+                                        _supports_timeout,
+                                        _instr_text,
+                                        _ta_profile,
+                                        _ta_examples,
+                                        resume_state=None,
+                                    )
+                                    == "back"
+                                ):
+                                    continue  # crossed back to Work items, not out
                                 break
                         elif _ta_error_box[0]:
                             w, h = console.size
@@ -13104,6 +13683,14 @@ def select_mode(
                             pass
                         _ana_n = len(_profiles_for_analysis) + len(_ana_labels)
                         _ana_selected = 0
+                        if _ana_skip_list:
+                            if _ana_leave_setup():
+                                _ana_restart = True
+                                continue
+                            _restart_mode_select = True
+                            _skip_fade_in = True
+                            _ana_restart = False
+                            break
                         _ana_restart = True
                         _team_popup_result = ""
                         continue
@@ -13367,6 +13954,31 @@ def select_mode(
                         _settings_data["_message"] = _msg
                         _settings_voice().say(_msg)
                         logger.info("Settings: VOICE_DEVICE set to %r", _picked)
+                        return
+                    # A fixed-choice row has no editor either: Enter steps to the next
+                    # option and saves it outright. Routed through the ordinary commit
+                    # path so the write, the environment update, the status line and
+                    # the logging are all the same code the typed fields use.
+                    from yeaboi.ui.mode_select.screens._screens_secondary import (
+                        SETTINGS_CHOICES,
+                        settings_choice_value,
+                    )
+
+                    _choices = SETTINGS_CHOICES.get(env)
+                    if _choices:
+                        # Step on from the option the ROW is lighting, resolved by the
+                        # same helper the builder uses. Reading the raw stored value
+                        # here instead is how "unset" lit WARNING while Enter jumped
+                        # to INFO — an unset var is not the same as the first option.
+                        _at = _choices.index(settings_choice_value(env, _settings_data.get(env, ""))) + 1
+                        _s_edit = {
+                            "env": env,
+                            "label": label,
+                            "masked": False,
+                            "buf": _choices[_at % len(_choices)],
+                            "cur": 0,
+                        }
+                        _s_commit_edit()
                         return
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.

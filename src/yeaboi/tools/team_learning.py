@@ -4076,6 +4076,263 @@ Apply the feedback. Keep everything the user did not ask to change.
 Return the same JSON schema as above."""
 
 
+def _epic_context(_ex: dict) -> str:
+    """The team's epic-naming context, as prompt text."""
+    naming = _ex.get("naming_conventions", {})
+    epic_examples = naming.get("epic_examples", [])
+    template_sections = naming.get("template_sections", [])
+    parts: list[str] = []
+    if epic_examples:
+        parts.append("Real epic titles from this team: " + ", ".join(f'"{e}"' for e in epic_examples[:5]))
+    parts.append(f"Epic naming style: {naming.get('epic_naming_style', 'feature-scoped')}")
+    if template_sections:
+        secs = ", ".join(f'"{s}"' for s, _ in template_sections[:5])
+        parts.append(f"Description template sections: {secs}")
+    return "\n".join(parts)
+
+
+def _story_context(_ex: dict) -> str:
+    """The team's acceptance-criteria and Definition-of-Done context."""
+    wp = _ex.get("ac_patterns", {})
+    parts: list[str] = []
+    median_ac = wp.get("median_ac", 0) if isinstance(wp, dict) else 0
+    if median_ac:
+        parts.append(f"Team averages {median_ac} acceptance criteria per story.")
+    proposed_dod = _ex.get("proposed_dod", {})
+    if isinstance(proposed_dod, dict):
+        items = proposed_dod.get("items", [])
+        established = [it["practice"] for it in items if isinstance(it, dict) and it.get("status") == "established"]
+        emerging = [it["practice"] for it in items if isinstance(it, dict) and it.get("status") == "emerging"]
+        if established:
+            parts.append("Established DoD practices: " + ", ".join(established))
+        if emerging:
+            parts.append("Emerging DoD practices: " + ", ".join(emerging))
+    return "\n".join(parts)
+
+
+def _task_context(_ex: dict) -> str:
+    """The team's task-decomposition context."""
+    td = _ex.get("task_decomposition", {})
+    if not isinstance(td, dict):
+        return ""
+    parts: list[str] = []
+    avg_tasks = td.get("avg_tasks_per_story", 0)
+    if avg_tasks:
+        parts.append(f"Team averages {avg_tasks:.1f} tasks per story.")
+    type_dist = td.get("type_distribution", {})
+    if type_dist:
+        parts.append("Task type distribution: " + ", ".join(f"{t} {p}%" for t, p in type_dist.items()))
+    common = td.get("common_tasks", [])
+    if common:
+        parts.append("Common task patterns: " + ", ".join(f'"{t}"' for t, _ in common[:5]))
+    return "\n".join(parts)
+
+
+def _sprint_velocities(_ex: dict) -> tuple:
+    """(delivered, committed) average velocity, either possibly 0 for unknown."""
+    scope = _ex.get("scope_changes", {})
+    totals = scope.get("totals", {}) if isinstance(scope, dict) else {}
+    return totals.get("avg_delivered_velocity", 0), totals.get("avg_committed_velocity", 0)
+
+
+def _fallback_epic(_ex: dict) -> dict:
+    """The deterministic epic used when the LLM is unavailable."""
+    epic_examples = _ex.get("naming_conventions", {}).get("epic_examples", [])
+    return {
+        "title": epic_examples[0] if epic_examples else "Platform Improvement Initiative",
+        "description": "Sample epic matching the team's conventions.",
+        "priority": "high",
+        "stories_estimate": 5,
+        "points_estimate": 18,
+        "rationale": "Fallback — LLM unavailable. Based on historical averages.",
+    }
+
+
+def _fallback_stories() -> list[dict]:
+    """The deterministic story list used when the LLM is unavailable."""
+    return [
+        {
+            "id": "S1",
+            "title": "Implement core functionality",
+            "persona": "developer",
+            "goal": "build the main feature",
+            "benefit": "delivers value",
+            "story_points": 3,
+            "priority": "high",
+            "discipline": "infrastructure",
+            "acceptance_criteria": [{"given": "system is running", "when": "action taken", "then": "expected result"}],
+            "definition_of_done": ["Code reviewed", "Tests passing", "Deployed to staging"],
+            "rationale": "Fallback — LLM unavailable.",
+        }
+    ]
+
+
+def _fallback_tasks(sample_stories: list[dict]) -> list[dict]:
+    """One deterministic task per story, when the LLM is unavailable."""
+    return [
+        {
+            "id": f"T-{s.get('id', 'S1')}-01",
+            "story_id": s.get("id", "S1"),
+            "title": "Implement core functionality",
+            "description": "Build the main feature.",
+            "label": "Code",
+            "test_plan": "Unit test the implementation.",
+        }
+        for s in sample_stories
+    ]
+
+
+def _fallback_sprint(_ex: dict, sample_stories: list[dict]) -> dict:
+    """The deterministic sprint plan used when the LLM is unavailable."""
+    delivered, _committed = _sprint_velocities(_ex)
+    return {
+        "sprint_name": "Sprint 1",
+        "velocity_target": delivered or 20,
+        "stories_included": [s.get("id", "") for s in sample_stories],
+        "total_points": sum(s.get("story_points", 0) for s in sample_stories),
+        "capacity_notes": "Based on team delivered velocity.",
+        "risks": [],
+        "rationale": "Fallback — LLM unavailable.",
+    }
+
+
+def _parse_json_reply(response) -> object:
+    """Strip an optional ``` fence off an LLM reply and parse it as JSON."""
+    text = (response.content if hasattr(response, "content") else str(response)).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return json.loads(text)
+
+
+def generate_sample_plan(calibration_text: str, examples: dict | None = None) -> dict:
+    """Generate the whole preview plan — epic, stories, tasks and sprint — in ONE call.
+
+    The four artifacts used to be four chained LLM calls, each feeding the next:
+    four round trips, four timeouts to sit through, and four chances to fail
+    half-way and leave the preview holding an epic with no stories under it. They
+    are one artifact from the user's point of view — "here is what planning would
+    produce for your team" — so they are one request.
+
+    Chaining them inside a single prompt is also *better* output, not just fewer
+    calls: the model writes the stories knowing the epic it just wrote and the
+    tasks knowing both, where separate calls only ever saw the previous one's
+    JSON. The per-artifact functions below stay, because Regenerate on one page
+    should re-ask for that page and nothing else.
+
+    Returns ``{"epic": dict, "stories": list, "tasks": list, "sprint": dict}``.
+    Any part the model omits or malforms falls back to its deterministic version,
+    so a partial reply still yields a complete, renderable plan.
+    """
+    _ex = examples or {}
+    delivered, committed = _sprint_velocities(_ex)
+
+    prompt = f"""\
+You are generating a SAMPLE plan to preview how the planning phase will work for
+this team: one epic, its stories, their tasks, and a sprint plan for them. Every
+artifact must match the team's actual style and conventions.
+
+{calibration_text}
+
+Team's epic context:
+{_epic_context(_ex)}
+
+Team's story context:
+{_story_context(_ex)}
+
+Team's task context:
+{_task_context(_ex)}
+
+Team's sprint context:
+Velocity: {delivered or "unknown"} pts/sprint delivered, {committed or "unknown"} pts/sprint committed
+
+Return ONE JSON object with exactly these four keys:
+{{
+  "epic": {{
+    "title": "Epic title matching the team's naming convention",
+    "description": "Epic description using the team's template structure if detected",
+    "priority": "high",
+    "stories_estimate": 5,
+    "points_estimate": 18,
+    "rationale": "Why this epic structure matches the team's patterns"
+  }},
+  "stories": [{{
+    "id": "S1",
+    "title": "Short story title",
+    "persona": "developer",
+    "goal": "what the user wants to do",
+    "benefit": "why it matters",
+    "story_points": 3,
+    "priority": "high",
+    "discipline": "infrastructure",
+    "acceptance_criteria": [{{"given": "context", "when": "action", "then": "outcome"}}],
+    "definition_of_done": ["Code reviewed and approved", "Unit tests passing"],
+    "rationale": "Why this story structure matches the team's patterns"
+  }}],
+  "tasks": [{{
+    "id": "T-S1-01",
+    "story_id": "S1",
+    "title": "Implement X",
+    "description": "Details",
+    "label": "Code",
+    "test_plan": "Unit test: verify X"
+  }}],
+  "sprint": {{
+    "sprint_name": "Sprint 1",
+    "velocity_target": 20,
+    "stories_included": ["S1", "S2"],
+    "total_points": 8,
+    "capacity_notes": "Based on team avg of 20 pts/sprint",
+    "risks": ["Story S2 has external dependency"],
+    "rationale": "Why this sprint allocation matches team patterns"
+  }}
+}}
+
+Rules:
+- The epic title MUST match the team's naming style, and its description MUST use
+  the team's template sections if detected.
+- Write 2-3 stories, all belonging to the epic you just wrote.
+- Story points MUST be one of 1, 2, 3, 5, 8; disciplines and titles should match
+  the team's; use Given/When/Then ACs if the team does.
+- definition_of_done MUST reflect the team's ACTUAL observed practices.
+- 2-5 tasks per story (match the team's average), every "story_id" one of the
+  story ids you wrote, imperative verb-first titles, labels from:
+  Code, Testing, Documentation, Infrastructure.
+- Size the sprint on DELIVERED velocity, not committed, and only include stories
+  you wrote.
+- Return ONLY the JSON object, no other text."""
+
+    try:
+        result = _parse_json_reply(_llm_invoke(prompt, temperature=0.3))
+        if not isinstance(result, dict):
+            raise ValueError(f"expected a JSON object, got {type(result).__name__}")
+    except Exception as exc:
+        logger.warning("Sample plan generation failed: %s", exc)
+        result = {}
+
+    epic = result.get("epic")
+    stories = result.get("stories")
+    tasks = result.get("tasks")
+    sprint = result.get("sprint")
+    # Each part falls back on its own: a reply that got the epic right and the
+    # sprint wrong should keep the epic.
+    if not isinstance(epic, dict) or not epic:
+        epic = _fallback_epic(_ex)
+    if not isinstance(stories, list) or not stories:
+        stories = _fallback_stories()
+    if not isinstance(tasks, list) or not tasks:
+        tasks = _fallback_tasks(stories)
+    if not isinstance(sprint, dict) or not sprint:
+        sprint = _fallback_sprint(_ex, stories)
+    logger.info(
+        "Sample plan generated in one call: epic=%r, %d stories, %d tasks",
+        epic.get("title", "?"),
+        len(stories),
+        len(tasks),
+    )
+    return {"epic": epic, "stories": stories, "tasks": tasks, "sprint": sprint}
+
+
 def generate_sample_epic(
     calibration_text: str,
     examples: dict | None = None,
@@ -4093,21 +4350,7 @@ def generate_sample_epic(
     points_estimate, rationale.
     """
     _ex = examples or {}
-    naming = _ex.get("naming_conventions", {})
-    epic_style = naming.get("epic_naming_style", "feature-scoped")
-    epic_examples = naming.get("epic_examples", [])
-    template_sections = naming.get("template_sections", [])
-
-    # Build context from analysis
-    epic_ctx_parts: list[str] = []
-    if epic_examples:
-        epic_ctx_parts.append("Real epic titles from this team: " + ", ".join(f'"{e}"' for e in epic_examples[:5]))
-    epic_ctx_parts.append(f"Epic naming style: {epic_style}")
-    if template_sections:
-        secs = ", ".join(f'"{s}"' for s, _ in template_sections[:5])
-        epic_ctx_parts.append(f"Description template sections: {secs}")
-
-    epic_context = "\n".join(epic_ctx_parts)
+    epic_context = _epic_context(_ex)
 
     prompt = f"""\
 You are generating a SAMPLE epic to preview how the planning phase will create epics
@@ -4137,25 +4380,10 @@ Rules:
     prompt += _build_revision_block(feedback, previous)
 
     try:
-        response = _llm_invoke(prompt, temperature=0.3)
-        text = response.content if hasattr(response, "content") else str(response)
-        text = text.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```$", "", text)
-        return json.loads(text)
+        return _parse_json_reply(_llm_invoke(prompt, temperature=0.3))
     except Exception as exc:
         logger.warning("Sample epic generation failed: %s", exc)
-        # Deterministic fallback
-        title = epic_examples[0] if epic_examples else "Platform Improvement Initiative"
-        return {
-            "title": title,
-            "description": "Sample epic matching the team's conventions.",
-            "priority": "high",
-            "stories_estimate": 5,
-            "points_estimate": 18,
-            "rationale": "Fallback — LLM unavailable. Based on historical averages.",
-        }
+        return _fallback_epic(_ex)
 
 
 def generate_sample_stories(
@@ -4172,33 +4400,9 @@ def generate_sample_stories(
     stories with realistic ACs, points, and discipline assignments.
     """
     _ex = examples or {}
-    wp = _ex.get("ac_patterns", {})
-
-    # Build context
     epic_title = sample_epic.get("title", "Sample Epic")
     epic_desc = sample_epic.get("description", "")
-    stories_est = sample_epic.get("stories_estimate", 3)
-    n_stories = min(3, max(2, stories_est))
-
-    ac_info = ""
-    median_ac = wp.get("median_ac", 0) if isinstance(wp, dict) else 0
-    if median_ac:
-        ac_info = f"Team averages {median_ac} acceptance criteria per story."
-
-    # Build DoD context from proposed_dod
-    dod_info = ""
-    proposed_dod = _ex.get("proposed_dod", {})
-    if isinstance(proposed_dod, dict):
-        dod_items = proposed_dod.get("items", [])
-        established = [it["practice"] for it in dod_items if isinstance(it, dict) and it.get("status") == "established"]
-        emerging = [it["practice"] for it in dod_items if isinstance(it, dict) and it.get("status") == "emerging"]
-        if established or emerging:
-            dod_parts = []
-            if established:
-                dod_parts.append("Established DoD practices: " + ", ".join(established))
-            if emerging:
-                dod_parts.append("Emerging DoD practices: " + ", ".join(emerging))
-            dod_info = "\n".join(dod_parts)
+    n_stories = min(3, max(2, sample_epic.get("stories_estimate", 3)))
 
     prompt = f"""\
 Generate {n_stories} sample user stories for this epic, matching the team's conventions.
@@ -4207,8 +4411,7 @@ Generate {n_stories} sample user stories for this epic, matching the team's conv
 
 Epic: {epic_title}
 Description: {epic_desc}
-{ac_info}
-{dod_info}
+{_story_context(_ex)}
 
 Return a JSON array where each story has:
 {{
@@ -4241,34 +4444,13 @@ Rules:
     prompt += _build_revision_block(feedback, previous)
 
     try:
-        response = _llm_invoke(prompt, temperature=0.3)
-        text = response.content if hasattr(response, "content") else str(response)
-        text = text.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```$", "", text)
-        result = json.loads(text)
+        result = _parse_json_reply(_llm_invoke(prompt, temperature=0.3))
         if isinstance(result, list):
             return result
     except Exception as exc:
         logger.warning("Sample stories generation failed: %s", exc)
 
-    # Fallback
-    return [
-        {
-            "id": "S1",
-            "title": "Implement core functionality",
-            "persona": "developer",
-            "goal": "build the main feature",
-            "benefit": "delivers value",
-            "story_points": 3,
-            "priority": "high",
-            "discipline": "infrastructure",
-            "acceptance_criteria": [{"given": "system is running", "when": "action taken", "then": "expected result"}],
-            "definition_of_done": ["Code reviewed", "Tests passing", "Deployed to staging"],
-            "rationale": "Fallback — LLM unavailable.",
-        }
-    ]
+    return _fallback_stories()
 
 
 def generate_sample_tasks(
@@ -4281,21 +4463,7 @@ def generate_sample_tasks(
 ) -> list[dict]:
     """Generate sample tasks for the sample stories matching the team's patterns."""
     _ex = examples or {}
-    td = _ex.get("task_decomposition", {})
-
-    task_ctx_parts: list[str] = []
-    avg_tasks = td.get("avg_tasks_per_story", 0) if isinstance(td, dict) else 0
-    if avg_tasks:
-        task_ctx_parts.append(f"Team averages {avg_tasks:.1f} tasks per story.")
-    type_dist = td.get("type_distribution", {}) if isinstance(td, dict) else {}
-    if type_dist:
-        dist_str = ", ".join(f"{t} {p}%" for t, p in type_dist.items())
-        task_ctx_parts.append(f"Task type distribution: {dist_str}")
-    common = td.get("common_tasks", []) if isinstance(td, dict) else []
-    if common:
-        names = ", ".join(f'"{t}"' for t, _ in common[:5])
-        task_ctx_parts.append(f"Common task patterns: {names}")
-    task_context = "\n".join(task_ctx_parts)
+    task_context = _task_context(_ex)
 
     stories_block = ""
     for s in sample_stories:
@@ -4328,33 +4496,13 @@ def generate_sample_tasks(
     prompt += _build_revision_block(feedback, previous)
 
     try:
-        response = _llm_invoke(prompt, temperature=0.3)
-        text = response.content if hasattr(response, "content") else str(response)
-        text = text.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```$", "", text)
-        result = json.loads(text)
+        result = _parse_json_reply(_llm_invoke(prompt, temperature=0.3))
         if isinstance(result, list):
             return result
     except Exception as exc:
         logger.warning("Sample tasks generation failed: %s", exc)
 
-    # Fallback
-    tasks = []
-    for s in sample_stories:
-        sid = s.get("id", "S1")
-        tasks.append(
-            {
-                "id": f"T-{sid}-01",
-                "story_id": sid,
-                "title": "Implement core functionality",
-                "description": "Build the main feature.",
-                "label": "Code",
-                "test_plan": "Unit test the implementation.",
-            }
-        )
-    return tasks
+    return _fallback_tasks(sample_stories)
 
 
 def generate_sample_sprint(
@@ -4368,10 +4516,7 @@ def generate_sample_sprint(
 ) -> dict:
     """Generate a sample sprint plan matching the team's velocity and capacity."""
     _ex = examples or {}
-    scope = _ex.get("scope_changes", {})
-    totals = scope.get("totals", {}) if isinstance(scope, dict) else {}
-    delivered_vel = totals.get("avg_delivered_velocity", 0)
-    committed_vel = totals.get("avg_committed_velocity", 0)
+    delivered_vel, committed_vel = _sprint_velocities(_ex)
 
     total_pts = sum(s.get("story_points", 0) for s in sample_stories)
     story_ids = [s.get("id", "") for s in sample_stories]
@@ -4401,27 +4546,13 @@ def generate_sample_sprint(
     prompt += _build_revision_block(feedback, previous)
 
     try:
-        response = _llm_invoke(prompt, temperature=0.3)
-        text = response.content if hasattr(response, "content") else str(response)
-        text = text.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```$", "", text)
-        result = json.loads(text)
+        result = _parse_json_reply(_llm_invoke(prompt, temperature=0.3))
         if isinstance(result, dict):
             return result
     except Exception as exc:
         logger.warning("Sample sprint generation failed: %s", exc)
 
-    return {
-        "sprint_name": "Sprint 1",
-        "velocity_target": delivered_vel or 20,
-        "stories_included": story_ids,
-        "total_points": total_pts,
-        "capacity_notes": "Based on team delivered velocity.",
-        "risks": [],
-        "rationale": "Fallback — LLM unavailable.",
-    }
+    return _fallback_sprint(_ex, sample_stories)
 
 
 def _analyse_workflow_columns(delivery_stories: list[dict]) -> dict:

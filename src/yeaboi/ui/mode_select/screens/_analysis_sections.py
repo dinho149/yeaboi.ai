@@ -79,6 +79,20 @@ class _TaCtx:
         # Set by the screen builder in 'both' mode: side-by-side headline rows
         # (label, jira_value, azdevops_value) rendered atop the overview.
         self.comparison: list[tuple[str, str, str]] | None = None
+        # The width the executive summary will actually be laid into. It is the
+        # only thing on these screens built at one width and rendered at
+        # another: the band puts it in a half-width column, and wrapping it to
+        # the page first meant every line was wrapped twice — once here and
+        # again by the cell — which reads as ragged alternating indentation.
+        # 0 means "the same width as everything else".
+        self.summary_w = 0
+        # The page's own width, kept apart from ``width`` so the body can be
+        # narrowed to a column while heights are still measured against the
+        # panel a row is actually rendered into.
+        self.page_w = width
+        # Columns held back on the right, so the body stops short of whatever
+        # occupies them — the AI summary shares this page with it.
+        self.right_pad = 0
         # Code/Docs are global scans (not per delivery tracker); the screen builder
         # sets these from the top-level result so the two cards render regardless of
         # the active tracker's own (empty) profile signals.
@@ -97,6 +111,11 @@ class _TaCtx:
         # row, so the screen builder can auto-scroll the selection into view.
         self.overview_first_card_row: int | None = None
         self.overview_card_rows: list[int] = []
+        self.summary_at: int | None = None  # index in `lines` where the AI summary begins
+        # Label column of a key/value row. The headline band widens it so the
+        # stats spread to the edge of their half instead of huddling at the far
+        # left of it with the summary a screen away.
+        self.kv_w: int = 24
 
     def add(self, item, rendered_h: int = 1) -> None:
         """Append an item and track its rendered height."""
@@ -104,14 +123,29 @@ class _TaCtx:
         self.item_heights.append(rendered_h)
         self.rendered_lines += rendered_h
 
-    def add_table(self, table) -> None:
-        """Append a table with its wrapped height measured (not naive row count)."""
-        padded = Padding(table, (0, 0, 0, len(PAD) + 2))
+    def add_table(self, table, inset: int = 0) -> None:
+        """Append a table with its wrapped height measured (not naive row count).
+
+        ``inset`` holds it off the right edge of the body column, so a box does
+        not finish hard against the scrollbar that runs down it.
+        """
+        # Flush with the heading above it, like every other row: a table indented
+        # two columns further read as nested under nothing.
+        # Measured at the body's own width. The right-hand reserve is applied
+        # ONCE, to the viewport that holds every item and the scrollbar — doing
+        # it per item as well would take the column off the page twice.
+        padded = Padding(table, (0, inset, 0, len(PAD)))
         self.add(padded, rendered_h=_measure_render_height(padded, max(10, self.width - 7)))
 
-    def add_renderable(self, renderable) -> None:
-        """Append a rich renderable whose terminal-row height is not known upfront."""
-        padded = Padding(renderable, (0, 1, 0, len(PAD)))
+    def add_renderable(self, renderable, inset: int = 1) -> None:
+        """Append a rich renderable whose terminal-row height is not known upfront.
+
+        ``inset`` holds it off the right edge of the body column, as for
+        :meth:`add_table` — a callout above a row of cards has to stop where
+        they stop, or the one box in the section that reaches the scrollbar is
+        the one introducing the rest.
+        """
+        padded = Padding(renderable, (0, inset, 0, len(PAD)))
         self.add(padded, rendered_h=_measure_render_height(padded, max(10, self.width - 7)))
 
     def heading(self, text: str) -> None:
@@ -122,8 +156,8 @@ class _TaCtx:
         self.add(Text(PAD + "─" * min(len(text), 40), style="rgb(50,60,80)"))
 
     def kv(self, label: str, value: str, val_style: str = c_value) -> None:
-        t = Text(PAD + "  ", justify="left")
-        t.append(f"{label:<24s}", style=c_muted)
+        t = Text(PAD, justify="left")
+        t.append(f"{label:<{self.kv_w}s}", style=c_muted)
         t.append(value, style=val_style)
         self.add(t)
 
@@ -145,7 +179,7 @@ class _TaCtx:
         if not items:
             return
         for ex in items[:limit]:
-            t = Text(PAD + "      ", justify="left")
+            t = Text(PAD + "  ", justify="left")
             ek = ex.get("issue_key", "")
             url = ex.get("issue_url", "")
             summary = ex.get("summary", "")
@@ -202,8 +236,9 @@ def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -
             Group(*lines),
             box=rich.box.ROUNDED,
             border_style="rgb(50,70,60)",
-            padding=(0, 1),
-        )
+            padding=(0, 2),
+        ),
+        inset=_INSIGHT_CARD_INSET,
     )
 
 
@@ -222,7 +257,7 @@ def _ta_more_row(ctx: _TaCtx, hidden: int, noun: str) -> None:
     """Dim '+ N more <noun>' disclosure row closing a capped list."""
     if hidden <= 0:
         return
-    t = Text(PAD + "  ", justify="left")
+    t = Text(PAD, justify="left")
     t.append(f"+ {hidden} more {noun}", style=c_dim)
     ctx.add(t)
 
@@ -248,12 +283,12 @@ def _ta_metric_tiles(ctx: _TaCtx, tiles: list[tuple[str, str, str, str]]) -> Non
                     content,
                     box=rich.box.ROUNDED,
                     border_style="rgb(48,55,68)",
-                    padding=(0, 1),
+                    padding=(0, 2),
                 )
             )
         cells.extend(Text("") for _ in range(columns - len(cells)))
         grid.add_row(*cells)
-    ctx.add_table(grid)
+    ctx.add_table(grid, inset=_INSIGHT_CARD_INSET)
 
 
 def _ta_ranked_bars(
@@ -273,7 +308,7 @@ def _ta_ranked_bars(
     label_w = min(18, max(len(labeler(label)) for label, _count in clean))
     bar_w = 16 if ctx.width >= 78 else 10
     for label, count in clean:
-        line = Text(PAD + "  ")
+        line = Text(PAD)
         line.append(f"{labeler(label)[:label_w]:<{label_w}} ", style=c_muted)
         line.append_text(_ta_meter(count, peak, width=bar_w, style=c_accent))
         line.append(f"  {count}", style=c_value)
@@ -285,6 +320,16 @@ _INSIGHT_DASHBOARD_GROUPS = (
     ("Keep working", ("keep",)),
     ("Experiments", ("try",)),
 )
+# A coaching card is a sentence and its evidence, so it wants a readable measure
+# rather than the whole window. These two decide how many fit: the width one card
+# needs before a second may sit beside it, and the point past which more columns
+# would be shorter lines rather than more information.
+_INSIGHT_CARD_MIN_W = 56
+_INSIGHT_CARD_COLS_MAX = 3
+# Boxes stop short of the body column's right edge, so they do not finish hard
+# against the scrollbar running down it.
+_INSIGHT_CARD_INSET = 4
+
 _INSIGHT_BADGES = {
     "start": ("START", c_accent),
     "stop": ("AVOID", c_bad),
@@ -316,36 +361,58 @@ def _ta_coaching_dashboard(ctx: _TaCtx, insights: dict) -> None:
         if not group_items:
             continue
         ctx.heading(group_title)
+        # Cards flow into columns once there is room for them side by side. One
+        # per row is right in a terminal-sized window and wrong in a maximised
+        # one: a 60-character sentence in a 230-column box leaves the eye to
+        # cross the whole screen to reach the evidence line under it.
+        _avail = max(10, ctx.width - len(PAD) - 7)
+        columns = max(1, min(_INSIGHT_CARD_COLS_MAX, _avail // _INSIGHT_CARD_MIN_W))
+        # What a card's own text gets: its share of the row, less the grid's
+        # padding and the panel's border and padding.
+        _text_w = max(24, _avail // columns - 6)
+        cells: list = []
         for key, item in group_items:
             badge, colour = _INSIGHT_BADGES[key]
-            head = Text()
+            head = Text(no_wrap=True, overflow="ellipsis")
             head.append(f" {badge} ", style=f"bold black on {colour}")
             head.append("  ")
             head.append(str(item["title"]).strip(), style=c_value)
             lines: list = [head]
             detail = str(item.get("detail", "") or "").strip()
-            for wrapped in _ta_wrap(detail, max(26, ctx.width - len(PAD) - 18)):
+            for wrapped in _ta_wrap(detail, _text_w):
                 lines.append(Text(wrapped, style=c_muted))
             evidence = str(item.get("evidence", "") or "").strip()
             if evidence:
-                ev = Text()
+                ev = Text(no_wrap=True, overflow="ellipsis")
                 ev.append("Evidence  ", style=f"bold {colour}")
                 ev.append(evidence, style=c_dim)
                 lines.append(ev)
             link = str(item.get("link", "") or "").strip()
             if link:
-                linked = Text()
+                linked = Text(no_wrap=True, overflow="ellipsis")
                 linked.append("↳ ")
                 linked.append(link, style=f"underline {c_accent} link {link}")
                 lines.append(linked)
-            ctx.add_renderable(
+            cells.append(
                 Panel(
                     Group(*lines),
                     box=rich.box.ROUNDED,
                     border_style=colour,
-                    padding=(0, 1),
+                    padding=(0, 2),
                 )
             )
+        # One grid PER ROW, not one for the whole group. The viewport packer
+        # slices by item, so a single grid holding every card is one item taller
+        # than the viewport — and an item that doesn't fit is dropped, which
+        # emptied the section instead of scrolling it.
+        for start in range(0, len(cells), columns):
+            row = cells[start : start + columns]
+            row.extend(Text("") for _ in range(columns - len(row)))
+            grid = RichTable.grid(expand=True, padding=(0, 1))
+            for _ in range(columns):
+                grid.add_column(ratio=1)
+            grid.add_row(*row)
+            ctx.add_table(grid, inset=_INSIGHT_CARD_INSET)
 
 
 def _ta_glossary_lines(ctx: _TaCtx, keys: tuple[str, ...]) -> None:
@@ -357,7 +424,7 @@ def _ta_glossary_lines(ctx: _TaCtx, keys: tuple[str, ...]) -> None:
     h.append("What the terms mean", style=f"bold {c_muted}")
     ctx.add(h)
     for k in keys:
-        t = Text(PAD + "  ", justify="left")
+        t = Text(PAD, justify="left")
         t.append(_TA_GLOSSARY[k], style=c_dim)
         ctx.add(t)
 
@@ -378,7 +445,7 @@ def _ta_narrative_block(ctx: _TaCtx, key: str) -> None:
     h.append("What this means", style=f"bold {c_ai_head}")
     ctx.add(h)
     for wrapped in _ta_wrap(str(text), max(40, ctx.width - len(PAD) - 10)):
-        t = Text(PAD + "  ", justify="left")
+        t = Text(PAD, justify="left")
         t.append(wrapped, style=c_ai_text)
         ctx.add(t)
 
@@ -423,7 +490,7 @@ def _ta_recurring(ctx: _TaCtx, profile) -> None:
         _add(note)
         if rec_items and isinstance(rec_items, list):
             for ex in rec_items[:3]:
-                t = Text(PAD + "  ", justify="left")
+                t = Text(PAD, justify="left")
                 ek = ex.get("issue_key", "")
                 summary = ex.get("summary", "")
                 url = ex.get("issue_url", "")
@@ -643,7 +710,7 @@ def _ta_sprint_breakdown(ctx: _TaCtx, profile) -> None:
                 inc = sd.get("incomplete", [])
 
                 _add(Text(""))
-                hdr = Text(PAD + "    ", justify="left")
+                hdr = Text(PAD, justify="left")
                 has_sh = sd.get("has_shadow", False)
                 hdr.append(name, style=c_warn)
                 if gap > 0:
@@ -661,7 +728,7 @@ def _ta_sprint_breakdown(ctx: _TaCtx, profile) -> None:
                 for item in inc[:2]:
                     if not isinstance(item, dict):
                         continue
-                    t = Text(PAD + "      ", justify="left")
+                    t = Text(PAD + "  ", justify="left")
                     ek = item.get("issue_key", "")
                     i_url = item.get("issue_url", "")
                     sm = item.get("summary", "")
@@ -683,7 +750,7 @@ def _ta_shadow_spillover(ctx: _TaCtx, profile) -> None:
     shadow = _ex.get("shadow_spillover", [])
     if isinstance(shadow, list) and shadow:
         _add(Text(""))
-        hdr = Text(PAD + "  ", justify="left")
+        hdr = Text(PAD, justify="left")
         hdr.append(
             f"\u26a0 {len(shadow)} re-created stories detected",
             style=f"bold {c_warn}",
@@ -699,7 +766,7 @@ def _ta_shadow_spillover(ctx: _TaCtx, profile) -> None:
         for sh in shadow[:5]:
             if not isinstance(sh, dict):
                 continue
-            t = Text(PAD + "    ", justify="left")
+            t = Text(PAD, justify="left")
             ek = sh.get("issue_key", "")
             url = sh.get("issue_url", "")
             sh_title = sh.get("title", "")
@@ -711,7 +778,7 @@ def _ta_shadow_spillover(ctx: _TaCtx, profile) -> None:
                 t.append(f"  {sh_title}", style=c_example)
             _add(t)
             if from_sp or to_sp:
-                m = Text(PAD + "      ", justify="left")
+                m = Text(PAD + "  ", justify="left")
                 m.append(f"{from_sp} \u2192 {to_sp}", style=c_dim)
                 _add(m)
 
@@ -735,7 +802,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
             if avg_committed > 0:
                 delivery_pct = round(avg_delivered / avg_committed * 100)
                 d_sty = c_good if delivery_pct >= 85 else (c_warn if delivery_pct >= 70 else c_bad)
-                summary = Text(PAD + "  ", justify="left")
+                summary = Text(PAD, justify="left")
                 summary.append("Committed ", style=c_muted)
                 summary.append(f"{avg_committed:g}", style="bold " + c_value)
                 summary.append(" \u2192 Delivered ", style=c_muted)
@@ -750,7 +817,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
                 re_pct = round(t_re_est / t_total * 100)
                 add_sty = c_good if add_pct < 10 else (c_warn if add_pct < 25 else c_bad)
                 re_sty = c_good if re_pct < 10 else (c_warn if re_pct < 25 else c_bad)
-                stats = Text(PAD + "  ", justify="left")
+                stats = Text(PAD, justify="left")
                 stats.append(f"{t_added} added mid-sprint ", style=add_sty)
                 stats.append(f"({add_pct}%)", style=c_dim)
                 stats.append("  \u00b7  ", style=c_dim)
@@ -767,7 +834,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
                 pct = round(delta / tl.committed_pts * 100) if tl.committed_pts else 0
                 delta_str = f"+{delta:g}" if delta > 0 else f"{delta:g}"
                 d_sty_n = c_good if delta == 0 else (c_warn if abs(delta) < 5 else c_bad)
-                hdr = Text(PAD + "  ", justify="left")
+                hdr = Text(PAD, justify="left")
                 hdr.append(tl.sprint_name, style="bold " + c_value)
                 hdr.append(f"  {delta_str} scope ", style=d_sty_n)
                 hdr.append(f"({pct:+d}%)", style=c_dim)
@@ -775,7 +842,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
 
                 # Day 1 committed
                 n_stories = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
-                day1 = Text(PAD + "    ", justify="left")
+                day1 = Text(PAD, justify="left")
                 day1.append(f"committed {tl.committed_pts:g} pts", style=c_muted)
                 if n_stories:
                     day1.append(f" ({n_stories} stories)", style=c_dim)
@@ -788,7 +855,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
                     delta_s = f"+{ev.delta_pts:g}" if ev.delta_pts > 0 else f"{ev.delta_pts:g}"
                     ev_sty = c_good if ev.delta_pts < 0 else (c_warn if abs(ev.delta_pts) <= 3 else c_bad)
                     ct_sty = "#22c55e" if "removed" in ct_short else ("#ef4444" if "added" in ct_short else c_warn)
-                    row = Text(PAD + "    ", justify="left")
+                    row = Text(PAD, justify="left")
                     row.append(f"{delta_s} pts", style=ev_sty)
                     row.append(f"  {ev.issue_key}", style=c_accent)
                     row.append(f"  {ct_short}", style=ct_sty)
@@ -796,13 +863,13 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
                         row.append(f"  {ev.summary[:45]}", style=c_dim)
                     _add(row)
                 if len(tl.change_events) > 5:
-                    more = Text(PAD + "    ", justify="left")
+                    more = Text(PAD, justify="left")
                     more.append(f"... +{len(tl.change_events) - 5} more", style=c_dim)
                     _add(more)
 
                 # Final/delivered
                 n_final = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
-                foot = Text(PAD + "    ", justify="left")
+                foot = Text(PAD, justify="left")
                 foot.append(f"final {tl.final_pts:g} pts", style=c_muted)
                 if n_final:
                     foot.append(f" ({n_final} stories)", style=c_dim)
@@ -813,7 +880,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
             chains = scope.get("carry_over_chains", [])
             if chains:
                 _add(Text(""))
-                h = Text(PAD + "  ", justify="left")
+                h = Text(PAD, justify="left")
                 h.append(
                     f"\u26a0 {len(chains)} stories bounced across 3+ sprints",
                     style=f"bold {c_warn}",
@@ -822,7 +889,7 @@ def _ta_scope(ctx: _TaCtx, profile) -> None:
                 for ch in chains[:5]:
                     if not isinstance(ch, dict):
                         continue
-                    t = Text(PAD + "    ", justify="left")
+                    t = Text(PAD, justify="left")
                     ek = ch.get("issue_key", "")
                     sc = ch.get("sprint_count", 0)
                     sprints = ch.get("sprints", [])
@@ -844,7 +911,7 @@ def _ta_team_members(ctx: _TaCtx, profile) -> None:
         total_del = sum(c.get("delivery_pts", 0) for c in _contrib)
         if total_rec > 0:
             rec_pct = round(total_rec / (total_rec + total_del) * 100) if (total_rec + total_del) else 0
-            rec_row = Text(PAD + "  ", justify="left")
+            rec_row = Text(PAD, justify="left")
             rec_row.append("Interrupted work: ", style=c_muted)
             rec_row.append(f"{total_rec:g} pts", style=c_warn if rec_pct > 30 else c_value)
             rec_row.append(f" ({rec_pct}% of total effort)", style=c_dim)
@@ -905,7 +972,7 @@ def _ta_team_members(ctx: _TaCtx, profile) -> None:
             if total_del > 0:
                 top_pct = round(top["delivery_pts"] / total_del * 100)
                 if top_pct >= 40:
-                    ins = Text(PAD + "  ", justify="left")
+                    ins = Text(PAD, justify="left")
                     ins.append(f"\u26a0 {top['name']}", style=f"bold {c_warn}")
                     ins.append(f" carries {top_pct}% of delivery work", style=c_warn)
                     _add(ins)
@@ -914,7 +981,7 @@ def _ta_team_members(ctx: _TaCtx, profile) -> None:
             high_spill = [c for c in _contrib if c.get("spill_rate", 0) >= 30 and c.get("stories_total", 0) >= 3]
             if high_spill:
                 for hs in high_spill[:2]:
-                    ins = Text(PAD + "  ", justify="left")
+                    ins = Text(PAD, justify="left")
                     ins.append(f"\u26a0 {hs['name']}", style=f"bold {c_bad}")
                     ins.append(
                         f" spills {hs['spill_rate']}% of stories ({hs['stories_spilled']}/{hs['stories_total']})",
@@ -936,7 +1003,7 @@ def _ta_spillover_root_causes(ctx: _TaCtx, profile) -> None:
         if has_spill:
             _heading("Spillover Root Causes")
             if by_size:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append("By size:       ", style=c_muted)
                 parts = []
                 for sz, pct in sorted(by_size.items(), key=lambda x: int(x[0])):
@@ -948,7 +1015,7 @@ def _ta_spillover_root_causes(ctx: _TaCtx, profile) -> None:
                     row.append(txt, style=sty)
                 _add(row)
             if by_disc:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append("By discipline: ", style=c_muted)
                 parts = []
                 for disc, pct in sorted(by_disc.items()):
@@ -960,7 +1027,7 @@ def _ta_spillover_root_causes(ctx: _TaCtx, profile) -> None:
                     row.append(txt, style=sty)
                 _add(row)
             if by_tasks:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append("By tasks:      ", style=c_muted)
                 parts = []
                 for bucket, pct in by_tasks.items():
@@ -990,7 +1057,7 @@ def _ta_discipline_calibration(ctx: _TaCtx, profile) -> None:
             if not isinstance(entries, list) or not entries:
                 continue
             _add(Text(""))
-            h = Text(PAD + "  ", justify="left")
+            h = Text(PAD, justify="left")
             h.append(disc, style=f"bold {c_accent}")
             _add(h)
             for e in entries:
@@ -1002,7 +1069,7 @@ def _ta_discipline_calibration(ctx: _TaCtx, profile) -> None:
                 samples = e.get("samples", 0)
                 sp = e.get("spill_pct", 0)
                 pts_label = f"{pts}pt" if pts == 1 else f"{pts}pts"
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"{pts_label:<6s}", style=c_muted)
                 day_sty = c_value if avg_d <= 15 else (c_warn if avg_d <= 40 else c_bad)
                 row.append(f"{avg_d:.0f}d", style=day_sty)
@@ -1037,7 +1104,7 @@ def _ta_point_meanings(ctx: _TaCtx, profile) -> None:
 
             _add(Text(""))
             # Point value header with key stats
-            h = Text(PAD + "  ", justify="left")
+            h = Text(PAD, justify="left")
             h.append(pts_label, style=f"bold {c_accent}")
             h.append(f"   {days:.0f}d avg cycle", style=day_style)
             h.append(f"  \u00b7  {cal.sample_count} stories", style=c_muted)
@@ -1056,14 +1123,14 @@ def _ta_point_meanings(ctx: _TaCtx, profile) -> None:
             _pt_descs = _ex.get("point_descriptions", {})
             _pt_desc = _pt_descs.get(str(cal.point_value), "") if isinstance(_pt_descs, dict) else ""
             if _pt_desc:
-                d = Text(PAD + "    ", justify="left")
+                d = Text(PAD, justify="left")
                 d.append("\u2192 ", style="rgb(100,180,100)")
                 d.append(str(_pt_desc), style="rgb(180,220,180)")
                 _add(d)
 
             # Common patterns — what kind of work this point value represents
             if cal.common_patterns:
-                p = Text(PAD + "    ", justify="left")
+                p = Text(PAD, justify="left")
                 p.append("Typical work: ", style=c_muted)
                 p.append(", ".join(cal.common_patterns), style=c_value)
                 _add(p)
@@ -1072,7 +1139,7 @@ def _ta_point_meanings(ctx: _TaCtx, profile) -> None:
             ex_items = _ex.get(f"calibration_{cal.point_value}pt", [])
             if ex_items:
                 for ex in ex_items[:3]:
-                    t = Text(PAD + "    ", justify="left")
+                    t = Text(PAD, justify="left")
                     ek = ex.get("issue_key", "")
                     url = ex.get("issue_url", "")
                     summary = ex.get("summary", "")
@@ -1097,7 +1164,7 @@ def _ta_story_shape(ctx: _TaCtx, profile) -> None:
     if real_shapes:
         _heading("Story Shape by Discipline")
         for shape in real_shapes:
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append(f"{shape.discipline:<14s}", style=c_value)
             parts = [f"avg {shape.avg_points} pts"]
             if shape.avg_ac_count > 0:
@@ -1132,7 +1199,7 @@ def _ta_task_decomposition(ctx: _TaCtx, profile) -> None:
         if type_dist:
             _add(Text(""))
             for cat, pct in type_dist.items():
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"{cat:<16s}", style=c_value)
                 row.append(_pct_dots(pct, w=10), style=c_muted)
                 _add(row)
@@ -1142,7 +1209,7 @@ def _ta_task_decomposition(ctx: _TaCtx, profile) -> None:
         if bottlenecks:
             _add(Text(""))
             for cat, rate, count in bottlenecks:
-                t = Text(PAD + "  ", justify="left")
+                t = Text(PAD, justify="left")
                 t.append(f"\u26a0 {cat}", style=f"bold {c_warn}")
                 t.append(
                     f"  only {rate}% completion ({count} tasks)",
@@ -1162,7 +1229,7 @@ def _ta_task_decomposition(ctx: _TaCtx, profile) -> None:
                 )
             )
             for title, cnt in common_tasks[:4]:
-                t = Text(PAD + "    ", justify="left")
+                t = Text(PAD, justify="left")
                 t.append(f"{title[:45]}", style=c_example)
                 t.append(f"  \u00d7{cnt}", style=c_dim)
                 _add(t)
@@ -1240,7 +1307,7 @@ def _ta_board_workflow(ctx: _TaCtx, profile) -> None:
         # Workflow sequence
         wf_seq = _wf.get("workflow", [])
         if wf_seq:
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append(" \u2192 ".join(wf_seq), style=c_value)
             _add(row)
 
@@ -1279,7 +1346,7 @@ def _ta_board_workflow(ctx: _TaCtx, profile) -> None:
         if skips:
             _add(Text(""))
             for sp in skips[:3]:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"\u26a0 {sp['skip_pct']}% skip ", style=c_warn)
                 row.append(sp.get("column", "?"), style=c_value)
                 _add(row)
@@ -1295,7 +1362,7 @@ def _ta_proposed_dod(ctx: _TaCtx, profile) -> None:
         dod_health = proposed_dod.get("health", "weak")
         if dod_summary:
             h_style = c_good if dod_health == "strong" else (c_warn if dod_health == "moderate" else c_bad)
-            _add(Text(PAD + "  " + dod_summary, style=h_style, justify="left"))
+            _add(Text(PAD + dod_summary, style=h_style, justify="left"))
 
         pdod_table = RichTable(
             show_header=True,
@@ -1325,7 +1392,7 @@ def _ta_proposed_dod(ctx: _TaCtx, profile) -> None:
         # DoD ordering (typical sequence)
         dod_ordering = proposed_dod.get("ordering", [])
         if len(dod_ordering) >= 2:
-            ord_row = Text(PAD + "  ", justify="left")
+            ord_row = Text(PAD, justify="left")
             ord_row.append("Typical order: ", style=c_muted)
             ord_row.append(" \u2192 ".join(dod_ordering), style=c_value)
             _add(ord_row)
@@ -1334,7 +1401,7 @@ def _ta_proposed_dod(ctx: _TaCtx, profile) -> None:
         custom_steps = proposed_dod.get("custom_steps", [])
         if custom_steps:
             _add(Text(""))
-            cs_row = Text(PAD + "  ", justify="left")
+            cs_row = Text(PAD, justify="left")
             cs_row.append("Team-specific steps: ", style=c_muted)
             cs_parts = [f'"{cs["title"]}" ({cs["pct"]}%)' for cs in custom_steps[:4]]
             cs_row.append(", ".join(cs_parts), style=c_value)
@@ -1379,7 +1446,7 @@ def _ta_naming(ctx: _TaCtx, profile) -> None:
         # Title prefixes
         prefixes = _naming.get("title_prefixes", [])
         if prefixes:
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append("Title prefixes: ", style=c_muted)
             p_parts = [f"{p} {pct}%" for p, pct in prefixes[:5]]
             row.append(" \u00b7 ".join(p_parts), style=c_value)
@@ -1396,7 +1463,7 @@ def _ta_naming(ctx: _TaCtx, profile) -> None:
                 f"{lbl_pct}% of stories labelled, avg {_naming.get('labels_per_story', 0)}/story",
                 c_good if lbl_pct >= 70 else (c_warn if lbl_pct >= 30 else c_dim),
             )
-            row = Text(PAD + "    ", justify="left")
+            row = Text(PAD, justify="left")
             l_parts = [f"{lbl} {pct}%" for lbl, pct in lbl_dist[:6]]
             row.append(" \u00b7 ".join(l_parts), style=c_value)
             _add(row)
@@ -1409,7 +1476,7 @@ def _ta_naming(ctx: _TaCtx, profile) -> None:
         if epic_style and epic_ex:
             _kv("Epic naming", epic_style)
             for ex_title in epic_ex[:3]:
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"\u2022 {ex_title[:50]}", style=c_example)
                 _add(row)
 
@@ -1417,7 +1484,7 @@ def _ta_naming(ctx: _TaCtx, profile) -> None:
         sections = _naming.get("template_sections", [])
         if sections:
             _kv("Description template", f"{len(sections)} recurring sections detected", c_good)
-            row = Text(PAD + "    ", justify="left")
+            row = Text(PAD, justify="left")
             s_parts = [f'"{s}"' for s, _ in sections[:5]]
             row.append(" \u2192 ".join(s_parts), style=c_value)
             _add(row)
@@ -1441,7 +1508,7 @@ def _ta_story_structure(ctx: _TaCtx, profile) -> None:
         skipped = _struct.get("skipped_types", [])
         if skipped:
             skip_parts = [f"{s['type']} ({s['present_pct']}%)" for s in skipped]
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append("Rarely created: ", style=c_muted)
             row.append(" \u00b7 ".join(skip_parts), style=c_warn)
             _add(row)
@@ -1455,11 +1522,11 @@ def _ta_story_structure(ctx: _TaCtx, profile) -> None:
         lingering = _struct.get("lingering_epics", [])
         if lingering:
             _add(Text(""))
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append(f"\u26a0 {len(lingering)} epics below 80% completion:", style=f"bold {c_warn}")
             _add(row)
             for ep in lingering[:3]:
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"{ep.get('epic_title', '?')}", style=c_value)
                 row.append(f"  {ep['completed']}/{ep['total']} done ({ep['rate']}%)", style=c_dim)
                 _add(row)
@@ -1468,11 +1535,11 @@ def _ta_story_structure(ctx: _TaCtx, profile) -> None:
         spread = _struct.get("epic_sprint_spread", [])
         if spread:
             _add(Text(""))
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append("Multi-sprint epics:", style=c_muted)
             _add(row)
             for ep in spread[:3]:
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"{ep.get('epic', '?')}", style=c_value)
                 row.append(
                     f"  {ep['stories']} stories across {ep['sprints']} sprints",
@@ -1484,11 +1551,11 @@ def _ta_story_structure(ctx: _TaCtx, profile) -> None:
         splitting = _struct.get("splitting_signals", [])
         if splitting:
             _add(Text(""))
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append("Story size variation within epics:", style=c_muted)
             _add(row)
             for sp in splitting[:3]:
-                row = Text(PAD + "    ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"{sp.get('epic', '?')}", style=c_value)
                 row.append(
                     f"  {sp['story_count']} stories, {sp['point_range']} pts range",
@@ -1514,7 +1581,7 @@ def _ta_estimation_bias(ctx: _TaCtx, profile) -> None:
         _kv("Overestimated", f"{o_pct}% (finished in <½ expected)", c_warn if o_pct >= 20 else c_muted)
         worst = est.get("worst_sizes", [])
         if worst:
-            row = Text(PAD + "  ", justify="left")
+            row = Text(PAD, justify="left")
             row.append("Most underestimated: ", style=c_muted)
             row.append(", ".join(f"{p}pt" for p in worst), style=c_bad)
             _add(row)
@@ -1532,19 +1599,19 @@ def _ta_seasonal_and_bugs(ctx: _TaCtx, profile) -> None:
         low = seas.get("low_months", {})
         high = seas.get("high_months", {})
         _heading("Seasonal Patterns")
-        row = Text(PAD + "  ", justify="left")
+        row = Text(PAD, justify="left")
         m_parts = [f"{m} {v:g}" for m, v in monthly.items()]
         row.append(" \u00b7 ".join(m_parts), style=c_muted)
         _add(row)
         if low:
             for m, v in low.items():
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"\u2193 {m}: {v:g} pts", style=c_bad)
                 row.append(f" (avg {seas.get('overall_avg', 0):g})", style=c_dim)
                 _add(row)
         if high:
             for m, v in high.items():
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"\u2191 {m}: {v:g} pts", style=c_good)
                 row.append(f" (avg {seas.get('overall_avg', 0):g})", style=c_dim)
                 _add(row)
@@ -1611,7 +1678,7 @@ def _ta_ac_patterns(ctx: _TaCtx, profile) -> None:
             if themes:
                 _add(Text(""))
                 for theme, pct in list(themes.items())[:5]:
-                    row = Text(PAD + "    ", justify="left")
+                    row = Text(PAD, justify="left")
                     row.append(f"{theme}", style="bold " + c_value)
                     row.append(f"  {pct}%", style=c_muted)
                     ex = t_examples.get(theme)
@@ -1628,7 +1695,7 @@ def _ta_ac_patterns(ctx: _TaCtx, profile) -> None:
             # By discipline
             by_disc = ac_pat.get("by_discipline", {})
             if len(by_disc) >= 2:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append("By discipline: ", style=c_muted)
                 d_parts = [f"{d} {v['avg_ac']:.0f} avg" for d, v in by_disc.items()]
                 row.append(" \u00b7 ".join(d_parts), style=c_value)
@@ -1639,7 +1706,7 @@ def _ta_ac_patterns(ctx: _TaCtx, profile) -> None:
             low_s = spill.get("low_ac_spill_pct", 0)
             high_s = spill.get("high_ac_spill_pct", 0)
             if low_s > high_s + 5 and spill.get("low_ac_count", 0) >= 5:
-                row = Text(PAD + "  ", justify="left")
+                row = Text(PAD, justify="left")
                 row.append(f"0-1 ACs: {low_s}% spill", style=c_bad)
                 row.append(" vs ", style=c_dim)
                 row.append(f"3+ ACs: {high_s}% spill", style=c_good)
@@ -1728,7 +1795,7 @@ def _ta_repositories(ctx: _TaCtx, profile) -> None:
             for sr in spill_repos[:3]:
                 if not isinstance(sr, dict):
                     continue
-                t = Text(PAD + "    ", justify="left")
+                t = Text(PAD, justify="left")
                 t.append(sr.get("repo", "")[:28], style=f"bold {c_warn}")
                 t.append(
                     f"  {sr.get('spill_rate', 0)}% of stories spill ({sr.get('spills', 0)} times)",
@@ -1751,7 +1818,7 @@ def _ta_repositories(ctx: _TaCtx, profile) -> None:
                 pt_repos = by_pts[pts_key]
                 if not pt_repos:
                     continue
-                t = Text(PAD + "    ", justify="left")
+                t = Text(PAD, justify="left")
                 t.append(f"{pts_key}pt  ", style=c_accent)
                 t.append(", ".join(str(r) for r in pt_repos[:3]), style=c_dim)
                 _add(t)
@@ -1766,7 +1833,7 @@ def _ta_recommendations(ctx: _TaCtx, profile) -> None:
         _heading("Recommendations")
         for icon_label, rec_text in recs:
             _add(Text(""))
-            t = Text(PAD + "  ", justify="left")
+            t = Text(PAD, justify="left")
             t.append(icon_label, style=f"bold {c_warn}")
             _add(t)
             # Wrap recommendation text to fit screen
@@ -1775,14 +1842,14 @@ def _ta_recommendations(ctx: _TaCtx, profile) -> None:
             line_buf = ""
             for word in words:
                 if len(line_buf) + len(word) + 1 > max_w:
-                    r = Text(PAD + "    ", justify="left")
+                    r = Text(PAD, justify="left")
                     r.append(line_buf.strip(), style=c_muted)
                     _add(r)
                     line_buf = word + " "
                 else:
                     line_buf += word + " "
             if line_buf.strip():
-                r = Text(PAD + "    ", justify="left")
+                r = Text(PAD, justify="left")
                 r.append(line_buf.strip(), style=c_muted)
                 _add(r)
 
@@ -1798,8 +1865,11 @@ def _ta_insights(ctx: _TaCtx, profile) -> None:
     insights = _ex.get("insights", {})
     has_items = isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES)
     if not has_items:
-        _add(Text(""))
-        t = Text(PAD + "  ", justify="left")
+        # No spacer: the page's own "How to improve this team" heading and its
+        # subtitle are the two lines directly above, and a blank between them and
+        # the one sentence explaining why the page is empty left the sentence
+        # floating with nothing to belong to.
+        t = Text(PAD, justify="left")
         t.append(
             "No insights saved for this analysis — run a new analysis to generate them.",
             style=c_dim,
@@ -1830,7 +1900,7 @@ def _practice_cell(num: int, den: int, rate, min_sample: int) -> Text:
 def _ta_practices_table(ctx: _TaCtx, practices: dict, member_activity: list, team_ai: int) -> None:
     """The card's lead section: per-member practice hygiene over ALL attributed work."""
     ctx.heading("Engineering practices by member")
-    framing = Text(PAD + "  ")
+    framing = Text(PAD)
     framing.append("All attributed work in the window — not just AI-marked items.", style=c_muted)
     ctx.add(framing)
     min_sample = int(practices.get("min_sample", 5) or 5)
@@ -1864,7 +1934,7 @@ def _ta_practices_table(ctx: _TaCtx, practices: dict, member_activity: list, tea
     ctx.add_table(table)
     file_data = practices.get("file_data") or {}
     if file_data.get("total") and file_data.get("with_file_data", 0) < file_data["total"]:
-        footnote = Text(PAD + "  ")
+        footnote = Text(PAD)
         footnote.append(
             f"File-based columns (Tests, Docs) cover {file_data.get('with_file_data', 0)} "
             f"of {file_data['total']} items with change metadata.",
@@ -1987,7 +2057,7 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         ],
     )
     if not _small:
-        hero = Text(PAD + "  ")
+        hero = Text(PAD)
         hero.append("Footprint  ", style=c_muted)
         hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
         hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
@@ -2027,7 +2097,7 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     if coverage:
         ctx.heading("Not scanned")
         for gap in coverage[:8]:
-            g = Text(PAD + "  ", justify="left")
+            g = Text(PAD, justify="left")
             g.append(f"• {gap}", style=c_dim)
             _add(g)
         _ta_more_row(ctx, len(coverage) - 8, "coverage notes (full list in export)")
@@ -2179,7 +2249,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
             ),
         ],
     )
-    clarity_line = Text(PAD + "  ")
+    clarity_line = Text(PAD)
     clarity_line.append("Clarity  ", style=c_muted)
     clarity_line.append_text(_ta_meter(clarity, 100, width=24 if ctx.width >= 72 else 14, style=cl_sty))
     clarity_line.append(f"  {clarity:.0f}/100", style=f"bold {cl_sty}")
@@ -2190,7 +2260,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     n_clear = round(sig.clear_pages / total_split * split_width)
     n_mixed = round(sig.mixed_pages / total_split * split_width)
     n_unclear = max(0, split_width - n_clear - n_mixed)
-    split = Text(PAD + "  ")
+    split = Text(PAD)
     split.append("Page mix ", style=c_muted)
     split.append("▰" * n_clear, style=c_good)
     split.append("▰" * n_mixed, style=c_warn)
@@ -2505,45 +2575,28 @@ def _ta_overview(ctx: _TaCtx, profile, selected_card: int) -> None:
         # AI executive summary (generated at analysis time; absent on old profiles)
         narrative = ctx.ex.get("narrative", {})
         summary = narrative.get("executive_summary", "") if isinstance(narrative, dict) else ""
+        # Where the summary starts, so the page can set it beside the stats
+        # rather than under them — it is prose and they are a column of numbers,
+        # and stacked they left half the band empty at any usable width.
+        ctx.summary_at = len(ctx.lines)
         ctx.heading("Summary")
         if summary:
-            for wrapped in _ta_wrap(str(summary), max(40, ctx.width - len(PAD) - 10)):
-                t = Text(PAD + "  ", justify="left")
+            _sw = ctx.summary_w or ctx.width
+            for wrapped in _ta_wrap(str(summary), max(40, _sw - len(PAD) - 10)):
+                t = Text(PAD, justify="left")
                 t.append(wrapped, style=c_ai_text)
                 ctx.add(t)
         else:
-            t = Text(PAD + "  ", justify="left")
+            t = Text(PAD, justify="left")
             t.append("No AI summary saved for this analysis — run a new analysis to generate one.", style=c_dim)
             ctx.add(t)
     else:
         ctx.heading("Components")
-        t = Text(PAD + "  ", justify="left")
+        t = Text(PAD, justify="left")
         t.append("This view has no delivery/velocity profile — code and/or docs only.", style=c_dim)
         ctx.add(t)
 
-    ctx.heading("Sections")
-    ctx.overview_first_card_row = ctx.rendered_lines
-    # LLM-backed cards only — code-health is deterministic and deliberately
-    # ordered above this group (see visible_card_order), so no star, no indent.
-    ai_keys = {"ai-adoption", "documentation", "insights"}
-    ai_heading_added = False
-    for i, key in enumerate(ctx.visible_order):
-        if key in ai_keys and not ai_heading_added:
-            ctx.add(Text(""))
-            label = Text(PAD + "  ")
-            label.append("✦ AI-POWERED INSIGHTS", style=f"bold {c_ai_head}")
-            label.append("  metrics · evidence · coaching", style=c_dim)
-            ctx.add(label)
-            ai_heading_added = True
-        ctx.overview_card_rows.append(len(ctx.lines))
-        card = _TA_CARDS[key]
-        selected = i == selected_card
-        row = Text(PAD + "  ", justify="left")
-        row.append("▸ " if selected else "  ", style=c_accent if selected else c_dim)
-        if key in ai_keys:
-            row.append("✦ ", style=c_ai_head if selected else c_dim)
-        row.append(f"{card['title']:<20s}", style=f"bold {c_accent}" if selected else c_value)
-        teaser = _ta_card_teaser(ctx, profile, key)
-        if teaser:
-            row.append(f"  {teaser}", style=c_muted if selected else c_dim)
-        ctx.add(row)
+    # No "Sections" list: the sections are the page's tab bar now. A list of
+    # seven titles under a heading, each opened with Enter into a page of its
+    # own, was two navigations (choose, then open) for what tabs do in one — and
+    # it spent the top third of the overview describing the rest of the screen.

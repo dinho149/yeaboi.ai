@@ -149,19 +149,11 @@ def _generate_samples(profile, examples: dict, warnings: list[str]) -> dict | No
     minus the interactive accept/edit loop)."""
     try:
         from yeaboi.agent.nodes import _format_team_calibration
-        from yeaboi.tools.team_learning import (
-            generate_sample_epic,
-            generate_sample_sprint,
-            generate_sample_stories,
-            generate_sample_tasks,
-        )
+        from yeaboi.tools.team_learning import generate_sample_plan
 
+        # One call, not four chained ones — see ``generate_sample_plan``.
         calibration = _format_team_calibration(profile, examples=examples)
-        epic = generate_sample_epic(calibration, examples)
-        stories = generate_sample_stories(calibration, epic, examples)
-        tasks = generate_sample_tasks(calibration, stories, examples)
-        sprint = generate_sample_sprint(calibration, stories, tasks, examples)
-        return {"epic": epic, "stories": stories, "tasks": tasks, "sprint": sprint}
+        return generate_sample_plan(calibration, examples)
     except Exception as exc:  # LLM/parse trouble → warning, never a crash
         logger.warning("Sample-ticket generation failed: %s", exc)
         warnings.append(f"Sample-ticket generation failed: {exc}")

@@ -547,6 +547,54 @@ class TestAnalysisResumeContract:
 
         assert mode_select._load_ana_session("Platform") is None
 
+    def test_a_finished_plan_is_still_loadable(self, tmp_path: Path, monkeypatch):
+        """Complete means finished, not forgotten.
+
+        "Is there somewhere to resume to" and "does a plan exist" are different
+        questions, and a plan read to the end answers no to the first and yes to
+        the second. Answering the first in place of the second is how a finished
+        plan came back as an offer to generate one — and was then regenerated
+        from scratch, over the edits.
+        """
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        monkeypatch.setattr(mode_select, "_ana_sid", "")
+
+        sid = make_session_id()
+        with SessionStore(db) as store:
+            store.create_session(sid, project_name="Platform", mode="analysis")
+            store.save_state(
+                sid,
+                {
+                    "messages": [],
+                    "sample_epic": {"title": "Checkout revamp"},
+                    "sample_sprint": {"sprint_name": "Sprint 1"},
+                    "last_page": "complete",
+                },
+            )
+
+        assert mode_select._load_ana_session("Platform") is None  # not resumable
+        plan = mode_select._load_ana_plan("Platform")  # but still there
+        assert plan is not None
+        assert plan["sample_epic"] == {"title": "Checkout revamp"}
+
+    def test_a_session_with_no_artifacts_is_not_a_plan(self, tmp_path: Path, monkeypatch):
+        """An analysis opened and abandoned before generating has no plan."""
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        monkeypatch.setattr(mode_select, "_ana_sid", "")
+
+        sid = make_session_id()
+        with SessionStore(db) as store:
+            store.create_session(sid, project_name="Platform", mode="analysis")
+            store.save_state(sid, {"messages": [], "instructions": "Team velocity is 23.5", "last_page": "epic"})
+
+        assert mode_select._load_ana_plan("Platform") is None
+
 
 class TestMigrationV23:
     """Standup practice config reaches a database migrated ahead of StandupStore.

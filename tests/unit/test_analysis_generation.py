@@ -979,3 +979,98 @@ class TestSynthesisEvidenceCap:
         )
         assert not first.get("_cache_hit")
         assert second.get("_cache_hit") is True
+
+
+# ---------------------------------------------------------------------------
+# generate_sample_plan — all four artifacts in ONE call
+# ---------------------------------------------------------------------------
+
+
+_SAMPLE_PLAN = {
+    "epic": _SAMPLE_EPIC,
+    "stories": _SAMPLE_STORIES,
+    "tasks": _SAMPLE_TASKS,
+    "sprint": {
+        "sprint_name": "Sprint 1",
+        "velocity_target": 25,
+        "stories_included": ["S1", "S2"],
+        "total_points": 8,
+        "capacity_notes": "Based on delivered velocity.",
+        "risks": [],
+        "rationale": "Matches team capacity.",
+    },
+}
+
+
+class TestGenerateSamplePlan:
+    """The whole preview plan comes back from a single LLM round trip."""
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_one_llm_call_for_all_four_artifacts(self, mock_get_llm):
+        from yeaboi.tools.team_learning import generate_sample_plan
+
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps(_SAMPLE_PLAN))
+
+        result = generate_sample_plan(_CALIBRATION, _EXAMPLES)
+
+        # The point of the function: four artifacts, one round trip. Chaining
+        # four calls is what this replaced, so the count is the assertion.
+        assert mock_get_llm.return_value.invoke.call_count == 1
+        assert result["epic"]["title"] == _SAMPLE_EPIC["title"]
+        assert len(result["stories"]) == 2
+        assert len(result["tasks"]) == 3
+        assert result["sprint"]["sprint_name"] == "Sprint 1"
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_prompt_carries_every_artifact_s_team_context(self, mock_get_llm):
+        """One prompt has to say everything the four separate prompts said."""
+        from yeaboi.tools.team_learning import generate_sample_plan
+
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps(_SAMPLE_PLAN))
+        generate_sample_plan(_CALIBRATION, _EXAMPLES)
+
+        prompt = mock_get_llm.return_value.invoke.call_args[0][0][0].content
+        assert "quarter-scoped" in prompt  # epic naming
+        assert "3 acceptance criteria" in prompt  # story ACs
+        assert "4.8 tasks per story" in prompt  # task decomposition
+        assert "25.9 pts/sprint delivered" in prompt  # sprint capacity
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_llm_failure_falls_back_to_a_complete_plan(self, mock_get_llm):
+        from yeaboi.tools.team_learning import generate_sample_plan
+
+        mock_get_llm.return_value.invoke.side_effect = Exception("API down")
+
+        result = generate_sample_plan(_CALIBRATION, _EXAMPLES)
+
+        # A failed plan must still be renderable — five pages have nothing to
+        # draw otherwise, and the flow has already taken the user's approval.
+        assert set(result) == {"epic", "stories", "tasks", "sprint"}
+        assert result["epic"]["title"] == _EXAMPLES["naming_conventions"]["epic_examples"][0]
+        assert result["stories"] and result["tasks"] and result["sprint"]
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_partial_reply_keeps_what_arrived(self, mock_get_llm):
+        """Each key falls back on its own — a good epic survives a bad sprint."""
+        from yeaboi.tools.team_learning import generate_sample_plan
+
+        partial = {"epic": _SAMPLE_EPIC, "stories": _SAMPLE_STORIES}
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps(partial))
+
+        result = generate_sample_plan(_CALIBRATION, _EXAMPLES)
+
+        assert result["epic"]["title"] == _SAMPLE_EPIC["title"]
+        assert len(result["stories"]) == 2
+        # Tasks fall back one-per-story, against the stories that DID arrive.
+        assert [t["story_id"] for t in result["tasks"]] == ["S1", "S2"]
+        assert result["sprint"]["stories_included"] == ["S1", "S2"]
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_json_array_reply_is_not_a_plan(self, mock_get_llm):
+        """A list parses fine and is still the wrong shape — fall back whole."""
+        from yeaboi.tools.team_learning import generate_sample_plan
+
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps([_SAMPLE_EPIC]))
+
+        result = generate_sample_plan(_CALIBRATION, _EXAMPLES)
+        assert result["epic"]["rationale"].startswith("Fallback")

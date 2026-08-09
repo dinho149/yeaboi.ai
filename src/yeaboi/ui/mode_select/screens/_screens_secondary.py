@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import textwrap
+import time
 
 import rich.box
 from rich.cells import cell_len
@@ -19,16 +20,18 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.beta import BETA_LABEL, BETA_RGB
+from yeaboi.config import SCREENSAVER_STYLES, VALID_LOG_LEVELS
 from yeaboi.ui.mode_select.screens._analysis_sections import (
     _TA_CARDS,
     _measure_render_height,
     _ta_glossary_lines,
-    _ta_insights,
     _ta_narrative_block,
     _ta_overview,
     _TaCtx,
 )
 from yeaboi.ui.mode_select.screens._screens import _INTAKE_CARDS, _OFFLINE_CARDS, _build_mode_row
+from yeaboi.ui.shared._animations import ease_out_cubic
+from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
@@ -51,6 +54,311 @@ from yeaboi.ui.shared._scroll import publish_geometry
 
 _ANALYSIS_STAGES = ["Instructions", "Epic", "Stories", "Tasks", "Sprint"]
 
+# The preview page's four work-item tabs. Instructions is not among them: it is
+# the calibration every one of these was generated FROM, so it is reference you
+# read *while* reviewing them, not a fifth thing to review. It holds the left
+# column and never leaves the screen.
+_PREVIEW_TABS = ("Epic", "Stories", "Tasks", "Sprint")
+_SPLIT_GUTTER = 4  # blank columns between the two, in place of a divider rule
+_PREVIEW_SUBTITLES = (
+    "Does this epic match your team's style?",
+    "Do these stories match your team's style?",
+    "Do these tasks match your team's decomposition style?",
+    "Does this sprint plan match your team's capacity?",
+)
+# "Accept" on every tab, including the last. The forward slot is a fixed piece of
+# chrome and the tabs are free to move between, so relabelling it "Done" on the
+# Sprint tab made a tab leave and another arrive in the same slot — the entrance
+# animation then flashed the old label for a few frames every time you crossed
+# between Tasks and Sprint. Sprint has no Edit because there is no sprint editor;
+# that difference is real, and the one above was not.
+# No Accept. It was the forward step of a march, and these four stopped being a
+# march when they became tabs — you move with the strip, and "accepting" a tab
+# you can leave and come back to says nothing. What is left acts on the artifact
+# in front of you. Sprint has no Edit because there is no sprint editor.
+_PREVIEW_ACTIONS = (
+    ["Edit", "Regenerate", "Export"],
+    ["Edit", "Regenerate", "Export"],
+    ["Edit", "Regenerate", "Export"],
+    ["Regenerate", "Export"],
+)
+# Derived, not chosen: the stage body builders floor their wrap width at 40, so a
+# column narrower than that plus its indent and scrollbar draws rules and rows
+# that overhang it.
+_SPLIT_MIN_COL = 40 + len(PAD) + 2
+# The left column ends on the flow's column rather than at half the content
+# (see preview_split_widths), which puts it two narrower than an even split —
+# so the width at which it reaches the minimum is higher than a halving would
+# suggest. Solved for that, not for the halving: left(w) = (w - 6)//2 - 4.
+_SPLIT_MIN_W = (_SPLIT_MIN_COL + 4) * 2 + 6
+
+
+# The analysis flow's two pages, declared once. Every page in the flow shows the
+# same pair and marks itself live, so the control does not move, rename itself or
+# change what it crosses depending on where you are standing.
+# The coaching plan is a section OF the analysis — it has its own tab in the
+# section bar — so the second page was named after content it was showing twice.
+# It is named for what it is for instead: the work items drafted from the
+# analysis.
+ANALYSIS_PAGES = ("Analysis", "Work items")
+
+
+def analysis_pager(active: int) -> tuple:
+    """The bottom-centre pager for an analysis page, with ``active`` live."""
+    return (*ANALYSIS_PAGES, 1 if active else 0)
+
+
+def analysis_divider_x(width: int) -> int:
+    """The one column the analysis flow splits its pager over.
+
+    Every page in the flow has some vertical near the middle — the results
+    page's scrollbar, the plan page's gutter — but they do not fall in the same
+    column, and a control that lands somewhere different on each page is one
+    you have to find again on each page. So the flow picks ONE column: the
+    results page's, which is where the scrollbar runs.
+    """
+    return max(1, (width - 6) // 2 - 2)
+
+
+def preview_is_split(width: int) -> bool:
+    """Whether the preview page has room for two columns.
+
+    Under it the page keeps the instructions as a fifth tab instead — reference
+    you can still reach, rather than a column too narrow to read.
+    """
+    return width >= _SPLIT_MIN_W
+
+
+def preview_split_widths(width: int) -> tuple[int, int]:
+    """``(left, right)`` content widths for the split preview page.
+
+    Public because the caller has to build each column's body AT its own width —
+    wrapping is done by the body builders, and a body wrapped to the page would
+    overflow the column it was put in.
+    """
+    content = max(20, width - 6)
+    # The left column ends ON the flow's column, so its scrollbar runs down the
+    # same line as the results page's and as the pager's own split. Halving the
+    # content put it two columns right of that, which is a difference you can
+    # see and cannot explain.
+    left = max(10, min(content - _SPLIT_GUTTER - 10, analysis_divider_x(width) - _TAB_COL_OFFSET + 2))
+    return left, content - _SPLIT_GUTTER - left
+
+
+def _hang_wrap(rows: list, width: int, indent: str = "  ") -> list:
+    """Re-wrap finished rows so an overrun continues under its own text.
+
+    Rich has no hanging indent: a Text that overruns wraps its tail to column
+    zero, and every row here is already indented by PAD, so the tail landed
+    further LEFT than the sentence it belonged to and read as a new block.
+
+    A post-pass rather than a rule each branch has to remember. ``Text.wrap``
+    keeps the styling, so a row built from three differently-styled runs comes
+    back out as the same three runs — which is why this can run over the finished
+    body instead of every place that appends to it.
+    """
+    from io import StringIO
+
+    from rich.console import Console as _Console
+
+    probe = _Console(file=StringIO(), width=max(20, width), force_terminal=False)
+    room = max(10, width - len(_PAD) - len(indent))
+    out: list = []
+    for row in rows:
+        if not isinstance(row, Text) or row.cell_len <= width:
+            out.append(row)
+            continue
+        for i, part in enumerate(row.wrap(probe, room)):
+            if i == 0:
+                out.append(part)  # already carries its own PAD
+            else:
+                out.append(Text(_PAD + indent, justify="left").append_text(part))
+    return out
+
+
+def _scrolled_column(
+    body_lines: list,
+    *,
+    scroll_offset: int,
+    scroll_meta: dict | None,
+    viewport_h: int,
+    content_w: int,
+):
+    """Clip a body to ``viewport_h`` *rendered* rows, pad it out, and hang a
+    scrollbar off the right when there is more than fits.
+
+    Measured, not counted: one item can wrap to several rows at this width, so a
+    viewport counted in list entries silently ate the bottom of the page.
+    """
+    heights = [max(1, _measure_render_height(bl, content_w)) for bl in body_lines]
+    total = sum(heights)
+    max_off, acc = 0, 0
+    for i in range(len(body_lines) - 1, -1, -1):
+        acc += heights[i]
+        if acc >= viewport_h:
+            max_off = i
+            break
+    actual = min(scroll_offset, max_off)
+    publish_geometry(scroll_meta, max_off, viewport_h)
+
+    visible, vis_h = [], 0
+    for i in range(actual, len(body_lines)):
+        # As above: show the top of an over-tall item rather than nothing.
+        if visible and vis_h + heights[i] > viewport_h:
+            break
+        visible.append(body_lines[i])
+        vis_h += heights[i]
+    rows = list(visible) + [Text("") for _ in range(max(0, viewport_h - vis_h))]
+
+    bar = build_scrollbar(viewport_h, total, actual, max_off)
+    if bar is None:
+        return Group(*rows)
+    grid = Table.grid(padding=0)
+    grid.add_column(width=max(1, content_w))
+    grid.add_column(width=1)
+    grid.add_row(Group(*rows), bar)
+    return grid
+
+
+def _build_preview_split_screen(
+    instr_lines: list,
+    item_lines: list,
+    *,
+    stage_index: int = 0,
+    instr_scroll: int = 0,
+    item_scroll: int = 0,
+    instr_meta: dict | None = None,
+    item_meta: dict | None = None,
+    focus_instructions: bool = False,
+    width: int = 80,
+    height: int = 24,
+    actions: list[str] | None = None,
+    subtitle: str = "",
+    ready: tuple[bool, ...] | None = None,
+    shimmer_tick: float | None = None,
+) -> Panel:
+    """The preview page: instructions on the left, the work item on the right.
+
+    The four generated artifacts replaced the instructions on screen when they
+    were tabs of the same column — and the instructions are the calibration they
+    were generated from, which is exactly what you want in front of you while
+    judging whether they match the team. So the page is two columns: the
+    calibration stays put on the left, and the tab strip and whichever work item
+    it selects own the right.
+
+    Both columns scroll, independently, because both are longer than a screen.
+    ``focus_instructions`` says which one the scroll keys are driving; the loop
+    flips it with Tab and the focused column's header lights up to show it.
+    """
+    from yeaboi.ui.shared._components import analysis_title
+
+    _here = max(0, min(stage_index, len(_PREVIEW_TABS) - 1))
+    _actions = list(actions or _PREVIEW_ACTIONS[_here])
+    if focus_instructions and "Edit" not in _actions:
+        # Edit acts on the focused column, so the Sprint tab — which has no
+        # editor of its own — still offers one while the instructions are focused.
+        _actions.insert(0, "Edit")
+    left_w, right_w = preview_split_widths(width)
+    _rdy = tuple(ready) if ready is not None else (True,) * len(_PREVIEW_TABS)
+
+    # Built against the RIGHT column's width, then offset into place: the bar
+    # spreads over the column it belongs to, not over the page.
+    tab_rows, tab_spans = _settings_tab_bar(
+        list(_PREVIEW_TABS),
+        _here,
+        ANALYSIS_THEME,
+        right_w + 6,
+        pos=_preview_tab_pos(stage_index, len(_PREVIEW_TABS)),
+        taper=False,
+        spread=True,
+        muted=tuple(not r for r in _rdy),
+    )
+
+    # 3 above the grid — the leading blank and the two wordmark rows — and 1
+    # below, because the chrome band overwrites the last THREE rendered rows and
+    # two of those are the panel's own bottom padding and border. Reserving three
+    # left five rows of nothing between the last line and the pockets.
+    col_h = calc_viewport(height, header_h=3, action_h=2)
+    body_h = max(1, col_h - 4)  # each column's own header rows, inside the grid
+
+    # no_wrap on both header captions: a fixed header row that wraps steals a row
+    # from the body it sits over, and only on one side, so the two columns stop
+    # lining up at exactly the widths where that matters most.
+    # The left column starts straight under the wordmark. It has no header of its
+    # own any more — the caption is gone and the tabs opposite are not its — so
+    # holding three blank rows to stay level with them only pushed the first line
+    # of the calibration three rows further from the title naming it. It gets
+    # those rows as content instead.
+    left = _scrolled_column(
+        instr_lines,
+        scroll_offset=instr_scroll,
+        scroll_meta=instr_meta,
+        viewport_h=col_h,
+        content_w=max(20, left_w - 1),
+    )
+    right = Group(
+        *tab_rows,
+        # A line between the rule and the first words under it. Hard against the
+        # rule, the caption read as part of the strip rather than as the start
+        # of what the strip opened.
+        Text(""),
+        Text(_PAD + (subtitle or _PREVIEW_SUBTITLES[_here]), style="dim", no_wrap=True, overflow="ellipsis"),
+        _scrolled_column(
+            item_lines,
+            scroll_offset=item_scroll,
+            scroll_meta=item_meta,
+            viewport_h=body_h,
+            content_w=max(20, right_w - 1),
+        ),
+    )
+
+    body = Table.grid(padding=0)
+    body.add_column(width=left_w)
+    body.add_column(width=_SPLIT_GUTTER)  # a gutter, not a divider: one more
+    body.add_column(width=right_w)  # vertical rule on this page reads as a frame
+    body.add_row(left, Text(""), right)
+
+    panel = build_page_panel(Group(Text(""), analysis_title(shimmer_tick), body), theme=ANALYSIS_THEME, height=height)
+    # The strip's spans are relative to the right column, so shift them across it.
+    _tab_top = 3 + 1 + TITLE_ROWS
+    _shift = _TAB_COL_OFFSET + left_w + _SPLIT_GUTTER
+    panel._section_tabs = [
+        (_tab_top, _tab_top + 1, _shift + a, _shift + b - 1, key.lower())
+        for (a, b), key in zip(tab_spans, _PREVIEW_TABS, strict=True)
+    ]
+    # This page has a pager too. Every page in the analysis flow shows itself and
+    # the neighbour it came from, so the bottom-centre control is in the same
+    # place throughout rather than vanishing once you reach the plan.
+    panel._pager = analysis_pager(1)
+    # The last terminal column belonging to the left column, so a wheel tick can
+    # be routed to whichever side the pointer was over.
+    panel._split_left_end = _TAB_COL_OFFSET + left_w - 1
+    # The flow's column, not this page's own gutter: the pill has to be in the
+    # same place on every page of the flow before it can be in the right place
+    # on any one of them.
+    panel._pager_divider_x = analysis_divider_x(width)
+    panel._page_tabs = [(name, f"act:{name}") for name in _actions]
+
+    return panel
+
+
+def _title_with_crumb(title, crumb_text: str, *, style: str = "bold white"):
+    """The wordmark with its crumb beside it, on the wordmark's last row.
+
+    The crumb names the team, source and window this page is about — it belongs
+    to the title rather than to the body, and on its own row it cost every page a
+    line to say what the heading was already introducing. Blank cell first, so it
+    sits on the wordmark's baseline: two rows of block glyphs with one line of
+    text against their cap reads as unaligned.
+    """
+    if not crumb_text:
+        return title
+    grid = Table.grid(padding=(0, 3))
+    grid.add_column()
+    grid.add_column(ratio=1)
+    grid.add_row(title, Group(Text(""), Text(crumb_text, style=style, no_wrap=True, overflow="ellipsis")))
+    return grid
+
 
 def _build_analysis_review_screen(
     body_lines: list,
@@ -63,8 +371,19 @@ def _build_analysis_review_screen(
     action_sel: int = 0,
     actions: list[str] | None = None,
     subtitle: str = "",
+    chrome_actions: bool = True,
+    ready: tuple[bool, ...] | None = None,
+    crumb: str = "",
+    show_stages: bool = True,
+    column_body: bool = False,
+    shimmer_tick: float | None = None,
 ) -> Panel:
     """Shared screen builder for all analysis preview pages.
+
+    ``chrome_actions`` puts the actions in the chrome — forward in the slot
+    beside the music pocket, the rest as tabs beside back. Every caller wants
+    that: a row of buttons in the body sits directly on top of the back tab,
+    and the gate's own buttons were the last pair still doing it.
 
     Uses shared UI primitives (build_action_buttons, build_scrollbar,
     build_progress_dots, calc_viewport) for visual consistency.
@@ -72,12 +391,41 @@ def _build_analysis_review_screen(
     from yeaboi.ui.shared._components import analysis_title
 
     _actions = actions or ["Accept", "Edit", "Regenerate", "Export"]
-    title = analysis_title()
-    progress = build_progress_dots(_ANALYSIS_STAGES, stage_index, theme=ANALYSIS_THEME)
-    sub = Text(_PAD + subtitle, style="dim", justify="left")
+    title = analysis_title(shimmer_tick)
+    # A tab bar, not progress dots: these five are pages you move between, and
+    # dots describe a march you have to complete in order. ``ready`` dims the
+    # ones whose content has not arrived yet — they are still shown, because a
+    # tab that appears when its content does is a menu that moves under you.
+    stages = list(_ANALYSIS_STAGES)
+    _rdy = tuple(ready) if ready is not None else (True,) * len(stages)
+    progress_rows, _tab_spans = _settings_tab_bar(
+        stages,
+        max(0, min(stage_index, len(stages) - 1)),
+        ANALYSIS_THEME,
+        width,
+        pos=_preview_tab_pos(stage_index, len(stages)),
+        taper=False,
+        muted=tuple(not r for r in _rdy),
+        # Half the page, parked right: packed against the edge the five read as
+        # one clump in the corner, and spread over the whole width they run back
+        # under the content the strip was moved out of the way of.
+        spread=(width - 6) // 2,
+        align_right=True,
+    )
+    # An empty subtitle takes no row at all, rather than a blank one: the page's
+    # own heading is right underneath it, so a spacer between the two only
+    # pushed the content down to say nothing.
+    sub = Text(_PAD + subtitle, style="dim", justify="left") if subtitle else None
 
     # ── Viewport (height-aware for line wrapping)
-    viewport_h = calc_viewport(height, header_h=7, action_h=4)
+    # 2 for the chrome band, not 3: it overwrites the last THREE *rendered* rows,
+    # and calc_viewport has already taken two of those off as the panel's bottom
+    # padding and border — so one row covers it, and the second is a single line
+    # of air so the last sentence is not sitting on the pockets' roof.
+    # 6, not 7: the spacer between the wordmark and the stage strip is gone.
+    # 6 with the stage strip, 4 without it — a page that does not draw the strip
+    # must not go on reserving its two rows.
+    viewport_h = calc_viewport(height, header_h=6 if show_stages else 5, action_h=2 if chrome_actions else 4)
 
     # Measure actual terminal height. Most pages pass Text, while the redesigned
     # Team Insights page also passes Rich panels and tables.
@@ -107,7 +455,10 @@ def _build_analysis_review_screen(
     _vis_h = 0
     for i in range(actual_scroll, len(body_lines)):
         ih = _item_heights[i]
-        if _vis_h + ih > viewport_h:
+        # Always take the first one, even if it is taller than the viewport: an
+        # item is a whole card or table, and dropping it for not fitting left
+        # the page blank on a short terminal rather than showing its top.
+        if visible and _vis_h + ih > viewport_h:
             break
         visible.append(body_lines[i])
         _vis_h += ih
@@ -118,8 +469,13 @@ def _build_analysis_review_screen(
     for _i in range(max(0, viewport_h - _vis_h)):
         padded_lines.append(Text(""))
 
-    # Action buttons
-    btn_top, btn_mid, btn_bot = build_action_buttons(_actions, action_sel)
+    # The buttons move into the chrome, the same way the results page's did:
+    # a row of them under the content collided with the back tab, and the one
+    # that moves you forward belongs in the forward slot rather than in a row
+    # with the ones that act on what you are looking at.
+    _forward = _actions[0] if _actions and chrome_actions else ""
+    _tabbed = list(_actions[1:]) if chrome_actions else []
+    btn_top, btn_mid, btn_bot = (None, None, None) if chrome_actions else build_action_buttons(_actions, action_sel)
 
     # Build viewport with optional scrollbar
     if _sb_text is not None:
@@ -140,30 +496,64 @@ def _build_analysis_review_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    # Every page in the flow runs its bar down the flow's own column, so the bar
+    # and the pager's split are one line wherever you are. Without this the Work
+    # items page put its bar on the page's right border while its pill was split
+    # halfway across — the two furthest-apart verticals on one screen.
+    _reserve = max(0, width - analysis_divider_x(width) - 4) if column_body else 0
+    if _reserve:
+        viewport_renderable = Padding(viewport_renderable, (0, _reserve, 0, 0))
+
+    if not show_stages:
+        # One blank in the strip's place, not none. Without a strip the body
+        # started on the wordmark's own last row, level with the crumb, so the
+        # first heading read as part of the title rather than under it.
+        progress_rows, _tab_spans = [Text("")], []
     content = Group(
         Text(""),
-        title,
-        Text(""),
-        progress,
-        sub,
-        Text(""),
+        _title_with_crumb(title, crumb),
+        # No spacer between the wordmark and the strip. The strip only occupies
+        # the right half, so on the left it is two blank rows already — a third
+        # one above it pushed the first line of every page that much further
+        # from the only thing naming it.
+        *progress_rows,
+        *([sub] if sub is not None else []),
         viewport_renderable,
-        Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *([] if chrome_actions else [Text(""), btn_top, btn_mid, btn_bot]),
     )
 
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+    # (labels row, underline row, x0, x1, page key) so a click on a tab opens it.
+    # +3: panel border, top padding, then the leading blank and the wordmark.
+    _tab_top = 3 + 1 + TITLE_ROWS
+    panel._section_tabs = [
+        (_tab_top, _tab_top + 1, _TAB_COL_OFFSET + a, _TAB_COL_OFFSET + b - 1, key.lower())
+        for (a, b), key in zip(_tab_spans, stages[: len(_tab_spans)], strict=True)
+    ]
+    # "act:<name>" so a click on a tab comes back as the action's own name and
+    # rejoins the keyboard path — see the results page for the same contract.
+    # Every action in the LEFT strip, the forward one included. It used to ride
+    # the bottom-right slot opposite back, which reads as the far end of a wizard
+    # — but these pages are not a wizard any more, and an action that acts on
+    # what you are looking at belongs with the others that do.
+    panel._page_tabs = [(name, f"act:{name}") for name in _actions]
+    # Kept off the panel's rendered chrome but still named, so Enter knows which
+    # of the actions it means without the tab being drawn twice.
+    panel._forward_action = _forward or (_actions[0] if _actions else "")
+    return panel
 
 
 # 2-space content indent for every secondary screen: headings then land at the
 # title's column and value rows one level in, matching the Settings screen. This
 # is the single knob — all these screens indent via _PAD (and size via len(_PAD)).
-# This module's own tighter page pad. Distinct from the shared four-space PAD
-# (imported above), which the reporting/analysis setup screens use — do not
-# collapse the two: several layouts are measured against one or the other.
-_PAD = "  "
+# One page pad, shared with the rest of the app.
+#
+# This was its own tighter two-space value, which meant every screen in this file
+# put its body text two columns left of its own title art and button row — both of
+# which come from _components.py at the four-space PAD. The results views made it
+# worse by importing the shared PAD directly, so a single screen mixed both.
+# Kept as a name because 240-odd call sites read better than a rename would.
+_PAD = PAD
 
 # The two columns a Panel's left and right borders take. Anything measured
 # against the panel's usable interior has to come off the console width first.
@@ -298,29 +688,64 @@ def _build_team_insights_screen(
     height: int = 24,
     action_sel: int = 0,
     subtitle: str = "",
+    shimmer_tick: float | None = None,
 ) -> Panel:
-    """Coaching insights screen shown between analysis results and ticket generation.
+    """The Work items page — the second half of the analysis pager.
 
-    Presents the AI's start/stop/keep/try advice for improving the team before
-    the app suggests generating sample tickets. Delegates to
-    ``_build_analysis_review_screen`` so the layout (title, progress dots,
+    The work items drafted from the analysis: the offer to draft them, or the
+    note that a plan is waiting. It used to open with the coaching plan, but
+    that is a section OF the analysis with a tab of its own, so this page was
+    drawing the other page's content and had no subject left of its own.
+
+    Delegates to ``_build_analysis_review_screen`` so the layout (title,
     viewport, scrollbar, action buttons) stays identical to the rest of
     analysis mode.
     """
+    # No leading blank: the tab rule directly above is the page's own header
+    # edge, and a spacer under it left the heading floating between the two.
+    # What the separate confirm gate used to ask, folded in. It was one decision
+    # across two screens — this page's Continue only led to a page asking whether
+    # you meant it — so the second Continue is gone and this one runs it.
+    #
+    # There is no second state for "already made", because this page is not
+    # drawn once a plan exists: crossing to Work items IS the plan by then, and
+    # a page whose only content was that the thing behind it was ready is a gate
+    # in front of what you asked for.
     body_lines: list = [
-        Text(""),
-        Text(_PAD + "How to improve this team", style="bold white", justify="left"),
+        Text(_PAD + "Generate sample tickets from this?", style="bold white", justify="left"),
         Text(
-            _PAD + "Coaching insights grounded in the analysed sprints.",
+            _PAD + "yeaboi can draft a sample set calibrated to these patterns: an epic, its user",
+            style="rgb(120,120,140)",
+            justify="left",
+        ),
+        Text(
+            _PAD + "stories, their tasks and a sprint plan. This runs the LLM; you can edit,",
+            style="rgb(120,120,140)",
+            justify="left",
+        ),
+        Text(
+            _PAD + "regenerate or export each one.",
             style="rgb(120,120,140)",
             justify="left",
         ),
     ]
-    ctx = _TaCtx(width, examples)
-    _ta_insights(ctx, profile)
-    body_lines.extend(ctx.lines)
 
-    return _build_analysis_review_screen(
+    # Built from the profile, not from ``subtitle``: that argument carries this
+    # loop's transient status ("Team profile exported"), so hanging the crumb on
+    # it left the title with nothing beside it whenever nothing had happened yet.
+    _src = getattr(profile, "source", "") or ""
+    _key = getattr(profile, "project_key", "") or ""
+    _bits = [f"{_src}/{_key}".strip("/")] if (_src or _key) else []
+    for _attr, _what in (("sample_sprints", "sprints"), ("sample_stories", "stories")):
+        _n = getattr(profile, _attr, 0)
+        if _n:
+            _bits.append(f"{_n} {_what}")
+    # Named for THIS page, not for the mode. The scope after it is the same on
+    # both — same team, same window — but a crumb that opens with the previous
+    # page's name is telling you where you were, not where you are.
+    _crumb = "  ·  ".join([ANALYSIS_PAGES[1], *_bits])
+
+    panel = _build_analysis_review_screen(
         body_lines,
         stage_index=0,
         scroll_offset=scroll_offset,
@@ -328,9 +753,181 @@ def _build_team_insights_screen(
         width=width,
         height=height,
         action_sel=action_sel,
-        actions=["Continue", "Export", "Back"],
-        subtitle=subtitle,
+        # No Back: the chrome's own back tab covers leaving, and a "Back" tab
+        # sitting immediately beside it offered the same thing twice.
+        actions=["Continue", "Export"],
+        crumb=_crumb,
+        show_stages=False,
+        # In the flow, so its bar runs down the flow's column like every other
+        # page's — the pager's split is on that line.
+        column_body=True,
+        shimmer_tick=shimmer_tick,
     )
+    # The other half of the results page's pager — same two names, this one live,
+    # and split over the same column so it does not move when you cross.
+    panel._pager = analysis_pager(1)
+    panel._pager_divider_x = analysis_divider_x(width)
+    return panel
+
+
+# Actions that act ON the report rather than navigating it. They ride in the
+# chrome's left strip; the driver reads the same tuple so its click hit-testing
+# cannot drift from what was drawn.
+# Short names for the section tab bar. A card's own title reads as a heading
+# ("Velocity & Sprints"); eleven of those on one row wrapped at any width a
+# terminal actually has. The heading still leads the section it opens, so the tab
+# only has to be the shortest thing that names it.
+_TA_TAB_LABELS: dict[str, str] = {
+    "velocity": "Velocity",
+    "team": "Team",
+    "estimation": "Estimates",
+    "workflow": "Workflow",
+    "writing": "Writing",
+    "trends": "Trends",
+    "recommendations": "Actions",
+    "ai-adoption": "AI Usage",
+    "code-health": "Code",
+    "documentation": "Docs",
+    "insights": "Insights",
+}
+
+# The two ways off this page and onto a different analysis. Named here, beside
+# the strip that draws them, so the loop offering them and the page rendering
+# them cannot disagree about what they are called — an action this page doesn't
+# recognise falls through to the body and gets drawn a second time as a button
+# floating above the chrome.
+ANALYSIS_NAV_ACTIONS: tuple[str, ...] = ("Switch analysis", "New analysis", "Settings")
+
+RESULTS_TAB_ACTIONS: tuple[str, ...] = (
+    "Export",
+    "Share Online",
+    "Anonymize",
+    "Adjust",
+    "Revert",
+    "Retry failed",
+    *ANALYSIS_NAV_ACTIONS,
+)
+
+
+# Where the results tab underline is, so it can travel to where it belongs.
+# Module state for the same reason the setup rule's is (see _rule_slide): the
+# builder is called once per frame and has nowhere else to keep it.
+# Under this the band stacks instead of splitting — half the page cannot hold
+# the widest stat value without wrapping it mid-row.
+_BAND_TWO_COL_MIN_W = 118
+_TAB_SLIDE_SECS = 0.2
+_tab_slide: dict = {"to": None, "at": 0.0, "from": 0.0, "drawn": 0.0}
+
+
+def reset_section_tabs() -> None:
+    """Forget where the underline was, so the next page draws it in place."""
+    _tab_slide.update({"to": None, "at": 0.0, "from": 0.0, "drawn": 0.0})
+
+
+def _fit_section_tabs(labels: list[str], keys: list[str], at: int, strip_w: int) -> tuple[list, list, int]:
+    """Window the section strip down to what fits, centred on the live tab.
+
+    Returns the labels, their keys and the live tab's new index. An "…" at
+    either end stands for the tabs beyond it and carries the key of the first
+    one hidden there, so it steps the window instead of being a dead mark.
+    """
+    if len(labels) <= 1:
+        return labels, keys, at
+
+    def _fits(items: list[str]) -> bool:
+        return sum(len(x) + _TAB_GAP for x in items) - _TAB_GAP <= strip_w
+
+    if _fits(labels):
+        return labels, keys, at
+
+    lo = hi = at  # grow outward from the live tab, right first so it reads forward
+    while True:
+        grew = False
+        for nxt in (hi + 1, lo - 1):
+            if not (0 <= nxt < len(labels)):
+                continue
+            _lo, _hi = min(lo, nxt), max(hi, nxt)
+            trial = labels[_lo : _hi + 1]
+            # Room for the ellipsis that will stand for whatever is left over.
+            trial = (["…"] if _lo > 0 else []) + trial + (["…"] if _hi < len(labels) - 1 else [])
+            if _fits(trial):
+                lo, hi, grew = _lo, _hi, True
+        if not grew:
+            break
+
+    out_labels = labels[lo : hi + 1]
+    out_keys = keys[lo : hi + 1]
+    shift = 0
+    if lo > 0:
+        out_labels, out_keys, shift = ["…", *out_labels], [keys[lo - 1], *out_keys], 1
+    if hi < len(labels) - 1:
+        out_labels, out_keys = [*out_labels, "…"], [*out_keys, keys[hi + 1]]
+    return out_labels, out_keys, at - lo + shift
+
+
+def _section_tab_pos(active: int, count: int) -> float:
+    """The underline's current fractional tab position, easing toward *active*.
+
+    Starts from where it was last DRAWN rather than the previous tab's slot, so
+    changing your mind mid-slide carries on from where the bar actually is.
+    """
+    if count <= 0:
+        return 0.0
+    now = time.monotonic()
+    if _tab_slide["to"] != active:
+        _tab_slide["from"] = float(active) if _tab_slide["to"] is None else _tab_slide["drawn"]
+        _tab_slide["to"] = active
+        _tab_slide["at"] = now
+    progress = (now - _tab_slide["at"]) / _TAB_SLIDE_SECS
+    if progress >= 1.0:
+        _tab_slide["drawn"] = float(active)
+    else:
+        start = _tab_slide["from"]
+        _tab_slide["drawn"] = start + (active - start) * ease_out_cubic(max(0.0, progress))
+    return _tab_slide["drawn"]
+
+
+_preview_slide: dict = {"to": None, "at": 0.0, "from": 0.0, "drawn": 0.0}
+
+
+def reset_preview_tabs() -> None:
+    """Forget where the preview underline was, so the next page draws it in place."""
+    _preview_slide.update({"to": None, "at": 0.0, "from": 0.0, "drawn": 0.0})
+
+
+def _preview_tab_pos(active: int, count: int) -> float:
+    """The preview underline's fractional position, easing toward *active*."""
+    if count <= 0:
+        return 0.0
+    now = time.monotonic()
+    if _preview_slide["to"] != active:
+        _preview_slide["from"] = float(active) if _preview_slide["to"] is None else _preview_slide["drawn"]
+        _preview_slide["to"] = active
+        _preview_slide["at"] = now
+    progress = (now - _preview_slide["at"]) / _TAB_SLIDE_SECS
+    if progress >= 1.0:
+        _preview_slide["drawn"] = float(active)
+    else:
+        start = _preview_slide["from"]
+        _preview_slide["drawn"] = start + (active - start) * ease_out_cubic(max(0.0, progress))
+    return _preview_slide["drawn"]
+
+
+def section_tab_click(panel, x: int, y: int) -> str | None:
+    """Which section tab a click landed on, or None.
+
+    The tab bar is the results page's primary navigation, so a click is tested
+    against it before the body buttons — the same order the eye reads them in.
+    """
+    for y0, y1, x0, x1, key in getattr(panel, "_section_tabs", ()):
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return key
+    return None
+
+
+def results_body_actions(actions: list[str]) -> list[str]:
+    """The subset of *actions* still drawn as buttons in the body."""
+    return [a for a in actions if a not in RESULTS_TAB_ACTIONS and a != "Continue"]
 
 
 def _build_team_analysis_screen(
@@ -405,7 +1002,6 @@ def _build_team_analysis_screen(
         if doc_signal is not None or _ex.get("doc_quality"):
             bits.append("docs")
         header_str = f"Team Analysis  ·  {src}/{board_label}  ·  {' + '.join(bits) or 'components'} only"
-    sub = Text(_PAD + header_str, style="bold white", justify="left")
 
     # 'Both'-mode source toggle line: highlight the active tracker.
     toggle_line: Text | None = None
@@ -453,30 +1049,143 @@ def _build_team_analysis_screen(
         analysis_features=analysis_features,
     )
 
+    # The headline band — At a Glance beside the AI summary — sits ABOVE the tab
+    # bar, on every section. It is what the whole analysis says in five numbers
+    # and a paragraph; hiding it behind a tab made you leave the answer to look
+    # at the workings. Built in its own ctx so it never joins the scrolled body.
+    _hdr_ctx = _TaCtx(width, examples, sprint_names=sprint_names, stats=stats)
+    _hdr_ctx.comparison = comparison
+    _hdr_ctx.visible_order = ctx.visible_order
+    # Spread the stats across their half of the band rather than huddling them at
+    # its far left with the summary a screen away. Measured in a second pass: how
+    # far the labels can move is set by the LONGEST VALUE, and a guessed reserve
+    # wrapped "90% of committed scope delivered" out of its own column.
+    _col_w = (width - 6) // 2
+    # The summary is the one thing built at one width and laid out at another.
+    # Tell it which, or it wraps to the page and the half-width cell it lands in
+    # wraps every line a second time.
+    _summary_w = _col_w if width >= _BAND_TWO_COL_MIN_W else 0
+    _hdr_ctx.summary_w = _summary_w
+    _ta_overview(_hdr_ctx, profile, 0)
+    _widest = max((row.cell_len for row in _hdr_ctx.lines if isinstance(row, Text)), default=_col_w)
+    _slack = _col_w - _widest - 1
+    if _slack > 0:
+        _hdr_ctx = _TaCtx(width, examples, sprint_names=sprint_names, stats=stats)
+        _hdr_ctx.comparison = comparison
+        _hdr_ctx.visible_order = ctx.visible_order
+        _hdr_ctx.kv_w = 24 + _slack
+        _hdr_ctx.summary_w = _summary_w
+        _ta_overview(_hdr_ctx, profile, 0)
+    _at = _hdr_ctx.summary_at
+    _glance = _hdr_ctx.lines[:_at] if _at is not None else _hdr_ctx.lines
+    _summary = _hdr_ctx.lines[_at:] if _at is not None else []
     if view == "overview":
-        crumb_text = "Overview  ·  ↑/↓ choose a section, Enter to open"
-        _ta_overview(ctx, profile, selected_card)
-        _actions = actions or ["Open", "Export", "Continue"]
+        view = ctx.visible_order[0] if ctx.visible_order else "overview"
+    # Everything under the tabs belongs to the left column when the band is
+    # split, because the right one is the summary's — and the summary can be
+    # long. The strip is already capped there; a body that ran the full width
+    # under it read as overrunning its own tabs, and would have run under the
+    # summary the moment there was one worth reading.
+    if _glance and _summary and width >= _BAND_TWO_COL_MIN_W:
+        # The reserve is whatever puts the scrollbar ON the flow's column: the
+        # bar is the last cell of the body, four in from the reserve's edge.
+        # Derived rather than chosen, so the bar and the pager's split cannot
+        # drift apart when one of them moves.
+        ctx.right_pad = max(0, width - analysis_divider_x(width) - 4)
+        ctx.width = max(20, width - 6 - ctx.right_pad)
+
+    if view == "overview":
+        crumb_text = ""
+        _actions = actions or ["Export", "Continue"]
     else:
         card = _TA_CARDS[view]
-        crumb_text = f"Overview › {card['title']}"
+        # The tab bar says which section you are in, and its own heading repeats
+        # the full title — a breadcrumb between the two said it a third time.
+        crumb_text = ""
         _ta_narrative_block(ctx, view)
+        _before = len(ctx.lines)
         for build_section in card["builders"]:
             build_section(ctx, profile)
+        # Say so rather than showing nothing. A section builder emits nothing at
+        # all when the run had no data for it (no repos scanned, nothing
+        # flagged) — as a page you had opened, that read as "still loading"; as a
+        # tab you can land on by pressing →, it reads as broken.
+        if len(ctx.lines) == _before:
+            ctx.heading(card["title"])
+            ctx.add(
+                Text(
+                    PAD + "Nothing to show here — this analysis produced no data for this section.",
+                    style=ANALYSIS_THEME.dim,
+                )
+            )
         _ta_glossary_lines(ctx, card["glossary"])
-        _actions = actions or ["Back", "Export", "Continue"]
+        _actions = actions or ["Export", "Continue"]
 
     # ── Layout matching planning mode ──────────────────────────────────
     from yeaboi.ui.shared._components import analysis_title
 
     title = analysis_title(shimmer_tick)
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(_actions, export_sel)
+    # Most of this page's actions move into the chrome: three of them act on the
+    # report rather than navigating it, and a row of five buttons under the
+    # content had the actions competing with the thing they act on. Export /
+    # Share / Anonymize join the back tab in the bottom-left strip; Continue
+    # takes the forward slot beside the music pocket, where "next" lives on
+    # every other page. What is left in the body is the one that moves you.
+    # The sections are a tab bar: each shows different content, so choosing one
+    # and opening it were the same intent expressed twice.
+    _two_col_band = bool(_glance and _summary and width >= _BAND_TWO_COL_MIN_W)
+    _tab_keys = list(ctx.visible_order)
+    _tab_labels = [_TA_TAB_LABELS.get(k, _TA_CARDS[k]["title"]) for k in _tab_keys]
+    _tab_at = _tab_keys.index(view) if view in _tab_keys else 0
+    # The strip only has half the page, and eight labels do not fit in it on a
+    # small terminal — they crush together and then overflow the rule. Show a
+    # window of them around the one you are on, with "…" standing for the rest.
+    # The ellipsis carries the key of the tab just outside the window, so it
+    # steps the window rather than being a mark you cannot use.
+    _strip_w = (ctx.width if ctx.right_pad else width - 6) - _TAB_INDENT
+    _tab_labels, _tab_keys, _tab_at = _fit_section_tabs(_tab_labels, _tab_keys, _tab_at, _strip_w)
+    _tab_lines, _tab_spans = _settings_tab_bar(
+        _tab_labels,
+        _tab_at,
+        ANALYSIS_THEME,
+        width,
+        pos=_section_tab_pos(_tab_at, len(_tab_keys)),
+        taper=False,
+        # Only as far as the summary starts: run the bar the whole way and a
+        # summary that needs a second line has nowhere to put it but under a
+        # rule that belongs to something else.
+        spread=(width - 6) // 2 if _two_col_band else True,
+    )
+    _body_actions = results_body_actions(_actions)
+    _tabbed = [a for a in _actions if a in RESULTS_TAB_ACTIONS]
+    _forward = "Continue" if "Continue" in _actions else ""
+    btn_top, btn_mid, btn_bot = build_action_buttons(_body_actions, export_sel)
     if anon_note:  # anonymized: the crumb line carries the "N masked — review" indicator
         crumb_text = anon_note
-    crumb = Text(_PAD + crumb_text, style="rgb(120,120,140)", justify="left")
+
     # The 'both'-mode toggle line adds one header row; shrink the viewport to match.
-    body_h = calc_viewport(height, header_h=8 if toggle_line is not None else 7, action_h=4)
+    _header_items = [Text(""), _title_with_crumb(title, header_str), Text("")]
+    if crumb_text:
+        _header_items.append(Text(_PAD + crumb_text, style="rgb(120,120,140)", justify="left"))
+    if toggle_line is not None:
+        _header_items.append(toggle_line)
+    if _two_col_band:
+        _band = Table.grid(padding=(0, 0), expand=True)
+        _band.add_column(ratio=1)
+        _band.add_column(ratio=1)
+        _band.add_row(Group(*_glance), Group(*_summary))
+        _header_items.append(_band)
+    elif _glance:
+        # Too narrow to split: half of it cannot hold "90% of committed scope
+        # delivered", and a value that wraps mid-row is worse than a tall band.
+        _header_items.extend(_glance)
+        _header_items.extend(_summary)
+    # Measured, not counted: the headline band's height depends on how far the
+    # summary wrapped, and a hand-counted header silently ate the bottom of every
+    # section (the velocity card's glossary went first).
+    _head = _rendered_height(Group(*_header_items, Text(""), Text(""), Text("")), width - 6)
+    body_h = calc_viewport(height, header_h=_head, action_h=4)
 
     # Scroll by renderable rather than pretending every item is one terminal row.
     # Dashboard tiles/tables/cards are atomic Rich renderables with measured heights.
@@ -489,16 +1198,8 @@ def _build_team_analysis_screen(
             break
         tail_h += ih
         max_scroll = i
-    if view == "overview" and ctx.overview_card_rows:
-        # ↑/↓ moves the card selection (not a free scroll) — keep the selected
-        # card inside the viewport, including the AI-feature group separator.
-        card_item = ctx.overview_card_rows[min(selected_card, len(ctx.overview_card_rows) - 1)]
-        visible_h = sum(
-            ctx.item_heights[i] if i < len(ctx.item_heights) else 1
-            for i in range(min(scroll_offset, card_item), card_item + 1)
-        )
-        if card_item < scroll_offset or visible_h > body_h:
-            scroll_offset = min(card_item, max_scroll)
+    # (The overview used to keep a selected card row in view. There is no card
+    # list to keep in view now — the tab bar is the selection.)
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, body_h)
 
@@ -506,13 +1207,21 @@ def _build_team_analysis_screen(
     _vis_h = 0
     for i in range(actual_scroll, len(ctx.lines)):
         ih = ctx.item_heights[i] if i < len(ctx.item_heights) else 1
-        if _vis_h + ih > body_h:
+        # Always take the first one, even if it is taller than the viewport: an
+        # item is a whole card or table, and dropping it for not fitting left
+        # the section blank on a short terminal rather than showing its top.
+        if _vis_items and _vis_h + ih > body_h:
             break
         _vis_items.append(ctx.lines[i])
         _vis_h += ih
 
     remaining = max(0, body_h - _vis_h)
-    _sb_text = build_scrollbar(body_h, len(ctx.lines), actual_scroll, max_scroll)
+    # Rendered ROWS, not the number of items. build_scrollbar compares its total
+    # against the viewport's height, so handing it a count of cards said eight
+    # things fit in twenty-five rows — no bar, on a section that was being cut
+    # off. Items here are whole cards and tables; one of them is many rows.
+    _total_rows = sum(ctx.item_heights[i] if i < len(ctx.item_heights) else 1 for i in range(len(ctx.lines)))
+    _sb_text = build_scrollbar(body_h, _total_rows, actual_scroll, max_scroll)
 
     # Build viewport with optional scrollbar
     _body_group = Group(*_vis_items, *[Text("") for _ in range(remaining)])
@@ -530,17 +1239,21 @@ def _build_team_analysis_screen(
         _vp_table.add_column(ratio=1)
         _vp_table.add_column(width=1)
         _vp_table.add_row(_body_group, _sb_text)
-        viewport_renderable = _vp_table
+        # Beside the content it scrolls, not at the far edge of the page. With
+        # the body held to the left column, a bar on the page's right border sat
+        # past the summary with nothing under it — present, and nowhere you
+        # would look for it. Padding rather than a third column, so the body
+        # keeps the same width it was measured at.
+        viewport_renderable = Padding(_vp_table, (0, ctx.right_pad, 0, 0)) if ctx.right_pad else _vp_table
+    elif ctx.right_pad:
+        viewport_renderable = Padding(_body_group, (0, ctx.right_pad, 0, 0))
     else:
         viewport_renderable = _body_group
 
-    _header_items = [Text(""), title, Text(""), sub]
-    if toggle_line is not None:
-        _header_items.append(toggle_line)
-    _header_items.append(crumb)
     content = Group(
         *_header_items,
         Text(""),
+        *_tab_lines,
         viewport_renderable,
         Text(""),
         btn_top,
@@ -548,12 +1261,43 @@ def _build_team_analysis_screen(
         btn_bot,
     )
 
-    # The results page keeps the proven card colour (slightly lighter than the
-    # analysis page tint) so its dense card layout reads as one elevated surface.
-    panel = build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    # The neutral base, like every other page. This was the one screen still
+    # tinting its whole background with the green card colour, which made the
+    # results read as a different application from the setup flow that leads into
+    # it — the same reason the setup review dropped the tint.
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, height=height)
     # Tables and meters run to width-7 — no free margin, so the duck's shared
     # bubble is suppressed here (he still bobs and quacks).
     panel._bubble_room = 0
+    # "act:<name>" rather than a letter: a click on a tab comes back as the key it
+    # carries, and the loop turns that straight into the action it already has a
+    # branch for — no second dispatch table to drift, and no letters to collide
+    # with the page's own keys.
+    # The two halves of the bottom-centre pager: this page, and the one Continue
+    # leads to. The PAGE names them — the chrome only draws it and reports which
+    # half was clicked.
+    panel._pager = analysis_pager(0)
+    # Split the pill over the page's own divider — the right edge of the body
+    # column, which is the column its scrollbar runs down. Measured against a
+    # render rather than derived from the padding constants, and published only
+    # when the body IS a column: with no reserve there is no such line, and the
+    # pill goes back to the centre of the page.
+    if ctx.right_pad:
+        panel._pager_divider_x = analysis_divider_x(width)
+    panel._page_tabs = [(name, f"act:{name}") for name in _actions]
+    # (labels row, underline row, x0, x1, section key) so a click on a tab opens
+    # that section — the same rows the settings page publishes, plus the key.
+    # Rendered rows, not list entries: the wordmark is one entry and two rows,
+    # and the toggle line and crumb come and go. Measured, so a header that grows
+    # a row can never leave the click targets on the row above the tabs.
+    _tab_top = 3 + _rendered_height(Group(*_header_items, Text("")), width - 6)
+    panel._section_tabs = [
+        (_tab_top, _tab_top + 1, _TAB_COL_OFFSET + a, _TAB_COL_OFFSET + b - 1, key)
+        for (a, b), key in zip(_tab_spans, _tab_keys, strict=True)
+    ]
+    if _forward:
+        panel._forward_action = _forward
+
     return panel
 
 
@@ -607,28 +1351,36 @@ def _analysis_toggle_row(
     enabled: bool = True,
     note: str = "",
     theme=None,
+    label_w: int = 0,
 ) -> Text:
     """The shared setup-wizard option row (``‹ ● Title ›  ·  hint``).
 
     Defaults to the Analysis look; ``theme`` re-brands it for other modes'
     setup screens (Reporting passes REPORTING_THEME).
+
+    ``label_w`` is the widest title in the group. Pass it and every row's ``·``
+    lands in the same column; leave it 0 and the separator tracks each title's
+    own length, which reads as ragged down a list. Callers know their siblings,
+    a single row does not, so it has to come in from outside.
     """
     theme = theme or ANALYSIS_THEME
-    row = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
-    row.append("‹ " if focused else "  ", style=theme.accent_bright if enabled else theme.dim)
+    # Flush with the section header, no caret and no separator dot: the bullet
+    # already says selected, weight already says focused, and the columns already
+    # separate label from description — the extra glyphs were decoration that
+    # pushed the whole list in from the page edge.
+    row = Text(_PAD, justify="left", overflow="ellipsis", no_wrap=True)
     row.append(
         "●" if selected and enabled else "○",
         style=theme.accent_bright if selected and enabled else theme.dim,
     )
     row.append(
-        f" {title} ",
+        f" {title}",
         style="bold white" if focused and enabled else theme.accent if selected and enabled else theme.desc,
     )
-    if focused:
-        row.append("›", style=theme.accent_bright if enabled else theme.dim)
+    row.append(" " * max(0, label_w - len(title)))
     detail = "Unavailable" if not enabled else note or description
     if detail:
-        row.append(f"  ·  {detail}", style=theme.dim if not enabled else theme.muted)
+        row.append(f"   {detail}", style=theme.dim if not enabled else theme.muted)
     return row
 
 
@@ -662,17 +1414,57 @@ def _analysis_card_grid(
     width: int,
     columns: int | None = None,
 ) -> Table:
-    """Responsive card grid shared by every Analysis setup selector."""
+    """Responsive card grid shared by every Analysis setup selector.
+
+    Indented to PAD like every other body element — the grid used to sit hard
+    against the panel padding while the header and hints above it were four
+    columns further in. Columns are given an explicit width rather than
+    ``ratio=1``: Rich hands the division's remainder to the last column, so on an
+    odd inner width the right-hand card came out a cell wider than the left.
+    """
     ncols = columns or (2 if width >= 88 else 1)
     ncols = max(1, min(ncols, max(1, len(cards))))
-    grid = Table.grid(expand=True, padding=(0, 1))
+    # Panel borders (2) + the page panel's own padding (4) + our PAD either side.
+    inner = max(ncols * 8, width - 6 - 2 * len(PAD))
+    gap = 1  # Table.grid padding, between columns only
+    col_w = max(4, (inner - gap * (ncols - 1)) // ncols)
+    grid = Table.grid(padding=(0, gap))
     for _ in range(ncols):
-        grid.add_column(ratio=1)
+        grid.add_column(width=col_w)
     for start in range(0, len(cards), ncols):
         row = list(cards[start : start + ncols])
         row.extend(Text("") for _ in range(ncols - len(row)))
         grid.add_row(*row)
-    return grid
+    return Padding(grid, (0, 0, 0, len(PAD)))
+
+
+# Depth and Time-window options, at module scope because BOTH the expanded stage
+# and its one-line collapsed form draw from them — two copies would be two
+# chances for the summary to disagree with the control it summarises.
+_ANALYSIS_DEPTH_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "QUICK",
+        "Metrics only · fastest",
+        "Computed metrics, deterministic summaries and coaching. No LLM wait.",
+    ),
+    (
+        "DEEP",
+        "Recommended · exhaustive",
+        "Covers every eligible asset and produces evidence-backed actions. Slower.",
+    ),
+)
+_ANALYSIS_WINDOW_OPTIONS: tuple[tuple[int, str], ...] = (
+    (30, "Last month"),
+    (90, "Last quarter"),
+    (120, "Recommended"),
+    (365, "Last year"),
+)
+
+
+# The setup steps in the order you meet them, for the breadcrumb trail. Optional
+# screens (Azure projects, Model) are absent on purpose — they only appear when
+# they actually run, and are appended by name when they do.
+_ANALYSIS_SETUP_TRAIL: tuple[str, ...] = ("Areas", "Sources", "Depth", "Time window", "People")
 
 
 def _analysis_setup_header(
@@ -684,12 +1476,37 @@ def _analysis_setup_header(
     modes' setup screens (Reporting passes "REPORTING SETUP" + REPORTING_THEME).
     """
     theme = theme or ANALYSIS_THEME
-    out: list = [
-        Text(_PAD + f"{brand}  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
-        Text(_PAD + help_text, style=theme.muted),
-    ]
+    # PAD, not _PAD: this file's _PAD is 2 and the shared PAD is 4, so the header
+    # used to sit two columns left of both the wordmark above it and the option
+    # rows below — reading as an outdent rather than a heading.
+    #
+    # The trail shows the whole setup, not just where you are: steps already done
+    # read dim, the current one is lit, the rest are muted. Matching on the
+    # section name keeps every caller unchanged; a step outside the canonical
+    # order (the optional Azure-projects and Model screens) still lights up on
+    # its own by falling through to the tail.
+    trail = list(_ANALYSIS_SETUP_TRAIL)
+    upper = section.upper()
+    here = next((i for i, name in enumerate(trail) if name.upper() == upper), None)
+    # Only Analysis's own canonical steps get the trail. Reporting borrows this
+    # header with its own brand and step names, and an optional screen (Azure
+    # projects, Model) has no fixed place in the order — showing either against
+    # Analysis's trail would state something untrue, so both keep the plain crumb.
+    show_trail = here is not None and brand == "ANALYSIS SETUP"
+    crumbs = Text(PAD, justify="left", no_wrap=True, overflow="ellipsis")
+    crumbs.append(brand, style=f"bold {theme.accent_bright}")
+    crumbs.append("  ›  ", style=theme.dim)
+    if show_trail:
+        # One line, not two: the stage row already names where you are, so a
+        # separate "› REVIEW" crumb above it just said it twice. build_progress_dots
+        # is the app's existing stage indicator (the initial setup wizard uses it),
+        # so this reads like the rest of the app rather than a second style.
+        crumbs.append_text(build_progress_dots(list(trail), here, pad="", theme=theme, mark_done=True))
+    else:
+        crumbs.append(upper, style=f"bold {theme.accent_bright}")
+    out: list = [crumbs, Text(PAD + help_text, style=theme.muted)]
     if message:
-        out.extend((Text(_PAD + "⚠  " + message, style=theme.warn), Text("")))
+        out.extend((Text(PAD + "⚠  " + message, style=theme.warn), Text("")))
     else:
         out.append(Text(""))
     return out
@@ -704,6 +1521,770 @@ def _analysis_setup_title(width: int, height: int):
     return analysis_title(width=width)
 
 
+# The setup sidebar: every stage and the choice made at it, standing beside the
+# stage you are on. The wizard is a sequence of pages, so without it the only
+# record of what you picked three screens ago was the trail's on/off dot.
+#
+# ``_SETUP_SIDEBAR_W`` is the column it takes; below ``_SETUP_SIDEBAR_MIN`` of
+# total width the page drops it entirely rather than squeezing the controls,
+# which is the half the user is actually operating.
+_STACKED_ROSTER_ROWS = 6  # roster rows visible when every set shares the page
+_SETUP_SIDEBAR_W = 30
+_SETUP_SIDEBAR_MIN = 96
+# Rows above the sidebar's first stage line, for click hit-testing. Derived, not
+# guessed: panel border + top padding (2), a blank, the title (2 rows of wordmark,
+# or 1 when the compact branding kicks in under height 28), a blank, the header
+# block, then the sidebar's own top border. A unit test pins it against a real
+# render so it cannot drift when the header gains a row.
+_SETUP_SIDEBAR_CHROME = 2 + 1 + 1 + 1 + 1  # border+pad, blank, blank, sidebar border, first line
+# Trail name → the wizard step key the sequencer indexes by (see _WIZARD_STEPS).
+SETUP_STAGE_STEPS: dict[str, str] = {
+    "Areas": "features",
+    "Sources": "sources",
+    "Depth": "depth",
+    "Time window": "window",
+    "People": "members",
+}
+
+
+def _rendered_height(renderable, width: int) -> int:
+    """How many terminal rows *renderable* actually occupies at *width*.
+
+    The active stage's control block is a Group whose height depends on a
+    viewport, a wrapped description or a divider — there is no counting it by
+    eye, and every collapsed set below it is positioned from this number.
+    """
+    from rich.console import Console as _Console
+
+    probe = _Console(width=max(10, width), height=200, force_terminal=False)
+    return len(probe.render_lines(renderable, probe.options.update_width(max(10, width)), pad=False))
+
+
+# Rows the active set's heading occupies in each face. The two-row block face is
+# the app's own display type (render_ascii_text — the same one every mode title is
+# set in); a character grid has no half-step between it and body text, so this is
+# the only "h2" available. It is worth two rows only when there are rows to spare.
+_STAGE_HEADING_TALL_MIN_H = 34
+
+
+def _analysis_stage_heading(stage: str, theme, *, tall: bool) -> tuple[object, int]:
+    """The lit name of the set being configured, and how many rows it takes.
+
+    ``tall`` sets it in the two-row display face, which is what gives the page a
+    middle tier between the wordmark and body text. Short terminals get the
+    one-row form with a caret instead — the hierarchy is worth less than the rows.
+    """
+    if not tall:
+        row = Text(PAD[:-2], justify="left", no_wrap=True, overflow="ellipsis")
+        row.append("▸ ", style=theme.accent_bright)
+        row.append(stage, style=f"bold {theme.accent_bright}")
+        return row, 1
+    top, bottom = render_ascii_text(stage)
+    art = Text(justify="left", no_wrap=True, overflow="ellipsis")
+    art.append(PAD + top + "\n", style=f"bold {theme.accent_bright}")
+    art.append(PAD + bottom, style=f"bold {theme.accent_bright}")
+    return art, 2
+
+
+def _with_live(state: dict | None, **live) -> dict | None:
+    """Overlay a stage's LIVE working values onto the wizard snapshot.
+
+    ``state`` comes from the wizard and only carries what has been *committed* —
+    a value is written when you press Enter on its stage. The stage you are
+    standing on is still being edited, so its committed value is one step stale.
+    Every builder overlays its own in-progress selection (and its cursor) here,
+    which is what lets one renderer draw the focused set and the unfocused ones
+    from the same dict.
+    """
+    if state is None:
+        return None
+    return {**state, **live}
+
+
+def _sources_selected(state: dict) -> dict[str, set[str]]:
+    """Component → the sub-sources selected under it, by NAME.
+
+    ``state["components"]`` is the wizard's ``{component: [sub-source names]}``,
+    while the picker works in indices — comparing the two directly silently
+    matched nothing, so every source read as unselected away from its own stage.
+    A component missing from the dict has not been visited yet, and the picker
+    starts everything checked, so absent means all rather than none.
+    """
+    grid = state.get("grid") or {}
+    picked = state.get("components")
+    out: dict[str, set[str]] = {}
+    for ckey, subs in grid.items():
+        if not subs:
+            continue
+        chosen = None if not picked else picked.get(ckey)
+        out[ckey] = set(subs) if chosen is None else {s for s in subs if s in set(chosen)}
+    return out
+
+
+def _analysis_stage_line(stage: str, state: dict, theme) -> Text:
+    """A config set collapsed to ONE line that still shows every option.
+
+    Not a value summary: the point of putting all the sets on one page is that
+    you can see what each of them is set to without going there, so the line
+    carries the same ● / ○ marks the expanded stage does. A stage you have not
+    reached shows its options unset rather than a dash — "nothing chosen yet"
+    and "chose nothing" look different that way.
+    """
+    row = Text(PAD, justify="left", no_wrap=True, overflow="ellipsis")
+    row.append(f"{stage:<14}", style=theme.muted)
+
+    def _opt(label: str, on: bool, enabled: bool = True) -> None:
+        if len(row) > len(PAD) + 14:
+            row.append("   ")
+        row.append("● " if on else "○ ", style=theme.accent if on else theme.dim)
+        row.append(label, style=theme.desc if enabled else theme.dim)
+
+    if stage == "Areas":
+        available = state.get("available") or {}
+        checked = state.get("features") or set()
+        for key in _ANALYSIS_FEATURE_KEYS:
+            _opt(_ANALYSIS_FEATURE_LABELS[key][0], key in checked, bool(available.get(key)))
+    elif stage == "Sources":
+        picked = _sources_selected(state)
+        for name, subs in (state.get("grid") or {}).items():
+            for sub in subs:
+                _opt(_SUBSOURCE_TITLES.get(sub, sub), sub in picked.get(name, set()))
+    elif stage == "Depth":
+        for i, (name, _label, _detail) in enumerate(_ANALYSIS_DEPTH_OPTIONS):
+            _opt(name.title(), i == state.get("depth", 1))
+    elif stage == "Time window":
+        for i, (days, _label) in enumerate(_ANALYSIS_WINDOW_OPTIONS):
+            _opt(f"{days}d", i == state.get("window", 2))
+    elif stage == "People":
+        roster = state.get("roster") or []
+        picked = state.get("members")
+        if not roster:
+            row.append("everyone on the board", style=theme.dim)
+        elif picked is None or len(picked) == len(roster):
+            row.append(f"all {len(roster)} members", style=theme.desc)
+        else:
+            row.append(f"{len(picked)} of {len(roster)} members", style=theme.desc)
+    return row
+
+
+# ── Side-by-side setup: every config set as its own column ──────────────────
+# Stacked down the page, five sets separated by blank rows read as one long
+# ribbon whichever way the gaps are tuned — the eye has nothing but whitespace
+# to group by. Given the width, columns do the grouping structurally: the
+# breadcrumb trail becomes the header row, and each set's options hang under
+# their own crumb.
+_SETUP_COL_MIN_W = 16  # " ● Documentation" — the widest option in the wizard
+_SETUP_COL_MAX_W = 24  # a long roster name ellipsises rather than starving the rest
+_SETUP_COL_GAP = 3  # the air between columns, counted into the span geometry
+# An unfocused column is REFERENCE, not a control: you read it to remember what
+# you set, and the rest of the time it should be nearly page. theme.muted/dim are
+# tuned for a page whose foreground competes with nothing, and six of them side
+# by side made five sets shout as loudly as the one being edited. These sit just
+# far enough above rgb(16,16,20) to be legible when looked at directly.
+_OFF_LABEL_ON = "rgb(66,72,66)"  # a value that is set
+_OFF_LABEL_OFF = "rgb(42,44,50)"  # one that is not
+_OFF_MARK_ON = "rgb(48,86,54)"  # its bullet, dark green so "set" still reads
+_OFF_MARK_OFF = "rgb(36,38,44)"
+_OFF_HEADING = "rgb(52,56,62)"  # a source group's name
+_OFF_CRUMB_DONE = "rgb(52,94,60)"  # a set already passed
+_OFF_CRUMB_TODO = "rgb(46,48,54)"  # one not reached
+# Below this the six columns cannot each hold their own crumb without
+# truncating it, so the page keeps stacking. DERIVED, not chosen: a guessed
+# threshold that let the columns overflow put every click region a column off
+# while the page still looked plausible.
+_SETUP_COLUMNS_MIN_W = (
+    sum(max(_SETUP_COL_MIN_W, len(name) + 3) for name in _ANALYSIS_SETUP_TRAIL)
+    + (len(_ANALYSIS_SETUP_TRAIL) - 1) * _SETUP_COL_GAP
+    + len(PAD)
+    + 6  # panel border + padding, both sides
+)
+
+
+def _analysis_stage_column(
+    stage: str,
+    state: dict,
+    theme,
+    *,
+    active: bool,
+    rows_cap: int,
+) -> tuple[list[Text], list[object]]:
+    """One config set's options as a column of rows, lit only when it is active.
+
+    The same renderer draws the set you are on and the four you are not — the
+    difference is colour, not content. Every option is legible from anywhere in
+    the wizard, which is the whole point of putting them side by side; the
+    unfocused ones simply drop to the muted/dim pair so focus stays unambiguous.
+
+    ``state["cursor"]`` is the active stage's live cursor (an int, or a
+    ``(row, col)`` pair for the ragged Sources grid) — see _with_live.
+
+    Returns the rows and, per row, the cursor value that row stands for (None
+    for a heading, rule or blank). That second list is what makes the options
+    clickable: it is built as the rows are, so a heading gained or a roster
+    windowed cannot slide the hit targets off the labels they belong to.
+    """
+    cursor = state.get("cursor") if active else None
+    rows: list[Text] = []
+    targets: list[object] = []
+
+    def opt(label: str, *, on: bool, focused: bool = False, enabled: bool = True, target: object = None) -> None:
+        row = Text("", no_wrap=True, overflow="ellipsis")
+        row.append("▸" if focused else " ", style=theme.accent_bright)
+        lit = on and enabled
+        if active:
+            mark = theme.accent_bright if lit else theme.dim
+        else:
+            mark = _OFF_MARK_ON if lit else _OFF_MARK_OFF
+        row.append("●" if lit else "○", style=mark)
+        if not active:
+            style = _OFF_LABEL_ON if lit else _OFF_LABEL_OFF
+        elif not enabled:
+            style = theme.dim
+        elif focused:
+            style = "bold white"
+        else:
+            style = theme.accent if on else theme.desc
+        row.append(f" {label}", style=style)
+        rows.append(row)
+        targets.append(target if enabled else None)
+
+    if stage == "Areas":
+        available = state.get("available") or {}
+        checked = state.get("features") or set()
+        runnable = {f for f in _ANALYSIS_FEATURE_KEYS if available.get(f)}
+        opt(
+            "Analyse all",
+            on=bool(runnable) and runnable <= checked,
+            focused=cursor == 0,
+            enabled=bool(runnable),
+            target=0,
+        )
+        # Same rule the stacked layout draws: "Analyse all" acts ON the four
+        # below rather than being a fifth peer. Its length tracks the labels it
+        # underlines, not the column — the column is sized FROM these rows.
+        # +2 for the "● " every label carries, and the row's own leading space is
+        # already counted — one more and the divider alone made this column the
+        # widest on the page, which then pushed the crumb row past the panel.
+        rule_w = max(len(_ANALYSIS_FEATURE_LABELS[k][0]) for k in _ANALYSIS_FEATURE_KEYS) + 2
+        rows.append(Text(" " + "─" * rule_w, style=theme.sep))
+        targets.append(None)
+        for index, key in enumerate(_ANALYSIS_FEATURE_KEYS, start=1):
+            opt(
+                _ANALYSIS_FEATURE_LABELS[key][0],
+                on=key in checked,
+                focused=cursor == index,
+                enabled=bool(available.get(key)),
+                target=index,
+            )
+    elif stage == "Sources":
+        grid = state.get("grid") or {}
+        picked = _sources_selected(state)
+        order = [c for c in _COMPONENT_KEYS if grid.get(c)]
+        row_idx, col_idx = cursor if isinstance(cursor, tuple) else (-1, -1)
+        for r, ckey in enumerate(order):
+            if rows:
+                rows.append(Text(""))
+                targets.append(None)
+            head = Text(" ", no_wrap=True, overflow="ellipsis")
+            head.append(
+                _COMPONENT_NAMES.get(ckey, ckey).upper(),
+                style=f"bold {theme.accent_bright}"
+                if active and r == row_idx
+                else (theme.accent if active else _OFF_HEADING),
+            )
+            rows.append(head)
+            targets.append(None)
+            for s, sub in enumerate(grid[ckey]):
+                opt(
+                    _SUBSOURCE_TITLES.get(sub, sub),
+                    on=sub in picked.get(ckey, set()),
+                    focused=r == row_idx and s == col_idx,
+                    target=(r, s),
+                )
+    elif stage == "Depth":
+        chosen = cursor if isinstance(cursor, int) else state.get("depth", 1)
+        for index, (name, _label, _detail) in enumerate(_ANALYSIS_DEPTH_OPTIONS):
+            opt(name.title(), on=index == chosen, focused=cursor == index, target=index)
+    elif stage == "Time window":
+        chosen = cursor if isinstance(cursor, int) else state.get("window", 2)
+        for index, (days, _label) in enumerate(_ANALYSIS_WINDOW_OPTIONS):
+            opt(f"{days}d", on=index == chosen, focused=cursor == index, target=index)
+    elif stage == "People":
+        roster = state.get("roster") or []
+        picked = state.get("members")
+        if not roster:
+            rows.append(Text("  everyone on the board", style=theme.dim if active else _OFF_LABEL_OFF))
+            targets.append(None)
+        else:
+            chosen = set(roster) if picked is None else set(picked)
+            # Window the roster around the cursor: a team of thirty would push
+            # every column below the page, and the column has no scrollbar to
+            # explain itself. The active stage still scrolls, just in place.
+            start = 0
+            if len(roster) > rows_cap:
+                start = max(0, min(len(roster) - rows_cap, (cursor or 0) - rows_cap // 2))
+            for index, name in enumerate(roster[start : start + rows_cap], start=start):
+                opt(name, on=name in chosen, focused=cursor == index, target=index)
+            if len(roster) > rows_cap:
+                rows.append(Text(f"  +{len(roster) - rows_cap} more", style=theme.dim))
+                targets.append(None)
+    if len(rows) > rows_cap:
+        keep = max(1, rows_cap - 1)
+        rows = rows[:keep] + [Text("  …", style=theme.dim)]
+        targets = targets[:keep] + [None]
+    return rows, targets
+
+
+def _analysis_focus_detail(stage: str, state: dict, theme) -> Text:
+    """The one line of prose the columns have no room for: the focused option.
+
+    Side by side, a column is about seventeen columns wide — enough for
+    "● Documentation" and nothing else. The descriptions still matter, so the
+    cursor's own is spelled out full-width beneath the grid, where it has room.
+    """
+    cursor = state.get("cursor")
+    row = Text(PAD, no_wrap=True, overflow="ellipsis")
+
+    def say(name: str, detail: str, note: str = "") -> Text:
+        row.append(name, style=f"bold {theme.accent_bright}")
+        if detail:
+            row.append("  ·  ", style=theme.dim)
+            row.append(detail, style=theme.muted)
+        if note:
+            row.append("     ", style=theme.dim)
+            row.append(note, style=theme.accent)
+        return row
+
+    if stage == "Areas":
+        available = state.get("available") or {}
+        checked = state.get("features") or set()
+        runnable = {f for f in _ANALYSIS_FEATURE_KEYS if available.get(f)}
+        note = f"{len(checked & runnable)}/{len(runnable)} selected" if runnable else ""
+        if cursor == 0:
+            return say("Analyse all", "Select every available analysis area", note)
+        key = _ANALYSIS_FEATURE_KEYS[max(0, min(len(_ANALYSIS_FEATURE_KEYS) - 1, (cursor or 1) - 1))]
+        label, detail = _ANALYSIS_FEATURE_LABELS[key]
+        return say(label, detail if available.get(key) else "Unavailable — no source configured", note)
+    if stage == "Sources":
+        grid = state.get("grid") or {}
+        order = [c for c in _COMPONENT_KEYS if grid.get(c)]
+        row_idx = cursor[0] if isinstance(cursor, tuple) else 0
+        ckey = order[max(0, min(len(order) - 1, row_idx))] if order else ""
+        picked = _sources_selected(state)
+        total = sum(len(v) for v in picked.values())
+        return say(
+            _COMPONENT_NAMES.get(ckey, ckey),
+            _COMPONENT_DESCS.get(ckey, ""),
+            f"{total} source{'' if total == 1 else 's'}",
+        )
+    if stage == "Depth":
+        index = cursor if isinstance(cursor, int) else state.get("depth", 1)
+        name, label, detail = _ANALYSIS_DEPTH_OPTIONS[max(0, min(len(_ANALYSIS_DEPTH_OPTIONS) - 1, index))]
+        return say(name.title(), f"{label} · {detail}")
+    if stage == "Time window":
+        index = cursor if isinstance(cursor, int) else state.get("window", 2)
+        days, label = _ANALYSIS_WINDOW_OPTIONS[max(0, min(len(_ANALYSIS_WINDOW_OPTIONS) - 1, index))]
+        return say(f"{days} days", label)
+    if stage == "People":
+        roster = state.get("roster") or []
+        picked = state.get("members")
+        if not roster:
+            return say("People", "everyone on the board")
+        count = len(roster) if picked is None else len(picked)
+        return say("People", "who the delivery and code numbers are about", f"{count} of {len(roster)} selected")
+    return row
+
+
+# Where the active-crumb rule was last DRAWN, and where its current slide began.
+# Module state, like the music bar's tab presence: the wizard is a sequence of
+# separate blocking loops, so a slide that outlives the step it started in has
+# nowhere else to live. Positions are stored, not stage names — the column widths
+# are recomputed every frame, so a name would resolve to a slot the rule may
+# never have been at.
+_RULE_SLIDE_SECS = 0.22
+_rule: dict = {"stage": None, "at": 0.0, "from": (0, 0), "drawn": (0, 0)}
+
+
+def reset_setup_rule() -> None:
+    """Forget where the rule was, so the next page draws it in place.
+
+    Called when the wizard is entered afresh: sliding in from the set you
+    happened to leave off at last time is motion that means nothing.
+    """
+    _rule.update({"stage": None, "at": 0.0, "from": (0, 0), "drawn": (0, 0)})
+
+
+def _rule_slide(active: str, x_to: int, w_to: int) -> tuple[int, int]:
+    """The rule's current ``(offset, width)``, easing towards the active set.
+
+    A new destination starts the slide from wherever the rule was last drawn —
+    NOT from the previous set's slot. Turning back half way through a move is
+    the common case (←, ←) and snapping to the column you never reached before
+    setting off again is exactly the teleport the slide exists to avoid.
+
+    Returns the destination unchanged on the first draw and once the slide has
+    run out, so a page that is not moving renders identically every frame.
+    """
+    now = time.monotonic()
+    if _rule["stage"] != active:
+        _rule["from"] = (x_to, w_to) if _rule["stage"] is None else _rule["drawn"]
+        _rule["stage"] = active
+        _rule["at"] = now
+    progress = (now - _rule["at"]) / _RULE_SLIDE_SECS
+    if progress >= 1.0:
+        _rule["drawn"] = (x_to, w_to)
+    else:
+        eased = ease_out_cubic(max(0.0, progress))
+        x_from, w_from = _rule["from"]
+        _rule["drawn"] = (
+            round(x_from + (x_to - x_from) * eased),
+            max(1, round(w_from + (w_to - w_from) * eased)),
+        )
+    return _rule["drawn"]
+
+
+def _stage_neighbours(active: str, order: list[str], skip: set[str] | None = None) -> tuple[str | None, str | None]:
+    """The sets either side of *active*, for ←/→. The ends do not wrap.
+
+    ``skip`` names the sets this configuration does not use — a docs-only run
+    has no Depth and no People. Their columns are still drawn (the trail is the
+    whole trail), but stepping onto one would land on a step the wizard skips,
+    which is a keypress that appears to do nothing or, from the last set, walks
+    off the end of the sequence entirely.
+    """
+    skipped = {name.upper() for name in (skip or ())}
+    at = next((i for i, stage in enumerate(order) if stage.upper() == active.upper()), 0)
+    before = next((s for s in reversed(order[:at]) if s.upper() not in skipped), None)
+    after = next((s for s in order[at + 1 :] if s.upper() not in skipped), None)
+    return before, after
+
+
+def _setup_column_natural_w(stage: str, body: list[Text]) -> int:
+    """The narrowest a column can be without truncating its own crumb or rows.
+
+    A roster name can be arbitrarily long, so it is capped — one over-long name
+    must not squeeze the other five columns off the page. That name ellipsises;
+    everything else stays whole.
+    """
+    head = len(stage) + 3  # leading space, dot, space
+    return min(_SETUP_COL_MAX_W, max(head, *(len(row.plain) for row in body), _SETUP_COL_MIN_W))
+
+
+def _analysis_setup_columns(
+    active: str,
+    state: dict,
+    theme,
+    *,
+    width: int,
+    body_rows: int,
+) -> tuple[Table, list[tuple[int, int, str]], list[tuple[int, int, int, object]]]:
+    """The whole wizard as one grid: trail across the top, options beneath.
+
+    Returns the grid, each column's ``(x0, x1, stage)`` span, and the active
+    column's ``(x0, x1, row, cursor_value)`` option targets — the first two in
+    1-based terminal columns, the row relative to the grid's own top. The
+    columns are a fixed width rather than rich's ``expand`` share-out precisely
+    so those spans can be computed instead of guessed — a click that lands one
+    column over is worse than no click at all.
+
+    Nothing is ruled between the columns: standing apart already separates
+    them, and the one rule the page draws — under the active crumb — says the
+    only thing a rule needs to here, which set you are editing.
+    """
+    stages = list(_ANALYSIS_SETUP_TRAIL)
+    gap = _SETUP_COL_GAP
+    inner = width - 6 - len(PAD)  # panel border + padding, then the left spacer
+    here = next((i for i, name in enumerate(stages) if name.upper() == active.upper()), 0)
+
+    drawn = [
+        _analysis_stage_column(
+            stage,
+            state,
+            theme,
+            active=stage.upper() == active.upper(),
+            rows_cap=body_rows,
+        )
+        for stage in stages
+    ]
+    bodies = [rows for rows, _targets in drawn]
+    # Size each column to what it holds, then share the slack out evenly. Six
+    # equal columns spend as much room on Depth (two options, five letters) as
+    # on a roster; worse, at the widths where equal columns stop fitting, a
+    # minimum-width floor made the span arithmetic disagree with what rich drew,
+    # so the click regions sat a column off with nothing to show for it.
+    widths = [_setup_column_natural_w(stage, body) for stage, body in zip(stages, bodies, strict=True)]
+    share, extra = divmod(max(0, inner - sum(widths) - (len(stages) - 1) * gap), len(stages))
+    widths = [w + share for w in widths]
+    widths[-1] += extra
+    # Never wider than the page: the crumb row is one Text now, so an overrun of
+    # even a column costs the last crumb to an ellipsis. Shrink the widest until
+    # it fits — its own content ellipsises instead, which is the cheaper loss.
+    while sum(widths) + (len(stages) - 1) * gap > inner and max(widths) > 1:
+        widths[widths.index(max(widths))] -= 1
+
+    # The crumb row and the rule under it are laid out by hand rather than as
+    # grid cells: the rule SLIDES between columns, so it has to be one run of
+    # glyphs at an arbitrary offset, not a cell that belongs to a column.
+    offsets = [sum(widths[:i]) + i * gap for i in range(len(stages))]
+    crumbs = Text(PAD, no_wrap=True, overflow="ellipsis")
+    for index, stage in enumerate(stages):
+        if index:
+            crumbs.append(" " * gap)
+        # A leading space so the crumb's dot sits over its options' dots — the
+        # option rows spend their first column on the cursor caret.
+        crumbs.append(" ")
+        if index == here:
+            crumbs.append("● ", style=theme.accent_bright)
+            crumbs.append(stage.upper(), style="bold white")
+        elif index < here:
+            crumbs.append("● ", style=_OFF_CRUMB_DONE)
+            crumbs.append(stage.upper(), style=_OFF_CRUMB_DONE)
+        else:
+            crumbs.append("○ ", style=_OFF_CRUMB_TODO)
+            crumbs.append(stage, style=_OFF_CRUMB_TODO)
+        crumbs.append(" " * max(0, widths[index] - (len(stage) + 3)))
+
+    # Underline the ACTIVE crumb only, easing across from wherever it last was.
+    # The columns are already separated by standing apart; ruling between them
+    # boxed the page in for no extra information, and every rule drawn is one
+    # more thing competing with the single mark that matters — which set you are
+    # editing. Sliding it is what carries that mark across the move: the rule
+    # arriving instantly somewhere else reads as a redraw, not as travel.
+    slide_x, slide_w = _rule_slide(active, offsets[here], widths[here])
+    rule = Text(PAD + " " * slide_x, no_wrap=True, overflow="ellipsis")
+    rule.append("─" * slide_w, style=theme.accent_bright)
+
+    grid = Table.grid(padding=(0, 0))
+    grid.add_column(width=len(PAD))
+    for index in range(len(stages)):
+        if index:
+            grid.add_column(width=gap)
+        grid.add_column(width=widths[index], no_wrap=True, overflow="ellipsis")
+
+    # Drawn to the tallest column, not to the page floor: with nothing ruled
+    # between them, filler rows show nothing at all — and the focused option's
+    # description follows the grid, so every empty row is one more between the
+    # item and what it says about itself.
+    for r in range(max((len(body) for body in bodies), default=0)):
+        row: list = [""]
+        for index, body in enumerate(bodies):
+            if index:
+                row.append("")
+            row.append(body[r] if r < len(body) else Text(""))
+        grid.add_row(*row)
+
+    # x = 1 (panel border) + 2 (panel padding) + len(PAD) (spacer) + 1 (1-based).
+    x = 1 + 2 + len(PAD) + 1
+    spans: list[tuple[int, int, str]] = []
+    options: list[tuple[int, int, int, object]] = []
+    for index, stage in enumerate(stages):
+        spans.append((x, x + widths[index] - 1, stage))
+        if index == here:
+            # Body row r sits two rows under the crumb row (the crumb, then the
+            # rule). Rows relative to the grid; the page adds its own offset.
+            options += [
+                (x, x + widths[index] - 1, r + 2, target)
+                for r, target in enumerate(drawn[index][1])
+                if target is not None
+            ]
+        x += widths[index] + gap
+    return crumbs, rule, grid, spans, options
+
+
+def _analysis_setup_sidebar(active: str, summary: dict[str, str] | None, theme) -> Panel:
+    """The stage list: name, chosen value, and a caret on the one you are at."""
+    rows: list[Text] = []
+    for stage in _ANALYSIS_SETUP_TRAIL:
+        here = stage.upper() == active.upper()
+        value = (summary or {}).get(stage, "")
+        row = Text(justify="left", no_wrap=True, overflow="ellipsis")
+        row.append("▸" if here else " ", style=theme.accent_bright)
+        row.append(f"{stage:<12}", style=f"bold {theme.accent_bright}" if here else theme.muted)
+        # An em dash for a stage not yet reached, so "nothing chosen" never reads
+        # as "chose nothing" — the two matter on People, where empty means all.
+        row.append(value or "—", style=theme.value if here else (theme.desc if value else theme.dim))
+        rows.append(row)
+    return Panel(
+        Group(*rows),
+        box=rich.box.ROUNDED,
+        border_style=theme.sep,
+        padding=(0, 1),
+        width=_SETUP_SIDEBAR_W,
+    )
+
+
+def _analysis_setup_page(
+    active: str,
+    help_text: str,
+    *block,
+    state: dict | None = None,
+    summary: dict[str, str] | None = None,
+    width: int,
+    height: int,
+    message: str = "",
+    next_tab: bool | str = True,
+):
+    """The scaffold every setup stage draws into: wordmark, trail, then EVERY
+    config set — the one you are on expanded with its descriptions and cursor,
+    the rest collapsed to a line that still shows all of their options.
+
+    The wizard is a sequence of pages, and each page used to show one set with
+    two thirds of the terminal empty beneath it. Showing them all costs nothing
+    and means a choice three steps back is visible while you make this one.
+
+    ``block`` is the active stage's control rows; ``state`` supplies every other
+    stage's values (see _analysis_stage_line). Without ``state`` the page falls
+    back to drawing the active stage alone, which is what the preview tool and
+    the per-stage unit tests do.
+
+    Given the width (``_SETUP_COLUMNS_MIN_W``) it lays the sets out side by side
+    instead — the trail becomes the header row and ``block`` is not drawn at all,
+    since the active column carries the same options with the cursor on them.
+    """
+    theme = ANALYSIS_THEME
+    title_h = 2 if height >= 28 else 1
+    if state is not None and width >= _SETUP_COLUMNS_MIN_W:
+        return _analysis_setup_columns_page(
+            active,
+            help_text,
+            state,
+            theme,
+            width=width,
+            height=height,
+            title_h=title_h,
+            message=message,
+            next_tab=next_tab,
+        )
+    hdr = _analysis_setup_header(active, help_text, message=message)
+    rows: list = [Text(""), _analysis_setup_title(width, height), Text("")]
+    rows += hdr
+    stage_rows: dict[str, int] = {}
+    if state is None:
+        rows.extend(block)
+    else:
+        # Rendered rows, not list entries: the wordmark is one entry and two rows,
+        # and the active stage's block is one entry of unknown height. Counting
+        # entries put every click region a row or more above its line.
+        drawn = (2 if height >= 28 else 1) + 1 + 1 + len(hdr)  # title, the two blanks, header
+        tall = height >= _STAGE_HEADING_TALL_MIN_H
+        heading, head_h = _analysis_stage_heading(active, theme, tall=tall)
+        block_h = _rendered_height(Group(*block), width - 6)
+        sets = list(_ANALYSIS_SETUP_TRAIL)
+        # Spread the sets down the page instead of stacking them against the top.
+        # A wizard step is short and a terminal is not: bunched at the top, two
+        # thirds of the screen read as broken rather than roomy. The gap is what
+        # is spare, shared between the sets and capped so a very tall terminal
+        # does not scatter them.
+        body_h = head_h + block_h + len(sets) - 1
+        spare = height - 4 - drawn - body_h  # 4 = top border+pad, bottom pad+border
+        gap = max(1, min(3, spare // max(1, len(sets))))
+        for i, stage in enumerate(sets):
+            if i:
+                rows.extend(Text("") for _ in range(gap))
+                drawn += gap
+            stage_rows[stage] = drawn
+            if stage.upper() == active.upper():
+                rows.append(heading)
+                rows.extend(block)
+                drawn += head_h + block_h
+            else:
+                rows.append(_analysis_stage_line(stage, state, theme))
+                drawn += 1
+    panel = build_page_panel(Group(*rows), theme=theme, height=height)
+    panel._next_tab = next_tab
+    if stage_rows:
+        # (x0, y0, x1, y1, stage), 1-based terminal coords, so clicking a collapsed
+        # set jumps the wizard to it. Rows are counted as the page is built rather
+        # than derived from a constant — the header grows a line when it carries a
+        # message, and a guessed offset would land on the wrong set exactly then.
+        # +1: `drawn` counts rows already laid down, so the stage sits on the NEXT one.
+        # A short terminal runs the last set past the bottom border. Publishing a
+        # region there offers a jump on a row the set is not drawn on, so the
+        # off-page ones are dropped rather than shipped as dead targets.
+        pre = 2 + 1  # panel border + top padding, then the row itself
+        panel._stage_regions = [
+            (2, pre + row, width - 2, pre + row, stage)
+            for stage, row in stage_rows.items()
+            if stage.upper() != active.upper()
+            and pre + row <= height - 2
+            and stage.upper() not in {name.upper() for name in (state.get("skip") or ())}
+        ]
+        # ←/→ walk the sets here too. Stacked, they are still all on the page —
+        # one line each — and Esc leaves the setup now, so without this a narrow
+        # terminal would have no keyboard way back to a set at all.
+        panel._stage_neighbours = _stage_neighbours(active, list(stage_rows), state.get("skip"))
+    return panel
+
+
+def _analysis_setup_columns_page(
+    active: str,
+    help_text: str,
+    state: dict,
+    theme,
+    *,
+    width: int,
+    height: int,
+    title_h: int,
+    message: str = "",
+    next_tab: bool | str = True,
+):
+    """The wide-terminal setup page: wordmark, then the whole wizard as columns.
+
+    The crumb line loses its trail here because the grid's header row *is* the
+    trail — spelling it twice, once as a line and again as headers, was the
+    first thing that read as clutter.
+    """
+    brand = Text(PAD, justify="left", no_wrap=True, overflow="ellipsis")
+    brand.append("ANALYSIS SETUP", style=f"bold {theme.accent_bright}")
+    # ←/→ walk the sets here, so a stage that offers them as a second way to
+    # move within its own list would be describing a key it no longer owns.
+    hint = help_text.replace("←/→ or ↑/↓", "↑/↓").replace("←/→ and ↑/↓", "↑/↓")
+    if "between sets" not in hint:  # review already leads with it
+        hint += " · ←/→ between sets"
+    hdr: list = [brand, Text(PAD + hint, style=theme.muted)]
+    if message:
+        hdr.append(Text(PAD + "⚠  " + message, style=theme.warn))
+    hdr.append(Text(""))
+
+    # Rows above the grid's header row, counted rather than assumed: the leading
+    # blank, the wordmark, the blank under it, then the header block (which grows
+    # a line when it carries a message — the click regions must move with it).
+    pre = 1 + title_h + 1 + len(hdr)
+    # 4 = panel border + padding, top and bottom; 2 = the grid's crumb row and
+    # the rule under it; 1 = the focused-option line that sits at the foot.
+    body_rows = max(3, height - 4 - pre - 2 - 1)
+    crumbs, rule, grid, spans, options = _analysis_setup_columns(active, state, theme, width=width, body_rows=body_rows)
+
+    rows: list = [Text(""), _analysis_setup_title(width, height), Text("")]
+    rows += hdr
+    rows.extend((crumbs, rule, grid, Text("")))
+    rows.append(_analysis_focus_detail(active, state, theme))
+
+    panel = build_page_panel(Group(*rows), theme=theme, height=height)
+    # The last set in play has nothing after it, so its forward action IS the
+    # run — there is no separate review page left to say so.
+    panel._next_tab = "Run Analysis" if state.get("last") else next_tab
+    # +3: panel border, top padding, then `pre` rows already laid down, so the
+    # crumbs sit on the next one. A whole COLUMN is the jump target, not just its
+    # crumb — the set is drawn under it, and a click landing on "Deep" in a column
+    # you are not editing plainly means "take me there" rather than nothing.
+    y = 3 + pre
+    skipped = {name.upper() for name in (state.get("skip") or ())}
+    panel._stage_regions = [
+        (x0, y, x1, height - 2, stage)
+        for x0, x1, stage in spans
+        if stage.upper() != active.upper() and stage.upper() not in skipped
+    ]
+    # (x0, y0, x1, y1, cursor value) for the set being edited. The loops check
+    # these first; the active column overlaps no stage region, so order only
+    # matters for reading it, not for correctness.
+    panel._option_regions = [(x0, y + row, x1, y + row, target) for x0, x1, row, target in options]
+    # The sets either side of this one, for ←/→. Published only here, so on a
+    # narrow terminal (no columns) the arrows keep their in-list meaning.
+    panel._stage_neighbours = _stage_neighbours(active, [stage for _x0, _x1, stage in spans], state.get("skip"))
+    return panel
+
+
 def _build_analysis_feature_screen(
     available: dict[str, bool],
     checked: set[str],
@@ -712,11 +2293,17 @@ def _build_analysis_feature_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
+    summary: dict[str, str] | None = None,
+    state: dict | None = None,
 ) -> Panel:
     """First Analysis card: choose independently runnable result areas."""
     theme = ANALYSIS_THEME
     runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
     all_checked = bool(runnable) and runnable <= checked
+    label_w = max(
+        len("Analyse all"),
+        *(len(_ANALYSIS_FEATURE_LABELS[f][0]) for f in _ANALYSIS_FEATURE_KEYS),
+    )
     rows = [
         _analysis_toggle_row(
             "Analyse all",
@@ -725,8 +2312,13 @@ def _build_analysis_feature_screen(
             selected=all_checked,
             enabled=bool(runnable),
             note=f"{len(checked)}/{len(runnable)} selected" if runnable else "",
+            label_w=label_w,
         )
     ]
+    # "Analyse all" acts ON the four below rather than being a fifth peer, so a
+    # rule separates it from the things it toggles. Purely decorative — the
+    # cursor still indexes the option rows, so it must not join `rows`.
+    divider = Text(_PAD + "─" * (label_w + 4), style=theme.sep)
     for index, feature in enumerate(_ANALYSIS_FEATURE_KEYS, start=1):
         label, detail = _ANALYSIS_FEATURE_LABELS[feature]
         enabled = feature in runnable
@@ -737,23 +2329,32 @@ def _build_analysis_feature_screen(
                 focused=index == cursor,
                 selected=feature in checked,
                 enabled=enabled,
+                label_w=label_w,
             )
         )
     footer = f"{len(checked)} selected" if checked else "Select at least one available area"
-    header = _analysis_setup_header(
+    return _analysis_setup_page(
         "Areas",
         "Arrows move · Space selects · A selects all · Enter continues",
+        rows[0],
+        divider,
+        # In stacked mode the viewport must NOT fill the page: it sits between the
+        # sets above and below it, and a height-filling list pushed every one of
+        # them off the bottom. Sized to its own rows instead (four areas — it has
+        # never needed to scroll); the standalone page keeps the full viewport.
+        _analysis_toggle_viewport(
+            rows[1:],
+            max(0, cursor - 1),
+            height=(13 + len(rows) - 1) if state is not None else height,
+            header_h=13,
+        ),
+        Text(_PAD + footer, style=theme.accent_bright),
+        summary=summary,
+        state=_with_live(state, available=available, features=checked, cursor=cursor),
+        width=width,
+        height=height,
         message=message,
     )
-    content = Group(
-        Text(""),
-        _analysis_setup_title(width, height),
-        Text(""),
-        *header,
-        _analysis_toggle_viewport(rows, cursor, height=height),
-        Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
-    )
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_component_select_screen(
@@ -771,6 +2372,8 @@ def _build_component_select_screen(
     brand: str = "ANALYSIS SETUP",
     title_builder=None,
     footer_verb: str = "analyse",
+    summary: dict[str, str] | None = None,
+    state: dict | None = None,
 ) -> Panel:
     """Ragged component × sub-source multi-select.
 
@@ -791,7 +2394,9 @@ def _build_component_select_screen(
     for ci, ckey in enumerate(rows_order):
         subs = grid.get(ckey, [])
         focused_row = ci == row_idx
-        header = Text(_PAD + "  ", justify="left")
+        # Flush with its own source rows below: the header sat two columns right
+        # of the things it labels, so the group read as indented under nothing.
+        header = Text(_PAD, justify="left")
         header.append(
             _COMPONENT_NAMES.get(ckey, ckey).upper(),
             style=f"bold {theme.accent_bright if focused_row else theme.accent}",
@@ -840,25 +2445,263 @@ def _build_component_select_screen(
         sections = list(sections[row_idx * 3 : row_idx * 3 + 3])
         counts = "  ·  ".join(f"{name} {count}" for name, count in per_component)
         sections.insert(0, Text(_PAD + counts, style=theme.muted))
-    content = Group(Text(""), title, Text(""), *header, Group(*sections), footer)
-    return build_page_panel(content, theme=theme, height=height)
-
-
-def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: int = 24) -> Panel:
-    """Choose Quick (zero LLM calls) or Deep (cached AI enrichment)."""
-    options = (
-        (
-            "QUICK",
-            "Metrics only · fastest",
-            "Computed metrics, deterministic summaries and coaching. No LLM wait.",
+    # Reporting borrows this builder with its own brand and theme; only Analysis
+    # has the stage sidebar, so anything re-branded keeps the plain full-width page.
+    if brand != "ANALYSIS SETUP":
+        content = Group(Text(""), title, Text(""), *header, Group(*sections), footer)
+        panel = build_page_panel(content, theme=theme, height=height)
+        panel._next_tab = True
+        return panel
+    return _analysis_setup_page(
+        "Sources",
+        "Arrows move · Space selects · Enter continues",
+        Group(*sections),
+        footer,
+        summary=summary,
+        state=_with_live(
+            state,
+            grid=grid,
+            components={c: [grid[c][i] for i in sorted(checked.get(c, set()))] for c in rows_order},
+            cursor=(row_idx, col_idx),
         ),
-        (
-            "DEEP",
-            "Recommended · exhaustive",
-            "Covers every eligible asset and produces evidence-backed actions. Slower.",
-        ),
+        width=width,
+        height=height,
+        message=message,
     )
+
+
+# ── Board setup (the "no tracker configured" entry gate) ────────────────────
+# Analysis reads sprints and stories from a tracker, so it can't start without
+# one. This screen replaces what used to be a dead end — a static "set these in
+# your .env" message that bounced you back to the menu on any key — with the
+# fields themselves, editable in place. Same trade the settings page makes:
+# tell the user what's missing AND let them fix it where they are.
+
+_BOARD_TRACKERS = ("Jira", "Azure DevOps")
+
+# Left margin on a field row. Named because the focus bar has to start exactly
+# where it ends — styling from column 0 would run the bar out into the margin.
+_BOARD_ROW_INDENT = PAD + "  "
+
+
+def board_setup_fields(tracker: int) -> list[dict]:
+    """The credential fields for tracker index ``tracker`` (0=Jira, 1=Azure DevOps).
+
+    Reuses the setup wizard's field definitions rather than restating them, so
+    labels, placeholders, masking and the where-to-get-it hints stay in one place.
+    """
+    from yeaboi.ui.provider_select._constants import _AZDEVOPS_TRACKING_FIELDS, _ISSUE_TRACKING_FIELDS
+
+    return _ISSUE_TRACKING_FIELDS if tracker == 0 else _AZDEVOPS_TRACKING_FIELDS
+
+
+def board_setup_ready(tracker: int, values: dict[str, str]) -> bool:
+    """Whether every ``required`` field of this tracker has a value.
+
+    Drives the Connect button's enabled state. Deliberately stricter than
+    ``is_jira_configured()`` (which only checks the token): a token with no base
+    URL passes that check and then fails on the first request.
+    """
+    return all(str(values.get(f["env_var"], "")).strip() for f in board_setup_fields(tracker) if f.get("required"))
+
+
+def _board_value_cell(
+    field: dict,
+    value: str,
+    *,
+    editing: tuple[str, str, int] | None,
+    theme,
+    avail: int,
+) -> Text:
+    """Render one field's value cell: the live edit buffer, a mask, or 'not set'."""
+    cell = Text(justify="left")
+    env, masked = field["env_var"], field.get("masked", False)
+    if editing is not None and editing[0] == env:
+        # Window the buffer to what's left of the row so the cursor stays on
+        # screen — otherwise a long token scrolls out exactly where you're typing.
+        buf, pos = editing[1], max(0, min(editing[2], len(editing[1])))
+        lo = max(0, pos - avail + 1)
+        win, wc = buf[lo : lo + avail], pos - lo
+        cell.append(win[:wc], style=theme.value)
+        cell.append(win[wc : wc + 1] or " ", style="reverse bold")  # block cursor
+        cell.append(win[wc + 1 :], style=theme.value)
+    elif masked and value:
+        shown = value[:4] + "•" * min(12, len(value) - 4) if len(value) > 4 else "•" * len(value)
+        cell.append(shown, style=theme.dim)
+    elif value:
+        cell.append(value, style=theme.value)
+    elif field.get("required"):
+        cell.append("required", style=theme.muted)
+    else:
+        cell.append("optional", style=theme.dim)
+    return cell
+
+
+def _build_analysis_board_setup_screen(
+    values: dict[str, str],
+    *,
+    tracker: int = 0,
+    selected: int = 0,
+    editing: tuple[str, str, int] | None = None,
+    action_sel: int = 0,
+    message: str = "",
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+) -> Panel:
+    """Build the Analysis board-setup gate: pick a tracker, fill in its credentials.
+
+    ``values`` maps env var -> current value; ``editing`` is the open in-place
+    edit as ``(env_var, buffer, cursor)``. Publishes ``_row_regions`` (one per
+    field row) and ``_tab_regions`` (the tracker switch) so the loop can
+    hit-test clicks, matching the settings page's click-to-edit.
+    """
+    from yeaboi.ui.shared._components import analysis_title
+
+    theme = ANALYSIS_THEME
+    fields = board_setup_fields(tracker)
+    ready = board_setup_ready(tracker, values)
+
+    title = analysis_title(shimmer_tick)
+    subtitle = Text(PAD + "Connect a board", style=f"bold {theme.accent}")
+    blurb = Text(
+        PAD + "Analysis reads sprints and stories from your tracker. Fill these in to continue —",
+        style=theme.muted,
+    )
+    blurb2 = Text(PAD + "they're saved to your .env, so this is a one-off.", style=theme.muted)
+
+    # Tracker switch. Rendered as one row so the two options read as alternatives
+    # rather than a list you scroll — you only ever need one of them configured.
+    tabs = Text(PAD, justify="left")
+    tab_regions: list[tuple[int, int, int]] = []
+    for i, name in enumerate(_BOARD_TRACKERS):
+        if i:
+            tabs.append("   ")
+        label = f"[ {name} ]" if i == tracker else f"  {name}  "
+        x0 = tabs.cell_len
+        tabs.append(label, style=f"bold {theme.accent}" if i == tracker else theme.dim)
+        tab_regions.append((x0, tabs.cell_len - 1, i))
+
+    label_w = max(len(f["label"]) for f in fields) + 2
+    body: list[Text] = []
+    row_regions: list[tuple[int, str, str, bool]] = []
+    striped: list[int] = []  # rows that get the focus bar, applied once the width is known
+    for i, field in enumerate(fields):
+        focused = i == selected and editing is None
+        env = field["env_var"]
+        row = Text(_BOARD_ROW_INDENT, justify="left", no_wrap=True, overflow="ellipsis")
+        marker_style = theme.accent if str(values.get(env, "")).strip() else theme.muted
+        row.append("● " if str(values.get(env, "")).strip() else "○ ", style=marker_style)
+        row.append(field["label"].ljust(label_w), style=theme.value if focused else theme.muted)
+        row.append(
+            _board_value_cell(
+                field,
+                str(values.get(env, "")),
+                editing=editing,
+                theme=theme,
+                avail=max(8, width - len(PAD) - label_w - 12),
+            )
+        )
+        if focused or (editing is not None and editing[0] == env):
+            striped.append(i)
+        row_regions.append((len(body), env, field["label"], field.get("masked", False)))
+        body.append(row)
+
+    # The focus bar spans the FIELD BLOCK, not the terminal — a stripe running the
+    # full width reads as a separator rather than a cursor. Measured off the widest
+    # row so every row highlights to the same edge, the way the settings sections do.
+    stripe_w = max(r.cell_len for r in body) + 2
+    for i in striped:
+        body[i].append(" " * max(0, stripe_w - body[i].cell_len))
+        # stylize(), NOT .style: a Text's `style` also paints the padding Rich adds
+        # out to the full line width, which is what made the bar span the terminal.
+        # Starting at the indent's end keeps it off the left margin too, so the bar
+        # is exactly the row — bounded on both sides.
+        body[i].stylize(f"on {_SETTINGS_FOCUS_BG}", len(_BOARD_ROW_INDENT))
+
+    # Where-to-get-it hint for the focused field only — the full stack of hints
+    # would bury the fields themselves.
+    hint_rows: list[Text] = []
+    if 0 <= selected < len(fields):
+        hint = fields[selected].get("hint", "")
+        if hint:
+            h = Text(PAD + "  ", justify="left", no_wrap=True, overflow="ellipsis")
+            h.append("↳ ", style=theme.muted)
+            h.append(hint, style=theme.dim)
+            hint_rows.append(h)
+
+    status = Text(PAD, justify="left")
+    if message:
+        status.append(message, style=theme.accent)
+    elif ready:
+        status.append("All set — press Continue to start.", style=theme.accent)
+    else:
+        missing = [f["label"] for f in fields if f.get("required") and not str(values.get(f["env_var"], "")).strip()]
+        status.append(f"Still needed: {', '.join(missing)}", style=theme.muted)
+
+    # No Back button: the chrome's own back tab already covers leaving, so a second
+    # affordance for it is noise. "Continue" is the one thing this page adds, and
+    # only once there is something to continue to.
+    actions = ["Continue"] if ready else []
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel) if actions else (None, None, None)
+
+    # Controls ride in the bottom-left pocket beside "back" (_hint_tab), the same
+    # as the settings page — they don't take a body row of their own.
+    hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
+    if editing is not None:
+        hint.append("type to edit", style=theme.accent)
+        hint.append("  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  save  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  cancel  ·  '-' clears", style=theme.muted)
+    else:
+        hint.append("↑/↓", style=theme.accent)
+        hint.append("  pick field  ·  ", style=theme.muted)
+        hint.append("←/→", style=theme.accent)
+        hint.append("  switch tracker  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  edit", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
+
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        subtitle,
+        Text(""),
+        blurb,
+        blurb2,
+        Text(""),
+        tabs,
+        Text(""),
+        *body,
+        Text(""),
+        *hint_rows,
+        Text(""),
+        status,
+        Text(""),
+        *([btn_top, btn_mid, btn_bot] if actions else []),
+    )
+    panel = build_page_panel(content, theme=theme, height=height)
+    panel._hint_tab = hint
+    panel._board_actions = actions
+    panel._row_regions = row_regions  # (body_index, env, label, masked) per field row
+    panel._tab_regions = tab_regions  # (x0, x1, tracker_index) on the switch row
+    return panel
+
+
+def _build_analysis_depth_screen(
+    selected: int = 0,
+    *,
+    width: int = 80,
+    height: int = 24,
+    summary: dict[str, str] | None = None,
+    state: dict | None = None,
+) -> Panel:
+    """Choose Quick (zero LLM calls) or Deep (cached AI enrichment)."""
+    options = _ANALYSIS_DEPTH_OPTIONS
     rows: list[Text] = []
+    label_w = max(len(name) for name, _label, _detail in options)
     for idx, (name, label, detail) in enumerate(options):
         focused = idx == selected
         rows.append(
@@ -868,17 +2711,19 @@ def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: 
                 focused=focused,
                 selected=focused,
                 note=f"{label} · {detail}",
+                label_w=label_w,
             )
         )
 
-    content = Group(
-        Text(""),
-        _analysis_setup_title(width, height),
-        Text(""),
-        *_analysis_setup_header("Depth", "←/→ or ↑/↓ choose · Enter continue · Esc cancel"),
+    return _analysis_setup_page(
+        "Depth",
+        "←/→ or ↑/↓ choose · Enter continue · Esc cancel",
         Group(*rows),
+        summary=summary,
+        state=_with_live(state, depth=selected, cursor=selected),
+        width=width,
+        height=height,
     )
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_analysis_model_offer_screen(
@@ -900,6 +2745,7 @@ def _build_analysis_model_offer_screen(
         (current_model, f"Keep current model · estimated {minutes} min"),
     )
     rows: list[Text] = []
+    label_w = max(len(model or "current model") for model, _detail in options)
     for index, (model, detail) in enumerate(options):
         focused = index == selected
         rows.append(
@@ -909,6 +2755,7 @@ def _build_analysis_model_offer_screen(
                 focused=focused,
                 selected=focused,
                 note=f"{'Faster' if index == 0 else 'Current'} · {detail}",
+                label_w=label_w,
             )
         )
     content = Group(
@@ -927,10 +2774,18 @@ def _build_analysis_model_offer_screen(
     return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
 
 
-def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height: int = 24) -> Panel:
+def _build_analysis_window_screen(
+    selected: int = 2,
+    *,
+    width: int = 80,
+    height: int = 24,
+    summary: dict[str, str] | None = None,
+    state: dict | None = None,
+) -> Panel:
     """Choose the changed-content window shared by Code and Docs."""
-    options = ((30, "Last month"), (90, "Last quarter"), (120, "Recommended"), (365, "Last year"))
+    options = _ANALYSIS_WINDOW_OPTIONS
     rows: list[Text] = []
+    label_w = max(len(f"{days} DAYS") for days, _label in options)
     for idx, (days, label) in enumerate(options):
         focused = idx == selected
         rows.append(
@@ -940,16 +2795,18 @@ def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height:
                 focused=focused,
                 selected=focused,
                 note=label,
+                label_w=label_w,
             )
         )
-    content = Group(
-        Text(""),
-        _analysis_setup_title(width, height),
-        Text(""),
-        *_analysis_setup_header("Time window", "←/→ and ↑/↓ choose · Enter continue · Esc cancel"),
+    return _analysis_setup_page(
+        "Time window",
+        "←/→ and ↑/↓ choose · Enter continue · Esc cancel",
         Group(*rows),
+        summary=summary,
+        state=_with_live(state, window=selected, cursor=selected),
+        width=width,
+        height=height,
     )
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_member_select_screen(
@@ -960,10 +2817,11 @@ def _build_member_select_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
+    summary: dict[str, str] | None = None,
+    state: dict | None = None,
 ) -> Panel:
     """Roster multi-select with an explicit checked state for every member."""
     theme = ANALYSIS_THEME
-    title = _analysis_setup_title(width, height)
     n_checked = len(checked)
     scope = f"{n_checked} of {len(roster)} selected"
     rows: list[Text] = []
@@ -984,23 +2842,29 @@ def _build_member_select_screen(
             enabled=False,
         )
     else:
-        viewport_renderable = _analysis_toggle_viewport(rows, cursor, height=height, header_h=12)
+        # Stacked, the roster gets a fixed six-row window with its scrollbar rather
+        # than the rest of the terminal — the sets below it need somewhere to be.
+        viewport_renderable = _analysis_toggle_viewport(
+            rows, cursor, height=(12 + _STACKED_ROSTER_ROWS) if state is not None else height, header_h=12
+        )
 
-    header = _analysis_setup_header(
+    return _analysis_setup_page(
         "People",
         "Arrows move · Space selects · A selects all · Enter continues",
-        message=message,
-    )
-    content = Group(
-        Text(""),
-        title,
-        Text(""),
-        *header,
         Text(_PAD + scope, style=theme.accent_bright),
         Text(""),
         viewport_renderable,
+        summary=summary,
+        state=_with_live(
+            state,
+            roster=roster,
+            members=[roster[i] for i in sorted(checked) if i < len(roster)],
+            cursor=cursor,
+        ),
+        width=width,
+        height=height,
+        message=message,
     )
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_code_scope_select_screen(
@@ -1047,7 +2911,10 @@ def _build_code_scope_select_screen(
     scope_lines = [Text(_PAD + f"{len(checked)} of {len(items)} {unit} selected", style=theme.accent_bright)]
     if hint:
         scope_lines.append(Text(_PAD + hint, style=theme.muted))
-    return build_page_panel(
+    # The code-scope sub-step is not one of the six trail stages, so it keeps the
+    # plain full-width page — a sidebar would have to light a stage that is not
+    # where you are.
+    panel = build_page_panel(
         Group(
             Text(""),
             _analysis_setup_title(width, height),
@@ -1060,124 +2927,17 @@ def _build_code_scope_select_screen(
         theme=ANALYSIS_THEME,
         height=height,
     )
+    panel._next_tab = True
+    return panel
 
 
-def _build_analysis_setup_review_screen(
-    *,
-    features: list[str],
-    components: dict[str, list[str]],
-    members: list[str] | None,
-    analysis_scope: dict[str, list[str]],
-    depth: str,
-    window_days: int,
-    model: str | None = None,
-    action_sel: int = 0,
-    width: int = 80,
-    height: int = 24,
-) -> Panel:
-    """Final, non-destructive review of the exact Analysis engine payload."""
-    theme = ANALYSIS_THEME
-
-    def _summary(title: str, value: str, symbol: str) -> Panel:
-        head = Text()
-        head.append(f"{symbol} ", style=theme.accent_bright)
-        head.append(title, style=f"bold {theme.accent_bright}")
-        return Panel(
-            Group(head, Text(value or "None", style="white")),
-            box=rich.box.ROUNDED,
-            border_style=theme.accent,
-            style=_ANALYSIS_CARD_BG,
-            padding=(0, 1),
-            expand=True,
-        )
-
-    def _summarize(values: list[str], limit: int = 4) -> str:
-        shown = values[:limit]
-        suffix = f" +{len(values) - limit} more" if len(values) > limit else ""
-        return ", ".join(shown) + suffix
-
-    feature_names = [_ANALYSIS_FEATURE_LABELS[key][0] for key in features]
-    source_names = [
-        _SUBSOURCE_TITLES.get(source, source)
-        for component in ("delivery", "code", "docs")
-        for source in components.get(component, [])
-    ]
-    source_value = _summarize(source_names)
-    # Both code hosts can carry a scope; the compact branch below folds the extra
-    # lines onto one with " · ", so adding a host costs no layout work.
-    for _scope_key, _scope_label in (("github", "GitHub owners"), ("azdo", "Azure projects")):
-        _scope_values = analysis_scope.get(_scope_key) or []
-        if _scope_values:
-            source_value += f"\n{_scope_label}: {_summarize(_scope_values)}"
-    people_value = _summarize(members) if members else "All available team members"
-    settings = f"{depth.title()} · {window_days} days"
-    if model:
-        settings += f"\nModel: {model}"
-    cards = [
-        _summary("Analysis areas", _summarize(feature_names), "✦"),
-        _summary("Sources and scope", source_value, "◆"),
-        _summary("People", people_value, "●"),
-        _summary("Run settings", settings, "◷"),
-    ]
-    if width < 88 or height < 30:
-        compact = []
-        for label, value in (
-            ("Areas", _summarize(feature_names)),
-            ("Sources", source_value.replace("\n", " · ")),
-            ("People", people_value),
-            ("Settings", settings.replace("\n", " · ")),
-        ):
-            line = Text()
-            line.append(f"{label:<10}", style=f"bold {theme.accent_bright}")
-            line.append(value or "None", style="white")
-            compact.append(line)
-        summary_renderable = Panel(
-            Group(*compact),
-            box=rich.box.ROUNDED,
-            border_style=theme.accent,
-            style=_ANALYSIS_CARD_BG,
-            padding=(0, 1),
-        )
-    else:
-        summary_renderable = _analysis_card_grid(cards, width=width)
-    btn_top, btn_mid, btn_bot = build_action_buttons(["Run Analysis", "Back"], action_sel)
-    if height < 24:
-        content = Group(
-            _analysis_setup_title(width, height),
-            Text(_PAD + "REVIEW  ·  ←/→ choose  ·  Enter confirm", style=theme.muted),
-            summary_renderable,
-            btn_top,
-            btn_mid,
-            btn_bot,
-        )
-    else:
-        content = Group(
-            Text(""),
-            _analysis_setup_title(width, height),
-            Text(""),
-            *_analysis_setup_header("Review", "←/→ choose · Enter confirm · Esc back"),
-            summary_renderable,
-            Text(""),
-            Text(_PAD + "Nothing starts until you confirm Run Analysis.", style=theme.muted),
-            Text(""),
-            btn_top,
-            btn_mid,
-            btn_bot,
-        )
-    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
+def _instructions_body(instructions_text: str, *, width: int = 80) -> list:
+    """The planning-instructions body: the team calibration this preview was built from.
 
 
-def _build_instructions_review_screen(
-    instructions_text: str,
-    *,
-    scroll_offset: int = 0,
-    scroll_meta: dict | None = None,
-    width: int = 80,
-    height: int = 24,
-    action_sel: int = 0,
-    editing: bool = False,
-) -> Panel:
-    """Build the planning instructions review screen using shared layout."""
+    Split out from the screen builder so the preview page can compose it
+    beside another column instead of only as a page of its own.
+    """
     import re as _re
 
     c_section = "bold #22c55e"
@@ -1194,20 +2954,64 @@ def _build_instructions_review_screen(
     body_lines: list = []
     wrap_w = max(40, width - len(_PAD) - 14)
 
-    def _wrap_append(text: str, style: str, indent: str = "    ") -> None:
-        """Word-wrap text into body_lines."""
+    def _wrap_append(text: str, style: str, indent: str = "", *, hang: bool = False) -> None:
+        """Word-wrap text into body_lines.
+
+        ``hang`` puts ``indent`` on the continuation lines only — for a paragraph
+        that starts at the page margin and whose overflow should sit under it.
+        Without it the indent applies to every line, which is what the callers
+        passing an already-split tail want.
+        """
         # Strip markdown bold markers for display
         text = _re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
         words = text.split()
         buf = ""
+        _n = 0
+
+        def _emit(chunk: str) -> None:
+            nonlocal _n
+            pre = "" if (hang and _n == 0) else indent
+            body_lines.append(Text(_PAD + pre + chunk, style=style, justify="left"))
+            _n += 1
+
         for word in words:
             if buf and len(buf) + len(word) + 1 > wrap_w:
-                body_lines.append(Text(_PAD + indent + buf, style=style, justify="left"))
+                _emit(buf)
                 buf = word
             else:
                 buf = (buf + " " + word).strip()
         if buf:
-            body_lines.append(Text(_PAD + indent + buf, style=style, justify="left"))
+            _emit(buf)
+
+    def _label_row(label: str, sep: str, value: str, label_style: str, value_style: str, indent: str = "  ") -> None:
+        """A "label: value" row whose overflow keeps a hanging indent.
+
+        Rich has no hanging indent, so a single Text that overruns wraps its tail
+        to column zero — on a page that indents every line by PAD, the tail lands
+        further LEFT than the sentence it belongs to and reads as a new block.
+        Wrapping it here keeps the continuation under the value instead.
+        """
+        head = len(label) + len(sep)
+        first_room = max(10, wrap_w - head)
+        rest_room = max(10, wrap_w - len(indent))
+        lines: list[str] = []
+        buf = ""
+        for word in value.split():
+            room = first_room if not lines else rest_room
+            if buf and len(buf) + len(word) + 1 > room:
+                lines.append(buf)
+                buf = word
+            else:
+                buf = (buf + " " + word).strip()
+        if buf or not lines:
+            lines.append(buf)
+        row = Text(_PAD, justify="left")
+        row.append(label, style=label_style)
+        if lines[0]:
+            row.append(sep + lines[0], style=value_style)
+        body_lines.append(row)
+        for extra in lines[1:]:
+            body_lines.append(Text(_PAD + indent + extra, style=value_style, justify="left"))
 
     def _styled_bullet(text: str) -> None:
         """Parse a markdown bullet line into styled Rich Text."""
@@ -1223,14 +3027,14 @@ def _build_instructions_review_screen(
         pt_match = _re.match(r"(\d+)\s*pt\b[s]?[*]*:\s*(.*)", clean)
         if pt_match:
             pts, desc = pt_match.group(1), pt_match.group(2)
-            row = Text(_PAD + "    ", justify="left")
+            row = Text(_PAD, justify="left")
             row.append(f"{pts} pt", style=f"bold {c_accent}")
             row.append("  ", style=c_dim)
             # Wrap long descriptions
             if len(desc) > wrap_w - 10:
                 row.append(desc[: wrap_w - 10], style=c_value)
                 body_lines.append(row)
-                _wrap_append(desc[wrap_w - 10 :], c_value, indent="          ")
+                _wrap_append(desc[wrap_w - 10 :], c_value, indent="  ")
             else:
                 row.append(desc, style=c_value)
                 body_lines.append(row)
@@ -1240,10 +3044,7 @@ def _build_instructions_review_screen(
         disc_match = _re.match(r"(\w[\w\-]*)\s+stories:\s*(.*)", clean)
         if disc_match:
             disc, stats = disc_match.group(1), disc_match.group(2)
-            row = Text(_PAD + "    ", justify="left")
-            row.append(f"{disc:<16s}", style=c_label)
-            row.append(stats, style=c_muted)
-            body_lines.append(row)
+            _label_row(f"{disc:<16s}", "", stats, c_label, c_muted, indent=" " * 16)
             return
 
         # Pattern: "label — value" or "label: value"
@@ -1251,11 +3052,7 @@ def _build_instructions_review_screen(
             if sep in clean:
                 parts = clean.split(sep, 1)
                 lbl, val = parts[0].strip(), parts[1].strip() if len(parts) > 1 else ""
-                row = Text(_PAD + "    ", justify="left")
-                row.append(lbl, style=c_label)
-                if val:
-                    row.append(f"  {val}", style=c_value)
-                body_lines.append(row)
+                _label_row(lbl, "  ", val, c_label, c_value)
                 return
 
         # Fallback: plain bullet
@@ -1270,22 +3067,20 @@ def _build_instructions_review_screen(
         if stripped.startswith("## "):
             body_lines.append(Text(""))
             title_text = stripped.lstrip("#").strip().rstrip(":")
-            body_lines.append(Text(_PAD + "  " + title_text, style=c_section, justify="left"))
-            body_lines.append(Text(_PAD + "  " + "\u2500" * min(len(title_text), 40), style=c_sep, justify="left"))
+            body_lines.append(Text(_PAD + title_text, style=c_section, justify="left"))
+            body_lines.append(Text(_PAD + "\u2500" * min(len(title_text), 40), style=c_sep, justify="left"))
             continue
 
         # ### Subsection header
         if stripped.startswith("### "):
             body_lines.append(Text(""))
-            body_lines.append(
-                Text(_PAD + "  " + stripped.lstrip("#").strip().rstrip(":"), style=c_subsection, justify="left")
-            )
+            body_lines.append(Text(_PAD + stripped.lstrip("#").strip().rstrip(":"), style=c_subsection, justify="left"))
             continue
 
         # → Arrow directives
         if stripped.startswith("\u2192") or stripped.startswith("→"):
             clean = _re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
-            body_lines.append(Text(_PAD + "      " + clean, style=f"bold {c_arrow}", justify="left"))
+            _wrap_append(clean, f"bold {c_arrow}", indent="  ", hang=True)
             continue
 
         # Bullet items
@@ -1297,19 +3092,30 @@ def _build_instructions_review_screen(
         if ":" in stripped and not stripped.startswith("Weight"):
             clean = _re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
             k, _, v = clean.partition(":")
-            row = Text(_PAD + "  ", justify="left")
-            row.append(k.strip(), style=f"bold {c_warn}")
-            if v.strip():
-                row.append(": " + v.strip(), style=c_value)
-            body_lines.append(row)
+            _label_row(k.strip(), ": ", v.strip(), f"bold {c_warn}", c_value)
             continue
 
         # Fallback: plain text
         clean = _re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
         _wrap_append(clean, c_muted)
 
+    return _hang_wrap(body_lines, width)
+
+
+def _build_instructions_review_screen(
+    instructions_text: str,
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    editing: bool = False,
+    ready: tuple[bool, ...] | None = None,
+) -> Panel:
+    """Build the page for this body on its own."""
     return _build_analysis_review_screen(
-        body_lines,
+        _instructions_body(instructions_text, width=width),
         stage_index=0,
         scroll_offset=scroll_offset,
         scroll_meta=scroll_meta,
@@ -1318,23 +3124,18 @@ def _build_instructions_review_screen(
         action_sel=action_sel,
         actions=["Accept", "Edit", "Export"],
         subtitle="Review planning instructions",
+        ready=ready,
     )
 
 
-def _build_sample_epic_screen(
-    epic: dict,
-    *,
-    scroll_offset: int = 0,
-    scroll_meta: dict | None = None,
-    width: int = 80,
-    height: int = 24,
-    action_sel: int = 0,
-    examples: dict | None = None,
-) -> Panel:
-    """Build the sample epic review screen matching planning mode's feature display.
+def _sample_epic_body(epic: dict, *, width: int = 80, examples: dict | None = None) -> list:
+    """The sample epic body — the card, then why it matches the team.
 
     Shows the generated epic card with description sections properly parsed,
     followed by a compact "why this matches" rationale and pattern summary.
+
+    Split out from the screen builder so the preview page can compose it
+    beside another column instead of only as a page of its own.
     """
     c_accent = "#22c55e"
     c_muted = "rgb(120,120,140)"
@@ -1350,7 +3151,7 @@ def _build_sample_epic_screen(
     body_lines: list = []
     wrap_w = max(40, width - len(_PAD) - 14)
 
-    def _wrap_text(text: str, style: str, indent: str = "      ") -> None:
+    def _wrap_text(text: str, style: str, indent: str = "    ") -> None:
         """Word-wrap text into body_lines with given style and indent."""
         words = text.split()
         line_buf = ""
@@ -1369,7 +3170,7 @@ def _build_sample_epic_screen(
     _prio_colors = {"critical": "bold red", "high": "yellow", "medium": "rgb(70,100,180)", "low": "dim"}
     _prio_style = _prio_colors.get(priority, "yellow")
 
-    hdr = Text(_PAD + "  ", justify="left")
+    hdr = Text(_PAD, justify="left")
     hdr.append("[F1]", style=c_id)
     hdr.append("  \u00b7  ", style=c_dim)
     hdr.append(title, style=c_value)
@@ -1380,12 +3181,12 @@ def _build_sample_epic_screen(
     # Metadata line
     stories_est = epic.get("stories_estimate", 0)
     points_est = epic.get("points_estimate", 0)
-    meta = Text(_PAD + "  ", justify="left")
+    meta = Text(_PAD, justify="left")
     meta.append(f"~{stories_est} stories", style=c_muted)
     meta.append("  \u00b7  ", style=c_dim)
     meta.append(f"~{points_est} story points", style=c_muted)
     body_lines.append(meta)
-    body_lines.append(Text(_PAD + "  " + "\u2500" * min(40, wrap_w), style=c_sep, justify="left"))
+    body_lines.append(Text(_PAD + "\u2500" * min(40, wrap_w), style=c_sep, justify="left"))
     body_lines.append(Text(""))
 
     # ── Description — parse section markers into styled blocks ──
@@ -1404,31 +3205,31 @@ def _build_sample_epic_screen(
         if len(parts) > 2:
             # parts = [text_before, section_title, section_body, title2, body2, ...]
             if parts[0].strip():
-                _wrap_text(parts[0].strip(), c_desc, indent="    ")
+                _wrap_text(parts[0].strip(), c_desc, indent="")
                 body_lines.append(Text(""))
 
             i = 1
             while i < len(parts) - 1:
                 section_title = parts[i].strip().rstrip("?")
                 section_body = parts[i + 1].strip() if i + 1 < len(parts) else ""
-                body_lines.append(Text(_PAD + "    " + section_title, style=f"bold {c_label}", justify="left"))
+                body_lines.append(Text(_PAD + section_title, style=f"bold {c_label}", justify="left"))
                 if section_body:
-                    _wrap_text(section_body, c_desc, indent="    ")
+                    _wrap_text(section_body, c_desc, indent="")
                 body_lines.append(Text(""))
                 i += 2
         else:
             # No section markers at all — show raw description
-            _wrap_text(desc, c_desc, indent="    ")
+            _wrap_text(desc, c_desc, indent="")
             body_lines.append(Text(""))
     else:
-        body_lines.append(Text(_PAD + "    No description provided.", style=c_muted, justify="left"))
+        body_lines.append(Text(_PAD + "No description provided.", style=c_muted, justify="left"))
         body_lines.append(Text(""))
 
     # ── Rationale ─────────────────────────────────────────────────
     rationale = epic.get("rationale", "")
     if rationale:
-        body_lines.append(Text(_PAD + "  Why this matches your team", style=c_section, justify="left"))
-        _wrap_text(rationale, c_muted, indent="    ")
+        body_lines.append(Text(_PAD + "Why this matches your team", style=c_section, justify="left"))
+        _wrap_text(rationale, c_muted, indent="")
         body_lines.append(Text(""))
 
     # ── Pattern Summary (compact) ─────────────────────────────────
@@ -1437,42 +3238,55 @@ def _build_sample_epic_screen(
     _epic_ex = _naming.get("epic_examples", [])
 
     if _epic_style or _epic_ex:
-        body_lines.append(Text(_PAD + "  Team Patterns", style=c_section, justify="left"))
+        body_lines.append(Text(_PAD + "Team Patterns", style=c_section, justify="left"))
         if _epic_style:
-            row = Text(_PAD + "    ", justify="left")
+            row = Text(_PAD, justify="left")
             row.append("Naming: ", style=c_dim)
             row.append(_epic_style, style=c_muted)
             body_lines.append(row)
         if _epic_ex:
-            row = Text(_PAD + "    ", justify="left")
+            row = Text(_PAD, justify="left")
             row.append("Examples: ", style=c_dim)
             row.append(", ".join(f'"{e}"' for e in _epic_ex[:3]), style=c_muted)
             body_lines.append(row)
 
-    return _build_analysis_review_screen(
-        body_lines,
-        stage_index=1,
-        scroll_offset=scroll_offset,
-        scroll_meta=scroll_meta,
-        width=width,
-        height=height,
-        action_sel=action_sel,
-        subtitle="Does this epic match your team's style?",
-    )
+    return body_lines
 
 
-def _build_sample_stories_screen(
-    stories: list[dict],
+def _build_sample_epic_screen(
+    epic: dict,
     *,
     scroll_offset: int = 0,
     scroll_meta: dict | None = None,
     width: int = 80,
     height: int = 24,
     action_sel: int = 0,
-    epic_title: str = "",
     examples: dict | None = None,
+    ready: tuple[bool, ...] | None = None,
 ) -> Panel:
-    """Build the sample stories review screen matching planning mode's story cards."""
+    """Build the page for this body on its own."""
+    return _build_analysis_review_screen(
+        _sample_epic_body(epic, width=width, examples=examples),
+        stage_index=1,
+        scroll_offset=scroll_offset,
+        scroll_meta=scroll_meta,
+        width=width,
+        height=height,
+        action_sel=action_sel,
+        subtitle=_PREVIEW_SUBTITLES[0],
+        ready=ready,
+    )
+
+
+def _sample_stories_body(
+    stories: list[dict], *, width: int = 80, epic_title: str = "", examples: dict | None = None
+) -> list:
+    """The sample stories body — one card per story.
+
+
+    Split out from the screen builder so the preview page can compose it
+    beside another column instead of only as a page of its own.
+    """
     c_accent = "#22c55e"
     c_id = "cyan"
     c_muted = "rgb(120,120,140)"
@@ -1493,18 +3307,18 @@ def _build_sample_stories_screen(
     max_w = max(40, width - len(_PAD) - 12)
 
     # Pattern breakdown
-    body_lines.append(Text(_PAD + "  Story Design Patterns", style=c_section, justify="left"))
+    body_lines.append(Text(_PAD + "Story Design Patterns", style=c_section, justify="left"))
     if epic_title:
-        body_lines.append(Text(_PAD + f"    Epic: {epic_title}", style=c_muted, justify="left"))
+        body_lines.append(Text(_PAD + f"Epic: {epic_title}", style=c_muted, justify="left"))
     body_lines.append(
         Text(
-            _PAD + f"    {len(stories)} sample stories generated",
+            _PAD + f"{len(stories)} sample stories generated",
             style=c_muted,
             justify="left",
         )
     )
     body_lines.append(Text(""))
-    body_lines.append(Text(_PAD + "  " + "\u2500" * 36, style=c_sep, justify="left"))
+    body_lines.append(Text(_PAD + "\u2500" * 36, style=c_sep, justify="left"))
     body_lines.append(Text(""))
 
     # Story cards
@@ -1519,7 +3333,7 @@ def _build_sample_stories_screen(
         benefit = story.get("benefit", "")
 
         # Header: S1 · 3 pts · high · infrastructure
-        hdr = Text(_PAD + "  ", justify="left")
+        hdr = Text(_PAD, justify="left")
         hdr.append(sid, style=c_id)
         hdr.append("  \u00b7  ", style="dim")
         hdr.append(f"{pts} pts", style="dim")
@@ -1530,33 +3344,33 @@ def _build_sample_stories_screen(
         body_lines.append(hdr)
 
         if title:
-            body_lines.append(Text(_PAD + f"    {title}", style="bold white", justify="left"))
+            body_lines.append(Text(_PAD + f"{title}", style="bold white", justify="left"))
 
         # Description
-        body_lines.append(Text(_PAD + "    Description", style=f"bold {c_muted}", justify="left"))
+        body_lines.append(Text(_PAD + "Description", style=f"bold {c_muted}", justify="left"))
         story_text = f"As a {persona}, I want to {goal}, so that {benefit}."
         words = story_text.split()
         buf = ""
         for word in words:
             if len(buf) + len(word) + 1 > max_w:
-                body_lines.append(Text(_PAD + "      " + buf, style=c_desc, justify="left"))
+                body_lines.append(Text(_PAD + "" + buf, style=c_desc, justify="left"))
                 buf = word
             else:
                 buf = (buf + " " + word).strip()
         if buf:
-            body_lines.append(Text(_PAD + "      " + buf, style=c_desc, justify="left"))
+            body_lines.append(Text(_PAD + "" + buf, style=c_desc, justify="left"))
 
         # Acceptance Criteria
         acs = story.get("acceptance_criteria", [])
         if acs:
             body_lines.append(Text(""))
-            body_lines.append(Text(_PAD + "    Acceptance Criteria", style=f"bold {c_muted}", justify="left"))
+            body_lines.append(Text(_PAD + "Acceptance Criteria", style=f"bold {c_muted}", justify="left"))
             for ac in acs[:3]:
                 if isinstance(ac, dict):
                     for kw, style in [("given", c_given), ("when", c_when), ("then", c_then)]:
                         val = ac.get(kw, "")
                         if val:
-                            row = Text(_PAD + "      ", justify="left")
+                            row = Text(_PAD + "", justify="left")
                             row.append(f"{kw.capitalize():5s} ", style=f"bold {style}")
                             row.append(val, style=c_desc)
                             body_lines.append(row)
@@ -1573,41 +3387,54 @@ def _build_sample_stories_screen(
                     if isinstance(it, dict) and it.get("status") in ("established", "emerging")
                 ]
         if dod:
-            body_lines.append(Text(_PAD + "    Definition of Done", style=f"bold {c_muted}", justify="left"))
+            body_lines.append(Text(_PAD + "Definition of Done", style=f"bold {c_muted}", justify="left"))
             for item in dod:
-                row = Text(_PAD + "      ", justify="left")
+                row = Text(_PAD + "", justify="left")
                 row.append("\u2713 ", style="rgb(80,180,80)")
                 row.append(str(item), style=c_desc)
                 body_lines.append(row)
             body_lines.append(Text(""))
 
         if idx < len(stories) - 1:
-            body_lines.append(Text(_PAD + "  " + "\u2500" * 36, style=c_sep, justify="left"))
+            body_lines.append(Text(_PAD + "\u2500" * 36, style=c_sep, justify="left"))
             body_lines.append(Text(""))
 
-    return _build_analysis_review_screen(
-        body_lines,
-        stage_index=2,
-        scroll_offset=scroll_offset,
-        scroll_meta=scroll_meta,
-        width=width,
-        height=height,
-        action_sel=action_sel,
-        subtitle="Do these stories match your team's style?",
-    )
+    return body_lines
 
 
-def _build_sample_tasks_screen(
-    tasks: list[dict],
+def _build_sample_stories_screen(
+    stories: list[dict],
     *,
     scroll_offset: int = 0,
     scroll_meta: dict | None = None,
     width: int = 80,
     height: int = 24,
     action_sel: int = 0,
-    stories: list[dict] | None = None,
+    epic_title: str = "",
+    examples: dict | None = None,
+    ready: tuple[bool, ...] | None = None,
 ) -> Panel:
-    """Build the sample tasks review screen matching planning mode's task display."""
+    """Build the page for this body on its own."""
+    return _build_analysis_review_screen(
+        _sample_stories_body(stories, width=width, epic_title=epic_title, examples=examples),
+        stage_index=2,
+        scroll_offset=scroll_offset,
+        scroll_meta=scroll_meta,
+        width=width,
+        height=height,
+        action_sel=action_sel,
+        subtitle=_PREVIEW_SUBTITLES[1],
+        ready=ready,
+    )
+
+
+def _sample_tasks_body(tasks: list[dict], *, width: int = 80, stories: list[dict] | None = None) -> list:
+    """The sample tasks body — tasks grouped under their story.
+
+
+    Split out from the screen builder so the preview page can compose it
+    beside another column instead of only as a page of its own.
+    """
     c_accent = "#22c55e"
     c_id = "cyan"
     c_muted = "rgb(120,120,140)"
@@ -1633,20 +3460,20 @@ def _build_sample_tasks_screen(
     # Pattern breakdown
     body_lines.append(
         Text(
-            _PAD + "  Task Decomposition Preview",
+            _PAD + "Task Decomposition Preview",
             style=c_section,
             justify="left",
         )
     )
     body_lines.append(
         Text(
-            _PAD + f"    {len(tasks)} tasks across {len(_by_story)} stories",
+            _PAD + f"{len(tasks)} tasks across {len(_by_story)} stories",
             style=c_muted,
             justify="left",
         )
     )
     body_lines.append(Text(""))
-    body_lines.append(Text(_PAD + "  " + "\u2500" * 36, style=c_sep, justify="left"))
+    body_lines.append(Text(_PAD + "\u2500" * 36, style=c_sep, justify="left"))
     body_lines.append(Text(""))
 
     # Render tasks grouped by story
@@ -1658,7 +3485,7 @@ def _build_sample_tasks_screen(
 
     for s_idx, (sid, story_tasks) in enumerate(_by_story.items()):
         # Story header with title
-        hdr = Text(_PAD + "  ", justify="left")
+        hdr = Text(_PAD, justify="left")
         hdr.append(sid, style=f"bold {c_id}")
         story_title = _story_titles.get(sid, "")
         if story_title:
@@ -1676,7 +3503,7 @@ def _build_sample_tasks_screen(
             label_sty = _label_colors.get(label.lower(), c_muted)
 
             # Task header: T-S1-01 · [Code] · Title
-            row = Text(_PAD + "    ", justify="left")
+            row = Text(_PAD, justify="left")
             row.append(tid, style=c_id)
             row.append("  ", style="dim")
             row.append(f"[{label}]", style=label_sty)
@@ -1692,7 +3519,7 @@ def _build_sample_tasks_screen(
                     if len(buf) + len(word) + 1 > max_w:
                         body_lines.append(
                             Text(
-                                _PAD + "         " + buf,
+                                _PAD + "   " + buf,
                                 style=c_desc,
                                 justify="left",
                             )
@@ -1703,7 +3530,7 @@ def _build_sample_tasks_screen(
                 if buf:
                     body_lines.append(
                         Text(
-                            _PAD + "         " + buf,
+                            _PAD + "   " + buf,
                             style=c_desc,
                             justify="left",
                         )
@@ -1711,7 +3538,7 @@ def _build_sample_tasks_screen(
 
             # Test plan
             if test_plan:
-                tp_row = Text(_PAD + "         ", justify="left")
+                tp_row = Text(_PAD + "   ", justify="left")
                 tp_row.append("Test: ", style="bold rgb(220,180,60)")
                 tp_row.append(test_plan[:60], style=c_desc)
                 body_lines.append(tp_row)
@@ -1721,36 +3548,48 @@ def _build_sample_tasks_screen(
         if s_idx < len(_by_story) - 1:
             body_lines.append(
                 Text(
-                    _PAD + "  " + "\u2500" * 36,
+                    _PAD + "\u2500" * 36,
                     style=c_sep,
                     justify="left",
                 )
             )
             body_lines.append(Text(""))
 
-    return _build_analysis_review_screen(
-        body_lines,
-        stage_index=3,
-        scroll_offset=scroll_offset,
-        scroll_meta=scroll_meta,
-        width=width,
-        height=height,
-        action_sel=action_sel,
-        subtitle="Do these tasks match your team's decomposition style?",
-    )
+    return body_lines
 
 
-def _build_sample_sprint_screen(
-    sprint: dict,
-    stories: list[dict],
+def _build_sample_tasks_screen(
+    tasks: list[dict],
     *,
     scroll_offset: int = 0,
     scroll_meta: dict | None = None,
     width: int = 80,
     height: int = 24,
     action_sel: int = 0,
+    stories: list[dict] | None = None,
+    ready: tuple[bool, ...] | None = None,
 ) -> Panel:
-    """Build the sample sprint plan review screen."""
+    """Build the page for this body on its own."""
+    return _build_analysis_review_screen(
+        _sample_tasks_body(tasks, width=width, stories=stories),
+        stage_index=3,
+        scroll_offset=scroll_offset,
+        scroll_meta=scroll_meta,
+        width=width,
+        height=height,
+        action_sel=action_sel,
+        subtitle=_PREVIEW_SUBTITLES[2],
+        ready=ready,
+    )
+
+
+def _sample_sprint_body(sprint: dict, stories: list[dict], *, width: int = 80) -> list:
+    """The sample sprint body — the plan, its capacity notes and its risks.
+
+
+    Split out from the screen builder so the preview page can compose it
+    beside another column instead of only as a page of its own.
+    """
     c_accent = "#22c55e"
     c_muted = "rgb(120,120,140)"
     c_desc = "rgb(160,160,160)"
@@ -1768,7 +3607,7 @@ def _build_sample_sprint_screen(
 
     body_lines.append(
         Text(
-            _PAD + "  Sprint Plan Preview",
+            _PAD + "Sprint Plan Preview",
             style=c_section,
             justify="left",
         )
@@ -1776,7 +3615,7 @@ def _build_sample_sprint_screen(
     body_lines.append(Text(""))
 
     # Sprint card
-    hdr = Text(_PAD + "  ", justify="left")
+    hdr = Text(_PAD, justify="left")
     hdr.append(sprint_name, style="bold white")
     hdr.append(f"  \u00b7  {total_pts} pts", style=c_muted)
     hdr.append(f"  \u00b7  capacity {vel_target} pts", style=c_muted)
@@ -1788,7 +3627,7 @@ def _build_sample_sprint_screen(
     if cap_notes:
         body_lines.append(
             Text(
-                _PAD + f"    {cap_notes}",
+                _PAD + f"{cap_notes}",
                 style=c_standalone,
                 justify="left",
             )
@@ -1800,7 +3639,7 @@ def _build_sample_sprint_screen(
     if included:
         body_lines.append(
             Text(
-                _PAD + "  Stories included:",
+                _PAD + "Stories included:",
                 style=f"bold {c_muted}",
                 justify="left",
             )
@@ -1808,7 +3647,7 @@ def _build_sample_sprint_screen(
         for sid in included:
             # Find matching story
             story = next((s for s in stories if s.get("id") == sid), None)
-            row = Text(_PAD + "    ", justify="left")
+            row = Text(_PAD, justify="left")
             row.append(sid, style="cyan")
             if story:
                 row.append(f"  {story.get('title', '')}  ", style="white")
@@ -1822,7 +3661,7 @@ def _build_sample_sprint_screen(
         util_style = c_accent if 70 <= util_pct <= 90 else (c_standalone if util_pct < 70 else "bold red")
         body_lines.append(
             Text(
-                _PAD + f"  Sprint utilisation: {util_pct}%",
+                _PAD + f"Sprint utilisation: {util_pct}%",
                 style=util_style,
                 justify="left",
             )
@@ -1832,21 +3671,21 @@ def _build_sample_sprint_screen(
     # Risks
     risks = sprint.get("risks", [])
     if risks:
-        body_lines.append(Text(_PAD + "  " + "\u2500" * 36, style=c_sep, justify="left"))
+        body_lines.append(Text(_PAD + "\u2500" * 36, style=c_sep, justify="left"))
         body_lines.append(Text(""))
-        body_lines.append(Text(_PAD + "  Risks:", style=f"bold {c_standalone}", justify="left"))
+        body_lines.append(Text(_PAD + "Risks:", style=f"bold {c_standalone}", justify="left"))
         for risk in risks[:5]:
-            body_lines.append(Text(_PAD + f"    \u26a0 {risk}", style=c_desc, justify="left"))
+            body_lines.append(Text(_PAD + f"\u26a0 {risk}", style=c_desc, justify="left"))
         body_lines.append(Text(""))
 
     # Rationale
     rationale = sprint.get("rationale", "")
     if rationale:
-        body_lines.append(Text(_PAD + "  " + "\u2500" * 36, style=c_sep, justify="left"))
+        body_lines.append(Text(_PAD + "\u2500" * 36, style=c_sep, justify="left"))
         body_lines.append(Text(""))
         body_lines.append(
             Text(
-                _PAD + "  Why this sprint plan matches your team",
+                _PAD + "Why this sprint plan matches your team",
                 style=f"bold {c_muted}",
                 justify="left",
             )
@@ -1855,23 +3694,39 @@ def _build_sample_sprint_screen(
         buf = ""
         for word in words:
             if len(buf) + len(word) + 1 > max_w:
-                body_lines.append(Text(_PAD + "    " + buf, style=c_desc, justify="left"))
+                body_lines.append(Text(_PAD + buf, style=c_desc, justify="left"))
                 buf = word
             else:
                 buf = (buf + " " + word).strip()
         if buf:
-            body_lines.append(Text(_PAD + "    " + buf, style=c_desc, justify="left"))
+            body_lines.append(Text(_PAD + buf, style=c_desc, justify="left"))
 
+    return body_lines
+
+
+def _build_sample_sprint_screen(
+    sprint: dict,
+    stories: list[dict],
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    ready: tuple[bool, ...] | None = None,
+) -> Panel:
+    """Build the page for this body on its own."""
     return _build_analysis_review_screen(
-        body_lines,
+        _sample_sprint_body(sprint, stories, width=width),
         stage_index=4,
         scroll_offset=scroll_offset,
         scroll_meta=scroll_meta,
         width=width,
         height=height,
         action_sel=action_sel,
-        actions=["Done", "Regenerate", "Export"],
-        subtitle="Does this sprint plan match your team's capacity?",
+        actions=_PREVIEW_ACTIONS[3],
+        subtitle=_PREVIEW_SUBTITLES[3],
+        ready=ready,
     )
 
 
@@ -2326,8 +4181,10 @@ def _build_analysis_progress_screen(
     content = Group(Text(""), title, Text(""), *body)
 
     # The checklist hugs the left gutter, so the loading screen's right side is
-    # dependably free for the duck's bubble.
-    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
+    # dependably free for the duck's bubble. Plain white border like every other
+    # page: an accent frame reads as the whole terminal lighting up, which is a
+    # lot of signal for "a job is running".
+    return _with_bubble_room(build_page_panel(content, theme=theme, height=height), width)
 
 
 def _build_project_export_success_screen(
@@ -2396,6 +4253,11 @@ def _build_project_export_success_screen(
 # leaves the label/value rows too cramped).
 _USAGE_MIN_BOX_W = 34
 _USAGE_MAX_COLS = 3
+# The column width at which a ``wide`` Usage section no longer needs its own row:
+# the longest thing it carries is a session-DB path, and ~52 columns holds a
+# typical one without ellipsizing. Below this they still stack full-width, so a
+# normal terminal is unchanged.
+_USAGE_WIDE_COL_W = 52
 
 
 def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
@@ -2569,10 +4431,19 @@ def _build_usage_screen(
     # table whose column count comes from the available width (1 when narrow, up
     # to _USAGE_MAX_COLS when wide). Fewer columns beats squashed boxes, so the
     # count drops as soon as a column would fall below _USAGE_MIN_BOX_W.
-    _grid_indent = _PAD + "  "
+    # Two columns out from the subtitle, so the box's TEXT lands where the
+    # subtitle's does. Lining the border up with the words instead put
+    # everything inside the box a column right of everything outside it.
+    _grid_indent = _PAD
     grid_w = max(24, width - 4 - len(_grid_indent) - 2)  # panel border/pad + indent + scrollbar gutter
-    _narrow = [s for s in sections if not s[2]]
-    _wide = [s for s in sections if s[2]]
+    # A "wide" section is only wide because a timestamp or a DB path won't fit a
+    # column on a normal terminal. Once a column clears _USAGE_WIDE_COL_W it will,
+    # so the section joins the grid rather than stacking full-width beneath it —
+    # otherwise a big screen shows three boxes across the top and then two lonely
+    # full-width strips under them, with everything below the fold empty.
+    _wide_fits_col = (grid_w - 2 - 2 * (_USAGE_MAX_COLS - 1)) // _USAGE_MAX_COLS >= _USAGE_WIDE_COL_W
+    _narrow = [s for s in sections if not s[2] or _wide_fits_col]
+    _wide = [s for s in sections if s[2] and not _wide_fits_col]
     n_cols = max(1, min(_USAGE_MAX_COLS, grid_w // _USAGE_MIN_BOX_W, len(_narrow) or 1))
     # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only.
     # Two columns of slack keep the table clear of the render width (sitting
@@ -3552,7 +5423,10 @@ def _build_all_tips_screen(
     # section's content, not as a sub-level of it.
     bullet_prefix = _PAD + "  " + "•  "
     continuation_prefix = _PAD + "  " + "   "
-    tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
+    # -4, not -1: the viewport puts the body in a table beside the scrollbar, so
+    # the cell the line lands in is narrower than the panel. Wrapping to the
+    # panel let Rich crop the tail — silently, with no ellipsis to show it had.
+    tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 4)
     separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 
     tips = get_tips()
@@ -5915,6 +7789,65 @@ _TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content col
 # pairs whose values (URLs, model names) are longer than Usage's counters.
 _SETTINGS_MIN_BOX_W = 38
 _SETTINGS_MAX_COLS = 2
+
+# Settings rows that pick from a fixed set rather than taking typed text. Enter
+# steps to the next option and saves it — see _choice_row for the drawing and
+# _s_begin_edit for the keystroke. Anything not listed here still opens the
+# in-place text editor, which is right for URLs, keys and free-form values.
+#
+# The values are what lands in .env, so the booleans stay "true"/"false" — that is
+# what is_tips_enabled/is_duck_enabled read, and writing "off" would silently turn
+# the feature ON (anything that is not the literal "false" counts as enabled).
+#
+# Session Prune Days is deliberately NOT here: it is an arbitrary integer, and a
+# list of presets would take away every value that is not on the list.
+SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
+    "SCREENSAVER_STYLE": SCREENSAVER_STYLES,
+    "TIPS_ENABLED": ("true", "false"),
+    "DUCK_ENABLED": ("true", "false"),
+    "LANGSMITH_TRACING": ("true", "false"),
+    "LOG_LEVEL": VALID_LOG_LEVELS,
+}
+
+# How a stored choice is spelled on the row, where the two differ. Nobody wants to
+# read "true / false" for a switch that has always been drawn as on/off.
+SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
+    "TIPS_ENABLED": {"true": "on", "false": "off"},
+    "DUCK_ENABLED": {"true": "on", "false": "off"},
+    "LANGSMITH_TRACING": {"true": "enabled", "false": "disabled"},
+}
+
+# What an unset var behaves as. These are NOT all the first option — tracing is off
+# by default while tips and the duck are on, and WARNING sits third in the level
+# list — so neither the row nor the cycle can assume index 0.
+SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
+    "SCREENSAVER_STYLE": "ducks",
+    "TIPS_ENABLED": "true",
+    "DUCK_ENABLED": "true",
+    "LANGSMITH_TRACING": "false",
+    "LOG_LEVEL": "WARNING",
+}
+
+
+def settings_choice_value(env: str, stored: str) -> str:
+    """The option a stored value behaves as, in the casing the option list uses.
+
+    One resolution for both halves of a choice row: the builder lights this option
+    and the settings loop steps on from it. Splitting them is how "unset" ended up
+    lighting WARNING while Enter jumped to INFO.
+    """
+    folded = {opt.lower(): opt for opt in SETTINGS_CHOICES[env]}
+    return folded.get((stored or "").strip().lower(), SETTINGS_CHOICE_DEFAULTS[env])
+
+
+# The column width at which a _WIDE_SETTINGS_SECTIONS box stops needing the whole
+# row. Those sections are wide only because their token-help sub-lines don't fit a
+# half-width column on an 80-column terminal; give a column this much and they do
+# (the longest creation URL line is ~70 columns, and the scope sentence wraps).
+# Below it they still span, so nothing changes on a normal-sized terminal — but on
+# a wide one the Credentials tab was one column of full-width boxes with most of
+# the screen empty beside it, because only its provider box was ever "narrow".
+_SETTINGS_WIDE_COL_W = 76
 # The focused value is marked by a full-width bar behind the row rather than a
 # leading glyph: a marker needs a gutter on EVERY row to avoid text jumping when
 # focus lands, and that gutter reads as a stray indent inside an already-indented
@@ -5925,8 +7858,9 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 4  # per-box leveling allowance — grew with the Advanced box (Duck row)
+_SETTINGS_MAX_STRETCH = 5  # per-box leveling allowance — grew again with the Microphone row
 
+_TAB_NOT_READY = "rgb(74,74,90)"  # visibly present, clearly behind the ready ones
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
 
@@ -6006,7 +7940,16 @@ def settings_focus_move(
 
 
 def _settings_tab_bar(
-    labels: list[str], active: int, theme, width: int, *, pos: float | None = None
+    labels: list[str],
+    active: int,
+    theme,
+    width: int,
+    *,
+    pos: float | None = None,
+    taper: bool = True,
+    spread: int | bool = False,
+    muted: tuple[bool, ...] = (),
+    align_right: bool = False,
 ) -> tuple[list, list]:
     """Render the underline-style tab bar: a row of labels over one continuous
     horizontal rule. Under the active tab the rule is accent-bright, tapering in
@@ -6018,23 +7961,61 @@ def _settings_tab_bar(
     Returns ``(lines, spans)`` where ``spans[i]`` is the 0-based ``(start, end)``
     column range (within the content) of label *i* — used to hit-test tab clicks.
     """
-    labels_line = Text(" " * _TAB_INDENT, justify="left")
+    # ``spread`` shares the page's width out between the tabs instead of packing
+    # them at the left. A bar that stops a third of the way across reads as a
+    # list that ran out, not as the full set of what there is.
+    # An int spreads to THAT width rather than the page's, so a bar under a
+    # two-column band can stop where the other column starts and leave it free.
+    gap = _TAB_GAP
+    if spread and len(labels) > 1:
+        _to = spread if isinstance(spread, int) and spread is not True else width - 6
+        # A left-aligned bar keeps a margin at each end; a right-parked one is
+        # pushed against the edge afterwards, so it fills ``_to`` exactly and has
+        # no left margin to subtract — subtracting one anyway left the strip
+        # short of the width it was asked to spread over.
+        _margins = 0 if align_right else _TAB_INDENT * 2
+        room = max(0, _to - _margins - sum(len(x) for x in labels))
+        gap = max(_TAB_GAP, room // (len(labels) - 1))
+    # ``align_right`` parks the whole strip against the right edge instead of the
+    # left margin, for a page whose content leads at the left and wants its
+    # stage list out of the way of the first word on every line.
+    indent = _TAB_INDENT
+    if align_right:
+        natural = sum(len(x) for x in labels) + gap * max(0, len(labels) - 1)
+        # Held off the edge by the same margin the left-aligned bar keeps: run it
+        # to the last content column and the final tab sits against the frame
+        # with nothing either side of it.
+        indent = max(_TAB_INDENT, (width - 6) - _TAB_INDENT - natural)
+    labels_line = Text(" " * indent, justify="left")
     spans: list = []
-    col = _TAB_INDENT
+    col = indent
     for i, label in enumerate(labels):
         if i > 0:
-            labels_line.append(" " * _TAB_GAP)
-            col += _TAB_GAP
+            labels_line.append(" " * gap)
+            col += gap
         start = col
-        labels_line.append(label, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
+        if i == active:
+            _style = f"bold {theme.accent_bright}"
+        elif i < len(muted) and muted[i]:
+            # A concrete colour, not `dim`: Rich's dim attribute against this
+            # page's near-black background renders as very nearly nothing, so a
+            # tab with no content behind it yet did not read as "not ready" — it
+            # read as gone, and the strip looked like it had lost three of four.
+            _style = _TAB_NOT_READY
+        else:
+            _style = theme.muted
+        labels_line.append(label, style=_style)
         col += len(label)
         spans.append((start, col))  # [start, end)
 
     # The rule spans the tab strip plus a 2-char margin each side, so the dimmer
     # "shoulder" chars beside the active tab stay visible even when the first or
     # last tab is selected — but it still stops well short of the full width.
-    rule_start = max(0, (spans[0][0] if spans else _TAB_INDENT) - 2)
-    rule_end = (spans[-1][1] if spans else _TAB_INDENT) + 2
+    rule_start = max(0, (spans[0][0] if spans else indent) - 2)
+    # Clamped: the two-column shoulder past the last tab has nowhere to go when
+    # the strip is already against the right edge, and a rule one char too wide
+    # wraps to the next line as a stray stub.
+    rule_end = min((width - 6), (spans[-1][1] if spans else indent) + 2)
     if pos is not None and spans:
         # Animated: slide the bright underline between adjacent tab spans by the
         # fractional position (the loop eases `pos` toward the active tab index).
@@ -6053,11 +8034,14 @@ def _settings_tab_bar(
     underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
     for c in range(rule_start, rule_end):
         if a_start <= c < a_end:
-            if c == a_start or c == a_end - 1:
-                style = theme.accent  # taper: the last char on either end steps down
+            # ``taper`` off = one flat colour end to end. A bar that changes shade
+            # along its own length reads as two marks while it is sliding, which
+            # is exactly when it most needs to read as one object moving.
+            if taper and (c == a_start or c == a_end - 1):
+                style = theme.accent  # the last char on either end steps down
             else:
                 style = f"bold {theme.accent_bright}"  # full brightness across the middle
-        elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
+        elif taper and (a_start - 2 <= c < a_start or a_end <= c < a_end + 2):
             style = theme.dim  # slightly dimmer just to either side
         else:
             style = theme.sep  # the neutral continuous rule
@@ -6132,8 +8116,17 @@ def _build_settings_screen(
     # panel chrome (border + 2 pad, both sides) + the indent + the scrollbar gutter.
     grid_w = max(24, width - 6 - len(_grid_indent) - 1)
     _tab_name = _SETTINGS_TABS[max(0, min(active_tab, len(_SETTINGS_TABS) - 1))]
-    _n_narrow = sum(1 for _s in _SETTINGS_TAB_SECTIONS[_tab_name] if _s not in _WIDE_SETTINGS_SECTIONS)
-    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_narrow or 1))
+    _tab_sections = _SETTINGS_TAB_SECTIONS[_tab_name]
+    _n_narrow = sum(1 for _s in _tab_sections if _s not in _WIDE_SETTINGS_SECTIONS)
+    # Would a column still be wide enough for a token-help section? If so the wide
+    # sections join the grid instead of spanning it, and the box count that drives
+    # the column choice is every section rather than just the narrow ones. This is
+    # what stops the Credentials tab rendering as a single stack of full-width
+    # boxes on a large terminal: only "provider" is narrow, so _n_narrow was 1 and
+    # the grid collapsed to one column no matter how much room there was.
+    _wide_fits_col = (grid_w - 4) // 2 >= _SETTINGS_WIDE_COL_W
+    _n_boxes = len(_tab_sections) if _wide_fits_col else (_n_narrow or 1)
+    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_boxes))
     # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only; two
     # columns of slack keep the table clear of the render width.
     col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
@@ -6148,12 +8141,47 @@ def _build_settings_screen(
     _cur_w = col_w - 4  # inner text width available to the open section
 
     def _heading(text: str, *, wide: bool = False) -> None:
-        """Open a new section box — its heading is drawn as the box title."""
+        """Open a new section box — its heading is drawn as the box title.
+
+        ``wide`` is a request, not a guarantee: once a column is roomy enough for
+        the token help (``_wide_fits_col``) the section takes a column like any
+        other, and only the narrow terminal still gets a full-width row.
+        """
         nonlocal _cur, _cur_fields, _cur_w
+        wide = wide and not _wide_fits_col
         _cur, _cur_fields = [], []
         _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
         sections.append((text, _cur, wide))
         box_fields.append(_cur_fields)
+
+    def _choice_row(label: str, env: str) -> None:
+        """A settings row that picks from a fixed set instead of taking free text.
+
+        Every option is on the row with the live one lit, so the choice is visible
+        without entering anything — and Enter steps to the next rather than opening
+        the editor (see SETTINGS_CHOICES and _s_begin_edit). Typing "classic", or
+        "false", into a text box to flip a switch was the wrong gesture for it.
+
+        The live option comes from settings_choice_value, the same resolver the
+        cycle uses; SETTINGS_CHOICE_LABELS decides how each one reads.
+        """
+        choices = SETTINGS_CHOICES[env]
+        _labels = SETTINGS_CHOICE_LABELS.get(env, {})
+        _live = settings_choice_value(env, config_data.get(env, ""))
+        _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
+        r = _EditableRow("", **_kw)
+        _focused = len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
+        r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
+        for _i, _opt in enumerate(choices):
+            if _i:
+                r.append("  ", style=theme.muted)
+            r.append(_labels.get(_opt, _opt), style=f"bold {theme.good}" if _opt == _live else theme.dim)
+        if _focused:
+            r.append(" " * max(0, _cur_w - r.cell_len))
+            r.style = f"on {_SETTINGS_FOCUS_BG}"
+        r.env, r.label, r.masked = env, label, False
+        _cur_fields.append((env, label, False))
+        _cur.append(r)
 
     def _row(
         label: str, value: str, value_style: str = "", masked: bool = False, env: str = "", wrap: bool = False
@@ -6228,10 +8256,20 @@ def _build_settings_screen(
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         _cur.append(link)
+        # The scope sentence wraps rather than ellipsizing: it is the one line here
+        # long enough to overrun a column, and losing its tail costs the reader the
+        # permissions they came for. Wrapping HERE keeps one body line per rendered
+        # row, which the box heights and click regions depend on. The URL above it
+        # stays no_wrap — a split link is not a link.
+        _scope_lines = _wrap_value(str(entry["scope"]), _cur_w, 4 + len("scope: "), indent=6)
         scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
-        scope.append(entry["scope"], style=theme.dim)
+        scope.append(_scope_lines[0], style=theme.dim)
         _cur.append(scope)
+        for _more in _scope_lines[1:]:
+            _c = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
+            _c.append(_more, style=theme.dim)
+            _cur.append(_c)
 
     # ── Section builders (one per tab) — only the active one is rendered ──
     def _sec_provider() -> None:
@@ -6377,21 +8415,22 @@ def _build_settings_screen(
         _row("Profile", config_data.get("AWS_PROFILE", ""), env="AWS_PROFILE")
 
     def _sec_advanced() -> None:
+        """Everything here with a closed set of answers is a pick, not a text field.
+
+        Each row reads its live option through settings_choice_value, because the
+        defaults are asymmetric — Tips and the Duck are on unless the literal
+        "false", LangSmith is off unless the literal "true", and WARNING sits third
+        in the level list. Nothing here may assume the first option is the default.
+        """
         _heading("Advanced")
-        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"), env="LOG_LEVEL")
+        _choice_row("Log Level", "LOG_LEVEL")
+        # An arbitrary integer, so it stays typed — presets would rule out every
+        # number that is not one of them.
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
-        # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
-        _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
-        _row(
-            "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
-        )
-        # Duck bubble default on; only the literal "false" mutes it (matches is_duck_enabled).
-        _duck_on = config_data.get("DUCK_ENABLED", "").strip().lower() != "false"
-        _row(
-            "Duck", "on" if _duck_on else "off", value_style=theme.good if _duck_on else theme.muted, env="DUCK_ENABLED"
-        )
-        langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
-        _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
+        _choice_row("Tips", "TIPS_ENABLED")
+        _choice_row("Duck", "DUCK_ENABLED")
+        _choice_row("Screensaver", "SCREENSAVER_STYLE")
+        _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
     _builders = {
