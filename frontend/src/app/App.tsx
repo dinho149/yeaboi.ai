@@ -14,6 +14,7 @@ import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitiv
 import { ArtifactView } from './Artifact';
 import { ImportDialog } from './Import';
 import { RoomList } from './Rooms';
+import { Settings } from './Settings';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
@@ -311,7 +312,17 @@ export function App({ user: initial }: { user: User | null }) {
     view = <ArtifactView id={match.params.artifactId ?? ''} />;
   else if (match.pattern === '/projects/{id}')
     view = <ProjectDetailView id={match.params.id ?? ''} notify={push} />;
-  else if (match.pattern === '/settings') view = <EmptyState title="Settings" hint="TODO(design)" />;
+  else if (match.pattern === '/settings')
+    view = (
+      <Settings
+        user={user}
+        notify={push}
+        onSignedOut={() => {
+          setUser(null);
+          navigate('/');
+        }}
+      />
+    );
   else view = <ProjectList notify={push} />;
 
   return (

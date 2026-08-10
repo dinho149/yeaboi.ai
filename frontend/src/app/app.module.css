@@ -88,6 +88,33 @@
   font-size: var(--fs-l);
 }
 
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  max-width: 40rem;
+}
+
+.settingRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.themeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
 .toolbar {
   display: flex;
   gap: var(--s2);

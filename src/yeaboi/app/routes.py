@@ -169,6 +169,24 @@ def build_router(app: AppServer) -> Router:
 
     router.delete("/api/auth/session", sign_out)
 
+    def sign_out_everywhere(request: Request) -> Response:
+        """Revoke every session this user has, including this one.
+
+        The "I lost my laptop" control. `SessionStore.revoke_all` has existed
+        since the substrate and nothing reached it, which made it a promise the
+        product did not keep: a session you cannot revoke from a device you
+        still have is not much of a session.
+
+        The current cookie is cleared too. Leaving it set would leave the
+        browser holding a token the server has already forgotten, and the next
+        request would look like a mysterious sign-out rather than the one that
+        was just asked for.
+        """
+        app.sessions.revoke_all(request.user_id or "")
+        return json_response({"ok": True}, headers=clear_cookie_headers(secure=app.secure_cookies))
+
+    router.delete("/api/auth/sessions", sign_out_everywhere)
+
     def me(request: Request) -> Response:
         user = app.store.user(request.user_id or "")
         if user is None:

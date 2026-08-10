@@ -454,3 +454,44 @@ class TestFirstRunClaim:
         secure = AppServer(store, secure_cookies=True, deliverer=LogDeliverer())
         hosted = call(secure, "POST", "/api/auth/claim", {"email": "eve@example.com"})
         assert claimed.body == hosted.body
+
+
+class TestSignOutEverywhere:
+    """The control that makes a session revocable from a device you still have.
+
+    `revoke_all` existed from the substrate commit with nothing calling it,
+    which made it a promise the product did not keep.
+    """
+
+    def test_it_kills_every_session_not_just_this_one(self, app):
+        first, first_csrf = sign_in(app, "ada@example.com")
+        second, _ = sign_in(app, "ada@example.com")
+        # Both are live before.
+        assert call(app, "GET", "/api/auth/me", cookies=first).code == 200
+        assert call(app, "GET", "/api/auth/me", cookies=second).code == 200
+
+        assert call(app, "DELETE", "/api/auth/sessions", cookies=first, csrf=first_csrf).code == 200
+
+        assert call(app, "GET", "/api/auth/me", cookies=first).code == 401
+        assert call(app, "GET", "/api/auth/me", cookies=second).code == 401
+
+    def test_it_clears_the_calling_browser_s_cookie(self, app):
+        # Otherwise the browser holds a token the server has forgotten, and the
+        # next request reads as a mysterious sign-out.
+        cookies, csrf = sign_in(app)
+        response = call(app, "DELETE", "/api/auth/sessions", cookies=cookies, csrf=csrf)
+        cleared = [value for key, value in response.headers if key == "Set-Cookie"]
+        assert cleared and all("Max-Age=0" in value for value in cleared)
+
+    def test_it_leaves_other_users_alone(self, app):
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        bob, _ = sign_in(app, "bob@example.com")
+        call(app, "DELETE", "/api/auth/sessions", cookies=ada, csrf=ada_csrf)
+        assert call(app, "GET", "/api/auth/me", cookies=bob).code == 200
+
+    def test_it_needs_a_session(self, app):
+        assert call(app, "DELETE", "/api/auth/sessions").code == 401
+
+    def test_it_needs_the_csrf_header(self, app):
+        cookies, _ = sign_in(app)
+        assert call(app, "DELETE", "/api/auth/sessions", cookies=cookies).code == 403
