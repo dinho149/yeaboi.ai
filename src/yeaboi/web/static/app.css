@@ -2419,7 +2419,7 @@ a._issueKey_wm1hn_351:hover {
  * build on a hex literal or a bare px in this directory.
  */
 
-._shell_12od0_11 {
+._shell_18dtb_11 {
   display: grid;
   /* Rail + content. The rail is a token so the design pass can move it. */
   grid-template-columns: var(--rail-w) 1fr;
@@ -2430,7 +2430,7 @@ a._issueKey_wm1hn_351:hover {
   font-family: var(--font-sans);
 }
 
-._masthead_12od0_22 {
+._masthead_18dtb_22 {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -2440,7 +2440,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._rail_12od0_32 {
+._rail_18dtb_32 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2449,7 +2449,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._railLink_12od0_41 {
+._railLink_18dtb_41 {
   display: block;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2461,17 +2461,17 @@ a._issueKey_wm1hn_351:hover {
   text-decoration: none;
 }
 
-._railLink_12od0_41[aria-current='page'] {
+._railLink_18dtb_41[aria-current='page'] {
   background: var(--card);
   color: var(--text);
 }
 
-._content_12od0_58 {
+._content_18dtb_58 {
   padding: var(--s5);
   min-width: 0; /* lets long tables scroll instead of stretching the grid */
 }
 
-._footer_12od0_63 {
+._footer_18dtb_63 {
   grid-column: 1 / -1;
   padding: var(--s4) var(--s5);
   border-top: 1px solid var(--line);
@@ -2479,7 +2479,7 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-xs);
 }
 
-._slot_12od0_71 {
+._slot_18dtb_71 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2487,19 +2487,25 @@ a._issueKey_wm1hn_351:hover {
   padding: var(--s6) 0;
 }
 
-._slotLabel_12od0_79,
-._slotHint_12od0_80 {
+._slotLabel_18dtb_79,
+._slotHint_18dtb_80 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._slotTitle_12od0_85 {
+._slotTitle_18dtb_85 {
   margin: 0;
   color: var(--text);
   font-size: var(--fs-l);
 }
 
-._projectList_12od0_91 {
+._toolbar_18dtb_91 {
+  display: flex;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+._projectList_18dtb_97 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -2508,7 +2514,7 @@ a._issueKey_wm1hn_351:hover {
   list-style: none;
 }
 
-._projectRow_12od0_100 {
+._projectRow_18dtb_106 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2519,7 +2525,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._projectName_12od0_111 {
+._projectName_18dtb_117 {
   color: var(--text);
   font-size: var(--fs-m);
   text-decoration: none;
@@ -2527,7 +2533,7 @@ a._issueKey_wm1hn_351:hover {
   overflow-wrap: anywhere;
 }
 
-._role_12od0_119 {
+._role_18dtb_125 {
   flex: none;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -2536,7 +2542,7 @@ a._issueKey_wm1hn_351:hover {
   text-transform: uppercase;
 }
 
-._signin_12od0_128 {
+._signin_18dtb_134 {
   display: flex;
   flex-direction: column;
   gap: var(--s3);

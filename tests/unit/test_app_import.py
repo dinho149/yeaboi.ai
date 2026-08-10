@@ -141,3 +141,86 @@ class TestImportRoute:
     def test_it_needs_a_session(self, store, tui):
         app = AppServer(store)
         assert call(app, "POST", "/api/import/plan", {"tui_project_id": "tui_1"}).code == 401
+
+
+class TestImportableProjects:
+    """Discovery, so a browser never needs to know an id."""
+
+    def test_it_lists_what_the_tui_has(self, monkeypatch):
+        import yeaboi.app.importer as importer
+        from yeaboi.persistence import ProjectSummary
+
+        summary = ProjectSummary(
+            name="Payments",
+            id="tui_1",
+            created="2 days ago",
+            status="Complete",
+            feature_count=3,
+            story_count=12,
+            task_count=20,
+            sprint_count=2,
+            jira_summary="",
+            progress=1.0,
+            updated_at="2026-08-01T00:00:00",
+        )
+        monkeypatch.setattr(importer, "load_projects", lambda: [summary])
+        rows = importer.importable_projects()
+        assert rows == [
+            {
+                "id": "tui_1",
+                "name": "Payments",
+                "status": "Complete",
+                "stories": 12,
+                "updated_at": "2026-08-01T00:00:00",
+            }
+        ]
+
+    def test_a_project_with_no_id_is_skipped(self, monkeypatch):
+        # It cannot be imported, so offering it is offering a dead button.
+        import yeaboi.app.importer as importer
+        from yeaboi.persistence import ProjectSummary
+
+        blank = ProjectSummary(
+            name="Broken",
+            id="",
+            created="",
+            status="",
+            feature_count=0,
+            story_count=0,
+            task_count=0,
+            sprint_count=0,
+            jira_summary="",
+            progress=0.0,
+            updated_at="",
+        )
+        monkeypatch.setattr(importer, "load_projects", lambda: [blank])
+        assert importer.importable_projects() == []
+
+    def test_an_unreadable_store_is_nothing_to_import_not_a_crash(self, monkeypatch):
+        # On a hosted instance there is no ~/.yeaboi at all; an empty list is
+        # the honest answer and a 500 is not.
+        import yeaboi.app.importer as importer
+
+        def boom():
+            raise OSError("no such directory")
+
+        monkeypatch.setattr(importer, "load_projects", boom)
+        assert importer.importable_projects() == []
+
+    def test_the_endpoint_needs_a_session(self, store, tui):
+        app = AppServer(store)
+        assert call(app, "GET", "/api/import/candidates").code == 401
+
+    def test_the_endpoint_returns_the_candidates(self, store, tui, monkeypatch):
+        import yeaboi.app.importer as importer
+
+        monkeypatch.setattr(importer, "importable_projects", lambda: [{"id": "tui_1", "name": "P"}])
+        # The route closed over the module function at build time, so patch the
+        # name the route actually calls.
+        import yeaboi.app.routes as routes_module
+
+        monkeypatch.setattr(routes_module, "importable_projects", lambda: [{"id": "tui_1", "name": "P"}])
+        app = AppServer(store)
+        cookies, csrf = sign_in(app)
+        body = json.loads(call(app, "GET", "/api/import/candidates", cookies=cookies).body)
+        assert body == {"projects": [{"id": "tui_1", "name": "P"}]}

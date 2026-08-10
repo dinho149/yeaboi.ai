@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
+import { ImportDialog } from './Import';
 import { RoomList } from './Rooms';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
@@ -146,12 +147,14 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
 }
 
 function ProjectList({ notify }: { notify: (message: string) => void }) {
+  const [importing, setImporting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   // Keyed on the state's status so the stagger runs when the rows arrive,
   // not on the loading pass when there is nothing to animate.
   const listRef = useEnterList<HTMLUListElement>('li', 'projects');
   const state = useAsync(
     () => get<{ projects: ProjectSummary[] }>('/api/projects'),
-    [],
+    [reloadKey],
     { isEmpty: (data) => data.projects.length === 0 },
   );
 
@@ -170,6 +173,13 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
   }
 
   return (
+    <>
+    <ImportDialog
+      open={importing}
+      onClose={() => setImporting(false)}
+      onImported={() => setReloadKey((n) => n + 1)}
+      notify={notify}
+    />
     <AsyncView
       state={state}
       empty={
@@ -177,14 +187,26 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
           title="No projects yet"
           hint="A project holds the plans, standups and retros for one team."
           action={
-            <Button variant="primary" onClick={create}>
-              New project
-            </Button>
+            <>
+              <Button variant="primary" onClick={create}>
+                New project
+              </Button>
+              <Button onClick={() => setImporting(true)}>Import from the terminal app</Button>
+            </>
           }
         />
       }
     >
       {(data) => (
+        <>
+        <div className={styles.toolbar}>
+          <Button variant="primary" size="small" onClick={create}>
+            New project
+          </Button>
+          <Button size="small" onClick={() => setImporting(true)}>
+            Import
+          </Button>
+        </div>
         <ul className={styles.projectList} ref={listRef}>
           {data.projects.map((project) => (
             <li key={project.id} className={styles.projectRow}>
@@ -201,8 +223,10 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
             </li>
           ))}
         </ul>
+        </>
       )}
     </AsyncView>
+    </>
   );
 }
 

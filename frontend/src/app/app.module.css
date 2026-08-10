@@ -88,6 +88,12 @@
   font-size: var(--fs-l);
 }
 
+.toolbar {
+  display: flex;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
 .projectList {
   display: flex;
   flex-direction: column;

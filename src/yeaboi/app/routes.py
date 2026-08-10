@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from yeaboi.app.auth import looks_like_email, normalise_email
-from yeaboi.app.importer import import_plan
+from yeaboi.app.importer import import_plan, importable_projects
 from yeaboi.app.page import render_app_page
 from yeaboi.app.router import HTTPError, Request, Response, Router, json_response
 from yeaboi.app.sessions import SESSION_COOKIE, clear_cookie_headers, cookie_headers
@@ -307,6 +307,12 @@ def build_router(app: AppServer) -> Router:
     router.delete("/api/artifacts/{artifact_id}", delete_artifact)
 
     # ── import ─────────────────────────────────────────────────────────
+
+    def list_importable(request: Request) -> Response:
+        """What is available to import, so a browser never needs an id."""
+        return json_response({"projects": importable_projects()})
+
+    router.get("/api/import/candidates", list_importable)
 
     def import_tui_plan(request: Request) -> Response:
         """Copy a plan out of the local TUI store into the app.

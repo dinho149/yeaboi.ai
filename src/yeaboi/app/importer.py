@@ -18,9 +18,40 @@ import logging
 
 from yeaboi.app.store import AppStore, Project
 from yeaboi.html_exporter import plan_export_args
-from yeaboi.persistence import load_graph_state
+from yeaboi.persistence import load_graph_state, load_projects
 
 logger = logging.getLogger(__name__)
+
+
+def importable_projects() -> list[dict[str, object]]:
+    """The TUI's projects, as something a browser can choose from.
+
+    Without this the import endpoint takes an id and there is no way to learn
+    one without a terminal, which is exactly the gap that makes the app not
+    actually usable from a browser.
+
+    **Local by nature**, and this is the clearest place that shows: it reads the
+    ``~/.yeaboi`` of whatever machine the server runs on. Correct for a
+    single-tenant instance on someone's laptop; wrong the moment the app is
+    hosted, where there is no such directory and the answer would be an empty
+    list rather than an error. See ``docs/app-plan.md``.
+    """
+    try:
+        summaries = load_projects()
+    except Exception:  # noqa: BLE001 - a missing or malformed store is "nothing to import"
+        logger.warning("could not read the TUI project store", exc_info=True)
+        return []
+    return [
+        {
+            "id": summary.id,
+            "name": summary.name,
+            "status": summary.status,
+            "stories": summary.story_count,
+            "updated_at": summary.updated_at,
+        }
+        for summary in summaries
+        if summary.id
+    ]
 
 
 def import_plan(

@@ -43,3 +43,11 @@ export interface Room {
   join_code: string;
   opened_at: number;
 }
+
+export interface ImportCandidate {
+  id: string;
+  name: string;
+  status: string;
+  stories: number;
+  updated_at: string;
+}
