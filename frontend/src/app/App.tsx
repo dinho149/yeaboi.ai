@@ -19,7 +19,7 @@ import { ProjectAdmin } from './ProjectAdmin';
 import { RoomList } from './Rooms';
 import { Settings } from './Settings';
 import { Credit } from '../shared/Credit';
-import { del, get, post } from './api';
+import { del, get, post, setUnauthorizedHandler } from './api';
 import { interceptLinks, navigate, Routes } from './router';
 import { AsyncView, EmptyState, ErrorState, Loading } from './Slots';
 import { useEnterList, useFlip } from './useMotion';
@@ -291,6 +291,17 @@ export function App({ user: initial }: { user: User | null }) {
   const [user, setUser] = useState<User | null>(initial);
   const { toasts, push, dismiss } = useToasts();
   const path = usePath();
+
+  // A session can end without this tab doing anything: it expires, or another
+  // device uses "sign out on every device". Registered once, so no screen has
+  // to decide what a 401 means on its own.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      navigate('/');
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
   const match = useMemo(() => ROUTES.match(path), [path]);
   const mainRef = useRef<HTMLElement>(null);
   const announcement = useRouteAnnounce(match?.pattern ?? null, path, mainRef);
