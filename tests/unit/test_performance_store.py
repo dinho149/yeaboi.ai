@@ -1,14 +1,29 @@
 """Unit tests for PerformanceStore — round-trips, action-item loop, notes."""
 
+from dataclasses import fields
+
 import pytest
 
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import Annotation, OneOnOnePrep, OneOnOneRecord, SixMonthReview
 from yeaboi.performance.store import PerformanceStore
 
 
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / "sessions.db"
+
+
+def _assert_every_field_populated(artifact) -> None:
+    """Fail if the fixture left any field of ``artifact`` at its dataclass default.
+
+    The full-artifact round-trip tests assert equality, which only proves what the
+    fixture actually populated: a field added to the dataclass later and dropped by
+    the store's deserializer would compare default-to-default and pass silently.
+    This keeps those fixtures honest as the artifacts grow — a new field fails here
+    until it is given a distinct value.
+    """
+    unset = [f.name for f in fields(artifact) if getattr(artifact, f.name) == f.default]
+    assert not unset, f"{type(artifact).__name__} fixture leaves fields at their default: {unset}"
 
 
 class TestPrepRoundTrip:
@@ -27,6 +42,42 @@ class TestPrepRoundTrip:
         assert got.talking_points == ("a", "b")
         assert got.goals == ("ship auth",)
         assert got.carried_action_items == ("write tests",)
+
+    def test_every_prep_field_round_trips(self, db_path):
+        """Every OneOnOnePrep field survives the store's JSON round trip.
+
+        A prep is what a lead reads back before walking into the 1:1, so a field
+        the deserializer drops is a talking point, a gap or a caveat that silently
+        does not make it to the meeting.
+        """
+        prep = OneOnOnePrep(
+            engineer="Ada",
+            date="2026-07-12",
+            talking_points=("Auth rollout went out a sprint early", "Wants more review time"),
+            feedback=("Unblocked Bob on the migration", "Reviews land late in the day"),
+            goals=("Own the billing service", "Mentor one new joiner"),
+            gaps=("Little exposure to the deployment pipeline",),
+            improvements=("Pair on one deploy per sprint",),
+            carried_action_items=("Write the auth runbook",),
+            activity_summary="Closed 7 stories across PROJ-101..PROJ-118, mostly auth.",
+            warnings=("Only one sprint of history — treat trends as provisional",),
+            annotations=(
+                Annotation(
+                    kind="field",
+                    anchor="goals",
+                    label="Promo target",
+                    text="Senior in H2",
+                    author="Lead",
+                    avatar="🦊",
+                    at="2026-07-12T09:30:00+00:00",
+                ),
+            ),
+        )
+        _assert_every_field_populated(prep)
+        with PerformanceStore(db_path) as store:
+            store.record_prep(prep, session_id="s1")
+            got = store.get_latest_prep("Ada")
+        assert got == prep
 
     def test_get_latest_prep_none_when_absent(self, db_path):
         with PerformanceStore(db_path) as store:
@@ -53,6 +104,43 @@ class TestCompletionLoop:
         assert [r.date for r in recents] == ["2026-07-12", "2026-07-01"]
 
 
+class TestCompletionRoundTrip:
+    """The completion artifact itself — TestCompletionLoop covers the action-item loop."""
+
+    def test_every_completion_field_round_trips(self, db_path):
+        """Every OneOnOneRecord field survives the store's JSON round trip.
+
+        The transcript and the email subject are the durable record of what was
+        actually said in a 1:1 — a lead may quote either months later, so neither
+        may quietly deserialize back as an empty string.
+        """
+        record = OneOnOneRecord(
+            engineer="Ada",
+            date="2026-07-12",
+            transcript="Lead: how did the auth rollout land?\nAda: a sprint early, but the runbook is thin.",
+            email_subject="1:1 summary — Ada, 12 Jul 2026",
+            email_summary="Thanks for the chat. Agreed: you own billing next, runbook lands this week.",
+            action_items=("Write the auth runbook", "Draft the billing design"),
+            highlights=("Auth shipped early", "Wants deployment exposure"),
+            warnings=("Transcript was partial — summary covers the second half only",),
+            annotations=(
+                Annotation(
+                    kind="note",
+                    anchor="highlights",
+                    text="Raised again in the sprint retro.",
+                    author="Lead",
+                    avatar="🦊",
+                    at="2026-07-12T10:05:00+00:00",
+                ),
+            ),
+        )
+        _assert_every_field_populated(record)
+        with PerformanceStore(db_path) as store:
+            store.record_completion(record, session_id="s1")
+            (got,) = store.get_recent_completions("Ada")
+        assert got == record
+
+
 class TestReviewRoundTrip:
     def test_record_and_get_latest_review(self, db_path):
         review = SixMonthReview(
@@ -69,6 +157,42 @@ class TestReviewRoundTrip:
         assert got is not None
         assert got.strengths == ("ownership",)
         assert got.overall == "Strong half."
+
+    def test_every_review_field_round_trips(self, db_path):
+        """Every SixMonthReview field survives the store's JSON round trip.
+
+        The review is the most quotable artifact this mode writes about a person:
+        the period bounds and the framework used are what make a judgement
+        attributable, so losing either leaves prose with no scope behind it.
+        """
+        review = SixMonthReview(
+            engineer="Ada",
+            period_start="2026-01-12",
+            period_end="2026-07-12",
+            strengths=("Ownership of the auth rollout", "Clear written design docs"),
+            areas_for_improvement=("Reviews queue up late in the sprint",),
+            achievements=("Shipped auth a sprint early", "Cut onboarding time to two days"),
+            goals=("Own the billing service", "Mentor one new joiner"),
+            overall="Strong half, grounded in 14 delivered stories across two teams.",
+            framework_used="acme-engineering-ladder-v3",
+            warnings=("Half covers 4 sprints of data — narrower than a usual review window",),
+            annotations=(
+                Annotation(
+                    kind="field",
+                    anchor="achievements",
+                    label="Calibration",
+                    text="Reviewed with the staff engineer on 10 Jul.",
+                    author="Lead",
+                    avatar="🐙",
+                    at="2026-07-12T11:00:00+00:00",
+                ),
+            ),
+        )
+        _assert_every_field_populated(review)
+        with PerformanceStore(db_path) as store:
+            store.record_review(review, session_id="s1")
+            got = store.get_latest_review("Ada")
+        assert got == review
 
 
 class TestNotes:
