@@ -88,18 +88,6 @@
   font-size: var(--fs-l);
 }
 
-.retry,
-.action {
-  padding: var(--s2) var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--card);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-s);
-  cursor: pointer;
-}
-
 .projectList {
   display: flex;
   flex-direction: column;
@@ -144,31 +132,3 @@
   max-width: 22rem;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-}
-
-.label {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-}
-
-.input {
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-s);
-}
-
-.error {
-  color: var(--danger);
-  font-size: var(--fs-s);
-}

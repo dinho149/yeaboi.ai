@@ -102,6 +102,22 @@ HTMLMediaElement.prototype.play = () => Promise.resolve();
 HTMLMediaElement.prototype.pause = () => {};
 HTMLMediaElement.prototype.load = () => {};
 
+// <dialog>: jsdom parses the element but implements neither showModal() nor
+// close(), so a component driving a dialog by its methods — which is the only
+// way to get a modal, a focus trap and the top layer — dies at mount. The shim
+// moves the `open` property the way the spec says the methods do, and stops
+// there: the focus trap and the top layer are browser behaviour that no test
+// here asserts, so faking them would be faking behaviour under test.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
 // jsdom defines getContext but throws a "not implemented" notice for every
 // call, which floods the output whenever a canvas renders. Both canvas users
 // here (confetti, the visualiser) already handle a null context by drawing

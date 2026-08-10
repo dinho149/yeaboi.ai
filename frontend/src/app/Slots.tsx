@@ -9,6 +9,7 @@
  */
 
 import type { ComponentChildren } from 'preact';
+import { Button } from '../design/primitives';
 import type { AsyncState } from './useAsync';
 import styles from './app.module.css';
 
@@ -45,11 +46,7 @@ export function ErrorState({ error, retry }: { error: string; retry?: () => void
     <div className={styles.slot} role="alert">
       <p className={styles.slotTitle}>Something did not load</p>
       <p className={styles.slotHint}>{error}</p>
-      {retry ? (
-        <button type="button" className={styles.retry} onClick={retry}>
-          Try again
-        </button>
-      ) : null}
+      {retry ? <Button onClick={retry}>Try again</Button> : null}
     </div>
   );
 }

@@ -108,23 +108,8 @@ class TestDesignLayerIsTheOnlySourceOfStyle:
         assert offenders == [], f"raw spacing in the app layer: {offenders} — use --s1..--s6 / --r-*"
 
 
-class TestEveryTokenUsedIsDefined:
-    """An undefined `var(--x)` fails silently — the property is just dropped.
-
-    That is a nastier failure than a raw literal: the "no hex" guard above
-    passes, the build passes, and the layout quietly collapses in the browser.
-    Caught once already (`--rail-w` was used before it existed).
-    """
-
-    def test_no_app_token_is_undefined(self):
-        design = APP_SRC.parent / "design"
-        defined = set()
-        for path in design.glob("*.css"):
-            # Not anchored to line start: palette.css packs several
-            # declarations onto one line, and `^\s*` misses all but the first.
-            defined.update(re.findall(r"(--[a-z0-9-]+)\s*:", path.read_text()))
-        used = set()
-        for path in APP_SRC.rglob("*"):
-            if path.suffix in {".css", ".tsx", ".ts"}:
-                used.update(re.findall(r"var\((--[a-z0-9-]+)", path.read_text()))
-        assert used <= defined, f"undefined token(s) used by the app layer: {sorted(used - defined)}"
+# An "every var() resolves" guard belonged here, and was deleted rather than
+# kept: `test_web_frontend_guards.py::TestCustomPropertiesResolve` already makes
+# exactly that assertion across the whole of frontend/, including this layer.
+# Two guards for one property means one of them rots unnoticed. It did its job
+# on the way past - it is what caught --rail-w being used before it existed.

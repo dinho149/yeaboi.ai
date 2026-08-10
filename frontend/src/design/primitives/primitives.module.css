@@ -368,3 +368,254 @@
 .lozengeProgress { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
 .lozengeDone { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
 .lozengeBlocked { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+
+/* ── App chrome ───────────────────────────────────────────────────────
+   Milestone 2 primitives: button, field, modal, toast, skeleton, tabs.
+
+   TODO(design): geometry and weight are provisional. Every value here is a
+   token; `test_app_shell.py` fails the build on a raw colour, font stack or
+   spacing literal, and `test_web_frontend_guards.py` fails it on a custom
+   property nothing declares. That is what keeps the design pass a token edit
+   rather than a rewrite. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  border: 1px solid transparent;
+  border-radius: var(--r-s);
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  /* A disabled control must still be legible: greying it into the background
+     is the most common contrast failure in any design system. */
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-small {
+  padding: var(--s1) var(--s3);
+  font-size: var(--fs-2xs);
+}
+
+.btn-medium {
+  padding: var(--s2) var(--s4);
+  font-size: var(--fs-xs);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  /* --ink is each theme's "text on an accent fill" colour. */
+  color: var(--ink);
+}
+
+.btn-secondary {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.fieldLabel {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.fieldHint {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-xs);
+}
+
+.input {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.select {
+  cursor: pointer;
+}
+
+.modal {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  max-width: min(40rem, 92vw);
+}
+
+.modal::backdrop {
+  /* color-mix keeps the scrim tied to the theme rather than a hardcoded rgba. */
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s5);
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: var(--fs-xl);
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+
+.toastRegion {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  z-index: 1;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-s);
+  box-shadow: var(--shadow-1);
+}
+
+.toast-danger,
+.toast-critical {
+  border-color: var(--danger);
+}
+
+.toast-ok {
+  border-color: var(--ok);
+}
+
+.toast-warn {
+  border-color: var(--warn);
+}
+
+.toastClose {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-l);
+  line-height: 1;
+}
+
+.skeleton {
+  display: inline-block;
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.skeletonStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* A skeleton is a hint, not an attraction. Respect the OS setting rather than
+   animating regardless — this is the accessibility default the motion layer in
+   milestone 4 will follow too. */
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: skeletonPulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skeletonPulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: var(--s1);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  padding: var(--s2) var(--s4);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tabActive {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

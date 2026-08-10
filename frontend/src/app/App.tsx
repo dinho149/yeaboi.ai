@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
@@ -59,28 +60,24 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
 
   return (
     <form className={styles.signin} onSubmit={submit}>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          className={styles.input}
-          type="email"
-          required
-          value={email}
-          onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-        />
-      </div>
-      {error ? <p className={styles.error}>{error}</p> : null}
-      <button type="submit" className={styles.action} disabled={busy}>
-        {busy ? 'Signing in' : 'Continue'}
-      </button>
+      <Field label="Email" error={error} required>
+        {(props) => (
+          <Input
+            {...props}
+            type="email"
+            value={email}
+            onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+          />
+        )}
+      </Field>
+      <Button type="submit" variant="primary" busy={busy}>
+        Continue
+      </Button>
     </form>
   );
 }
 
-function ProjectList() {
+function ProjectList({ notify }: { notify: (message: string) => void }) {
   const state = useAsync(
     () => get<{ projects: ProjectSummary[] }>('/api/projects'),
     [],
@@ -88,9 +85,16 @@ function ProjectList() {
   );
 
   async function create() {
+    // TODO(design): a prompt() is a placeholder for a real create dialog —
+    // <Modal> exists for it, but what the flow asks for is a product decision.
     const name = window.prompt('Project name');
     if (!name) return;
-    await post('/api/projects', { name });
+    const result = await post('/api/projects', { name });
+    if (!result.ok) {
+      notify(result.error);
+      return;
+    }
+    notify(`Created ${name}`);
     navigate('/projects');
   }
 
@@ -102,9 +106,9 @@ function ProjectList() {
           title="No projects yet"
           hint="A project holds the plans, standups and retros for one team."
           action={
-            <button type="button" className={styles.action} onClick={create}>
+            <Button variant="primary" onClick={create}>
               New project
-            </button>
+            </Button>
           }
         />
       }
@@ -148,6 +152,7 @@ function ProjectDetailView({ id }: { id: string }) {
 
 export function App({ user: initial }: { user: User | null }) {
   const [user, setUser] = useState<User | null>(initial);
+  const { toasts, push, dismiss } = useToasts();
   const path = usePath();
   const match = useMemo(() => ROUTES.match(path), [path]);
 
@@ -169,16 +174,16 @@ export function App({ user: initial }: { user: User | null }) {
   if (!match) view = <EmptyState title="No such page" hint={path} />;
   else if (match.pattern === '/projects/{id}') view = <ProjectDetailView id={match.params.id ?? ''} />;
   else if (match.pattern === '/settings') view = <EmptyState title="Settings" hint="TODO(design)" />;
-  else view = <ProjectList />;
+  else view = <ProjectList notify={push} />;
 
   return (
     <div className={styles.shell}>
       <header className={styles.masthead}>
         <strong>yeaboi</strong>
         <span className={styles.role}>{user.email}</span>
-        <button type="button" className={styles.action} onClick={signOut}>
+        <Button variant="ghost" size="small" onClick={signOut}>
           Sign out
-        </button>
+        </Button>
       </header>
       <nav className={styles.rail} aria-label="Sections">
         {RAIL.map((item) => (
@@ -196,6 +201,7 @@ export function App({ user: initial }: { user: User | null }) {
       <footer className={styles.footer}>
         <Credit>Built with yeaboi.ai</Credit>
       </footer>
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
