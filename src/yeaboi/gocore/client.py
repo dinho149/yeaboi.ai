@@ -223,11 +223,16 @@ def get_client() -> CoreClient | None:
                 logger.debug("gocore: no yeaboi-core binary found — using the Python path")
             _client_failed = True
             return None
+        client = None
         try:
             client = CoreClient(binary)
             client.hello()
         except Exception as exc:  # noqa: BLE001 — any failure means "no Go path"
             logger.warning("gocore: sidecar unavailable (%s: %s) — using the Python path", type(exc).__name__, exc)
+            # A handshake failure (version mismatch, timeout) leaves a spawned
+            # child behind; without this it survives until interpreter exit.
+            if client is not None:
+                client.close()
             _client_failed = True
             return None
         _client = client
