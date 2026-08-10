@@ -171,9 +171,11 @@ The single decision point. It is the only routine that posts proposals to Slack.
      would only restate them; the per-workstream remainder is the one place a reader learns which
      surface the backlog is piling up on. Omit the line entirely when the sections above listed
      everything — a remainder of zero is not a fact anyone needs.
-   - the two health sections from step 5 — 🚧 **Blocked on an open PR** and 🔇 **Silent 21+ days** —
-     sharing one divider, because they are two halves of one health report and splitting them reads
-     as two unrelated topics. Then, on Mondays only, 📊 **Calibration** from step 6 under a divider
+   - the three health sections from step 5 — ⏳ **Approved, no PR yet**, 🚧 **Blocked on an open
+     PR** and 🔇 **Silent 21+ days** — sharing one divider, because they are three parts of one
+     health report and splitting them reads as unrelated topics. Approved-with-no-PR leads: it is
+     the only one of the three where a human already said yes, so it is the only one where the
+     silence is the fleet's fault rather than the backlog's. Then, on Mondays only, 📊 **Calibration** from step 6 under a divider
      of its own.
    - last, under a final divider, the reminder that approval is ✅ on an item's thread reply
      (relayed within the hour — or `/cowork run slack-relay` for right now) or adding
@@ -221,12 +223,37 @@ The single decision point. It is the only routine that posts proposals to Slack.
 5. **Report the health lines** — if any workstream has filed nothing in 21 days, say so in the
    digest. A silent scout is usually a broken scout, not a clean codebase.
 
-   Separate the two ways a workstream goes quiet, under two headings — 🚧 **Blocked on an open PR**
-   and 🔇 **Silent 21+ days** — each an ordered list, one workstream per item, in the same two-line
-   shape as a proposal. These were one prose paragraph, which is why nobody read past the first name.
+   Separate the three ways work goes quiet, under three headings — ⏳ **Approved, no PR yet**,
+   🚧 **Blocked on an open PR** and 🔇 **Silent 21+ days** — each an ordered list, one item per
+   entry, in the same two-line shape as a proposal. These were one prose paragraph, which is why
+   nobody read past the first name.
 
-   The two lines carry different facts, because the two states are different facts:
+   The lines carry different facts, because the states are different facts:
 
+   - **Approved, no PR yet** — an issue carrying `claude-implement` with no PR behind it.
+     `gh issue list --label claude-implement --state open --json number,title` for the candidates,
+     then per issue `gh pr list --search '<n> in:body' --state all --json number` to see whether one
+     was ever opened. Line one is `**#<n>** <title>`; line two is `— approved <k> days ago, <state>`,
+     where state is `no branch` or `branch pushed, no PR` — check
+     `git ls-remote --heads origin 'refs/heads/feature/issue-<n>-*'` to tell those apart, because
+     they fail differently: nothing started, versus a run truncated between its push and its
+     `gh pr create`.
+
+     **`<k>` is days since the label landed, not since the issue was filed.** Only the timeline
+     carries that:
+     `gh api repos/{owner}/{repo}/issues/<n>/timeline --jq '[.[] | select(.event == "labeled" and
+     .label.name == "claude-implement")] | last | .created_at'`. `createdAt` from `gh issue list` is
+     the filing date, which for a proposal approved after a fortnight in the queue overstates the
+     delay by that fortnight — and the "more than a day is a broken lane" reading below depends on
+     the number meaning what it says.
+
+     This is the only section here about an issue rather than a workstream, and it exists because
+     that window had no owner. The approval is the moment a proposal stops being a question, and
+     from then on nothing watches it: step 4 above is forbidden from ageing these out, so a build
+     that never started leaves an issue no routine will ever mention again. Issue #172 sat in this
+     state from 2026-08-09 — the implement job it triggered exited green having written nothing —
+     and the fleet's only report of it was the same three lines of Slack it had already posted.
+     Anything listed here for more than a day is a broken lane, not a slow one.
    - **Blocked** — line one is the workstream and its linked PR, `**<workstream>** [PR #123 —
      <title>](<pr url>)`; line two is `— ` and what is actually holding that PR up, from the
      `pr_feedback.py` run below (red CI, or *n* unanswered findings).

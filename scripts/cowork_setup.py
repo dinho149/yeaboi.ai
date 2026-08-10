@@ -107,13 +107,49 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # routine that only reports the schedule has no business editing a file or
     # searching the tree, and narrowing it says so where the grant is reviewed.
     "day-ahead": ("Bash", "Read", "Task", "TodoWrite"),
-    # slack-relay relays a human's verbs and nothing else: gh and the manifest
-    # (Bash), the repo and its own allowlist (Read/Glob/Grep), and the routines
-    # API (RemoteTrigger) for pause/resume/run — which nothing else gets: a
-    # sweep that can reach the routines API is a sweep that can un-pause the
-    # fleet. Write/Edit/Task are deliberately absent: the relay's own file
-    # forbids editing anything, and it spawns no crew.
-    "slack-relay": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "TodoWrite"),
+    # slack-relay relays a human's verbs and nothing else: the routines API
+    # (RemoteTrigger) for pause/resume/run — which nothing else gets, because a
+    # sweep that can reach it is a sweep that can un-pause the fleet — the repo
+    # and its own allowlist (Read/Glob/Grep), and a *scoped* shell.
+    #
+    # The scoping is not decoration. This routine held bare ``Bash`` until issue
+    # #172, where relaying one ✅ replaced the issue's whole label set: it lost
+    # ``cowork:proposal``, ``workstream:web-ux`` and ``type:security`` in the same
+    # second it gained ``claude-implement``, and the workstream label is what
+    # ``claude.yml``'s implement job reads to find the charter declaring which
+    # paths an unattended run may touch. The routine had always *said*
+    # ``--add-label``. Saying it is what failed, so the grant says it too.
+    #
+    # This removes the *wholesale* loss, not every possible one: ``gh api`` is gone,
+    # so no verb here can replace a label set in one call, but ``gh issue edit``
+    # still spells ``--remove-label``. That is the right line — the relay must be
+    # able to edit labels to do its job at all — and it is the difference between a
+    # slip that takes one label and one that takes all of them.
+    #
+    # ``Bash(...)`` scoping is honoured by the routines API: a probe registered the
+    # scoped strings and read them back verbatim through ``RemoteTrigger get``, so
+    # ``trigger_plan``'s ``allowed_tools`` comparison stays stable rather than
+    # reporting drift forever. Write/Edit/Task stay absent as well — the relay edits
+    # nothing and spawns no crew.
+    "slack-relay": (
+        "Bash(gh issue view:*)",
+        "Bash(gh issue edit:*)",
+        "Bash(gh issue close:*)",
+        "Bash(gh issue comment:*)",
+        "Bash(gh pr view:*)",
+        "Bash(gh pr close:*)",
+        # The routine leaves an audit comment for issue *and* PR verbs, so closing
+        # a PR without this is a decision with no record of who made it.
+        "Bash(gh pr comment:*)",
+        "Bash(gh pr list:*)",
+        "Bash(uv run python scripts/cowork_relay.py:*)",
+        "Bash(uv run python scripts/cowork_setup.py --json)",
+        "Glob",
+        "Grep",
+        "Read",
+        "RemoteTrigger",
+        "TodoWrite",
+    ),
     # The two PR routines read text nobody here wrote. `gh pr view` and `gh pr
     # diff` return a title, a body and a diff authored by whoever opened the PR —
     # on a public repo that is anyone with a fork — and both routines then hold
@@ -1234,10 +1270,20 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
     edits nothing, and the deployer's only file write is the README URL column,
     made by ``--urls`` inside this script.
 
-    It does not make a holder harmless — both hold ``Bash``, which can write
-    anything. What it removes is the unreviewed path: a change made through this
-    script or through git ends up in a PR, and this check is what keeps the grant
-    from quietly growing a shortcut around that.
+    What it removes is the unreviewed path: a change made through this script or
+    through git ends up in a PR, and this check is what keeps the grant from
+    quietly growing a shortcut around that.
+
+    The second rule is narrower and was bought the hard way. ``Bash`` can write
+    anything, so for a long time this check conceded that it did not make a holder
+    harmless. Issue #172 is what that concession cost: relaying one ✅ replaced the
+    issue's entire label set, taking with it the ``workstream:`` label that scopes
+    which paths the implement job may touch. The relay's own file had always
+    specified ``--add-label``; prose was the only thing enforcing it. So the relay
+    — and only the relay, which runs seventeen times a day on text it did not
+    write — must carry a scoped shell rather than a bare one. ``cd-deploy`` keeps
+    bare ``Bash``: it runs ``git`` and ``gh pr create`` against a plan Python
+    composed, and enumerating that is a list that would rot.
     """
     for routine in routines:
         tools = set(routine_tools(routine.name))
@@ -1245,6 +1291,12 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
             report.fail(
                 f"{routine.path} holds RemoteTrigger and {', '.join(sorted(writers))}",
                 "a routine that can edit the repo must not also reprogram the fleet — drop one",
+            )
+        if routine.name == "slack-relay" and "Bash" in tools:
+            report.fail(
+                f"{routine.path} holds unscoped Bash",
+                "the relay must list the exact `gh` verbs it needs — see issue #172, where a bare "
+                "shell replaced an issue's label set while relaying a single reaction",
             )
 
 
