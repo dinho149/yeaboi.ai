@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -70,6 +71,25 @@ func serve(line string, out *rpc.Writer) {
 		return
 	}
 	id := *req.ID
+	// A panic in a handler (an index slip on an odd payload) would otherwise
+	// take the whole process down, and the accelerator stays gone for the rest
+	// of the session — Python falls back correctly either way, so the cost is
+	// silent slowness. Bound it to the one request instead. The message is a
+	// fixed string, and the local log gets the value only for runtime errors
+	// (index/nil/conversion — they carry no input) and the bare type otherwise:
+	// an arbitrary panic value can quote the input, error messages are logged
+	// by the client, and stderr is drained into the user's local log
+	// (rpc.md: no transcript content ever leaves here, logs included).
+	defer func() {
+		if r := recover(); r != nil {
+			detail := fmt.Sprintf("%T", r)
+			if runtimeErr, ok := r.(runtime.Error); ok {
+				detail = runtimeErr.Error()
+			}
+			log.Printf("panic serving %s: %s", req.Method, detail)
+			_ = out.SendError(id, rpc.CodeInternal, "handler panicked — see the sidecar log")
+		}
+	}()
 	result, rpcErr := dispatch(&req, id, out)
 	if rpcErr != nil {
 		_ = out.SendError(id, rpcErr.Code, rpcErr.Message)

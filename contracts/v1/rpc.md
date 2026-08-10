@@ -123,9 +123,11 @@ canonical JSON.
    `store.py`; refuse (error 1001) when the version in the `schema_info`
    table — where `sessions.py` records it; Python never sets
    `PRAGMA user_version`, which is read only as a fallback for a database
-   no Python build has opened — is > 27 (`sessions.py
-   CURRENT_SCHEMA_VERSION` at contract v1). Mirror the `agent_sessions`
-   primary-key repair check.
+   no Python build has opened — is newer than the binary's
+   `currentSchemaVersion` (`go/internal/agentwatch/store.go`), which a
+   unit test (`test_gocore_packaging.py::TestSchemaGuardLockstep`) keeps
+   equal to `sessions.py CURRENT_SCHEMA_VERSION`. Mirror the
+   `agent_sessions` primary-key repair check.
 5. **Single writer.** The active implementation is the sole writer of the
    agentwatch tables; the report-history tables (`agent_*_reports`,
    `agent_standup_digests`) are Python-only and never touched by Go.

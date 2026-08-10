@@ -18,9 +18,10 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver, registered as "sqlite"
 )
 
-// currentSchemaVersion is sessions.py CURRENT_SCHEMA_VERSION at contract v1.
-// A database whose schema_info version is newer than this must be refused
-// (error 1001) — the Python side owns migrations, Go must never write ahead.
+// currentSchemaVersion mirrors sessions.py CURRENT_SCHEMA_VERSION, pinned by
+// tests/unit/test_gocore_packaging.py::TestSchemaGuardLockstep. A database
+// whose schema_info version is newer than this must be refused (error 1001)
+// — the Python side owns migrations, Go must never write ahead.
 const currentSchemaVersion = 27
 
 // ErrSchemaTooNew is the schema-guard sentinel; the RPC layer maps it to 1001.
