@@ -179,13 +179,28 @@ the import discovery endpoint are correct under all three.
 
 ## Open, in the order I would take them
 
-1. **Answer the question above.** Everything below is cheaper once it is settled.
-2. **Design pass** — the point of the invariants. 10 `TODO(design)` markers, and
-   `frontend/src/design/` is still the only place a colour, font or spacing
-   value lives. Verified on every commit.
-3. **Milestone 5, Tauri** — compiles and its sidecar logic is tested; nobody has
-   watched it open. `SERVER_COMMAND` assumes `yeaboi` on `PATH`, wrong for a
-   distributable. Packaging a Python runtime is the long tail.
+1. **Answer the hosting question above.** Everything below is cheaper once it
+   is settled.
+2. **Design pass** — the point of the invariants. `frontend/src/design/` is
+   still the only place a colour, font or spacing value lives, verified on
+   every commit, so this remains a token edit rather than a rewrite.
+3. **Milestone 5, Tauri** — the window opens, the sidecar dies with it, and an
+   old CLI on `PATH` is now reported rather than mysterious. Two things left:
+   nobody has looked at what the window *renders* (WKWebView is not Chrome),
+   and packaging a Python runtime, which depends on answer 1.
 4. **Live rooms beyond a registry** — embed or port. Needs a product decision.
-5. **Hosting** — the `~/.yeaboi` assumption in `importer.py`, made explicit but
-   not yet removed.
+5. **Hosting** — the `~/.yeaboi` assumption in `app/importer.py`. Made explicit
+   (an unreadable store is an empty list, not a crash) but not removed.
+
+## A recurring defect worth naming
+
+Three features shipped working and unreachable: sign-in needed a terminal,
+import needed an id nobody could discover, and the whole roles system had no UI
+at all. Each was found by asking *what can a person actually do from a browser*
+rather than *do the tests pass* — the tests passed every time.
+
+`grep` the route table against the client's call sites; anything only the
+server knows about is a candidate. Current state: every route the UI needs is
+reachable. `POST /api/projects/{id}/artifacts` and `POST .../rooms` remain
+server-only by design — artifacts arrive by import and rooms are opened by the
+TUI.
