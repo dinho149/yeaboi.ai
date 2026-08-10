@@ -51,10 +51,28 @@ Contrast needed no new tests: `theme.test.ts` already audits every pair these
 use across all five themes. `Nav`/`Menu` deferred — the rail is two links, and
 building a menu primitive before a screen needs one is speculation.
 
-### Milestone 3 — Archetype surfaces
-Wire the four archetypes to real routes:
-document · dashboard · live/interactive · chrome.
-Use `~/yeaboi-design-inventory/` as the content fixtures — real worst-case data.
+### Milestone 3 — Archetype surfaces — **3 of 4**
+- [x] **Chrome** — shell, rail, masthead, sign-in, project list (M1/M2)
+- [x] **Structured document** — `plan`, `roadmap`, `standup`, `retro`,
+      `anonymize` render through `export/Report.tsx` from a stored payload
+- [x] **Quantitative dashboard** — `performance`, `profile`, `poker`,
+      `reporting` — same path, same renderer
+- [ ] **Live / interactive** — NOT wired, and it is not a small job.
+
+**Why live is still open.** The retro and poker boards are separate
+`ThreadingHTTPServer`s with their own in-memory state, their own query-token
+auth and a long-poll loop. They are *ceremonies*: one host, one room, gone when
+the TUI closes. Bringing them inside the app is a genuine port — session
+registry, auth reconciliation, and a decision about whether a board's state
+becomes durable — not a route. It needs a product decision first:
+
+1. **Link out** — the app lists a running board and hands over. Cheapest,
+   keeps two auth models.
+2. **Embed** — iframe the existing server. Fast, but two CSPs and two sessions.
+3. **Port** — boards become app routes over the app's store. Correct, largest.
+
+The post-ceremony *reports* already render as artifacts, so the read path is
+covered; what is missing is the live room.
 
 ### Milestone 4 — Motion layer ("fluid")
 GSAP (skills installed: gsap-core, gsap-timeline, gsap-scrolltrigger,
