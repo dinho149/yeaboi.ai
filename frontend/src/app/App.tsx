@@ -13,6 +13,7 @@ import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
 import { ImportDialog } from './Import';
+import { ProjectAdmin } from './ProjectAdmin';
 import { RoomList } from './Rooms';
 import { Settings } from './Settings';
 import { Credit } from '../shared/Credit';
@@ -264,7 +265,8 @@ function ArtifactList({ projectId }: { projectId: string }) {
 }
 
 function ProjectDetailView({ id, notify }: { id: string; notify: (message: string) => void }) {
-  const state = useAsync(() => get<ProjectDetail>(`/api/projects/${id}`), [id]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const state = useAsync(() => get<ProjectDetail>(`/api/projects/${id}`), [id, reloadKey]);
   return (
     <AsyncView state={state} empty={<EmptyState title="Nothing here" />}>
       {(project) => (
@@ -280,6 +282,7 @@ function ProjectDetailView({ id, notify }: { id: string; notify: (message: strin
               </li>
             ))}
           </ul>
+          <ProjectAdmin project={project} notify={notify} onChanged={() => setReloadKey((n) => n + 1)} />
         </section>
       )}
     </AsyncView>
