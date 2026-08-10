@@ -169,6 +169,15 @@ in the Go twin (each Go file names its Python twin in its header) — otherwise 
 fails and the change cannot merge. Purely additive Python work that the sidecar does not
 serve (new prose, new store columns, rendering) is exempt; when in doubt, run `make parity`.
 
+**One constant outside those files couples the two languages**: `sessions.py`'s
+`CURRENT_SCHEMA_VERSION`, mirrored by `currentSchemaVersion` in
+`go/internal/agentwatch/store.go`. Go refuses a database newer than it understands rather
+than writing behind Python's migrations, so bumping the schema without raising the Go
+ceiling makes the sidecar refuse every upgraded database — the agentwatch family silently
+reverts to the Python path with CI fully green. `tests/unit/test_gocore_packaging.py`
+fails on the drift; raise the Go constant once the new migration is mirrored (or leave it
+deliberately, and say why, when the sidecar must not write behind it).
+
 ## Code Style
 
 - Python 3.11+, ruff for linting/formatting (line-length 120)

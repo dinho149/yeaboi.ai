@@ -1,10 +1,13 @@
-"""The yeaboi-core platform wheel stays in lockstep with the Go sidecar.
+"""Constants the Go sidecar must keep in lockstep with the Python side.
 
-Three parties name the sidecar's version or its wheel, and nothing at build or
-run time compares them: ``binaryVersion`` in the Go entrypoint, the packaging
-pyproject under ``packaging/yeaboi-core/``, and the ``core`` extra's range in
-the root pyproject. Drift ships a wheel whose version lies about the binary
-inside it — so the drift fails the unit suite instead.
+Two couplings, neither compared at build or run time. Versioning: three
+parties name the sidecar's version or its wheel — ``binaryVersion`` in the Go
+entrypoint, the packaging pyproject under ``packaging/yeaboi-core/``, and the
+``core`` extra's range in the root pyproject — and drift ships a wheel whose
+version lies about the binary inside it. Schema: the Go store's
+``currentSchemaVersion`` ceiling must equal ``sessions.CURRENT_SCHEMA_VERSION``
+or the sidecar refuses every upgraded database (see ``TestSchemaGuardLockstep``).
+Both drifts fail the unit suite here instead.
 """
 
 from __future__ import annotations
@@ -58,3 +61,32 @@ class TestCoreVersionLockstep:
             if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "WHEEL_TAGS" for t in node.targets)
         )
         assert set(tags) == {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
+
+
+class TestSchemaGuardLockstep:
+    """The Go schema guard's ceiling must track ``sessions.CURRENT_SCHEMA_VERSION``.
+
+    Nothing else can catch this drift. The guard only fires on a database that
+    has a ``schema_info`` table, and the parity fixtures build their databases
+    through ``AgentWatchStore(db_path)``, which runs the agentwatch DDL alone
+    and never writes that table — so Go falls back to ``PRAGMA user_version``,
+    reads 0, and passes. Meanwhile every *real* ``sessions.db`` carries the
+    Python version, so a bump to 28 against a Go constant still at 27 refuses
+    the database, returns 1001, and drops the whole agentwatch family back to
+    the Python path: the cold scan silently returns to 15-30s, the wheel still
+    installs, and CI is entirely green.
+    """
+
+    def test_go_schema_ceiling_matches_python(self):
+        from yeaboi.sessions import CURRENT_SCHEMA_VERSION
+
+        store_go = (REPO / "go" / "internal" / "agentwatch" / "store.go").read_text(encoding="utf-8")
+        match = re.search(r"const currentSchemaVersion = (\d+)", store_go)
+        assert match, "currentSchemaVersion const not found in go/internal/agentwatch/store.go"
+        assert int(match.group(1)) == CURRENT_SCHEMA_VERSION, (
+            f"go/internal/agentwatch/store.go pins currentSchemaVersion = {match.group(1)} but "
+            f"sessions.CURRENT_SCHEMA_VERSION is {CURRENT_SCHEMA_VERSION}. Bump the Go constant "
+            "after mirroring whatever the new migration changed in the agentwatch tables — or, if "
+            "the migration is one the sidecar genuinely must not write behind, leave it and say so "
+            "here, because the sidecar will refuse every upgraded database until it is raised."
+        )

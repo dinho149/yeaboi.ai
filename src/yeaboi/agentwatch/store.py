@@ -185,7 +185,14 @@ class AgentWatchStore:
         The connection runs in autocommit (``isolation_level = None``), so a
         cold ``collector.refresh()`` used to pay one fsync per statement —
         ~1,500 transactions over a large corpus. Wrapping a batch in
-        BEGIN…COMMIT collapses that to one. Rolls back if the block raises.
+        BEGIN…COMMIT collapses that to one. Rolls back if the exception passes
+        through the ``with`` block — which is NOT how ``refresh()`` uses it:
+        it holds the batch open across loop iterations on an ``ExitStack``, and
+        ``ExitStack.close()`` calls ``__exit__(None, None, None)``, so an
+        unwind there COMMITS the files completed so far. That is deliberate (a
+        file's rollup and its cursor land in the same batch, so committed work
+        is consistent and an interrupted file simply reparses next run), but do
+        not read this line as a rollback guarantee for that caller.
         Every other caller keeps autocommit semantics untouched. Not reentrant:
         SQLite has no nested BEGIN, and nothing here nests batches.
         """
