@@ -328,12 +328,37 @@ func TestSchemaGuardRefusesNewerDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Python records the schema version in schema_info (sessions.py) and never
+	// sets PRAGMA user_version — the guard must read the table.
+	for _, stmt := range []string{
+		"CREATE TABLE IF NOT EXISTS schema_info (schema_version INT NOT NULL)",
+		"INSERT INTO schema_info (schema_version) VALUES (99)",
+	} {
+		if _, err := store.conn.ExecContext(store.ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store.Close()
+	if _, err := OpenStore(dbPath); err == nil {
+		t.Fatal("expected schema guard error")
+	} else if !strings.Contains(err.Error(), "newer") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSchemaGuardFallsBackToPragmaWithoutSchemaInfo(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "sessions.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.conn.ExecContext(store.ctx, "PRAGMA user_version = 99"); err != nil {
 		t.Fatal(err)
 	}
 	store.Close()
 	if _, err := OpenStore(dbPath); err == nil {
-		t.Fatal("expected schema guard error")
+		t.Fatal("expected schema guard error via the pragma fallback")
 	} else if !strings.Contains(err.Error(), "newer") {
 		t.Errorf("unexpected error: %v", err)
 	}

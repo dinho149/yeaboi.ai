@@ -25,7 +25,7 @@ version does not match or the handshake fails.
 
 - `-32601` method not found
 - `-32602` invalid params
-- `1001` schema guard: the SQLite `PRAGMA user_version` is newer than this
+- `1001` schema guard: the sessions.db schema version is newer than this
   binary understands (client must fall back, never write)
 - `1000` internal failure (message is safe to log; it never contains
   transcript content)
@@ -120,9 +120,12 @@ canonical JSON.
    pre-parse stat. Prune DB state for files gone from disk — but never when a
    root failed to scan.
 4. **Schema guard.** Execute the same `CREATE TABLE IF NOT EXISTS` DDL as
-   `store.py`; refuse (error 1001) when `PRAGMA user_version` >
-   27 (`sessions.py CURRENT_SCHEMA_VERSION` at contract v1). Mirror the
-   `agent_sessions` primary-key repair check.
+   `store.py`; refuse (error 1001) when the version in the `schema_info`
+   table — where `sessions.py` records it; Python never sets
+   `PRAGMA user_version`, which is read only as a fallback for a database
+   no Python build has opened — is > 27 (`sessions.py
+   CURRENT_SCHEMA_VERSION` at contract v1). Mirror the `agent_sessions`
+   primary-key repair check.
 5. **Single writer.** The active implementation is the sole writer of the
    agentwatch tables; the report-history tables (`agent_*_reports`,
    `agent_standup_digests`) are Python-only and never touched by Go.

@@ -19,7 +19,7 @@ import (
 )
 
 // currentSchemaVersion is sessions.py CURRENT_SCHEMA_VERSION at contract v1.
-// A database whose PRAGMA user_version is newer than this must be refused
+// A database whose schema_info version is newer than this must be refused
 // (error 1001) — the Python side owns migrations, Go must never write ahead.
 const currentSchemaVersion = 27
 
@@ -128,14 +128,14 @@ func OpenStore(dbPath string) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("busy_timeout: %w", err)
 	}
-	var version int
-	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+	version, err := schemaVersion(ctx, conn)
+	if err != nil {
 		s.Close()
-		return nil, fmt.Errorf("user_version: %w", err)
+		return nil, err
 	}
 	if version > currentSchemaVersion {
 		s.Close()
-		return nil, fmt.Errorf("%w (user_version %d > %d)", ErrSchemaTooNew, version, currentSchemaVersion)
+		return nil, fmt.Errorf("%w (schema_version %d > %d)", ErrSchemaTooNew, version, currentSchemaVersion)
 	}
 	if err := s.rebuildSessionsIfKeyedOnSessionID(); err != nil {
 		s.Close()
@@ -146,6 +146,26 @@ func OpenStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	return s, nil
+}
+
+// schemaVersion reads the version the Python side actually records. sessions.py
+// stores it in the schema_info table and never touches PRAGMA user_version, so
+// the table is authoritative; MAX() tolerates the duplicate rows sessions.py
+// dedupes on open. The pragma is read only when the table does not exist yet
+// (a database no Python build has opened), where both sides agree on 0.
+func schemaVersion(ctx context.Context, conn *sql.Conn) (int, error) {
+	var version int
+	err := conn.QueryRowContext(ctx, "SELECT COALESCE(MAX(schema_version), 0) FROM schema_info").Scan(&version)
+	if err == nil {
+		return version, nil
+	}
+	if !strings.Contains(err.Error(), "no such table") {
+		return 0, fmt.Errorf("schema_info: %w", err)
+	}
+	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return 0, fmt.Errorf("user_version: %w", err)
+	}
+	return version, nil
 }
 
 // Close releases the connection. Safe to call twice.

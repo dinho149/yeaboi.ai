@@ -28,10 +28,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import multiprocessing
 import os
 import re
+import sqlite3
 from collections.abc import Callable, Iterable
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -85,10 +87,17 @@ def _pattern_label(pattern: str) -> str:
     return f"secret-{literal.rstrip('-_').lower()}" if literal else "secret-token"
 
 
+_BEARER_GUARD_RE = re.compile(r"(?i:bearer|basic)")
+
+
 def _guard_bearer(line: str) -> bool:
-    """Any match of the bearer/basic pattern must contain one of the two words."""
-    lowered = line.lower()
-    return "bearer" in lowered or "basic" in lowered
+    """Any match of the bearer/basic pattern must contain one of the two words.
+
+    A regex, not a ``line.lower()`` substring check: ``(?i:…)`` case-folds
+    U+017F (ſ) to "s" where ``str.lower()`` does not, and a guard that is not
+    exactly implied by the pattern it gates silently drops a finding.
+    """
+    return _BEARER_GUARD_RE.search(line) is not None
 
 
 def _guard_url_credentials(line: str) -> bool:
@@ -468,7 +477,15 @@ def refresh(
         use_pool = len(to_parse) >= _PARALLEL_THRESHOLD
         if use_pool:
             try:
-                pool = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, _MAX_PARSE_WORKERS, len(to_parse)))
+                # spawn, never the platform default: refresh() runs on a TUI
+                # worker thread, and fork() from a multi-threaded process can
+                # deadlock the child on a lock the parent held at fork time
+                # (Linux's default through 3.13; macOS already spawns, which is
+                # why it never reproduces here).
+                pool = ProcessPoolExecutor(
+                    max_workers=min(os.cpu_count() or 4, _MAX_PARSE_WORKERS, len(to_parse)),
+                    mp_context=multiprocessing.get_context("spawn"),
+                )
             except Exception as exc:  # spawn limits/sandbox — degrade, never fail
                 logger.warning(
                     "agentwatch: process pool unavailable (%s: %s), parsing serially", type(exc).__name__, exc
@@ -476,14 +493,18 @@ def refresh(
                 use_pool = False
         if use_pool:
             with pool:
-                futures = {
-                    pool.submit(_parse_worker, str(path)): (source, path, file_stat)
+                futures = [
+                    (source, path, file_stat, pool.submit(_parse_worker, str(path)))
                     for source, path, file_stat in to_parse
-                }
-                # Completion order ≠ scan order, but the meter carries only
-                # aggregate counts, so it stays monotonic either way.
-                for future in as_completed(futures):
-                    source, path, file_stat = futures[future]
+                ]
+                # Drain in SUBMISSION order, not completion order: warnings are
+                # persisted, exported and rendered, and the Go twin
+                # (collector.go) applies results in submission order — draining
+                # as_completed would make the warning order nondeterministic
+                # run-to-run and diverge from the sidecar on any corpus with
+                # two unparseable files. Workers still run in parallel; only
+                # the apply step is ordered.
+                for source, path, file_stat, future in futures:
                     try:
                         result = future.result()
                     except Exception as exc:  # worker died (BrokenProcessPool, pickling)
@@ -492,8 +513,19 @@ def refresh(
         else:
             for source, path, file_stat in to_parse:
                 _apply(source, path, file_stat, _parse_worker(str(path)))
+    except sqlite3.OperationalError as exc:
+        # sessions.db is shared: another writer (a scheduled headless standup,
+        # the TUI saving a session) can hold the write lock past the 5s busy
+        # timeout, and BEGIN/COMMIT then raises. refresh() promises to never
+        # raise — keep what committed, warn, and let the next run reparse the
+        # rest (uncommitted files were never cursored).
+        logger.warning("agentwatch ingest aborted mid-scan: %s", exc)
+        stats.warnings.append("scan interrupted: sessions.db was busy — partial results, rerun to complete")
     finally:
-        batch.close()
+        try:
+            batch.close()
+        except sqlite3.OperationalError as exc:
+            logger.warning("agentwatch batch commit failed: %s", exc)
     # Guarantee the meter closes at N/N even when the last file's stat() failed
     # and its per-file emit was skipped — the bar must never freeze short.
     if on_progress is not None and total and last_pct != 100:

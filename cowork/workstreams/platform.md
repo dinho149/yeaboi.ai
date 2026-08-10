@@ -4,7 +4,9 @@
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
-`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`
+`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`, and the Go sidecar seam —
+`go/` (the `yeaboi-core` binary and its `internal/` twins of Python engines), `contracts/v1/`,
+`src/yeaboi/gocore/`, `tests/parity/` (the byte-parity gate between the twins)
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 

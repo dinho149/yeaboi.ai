@@ -93,9 +93,14 @@ var patternGuards = map[string]func(string) bool{
 	`(?<=://)[^/\s:@]+:[^/\s@]{4,}(?=@)`:          guardURLCredentials,
 }
 
+// bearerGuardRE mirrors collector._BEARER_GUARD_RE: a case-insensitive regex
+// rather than a ToLower substring check, because `(?i)` simple-folds U+017F
+// (ſ) to "s" where ToLower does not — the guard must be exactly implied by
+// the pattern it gates or a finding is silently lost.
+var bearerGuardRE = regexp.MustCompile(`(?i)bearer|basic`)
+
 func guardBearer(line string) bool {
-	lowered := strings.ToLower(line)
-	return strings.Contains(lowered, "bearer") || strings.Contains(lowered, "basic")
+	return bearerGuardRE.MatchString(line)
 }
 
 func guardURLCredentials(line string) bool {
@@ -119,6 +124,14 @@ var secretPatterns = func() []secretPattern {
 // `(?:\s|$)` tail of rm-rf-root is equivalent here: `$` without re.M also
 // matches just before a trailing newline in Python, but that position is
 // already covered by `\s` matching the newline itself.
+//
+// Accepted deviation (rpc.md rule 10 documents the same for standup): `\b`
+// here is RE2's ASCII boundary while Python's is Unicode-aware, so a
+// non-ASCII word rune adjacent to a keyword (e.g. "curlé") flips the
+// decision in one implementation only. Every `\b` in these patterns sits
+// next to ASCII shell syntax, where the two agree; a drift would need a
+// non-ASCII letter glued to a shell keyword, which the parity corpus treats
+// as out of scope rather than post-filtering four patterns for it.
 var riskyBashPatterns = []riskyPattern{
 	{"curl-pipe-shell", "high", regexp.MustCompile(`\b(?:curl|wget)\b[^|;&]*\|[` + pySpace + `]*(?:sudo[` + pySpace + `]+)?(?:ba|z|da)?sh\b`)},
 	{"base64-decode-pipe-shell", "high", regexp.MustCompile(`base64[` + pySpace + `]+(?:-d|--decode)[^|;&]*\|[` + pySpace + `]*(?:ba|z|da)?sh\b`)},

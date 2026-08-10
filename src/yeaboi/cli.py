@@ -1951,8 +1951,6 @@ def _cmd_analyze(args: argparse.Namespace, console: Console) -> int:
         _print_profile_summary(console, sub)
     comparison = result.get("comparison") or []
     if comparison:
-        from rich.table import Table
-
         table = Table(title="Delivery — side by side", show_header=True)
         table.add_column("Metric", style="bold")
         table.add_column("Jira")
@@ -2082,8 +2080,6 @@ def _run_learn(console: Console) -> None:
     console.print(f"  Sprint completion rate: [bold]{profile.sprint_completion_rate:.0f}%[/bold]")
 
     if profile.point_calibrations:
-        from rich.table import Table
-
         table = Table(title="Story Point Calibration", show_header=True)
         table.add_column("Points", style="bold")
         table.add_column("Avg Cycle Time")

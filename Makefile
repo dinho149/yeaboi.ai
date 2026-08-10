@@ -248,7 +248,8 @@ go-test: ## Run the Go unit tests
 	cd go && go test ./...
 
 go-lint: ## Vet + gofmt check for the Go tree
-	cd go && go vet ./... && test -z "$$(gofmt -l .)" || { gofmt -l ./go; echo "gofmt: files need formatting"; exit 1; }
+	cd go && go vet ./...
+	@cd go && files="$$(gofmt -l .)"; if [ -n "$$files" ]; then echo "$$files"; echo "gofmt: files need formatting"; exit 1; fi
 
 parity: go-build ## Build the sidecar and run the Python↔Go parity suite unskipped
 	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core $(UV) run pytest tests/parity -v

@@ -887,6 +887,10 @@ def _updates_from_result(
         name = str(sk.get("name") or "")
         m = (llm_members or {}).get(name, {})
         summary = ((m.get("summary") or "").strip() if llm else "") or str(sk.get("fallback_summary") or "")
+        # Deliberate: the self-report overlay keys on the TEXT, not on which
+        # path produced it — an LLM that literally answers "No activity
+        # detected." is saying the same thing the fallback says, and a member
+        # who typed a self-report is a better source than either.
         if summary == "No activity detected." and self_reported.get(name):
             summary = self_reported[name]
         joined_signals = "; ".join(blocker_signals.get(name, ()))
