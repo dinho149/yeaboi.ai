@@ -209,6 +209,26 @@ the import discovery endpoint are correct under all three.
 5. **Hosting** — the `~/.yeaboi` assumption in `app/importer.py`. Made explicit
    (an unreadable store is an empty list, not a crash) but not removed.
 
+## Work found by auditing rather than by the plan
+
+With items 1–5 blocked, the productive move has been to audit an axis and fix
+what turns up. Four rounds so far, each finding something the test suite was
+structurally unable to see:
+
+| Axis | Found |
+|---|---|
+| Route table vs. client call sites | Sign-in, import and the whole roles system, all unreachable |
+| Native dialogs | `window.prompt`, which WKWebView may not implement at all |
+| axe over the app's own screens | An unnamed `<select>`; no route announcement or focus move |
+| Failure modes | A bad response shape escaping `useAsync`; no error boundary; `login_tokens` never pruned |
+
+The pattern is that green tests say the code does what it says, and say nothing
+about whether a person can reach it, hear it, or recover from it.
+
+**Remaining audit ideas, roughly in value order:** what happens on a slow or
+flapping connection; whether the app works at 320px; keyboard-only traversal of
+every screen; and what a second browser tab does to a session.
+
 ## A recurring defect worth naming
 
 Three features shipped working and unreachable: sign-in needed a terminal,
