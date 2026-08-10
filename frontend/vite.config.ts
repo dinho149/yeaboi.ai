@@ -11,6 +11,29 @@ import { ENTRIES, globalName } from './entries.mjs';
  * with a strict CSP, so the usual defaults are all wrong. Read the comments
  * before changing anything here.
  */
+/**
+ * Strip vendor documentation URLs out of the built bundle.
+ *
+ * `test_bundle_fetches_nothing` greps the minified output for any external
+ * origin, because once esbuild has been through it there is no way to tell an
+ * `<a href>` from a `fetch()`. GSAP embeds `https://gsap.com` in a console
+ * warning ("GSAP target not found"), which is a *sentence*, not a request — but
+ * the guard cannot know that, and the project already spends its one carve-out
+ * on the footer credit.
+ *
+ * Widening the guard to allow a second origin would cost it its teeth. Removing
+ * the string costs a broken link in a console message nobody reads in
+ * production, and leaves the bundle honestly free of external origins rather
+ * than exempted from the check. So: delete it, and keep the guard blunt.
+ */
+const stripVendorDocUrls = () => ({
+  name: 'yeaboi:strip-vendor-doc-urls',
+  renderChunk(code: string) {
+    // split/join rather than replaceAll: the tsconfig lib target predates it.
+    return { code: code.split('https://gsap.com').join(''), map: null };
+  },
+});
+
 export default defineConfig(({ mode, command }) => {
   const entry = ENTRIES[mode as keyof typeof ENTRIES];
   if (command === 'build' && !entry) {
@@ -20,6 +43,8 @@ export default defineConfig(({ mode, command }) => {
   }
 
   return {
+    plugins: [stripVendorDocUrls()],
+
     // Vite mistakes the repo root for the project root otherwise and starts
     // hunting for a index.html at the wrong level.
     root: import.meta.dirname,

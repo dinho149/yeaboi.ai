@@ -19,6 +19,7 @@ import { Report } from '../export/Report';
 import { get } from './api';
 import { AsyncView, EmptyState } from './Slots';
 import { useAsync } from './useAsync';
+import { useEnter } from './useMotion';
 
 interface ArtifactResponse {
   id: string;
@@ -31,9 +32,16 @@ interface ArtifactResponse {
 
 export function ArtifactView({ id }: { id: string }) {
   const state = useAsync(() => get<ArtifactResponse>(`/api/artifacts/${id}`), [id]);
+  // Keyed on the id: navigating between two reports re-runs the entrance, so
+  // the second one arrives rather than snapping into place.
+  const ref = useEnter<HTMLDivElement>(id);
   return (
     <AsyncView state={state} empty={<EmptyState title="Nothing here" />}>
-      {(artifact) => <Report report={artifact.payload} />}
+      {(artifact) => (
+        <div ref={ref}>
+          <Report report={artifact.payload} />
+        </div>
+      )}
     </AsyncView>
   );
 }

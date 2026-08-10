@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "gsap": "^3.15.0",
     "preact": "^10.29.1"
   },
   "devDependencies": {

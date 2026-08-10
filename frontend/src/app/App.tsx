@@ -15,6 +15,7 @@ import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
 import { AsyncView, EmptyState } from './Slots';
+import { useEnterList } from './useMotion';
 import { useAsync } from './useAsync';
 import type { ArtifactSummary, ProjectDetail, ProjectSummary, User } from './types';
 import styles from './app.module.css';
@@ -85,6 +86,9 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
 }
 
 function ProjectList({ notify }: { notify: (message: string) => void }) {
+  // Keyed on the state's status so the stagger runs when the rows arrive,
+  // not on the loading pass when there is nothing to animate.
+  const listRef = useEnterList<HTMLUListElement>('li', 'projects');
   const state = useAsync(
     () => get<{ projects: ProjectSummary[] }>('/api/projects'),
     [],
@@ -121,7 +125,7 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
       }
     >
       {(data) => (
-        <ul className={styles.projectList}>
+        <ul className={styles.projectList} ref={listRef}>
           {data.projects.map((project) => (
             <li key={project.id} className={styles.projectRow}>
               <a className={styles.projectName} href={`/projects/${project.id}`}>
