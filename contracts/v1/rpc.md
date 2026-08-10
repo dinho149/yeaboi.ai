@@ -35,7 +35,7 @@ version does not match or the handshake fails.
 ### core.hello
 
 Params: `{}` →
-`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate"]}`
+`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate", "analysis.classify_markers", "analysis.score_code"]}`
 
 Adding a method is additive and does NOT bump `contract_version`: an older
 binary answers `-32601` for a method it lacks, which the client surfaces as a
@@ -101,6 +101,32 @@ implementation; `build_aggregate_inputs` builds the params).
   object keep the reference implementation's dict-literal key order — the
   Python client json.loads-es them into dicts whose order feeds the LLM
   prompt's `json.dumps` bytes.
+
+### analysis.classify_markers
+
+AI-marker classification over the TEAM ANALYSIS activity items: the adoption
+signal (`aggregate_ai_markers`) plus every AI-marked evidence sample. A
+separate method from `analysis.score_code` for a concurrency reason, not a
+data one: the caller starts its footprint-insights LLM thread with
+signal+samples *before* the change-metadata fetch, so classification must
+return before the inputs of `score_code` even exist. Pure; no DB, no
+progress. See `analysis.classify_markers.json` and
+`src/yeaboi/analysis/aggregate.py` (`classify_markers` is the reference
+implementation; `build_classify_inputs` builds the params).
+
+### analysis.score_code
+
+The deterministic tail of the TEAM ANALYSIS code pipeline: code-change
+health (`analyse_changed_files` → `prioritize_actions` →
+`changed_file_summary` → `coverage_notes`, gated by `health_enabled` with an
+empty scaffold when off), the per-member activity tally, and
+practice-hygiene scoring (`member_practices`). One pure function of its
+params: Python fetches all tracker state (including the change-metadata
+fan-out and its cache hits), sends everything as data, and overlays
+provenance and LLM prose on the returned scaffold. No DB, no progress;
+result key order is contractual. See `analysis.score_code.json` and
+`src/yeaboi/analysis/aggregate.py` (`score_code` is the reference
+implementation; `build_score_inputs` builds the params).
 
 ## Semantics the Go side must preserve
 

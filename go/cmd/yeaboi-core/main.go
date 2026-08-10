@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/yeaboi-ai/yeaboi/go/internal/agentwatch"
+	"github.com/yeaboi-ai/yeaboi/go/internal/analysis"
 	"github.com/yeaboi-ai/yeaboi/go/internal/contract"
 	"github.com/yeaboi-ai/yeaboi/go/internal/pysem"
 	"github.com/yeaboi-ai/yeaboi/go/internal/rpc"
@@ -28,7 +29,8 @@ import (
 
 // binaryVersion is the sidecar's own semver, reported by core.hello.
 // 0.2.0: standup.aggregate joined the method set (additive; contract v1).
-const binaryVersion = "0.2.0"
+// 0.3.0: analysis.classify_markers + analysis.score_code (additive; contract v1).
+const binaryVersion = "0.3.0"
 
 var methods = []string{
 	"agentwatch.refresh",
@@ -36,6 +38,8 @@ var methods = []string{
 	"agentwatch.standup",
 	"agentwatch.security",
 	"standup.aggregate",
+	"analysis.classify_markers",
+	"analysis.score_code",
 }
 
 func main() {
@@ -197,6 +201,31 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 		result, aggErr := standup.RunStandupAggregate(params)
 		if aggErr != nil {
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: aggErr.Error()}
+		}
+		return result, nil
+	case "analysis.classify_markers", "analysis.score_code":
+		// Same ordered decode as standup.aggregate: the params are
+		// Python-dict-shaped data whose object key order is contractual, and
+		// the result goes back out the same way (pysem.Obj.MarshalJSON).
+		// Emits no progress: both calls are milliseconds of pure compute.
+		if len(req.Params) == 0 {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params are required"}
+		}
+		decoded, err := pysem.DecodeOrdered(req.Params)
+		if err != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: fmt.Sprintf("invalid params: %v", err)}
+		}
+		params := pysem.AsObj(decoded)
+		if params == nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params must be an object"}
+		}
+		run := analysis.RunClassifyMarkers
+		if req.Method == "analysis.score_code" {
+			run = analysis.RunScoreCode
+		}
+		result, runErr := run(params)
+		if runErr != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: runErr.Error()}
 		}
 		return result, nil
 	default:

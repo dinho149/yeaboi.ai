@@ -39,7 +39,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from yeaboi.analysis.cancellation import AnalysisCancelledError
-from yeaboi.analysis.practices import member_practices
 from yeaboi.team_profile import AiAdoptionSignal
 
 logger = logging.getLogger(__name__)
@@ -899,8 +898,24 @@ def run_ai_adoption(
                 f"{fanout_collapsed} duplicate fan-out item(s) collapsed "
                 "(same author, message, and day across multiple repositories)"
             )
-        signal = aggregate_ai_markers(items) if footprint_enabled else AiAdoptionSignal()
+        # Marker classification runs behind the Go seam (analysis/aggregate.py;
+        # the sidecar serves analysis.classify_markers, Python is the fallback).
+        # It happens HERE, before the change-metadata fetch, because the insights
+        # thread below consumes signal+samples concurrently with that fetch.
+        # Evidence is no longer a first-N sample: every AI-marked item is kept so
+        # recommendations and JSON/MCP consumers can inspect the complete basis.
         if footprint_enabled:
+            from yeaboi.analysis.aggregate import (
+                build_classify_inputs,
+                classify_markers,
+                go_classify,
+                signal_from_wire,
+            )
+
+            classify_inputs = build_classify_inputs(items=items)
+            classified = go_classify(classify_inputs) or classify_markers(classify_inputs)
+            signal = signal_from_wire(classified["signal"])
+            samples = classified["samples"]
             _report_code_progress(
                 progress,
                 ("ai_footprint",),
@@ -909,6 +924,9 @@ def run_ai_adoption(
                 total=signal.scanned_commits + signal.scanned_prs,
                 unit="commits and PRs",
             )
+        else:
+            signal = AiAdoptionSignal()
+            samples = []
 
         # Repo/source provenance onto the signal for honest, source-aware rendering.
         from dataclasses import replace
@@ -931,9 +949,6 @@ def run_ai_adoption(
         selected_sources = sorted({provider for provider, _container, _repository in touched_repositories})
         signal = replace(signal, sources_scanned=tuple(selected_sources), repos_scanned=tuple(repos_scanned))
 
-        # Evidence is no longer a first-N sample. Keep every AI-marked item so
-        # recommendations and JSON/MCP consumers can inspect the complete basis.
-        samples = _collect_samples(items, limit=None) if footprint_enabled else []
         insights_executor = None
         insights_future = None
         if footprint_enabled and generate_insights and signal.scanned_commits + signal.scanned_prs > 0:
@@ -1137,16 +1152,28 @@ def run_ai_adoption(
                     continue
                 item["changed_file_paths"] = [str(file.get("path", "")) for file in ok_files if file.get("path")]
 
-        file_reports: list[dict] = []
-        health_findings: list[dict] = []
-        action_plan: list[dict] = []
-        file_coverage: dict = {}
-        repository_health: dict = {}
-        if health_enabled:
-            from yeaboi.analysis.code_health import analyse_changed_files, changed_file_summary, prioritize_actions
-            from yeaboi.analysis.coverage import coverage_notes
+        # The deterministic tail — code health, the per-member activity tally,
+        # and practice hygiene (tests / docs / tickets / descriptions, the lead
+        # signal of the card) — runs behind the Go seam (analysis/aggregate.py;
+        # the sidecar serves analysis.score_code, Python is the fallback).
+        from yeaboi.analysis.aggregate import build_score_inputs, go_score, score_code
 
-            file_reports, health_findings, file_coverage = analyse_changed_files(changed_files, window_days)
+        score_inputs = build_score_inputs(
+            items=items,
+            changed_files=changed_files,
+            selected_users=selected_users,
+            window_days=window_days,
+            health_enabled=health_enabled,
+            changed_file_cache_hits=changed_file_cache_hits,
+        )
+        scored = go_score(score_inputs) or score_code(score_inputs)
+        health = scored["health"]
+        file_reports = health["file_reports"]
+        health_findings = health["findings"]
+        action_plan = health["action_plan"]
+        file_coverage = health["file_coverage"]
+        repository_health = health["repository_health"]
+        if health_enabled:
             _report_code_progress(
                 progress,
                 ("code_health",),
@@ -1155,42 +1182,11 @@ def run_ai_adoption(
                 total=len(file_reports),
                 unit="file records",
             )
-            action_plan = prioritize_actions(health_findings)
-            repository_health = changed_file_summary(file_reports, health_findings)
-            repository_health["cached_change_lookups"] = changed_file_cache_hits
-            file_coverage["cached_change_lookups"] = changed_file_cache_hits
-            coverage.extend(coverage_notes(file_coverage))
-        commit_count = sum(item.get("kind") == "commit" for item in items)
-        pr_count = sum(item.get("kind") == "pr" for item in items)
-        # Per-member activity over the deduped items so the footprint
-        # denominator is verifiable at a glance (one member carrying thousands
-        # of automated commits is visible instead of hidden in a total).
-        member_rows: dict[str, dict] = {
-            member: {"member": member, "commits": 0, "prs": 0, "ai_marked": 0} for member in selected_users
-        }
-        agent_row = {"member": "AI agent accounts", "commits": 0, "prs": 0, "ai_marked": 0}
-        for item in items:
-            kind = item.get("kind")
-            if kind not in ("commit", "pr"):
-                continue
-            slot = "commits" if kind == "commit" else "prs"
-            ai_marked = bool(_classify_ai_item(item))
-            targets = [member_rows[m] for m in item.get("matched_members", ()) if m in member_rows]
-            if not targets and item.get("agent_authored"):
-                targets = [agent_row]
-            for row in targets:
-                row[slot] += 1
-                if ai_marked:
-                    row["ai_marked"] += 1
-        member_activity = sorted(
-            (row for row in member_rows.values()),
-            key=lambda row: (-(row["commits"] + row["prs"]), row["member"]),
-        )
-        if agent_row["commits"] or agent_row["prs"]:
-            member_activity.append(agent_row)
-        # Practice hygiene (tests / docs / tickets / descriptions) per member —
-        # the lead signal of the card; the footprint is secondary context.
-        practices = member_practices(items, selected_users)
+            coverage.extend(health["coverage_notes"])
+        commit_count = scored["activity_counts"]["commits"]
+        pr_count = scored["activity_counts"]["prs"]
+        member_activity = scored["member_activity"]
+        practices = scored["practices"]
         file_data = practices["file_data"]
         if health_enabled and file_data["total"] and file_data["with_file_data"] < file_data["total"]:
             coverage.append(
@@ -1231,8 +1227,8 @@ def run_ai_adoption(
             "activity_summary": {
                 "commits": commit_count,
                 "authored_prs": pr_count,
-                "reviews": sum(item.get("kind") == "review" for item in items),
-                "comments": sum(item.get("kind") == "comment" for item in items),
+                "reviews": scored["activity_counts"]["reviews"],
+                "comments": scored["activity_counts"]["comments"],
                 "repositories_touched": len(touched_repositories),
             },
             "changed_files": file_reports,
