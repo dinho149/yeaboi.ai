@@ -1590,6 +1590,43 @@ class TestToolOverrides:
         tools = setup.routine_tools("slack-relay")
         assert not {"Write", "Edit", "Task"} & set(tools)
 
+    def test_the_relays_shell_is_scoped_to_the_verbs_it_relays(self):
+        """Issue #172: relaying one ✅ replaced the issue's entire label set.
+
+        `gh issue edit --add-label` adds; `gh api -X PUT .../labels` replaces. The
+        routine had always specified the first, and prose was the only thing
+        enforcing it — so #172 lost `cowork:proposal`, `workstream:web-ux` and
+        `type:security` in the second it gained `claude-implement`. The workstream
+        label is what `claude.yml`'s implement job reads to find the charter
+        declaring which paths an unattended 110-turn run may touch, so this is a
+        boundary rather than bookkeeping. Bare Bash puts it back within reach.
+        """
+        tools = set(setup.routine_tools("slack-relay"))
+        assert "Bash" not in tools, "a bare shell can spell the label-replacing call the relay must not make"
+        shells = {tool for tool in tools if tool.startswith("Bash(")}
+        assert shells, "the relay still needs a shell — scoped, not absent"
+        assert not any("gh api" in shell for shell in shells), "gh api is how a label set gets replaced"
+
+    def test_the_relay_can_reach_the_helper_that_decides_for_it(self):
+        """The decision moved into `scripts/cowork_relay.py`; a grant that cannot
+        run it would send the relay straight back to judging the thread by eye."""
+        tools = set(setup.routine_tools("slack-relay"))
+        assert any("cowork_relay.py" in tool for tool in tools)
+
+    def test_the_doctor_fails_on_an_unscoped_relay(self, monkeypatch):
+        """The invariant above, through check_grants' own failure path."""
+        monkeypatch.setitem(setup.TOOL_OVERRIDES, "slack-relay", ("Bash", "Read", "RemoteTrigger"))
+        report = setup.Report()
+        setup.check_grants(report, ROUTINES)
+        assert any("unscoped Bash" in problem for problem in report.problems)
+
+    def test_the_deployer_keeps_a_bare_shell(self):
+        """The narrowing is the relay's alone. `cd-deploy` runs git and `gh pr
+        create` against a plan Python composed; enumerating that is a list that
+        would rot, and it runs once a merge rather than seventeen times a day on
+        text it did not write."""
+        assert "Bash" in set(setup.routine_tools("cd-deploy"))
+
     def test_the_day_ahead_routine_cannot_write(self):
         """`cron/day-ahead.md` states this as a safety property — it runs one script
         and posts one message — so it is pinned rather than left as prose. Task

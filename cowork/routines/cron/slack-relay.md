@@ -60,17 +60,40 @@ announce who is unauthorized.
    dropped approval that step 5 then accounts for as nothing unprocessed — the one way this routine
    fails without saying so.
 
-2. **Early exit** — if no message or reaction from an allowlisted human lacks the 🤖 marker, stop.
-   Post nothing, touch nothing. This is the common case and the whole cost model: most hourly runs
-   are a read and an exit.
+2. **Plan** — hand the thread to Python and act on what comes back:
 
-3. **Act** — process each unhandled item per the verb grammar below, oldest first.
+   ```bash
+   uv run python scripts/cowork_relay.py --plan < thread.json
+   ```
+
+   Pass one JSON array of the item replies, each `{ts, text, reactions}` with `reactions` a list of
+   `{name, users}` — the fields `slack_read_thread` and `slack_get_reactions` return, copied across
+   and nothing else. **Transcribe; do not summarise, filter or pre-judge.** Deciding which replies
+   are still owed an action is the helper's job, and every reply you drop on the way in is a
+   decision made without it.
+
+   **An empty `plan` is the early exit: stop, post nothing, touch nothing.** This is the common
+   case and the whole cost model — most hourly runs are a read and an exit.
+
+   This step used to be yours, and on 2026-08-09 it announced the same approval of #172 three
+   times. Reading a fifteen-reply thread once an hour and remembering which reaction you have
+   already answered is not judgement, it is a filter and a set membership test, and the acks it has
+   to see past are its own — the connector posts them under the human's name. So it is Python's,
+   the same way `cowork_setup.py --triggers` diffs the fleet rather than the model diffing it by
+   eye. If the helper cannot run, say so in thread and act on nothing; never fall back to deciding
+   by eye.
+
+3. **Act** — run each entry's `command` **verbatim, as given, oldest first**. Do not compose a `gh`
+   invocation of your own and do not add flags to one: the argv the helper emits is the whole
+   grant this routine has, and the one time an invocation was composed here it replaced an issue's
+   entire label set. An entry with `"verb": "ask"` carries no command — reply in thread asking for
+   a single verb, and touch nothing.
 
 4. **Acknowledge** — **every processed message gets the 🤖 marker**, whatever processing meant: an
-   action, a read-only answer, a refusal, or a question back. The marker is what step 2's early
-   exit keys on, so a reply without a marker is a reply the next sixteen runs will post again —
-   an ambiguous message answered hourly for two days is exactly the channel noise this system
-   refuses to make. Then:
+   action, a read-only answer, a refusal, or a question back. The marker is what step 2's helper
+   keys on, so a reply left unmarked is a reply the next sixteen runs will answer again — an
+   ambiguous message answered hourly for two days is exactly the channel noise this system refuses
+   to make. Then:
    - post one reply in the message's thread — for an action, exactly what was done ("added
      `claude-implement` to #231", "closed #232", "paused `cowork: security-sweep`"), one line, no
      preamble; for anything else, the answer, the refusal, or the question;
@@ -79,17 +102,28 @@ announce who is unauthorized.
      permalink tool is available, the channel name plus the message timestamp identifies the message;
      use that. The comment is what makes a label applied by a routine auditable as a human decision.
 
-5. **Account for the run** — end the session's own output with one line: how many messages and
-   reactions were read, how many were from allowlisted humans, how many were already marked, and
-   what was done. This never goes to Slack — it is the run log at claude.ai/code/routines, and it
-   is what `/cowork run slack-relay` surfaces. Without it, a wrong member ID in the allowlist, a
-   renamed Slack tool, and a genuinely quiet week all read identically as silence.
+   **Both of these happen only for work this run actually did.** If the `gh` state check in
+   Idempotency below says the verb already happened, mark the message and stop there: no thread
+   reply, no audit comment. #172 carries two identical `approved via Slack ✅` comments because a
+   run that correctly found the label already applied announced it anyway.
+
+5. **Account for the run** — end the session's own output with the helper's `counts` (replies read,
+   item replies, already marked, actionable) and what was done with each. This never goes to Slack
+   — it is the run log at claude.ai/code/routines, and it is what `/cowork run slack-relay`
+   surfaces. Report the numbers Python counted, not numbers you recall: a wrong member ID in the
+   allowlist, a renamed Slack tool, and a genuinely quiet week all read identically as silence, and
+   the counts are what tell them apart.
 
 ## Verb grammar
 
 - **✅ on a digest thread reply** (each leads with `#<issue-number>`) → `gh issue edit <n>
-  --add-label claude-implement`. The implement job fires on the label exactly as if it had been
-  added on GitHub.
+  --add-label claude-implement`, which the helper emits for you. The implement job fires on the
+  label exactly as if it had been added on GitHub. **`--add-label` adds; it never replaces.** On
+  2026-08-09 this verb was carried out with a call that replaced the set, and #172 lost
+  `cowork:proposal`, `workstream:web-ux` and `type:security` in the second it gained
+  `claude-implement` — the workstream label being the one `claude.yml` reads to find the charter
+  that says which paths the build may touch. The grant no longer includes `gh api`, so the wrong
+  call is now unavailable rather than merely forbidden.
 - **❌ on a digest thread reply**, or on any message that references exactly one open issue or PR →
   `gh issue close <n>` / `gh pr close <n>`. A message referencing several is ambiguous — ask in
   thread, act on nothing.
@@ -110,10 +144,18 @@ announce who is unauthorized.
 ## Idempotency
 
 No new state — GitHub issues are the queue, and this routine keeps it that way. The record is the
-🤖 marker plus GitHub itself:
+🤖 marker plus GitHub itself, and `scripts/cowork_relay.py` is where the first half is read:
 
+- **A reply is an input only if it leads with `#<issue-number>`**, which is the digest's thread-reply
+  contract. This routine's own acks say "added `claude-implement` to #172" — the number is not
+  leading, so they never match, and it cannot answer itself. That mattered because the Slack
+  connector posts under the allowlisted human's own member ID: an ack comes back on the next read
+  looking exactly like human input.
+- **A reply carrying 🤖 is done.** The marker sits on the message, never on a reaction — a reaction
+  cannot carry one. Marked means handled, whatever the reaction under it says.
 - Before any GitHub write, check current state. Label already present, or issue already closed:
-  the verb already happened (here or on GitHub directly) — add the marker and say nothing new.
+  the verb already happened (here or on GitHub directly) — mark the message and say nothing at all,
+  in Slack or on the issue.
 - Both ✅ and ❌ from allowlisted humans on one item: do nothing, reply asking for a single verb.
 - Once GitHub says decided, later reactions on the same item are ignored. GitHub is authoritative;
   Slack is how a decision arrives, not where it lives.
