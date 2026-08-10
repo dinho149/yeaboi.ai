@@ -40,10 +40,16 @@ after a design pass, defer it; if it is invisible to a design pass, do it now.*
 **Not yet:** importing a TUI project into the app (`persistence.py` copy), and a
 real identity provider behind `TODO(auth)` in `routes.py`.
 
-### Milestone 2 — App chrome primitives (thin skin)
-The vocabulary that does not exist yet: `Button`, `Input`, `Field`, `Select`,
-`Modal`, `Toast`, `Nav`, `Menu`, `EmptyState`, `Skeleton`, `Tabs`.
-Build them **token-driven and unopinionated**, so restyling is a token edit.
+### Milestone 2 — App chrome primitives (thin skin) — **DONE**
+- [x] `Button` (3 variants), `Field`/`Input`/`Select`, `Modal`, `Toast`,
+      `Skeleton`, `Tabs` — in `design/primitives/`, exported from the barrel
+- [x] 22 behaviour + axe tests (`Chrome.test.tsx`)
+- [x] The shell adopts them; its ad-hoc CSS is deleted
+- [x] jsdom `<dialog>` shim in `test/setup.ts`
+
+Contrast needed no new tests: `theme.test.ts` already audits every pair these
+use across all five themes. `Nav`/`Menu` deferred — the rail is two links, and
+building a menu primitive before a screen needs one is speculation.
 
 ### Milestone 3 — Archetype surfaces
 Wire the four archetypes to real routes:
