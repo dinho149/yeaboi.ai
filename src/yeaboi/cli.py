@@ -778,7 +778,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Serve the web app (projects, documents and live rooms in a browser)",
     )
     app_p.add_argument("--host", default="127.0.0.1", help="Interface to bind (default 127.0.0.1)")
-    app_p.add_argument("--port", type=int, default=5599, help="Port to bind (default 5599)")
+    app_p.add_argument(
+        "--port",
+        type=int,
+        default=5599,
+        help="Port to bind (default 5599). 0 asks the OS for a free one, and the chosen port "
+        "is printed on stdout as 'listening on http://HOST:PORT' for a supervisor to read.",
+    )
     app_p.add_argument(
         "--public",
         action="store_true",
@@ -1322,7 +1328,18 @@ def _cmd_app(args, console: Console) -> int:
         console.print(f"[red]{exc}[/red]")
         return 1
 
-    console.print(f"[green]yeaboi[/green] app on [bold]http://{args.host}:{args.port}[/bold]")
+    # The bound port, which is not args.port when 0 was asked for.
+    bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
+    url = f"http://{bound_host}:{bound_port}"
+
+    # A machine-readable line on stdout, before any decoration. A desktop shell
+    # or supervisor spawning this process has no other way to learn the port
+    # when it asked for 0, and parsing Rich's styled output would be parsing a
+    # presentation decision. Printed with flush because a parent reading the
+    # pipe blocks until it arrives.
+    print(f"listening on {url}", flush=True)
+
+    console.print(f"[green]yeaboi[/green] app on [bold]{url}[/bold]")
     console.print("[dim]Ctrl-C to stop[/dim]")
     try:
         httpd.serve_forever()
