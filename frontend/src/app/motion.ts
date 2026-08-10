@@ -29,6 +29,12 @@
  */
 
 import { gsap } from 'gsap';
+import { Flip } from 'gsap/Flip';
+
+// Registered at module scope, once. A plugin registered inside a component
+// re-registers on every mount, and one registered nowhere fails silently at
+// the call site rather than at import.
+gsap.registerPlugin(Flip);
 
 /**
  * The feel of the app, in one place.
@@ -40,6 +46,14 @@ import { gsap } from 'gsap';
 export const MOTION = {
   /** Entrances. Long enough to be seen, short enough not to be waited on. */
   enter: 0.32,
+  /**
+   * A shared element moving between two layouts. Slower than an entrance
+   * because the eye is tracking a specific thing across the screen rather than
+   * noticing something appear, and losing it defeats the point.
+   */
+  move: 0.45,
+  /** The curve for a move: accelerate away, decelerate in. */
+  moveEase: 'power2.inOut',
   /** Exits are faster than entrances — nobody wants to watch something leave. */
   exit: 0.18,
   /** Between items in a stagger. */
@@ -124,4 +138,70 @@ export function enterList(container: Element | null, selector: string): () => vo
     gsap.fromTo(items, vars.from, vars.to);
   }, container);
   return () => context.revert();
+}
+
+
+/**
+ * Move a shared element between two layouts.
+ *
+ * This is the part that pays for the animation dependency, and the reason is
+ * not decoration. When a row in a list becomes the heading of the screen you
+ * just opened, an interface that fades one out and the other in has told you
+ * nothing; one where the row *travels* has told you where you came from and
+ * what you are now looking at. That is the whole of "fluid" — continuity of
+ * object identity across a state change — and CSS cannot do it, because the two
+ * elements are in different subtrees with different parents.
+ *
+ * FLIP: read First, mutate, read Last, Invert the delta, Play it out. GSAP's
+ * `Flip.getState` / `Flip.from` are the two halves.
+ *
+ * ## Usage
+ *
+ * ```ts
+ * const state = captureFlip('[data-flip-id]');
+ * // ...change routes, reorder, expand...
+ * playFlip(state);
+ * ```
+ *
+ * The mutation in between must be synchronous, because `Flip.from` measures the
+ * new positions the moment it is called. An `await` in the middle measures a
+ * layout that has not happened yet and animates from nothing to nothing.
+ */
+export type FlipState = ReturnType<typeof Flip.getState> | null;
+
+/** Read the current geometry of everything matching `selector`. */
+export function captureFlip(selector: string): FlipState {
+  if (prefersReducedMotion()) return null;
+  if (typeof document === 'undefined') return null;
+  if (!document.querySelector(selector)) return null;
+  return Flip.getState(selector);
+}
+
+/**
+ * Animate from a captured state to wherever those elements are now.
+ *
+ * Returns a cleanup that kills the tween, so a second navigation landing
+ * mid-flight cannot leave an element stranded between two layouts — which is
+ * the characteristic failure of hand-rolled FLIP and looks like a rendering
+ * bug rather than an animation one.
+ */
+export function playFlip(state: FlipState): () => void {
+  if (!state) return () => {};
+  const animation = Flip.from(state, {
+    duration: MOTION.move,
+    ease: MOTION.moveEase,
+    // Elements move between different parents across a route change, so they
+    // have to come out of the flow to travel; without this they jump.
+    absolute: true,
+    // Scale rather than stretch width/height: transforms are composited, and
+    // animating a width re-lays out the page every frame.
+    scale: true,
+    // Anything that was not on screen before simply appears, rather than
+    // flying in from a position it never occupied.
+    onEnter: (elements: Element[]) => gsap.fromTo(elements, { opacity: 0 }, { opacity: 1, duration: MOTION.enter }),
+    onLeave: (elements: Element[]) => gsap.to(elements, { opacity: 0, duration: MOTION.exit }),
+  });
+  return () => {
+    animation?.kill();
+  };
 }

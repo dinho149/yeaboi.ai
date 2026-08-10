@@ -8,7 +8,7 @@
 
 import { useEffect, useRef } from 'preact/hooks';
 
-import { enter, enterList } from './motion';
+import { captureFlip, enter, enterList, playFlip } from './motion';
 
 /** Animate an element in when it mounts, and when `key` changes. */
 export function useEnter<T extends Element>(key: unknown = null) {
@@ -24,4 +24,26 @@ export function useEnterList<T extends Element>(selector: string, key: unknown =
   // change mid-animation cannot leave a half-faded row behind.
   useEffect(() => enterList(ref.current, selector), [selector, key]);
   return ref;
+}
+
+
+/**
+ * Run a FLIP transition across a synchronous state change.
+ *
+ * Returns a function that takes the mutation. The capture happens before it and
+ * the play immediately after, in one turn — so the caller cannot accidentally
+ * put an `await` in the middle, which would measure a layout that has not
+ * happened and animate from nothing to nothing.
+ */
+export function useFlip(selector = '[data-flip-id]') {
+  const cleanup = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => cleanup.current?.(), []);
+
+  return (mutate: () => void) => {
+    const state = captureFlip(selector);
+    mutate();
+    cleanup.current?.();
+    cleanup.current = playFlip(state);
+  };
 }

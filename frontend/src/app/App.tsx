@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
 import { RoomList } from './Rooms';
@@ -16,7 +17,7 @@ import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
 import { AsyncView, EmptyState } from './Slots';
-import { useEnterList } from './useMotion';
+import { useEnterList, useFlip } from './useMotion';
 import { useAsync } from './useAsync';
 import type { ArtifactSummary, ProjectDetail, ProjectSummary, User } from './types';
 import styles from './app.module.css';
@@ -37,15 +38,22 @@ const RAIL = [
 
 function usePath(): string {
   const [path, setPath] = useState(window.location.pathname);
+  const flip = useFlip();
+
   useEffect(() => {
-    const sync = () => setPath(window.location.pathname);
+    // The route change is the mutation FLIP brackets: capture where the shared
+    // elements are, swap the view, then play them to their new positions.
+    // `flushSync` is what makes the swap synchronous — without it Preact
+    // batches the re-render and Flip.from measures the OLD layout, producing a
+    // tween from a position to itself.
+    const sync = () => flip(() => flushSync(() => setPath(window.location.pathname)));
     window.addEventListener('popstate', sync);
     const release = interceptLinks(sync);
     return () => {
       window.removeEventListener('popstate', sync);
       release();
     };
-  }, []);
+  }, [flip]);
   return path;
 }
 
@@ -158,7 +166,13 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
         <ul className={styles.projectList} ref={listRef}>
           {data.projects.map((project) => (
             <li key={project.id} className={styles.projectRow}>
-              <a className={styles.projectName} href={`/projects/${project.id}`}>
+              {/* The flip id is what makes this row and the detail heading the
+                  same object to the motion layer. Same id on both screens. */}
+              <a
+                className={styles.projectName}
+                href={`/projects/${project.id}`}
+                data-flip-id={`project-${project.id}`}
+              >
                 {project.name}
               </a>
               <span className={styles.role}>{project.role}</span>
@@ -208,7 +222,7 @@ function ProjectDetailView({ id, notify }: { id: string; notify: (message: strin
     <AsyncView state={state} empty={<EmptyState title="Nothing here" />}>
       {(project) => (
         <section>
-          <h1>{project.name}</h1>
+          <h1 data-flip-id={`project-${project.id}`}>{project.name}</h1>
           <RoomList projectId={project.id} notify={notify} />
           <ArtifactList projectId={project.id} />
           <ul className={styles.projectList}>
