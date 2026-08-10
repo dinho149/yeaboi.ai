@@ -8,8 +8,10 @@ Each one is a way the flow could look correct and not be.
 
 from __future__ import annotations
 
+import io
 import json
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -23,7 +25,7 @@ from yeaboi.app.auth import (
     LoginTokens,
     looks_like_email,
 )
-from yeaboi.app.server import AppServer
+from yeaboi.app.server import AppRequestHandler, AppServer
 from yeaboi.app.store import AppStore
 
 
@@ -305,3 +307,81 @@ class TestBuildDeliverer:
         monkeypatch.setenv("YEABOI_APP_BASE_URL", "https://app.example.com")
         monkeypatch.setenv("STANDUP_SMTP_HOST", "smtp.example.com")
         assert isinstance(build_deliverer(), SmtpDeliverer)
+
+
+class TestTheDevLinkIsActuallyVisible:
+    """Regression: the dev link went to a logger nothing had configured.
+
+    `yeaboi app` calls no `basicConfig`, so `logger.warning` was swallowed and
+    the sign-in link was never shown — meaning sign-in was impossible on a
+    laptop, which is the default path. Found by running the server rather than
+    by any test, which is why there is now a test.
+    """
+
+    def test_the_link_is_written_to_the_stream_without_logging_configured(self):
+        import io
+        import logging
+
+        from yeaboi.app.auth import LogDeliverer, LoginRequest
+
+        stream = io.StringIO()
+        deliverer = LogDeliverer(stream)
+        # Silence logging entirely: the link must still appear.
+        logging.disable(logging.CRITICAL)
+        try:
+            deliverer.deliver(LoginRequest(email="ada@example.com", token="tok-visible", expires_at=0))
+        finally:
+            logging.disable(logging.NOTSET)
+        assert "tok-visible" in stream.getvalue()
+        assert "ada@example.com" in stream.getvalue()
+
+    def test_it_still_records_what_it_delivered(self):
+        import io
+
+        from yeaboi.app.auth import LogDeliverer, LoginRequest
+
+        deliverer = LogDeliverer(io.StringIO())
+        deliverer.deliver(LoginRequest(email="a@b.com", token="t", expires_at=0))
+        assert deliverer.delivered[-1].token == "t"
+
+
+class TestHeadIsAnswered:
+    """Regression: the stdlib handler answers 501 for a verb it has no method
+    for, so a monitor probing with HEAD reported the service as broken while a
+    browser saw it fine.
+
+    Driven against the real handler class with a fake socket, because the bug
+    lived in the HTTP layer rather than in `AppServer.handle` — which is
+    exactly the seam the rest of the suite bypasses.
+    """
+
+    def _raw_response(self, app, method: str, path: str) -> str:
+        handler = AppRequestHandler.__new__(AppRequestHandler)
+        handler.server = SimpleNamespace(app=app)
+        handler.wfile = io.BytesIO()
+        handler.rfile = io.BytesIO()
+        handler.path = path
+        handler.headers = {}
+        handler.request_version = "HTTP/1.1"
+        # send_response logs the request line, so it has to exist.
+        handler.requestline = f"{method} {path} HTTP/1.1"
+        handler.command = method
+        handler.client_address = ("127.0.0.1", 0)
+        handler.log_message = lambda *a, **k: None
+        getattr(handler, f"do_{method}")()
+        return handler.wfile.getvalue().decode("latin-1")
+
+    def test_head_answers_200_with_a_content_length_and_no_body(self, app):
+        raw = self._raw_response(app, "HEAD", "/api/health")
+        assert " 200 " in raw.splitlines()[0]
+        assert "Content-Length: 15" in raw
+        _, _, body = raw.partition("\r\n\r\n")
+        assert body == ""
+
+    def test_head_carries_the_same_security_headers_as_get(self, app):
+        head = self._raw_response(app, "HEAD", "/")
+        assert "Content-Security-Policy:" in head
+
+    def test_get_still_carries_its_body(self, app):
+        raw = self._raw_response(app, "GET", "/api/health")
+        assert '{"status":"ok"}' in raw

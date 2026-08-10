@@ -97,25 +97,37 @@ class Deliverer(Protocol):
 
 
 class LogDeliverer:
-    """Writes the link to the log. The default, and dev-only.
+    """Writes the link to stderr. The default, and dev-only.
 
     yeaboi has no SMTP dependency and no outbound network posture, and adding
     one to make sign-in work locally would be a poor trade. So the default
-    prints, loudly, and :class:`AppServer` refuses to use it when cookies are
-    marked secure — the closest available signal for "this is not a laptop".
+    prints, and :class:`AppServer` refuses to use it when cookies are marked
+    secure — the closest available signal for "this is not a laptop".
+
+    **stderr rather than only the logger**, and that is not a style choice: the
+    logger is silent unless something has configured handlers, and ``yeaboi
+    app`` does not. Routing the dev link through logging alone meant the link
+    was never shown and sign-in was impossible on a laptop — the default path,
+    broken by a missing ``basicConfig`` two modules away. A deliverer whose
+    entire job is "show me the link" must not depend on that.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, stream: object | None = None) -> None:
         self.delivered: list[LoginRequest] = []
+        self._stream = stream
 
     def deliver(self, request: LoginRequest) -> None:
+        import sys  # noqa: PLC0415
+
         self.delivered.append(request)
-        logger.warning(
-            "SIGN-IN LINK for %s (dev delivery, expires in %d min): /signin?token=%s",
-            request.email,
-            LOGIN_TTL_SECONDS // 60,
-            request.token,
+        stream = self._stream if self._stream is not None else sys.stderr
+        message = (
+            f"\n  SIGN-IN LINK for {request.email}"
+            f" (dev delivery, expires in {LOGIN_TTL_SECONDS // 60} min):\n"
+            f"  /signin?token={request.token}\n"
         )
+        print(message, file=stream, flush=True)  # type: ignore[arg-type]
+        logger.warning("dev sign-in link issued for %s", request.email)
 
 
 class SmtpDeliverer:

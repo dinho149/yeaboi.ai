@@ -21,7 +21,7 @@ from yeaboi.app.auth import Deliverer, InsecureDelivererError, LogDeliverer, Log
 from yeaboi.app.router import UNSAFE_METHODS, Request, Response, Router, json_response, parse_request
 from yeaboi.app.sessions import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE, SessionStore
 from yeaboi.app.store import AppStore
-from yeaboi.web.security import policy, send_document
+from yeaboi.web.security import policy, send_document, send_headers
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +60,41 @@ class AppRequestHandler(BaseHTTPRequestHandler):
             return b""
         return self.rfile.read(length)
 
-    def _handle(self, method: str) -> None:
+    def _handle(self, method: str, *, body: bool = True) -> None:
         request = parse_request(method, self.path, dict(self.headers), self._read_body())
         response = self._app.handle(request)
         csp = response.csp if response.csp is not None else APP_CSP
-        send_document(self, response.code, response.body, response.content_type, csp=csp, extra=response.headers)
+        if body:
+            send_document(self, response.code, response.body, response.content_type, csp=csp, extra=response.headers)
+            return
+        # HEAD: the same headers, including the Content-Length the body would
+        # have had, and no body. Built with send_headers rather than by adding
+        # a flag to send_document, because web/security.py is the security
+        # workstream's file and one caller's convenience is a poor reason to
+        # widen the one place every response's headers come from.
+        send_headers(
+            self,
+            response.code,
+            csp=csp,
+            extra=(
+                ("Content-Type", response.content_type),
+                ("Content-Length", str(len(response.body))),
+                *response.headers,
+            ),
+        )
+        self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib signature
         self._handle("GET")
+
+    def do_HEAD(self) -> None:  # noqa: N802 - stdlib signature
+        """Answer HEAD as GET-without-a-body.
+
+        Monitors and load balancers probe with HEAD, and the stdlib handler
+        answers 501 for any verb it has no method for — so a health check that
+        works in a browser reported the service as broken.
+        """
+        self._handle("GET", body=False)
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib signature
         self._handle("POST")

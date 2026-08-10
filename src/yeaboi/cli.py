@@ -773,6 +773,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    app_p = subparsers.add_parser(
+        "app",
+        help="Serve the web app (projects, documents and live rooms in a browser)",
+    )
+    app_p.add_argument("--host", default="127.0.0.1", help="Interface to bind (default 127.0.0.1)")
+    app_p.add_argument("--port", type=int, default=5599, help="Port to bind (default 5599)")
+    app_p.add_argument(
+        "--public",
+        action="store_true",
+        help="Mark cookies Secure for a TLS deployment. Requires YEABOI_APP_BASE_URL and SMTP, "
+        "since sign-in links must not be written to a log off a laptop.",
+    )
+
     agents_p = subparsers.add_parser(
         "agents",
         help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
@@ -1281,12 +1294,44 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
         "agents": _cmd_agents,
+        "app": _cmd_app,
     }
     try:
         return handlers[args.command](args, console)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+
+def _cmd_app(args, console: Console) -> int:
+    """Serve the web app until interrupted.
+
+    Binds 127.0.0.1 by default. The app holds every project a person has, and a
+    server that reaches the LAN the moment it starts is the kind of default
+    that is discovered rather than chosen — ``--host 0.0.0.0`` is available and
+    deliberate.
+    """
+    from yeaboi.app.server import serve  # noqa: PLC0415 - keeps CLI startup cheap
+
+    try:
+        httpd = serve(args.host, args.port, secure_cookies=args.public)
+    except OSError as exc:
+        console.print(f"[red]Could not bind {args.host}:{args.port} — {exc}[/red]")
+        return 1
+    except Exception as exc:  # InsecureDelivererError, and anything else at boot
+        console.print(f"[red]{exc}[/red]")
+        return 1
+
+    console.print(f"[green]yeaboi[/green] app on [bold]http://{args.host}:{args.port}[/bold]")
+    console.print("[dim]Ctrl-C to stop[/dim]")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\nStopped.")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    return 0
 
 
 def _strict_exit(strict: bool, warnings, empty: bool = False) -> int:
