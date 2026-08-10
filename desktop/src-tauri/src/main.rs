@@ -10,19 +10,15 @@
 
 mod sidecar;
 
-use sidecar::Sidecar;
+use sidecar::{resolve_server_command, Sidecar};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// The command that serves the app.
-///
-/// `yeaboi` from PATH for now, which is right for a development build and wrong
-/// for a distributable — a packaged app cannot assume the user has installed
-/// the CLI. Replacing this with a bundled runtime is the packaging work
-/// recorded in `desktop/README.md`.
-const SERVER_COMMAND: &str = "yeaboi";
-
 fn main() {
-    let sidecar = match Sidecar::start(SERVER_COMMAND) {
+    // `yeaboi` from PATH unless YEABOI_SERVER_CMD says otherwise. Still wrong
+    // for a distributable — a packaged app cannot assume the CLI is installed
+    // at all — and bundling a runtime is the packaging work in desktop/README.md.
+    let program = resolve_server_command();
+    let sidecar = match Sidecar::start(&program) {
         Ok(sidecar) => sidecar,
         Err(error) => {
             // No window, because there is nothing to show in one: the app has

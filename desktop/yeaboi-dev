@@ -1,0 +1,8 @@
+#!/bin/sh
+# Run the yeaboi in this checkout, for `YEABOI_SERVER_CMD=desktop/yeaboi-dev`.
+#
+# Exists because the `yeaboi` on a developer's PATH is often an older release
+# with no `app` command at all, so the desktop window would run the wrong
+# program. Pointing at the repo is the fix, and a two-line shim beats telling
+# everyone to remember a python -m incantation.
+exec "$(dirname "$0")/../.venv/bin/python" -m yeaboi.cli "$@"

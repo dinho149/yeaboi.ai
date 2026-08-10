@@ -17,6 +17,7 @@
 //!    user's projects open on a port they cannot see and cannot stop. `Drop`
 //!    kills it, and the window's exit handler drops it.
 
+use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -29,9 +30,41 @@ pub struct Sidecar {
     pub url: String,
 }
 
+/// Where the server command comes from.
+///
+/// `YEABOI_SERVER_CMD` first so a developer can point the window at a checkout
+/// rather than at whatever is installed. That override is not a convenience:
+/// the `yeaboi` on a developer's PATH is frequently an older release, and an
+/// older release has no `app` subcommand at all — so without this the window
+/// silently runs the wrong program and dies with an argparse error.
+pub fn resolve_server_command() -> String {
+    match env::var("YEABOI_SERVER_CMD") {
+        Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
+        _ => "yeaboi".to_string(),
+    }
+}
+
+/// Whether `program` is a build that actually has `yeaboi app`.
+///
+/// A preflight rather than a guess. The alternative is spawning it and reading
+/// the failure out of a closed pipe, which reports "exited before starting" for
+/// a cause that is really "your installed CLI is three minor versions old" —
+/// a message that sends someone looking in the wrong place entirely.
+pub fn supports_app_command(program: &str) -> bool {
+    Command::new(program)
+        .args(["app", "--help"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 #[derive(Debug)]
 pub enum SidecarError {
     Spawn(std::io::Error),
+    /// The program exists but has no `app` subcommand.
+    NoAppCommand(String),
     /// The process started but never announced a URL.
     NoAddress,
     /// The process exited before announcing one.
@@ -41,7 +74,17 @@ pub enum SidecarError {
 impl std::fmt::Display for SidecarError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SidecarError::Spawn(e) => write!(f, "could not start `yeaboi app`: {e}"),
+            SidecarError::Spawn(e) => write!(
+                f,
+                "could not start `yeaboi app`: {e}\n\n\
+                 Is yeaboi installed and on PATH? Set YEABOI_SERVER_CMD to point at a checkout."
+            ),
+            SidecarError::NoAppCommand(program) => write!(
+                f,
+                "`{program}` has no `app` command.\n\n\
+                 This is usually an older yeaboi on PATH. Upgrade it, or set YEABOI_SERVER_CMD \
+                 to the build you mean."
+            ),
             SidecarError::NoAddress => write!(f, "`yeaboi app` did not report a URL in time"),
             SidecarError::Exited(code) => {
                 write!(f, "`yeaboi app` exited before starting (code {code:?})")
@@ -68,6 +111,9 @@ pub fn parse_listening(line: &str) -> Option<String> {
 impl Sidecar {
     /// Start the server and wait for it to say where it is.
     pub fn start(program: &str) -> Result<Self, SidecarError> {
+        if !supports_app_command(program) {
+            return Err(SidecarError::NoAppCommand(program.to_string()));
+        }
         let mut child = Command::new(program)
             .args(["app", "--port", "0"])
             .stdout(Stdio::piped())
@@ -118,7 +164,8 @@ impl Drop for Sidecar {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_listening;
+    use super::{parse_listening, resolve_server_command, supports_app_command, SidecarError};
+    use std::env;
 
     #[test]
     fn reads_the_url_out_of_the_line() {
@@ -146,5 +193,40 @@ mod tests {
     fn refuses_a_non_http_scheme() {
         // The value is handed straight to the webview.
         assert_eq!(parse_listening("listening on file:///etc/passwd"), None);
+    }
+
+    #[test]
+    fn defaults_to_yeaboi_on_path() {
+        env::remove_var("YEABOI_SERVER_CMD");
+        assert_eq!(resolve_server_command(), "yeaboi");
+    }
+
+    #[test]
+    fn an_override_wins() {
+        env::set_var("YEABOI_SERVER_CMD", "/tmp/checkout/yeaboi");
+        assert_eq!(resolve_server_command(), "/tmp/checkout/yeaboi");
+        env::remove_var("YEABOI_SERVER_CMD");
+    }
+
+    #[test]
+    fn a_blank_override_is_ignored() {
+        env::set_var("YEABOI_SERVER_CMD", "   ");
+        assert_eq!(resolve_server_command(), "yeaboi");
+        env::remove_var("YEABOI_SERVER_CMD");
+    }
+
+    #[test]
+    fn a_missing_program_does_not_claim_to_support_app() {
+        assert!(!supports_app_command("definitely-not-a-real-program-xyz"));
+    }
+
+    #[test]
+    fn a_program_without_the_subcommand_is_named_in_the_error() {
+        // The message has to say which program, or it sends someone looking at
+        // the wrong install.
+        let error = SidecarError::NoAppCommand("/usr/local/bin/yeaboi".to_string());
+        let text = format!("{error}");
+        assert!(text.contains("/usr/local/bin/yeaboi"));
+        assert!(text.contains("YEABOI_SERVER_CMD"));
     }
 }

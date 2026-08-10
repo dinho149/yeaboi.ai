@@ -142,9 +142,9 @@ desktop-test: ## Unit-test the desktop shell's sidecar logic
 	@command -v cargo >/dev/null 2>&1 || { echo "cargo not found — see desktop/README.md"; exit 1; }
 	cd desktop/src-tauri && cargo test
 
-desktop-run: ## Run the desktop window (needs `yeaboi` on PATH)
+desktop-run: ## Run the desktop window against this checkout (not the installed CLI)
 	@command -v cargo >/dev/null 2>&1 || { echo "cargo not found — see desktop/README.md"; exit 1; }
-	cd desktop/src-tauri && cargo run
+	cd desktop/src-tauri && YEABOI_SERVER_CMD=$(PWD)/desktop/yeaboi-dev cargo run
 
 site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and robots.txt in docs/
 	$(UV) run python scripts/gen_site_seo.py

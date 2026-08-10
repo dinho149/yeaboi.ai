@@ -51,10 +51,39 @@ Done:
 - `make desktop-test` — 4 Rust tests on the parsing, including that a
   non-`http` scheme is refused, since the value goes straight to the webview.
 
+### It runs
+
+Verified, not assumed:
+
+- The shell starts, spawns the sidecar, and the sidecar creates its store.
+- **The sidecar dies with the window.** Killed the shell, checked for an
+  orphaned `yeaboi app` — none. That was the failure mode most worth proving,
+  because a server outliving its window holds the user's projects on a port
+  they cannot see or stop.
+- The failure path reads properly: pointing `YEABOI_SERVER_CMD` at a nonexistent
+  program produces a message naming the program and the variable, rather than
+  "exited before starting".
+
+### Running it against this checkout
+
+The `yeaboi` on a developer's PATH is often an **older release with no `app`
+command at all** — that was true on the machine this was built on (2.55.0 on
+PATH, 3.4.0 in the repo). The shell would have run the wrong program and died
+with an argparse error pointing nowhere useful. Two things fix that:
+
+```bash
+YEABOI_SERVER_CMD=desktop/yeaboi-dev make desktop-run
+```
+
+`desktop/yeaboi-dev` is a two-line shim that runs this checkout's interpreter,
+and `Sidecar::start` preflights `<cmd> app --help` so an old CLI is reported as
+"has no `app` command" rather than as a mysterious startup failure.
+
 Not done, in the order it matters:
 
-1. **Run it as a window.** `make desktop-run` needs `yeaboi` on `PATH`; nobody
-   has watched it open yet, so treat "it compiles" as exactly that.
+1. **Nobody has looked at the window's contents.** It opens and the server
+   behind it answers; whether the app *renders* correctly inside WKWebView is
+   unverified.
 2. **Packaging a Python runtime.** `SERVER_COMMAND` is `"yeaboi"` from `PATH`,
    which is right for development and wrong for anything shipped — a
    distributable cannot assume the CLI is installed. This is the long tail:
