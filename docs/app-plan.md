@@ -74,11 +74,18 @@ becomes durable — not a route. It needs a product decision first:
 The post-ceremony *reports* already render as artifacts, so the read path is
 covered; what is missing is the live room.
 
-### Milestone 4 — Motion layer ("fluid")
-GSAP (skills installed: gsap-core, gsap-timeline, gsap-scrolltrigger,
-gsap-react, gsap-performance). View transitions, shared-element movement between
-routes, no hard page loads. Must respect `prefers-reduced-motion` via
-`gsap.matchMedia()`.
+### Milestone 4 — Motion layer ("fluid") — **foundation done**
+- [x] `motion.ts` — `MOTION` tokens, `entranceVars` (pure), `enter`, `enterList`
+- [x] `useMotion.ts` hooks; project list and artifact view adopt them
+- [x] 16 tests, both reduced-motion branches asserted
+- [x] Vite `renderChunk` strips GSAP's doc URL so the bundle keeps no external
+      origin and the fetch guard keeps its teeth
+- [ ] Shared-element / FLIP transitions between routes — the part that actually
+      pays for the dependency. `gsap-plugins` (Flip) is the route.
+
+**Cost, stated plainly:** `app.js` 95 KB → 165 KB. Today that buys two
+entrances CSS could have done. If the design pass says the motion should be
+CSS, this is one dependency to remove.
 
 ### Milestone 5 — Desktop (Tauri)
 The existing self-contained IIFE constraint means bundles already run without a
