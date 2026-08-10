@@ -140,6 +140,23 @@ make lint && make test && make web-check
 All three green, then commit. `make web-check` is non-negotiable: it fails on
 stale committed bundles, which is how an autonomous run silently corrupts a repo.
 
+**Order matters, and it is not obvious.** `web-check` compares *committed*
+bundles, so it can only pass after `make web` and the commit — which means it
+is the one gate that cannot run last-before-commit. Its other half, TypeScript,
+can and must:
+
+```
+make web && cd frontend && npm run typecheck && npm test    # before committing
+make lint && make test                                      # before committing
+git commit                                                  # source + bundles together
+make web-check                                              # confirms afterwards
+```
+
+`make web` *builds* but does not typecheck, and `make test` is Python only — so
+skipping the middle line lets a TypeScript error through both gates. That has
+happened once, in a test file, and was caught only by `web-check` after the
+commit.
+
 ## Working agreement
 
 - Branch `app-shell`. Commit freely. **Do not merge to `main`** — the user merges.
