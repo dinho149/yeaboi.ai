@@ -194,6 +194,7 @@ def yesterday_context(
     transcript_corrections: dict[str, list[str]] | None = None,
     *,
     corrections: Sequence[object] = (),
+    corrected_fields: Mapping[str, list[str]] | None = None,
 ) -> dict[str, dict]:
     """Per-member comparison context distilled from the previous standup report.
 
@@ -218,8 +219,13 @@ def yesterday_context(
     time, and rewriting it to make today tidy would falsify that record. A
     member with a transcript correction but no previous update still gets an
     entry — the correction is the only thing we know about their yesterday.
+
+    ``corrected_fields`` is the already-parsed form of ``corrections`` — the
+    aggregate seam pre-parses the edit log in Python because parsing needs
+    ``yeaboi.artifacts.paths``, which the wire (and the Go port) never carries.
+    When given, it wins and ``corrections`` is ignored.
     """
-    fixed = corrected_members(corrections)
+    fixed = dict(corrected_fields) if corrected_fields is not None else corrected_members(corrections)
     context: dict[str, dict] = {}
     if previous_report is not None:
         for member in previous_report.member_updates:

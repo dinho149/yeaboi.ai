@@ -153,6 +153,22 @@ and never builds anything.
   an export is a file, so a dropped field surfaces months later as a blank slide with no server
   and no log to look at.
 
+## REQUIRED: Go sidecar dual maintenance
+
+Two Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with byte-level
+parity enforced by `tests/parity/` (`make parity`, and the `parity` CI job):
+
+- the **agentwatch** family (`src/yeaboi/agentwatch/{collector,store,engine,security_checks}.py`
+  ↔ `go/internal/agentwatch/`), and
+- the **standup deterministic core** (`src/yeaboi/standup/{aggregate,references,relatedness,
+  habits,automation,insights,confidence,categories}.py` + the engine's evidence helpers
+  ↔ `go/internal/standup/`).
+
+Python is the reference implementation. Any behavior change in those files MUST be mirrored
+in the Go twin (each Go file names its Python twin in its header) — otherwise `make parity`
+fails and the change cannot merge. Purely additive Python work that the sidecar does not
+serve (new prose, new store columns, rendering) is exempt; when in doubt, run `make parity`.
+
 ## Code Style
 
 - Python 3.11+, ruff for linting/formatting (line-length 120)

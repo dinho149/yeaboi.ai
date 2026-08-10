@@ -82,11 +82,11 @@ func TestOrderedDecodeKeepsDocumentOrderAndDuplicates(t *testing.T) {
 		t.Fatal("expected object")
 	}
 	// Python dict: duplicate key keeps its first position with the last value.
-	if !reflect.DeepEqual(obj.keys, []string{"z", "a"}) {
-		t.Errorf("keys = %v, want [z a]", obj.keys)
+	if !reflect.DeepEqual(obj.Keys(), []string{"z", "a"}) {
+		t.Errorf("keys = %v, want [z a]", obj.Keys())
 	}
-	if obj.vals["z"] != json.Number("3") {
-		t.Errorf("z = %v, want 3", obj.vals["z"])
+	if obj.Get("z") != json.Number("3") {
+		t.Errorf("z = %v, want 3", obj.Get("z"))
 	}
 }
 

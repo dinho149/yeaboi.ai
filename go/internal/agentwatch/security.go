@@ -94,12 +94,12 @@ func auditOneSettings(path string) []contract.SecurityFinding {
 	if note != nil {
 		findings = append(findings, *note)
 	}
-	if len(settings.keys) == 0 {
+	if len(settings.Keys()) == 0 {
 		return findings
 	}
 
-	permissions := objOrEmpty(settings.getDefault("permissions", nil))
-	defaultModeRaw := permissions.getDefault("defaultMode", "")
+	permissions := objOrEmpty(settings.GetDefault("permissions", nil))
+	defaultModeRaw := permissions.GetDefault("defaultMode", "")
 	if bypassModes[strings.ToLower(pyStr(defaultModeRaw))] {
 		findings = append(findings, contract.SecurityFinding{
 			Severity:    "critical",
@@ -107,11 +107,11 @@ func auditOneSettings(path string) []contract.SecurityFinding {
 			Title:       "Permission prompts bypassed by default",
 			Location:    path,
 			Pattern:     "permission-bypass-default",
-			Detail:      "permissions.defaultMode is " + pyReprAny(permissions.getDefault("defaultMode", nil)),
+			Detail:      "permissions.defaultMode is " + pyReprAny(permissions.GetDefault("defaultMode", nil)),
 			Remediation: "Remove the bypass default; approve tools per session instead.",
 		})
 	}
-	for _, rule := range listOrEmpty(permissions.getDefault("allow", nil)) {
+	for _, rule := range listOrEmpty(permissions.GetDefault("allow", nil)) {
 		ruleS := pyStr(rule)
 		if wildcardAllowRe.MatchString(ruleS) {
 			findings = append(findings, contract.SecurityFinding{
@@ -139,8 +139,8 @@ func auditOneSettings(path string) []contract.SecurityFinding {
 	// Hooks run arbitrary shell on the agent's lifecycle. The blob is the
 	// Python-json.dumps re-serialization (settings.get("hooks", {})).
 	hooksBlob := "{}"
-	if settings.has("hooks") {
-		hooksBlob = pyJSONDumps(settings.getDefault("hooks", nil))
+	if settings.Has("hooks") {
+		hooksBlob = pyJSONDumps(settings.GetDefault("hooks", nil))
 	}
 	if networkPipeRe.MatchString(hooksBlob) {
 		findings = append(findings, contract.SecurityFinding{
@@ -153,9 +153,9 @@ func auditOneSettings(path string) []contract.SecurityFinding {
 		})
 	}
 
-	env := objOrEmpty(settings.getDefault("env", nil))
-	for _, key := range env.keys {
-		if value, ok := env.vals[key].(string); ok && secretShapedRe.MatchString(value) {
+	env := objOrEmpty(settings.GetDefault("env", nil))
+	for _, key := range env.Keys() {
+		if value, ok := env.Get(key).(string); ok && secretShapedRe.MatchString(value) {
 			findings = append(findings, contract.SecurityFinding{
 				Severity:    "high",
 				Category:    "settings",
@@ -177,8 +177,8 @@ func listOrEmpty(v any) []any {
 		return list
 	}
 	if o := asObj(v); o != nil {
-		out := make([]any, 0, len(o.keys))
-		for _, k := range o.keys {
+		out := make([]any, 0, len(o.Keys()))
+		for _, k := range o.Keys() {
 			out = append(out, k)
 		}
 		return out
@@ -194,8 +194,8 @@ func auditSettings(claudeDir, claudeJSON string) []contract.SecurityFinding {
 		pyPathStr(claudeDir, "settings.local.json"),
 	}
 	top, _ := readJSONConfig(claudeJSON) // the note surfaces via inventoryMCP, like Python
-	if projects := asObj(top.getDefault("projects", nil)); projects != nil {
-		for _, projectPath := range projects.keys {
+	if projects := asObj(top.GetDefault("projects", nil)); projects != nil {
+		for _, projectPath := range projects.Keys() {
 			paths = append(paths,
 				pyPathStr(projectPath, ".claude", "settings.json"),
 				pyPathStr(projectPath, ".claude", "settings.local.json"))
@@ -212,21 +212,21 @@ func auditSettings(claudeDir, claudeJSON string) []contract.SecurityFinding {
 func mcpRecords(servers *jsonObj, scope string) ([]contract.McpServer, []contract.SecurityFinding) {
 	records := []contract.McpServer{}
 	findings := []contract.SecurityFinding{}
-	for _, name := range servers.keys {
-		spec := asObj(servers.vals[name])
+	for _, name := range servers.Keys() {
+		spec := asObj(servers.Get(name))
 		if spec == nil {
 			continue
 		}
-		url := truthyStr(spec.getDefault("url", ""))
-		command := truthyStr(spec.getDefault("command", ""))
+		url := truthyStr(spec.GetDefault("url", ""))
+		command := truthyStr(spec.GetDefault("command", ""))
 		args := []string{}
-		if list, ok := spec.getDefault("args", nil).([]any); ok {
+		if list, ok := spec.GetDefault("args", nil).([]any); ok {
 			for _, a := range list {
 				args = append(args, pyStr(a))
 			}
 		}
 		transport := ""
-		if typeVal := spec.getDefault("type", ""); pyTruthy(typeVal) {
+		if typeVal := spec.GetDefault("type", ""); pyTruthy(typeVal) {
 			transport = pyStr(typeVal)
 		} else if url != "" {
 			transport = "http"
@@ -265,7 +265,7 @@ func mcpRecords(servers *jsonObj, scope string) ([]contract.McpServer, []contrac
 			})
 		}
 		envBlob := "{}"
-		if envVal := spec.getDefault("env", nil); pyTruthy(envVal) {
+		if envVal := spec.GetDefault("env", nil); pyTruthy(envVal) {
 			envBlob = pyJSONDumps(envVal)
 		}
 		if secretShapedRe.MatchString(envBlob) {
@@ -295,18 +295,18 @@ func inventoryMCP(claudeJSON string) ([]contract.McpServer, []contract.SecurityF
 	if note != nil {
 		findings = append(findings, *note)
 	}
-	if servers := asObj(top.getDefault("mcpServers", nil)); servers != nil {
+	if servers := asObj(top.GetDefault("mcpServers", nil)); servers != nil {
 		recs, finds := mcpRecords(servers, "global")
 		records = append(records, recs...)
 		findings = append(findings, finds...)
 	}
-	if projects := asObj(top.getDefault("projects", nil)); projects != nil {
-		for _, projectPath := range projects.keys {
-			cfg := asObj(projects.vals[projectPath])
+	if projects := asObj(top.GetDefault("projects", nil)); projects != nil {
+		for _, projectPath := range projects.Keys() {
+			cfg := asObj(projects.Get(projectPath))
 			if cfg == nil {
 				continue
 			}
-			servers := asObj(cfg.getDefault("mcpServers", nil))
+			servers := asObj(cfg.GetDefault("mcpServers", nil))
 			if servers == nil {
 				continue
 			}

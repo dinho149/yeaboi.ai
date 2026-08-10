@@ -91,7 +91,7 @@ mcp = ["mcp>=1.9,<2"]
 # gate, this range just tracks the current contract line. In this repo uv
 # resolves it from packaging/yeaboi-core (see [tool.uv.sources]); the published
 # package resolves it from PyPI.
-core = ["yeaboi-core>=0.1.0,<0.2"]
+core = ["yeaboi-core>=0.2.0,<0.3"]
 all-providers = ["langchain-openai", "langchain-google-genai", "langchain-aws", "boto3", "langchain-ollama"]
 dev = [
     "pytest",

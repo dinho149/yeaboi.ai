@@ -35,7 +35,12 @@ version does not match or the handshake fails.
 ### core.hello
 
 Params: `{}` →
-`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security"]}`
+`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate"]}`
+
+Adding a method is additive and does NOT bump `contract_version`: an older
+binary answers `-32601` for a method it lacks, which the client surfaces as a
+`CoreError` and the engine downgrades to the Python path — the designed
+degradation.
 
 ### agentwatch.refresh
 
@@ -64,6 +69,38 @@ the whole deterministic security report: stored-finding mapping, the settings
 audit and MCP inventory over the config roots passed as params, ranking and
 posture. Only the LLM `summary`/`recommendations` and `generated_at` stay
 Python-side. See `agentwatch.security.json`.
+
+### standup.aggregate
+
+The deterministic middle of the DAILY STANDUP pipeline (the human mode — not
+`agentwatch.standup`, which is the Agents digest): identity closure → roster
+filter → automation filter → category coverage → grouping → day-over-day
+insights → practice detection → confidence → per-member skeletons. One pure
+function of its params: Python collects activity and reads all session state
+(collector, stores, tracker SDKs), sends everything as data, and overlays LLM
+prose on the returned scaffold. See `standup.aggregate.json` and
+`src/yeaboi/standup/aggregate.py` (`aggregate_standup` is the reference
+implementation; `build_aggregate_inputs` builds the params).
+
+- **DB-free.** Every standup table is report-history state — Python-only
+  under rule 5. The sidecar never opens a database for this method; all
+  DB-derived inputs (config subset, previous report projection, feedback
+  excuses, history rows, self-report names) travel as params.
+- **Two-pass adjudication.** Practice adjudication is an LLM seam inside
+  detection, so the method is idempotent and two-pass: pass 1 returns
+  `adjudication_cases`; the engine runs the (Python) adjudicator; when it
+  drops any, pass 2 repeats the IDENTICAL params plus `dropped_case_ids` and
+  returns `adjudication_cases: []`. Case ids are deterministic functions of
+  the params, so pass 2 rebuilds the same cases and applies the drops;
+  unknown ids are discarded by the same intersection Python applies.
+- **No progress notifications** — the call is milliseconds of pure compute;
+  Python wraps it in its own phase reporting.
+- **Object key order is contractual.** Member-keyed result objects
+  (`grouped`, `blocker_signals`, `yesterday`, `practices`) keep MEMBERS
+  order; each projected item, skeleton, evidence row and the `progress`
+  object keep the reference implementation's dict-literal key order — the
+  Python client json.loads-es them into dicts whose order feeds the LLM
+  prompt's `json.dumps` bytes.
 
 ## Semantics the Go side must preserve
 
@@ -105,3 +142,27 @@ canonical JSON.
    config value via Python `!r`, Go must reproduce `repr()` for the quoted
    value (quote choice, escapes). This applies to CONFIG values only — the
    privacy rule (1) still bars transcript content everywhere.
+
+Rules 10–12 were added with `standup.aggregate` (they mirror
+`src/yeaboi/standup/{engine,aggregate,references,relatedness,habits,
+automation,insights,confidence,categories}.py`):
+
+10. **Unicode regex semantics.** Python's `\b`/`\w` are unicode; RE2's are
+    ASCII. Ported patterns keep their `\b` in the RE2 source and post-filter
+    matches with a unicode word-boundary check; lookbehinds (which RE2 lacks)
+    are emulated by checking the preceding rune against the exact Python
+    class (ASCII `[A-Za-z0-9]` for `AB#n`, unicode `\w` plus `#` for bare
+    `#n`). `str.lower()` goes through a helper that preserves the U+0130 (İ)
+    full lowercase mapping. Accepted, documented deviations: `\d`/`\s`/`\S`
+    are treated as ASCII (no real tracker emits non-ASCII digits), and
+    `[\w.-]`-style classes approximate `\w` as `[\p{L}\p{N}_]`.
+11. **Change-handle hashing.** `habits.change_handle`'s subject fallback is
+    `sha1(normalize_commit_subject(subject).encode("utf-8", "replace"))[:16]`
+    and must match byte-for-byte — feedback excuses are keyed on it, and a
+    drifted handle silently re-fires signals the team already excused (the
+    worst failure mode this contract guards against).
+12. **String formatting.** Python `f"{x:.0f}"` is a correctly-rounded
+    half-even fixed conversion (Go's strconv 'f' formatting matches);
+    `int(round(x))` is banker's rounding; `str(list-of-strings)` renders with
+    Python `repr` elements (`['a', 'b']`) where a yesterday entry is
+    flattened into text.

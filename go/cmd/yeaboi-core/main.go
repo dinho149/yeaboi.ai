@@ -20,13 +20,22 @@ import (
 
 	"github.com/yeaboi-ai/yeaboi/go/internal/agentwatch"
 	"github.com/yeaboi-ai/yeaboi/go/internal/contract"
+	"github.com/yeaboi-ai/yeaboi/go/internal/pysem"
 	"github.com/yeaboi-ai/yeaboi/go/internal/rpc"
+	"github.com/yeaboi-ai/yeaboi/go/internal/standup"
 )
 
 // binaryVersion is the sidecar's own semver, reported by core.hello.
-const binaryVersion = "0.1.0"
+// 0.2.0: standup.aggregate joined the method set (additive; contract v1).
+const binaryVersion = "0.2.0"
 
-var methods = []string{"agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security"}
+var methods = []string{
+	"agentwatch.refresh",
+	"agentwatch.usage",
+	"agentwatch.standup",
+	"agentwatch.security",
+	"standup.aggregate",
+}
 
 func main() {
 	log.SetOutput(os.Stderr)
@@ -146,6 +155,28 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 		result, err := agentwatch.RunAgentSecurity(&params, emit)
 		if err != nil {
 			return nil, mapError(err)
+		}
+		return result, nil
+	case "standup.aggregate":
+		// The whole params document is Python-dict-shaped data whose object
+		// key order is part of the contract (grouped/practices/yesterday are
+		// member-keyed), so it is decoded ORDERED rather than into structs —
+		// and the result goes back out the same way (pysem.Obj.MarshalJSON).
+		// Emits no progress: the call is milliseconds of pure compute.
+		if len(req.Params) == 0 {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params are required"}
+		}
+		decoded, err := pysem.DecodeOrdered(req.Params)
+		if err != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: fmt.Sprintf("invalid params: %v", err)}
+		}
+		params := pysem.AsObj(decoded)
+		if params == nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params must be an object"}
+		}
+		result, aggErr := standup.RunStandupAggregate(params)
+		if aggErr != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: aggErr.Error()}
 		}
 		return result, nil
 	default:

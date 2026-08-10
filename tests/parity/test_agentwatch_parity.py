@@ -192,28 +192,7 @@ def core():
 # ── Comparison helpers ────────────────────────────────────────────────────
 
 
-def _approx_equal(a, b, path=""):
-    """Recursive equality with float tolerance; returns a list of diffs."""
-    diffs = []
-    if isinstance(a, float) or isinstance(b, float):
-        if abs(float(a) - float(b)) > 1e-9:
-            diffs.append(f"{path}: {a!r} != {b!r}")
-    elif isinstance(a, dict) and isinstance(b, dict):
-        for key in sorted(set(a) | set(b)):
-            if key not in a or key not in b:
-                diffs.append(f"{path}.{key}: present in only one side")
-            else:
-                diffs.extend(_approx_equal(a[key], b[key], f"{path}.{key}"))
-    elif isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
-        if len(a) != len(b):
-            diffs.append(f"{path}: length {len(a)} != {len(b)}")
-        else:
-            for i, (x, y) in enumerate(zip(a, b)):
-                diffs.extend(_approx_equal(x, y, f"{path}[{i}]"))
-    elif a != b:
-        diffs.append(f"{path}: {a!r} != {b!r}")
-    return diffs
-
+from tests.parity._diff import approx_equal as _approx_equal  # noqa: E402 — shared differ
 
 _SESSION_KEYS = (
     "session_id",
