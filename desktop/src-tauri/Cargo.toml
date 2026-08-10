@@ -1,0 +1,17 @@
+[package]
+name = "yeaboi-desktop"
+version = "0.1.0"
+description = "yeaboi as a desktop application"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[features]
+# Tauri's own convention: the packaged build disables devtools.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-teardown
+.PHONY: desktop-check desktop-test desktop-run install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-teardown
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -133,6 +133,18 @@ web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev bo
 # dozen meta tags is exactly what rots by hand. The staleness check lives in
 # tests/unit/test_site_seo.py (so it runs in make test-fast and every CI lane);
 # site-check is the same assertion for humans.
+
+desktop-check: ## Type-check the desktop shell (Rust; needs cargo)
+	@command -v cargo >/dev/null 2>&1 || { echo "cargo not found — see desktop/README.md"; exit 1; }
+	cd desktop/src-tauri && cargo check
+
+desktop-test: ## Unit-test the desktop shell's sidecar logic
+	@command -v cargo >/dev/null 2>&1 || { echo "cargo not found — see desktop/README.md"; exit 1; }
+	cd desktop/src-tauri && cargo test
+
+desktop-run: ## Run the desktop window (needs `yeaboi` on PATH)
+	@command -v cargo >/dev/null 2>&1 || { echo "cargo not found — see desktop/README.md"; exit 1; }
+	cd desktop/src-tauri && cargo run
 
 site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and robots.txt in docs/
 	$(UV) run python scripts/gen_site_seo.py
