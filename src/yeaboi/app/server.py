@@ -148,13 +148,42 @@ class AppServer:
         return secrets.compare_digest(sent, cookie)
 
 
-def serve(host: str = "127.0.0.1", port: int = 5599, *, db_path: Path | None = None) -> ThreadingHTTPServer:
+def build_deliverer() -> Deliverer | None:
+    """The mail deliverer, when the environment has enough to build one.
+
+    ``None`` means "fall back to the dev deliverer", which is correct on a
+    laptop and refused by :class:`AppServer` when cookies are marked secure. A
+    misconfiguration is logged rather than raised: a server that will not start
+    because email is half-configured is worse than one that starts and says
+    sign-in cannot be delivered yet.
+    """
+    import os  # noqa: PLC0415
+
+    base_url = os.getenv("YEABOI_APP_BASE_URL", "").strip()
+    if not base_url:
+        return None
+    try:
+        from yeaboi.app.auth import SmtpDeliverer  # noqa: PLC0415
+
+        return SmtpDeliverer(base_url)
+    except ValueError as exc:
+        logger.warning("sign-in email is not configured (%s); falling back to the dev deliverer", exc)
+        return None
+
+
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 5599,
+    *,
+    db_path: Path | None = None,
+    secure_cookies: bool = False,
+) -> ThreadingHTTPServer:
     """Bind and return the server. The caller owns ``serve_forever``.
 
     Returned rather than run so a test, the TUI, and a ``__main__`` can each
     decide about threads — the same shape ``RetroServer`` uses.
     """
-    app = AppServer(AppStore(db_path))
+    app = AppServer(AppStore(db_path), secure_cookies=secure_cookies, deliverer=build_deliverer())
     httpd = ThreadingHTTPServer((host, port), AppRequestHandler)
     httpd.app = app  # type: ignore[attr-defined]
     return httpd

@@ -118,6 +118,84 @@ class LogDeliverer:
         )
 
 
+class SmtpDeliverer:
+    """Emails the sign-in link.
+
+    Uses ``smtplib`` and the ``STANDUP_SMTP_*`` settings the project already
+    has, rather than a new dependency and a second set of environment
+    variables. A user who has configured standup email has configured this.
+
+    The STARTTLS dance mirrors ``standup/delivery.py`` deliberately: two
+    different opinions about when to upgrade a connection, in one codebase, is
+    how one of them ends up sending credentials in the clear.
+
+    ``base_url`` is required and not guessed. The link has to be absolute, and a
+    server behind a proxy or a tunnel cannot know its own public address — the
+    Host header is attacker-controlled, so deriving it from the request would
+    let someone mint a valid-looking link pointing at their own host.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        host: str = "",
+        port: int = 0,
+        user: str = "",
+        password: str = "",
+        sender: str = "",
+    ) -> None:
+        from yeaboi.config import (  # noqa: PLC0415 - keeps import cost off the app's hot path
+            get_smtp_host,
+            get_smtp_password,
+            get_smtp_port,
+            get_smtp_sender,
+            get_smtp_user,
+        )
+
+        self.base_url = base_url.rstrip("/")
+        self.host = host or get_smtp_host()
+        self.port = port or get_smtp_port()
+        self.user = user or get_smtp_user()
+        self.password = password or get_smtp_password()
+        self.sender = sender or get_smtp_sender()
+        if not self.base_url.startswith(("http://", "https://")):
+            raise ValueError("base_url must be an absolute http(s) URL")
+        if not self.host:
+            raise ValueError("no SMTP host configured (STANDUP_SMTP_HOST)")
+
+    def link(self, request: LoginRequest) -> str:
+        from urllib.parse import quote  # noqa: PLC0415
+
+        return f"{self.base_url}/signin?token={quote(request.token)}"
+
+    def deliver(self, request: LoginRequest) -> None:
+        import smtplib  # noqa: PLC0415
+        from email.message import EmailMessage  # noqa: PLC0415
+
+        message = EmailMessage()
+        message["Subject"] = "Your yeaboi sign-in link"
+        message["From"] = self.sender
+        message["To"] = request.email
+        message.set_content(
+            "Someone asked to sign in to yeaboi with this address.\n\n"
+            f"{self.link(request)}\n\n"
+            f"The link works once and expires in {LOGIN_TTL_SECONDS // 60} minutes.\n"
+            "If this was not you, nothing has happened and you can ignore this email."
+        )
+        with smtplib.SMTP(self.host, self.port, timeout=20) as smtp:
+            smtp.ehlo()
+            if smtp.has_extn("STARTTLS"):
+                smtp.starttls()
+                smtp.ehlo()
+            if self.user and self.password:
+                smtp.login(self.user, self.password)
+            smtp.send_message(message)
+        # The token is deliberately absent from this log line. It is a live
+        # credential, and "we sent it" is the fact worth recording.
+        logger.info("sign-in link sent to %s", request.email)
+
+
 class InsecureDelivererError(RuntimeError):
     """Raised when the dev deliverer would be used somewhere it must not be."""
 

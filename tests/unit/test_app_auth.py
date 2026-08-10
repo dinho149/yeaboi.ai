@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+from unittest import mock
 
 import pytest
 
@@ -190,3 +191,117 @@ class TestHousekeeping:
         monkeypatch.setattr(auth_module.time, "time", lambda: later)
         assert logins.purge_expired() == 1
         assert logins.purge_expired() == 0
+
+
+class TestSmtpDeliverer:
+    """The mail path. No new dependency, and no second set of env vars."""
+
+    def _deliverer(self, **kw):
+        from yeaboi.app.auth import SmtpDeliverer
+
+        defaults = {"host": "smtp.example.com", "port": 587, "user": "u", "password": "p", "sender": "no-reply@x.com"}
+        return SmtpDeliverer(kw.pop("base_url", "https://app.example.com"), **{**defaults, **kw})
+
+    def test_the_link_is_absolute_and_carries_the_token(self):
+        from yeaboi.app.auth import LoginRequest
+
+        deliverer = self._deliverer()
+        link = deliverer.link(LoginRequest(email="a@b.com", token="tok123", expires_at=0))
+        assert link == "https://app.example.com/signin?token=tok123"
+
+    def test_a_token_needing_escaping_is_escaped(self):
+        from yeaboi.app.auth import LoginRequest
+
+        link = self._deliverer().link(LoginRequest(email="a@b.com", token="a/b+c", expires_at=0))
+        assert "a/b+c" not in link.split("token=")[1] or "%" in link
+
+    def test_a_relative_base_url_is_refused(self):
+        # The Host header is attacker-controlled, so this cannot be derived
+        # from the request - a guessed base is a link pointing anywhere.
+        with pytest.raises(ValueError, match="absolute"):
+            self._deliverer(base_url="app.example.com")
+
+    def test_no_smtp_host_is_refused_at_construction(self):
+        # Better to fail at startup than to accept sign-ins that silently
+        # never arrive.
+        with pytest.raises(ValueError, match="SMTP host"):
+            self._deliverer(host="")
+
+    def test_it_sends_over_starttls_and_logs_no_token(self, caplog):
+        import smtplib
+
+        from yeaboi.app.auth import LoginRequest
+
+        sent = {}
+
+        class FakeSMTP:
+            def __init__(self, host, port, timeout=0):
+                sent["endpoint"] = (host, port)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def ehlo(self):
+                sent.setdefault("ehlo", 0)
+                sent["ehlo"] += 1
+
+            def has_extn(self, name):
+                return name == "STARTTLS"
+
+            def starttls(self):
+                sent["starttls"] = True
+
+            def login(self, user, password):
+                sent["login"] = user
+
+            def send_message(self, message):
+                sent["to"] = message["To"]
+                sent["body"] = message.get_content()
+
+        with mock.patch.object(smtplib, "SMTP", FakeSMTP), caplog.at_level("INFO"):
+            self._deliverer().deliver(LoginRequest(email="ada@example.com", token="secret-token", expires_at=0))
+
+        assert sent["starttls"] is True
+        assert sent["login"] == "u"
+        assert sent["to"] == "ada@example.com"
+        assert "secret-token" in sent["body"]
+        # A live credential must not end up in the logs.
+        assert "secret-token" not in caplog.text
+
+    def test_it_satisfies_the_deliverer_protocol(self, store):
+        from yeaboi.app.server import AppServer
+
+        # The point of the protocol: a secure deployment accepts this one.
+        assert AppServer(store, secure_cookies=True, deliverer=self._deliverer()) is not None
+
+
+class TestBuildDeliverer:
+    """`serve()` picks a deliverer from the environment."""
+
+    def test_no_base_url_means_the_dev_deliverer(self, monkeypatch):
+        from yeaboi.app.server import build_deliverer
+
+        monkeypatch.delenv("YEABOI_APP_BASE_URL", raising=False)
+        assert build_deliverer() is None
+
+    def test_a_half_configured_environment_warns_rather_than_refusing_to_boot(self, monkeypatch, caplog):
+        # A server that will not start because email is half-configured is
+        # worse than one that starts and says sign-in cannot be delivered.
+        from yeaboi.app.server import build_deliverer
+
+        monkeypatch.setenv("YEABOI_APP_BASE_URL", "https://app.example.com")
+        monkeypatch.setenv("STANDUP_SMTP_HOST", "")
+        with caplog.at_level("WARNING"):
+            assert build_deliverer() is None
+        assert "not configured" in caplog.text
+
+    def test_a_configured_environment_builds_the_smtp_deliverer(self, monkeypatch):
+        from yeaboi.app.auth import SmtpDeliverer
+        from yeaboi.app.server import build_deliverer
+
+        monkeypatch.setenv("YEABOI_APP_BASE_URL", "https://app.example.com")
+        monkeypatch.setenv("STANDUP_SMTP_HOST", "smtp.example.com")
+        assert isinstance(build_deliverer(), SmtpDeliverer)
