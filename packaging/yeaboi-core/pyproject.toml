@@ -8,7 +8,7 @@ name = "yeaboi-core"
 # (tests/unit/test_gocore_packaging.py) fails the main suite if they drift.
 # Versioned independently of the yeaboi package: the real compatibility gate
 # is the contract_version handshake in src/yeaboi/gocore/client.py.
-version = "0.2.0"
+version = "0.3.0"
 description = "Prebuilt yeaboi-core sidecar binary for yeaboi. Install via yeaboi[core]."
 readme = "README.md"
 requires-python = ">=3.11"

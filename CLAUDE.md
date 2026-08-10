@@ -159,10 +159,14 @@ Two Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with b
 parity enforced by `tests/parity/` (`make parity`, and the `parity` CI job):
 
 - the **agentwatch** family (`src/yeaboi/agentwatch/{collector,store,engine,security_checks}.py`
-  ↔ `go/internal/agentwatch/`), and
+  ↔ `go/internal/agentwatch/`),
 - the **standup deterministic core** (`src/yeaboi/standup/{aggregate,references,relatedness,
   habits,automation,insights,confidence,categories}.py` + the engine's evidence helpers
-  ↔ `go/internal/standup/`).
+  ↔ `go/internal/standup/`), and
+- the **team-analysis scoring core** (`src/yeaboi/analysis/{aggregate,code_health,coverage,
+  practices}.py` + `ai_usage.py`'s classifier block — the marker tables,
+  `_classify_ai_*`, `aggregate_ai_markers`, `_activity_bucket`, `_collect_samples`
+  ↔ `go/internal/analysis/`).
 
 Python is the reference implementation. Any behavior change in those files MUST be mirrored
 in the Go twin (each Go file names its Python twin in its header) — otherwise `make parity`

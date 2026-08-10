@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "3.5.0"
+version = "3.6.0"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -91,7 +91,7 @@ mcp = ["mcp>=1.9,<2"]
 # gate, this range just tracks the current contract line. In this repo uv
 # resolves it from packaging/yeaboi-core (see [tool.uv.sources]); the published
 # package resolves it from PyPI.
-core = ["yeaboi-core>=0.2.0,<0.3"]
+core = ["yeaboi-core>=0.3.0,<0.4"]
 all-providers = ["langchain-openai", "langchain-google-genai", "langchain-aws", "boto3", "langchain-ollama"]
 dev = [
     "pytest",

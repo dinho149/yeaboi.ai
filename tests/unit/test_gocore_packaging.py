@@ -63,6 +63,44 @@ class TestCoreVersionLockstep:
         assert set(tags) == {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
 
 
+class TestMethodSetLockstep:
+    """The RPC method set exists in three hand-maintained copies.
+
+    ``var methods`` in the Go entrypoint, the ``core.hello`` line in
+    ``contracts/v1/rpc.md``, and the per-method schema files — nothing at
+    build or run time compares them, and every new method edits all three by
+    hand. (``core.hello`` itself has no schema file; ``progress.json`` is not
+    a method.)
+    """
+
+    def _main_go_methods(self) -> set[str]:
+        main_go = (REPO / "go" / "cmd" / "yeaboi-core" / "main.go").read_text(encoding="utf-8")
+        match = re.search(r"var methods = \[\]string\{(.*?)\}", main_go, re.DOTALL)
+        assert match, "var methods block not found in go/cmd/yeaboi-core/main.go"
+        return set(re.findall(r'"([^"]+)"', match.group(1)))
+
+    def test_rpc_md_hello_line_matches_main_go(self):
+        rpc_md = (REPO / "contracts" / "v1" / "rpc.md").read_text(encoding="utf-8")
+        match = re.search(r'"methods": \[([^\]]+)\]', rpc_md)
+        assert match, "core.hello methods list not found in contracts/v1/rpc.md"
+        documented = set(re.findall(r'"([^"]+)"', match.group(1)))
+        assert documented == self._main_go_methods(), (
+            "contracts/v1/rpc.md's core.hello line and main.go's methods list disagree — "
+            "a method was added or removed in one copy only"
+        )
+
+    def test_every_method_has_a_schema_and_every_schema_a_method(self):
+        schemas = {
+            path.name.removesuffix(".json")
+            for path in (REPO / "contracts" / "v1").glob("*.json")
+            if path.name != "progress.json"
+        }
+        assert schemas == self._main_go_methods(), (
+            "contracts/v1/*.json and main.go's methods list disagree — every method needs a "
+            "schema file named after it (progress.json excepted), and every schema a method"
+        )
+
+
 class TestSchemaGuardLockstep:
     """The Go schema guard's ceiling must track ``sessions.CURRENT_SCHEMA_VERSION``.
 
