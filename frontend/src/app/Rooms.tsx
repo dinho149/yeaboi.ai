@@ -63,7 +63,7 @@ export function RoomList({ projectId, notify }: { projectId: string; notify: (me
                   <span className={styles.projectName}>{room.title || room.kind}</span>
                 )}
                 <span className={styles.role}>{room.join_code || room.kind}</span>
-                <Button variant="ghost" size="small" onClick={() => close(room)}>
+                <Button shape="bare" size="s" onClick={() => close(room)}>
                   Close
                 </Button>
               </li>

@@ -1,8 +1,14 @@
 /**
- * The milestone-2 chrome primitives.
+ * The chrome primitives this app-shell work actually added.
  *
- * These are the first primitives in this vocabulary that carry *behaviour*, so
- * the tests are about wiring rather than markup: the label that is actually
+ * Button and Modal are deliberately absent: they already existed in `shared/`
+ * and are tested there — including the two things asserted here first, that a
+ * button defaults to type="button" and that a dialog reports Escape rather than
+ * closing behind the caller's state. Duplicating those tests would duplicate
+ * the maintenance and pin nothing new.
+ *
+ * What remains are the first primitives in this vocabulary that carry
+ * *behaviour*, so the tests are about wiring rather than markup: the label that is actually
  * associated with its control, the arrow keys that move between tabs, the live
  * region that exists before its message, the dialog that tells its owner when
  * Escape closed it. Every one of these is a thing that looks fine on screen and
@@ -13,64 +19,12 @@ import { render, screen, waitFor } from '@testing-library/preact';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'preact/hooks';
 import { axe } from 'vitest-axe';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { Button } from './Button';
 import { Field, Input } from './Field';
-import { Modal } from './Modal';
 import { Skeleton, SkeletonLines } from './Skeleton';
 import { TabPanel, Tabs } from './Tabs';
 import { ToastRegion, useToasts } from './Toast';
-
-describe('<Button>', () => {
-  it('defaults to type=button, not submit', async () => {
-    // The HTML default submits the surrounding form, which is how a "Cancel"
-    // next to an input silently starts saving.
-    const onSubmit = vi.fn((e: Event) => e.preventDefault());
-    render(
-      <form onSubmit={onSubmit}>
-        <Button>Cancel</Button>
-      </form>,
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
-
-  it('submits when asked to', async () => {
-    const onSubmit = vi.fn((e: Event) => e.preventDefault());
-    render(
-      <form onSubmit={onSubmit}>
-        <Button type="submit">Save</Button>
-      </form>,
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(onSubmit).toHaveBeenCalledOnce();
-  });
-
-  it('busy blocks activation and is announced, without changing the label', async () => {
-    const onClick = vi.fn();
-    render(
-      <Button busy onClick={onClick}>
-        Save
-      </Button>,
-    );
-    const button = screen.getByRole('button', { name: 'Save' });
-    expect(button.getAttribute('aria-busy')).toBe('true');
-    await userEvent.click(button);
-    expect(onClick).not.toHaveBeenCalled();
-  });
-
-  it('has no axe violations in any variant', async () => {
-    const { container } = render(
-      <>
-        <Button variant="primary">One</Button>
-        <Button variant="secondary">Two</Button>
-        <Button variant="ghost">Three</Button>
-      </>,
-    );
-    expect(await axe(container)).toHaveNoViolations();
-  });
-});
 
 describe('<Field>', () => {
   it('associates the label with the control', () => {
@@ -188,39 +142,6 @@ describe('<Tabs>', () => {
   it('has no axe violations', async () => {
     const { container } = render(<Harness />);
     expect(await axe(container)).toHaveNoViolations();
-  });
-});
-
-describe('<Modal>', () => {
-  it('is not in the accessible tree when closed', () => {
-    render(
-      <Modal open={false} onClose={() => {}} title="Confirm">
-        body
-      </Modal>,
-    );
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('names the dialog with its title', () => {
-    render(
-      <Modal open onClose={() => {}} title="Delete project">
-        body
-      </Modal>,
-    );
-    expect(screen.getByRole('dialog', { name: 'Delete project' })).toBeTruthy();
-  });
-
-  it('tells its owner when Escape closes it', async () => {
-    // Without this the element shuts while `open` stays true, and the dialog
-    // cannot be reopened until it is toggled twice.
-    const onClose = vi.fn();
-    render(
-      <Modal open onClose={onClose} title="Confirm">
-        body
-      </Modal>,
-    );
-    screen.getByRole('dialog').dispatchEvent(new Event('cancel', { cancelable: true }));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
 

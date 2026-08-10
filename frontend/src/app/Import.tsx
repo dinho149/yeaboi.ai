@@ -53,7 +53,7 @@ export function ImportDialog({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Import a plan" footer={<Button onClick={onClose}>Close</Button>}>
+    <Modal open={open} onClose={onClose} title="Import a plan" actions={<Button onClick={onClose}>Close</Button>}>
       <AsyncView
         state={state}
         empty={
@@ -72,9 +72,10 @@ export function ImportDialog({
                   {candidate.stories} {candidate.stories === 1 ? 'story' : 'stories'}
                 </span>
                 <Button
-                  variant="primary"
-                  size="small"
-                  busy={busy === candidate.id}
+                  tone="primary"
+                  size="s"
+                  disabled={busy === candidate.id}
+                  aria-busy={busy === candidate.id || undefined}
                   onClick={() => run(candidate)}
                 >
                   Import

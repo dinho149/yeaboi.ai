@@ -1,7 +1,15 @@
-/** The primitive vocabulary. Import from here, not from the individual files. */
+/** The primitive vocabulary. Import from here, not from the individual files.
+ *
+ * Button and Modal are re-exported from `shared/` rather than defined here.
+ * They already existed, and `shared/Button.tsx` is itself the result of merging
+ * four drifted copies into one — adding a fifth for the app was reproducing the
+ * exact problem that file was written to end. The re-export keeps one import
+ * site for app code without a second implementation behind it.
+ */
+export { Button, type ButtonProps, type ButtonShape, type ButtonSize, type ButtonTone } from '../../shared/Button';
+export { Modal, type ModalProps } from '../../shared/Modal';
 
 export { Avatar, avatarTone, type AvatarProps } from './Avatar';
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button';
 export { SegmentBar, StatBar, type Segment, type SegmentBarProps, type StatBarProps } from './Bars';
 export { Card, Section, type CardProps, type SectionProps } from './Card';
 export { Chip, type ChipProps } from './Chip';
@@ -11,7 +19,6 @@ export { Eyebrow, type EyebrowProps } from './Eyebrow';
 export { Field, Input, Select, type FieldProps, type InputProps, type SelectProps } from './Field';
 export { countedSegments, Legend, type LegendItem } from './Legend';
 export { Lozenge, LOZENGE_CATEGORIES, type LozengeCategory, type LozengeProps } from './Lozenge';
-export { Modal, type ModalProps } from './Modal';
 export { NoticeBlock, type NoticeBlockProps } from './NoticeBlock';
 export { Prose, ProseBullets, proseBullets, RichText, splitSentences, type Run } from './Prose';
 export { Skeleton, SkeletonLines, type SkeletonProps } from './Skeleton';

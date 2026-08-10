@@ -139,7 +139,7 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
           />
         )}
       </Field>
-      <Button type="submit" variant="primary" busy={busy}>
+      <Button type="submit" tone="primary" disabled={busy} aria-busy={busy || undefined}>
         {claimable ? 'Get started' : 'Send a sign-in link'}
       </Button>
     </form>
@@ -188,7 +188,7 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
           hint="A project holds the plans, standups and retros for one team."
           action={
             <>
-              <Button variant="primary" onClick={create}>
+              <Button tone="primary" onClick={create}>
                 New project
               </Button>
               <Button onClick={() => setImporting(true)}>Import from the terminal app</Button>
@@ -200,10 +200,10 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
       {(data) => (
         <>
         <div className={styles.toolbar}>
-          <Button variant="primary" size="small" onClick={create}>
+          <Button tone="primary" size="s" onClick={create}>
             New project
           </Button>
-          <Button size="small" onClick={() => setImporting(true)}>
+          <Button size="s" onClick={() => setImporting(true)}>
             Import
           </Button>
         </div>
@@ -319,7 +319,7 @@ export function App({ user: initial }: { user: User | null }) {
       <header className={styles.masthead}>
         <strong>yeaboi</strong>
         <span className={styles.role}>{user.email}</span>
-        <Button variant="ghost" size="small" onClick={signOut}>
+        <Button shape="bare" size="s" onClick={signOut}>
           Sign out
         </Button>
       </header>
