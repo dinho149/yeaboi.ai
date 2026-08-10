@@ -20,6 +20,7 @@
 use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// How long to wait for the server to say where it is.
@@ -140,6 +141,24 @@ impl Sidecar {
                 }
                 Ok(_) => {
                     if let Some(url) = parse_listening(&line) {
+                        // Keep draining stdout for the rest of the child's life.
+                        //
+                        // Not tidiness — correctness. Dropping the reader here
+                        // closes the read end of the pipe, and the very next
+                        // thing the server writes (its own human-readable
+                        // banner, one line later) then raises SIGPIPE and kills
+                        // it. The window stayed open showing a blank page while
+                        // its server had already died, which is exactly what
+                        // happened the first time this was run for real.
+                        //
+                        // Detached on purpose: it ends by itself at EOF, which
+                        // is when the child exits.
+                        thread::spawn(move || {
+                            let mut sink = String::new();
+                            while reader.read_line(&mut sink).unwrap_or(0) > 0 {
+                                sink.clear();
+                            }
+                        });
                         return Ok(Sidecar { child, url });
                     }
                     // Any other line is the server's own chatter; keep reading.
