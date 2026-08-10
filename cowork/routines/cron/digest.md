@@ -230,14 +230,26 @@ The single decision point. It is the only routine that posts proposals to Slack.
 
    The lines carry different facts, because the states are different facts:
 
-   - **Approved, no PR yet** — an issue carrying `claude-implement` with no branch behind it.
-     `gh issue list --label claude-implement --state open --json number,title,labels,createdAt`,
-     then `git ls-remote --heads origin 'refs/heads/feature/issue-<n>-*'` per issue. Line one is
-     `**#<n>** <title>`; line two is `— approved <k> days ago, no branch`.
+   - **Approved, no PR yet** — an issue carrying `claude-implement` with no PR behind it.
+     `gh issue list --label claude-implement --state open --json number,title` for the candidates,
+     then per issue `gh pr list --search '<n> in:body' --state all --json number` to see whether one
+     was ever opened. Line one is `**#<n>** <title>`; line two is `— approved <k> days ago, <state>`,
+     where state is `no branch` or `branch pushed, no PR` — check
+     `git ls-remote --heads origin 'refs/heads/feature/issue-<n>-*'` to tell those apart, because
+     they fail differently: nothing started, versus a run truncated between its push and its
+     `gh pr create`.
+
+     **`<k>` is days since the label landed, not since the issue was filed.** Only the timeline
+     carries that:
+     `gh api repos/{owner}/{repo}/issues/<n>/timeline --jq '[.[] | select(.event == "labeled" and
+     .label.name == "claude-implement")] | last | .created_at'`. `createdAt` from `gh issue list` is
+     the filing date, which for a proposal approved after a fortnight in the queue overstates the
+     delay by that fortnight — and the "more than a day is a broken lane" reading below depends on
+     the number meaning what it says.
 
      This is the only section here about an issue rather than a workstream, and it exists because
      that window had no owner. The approval is the moment a proposal stops being a question, and
-     from then on nothing watches it: step 4 below is forbidden from ageing these out, so a build
+     from then on nothing watches it: step 4 above is forbidden from ageing these out, so a build
      that never started leaves an issue no routine will ever mention again. Issue #172 sat in this
      state from 2026-08-09 — the implement job it triggered exited green having written nothing —
      and the fleet's only report of it was the same three lines of Slack it had already posted.

@@ -118,10 +118,19 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # second it gained ``claude-implement``, and the workstream label is what
     # ``claude.yml``'s implement job reads to find the charter declaring which
     # paths an unattended run may touch. The routine had always *said*
-    # ``--add-label``. Saying it is what failed, so the grant now says it too:
-    # ``gh api`` is absent, and there is no verb here that can replace a set.
-    # Write/Edit/Task stay absent as well — the relay edits nothing and spawns no
-    # crew.
+    # ``--add-label``. Saying it is what failed, so the grant says it too.
+    #
+    # This removes the *wholesale* loss, not every possible one: ``gh api`` is gone,
+    # so no verb here can replace a label set in one call, but ``gh issue edit``
+    # still spells ``--remove-label``. That is the right line — the relay must be
+    # able to edit labels to do its job at all — and it is the difference between a
+    # slip that takes one label and one that takes all of them.
+    #
+    # ``Bash(...)`` scoping is honoured by the routines API: a probe registered the
+    # scoped strings and read them back verbatim through ``RemoteTrigger get``, so
+    # ``trigger_plan``'s ``allowed_tools`` comparison stays stable rather than
+    # reporting drift forever. Write/Edit/Task stay absent as well — the relay edits
+    # nothing and spawns no crew.
     "slack-relay": (
         "Bash(gh issue view:*)",
         "Bash(gh issue edit:*)",
@@ -129,6 +138,10 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
         "Bash(gh issue comment:*)",
         "Bash(gh pr view:*)",
         "Bash(gh pr close:*)",
+        # The routine leaves an audit comment for issue *and* PR verbs, so closing
+        # a PR without this is a decision with no record of who made it.
+        "Bash(gh pr comment:*)",
+        "Bash(gh pr list:*)",
         "Bash(uv run python scripts/cowork_relay.py:*)",
         "Bash(uv run python scripts/cowork_setup.py --json)",
         "Glob",

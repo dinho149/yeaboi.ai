@@ -24,6 +24,12 @@ comparison between the two happens here.
 between runs: the 🤖 marker on a reply is the record, and the emitted command is
 checked against live GitHub state by the routine before it runs.
 
+One bound worth knowing: Slack truncates a reaction's ``users`` list on heavily
+reacted messages, and a truncated list is indistinguishable here from nobody
+having reacted. ``slack_get_reactions`` returns up to 50 per emoji, and a digest
+item reply carries two, so this is a long way from mattering — but if it ever
+does, it fails toward re-processing an approval rather than toward dropping one.
+
 Input is a JSON array of thread replies on stdin, each ``{ts, text, reactions}``
 with ``reactions`` a list of ``{name, users}`` — the shape Slack's own
 ``conversations.replies`` returns, so a raw API response works unchanged::
@@ -66,6 +72,11 @@ class RelayError(RuntimeError):
     """The input is not something a plan can be built from."""
 
 
+def _is_placeholder(member: str, who: str) -> bool:
+    """A row nobody has filled in yet — `UXXXXXXXX`, or a description in angle brackets."""
+    return set(member[1:]) <= {"X", "0"} or who.startswith("<") or "placeholder" in who.lower()
+
+
 def parse_allowlist(text: str) -> dict[str, str]:
     """Pull the authorised member ids out of the relay routine's own table.
 
@@ -81,8 +92,15 @@ def parse_allowlist(text: str) -> dict[str, str]:
         if len(cells) < 2:
             continue
         match = MEMBER_RE.search(cells[0])
-        if match:
-            found[match.group(1)] = cells[1]
+        if not match:
+            continue
+        member, who = match.group(1), cells[1]
+        if _is_placeholder(member, who):
+            # The routine's stop condition is "any row is a placeholder OR the
+            # table is empty — exit without acting". A half-filled table is the
+            # more dangerous of the two: it looks configured.
+            return {}
+        found[member] = who
     return found
 
 
@@ -129,10 +147,11 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
     if not allowlist:
         # Matches the routine's own stop condition: an empty or placeholder
         # allowlist means nobody can authorise anything, so nothing is actionable.
-        return {"counts": {"replies": len(replies), "item_replies": 0, "marked": 0, "actionable": 0}, "plan": []}
+        empty = {"replies": len(replies), "item_replies": 0, "marked": 0, "ignored_markers": 0, "actionable": 0}
+        return {"counts": empty, "plan": []}
 
     plan: list[dict[str, Any]] = []
-    item_replies = marked = 0
+    item_replies = marked = ignored_markers = 0
 
     for reply in replies:
         text = reply.get("text") or ""
@@ -142,9 +161,18 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
         item_replies += 1
 
         reactions = _by_name(reply)
-        if DONE in reactions:
+        # The marker is gated on the same allowlist as the verbs. It is written by
+        # this routine through the Slack connector, which posts as the human — the
+        # ✅ and the 🤖 on the #172 reply are both under `U0BLM1QU3JN` — so gating
+        # costs nothing and closes a veto: ungated, any member of the channel could
+        # mark an item and suppress it from every future run, and the count would
+        # simply read as one more handled reply.
+        markers = [u for u in reactions.get(DONE, []) if u in allowlist]
+        if markers:
             marked += 1
             continue
+        if DONE in reactions:
+            ignored_markers += 1
 
         approvers = [u for u in reactions.get(APPROVE, []) if u in allowlist]
         rejecters = [u for u in reactions.get(REJECT, []) if u in allowlist]
@@ -166,6 +194,9 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
         "replies": len(replies),
         "item_replies": item_replies,
         "marked": marked,
+        # Never silent: a marker from outside the allowlist is disregarded, and
+        # saying so is what stops it from looking like a handled item.
+        "ignored_markers": ignored_markers,
         "actionable": len(plan),
     }
     return {"counts": counts, "plan": plan}

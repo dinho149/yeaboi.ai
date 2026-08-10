@@ -19,10 +19,17 @@ the outside — a green run that produced nothing.
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
+
+pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="the picker script shells out to jq")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "claude.yml"
@@ -62,30 +69,75 @@ class TestTheGrant:
 
 
 class TestTheModelTier:
-    def test_a_security_issue_never_runs_on_heavy(self, implement):
-        """cowork/models.md: "Security never runs on `heavy`."
+    """The picker is a self-contained shell script with one output, so it is run
+    rather than read.
 
-        Fable 5 reroutes cybersecurity queries to less capable models. Tolerable in
-        a chat; not in an unattended run that may edit `fs_policy.py` or a CSP
-        invariant, because the report would read the same either way. The direct
-        analogue of `test_codeql_triage.py::test_runs_at_deep_never_heavy` — and
-        #172, the first issue this job ever received, was `type:security`.
-        """
-        picker = next(step for step in implement["steps"] if step.get("id") == "model")
-        assert "type:security" in picker["run"]
-        assert "YEABOI_MODEL_DEEP" in picker["run"]
+    Asserting that `"type:security"` and `"YEABOI_MODEL_DEEP"` both appear in the
+    script proves nothing: swapping the two branches keeps every substring in
+    place and routes security straight to `heavy`, which is the one thing
+    cowork/models.md forbids. These execute it instead.
+    """
 
-    def test_the_tier_is_chosen_rather_than_hardcoded(self, implement, action):
+    @staticmethod
+    def _pick(implement: dict, labels: list[str], title: str, tmp_path: Path) -> str:
+        """Run the picker's own shell and return the tier id it selected."""
+        script = next(step for step in implement["steps"] if step.get("id") == "model")["run"]
+        # The only interpolations in the script are the two tier expressions;
+        # stand each one up as its own tier name so the branch taken is visible.
+        script = re.sub(r"\$\{\{[^}]*YEABOI_MODEL_(\w+)[^}]*\}\}", r"\1", script)
+        output = tmp_path / "github_output"
+        output.touch()
+        subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", script],
+            check=True,
+            capture_output=True,
+            env={
+                "PATH": os.environ["PATH"],
+                "LABELS": json.dumps(labels),
+                "TITLE": title,
+                "GITHUB_OUTPUT": str(output),
+            },
+        )
+        return output.read_text().strip().removeprefix("id=")
+
+    @pytest.mark.parametrize(
+        ("labels", "title"),
+        [
+            (["type:security", "workstream:web-ux"], "[security][web-ux] unpkg lenis has no SRI"),
+            # The workstream axis. models.md scopes the rule to "any auto-lane item
+            # in the `security` workstream", and these are separate labels — a
+            # security-workstream bug is `[bug][security]`, which a type-only check
+            # never sees. #172, the first issue this job ever received, was the
+            # other shape.
+            (["type:bug", "workstream:security"], "[bug][security] redaction misses a token"),
+            # Labels lost entirely — #172's whole set was replaced while it was
+            # being approved, so the title is the copy that survives.
+            ([], "[bug][security] redaction misses a token"),
+            ([], "[security][web-ux] unpkg lenis has no SRI"),
+        ],
+        ids=["type-label", "workstream-label", "title-only-workstream", "title-only-type"],
+    )
+    def test_security_never_reaches_heavy(self, implement, labels, title, tmp_path):
+        assert self._pick(implement, labels, title, tmp_path) == "DEEP"
+
+    @pytest.mark.parametrize(
+        ("labels", "title"),
+        [
+            (["type:bug", "workstream:platform"], "[bug][platform] auto-version rejects bot PRs"),
+            ([], "[chore][tui-ux] dedupe viewport math"),
+        ],
+        ids=["labelled", "unlabelled"],
+    )
+    def test_everything_else_still_gets_the_heavy_tier(self, implement, labels, title, tmp_path):
+        """The narrowing must not quietly become "everything runs on deep" — heavy
+        exists for exactly this job, and paying deep prices for every chore would
+        be a silent regression in the other direction."""
+        assert self._pick(implement, labels, title, tmp_path) == "HEAVY"
+
+    def test_the_tier_is_chosen_rather_than_hardcoded(self, action):
         args = action["with"]["claude_args"]
         assert "steps.model.outputs.id" in args
         assert "YEABOI_MODEL_HEAVY" not in args, "the tier must come from the picker, which excludes security"
-
-    def test_the_title_is_checked_as_well_as_the_label(self, implement):
-        """A label can be lost — #172's whole set was replaced while it was being
-        approved. The `[type][workstream]` title prefix cowork-scribe writes at
-        filing time is the copy that survives that, so it is the second signal."""
-        picker = next(step for step in implement["steps"] if step.get("id") == "model")
-        assert "TITLE" in picker["run"] and "security" in picker["run"]
 
 
 class TestTheToolchain:

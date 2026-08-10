@@ -14,6 +14,7 @@ so a future edit that reintroduces one fails here rather than in the channel.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 
@@ -57,7 +58,13 @@ class TestRecordedFailure:
     def test_the_thread_that_was_acked_three_times_now_plans_nothing(self, thread):
         result = relay.build_plan(thread, ALLOWLIST)
         assert result["plan"] == [], "the ✅ carries the marker — re-announcing it is the bug this fixes"
-        assert result["counts"] == {"replies": 15, "item_replies": 12, "marked": 1, "actionable": 0}
+        assert result["counts"] == {
+            "replies": 15,
+            "item_replies": 12,
+            "marked": 1,
+            "ignored_markers": 0,
+            "actionable": 0,
+        }
 
     def test_the_relays_own_acks_are_never_inputs(self, thread):
         """Three replies say "added `claude-implement` to #172". None is an item.
@@ -147,3 +154,84 @@ class TestInput:
     def test_non_json_is_a_clean_error_not_a_traceback(self):
         with pytest.raises(relay.RelayError):
             relay.load_replies("not json")
+
+
+class TestTheMarkerIsAuthorised:
+    """A 🤖 from outside the allowlist must not be able to bury an approval.
+
+    The marker is how this module decides an item is handled, and it is written
+    through the same Slack connector that posts as the human — the ✅ and the 🤖
+    on the #172 reply are both under `U0BLM1QU3JN`, confirmed via
+    `slack_get_reactions`. Ungated, any member of the channel could mark an item
+    and suppress it from every future run, and the run accounting would report it
+    as one more handled reply.
+    """
+
+    def test_a_marker_from_a_stranger_does_not_suppress_an_approval(self):
+        thread = [item(11, white_check_mark=[HUMAN], robot_face=["U000NOTME"])]
+        result = relay.build_plan(thread, ALLOWLIST)
+        assert [p["issue"] for p in result["plan"]] == [11], "a stranger must not be able to veto"
+        assert result["counts"]["marked"] == 0
+
+    def test_a_disregarded_marker_is_counted_rather_than_swallowed(self):
+        thread = [item(11, white_check_mark=[HUMAN], robot_face=["U000NOTME"])]
+        assert relay.build_plan(thread, ALLOWLIST)["counts"]["ignored_markers"] == 1
+
+    def test_a_marker_from_the_allowlist_still_means_handled(self):
+        thread = [item(11, white_check_mark=[HUMAN], robot_face=[HUMAN])]
+        result = relay.build_plan(thread, ALLOWLIST)
+        assert result["plan"] == []
+        assert result["counts"] == {
+            "replies": 1,
+            "item_replies": 1,
+            "marked": 1,
+            "ignored_markers": 0,
+            "actionable": 0,
+        }
+
+
+class TestPlaceholderAllowlist:
+    """The routine's stop condition is "any row is a placeholder OR the table is
+    empty". A half-filled table is the more dangerous of the two: it looks
+    configured, so nothing would prompt anyone to look at it."""
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            "| `UXXXXXXXX` | your slack member id |",
+            "| `U000000000` | fill me in |",
+            "| `U0BLM1QU3JN` | <who> |",
+            "| `U0BLM1QU3JN` | placeholder |",
+        ],
+    )
+    def test_a_placeholder_row_disables_the_whole_table(self, row):
+        assert relay.parse_allowlist(f"| id | who |\n|---|---|\n{row}\n") == {}
+
+    def test_a_real_row_still_parses(self):
+        table = "| id | who |\n|---|---|\n| `U0BLM1QU3JN` | onoureldin (onoureldin@gmail.com) |\n"
+        assert relay.parse_allowlist(table) == {HUMAN: "onoureldin (onoureldin@gmail.com)"}
+
+
+class TestEntryPoint:
+    def test_plan_is_required(self, capsys):
+        with pytest.raises(SystemExit):
+            relay.main([])
+
+    def test_a_plan_reaches_stdout_as_json(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps([item(3, white_check_mark=[HUMAN])])))
+        assert relay.main(["--plan"]) == 0
+        emitted = json.loads(capsys.readouterr().out)
+        assert emitted["plan"][0]["issue"] == 3
+
+    def test_bad_input_is_an_exit_code_not_a_traceback(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
+        assert relay.main(["--plan"]) == 2
+        assert "cowork_relay:" in capsys.readouterr().err
+
+    def test_a_missing_allowlist_file_is_reported(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO("[]"))
+        assert relay.main(["--plan", "--allowlist-from", str(tmp_path / "nope.md")]) == 2
+
+    def test_no_command_for_an_unknown_verb(self):
+        with pytest.raises(relay.RelayError):
+            relay._command("shrug", 1)

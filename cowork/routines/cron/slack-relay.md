@@ -63,14 +63,20 @@ announce who is unauthorized.
 2. **Plan** — hand the thread to Python and act on what comes back:
 
    ```bash
-   uv run python scripts/cowork_relay.py --plan < thread.json
+   uv run python scripts/cowork_relay.py --plan <<'THREAD'
+   [{"ts": "…", "text": "#172 — …", "reactions": [{"name": "white_check_mark", "users": ["U…"]}]}]
+   THREAD
    ```
+
+   A heredoc, not a file: this routine holds no `Write` and no shell verb that could create one,
+   which is deliberate — it edits nothing. The JSON goes on stdin as part of the same command.
 
    Pass one JSON array of the item replies, each `{ts, text, reactions}` with `reactions` a list of
    `{name, users}` — the fields `slack_read_thread` and `slack_get_reactions` return, copied across
-   and nothing else. **Transcribe; do not summarise, filter or pre-judge.** Deciding which replies
-   are still owed an action is the helper's job, and every reply you drop on the way in is a
-   decision made without it.
+   and nothing else. `users` matters: the helper checks every reaction against the allowlist,
+   including the 🤖 marker, so a reply passed without them is a reply it must treat as unreacted.
+   **Transcribe; do not summarise, filter or pre-judge.** Deciding which replies are still owed an
+   action is the helper's job, and every reply you drop on the way in is a decision made without it.
 
    **An empty `plan` is the early exit: stop, post nothing, touch nothing.** This is the common
    case and the whole cost model — most hourly runs are a read and an exit.
