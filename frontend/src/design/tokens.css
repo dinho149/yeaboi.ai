@@ -33,6 +33,13 @@
   --s5: 24px;
   --s6: 32px;
 
+  /* ── App shell ──────────────────────────────────────────────────────
+     The navigation rail's width. A token rather than a literal in
+     app/app.module.css because moving the rail is a design decision, and the
+     design layer is where design decisions are allowed to live.
+     TODO(design): provisional. */
+  --rail-w: 208px;
+
   /* ── Radius ─────────────────────────────────────────────────────── */
   --r-s: 6px;
   --r-m: 10px;

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from yeaboi.app.page import render_app_page
 from yeaboi.app.router import HTTPError, Request, Response, Router, json_response
 from yeaboi.app.sessions import SESSION_COOKIE, clear_cookie_headers, cookie_headers
 
@@ -25,6 +26,11 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/auth/session"),  # sign-in: the request that creates the cookie
     }
 )
+
+
+#: Paths that serve the shell document. Listed rather than a catch-all: a
+#: typo'd URL should 404 like a missing page, not silently render the app.
+SHELL_ROUTES: tuple[str, ...] = ("/", "/projects", "/projects/{project_id}", "/settings")
 
 
 def _project_or_404(app: AppServer, request: Request):
@@ -152,5 +158,18 @@ def build_router(app: AppServer) -> Router:
         return json_response({"ok": True, "user_id": invitee.id}, 201)
 
     router.post("/api/projects/{project_id}/members", add_member)
+
+    # ── the shell ──────────────────────────────────────────────────────
+    #
+    # Registered last and matching every path the API did not claim, so a hard
+    # refresh on /projects/prj_123 serves the app rather than a 404. The client
+    # router then reads the URL it was loaded at.
+
+    def shell(request: Request) -> Response:
+        html = render_app_page(app.store, request.user_id)
+        return Response(code=200, body=html.encode("utf-8"), content_type="text/html; charset=utf-8")
+
+    for template in SHELL_ROUTES:
+        router.get(template, shell, auth=False)
 
     return router

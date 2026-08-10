@@ -8,6 +8,7 @@
 // disagree about which modes exist.
 //
 export const ENTRIES = {
+  app: 'src/app/main.tsx',
   deck: 'src/deck/main.tsx',
   export: 'src/export/main.tsx',
   gate: 'src/gate/main.tsx',

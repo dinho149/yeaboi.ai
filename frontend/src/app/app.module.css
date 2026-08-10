@@ -1,0 +1,174 @@
+/*
+ * Structural layout for the app shell.
+ *
+ * TODO(design): this file is scaffolding. Every value below is a token from
+ * design/tokens.css - there is not one raw colour, font stack or spacing
+ * literal here, which is the property that makes the design pass a token edit
+ * rather than a rewrite. Keep it that way: `test_app_web_assets.py` fails the
+ * build on a hex literal or a bare px in this directory.
+ */
+
+.shell {
+  display: grid;
+  /* Rail + content. The rail is a token so the design pass can move it. */
+  grid-template-columns: var(--rail-w) 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.masthead {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s4) var(--s3);
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.railLink {
+  display: block;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-s);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.railLink[aria-current='page'] {
+  background: var(--card);
+  color: var(--text);
+}
+
+.content {
+  padding: var(--s5);
+  min-width: 0; /* lets long tables scroll instead of stretching the grid */
+}
+
+.footer {
+  grid-column: 1 / -1;
+  padding: var(--s4) var(--s5);
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: var(--fs-xs);
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s6) 0;
+}
+
+.slotLabel,
+.slotHint {
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.slotTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-l);
+}
+
+.retry,
+.action {
+  padding: var(--s2) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--card);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+
+.projectList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.projectRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+.projectName {
+  color: var(--text);
+  font-size: var(--fs-m);
+  text-decoration: none;
+  /* The heavy fixtures carry 100-char names; wrap rather than blow the row. */
+  overflow-wrap: anywhere;
+}
+
+.role {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.signin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  max-width: 22rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.input {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+}
+
+.error {
+  color: var(--danger);
+  font-size: var(--fs-s);
+}
