@@ -37,18 +37,34 @@ export function useAsync<T>(
   const run = useCallback(() => {
     const mine = ++generation.current;
     setState({ status: 'loading' });
-    void load().then((result) => {
-      if (mine !== generation.current) return;
-      if (!result.ok) {
-        setState({ status: 'error', error: result.error, retry: () => setNonce((n) => n + 1) });
-        return;
-      }
-      if (isEmpty?.(result.data)) {
-        setState({ status: 'empty' });
-        return;
-      }
-      setState({ status: 'ready', data: result.data });
-    });
+    const fail = (error: string) =>
+      setState({ status: 'error', error, retry: () => setNonce((n) => n + 1) });
+
+    void load()
+      .then((result) => {
+        if (mine !== generation.current) return;
+        if (!result.ok) {
+          fail(result.error);
+          return;
+        }
+        // `isEmpty` reads into the payload, so a response of an unexpected
+        // shape throws here. Caught rather than left to become an unhandled
+        // rejection: the four states are this hook's whole contract, and a
+        // throw escaping it leaves a screen stuck on 'loading' forever with
+        // the reason only in the console.
+        let empty = false;
+        try {
+          empty = isEmpty?.(result.data) ?? false;
+        } catch {
+          fail('the server sent something unexpected');
+          return;
+        }
+        setState(empty ? { status: 'empty' } : { status: 'ready', data: result.data });
+      })
+      .catch(() => {
+        if (mine !== generation.current) return;
+        fail('something went wrong loading this');
+      });
     // `load` is a fresh closure every render; deps are the real inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

@@ -49,9 +49,18 @@ const CASES: [string, preact.ComponentChildren][] = [
 
 describe('app screens have no axe violations', () => {
   it.each(CASES)('%s', async (_name, node) => {
-    // The dialogs fetch on mount; a rejected promise here would be an unhandled
-    // rejection rather than a violation, and the loading state is what axe sees.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+    // The dialogs fetch on mount. The body is the real shape rather than {}:
+    // a stub that does not match what the server sends tests the error path by
+    // accident, which is how this file first surfaced a crash in useAsync.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ projects: [], artifacts: [], rooms: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
     const { container } = render(<>{node}</>);
     expect(await axe(container)).toHaveNoViolations();
     vi.unstubAllGlobals();
