@@ -30,7 +30,9 @@ after a design pass, defer it; if it is invisible to a design pass, do it now.*
       per route and asserted exhaustive by `PUBLIC_ROUTES`
 - [x] Persistence — `app/store.py`, SQLite in its own `app.db`; reads scoped to
       the asker, no fetch-by-id, a foreign project 404s rather than 403s
-- [x] Auth — `app/sessions.py`, HttpOnly cookie + CSRF double submit
+- [x] Auth — `app/auth.py` one-time tokens + `app/sessions.py` HttpOnly cookie
+      and CSRF double submit. **`TODO(auth)` is closed**: sign-in proves the
+      address rather than trusting it.
 - [x] Client data layer — `frontend/src/app/api.ts`
 - [x] Client routing + shell — `router.ts`, `App.tsx`, deep-refresh via
       `SHELL_ROUTES`
@@ -40,7 +42,10 @@ after a design pass, defer it; if it is invisible to a design pass, do it now.*
 - [x] Importing a TUI plan into the app (`app/importer.py`) — copies, never
       shares, so `yeaboi` keeps working offline
 
-**Not yet:** a real identity provider behind `TODO(auth)` in `routes.py`.
+**Not yet:** a real *delivery channel*. `LogDeliverer` writes sign-in links to
+the log and `AppServer` refuses it when `secure_cookies=True`, so deploying
+needs a `Deliverer` implementation (SMTP, SES, Postmark) — or swapping the whole
+step for OAuth/SSO, which the token seam is shaped to allow.
 
 ### Milestone 2 — App chrome primitives (thin skin) — **DONE**
 - [x] `Button` (3 variants), `Field`/`Input`/`Select`, `Modal`, `Toast`,
@@ -142,8 +147,8 @@ stale committed bundles, which is how an autonomous run silently corrupts a repo
 
 **Open, in the order I would take them:**
 
-1. **`TODO(auth)`** — sign-in trusts the email address. Fine locally, not
-   shippable. Needs a decision: magic link, OAuth, or SSO.
+1. **A `Deliverer`** — sign-in works, but the link goes to the log. One class,
+   plus a decision about which mail path.
 2. **Shared-element / FLIP transitions** — the part that pays for GSAP's 70 KB.
 3. **Live rooms beyond a registry** — embed or port, if a registry is not enough.
 4. **Milestone 5, Tauri** — deliberately last; the self-contained IIFE bundles
