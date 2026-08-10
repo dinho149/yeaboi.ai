@@ -178,36 +178,31 @@ real sign-in with email delivery, and browser-reachable import. Milestone 5
 compiles but has never opened a window. 26 commits on `app-shell`; `main`
 untouched.
 
-## The open question that changes the rest
+## Where the server lives — answered
 
-**Where does the server live?** The user said the app is reached *purely from a
-browser*, which rules out "type a command first" as the normal path but does not
-say which of these it is:
+**Cloud hosting eventually; a compose stack for now.** `make up` builds the
+image and serves the app on `localhost:5599`.
 
-1. **Hosted** — runs on a box, you visit a URL. Biggest job: TLS, a domain, real
-   SMTP, and it breaks `app/importer.py`, which reads `~/.yeaboi` off the
-   server's own disk.
-2. **Local, always on** — a launchd/systemd service, you open `localhost:5599`
-   and never think about it. An afternoon.
-3. **Launched by the TUI** — you are already in `yeaboi`; it opens a tab.
+The local stack is deliberately the *same shape* as the eventual deployment,
+not a different thing — same image, same environment variables. What changes in
+the cloud is the values: TLS in front, real SMTP, and
+`YEABOI_ALLOW_REMOTE_FIRST_RUN` off.
 
-Work done since is deliberately common ground: the first-run browser claim and
-the import discovery endpoint are correct under all three.
+Three consequences that are now settled rather than open:
 
-## Open, in the order I would take them
-
-1. **Answer the hosting question above.** Everything below is cheaper once it
-   is settled.
-2. **Design pass** — the point of the invariants. `frontend/src/design/` is
-   still the only place a colour, font or spacing value lives, verified on
-   every commit, so this remains a token edit rather than a rewrite.
-3. **Milestone 5, Tauri** — the window opens, the sidecar dies with it, and an
-   old CLI on `PATH` is now reported rather than mysterious. Two things left:
-   nobody has looked at what the window *renders* (WKWebView is not Chrome),
-   and packaging a Python runtime, which depends on answer 1.
-4. **Live rooms beyond a registry** — embed or port. Needs a product decision.
-5. **Hosting** — the `~/.yeaboi` assumption in `app/importer.py`. Made explicit
-   (an unreadable store is an empty list, not a crash) but not removed.
+* **The image has no Node.** The bundles are built by `make web` and committed,
+  so serving them needs no toolchain. That constraint existed to keep
+  `pip install yeaboi` working without Node; it pays again here.
+* **First-run setup needed an explicit opt-in.** A container publishes a port,
+  so its traffic arrives from the Docker bridge and never looks like loopback —
+  the claim would have been permanently unavailable in exactly the setup it is
+  for. `YEABOI_ALLOW_REMOTE_FIRST_RUN=1` waives that one condition, and is
+  still refused outright when cookies are secure.
+* **`app/importer.py` is now definitively wrong for the hosted case.** It reads
+  `~/.yeaboi` on the server's own disk; in a container that is an empty volume,
+  and in the cloud it is nobody's machine. It degrades to "nothing to import"
+  rather than failing, which is the honest behaviour, but the *feature* needs a
+  different shape — upload, or a token-authenticated push from the TUI.
 
 ## Work found by auditing rather than by the plan
 

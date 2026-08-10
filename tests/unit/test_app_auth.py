@@ -528,3 +528,41 @@ class TestExpiredTokensDoNotAccumulate:
         for _ in range(LOGIN_RATE_LIMIT):
             logins.request("ada@example.com")
         assert logins.request("ada@example.com") is None
+
+
+class TestFirstRunInAContainer:
+    """A published port means traffic arrives from the Docker bridge.
+
+    Without the opt-in, first-run setup is unavailable in exactly the
+    deployment it exists for; with it treated as a header sniff, anyone could
+    claim the instance. So it is an explicit flag that waives one condition.
+    """
+
+    def _remote(self, app, path="/api/auth/claim", body=None):
+        from yeaboi.app.router import parse_request
+
+        raw = json.dumps(body or {"email": "ada@example.com"}).encode()
+        return app.handle(parse_request("POST", path, {}, raw, client_host="172.18.0.1"))
+
+    def test_a_bridge_address_cannot_claim_by_default(self, store):
+        app = AppServer(store)
+        assert self._remote(app).code == 403
+
+    def test_the_opt_in_allows_it(self, store):
+        app = AppServer(store, allow_remote_first_run=True)
+        assert self._remote(app).code == 201
+        assert app.store.user_by_email("ada@example.com") is not None
+
+    def test_the_opt_in_does_not_survive_a_secure_deployment(self, store):
+        # The flag waives the locality condition and nothing else: a TLS
+        # deployment must still go through email, or the first stranger to
+        # find the URL owns it.
+        app = AppServer(
+            store, secure_cookies=True, deliverer=LogDeliverer(), allow_remote_first_run=True
+        )
+        assert self._remote(app).code == 403
+
+    def test_the_opt_in_still_closes_once_claimed(self, store):
+        app = AppServer(store, allow_remote_first_run=True)
+        assert self._remote(app).code == 201
+        assert self._remote(app, body={"email": "eve@example.com"}).code == 403

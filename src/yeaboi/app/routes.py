@@ -78,7 +78,11 @@ def build_router(app: AppServer) -> Router:
           exists this is off forever, so it can never be a way in past sign-in.
         * **The request came from this machine**, read off the socket rather
           than a header — ``X-Forwarded-For`` is caller-supplied and would make
-          this claimable by anyone who says the right words.
+          this claimable by anyone who says the right words. A container
+          publishes a port, so its traffic arrives from the Docker bridge and
+          never looks local; ``YEABOI_ALLOW_REMOTE_FIRST_RUN=1`` waives *this*
+          condition and only this one, which is why it is an explicit opt-in
+          and not a header sniff.
         * **Cookies are not marked secure**, i.e. this is not a TLS deployment.
           A hosted instance must go through email, or the first stranger to find
           the URL owns it.
@@ -90,7 +94,7 @@ def build_router(app: AppServer) -> Router:
         """
         return (
             app_server.store.count_users() == 0
-            and request.is_loopback
+            and (request.is_loopback or app_server.allow_remote_first_run)
             and not app_server.secure_cookies
         )
 

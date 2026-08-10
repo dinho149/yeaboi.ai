@@ -1,0 +1,30 @@
+# Anything the image does not need, and a few things it must not have.
+
+.git/
+.github/
+.venv/
+node_modules/
+frontend/node_modules/
+desktop/
+**/target/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+tests/
+docs/
+cowork/
+packaging/
+scripts/
+claude-plugin/
+desktop-pet/
+
+# Secrets. .env would otherwise be baked into a layer and travel with the image.
+.env
+*.env
+!.env.example
+
+# Build output of the image itself.
+dist/
+build/
+*.egg-info/

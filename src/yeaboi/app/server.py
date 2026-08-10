@@ -120,11 +120,19 @@ class AppServer:
         router: Router | None = None,
         secure_cookies: bool = False,
         deliverer: Deliverer | None = None,
+        allow_remote_first_run: bool = False,
     ) -> None:
         self.store = store if store is not None else AppStore()
         self.sessions = SessionStore(self.store)
         self.logins = LoginTokens(self.store)
         self.secure_cookies = secure_cookies
+        # In a container the browser reaches the app through a published port,
+        # so the request arrives from the Docker bridge and never looks like
+        # loopback — which would make the first-run claim permanently
+        # unavailable in exactly the setup it exists for. An explicit opt-in
+        # rather than trusting X-Forwarded-For, which the caller controls.
+        # Still refused outright when cookies are secure: see routes.py.
+        self.allow_remote_first_run = allow_remote_first_run
         # `secure_cookies` means the deployment believes it is behind TLS,
         # which is the closest available signal for "not a laptop". Writing
         # sign-in links to a log there would put a live credential in whatever
@@ -212,7 +220,14 @@ def serve(
     Returned rather than run so a test, the TUI, and a ``__main__`` can each
     decide about threads — the same shape ``RetroServer`` uses.
     """
-    app = AppServer(AppStore(db_path), secure_cookies=secure_cookies, deliverer=build_deliverer())
+    import os  # noqa: PLC0415
+
+    app = AppServer(
+        AppStore(db_path),
+        secure_cookies=secure_cookies,
+        deliverer=build_deliverer(),
+        allow_remote_first_run=os.getenv("YEABOI_ALLOW_REMOTE_FIRST_RUN", "").strip() == "1",
+    )
     httpd = ThreadingHTTPServer((host, port), AppRequestHandler)
     httpd.app = app  # type: ignore[attr-defined]
     return httpd

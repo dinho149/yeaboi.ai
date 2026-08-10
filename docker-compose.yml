@@ -1,0 +1,49 @@
+# yeaboi as a web app, for a laptop or a single box.
+#
+# `docker compose up` and open http://localhost:5599. The first person to open
+# it claims the instance; after that, sign-in is by emailed link.
+#
+# This is the local shape of the eventual cloud deployment, not a different
+# thing: same image, same environment variables. What changes in the cloud is
+# the values — TLS in front, real SMTP, and YEABOI_ALLOW_REMOTE_FIRST_RUN off.
+
+services:
+  app:
+    build: .
+    image: yeaboi:local
+    ports:
+      # Published on loopback only. `5599:5599` would bind 0.0.0.0 on the host
+      # and put every project on the LAN, which is not something to discover.
+      - "127.0.0.1:5599:5599"
+    environment:
+      # ── Sign-in ──────────────────────────────────────────────────────
+      # A container's traffic arrives from the Docker bridge, so it never looks
+      # like loopback and the first-run claim would be permanently unavailable.
+      # This waives that one condition.
+      #
+      # TURN THIS OFF for anything reachable by other people: with it on, the
+      # first request to an unclaimed instance owns it. It is already ignored
+      # when YEABOI_APP_BASE_URL implies a real deployment (see below).
+      YEABOI_ALLOW_REMOTE_FIRST_RUN: "1"
+
+      # Set these to switch sign-in from "claim it" to "email me a link". The
+      # app reuses the project's existing STANDUP_SMTP_* settings rather than
+      # inventing a second mail configuration.
+      # YEABOI_APP_BASE_URL: "https://yeaboi.example.com"
+      # STANDUP_SMTP_HOST: "smtp.example.com"
+      # STANDUP_SMTP_PORT: "587"
+      # STANDUP_SMTP_USER: "no-reply@example.com"
+      # STANDUP_SMTP_PASSWORD: "..."
+      # STANDUP_SMTP_SENDER: "no-reply@example.com"
+
+      # Python should not buffer when something else is reading the logs.
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # Everything durable lives here: app.db, sessions, exports. A named
+      # volume rather than a bind mount so a rebuild cannot take it, and so it
+      # does not inherit the host user's permissions.
+      - yeaboi-data:/data
+    restart: unless-stopped
+
+volumes:
+  yeaboi-data:
