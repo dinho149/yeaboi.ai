@@ -30,7 +30,13 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
 
 #: Paths that serve the shell document. Listed rather than a catch-all: a
 #: typo'd URL should 404 like a missing page, not silently render the app.
-SHELL_ROUTES: tuple[str, ...] = ("/", "/projects", "/projects/{project_id}", "/settings")
+SHELL_ROUTES: tuple[str, ...] = (
+    "/",
+    "/projects",
+    "/projects/{project_id}",
+    "/projects/{project_id}/artifacts/{artifact_id}",
+    "/settings",
+)
 
 
 def _project_or_404(app: AppServer, request: Request):
@@ -158,6 +164,66 @@ def build_router(app: AppServer) -> Router:
         return json_response({"ok": True, "user_id": invitee.id}, 201)
 
     router.post("/api/projects/{project_id}/members", add_member)
+
+    # ── artifacts ──────────────────────────────────────────────────────
+    #
+    # An artifact is a report payload: the same mapping of text and numbers an
+    # exporter hands to `export_page`, which the front end's `Report` switch
+    # already knows how to draw. Storing that shape rather than rendered HTML is
+    # what lets one renderer serve the export, the share and the app.
+
+    def list_artifacts(request: Request) -> Response:
+        _project_or_404(app, request)
+        rows = [
+            {"id": a.id, "kind": a.kind, "title": a.title, "created_at": a.created_at}
+            for a in app.store.artifacts_for(request.params["project_id"], request.user_id or "")
+        ]
+        return json_response({"artifacts": rows})
+
+    router.get("/api/projects/{project_id}/artifacts", list_artifacts)
+
+    def create_artifact(request: Request) -> Response:
+        _project_or_404(app, request)
+        payload = request.json()
+        report = payload.get("payload")
+        if not isinstance(report, dict):
+            raise HTTPError(400, "payload must be an object")
+        artifact = app.store.create_artifact(
+            request.params["project_id"],
+            request.user_id or "",
+            str(payload.get("kind", "")),
+            str(payload.get("title", "")),
+            report,
+        )
+        if artifact is None:
+            raise HTTPError(403, "read-only")
+        return json_response({"id": artifact.id, "kind": artifact.kind, "title": artifact.title}, 201)
+
+    router.post("/api/projects/{project_id}/artifacts", create_artifact)
+
+    def get_artifact(request: Request) -> Response:
+        artifact = app.store.artifact(request.params["artifact_id"], request.user_id or "")
+        if artifact is None:
+            raise HTTPError(404, "not found")
+        return json_response(
+            {
+                "id": artifact.id,
+                "kind": artifact.kind,
+                "title": artifact.title,
+                "created_at": artifact.created_at,
+                "project_id": artifact.project_id,
+                "payload": artifact.payload,
+            }
+        )
+
+    router.get("/api/artifacts/{artifact_id}", get_artifact)
+
+    def delete_artifact(request: Request) -> Response:
+        if not app.store.delete_artifact(request.params["artifact_id"], request.user_id or ""):
+            raise HTTPError(404, "not found")
+        return json_response({"ok": True})
+
+    router.delete("/api/artifacts/{artifact_id}", delete_artifact)
 
     # ── the shell ──────────────────────────────────────────────────────
     #

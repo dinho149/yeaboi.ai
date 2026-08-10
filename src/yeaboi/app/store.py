@@ -16,6 +16,7 @@ server would break ``yeaboi`` offline, and that is not on the table.
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 import time
@@ -50,6 +51,19 @@ CREATE TABLE IF NOT EXISTS memberships (
     role        TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
     PRIMARY KEY (project_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    -- The report payload, exactly as an exporter would hand it to export_page:
+    -- text, numbers and structure, no markup and no presentation. Stored whole
+    -- rather than shredded into columns because the bundle's Report switch is
+    -- the only thing that reads it, and its shape is that union's business.
+    payload     TEXT NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS artifacts_project ON artifacts(project_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS sessions (
     token       TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -76,6 +90,17 @@ class Project:
     created_at: float
     updated_at: float
     role: str = "owner"
+
+
+@dataclass(frozen=True)
+class Artifact:
+    id: str
+    project_id: str
+    kind: str
+    title: str
+    created_at: float
+    #: Parsed payload. Absent from list views, which carry only the metadata.
+    payload: dict | None = None
 
 
 def _new_id(prefix: str) -> str:
@@ -233,3 +258,86 @@ class AppStore:
                 (project_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    # ── artifacts ──────────────────────────────────────────────────────
+
+    def create_artifact(self, project_id: str, user_id: str, kind: str, title: str, payload: dict) -> Artifact | None:
+        """Store a report payload against a project.
+
+        Returns ``None`` when the caller may not write, rather than raising: a
+        viewer posting an artifact is an authorisation answer, not an exception.
+        """
+        if not kind.strip():
+            raise ValueError("artifact kind is required")
+        if payload.get("kind") != kind:
+            # The bundle switches on payload["kind"]; a row whose column and
+            # payload disagree renders as something other than what it is
+            # filed under, which is the kind of drift nothing else would catch.
+            raise ValueError("payload kind must match the artifact kind")
+        current = self.project(project_id, user_id)
+        if current is None or current.role == "viewer":
+            return None
+        artifact = Artifact(
+            id=_new_id("art"),
+            project_id=project_id,
+            kind=kind.strip(),
+            title=title.strip(),
+            created_at=time.time(),
+            payload=payload,
+        )
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO artifacts (id, project_id, kind, title, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (artifact.id, project_id, artifact.kind, artifact.title, json.dumps(payload), artifact.created_at),
+            )
+            conn.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (artifact.created_at, project_id))
+        return artifact
+
+    def artifacts_for(self, project_id: str, user_id: str) -> list[Artifact]:
+        """Metadata only — a list view has no use for ten payloads."""
+        if self.project(project_id, user_id) is None:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, project_id, kind, title, created_at FROM artifacts "
+                "WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        return [Artifact(**dict(row)) for row in rows]
+
+    def artifact(self, artifact_id: str, user_id: str) -> Artifact | None:
+        """One artifact with its payload, scoped through the project membership.
+
+        The join is what does the scoping: there is no path to a payload that
+        does not pass through a membership row, so an id guessed from a URL
+        answers nothing.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT a.* FROM artifacts a "
+                "JOIN memberships m ON m.project_id = a.project_id "
+                "WHERE a.id = ? AND m.user_id = ?",
+                (artifact_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        return Artifact(
+            id=data["id"],
+            project_id=data["project_id"],
+            kind=data["kind"],
+            title=data["title"],
+            created_at=data["created_at"],
+            payload=json.loads(data["payload"]),
+        )
+
+    def delete_artifact(self, artifact_id: str, user_id: str) -> bool:
+        existing = self.artifact(artifact_id, user_id)
+        if existing is None:
+            return False
+        project = self.project(existing.project_id, user_id)
+        if project is None or project.role == "viewer":
+            return False
+        with self._connect() as conn:
+            conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
+        return True

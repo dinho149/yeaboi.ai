@@ -10,15 +10,22 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
+import { ArtifactView } from './Artifact';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
 import { AsyncView, EmptyState } from './Slots';
 import { useAsync } from './useAsync';
-import type { ProjectDetail, ProjectSummary, User } from './types';
+import type { ArtifactSummary, ProjectDetail, ProjectSummary, User } from './types';
 import styles from './app.module.css';
 
-const ROUTES = new Routes(['/', '/projects', '/projects/{id}', '/settings']);
+const ROUTES = new Routes([
+  '/',
+  '/projects',
+  '/projects/{id}',
+  '/projects/{id}/artifacts/{artifactId}',
+  '/settings',
+]);
 
 /** Modes, in the order the TUI lists them. */
 const RAIL = [
@@ -129,6 +136,38 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
   );
 }
 
+function ArtifactList({ projectId }: { projectId: string }) {
+  const state = useAsync(
+    () => get<{ artifacts: ArtifactSummary[] }>(`/api/projects/${projectId}/artifacts`),
+    [projectId],
+    { isEmpty: (data) => data.artifacts.length === 0 },
+  );
+  return (
+    <AsyncView
+      state={state}
+      empty={
+        <EmptyState
+          title="No documents yet"
+          hint="Plans, standups, retros and reports for this project will appear here."
+        />
+      }
+    >
+      {(data) => (
+        <ul className={styles.projectList}>
+          {data.artifacts.map((artifact) => (
+            <li key={artifact.id} className={styles.projectRow}>
+              <a className={styles.projectName} href={`/projects/${projectId}/artifacts/${artifact.id}`}>
+                {artifact.title || artifact.kind}
+              </a>
+              <span className={styles.role}>{artifact.kind}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </AsyncView>
+  );
+}
+
 function ProjectDetailView({ id }: { id: string }) {
   const state = useAsync(() => get<ProjectDetail>(`/api/projects/${id}`), [id]);
   return (
@@ -136,6 +175,7 @@ function ProjectDetailView({ id }: { id: string }) {
       {(project) => (
         <section>
           <h1>{project.name}</h1>
+          <ArtifactList projectId={project.id} />
           <ul className={styles.projectList}>
             {project.members.map((member) => (
               <li key={member.id} className={styles.projectRow}>
@@ -172,6 +212,8 @@ export function App({ user: initial }: { user: User | null }) {
 
   let view: preact.ComponentChildren;
   if (!match) view = <EmptyState title="No such page" hint={path} />;
+  else if (match.pattern === '/projects/{id}/artifacts/{artifactId}')
+    view = <ArtifactView id={match.params.artifactId ?? ''} />;
   else if (match.pattern === '/projects/{id}') view = <ProjectDetailView id={match.params.id ?? ''} />;
   else if (match.pattern === '/settings') view = <EmptyState title="Settings" hint="TODO(design)" />;
   else view = <ProjectList notify={push} />;

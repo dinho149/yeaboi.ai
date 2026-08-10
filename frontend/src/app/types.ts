@@ -27,3 +27,10 @@ export interface ProjectDetail extends Omit<ProjectSummary, 'updated_at'> {
   updated_at: number;
   members: Member[];
 }
+
+export interface ArtifactSummary {
+  id: string;
+  kind: string;
+  title: string;
+  created_at: number;
+}
