@@ -13,8 +13,8 @@ import json
 
 import pytest
 
+from tests._app import call, sign_in
 from yeaboi.app.importer import import_plan
-from yeaboi.app.router import parse_request
 from yeaboi.app.server import AppServer
 from yeaboi.app.store import AppStore
 
@@ -126,43 +126,18 @@ class TestImportPlan:
 
 
 class TestImportRoute:
-    def _sign_in(self, app):
-        response = app.handle(
-            parse_request("POST", "/api/auth/session", {}, json.dumps({"email": "ada@example.com"}).encode())
-        )
-        cookies = {}
-        for key, value in response.headers:
-            if key == "Set-Cookie":
-                name, _, rest = value.partition("=")
-                cookies[name] = rest.split(";")[0]
-        header = "; ".join(f"{k}={v}" for k, v in cookies.items())
-        return header, cookies["yeaboi_csrf"]
-
     def test_imports_and_returns_both_ids(self, store, tui):
         app = AppServer(store)
-        cookies, csrf = self._sign_in(app)
-        response = app.handle(
-            parse_request(
-                "POST",
-                "/api/import/plan",
-                {"Cookie": cookies, "X-Yeaboi-CSRF": csrf},
-                json.dumps({"tui_project_id": "tui_1"}).encode(),
-            )
-        )
+        cookies, csrf = sign_in(app)
+        response = call(app, "POST", "/api/import/plan", {"tui_project_id": "tui_1"}, cookies=cookies, csrf=csrf)
         assert response.code == 201
         assert set(json.loads(response.body)) == {"project_id", "artifact_id"}
 
     def test_a_missing_id_is_400(self, store, tui):
         app = AppServer(store)
-        cookies, csrf = self._sign_in(app)
-        response = app.handle(
-            parse_request("POST", "/api/import/plan", {"Cookie": cookies, "X-Yeaboi-CSRF": csrf}, b"{}")
-        )
-        assert response.code == 400
+        cookies, csrf = sign_in(app)
+        assert call(app, "POST", "/api/import/plan", {}, cookies=cookies, csrf=csrf).code == 400
 
     def test_it_needs_a_session(self, store, tui):
         app = AppServer(store)
-        response = app.handle(
-            parse_request("POST", "/api/import/plan", {}, json.dumps({"tui_project_id": "tui_1"}).encode())
-        )
-        assert response.code == 401
+        assert call(app, "POST", "/api/import/plan", {"tui_project_id": "tui_1"}).code == 401

@@ -53,18 +53,47 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  // A link lands here as /signin?token=... Redeem it once, on arrival.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('token');
+    if (!token) return;
+    setBusy(true);
+    void post<{ user: User }>('/api/auth/session', { token }).then((result) => {
+      setBusy(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // Drop the token from the address bar before anything else can read it:
+      // it is spent, but a one-time credential should not sit in history or
+      // ride along in a Referer.
+      navigate('/projects', { replace: true });
+      onDone(result.data.user);
+    });
+  }, [onDone]);
 
   async function submit(event: Event) {
     event.preventDefault();
     setBusy(true);
     setError('');
-    const result = await post<{ user: User }>('/api/auth/session', { email });
+    const result = await post('/api/auth/request', { email });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    onDone(result.data.user);
+    setSent(true);
+  }
+
+  if (sent) {
+    return (
+      <EmptyState
+        title="Check your email"
+        hint={`If ${email} has access, a sign-in link is on its way. It expires in 15 minutes.`}
+      />
+    );
   }
 
   return (
@@ -80,7 +109,7 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
         )}
       </Field>
       <Button type="submit" variant="primary" busy={busy}>
-        Continue
+        Send a sign-in link
       </Button>
     </form>
   );

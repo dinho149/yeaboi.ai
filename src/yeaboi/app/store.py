@@ -87,6 +87,24 @@ CREATE TABLE IF NOT EXISTS rooms (
     closed_at   REAL
 );
 CREATE INDEX IF NOT EXISTS rooms_project ON rooms(project_id, opened_at DESC);
+-- One-time sign-in tokens.
+--
+-- Only the SHA-256 of the token is stored. The raw value exists in the link the
+-- user receives and nowhere else, so a stolen database does not hand over the
+-- ability to sign in as anyone - which is the whole reason this table is not
+-- just an email column.
+--
+-- `used_at` rather than a delete: a token that has been spent must be
+-- distinguishable from one that never existed, or a replayed link and a forged
+-- one produce the same answer and neither can be alerted on.
+CREATE TABLE IF NOT EXISTS login_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    email       TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    expires_at  REAL NOT NULL,
+    used_at     REAL
+);
+CREATE INDEX IF NOT EXISTS login_tokens_email ON login_tokens(email, created_at DESC);
 CREATE TABLE IF NOT EXISTS sessions (
     token       TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

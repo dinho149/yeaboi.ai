@@ -17,6 +17,7 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from yeaboi.app.auth import Deliverer, InsecureDelivererError, LogDeliverer, LoginTokens
 from yeaboi.app.router import UNSAFE_METHODS, Request, Response, Router, json_response, parse_request
 from yeaboi.app.sessions import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE, SessionStore
 from yeaboi.app.store import AppStore
@@ -90,10 +91,21 @@ class AppServer:
         *,
         router: Router | None = None,
         secure_cookies: bool = False,
+        deliverer: Deliverer | None = None,
     ) -> None:
         self.store = store if store is not None else AppStore()
         self.sessions = SessionStore(self.store)
+        self.logins = LoginTokens(self.store)
         self.secure_cookies = secure_cookies
+        # `secure_cookies` means the deployment believes it is behind TLS,
+        # which is the closest available signal for "not a laptop". Writing
+        # sign-in links to a log there would put a live credential in whatever
+        # ships logs off the box, so it is refused rather than warned about.
+        if deliverer is None and secure_cookies:
+            raise InsecureDelivererError(
+                "refusing to log sign-in links in a secure deployment - pass a real Deliverer"
+            )
+        self.deliverer: Deliverer = deliverer if deliverer is not None else LogDeliverer()
         if router is not None:
             self.router = router
         else:

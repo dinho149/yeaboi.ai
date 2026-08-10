@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from yeaboi.app.router import parse_request
+from tests._app import call, sign_in
 from yeaboi.app.server import AppServer
 from yeaboi.app.store import ROOM_KINDS, AppStore
 
@@ -28,31 +28,6 @@ def store(tmp_path):
 @pytest.fixture
 def app(store):
     return AppServer(store)
-
-
-def _cookie(response, name):
-    for key, value in response.headers:
-        if key == "Set-Cookie" and value.startswith(f"{name}="):
-            return value.split(";")[0].split("=", 1)[1]
-    return ""
-
-
-def _call(app, method, path, body=None, *, cookies="", csrf=""):
-    headers = {}
-    if cookies:
-        headers["Cookie"] = cookies
-    if csrf:
-        headers["X-Yeaboi-CSRF"] = csrf
-    raw = json.dumps(body).encode() if body is not None else b""
-    return app.handle(parse_request(method, path, headers, raw))
-
-
-def _sign_in(app, email="ada@example.com"):
-    response = _call(app, "POST", "/api/auth/session", {"email": email})
-    return (
-        f"yeaboi_session={_cookie(response, 'yeaboi_session')}; yeaboi_csrf={_cookie(response, 'yeaboi_csrf')}",
-        _cookie(response, "yeaboi_csrf"),
-    )
 
 
 class TestRoomStore:
@@ -128,10 +103,10 @@ class TestRoomStore:
 
 class TestRoomRoutes:
     def test_open_list_close(self, app):
-        cookies, csrf = _sign_in(app)
-        created = _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
+        cookies, csrf = sign_in(app)
+        created = call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
         project_id = json.loads(created.body)["id"]
-        opened = _call(
+        opened = call(
             app,
             "POST",
             f"/api/projects/{project_id}/rooms",
@@ -142,17 +117,17 @@ class TestRoomRoutes:
         assert opened.code == 201
         room_id = json.loads(opened.body)["id"]
 
-        listed = json.loads(_call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)
+        listed = json.loads(call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)
         assert listed["rooms"][0]["join_code"] == "tidy-otter"
 
-        assert _call(app, "DELETE", f"/api/rooms/{room_id}", cookies=cookies, csrf=csrf).code == 200
-        assert json.loads(_call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)["rooms"] == []
+        assert call(app, "DELETE", f"/api/rooms/{room_id}", cookies=cookies, csrf=csrf).code == 200
+        assert json.loads(call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)["rooms"] == []
 
     def test_a_bad_url_is_400_not_500(self, app):
-        cookies, csrf = _sign_in(app)
-        created = _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
+        cookies, csrf = sign_in(app)
+        created = call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
         project_id = json.loads(created.body)["id"]
-        response = _call(
+        response = call(
             app,
             "POST",
             f"/api/projects/{project_id}/rooms",
@@ -163,11 +138,11 @@ class TestRoomRoutes:
         assert response.code == 400
 
     def test_rooms_of_another_project_are_404(self, app):
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        created = _call(app, "POST", "/api/projects", {"name": "P"}, cookies=ada, csrf=ada_csrf)
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        created = call(app, "POST", "/api/projects", {"name": "P"}, cookies=ada, csrf=ada_csrf)
         project_id = json.loads(created.body)["id"]
-        bob, _ = _sign_in(app, "bob@example.com")
-        assert _call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=bob).code == 404
+        bob, _ = sign_in(app, "bob@example.com")
+        assert call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=bob).code == 404
 
     def test_no_room_field_can_carry_the_host_secret(self, app):
         """The registry's whole security story, as one assertion.
@@ -176,10 +151,10 @@ class TestRoomRoutes:
         returns is the set of things a teammate may have. An admin token or a
         host link appearing here later would be a silent privilege escalation.
         """
-        cookies, csrf = _sign_in(app)
-        created = _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
+        cookies, csrf = sign_in(app)
+        created = call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf)
         project_id = json.loads(created.body)["id"]
-        _call(
+        call(
             app,
             "POST",
             f"/api/projects/{project_id}/rooms",
@@ -187,5 +162,5 @@ class TestRoomRoutes:
             cookies=cookies,
             csrf=csrf,
         )
-        room = json.loads(_call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)["rooms"][0]
+        room = json.loads(call(app, "GET", f"/api/projects/{project_id}/rooms", cookies=cookies).body)["rooms"][0]
         assert set(room) == {"id", "kind", "title", "invite_url", "join_code", "opened_at"}

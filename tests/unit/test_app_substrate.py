@@ -11,10 +11,12 @@ import json
 
 import pytest
 
+from tests._app import call, sign_in
+from yeaboi.app.auth import LogDeliverer
 from yeaboi.app.router import HTTPError, Request, Router, json_response, parse_request
 from yeaboi.app.routes import PUBLIC_ROUTES
 from yeaboi.app.server import AppServer
-from yeaboi.app.sessions import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE, SessionStore
+from yeaboi.app.sessions import CSRF_COOKIE, SESSION_COOKIE, SessionStore
 from yeaboi.app.store import AppStore
 
 
@@ -28,30 +30,10 @@ def app(store):
     return AppServer(store)
 
 
-def _cookie_value(response, name: str) -> str:
-    for key, value in response.headers:
-        if key == "Set-Cookie" and value.startswith(f"{name}="):
-            return value.split(";")[0].split("=", 1)[1]
-    return ""
 
 
-def _call(app, method, path, body=None, *, cookies="", csrf=""):
-    headers = {}
-    if cookies:
-        headers["Cookie"] = cookies
-    if csrf:
-        headers[CSRF_HEADER] = csrf
-    raw = json.dumps(body).encode() if body is not None else b""
-    return app.handle(parse_request(method, path, headers, raw))
 
 
-def _sign_in(app, email="ada@example.com", name="Ada"):
-    """Sign in and return ``(cookie_header, csrf_value)`` ready to re-send."""
-    response = _call(app, "POST", "/api/auth/session", {"email": email, "name": name})
-    assert response.code == 200
-    session = _cookie_value(response, SESSION_COOKIE)
-    csrf = _cookie_value(response, CSRF_COOKIE)
-    return f"{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}", csrf
 
 
 class TestRouter:
@@ -137,7 +119,9 @@ class TestRouteTableIsClosed:
 
 class TestAuth:
     def test_sign_in_sets_an_httponly_session_and_a_readable_csrf_cookie(self, app):
-        response = _call(app, "POST", "/api/auth/session", {"email": "ada@example.com"})
+        call(app, "POST", "/api/auth/request", {"email": "ada@example.com"})
+        token = app.deliverer.delivered[-1].token
+        response = call(app, "POST", "/api/auth/session", {"token": token})
         cookies = [value for key, value in response.headers if key == "Set-Cookie"]
         session = next(c for c in cookies if c.startswith(SESSION_COOKIE))
         csrf = next(c for c in cookies if c.startswith(CSRF_COOKIE))
@@ -147,31 +131,40 @@ class TestAuth:
         assert "SameSite=Lax" in session
 
     def test_secure_flag_follows_the_deployment(self, store):
-        secure_app = AppServer(store, secure_cookies=True)
-        response = _call(secure_app, "POST", "/api/auth/session", {"email": "a@b.com"})
-        assert all("Secure" in value for key, value in response.headers if key == "Set-Cookie")
+        # A secure deployment must supply a real deliverer, so this passes one.
+        secure_app = AppServer(store, secure_cookies=True, deliverer=LogDeliverer())
+        cookies, _ = sign_in(secure_app)
+        response = call(secure_app, "POST", "/api/auth/request", {"email": "x@y.com"})
+        assert response.code == 202
+        issued = call(
+            secure_app,
+            "POST",
+            "/api/auth/session",
+            {"token": secure_app.deliverer.delivered[-1].token},
+        )
+        assert all("Secure" in value for key, value in issued.headers if key == "Set-Cookie")
 
     def test_email_is_normalised(self, app):
-        _call(app, "POST", "/api/auth/session", {"email": "  ADA@Example.COM "})
+        call(app, "POST", "/api/auth/request", {"email": "  ADA@Example.COM "})
+        call(app, "POST", "/api/auth/session", {"token": app.deliverer.delivered[-1].token})
         assert app.store.user_by_email("ada@example.com") is not None
 
-    def test_sign_in_is_idempotent_on_email(self, app):
-        _call(app, "POST", "/api/auth/session", {"email": "ada@example.com"})
-        _call(app, "POST", "/api/auth/session", {"email": "ada@example.com"})
-        assert len(app.store.projects_for("nobody")) == 0
+    def test_signing_in_twice_does_not_fork_the_account(self, app):
+        sign_in(app, "ada@example.com")
+        sign_in(app, "ada@example.com")
         assert app.store.user_by_email("ada@example.com") is not None
 
     def test_bad_email_is_400(self, app):
-        assert _call(app, "POST", "/api/auth/session", {"email": "nope"}).code == 400
+        assert call(app, "POST", "/api/auth/request", {"email": "nope"}).code == 400
 
     def test_me_returns_the_signed_in_user(self, app):
-        cookies, _ = _sign_in(app)
-        assert json.loads(_call(app, "GET", "/api/auth/me", cookies=cookies).body)["email"] == "ada@example.com"
+        cookies, _ = sign_in(app)
+        assert json.loads(call(app, "GET", "/api/auth/me", cookies=cookies).body)["email"] == "ada@example.com"
 
     def test_sign_out_revokes_the_session(self, app):
-        cookies, csrf = _sign_in(app)
-        assert _call(app, "DELETE", "/api/auth/session", cookies=cookies, csrf=csrf).code == 200
-        assert _call(app, "GET", "/api/auth/me", cookies=cookies).code == 401
+        cookies, csrf = sign_in(app)
+        assert call(app, "DELETE", "/api/auth/session", cookies=cookies, csrf=csrf).code == 200
+        assert call(app, "GET", "/api/auth/me", cookies=cookies).code == 401
 
     def test_an_expired_session_does_not_resolve(self, app, store, monkeypatch):
         import yeaboi.app.sessions as sessions_module
@@ -186,61 +179,63 @@ class TestAuth:
 
 class TestCSRF:
     def test_unsafe_method_without_the_header_is_403(self, app):
-        cookies, _ = _sign_in(app)
-        assert _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies).code == 403
+        cookies, _ = sign_in(app)
+        assert call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies).code == 403
 
     def test_unsafe_method_with_a_mismatched_token_is_403(self, app):
-        cookies, _ = _sign_in(app)
-        assert _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf="wrong").code == 403
+        cookies, _ = sign_in(app)
+        assert call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf="wrong").code == 403
 
     def test_unsafe_method_with_the_echoed_token_passes(self, app):
-        cookies, csrf = _sign_in(app)
-        assert _call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf).code == 201
+        cookies, csrf = sign_in(app)
+        assert call(app, "POST", "/api/projects", {"name": "P"}, cookies=cookies, csrf=csrf).code == 201
 
     def test_safe_method_needs_no_token(self, app):
-        cookies, _ = _sign_in(app)
-        assert _call(app, "GET", "/api/projects", cookies=cookies).code == 200
+        cookies, _ = sign_in(app)
+        assert call(app, "GET", "/api/projects", cookies=cookies).code == 200
 
     def test_sign_in_is_not_blocked_by_csrf(self, app):
         # The request that creates the cookie cannot be expected to echo it.
-        assert _call(app, "POST", "/api/auth/session", {"email": "new@example.com"}).code == 200
+        call(app, "POST", "/api/auth/request", {"email": "new@example.com"})
+        token = app.deliverer.delivered[-1].token
+        assert call(app, "POST", "/api/auth/session", {"token": token}).code == 200
 
 
 class TestProjects:
     def test_create_then_list(self, app):
-        cookies, csrf = _sign_in(app)
-        _call(app, "POST", "/api/projects", {"name": "Payments"}, cookies=cookies, csrf=csrf)
-        listed = json.loads(_call(app, "GET", "/api/projects", cookies=cookies).body)["projects"]
+        cookies, csrf = sign_in(app)
+        call(app, "POST", "/api/projects", {"name": "Payments"}, cookies=cookies, csrf=csrf)
+        listed = json.loads(call(app, "GET", "/api/projects", cookies=cookies).body)["projects"]
         assert [p["name"] for p in listed] == ["Payments"]
         assert listed[0]["role"] == "owner"
 
     def test_a_blank_name_is_400(self, app):
-        cookies, csrf = _sign_in(app)
-        assert _call(app, "POST", "/api/projects", {"name": "   "}, cookies=cookies, csrf=csrf).code == 400
+        cookies, csrf = sign_in(app)
+        assert call(app, "POST", "/api/projects", {"name": "   "}, cookies=cookies, csrf=csrf).code == 400
 
     def test_another_users_project_is_404_not_403(self, app):
         # 403 would confirm the id exists, which is itself a leak.
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Secret"}, cookies=ada, csrf=ada_csrf).body)
-        bob, _ = _sign_in(app, "bob@example.com")
-        assert _call(app, "GET", f"/api/projects/{created['id']}", cookies=bob).code == 404
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Secret"}, cookies=ada, csrf=ada_csrf).body)
+        bob, _ = sign_in(app, "bob@example.com")
+        assert call(app, "GET", f"/api/projects/{created['id']}", cookies=bob).code == 404
 
     def test_owner_can_rename(self, app):
-        cookies, csrf = _sign_in(app)
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Old"}, cookies=cookies, csrf=csrf).body)
-        renamed = _call(app, "POST", f"/api/projects/{created['id']}", {"name": "New"}, cookies=cookies, csrf=csrf)
+        cookies, csrf = sign_in(app)
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Old"}, cookies=cookies, csrf=csrf).body)
+        renamed = call(app, "POST", f"/api/projects/{created['id']}", {"name": "New"}, cookies=cookies, csrf=csrf)
         assert json.loads(renamed.body)["name"] == "New"
 
     def test_owner_can_delete_and_it_is_gone(self, app):
-        cookies, csrf = _sign_in(app)
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Doomed"}, cookies=cookies, csrf=csrf).body)
-        assert _call(app, "DELETE", f"/api/projects/{created['id']}", cookies=cookies, csrf=csrf).code == 200
-        assert _call(app, "GET", f"/api/projects/{created['id']}", cookies=cookies).code == 404
+        cookies, csrf = sign_in(app)
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Doomed"}, cookies=cookies, csrf=csrf).body)
+        assert call(app, "DELETE", f"/api/projects/{created['id']}", cookies=cookies, csrf=csrf).code == 200
+        assert call(app, "GET", f"/api/projects/{created['id']}", cookies=cookies).code == 404
 
     def test_a_member_sees_the_project_but_a_viewer_cannot_rename(self, app):
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
-        added = _call(
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
+        added = call(
             app,
             "POST",
             f"/api/projects/{created['id']}/members",
@@ -249,15 +244,15 @@ class TestProjects:
             csrf=ada_csrf,
         )
         assert added.code == 201
-        bob, bob_csrf = _sign_in(app, "bob@example.com")
-        assert _call(app, "GET", f"/api/projects/{created['id']}", cookies=bob).code == 200
-        blocked = _call(app, "POST", f"/api/projects/{created['id']}", {"name": "Nope"}, cookies=bob, csrf=bob_csrf)
+        bob, bob_csrf = sign_in(app, "bob@example.com")
+        assert call(app, "GET", f"/api/projects/{created['id']}", cookies=bob).code == 200
+        blocked = call(app, "POST", f"/api/projects/{created['id']}", {"name": "Nope"}, cookies=bob, csrf=bob_csrf)
         assert blocked.code == 403
 
     def test_an_editor_cannot_delete(self, app):
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
-        _call(
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
+        call(
             app,
             "POST",
             f"/api/projects/{created['id']}/members",
@@ -265,13 +260,13 @@ class TestProjects:
             cookies=ada,
             csrf=ada_csrf,
         )
-        bob, bob_csrf = _sign_in(app, "bob@example.com")
-        assert _call(app, "DELETE", f"/api/projects/{created['id']}", cookies=bob, csrf=bob_csrf).code == 403
+        bob, bob_csrf = sign_in(app, "bob@example.com")
+        assert call(app, "DELETE", f"/api/projects/{created['id']}", cookies=bob, csrf=bob_csrf).code == 403
 
     def test_a_non_owner_cannot_add_members(self, app):
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        created = json.loads(_call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
-        _call(
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        created = json.loads(call(app, "POST", "/api/projects", {"name": "Shared"}, cookies=ada, csrf=ada_csrf).body)
+        call(
             app,
             "POST",
             f"/api/projects/{created['id']}/members",
@@ -279,8 +274,8 @@ class TestProjects:
             cookies=ada,
             csrf=ada_csrf,
         )
-        bob, bob_csrf = _sign_in(app, "bob@example.com")
-        blocked = _call(
+        bob, bob_csrf = sign_in(app, "bob@example.com")
+        blocked = call(
             app,
             "POST",
             f"/api/projects/{created['id']}/members",

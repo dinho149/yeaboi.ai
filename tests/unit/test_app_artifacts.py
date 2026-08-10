@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+from tests._app import call, make_project, sign_in
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.app.router import parse_request
 from yeaboi.app.server import AppServer
@@ -30,32 +31,11 @@ def app(store):
     return AppServer(store)
 
 
-def _cookie(response, name):
-    for key, value in response.headers:
-        if key == "Set-Cookie" and value.startswith(f"{name}="):
-            return value.split(";")[0].split("=", 1)[1]
-    return ""
 
 
-def _call(app, method, path, body=None, *, cookies="", csrf=""):
-    headers = {}
-    if cookies:
-        headers["Cookie"] = cookies
-    if csrf:
-        headers["X-Yeaboi-CSRF"] = csrf
-    raw = json.dumps(body).encode() if body is not None else b""
-    return app.handle(parse_request(method, path, headers, raw))
 
 
-def _sign_in(app, email="ada@example.com"):
-    response = _call(app, "POST", "/api/auth/session", {"email": email})
-    session = _cookie(response, "yeaboi_session")
-    csrf = _cookie(response, "yeaboi_csrf")
-    return f"yeaboi_session={session}; yeaboi_csrf={csrf}", csrf
 
-
-def _project(app, cookies, csrf, name="Payments"):
-    return json.loads(_call(app, "POST", "/api/projects", {"name": name}, cookies=cookies, csrf=csrf).body)["id"]
 
 
 PAYLOAD = {"kind": "anonymize", "markdown": "# hello", "warnings": []}
@@ -115,9 +95,9 @@ class TestArtifactStore:
 
 class TestArtifactRoutes:
     def test_create_list_read_delete(self, app):
-        cookies, csrf = _sign_in(app)
-        project_id = _project(app, cookies, csrf)
-        created = _call(
+        cookies, csrf = sign_in(app)
+        project_id = make_project(app, cookies, csrf)
+        created = call(
             app,
             "POST",
             f"/api/projects/{project_id}/artifacts",
@@ -128,20 +108,20 @@ class TestArtifactRoutes:
         assert created.code == 201
         artifact_id = json.loads(created.body)["id"]
 
-        listed = json.loads(_call(app, "GET", f"/api/projects/{project_id}/artifacts", cookies=cookies).body)
+        listed = json.loads(call(app, "GET", f"/api/projects/{project_id}/artifacts", cookies=cookies).body)
         assert [a["title"] for a in listed["artifacts"]] == ["Notes"]
         assert "payload" not in listed["artifacts"][0]
 
-        fetched = json.loads(_call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=cookies).body)
+        fetched = json.loads(call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=cookies).body)
         assert fetched["payload"] == PAYLOAD
 
-        assert _call(app, "DELETE", f"/api/artifacts/{artifact_id}", cookies=cookies, csrf=csrf).code == 200
-        assert _call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=cookies).code == 404
+        assert call(app, "DELETE", f"/api/artifacts/{artifact_id}", cookies=cookies, csrf=csrf).code == 200
+        assert call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=cookies).code == 404
 
     def test_a_non_object_payload_is_400(self, app):
-        cookies, csrf = _sign_in(app)
-        project_id = _project(app, cookies, csrf)
-        response = _call(
+        cookies, csrf = sign_in(app)
+        project_id = make_project(app, cookies, csrf)
+        response = call(
             app,
             "POST",
             f"/api/projects/{project_id}/artifacts",
@@ -152,9 +132,9 @@ class TestArtifactRoutes:
         assert response.code == 400
 
     def test_another_users_artifact_is_404(self, app):
-        ada, ada_csrf = _sign_in(app, "ada@example.com")
-        project_id = _project(app, ada, ada_csrf)
-        created = _call(
+        ada, ada_csrf = sign_in(app, "ada@example.com")
+        project_id = make_project(app, ada, ada_csrf)
+        created = call(
             app,
             "POST",
             f"/api/projects/{project_id}/artifacts",
@@ -163,8 +143,8 @@ class TestArtifactRoutes:
             csrf=ada_csrf,
         )
         artifact_id = json.loads(created.body)["id"]
-        bob, _ = _sign_in(app, "bob@example.com")
-        assert _call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=bob).code == 404
+        bob, _ = sign_in(app, "bob@example.com")
+        assert call(app, "GET", f"/api/artifacts/{artifact_id}", cookies=bob).code == 404
 
     def test_the_artifact_route_serves_the_shell(self, app):
         # A deep link to a report must survive a hard refresh.

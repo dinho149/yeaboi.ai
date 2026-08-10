@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from yeaboi.app.auth import looks_like_email, normalise_email
 from yeaboi.app.importer import import_plan
 from yeaboi.app.page import render_app_page
 from yeaboi.app.router import HTTPError, Request, Response, Router, json_response
@@ -24,7 +25,8 @@ if TYPE_CHECKING:
 PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/api/health"),  # liveness — must answer before anyone is signed in
-        ("POST", "/api/auth/session"),  # sign-in: the request that creates the cookie
+        ("POST", "/api/auth/request"),  # asks for a sign-in link; proves nothing yet
+        ("POST", "/api/auth/session"),  # redeems the token: the request that creates the cookie
     }
 )
 
@@ -33,6 +35,7 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
 #: typo'd URL should 404 like a missing page, not silently render the app.
 SHELL_ROUTES: tuple[str, ...] = (
     "/",
+    "/signin",
     "/projects",
     "/projects/{project_id}",
     "/projects/{project_id}/artifacts/{artifact_id}",
@@ -61,19 +64,40 @@ def build_router(app: AppServer) -> Router:
 
     # ── auth ───────────────────────────────────────────────────────────
 
-    def sign_in(request: Request) -> Response:
-        """Create a session for an email address.
+    def request_login(request: Request) -> Response:
+        """Ask for a sign-in link.
 
-        TODO(auth): this trusts the address. It is the seam a real verifier
-        (magic link, OAuth, SSO) drops into, and everything downstream — cookie,
-        CSRF, membership — is already shaped for it. Deliberately not a password
-        store: adding one would be a security surface the project has to keep
-        forever, and the plan is to federate instead.
+        Answers 202 for **every** syntactically valid address, whether or not
+        an account exists and whether or not the rate limit swallowed it. The
+        alternative turns this endpoint into a way to ask which addresses have
+        accounts here, and — for a product used by named teams — that is a
+        roster, not a nuisance.
         """
         payload = request.json()
-        email = str(payload.get("email", "")).strip()
-        if not email or "@" not in email:
+        email = normalise_email(str(payload.get("email", "")))
+        if not looks_like_email(email):
             raise HTTPError(400, "a valid email is required")
+        login = app.logins.request(email)
+        if login is not None:
+            app.deliverer.deliver(login)
+        return json_response({"status": "sent"}, 202)
+
+    router.post("/api/auth/request", request_login, auth=False)
+
+    def sign_in(request: Request) -> Response:
+        """Redeem a sign-in token for a session.
+
+        The user row is created here rather than when the link was requested:
+        until a token comes back, nobody has proved anything, and minting an
+        account per request would let a stranger fill the table with addresses
+        they do not own.
+        """
+        payload = request.json()
+        email = app.logins.consume(str(payload.get("token", "")))
+        if email is None:
+            # One answer for expired, spent, forged and absent. Saying which
+            # tells an attacker whether they are close.
+            raise HTTPError(401, "that sign-in link is not valid")
         user = app.store.create_user(email, str(payload.get("name", "")))
         issued = app.sessions.issue(user.id)
         return json_response(
