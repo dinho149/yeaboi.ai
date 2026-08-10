@@ -2,6 +2,40 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.6.0",
+      "date": "2026-08-10",
+      "summary": "Wave 5 of the Go migration brings the team-analysis scoring core (code health evaluation, coverage assessment, and code practice classification) behind the yeaboi-core sidecar. Two new deterministic RPC methods enable the analysis module to classify code markers and score repository health in the background Go service with Python fallback. The seam carefully orchestrates concurrent LLM work and file-fetch operations for optimal performance. Parity tests enforce byte-level equivalence across Python and Go implementations, and contract definitions lock the RPC interface across versions.",
+      "highlights": [
+        {
+          "text": "Analysis scoring core now runs in the Go sidecar with two new RPC methods: classify_markers and score_code",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "New aggregate module coordinates concurrent analysis work (LLM classification + network file fetches) with optimal parallelism",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Byte-level parity enforcement for analysis module ensures Python and Go implementations stay perfectly synchronized",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Silent Python fallback preserves compatibility when the sidecar is unavailable or encounters errors",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.5.0",
       "date": "2026-08-10",
       "summary": "The Go migration begins with the yeaboi-core sidecar now serving the deterministic agentwatch and standup engines. Platform wheels ship automatically with the `yeaboi[core]` extra, and the binary is auto-detected at runtime with silent Python fallback. Agentwatch scans are now ~30× faster (15–30s → ~1.1s), CLI startup is ~16× faster (0.65s → 0.04s), and the standup.aggregate RPC delivers deterministic report composition with byte-level contract enforcement. The migration is transparent — no breaking changes, no new CLI flags, no TUI changes. Python remains the reference implementation; Go and Python stay synchronized via parity tests covering every output byte.",
