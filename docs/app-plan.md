@@ -42,10 +42,8 @@ after a design pass, defer it; if it is invisible to a design pass, do it now.*
 - [x] Importing a TUI plan into the app (`app/importer.py`) — copies, never
       shares, so `yeaboi` keeps working offline
 
-**Not yet:** a real *delivery channel*. `LogDeliverer` writes sign-in links to
-the log and `AppServer` refuses it when `secure_cookies=True`, so deploying
-needs a `Deliverer` implementation (SMTP, SES, Postmark) — or swapping the whole
-step for OAuth/SSO, which the token seam is shaped to allow.
+- [x] Delivery — `SmtpDeliverer` reuses the project's `STANDUP_SMTP_*` config
+      and stdlib `smtplib`. Set `YEABOI_APP_BASE_URL` to switch it on.
 
 ### Milestone 2 — App chrome primitives (thin skin) — **DONE**
 - [x] `Button` (3 variants), `Field`/`Input`/`Select`, `Modal`, `Toast`,
@@ -89,12 +87,15 @@ covered; what is missing is the live room.
 - [x] 16 tests, both reduced-motion branches asserted
 - [x] Vite `renderChunk` strips GSAP's doc URL so the bundle keeps no external
       origin and the fetch guard keeps its teeth
-- [ ] Shared-element / FLIP transitions between routes — the part that actually
-      pays for the dependency. `gsap-plugins` (Flip) is the route.
+- [x] Shared-element / FLIP transitions — a project row travels into the
+      detail heading via `data-flip-id`. `flushSync` makes the route swap
+      synchronous, which is the assumption FLIP rests on and which
+      `flip.test.tsx` pins because it fails silently.
 
-**Cost, stated plainly:** `app.js` 95 KB → 165 KB. Today that buys two
-entrances CSS could have done. If the design pass says the motion should be
-CSS, this is one dependency to remove.
+**Cost, stated plainly:** `app.js` 95 KB → 191 KB (core + Flip). The entrances
+CSS could have done; the shared-element move it could not, because the two
+elements live in different subtrees. If the design pass wants less motion, this
+is one dependency to remove.
 
 ### Milestone 5 — Desktop (Tauri)
 The existing self-contained IIFE constraint means bundles already run without a
@@ -147,11 +148,12 @@ stale committed bundles, which is how an autonomous run silently corrupts a repo
 
 **Open, in the order I would take them:**
 
-1. **A `Deliverer`** — sign-in works, but the link goes to the log. One class,
-   plus a decision about which mail path.
-2. **Shared-element / FLIP transitions** — the part that pays for GSAP's 70 KB.
-3. **Live rooms beyond a registry** — embed or port, if a registry is not enough.
-4. **Milestone 5, Tauri** — deliberately last; the self-contained IIFE bundles
-   already run without a server, so most of it is done accidentally.
-5. **Hosting** — `app/importer.py` reads `~/.yeaboi` on the server's own disk.
+1. **Milestone 5, Tauri** — the only named milestone left. The self-contained
+   IIFE bundles already run without a server, so much of it is done
+   accidentally; it needs a Rust toolchain, which is a real install to agree to.
+2. **Live rooms beyond a registry** — embed or port, if a registry is not
+   enough. Needs the product decision recorded under Milestone 3.
+3. **Hosting** — `app/importer.py` reads `~/.yeaboi` on the server's own disk.
    Correct single-tenant, wrong the moment it is hosted for someone else.
+4. **A `yeaboi app` CLI command** — `serve()` exists and nothing calls it, so
+   the app is reachable only from Python.
