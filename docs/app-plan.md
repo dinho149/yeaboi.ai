@@ -97,9 +97,22 @@ CSS could have done; the shared-element move it could not, because the two
 elements live in different subtrees. If the design pass wants less motion, this
 is one dependency to remove.
 
-### Milestone 5 — Desktop (Tauri)
-The existing self-contained IIFE constraint means bundles already run without a
-server, so most of this is done accidentally.
+### Milestone 5 — Desktop (Tauri) — **started, mostly open**
+
+That optimistic line is **wrong**, and `desktop/README.md` now says why: it is
+true of the *exports* (`connect-src 'none'` — a written file cannot make a
+request) and false of the *app*, which is the first surface allowed to talk to
+an origin and gets everything from `/api`. A desktop build is the Python server
+running as a sidecar with the webview pointed at it.
+
+- [x] `yeaboi app --port 0` prints `listening on <url>` on stdout, so a shell
+      can find a server whose port it did not choose. Everything else waits on
+      this. Tested by spawning the real process.
+- [x] Prerequisites checked: `rustc 1.94.0` present, Tauri CLI 2.x not
+      installed, WKWebView suits the existing `connect-src 'self'`.
+- [ ] Scaffold Tauri in `desktop/`
+- [ ] Sidecar lifecycle — spawn on ready, die with the parent
+- [ ] Package a Python runtime, or declare a dependency on one
 
 ## Invariants — do not violate
 
@@ -148,12 +161,13 @@ stale committed bundles, which is how an autonomous run silently corrupts a repo
 
 **Open, in the order I would take them:**
 
-1. **Milestone 5, Tauri** — the only named milestone left. The self-contained
-   IIFE bundles already run without a server, so much of it is done
-   accidentally; it needs a Rust toolchain, which is a real install to agree to.
+1. **Milestone 5, Tauri** — the only named milestone left, and now started.
+   Rust turned out to already be installed. The remaining work is the sidecar
+   lifecycle and packaging a Python runtime, which is the long tail.
 2. **Live rooms beyond a registry** — embed or port, if a registry is not
    enough. Needs the product decision recorded under Milestone 3.
 3. **Hosting** — `app/importer.py` reads `~/.yeaboi` on the server's own disk.
    Correct single-tenant, wrong the moment it is hosted for someone else.
-4. **A `yeaboi app` CLI command** — `serve()` exists and nothing calls it, so
-   the app is reachable only from Python.
+4. **Design pass** — the whole point of the invariants. 9 `TODO(design)`
+   markers mark where taste goes, and `frontend/src/design/` is still the only
+   place a colour, font or spacing value lives.
