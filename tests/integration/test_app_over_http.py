@@ -25,7 +25,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from yeaboi.app.server import AppServer, AppRequestHandler
+from yeaboi.app.server import AppRequestHandler, AppServer
 from yeaboi.app.store import AppStore
 
 
