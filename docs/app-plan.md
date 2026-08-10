@@ -156,18 +156,36 @@ stale committed bundles, which is how an autonomous run silently corrupts a repo
 
 ## Where this stands
 
-**Done:** milestones 1, 2, 3 (all four archetypes), and the motion foundation.
-12 commits on `app-shell`; `main` untouched.
+**Done:** milestones 1–4, all four archetypes, the motion layer including FLIP,
+real sign-in with email delivery, and browser-reachable import. Milestone 5
+compiles but has never opened a window. 26 commits on `app-shell`; `main`
+untouched.
 
-**Open, in the order I would take them:**
+## The open question that changes the rest
 
-1. **Milestone 5, Tauri** — the only named milestone left, and now started.
-   Rust turned out to already be installed. The remaining work is the sidecar
-   lifecycle and packaging a Python runtime, which is the long tail.
-2. **Live rooms beyond a registry** — embed or port, if a registry is not
-   enough. Needs the product decision recorded under Milestone 3.
-3. **Hosting** — `app/importer.py` reads `~/.yeaboi` on the server's own disk.
-   Correct single-tenant, wrong the moment it is hosted for someone else.
-4. **Design pass** — the whole point of the invariants. 9 `TODO(design)`
-   markers mark where taste goes, and `frontend/src/design/` is still the only
-   place a colour, font or spacing value lives.
+**Where does the server live?** The user said the app is reached *purely from a
+browser*, which rules out "type a command first" as the normal path but does not
+say which of these it is:
+
+1. **Hosted** — runs on a box, you visit a URL. Biggest job: TLS, a domain, real
+   SMTP, and it breaks `app/importer.py`, which reads `~/.yeaboi` off the
+   server's own disk.
+2. **Local, always on** — a launchd/systemd service, you open `localhost:5599`
+   and never think about it. An afternoon.
+3. **Launched by the TUI** — you are already in `yeaboi`; it opens a tab.
+
+Work done since is deliberately common ground: the first-run browser claim and
+the import discovery endpoint are correct under all three.
+
+## Open, in the order I would take them
+
+1. **Answer the question above.** Everything below is cheaper once it is settled.
+2. **Design pass** — the point of the invariants. 10 `TODO(design)` markers, and
+   `frontend/src/design/` is still the only place a colour, font or spacing
+   value lives. Verified on every commit.
+3. **Milestone 5, Tauri** — compiles and its sidecar logic is tested; nobody has
+   watched it open. `SERVER_COMMAND` assumes `yeaboi` on `PATH`, wrong for a
+   distributable. Packaging a Python runtime is the long tail.
+4. **Live rooms beyond a registry** — embed or port. Needs a product decision.
+5. **Hosting** — the `~/.yeaboi` assumption in `importer.py`, made explicit but
+   not yet removed.
