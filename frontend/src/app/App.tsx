@@ -13,6 +13,7 @@ import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
 import { ImportDialog } from './Import';
+import { NewProjectDialog } from './NewProject';
 import { ProjectAdmin } from './ProjectAdmin';
 import { RoomList } from './Rooms';
 import { Settings } from './Settings';
@@ -150,6 +151,7 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
 
 function ProjectList({ notify }: { notify: (message: string) => void }) {
   const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Keyed on the state's status so the stagger runs when the rows arrive,
   // not on the loading pass when there is nothing to animate.
@@ -160,22 +162,16 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
     { isEmpty: (data) => data.projects.length === 0 },
   );
 
-  async function create() {
-    // TODO(design): a prompt() is a placeholder for a real create dialog —
-    // <Modal> exists for it, but what the flow asks for is a product decision.
-    const name = window.prompt('Project name');
-    if (!name) return;
-    const result = await post('/api/projects', { name });
-    if (!result.ok) {
-      notify(result.error);
-      return;
-    }
-    notify(`Created ${name}`);
-    navigate('/projects');
-  }
-
   return (
     <>
+    <NewProjectDialog
+      open={creating}
+      onClose={() => setCreating(false)}
+      onCreated={(name) => {
+        notify(`Created ${name}`);
+        setReloadKey((n) => n + 1);
+      }}
+    />
     <ImportDialog
       open={importing}
       onClose={() => setImporting(false)}
@@ -190,7 +186,7 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
           hint="A project holds the plans, standups and retros for one team."
           action={
             <>
-              <Button tone="primary" onClick={create}>
+              <Button tone="primary" onClick={() => setCreating(true)}>
                 New project
               </Button>
               <Button onClick={() => setImporting(true)}>Import from the terminal app</Button>
@@ -202,7 +198,7 @@ function ProjectList({ notify }: { notify: (message: string) => void }) {
       {(data) => (
         <>
         <div className={styles.toolbar}>
-          <Button tone="primary" size="s" onClick={create}>
+          <Button tone="primary" size="s" onClick={() => setCreating(true)}>
             New project
           </Button>
           <Button size="s" onClick={() => setImporting(true)}>
