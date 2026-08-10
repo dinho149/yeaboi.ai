@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from yeaboi.app.importer import import_plan
 from yeaboi.app.page import render_app_page
 from yeaboi.app.router import HTTPError, Request, Response, Router, json_response
 from yeaboi.app.sessions import SESSION_COOKIE, clear_cookie_headers, cookie_headers
@@ -224,6 +225,33 @@ def build_router(app: AppServer) -> Router:
         return json_response({"ok": True})
 
     router.delete("/api/artifacts/{artifact_id}", delete_artifact)
+
+    # ── import ─────────────────────────────────────────────────────────
+
+    def import_tui_plan(request: Request) -> Response:
+        """Copy a plan out of the local TUI store into the app.
+
+        Local-only by nature: it reads ``~/.yeaboi`` on the machine the server
+        runs on. That is right for the single-tenant case this ships as, and it
+        is the first thing that has to change if the app is ever hosted for
+        someone else's projects — there is no such directory on a server.
+        """
+        payload = request.json()
+        tui_project_id = str(payload.get("tui_project_id", "")).strip()
+        if not tui_project_id:
+            raise HTTPError(400, "tui_project_id is required")
+        result = import_plan(
+            app.store,
+            request.user_id or "",
+            tui_project_id,
+            into_project_id=str(payload.get("project_id", "")).strip(),
+        )
+        if result is None:
+            raise HTTPError(404, "no such plan, or it could not be imported")
+        project, artifact_id = result
+        return json_response({"project_id": project.id, "artifact_id": artifact_id}, 201)
+
+    router.post("/api/import/plan", import_tui_plan)
 
     # ── rooms (the live archetype) ─────────────────────────────────────
     #
