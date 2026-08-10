@@ -9,6 +9,7 @@ inside the handler, because a missing check inside a handler is invisible.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from yeaboi.app.auth import looks_like_email, normalise_email
@@ -22,9 +23,13 @@ if TYPE_CHECKING:
 
 #: Paths that are reachable without a session, and why. Anything not here needs
 #: one; the test asserts this list is exhaustive.
+logger = logging.getLogger(__name__)
+
 PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/api/health"),  # liveness — must answer before anyone is signed in
+        ("GET", "/api/auth/first-run"),  # is this instance unclaimed? asked before anyone exists
+        ("POST", "/api/auth/claim"),  # claims an unclaimed local instance
         ("POST", "/api/auth/request"),  # asks for a sign-in link; proves nothing yet
         ("POST", "/api/auth/session"),  # redeems the token: the request that creates the cookie
     }
@@ -63,6 +68,57 @@ def build_router(app: AppServer) -> Router:
     router.get("/api/health", health, auth=False)
 
     # ── auth ───────────────────────────────────────────────────────────
+
+    def first_run_available(app_server, request: Request) -> bool:
+        """Whether this instance may be claimed from the browser, with no email.
+
+        Three conditions, all required, and each closing a different door:
+
+        * **No users yet.** A claim is how the *first* account is made; once one
+          exists this is off forever, so it can never be a way in past sign-in.
+        * **The request came from this machine**, read off the socket rather
+          than a header — ``X-Forwarded-For`` is caller-supplied and would make
+          this claimable by anyone who says the right words.
+        * **Cookies are not marked secure**, i.e. this is not a TLS deployment.
+          A hosted instance must go through email, or the first stranger to find
+          the URL owns it.
+
+        The reason it exists at all: sign-in links are delivered by email, and a
+        laptop has no SMTP. Without this, a browser-only user of a fresh local
+        instance cannot get in at all — the link is printed to a terminal they
+        were told they would not need.
+        """
+        return (
+            app_server.store.count_users() == 0
+            and request.is_loopback
+            and not app_server.secure_cookies
+        )
+
+    def first_run(request: Request) -> Response:
+        return json_response({"available": first_run_available(app, request)})
+
+    router.get("/api/auth/first-run", first_run, auth=False)
+
+    def claim(request: Request) -> Response:
+        """Create the first account and sign in, without email."""
+        if not first_run_available(app, request):
+            # One answer for "already claimed", "not local" and "hosted": the
+            # caller has no business knowing which.
+            raise HTTPError(403, "this instance cannot be claimed")
+        payload = request.json()
+        email = normalise_email(str(payload.get("email", "")))
+        if not looks_like_email(email):
+            raise HTTPError(400, "a valid email is required")
+        user = app.store.create_user(email, str(payload.get("name", "")))
+        issued = app.sessions.issue(user.id)
+        logger.warning("instance claimed by %s from %s", email, request.client_host)
+        return json_response(
+            {"user": {"id": user.id, "email": user.email, "name": user.name}, "csrf": issued.csrf},
+            201,
+            headers=cookie_headers(issued, secure=app.secure_cookies),
+        )
+
+    router.post("/api/auth/claim", claim, auth=False)
 
     def request_login(request: Request) -> Response:
         """Ask for a sign-in link.

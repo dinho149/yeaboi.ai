@@ -20,15 +20,29 @@ from yeaboi.app.router import parse_request
 from yeaboi.app.sessions import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE
 
 
-def call(app, method: str, path: str, body: Any = None, *, cookies: str = "", csrf: str = ""):
-    """One request. `body` is JSON-encoded when given."""
+def call(
+    app,
+    method: str,
+    path: str,
+    body: Any = None,
+    *,
+    cookies: str = "",
+    csrf: str = "",
+    client_host: str = "127.0.0.1",
+):
+    """One request. `body` is JSON-encoded when given.
+
+    `client_host` defaults to loopback because that is what a real request from
+    a browser on the same machine looks like, and some routes (first-run claim)
+    read it. Pass a routable address to test the remote case.
+    """
     headers: dict[str, str] = {}
     if cookies:
         headers["Cookie"] = cookies
     if csrf:
         headers[CSRF_HEADER] = csrf
     raw = json.dumps(body).encode() if body is not None else b""
-    return app.handle(parse_request(method, path, headers, raw))
+    return app.handle(parse_request(method, path, headers, raw, client_host=client_host))
 
 
 def cookie_value(response, name: str) -> str:

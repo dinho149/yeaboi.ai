@@ -219,6 +219,11 @@ class AppStore:
             )
         return user
 
+    def count_users(self) -> int:
+        """How many accounts exist. Drives the first-run claim, and nothing else."""
+        with self._connect() as conn:
+            return int(conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"])
+
     def user_by_email(self, email: str) -> User | None:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()

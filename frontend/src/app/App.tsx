@@ -16,7 +16,7 @@ import { RoomList } from './Rooms';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
-import { AsyncView, EmptyState } from './Slots';
+import { AsyncView, EmptyState, Loading } from './Slots';
 import { useEnterList, useFlip } from './useMotion';
 import { useAsync } from './useAsync';
 import type { ArtifactSummary, ProjectDetail, ProjectSummary, User } from './types';
@@ -62,6 +62,15 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  // null while unknown: rendering the email form and then swapping it for the
+  // claim form a moment later is worse than waiting one request.
+  const [claimable, setClaimable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void get<{ available: boolean }>('/api/auth/first-run').then((result) => {
+      setClaimable(result.ok ? result.data.available : false);
+    });
+  }, []);
 
   // A link lands here as /signin?token=... Redeem it once, on arrival.
   useEffect(() => {
@@ -86,13 +95,26 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
     event.preventDefault();
     setBusy(true);
     setError('');
-    const result = await post('/api/auth/request', { email });
+    // On a fresh local instance there is no mail server, so the first account
+    // is claimed directly. Everywhere else a link is sent.
+    const result = claimable
+      ? await post<{ user: User }>('/api/auth/claim', { email })
+      : await post('/api/auth/request', { email });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
+    if (claimable) {
+      onDone((result.data as { user: User }).user);
+      navigate('/projects');
+      return;
+    }
     setSent(true);
+  }
+
+  if (claimable === null) {
+    return <Loading label="Starting" />;
   }
 
   if (sent) {
@@ -117,7 +139,7 @@ function SignIn({ onDone }: { onDone: (user: User) => void }) {
         )}
       </Field>
       <Button type="submit" variant="primary" busy={busy}>
-        Send a sign-in link
+        {claimable ? 'Get started' : 'Send a sign-in link'}
       </Button>
     </form>
   );

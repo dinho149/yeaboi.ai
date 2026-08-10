@@ -48,8 +48,11 @@ def app_process(tmp_path):
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
         "HOME": str(tmp_path),
-        # Its own data directory, so a test never touches a real ~/.yeaboi.
-        "YEABOI_ROOT_DIR": str(tmp_path / "root"),
+        # Its own data home. The variable is YEABOI_HOME (paths.py::_resolve_root);
+        # YEABOI_ROOT_DIR does not exist, and setting it silently writes to the
+        # real ~/.yeaboi — which is exactly what happened while developing this.
+        # HOME is overridden too, so isolation does not rest on one name alone.
+        "YEABOI_HOME": str(tmp_path / "yeaboi-home"),
         "PYTHONPATH": str(REPO / "src"),
         "PYTHONUNBUFFERED": "1",
     }

@@ -385,3 +385,72 @@ class TestHeadIsAnswered:
     def test_get_still_carries_its_body(self, app):
         raw = self._raw_response(app, "GET", "/api/health")
         assert '{"status":"ok"}' in raw
+
+
+class TestFirstRunClaim:
+    """Claiming a fresh local instance from the browser, with no email.
+
+    It exists because sign-in links go by email and a laptop has no SMTP —
+    without it, a browser-only user of a fresh instance cannot get in at all.
+    Which makes the gating the whole story: three conditions, each closing a
+    different door, and every one of them tested here.
+    """
+
+    def test_a_fresh_local_instance_is_claimable(self, app):
+        assert json.loads(call(app, "GET", "/api/auth/first-run").body)["available"] is True
+
+    def test_claiming_creates_the_user_and_signs_them_in(self, app):
+        response = call(app, "POST", "/api/auth/claim", {"email": "ada@example.com"})
+        assert response.code == 201
+        assert app.store.user_by_email("ada@example.com") is not None
+        jar = "; ".join(
+            value.split(";")[0] for key, value in response.headers if key == "Set-Cookie"
+        )
+        assert json.loads(call(app, "GET", "/api/auth/me", cookies=jar).body)["email"] == "ada@example.com"
+
+    def test_it_closes_permanently_once_a_user_exists(self, app):
+        # Otherwise it is a way in past sign-in, forever.
+        call(app, "POST", "/api/auth/claim", {"email": "ada@example.com"})
+        assert json.loads(call(app, "GET", "/api/auth/first-run").body)["available"] is False
+        assert call(app, "POST", "/api/auth/claim", {"email": "eve@example.com"}).code == 403
+
+    def test_a_remote_request_cannot_claim(self, app):
+        from yeaboi.app.router import parse_request
+
+        remote = parse_request(
+            "POST", "/api/auth/claim", {}, json.dumps({"email": "eve@example.com"}).encode(), client_host="10.0.0.9"
+        )
+        assert app.handle(remote).code == 403
+        assert app.store.count_users() == 0
+
+    def test_a_forwarded_header_cannot_fake_being_local(self, app):
+        # The peer address comes off the socket; a header is caller-supplied
+        # and would make this claimable by anyone who says the right words.
+        from yeaboi.app.router import parse_request
+
+        spoofed = parse_request(
+            "POST",
+            "/api/auth/claim",
+            {"X-Forwarded-For": "127.0.0.1"},
+            json.dumps({"email": "eve@example.com"}).encode(),
+            client_host="10.0.0.9",
+        )
+        assert app.handle(spoofed).code == 403
+
+    def test_a_secure_deployment_is_never_claimable(self, store):
+        # Hosted must go through email, or the first stranger to find the URL
+        # owns the instance.
+        secure = AppServer(store, secure_cookies=True, deliverer=LogDeliverer())
+        assert json.loads(call(secure, "GET", "/api/auth/first-run").body)["available"] is False
+        assert call(secure, "POST", "/api/auth/claim", {"email": "eve@example.com"}).code == 403
+
+    def test_a_bad_email_is_still_refused(self, app):
+        assert call(app, "POST", "/api/auth/claim", {"email": "nope"}).code == 400
+
+    def test_the_refusal_does_not_say_which_condition_failed(self, app, store):
+        # "already claimed", "not local" and "hosted" are one answer.
+        call(app, "POST", "/api/auth/claim", {"email": "ada@example.com"})
+        claimed = call(app, "POST", "/api/auth/claim", {"email": "eve@example.com"})
+        secure = AppServer(store, secure_cookies=True, deliverer=LogDeliverer())
+        hosted = call(secure, "POST", "/api/auth/claim", {"email": "eve@example.com"})
+        assert claimed.body == hosted.body

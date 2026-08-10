@@ -44,6 +44,21 @@ class Request:
     params: Mapping[str, str] = field(default_factory=dict)
     #: Set by the server once a session cookie has been resolved to a user.
     user_id: str | None = None
+    #: The peer's address, from the socket rather than from a header.
+    #: `X-Forwarded-For` is caller-supplied and therefore useless as a
+    #: security signal — the whole point of `is_loopback` is that it cannot be
+    #: claimed by someone who is not there.
+    client_host: str = ""
+
+    @property
+    def is_loopback(self) -> bool:
+        """True when the request came from this machine.
+
+        Used to gate first-run setup. Not a general authorisation mechanism:
+        anything on the box can reach loopback, so this only ever narrows a
+        decision that is already limited some other way.
+        """
+        return self.client_host in ("127.0.0.1", "::1", "localhost")
 
     def json(self) -> dict[str, Any]:
         """Parse the body as a JSON object.
@@ -170,6 +185,7 @@ class Router:
                 body=request.body,
                 params=params,
                 user_id=request.user_id,
+                client_host=request.client_host,
             )
             try:
                 return route.handler(scoped)
@@ -183,7 +199,13 @@ class Router:
         return json_response({"error": "not found"}, 404)
 
 
-def parse_request(method: str, raw_path: str, headers: Mapping[str, str], body: bytes = b"") -> Request:
+def parse_request(
+    method: str,
+    raw_path: str,
+    headers: Mapping[str, str],
+    body: bytes = b"",
+    client_host: str = "",
+) -> Request:
     """Split a raw request line into a :class:`Request`.
 
     Only the first value of a repeated query key is kept — every consumer here
@@ -192,4 +214,11 @@ def parse_request(method: str, raw_path: str, headers: Mapping[str, str], body: 
     """
     parsed = urlparse(raw_path)
     query = {key: values[0] for key, values in parse_qs(parsed.query).items() if values}
-    return Request(method=method.upper(), path=parsed.path, query=query, headers=dict(headers), body=body)
+    return Request(
+        method=method.upper(),
+        path=parsed.path,
+        query=query,
+        headers=dict(headers),
+        body=body,
+        client_host=client_host,
+    )

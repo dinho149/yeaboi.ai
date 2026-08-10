@@ -61,7 +61,8 @@ class AppRequestHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     def _handle(self, method: str, *, body: bool = True) -> None:
-        request = parse_request(method, self.path, dict(self.headers), self._read_body())
+        peer = self.client_address[0] if isinstance(self.client_address, tuple) else ""
+        request = parse_request(method, self.path, dict(self.headers), self._read_body(), client_host=str(peer))
         response = self._app.handle(request)
         csp = response.csp if response.csp is not None else APP_CSP
         if body:
@@ -159,6 +160,7 @@ class AppServer:
                 body=request.body,
                 params=request.params,
                 user_id=user_id,
+                client_host=request.client_host,
             )
         )
 
