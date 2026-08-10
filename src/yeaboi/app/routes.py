@@ -225,6 +225,55 @@ def build_router(app: AppServer) -> Router:
 
     router.delete("/api/artifacts/{artifact_id}", delete_artifact)
 
+    # ── rooms (the live archetype) ─────────────────────────────────────
+    #
+    # A registry, not a port. The retro and poker boards stay their own servers
+    # with their own state; this records where one is so a teammate can find it.
+    # That is the cheapest of the three options in docs/app-plan.md and it
+    # forecloses neither of the others - embedding or porting both need this
+    # table first, because either way something has to know a room exists.
+
+    def list_rooms(request: Request) -> Response:
+        _project_or_404(app, request)
+        rows = [
+            {
+                "id": room.id,
+                "kind": room.kind,
+                "title": room.title,
+                "invite_url": room.invite_url,
+                "join_code": room.join_code,
+                "opened_at": room.opened_at,
+            }
+            for room in app.store.rooms_for(request.params["project_id"], request.user_id or "")
+        ]
+        return json_response({"rooms": rows})
+
+    router.get("/api/projects/{project_id}/rooms", list_rooms)
+
+    def open_room(request: Request) -> Response:
+        _project_or_404(app, request)
+        payload = request.json()
+        room = app.store.open_room(
+            request.params["project_id"],
+            request.user_id or "",
+            str(payload.get("kind", "")),
+            str(payload.get("invite_url", "")),
+            title=str(payload.get("title", "")),
+            join_code=str(payload.get("join_code", "")),
+        )
+        if room is None:
+            raise HTTPError(403, "read-only")
+        return json_response({"id": room.id, "kind": room.kind, "invite_url": room.invite_url}, 201)
+
+    router.post("/api/projects/{project_id}/rooms", open_room)
+
+    def close_room(request: Request) -> Response:
+        if not app.store.close_room(request.params["room_id"], request.user_id or ""):
+            raise HTTPError(404, "not found")
+        return json_response({"ok": True})
+
+    router.delete("/api/rooms/{room_id}", close_room)
+
     # ── the shell ──────────────────────────────────────────────────────
     #
     # Registered last and matching every path the API did not claim, so a hard

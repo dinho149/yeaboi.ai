@@ -34,3 +34,12 @@ export interface ArtifactSummary {
   title: string;
   created_at: number;
 }
+
+export interface Room {
+  id: string;
+  kind: 'retro' | 'poker';
+  title: string;
+  invite_url: string;
+  join_code: string;
+  opened_at: number;
+}

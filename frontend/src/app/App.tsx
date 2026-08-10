@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
+import { RoomList } from './Rooms';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
@@ -172,13 +173,14 @@ function ArtifactList({ projectId }: { projectId: string }) {
   );
 }
 
-function ProjectDetailView({ id }: { id: string }) {
+function ProjectDetailView({ id, notify }: { id: string; notify: (message: string) => void }) {
   const state = useAsync(() => get<ProjectDetail>(`/api/projects/${id}`), [id]);
   return (
     <AsyncView state={state} empty={<EmptyState title="Nothing here" />}>
       {(project) => (
         <section>
           <h1>{project.name}</h1>
+          <RoomList projectId={project.id} notify={notify} />
           <ArtifactList projectId={project.id} />
           <ul className={styles.projectList}>
             {project.members.map((member) => (
@@ -218,7 +220,8 @@ export function App({ user: initial }: { user: User | null }) {
   if (!match) view = <EmptyState title="No such page" hint={path} />;
   else if (match.pattern === '/projects/{id}/artifacts/{artifactId}')
     view = <ArtifactView id={match.params.artifactId ?? ''} />;
-  else if (match.pattern === '/projects/{id}') view = <ProjectDetailView id={match.params.id ?? ''} />;
+  else if (match.pattern === '/projects/{id}')
+    view = <ProjectDetailView id={match.params.id ?? ''} notify={push} />;
   else if (match.pattern === '/settings') view = <EmptyState title="Settings" hint="TODO(design)" />;
   else view = <ProjectList notify={push} />;
 

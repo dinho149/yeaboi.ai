@@ -64,6 +64,29 @@ CREATE TABLE IF NOT EXISTS artifacts (
     created_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS artifacts_project ON artifacts(project_id, created_at DESC);
+-- A live ceremony that is running somewhere else.
+--
+-- The boards are their own servers with their own in-memory state; this table
+-- is a *registry*, not a copy. It records where a room is so a teammate can
+-- find it, and nothing about what is in it.
+--
+-- `invite_url` is the participant link and `join_code` the code that goes with
+-- it. Neither is a secret: the code is what a reader types to get in, and the
+-- URL is the board's public address (see sharing/access.py::invite_payload).
+-- The HOST link is deliberately absent and must never be stored here - it
+-- carries the admin secret, and every member of a project can read this table.
+CREATE TABLE IF NOT EXISTS rooms (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL CHECK (kind IN ('retro', 'poker')),
+    title       TEXT NOT NULL DEFAULT '',
+    invite_url  TEXT NOT NULL,
+    join_code   TEXT NOT NULL DEFAULT '',
+    opened_by   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    opened_at   REAL NOT NULL,
+    closed_at   REAL
+);
+CREATE INDEX IF NOT EXISTS rooms_project ON rooms(project_id, opened_at DESC);
 CREATE TABLE IF NOT EXISTS sessions (
     token       TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -101,6 +124,28 @@ class Artifact:
     created_at: float
     #: Parsed payload. Absent from list views, which carry only the metadata.
     payload: dict | None = None
+
+
+@dataclass(frozen=True)
+class Room:
+    id: str
+    project_id: str
+    kind: str
+    title: str
+    invite_url: str
+    join_code: str
+    opened_by: str
+    opened_at: float
+    closed_at: float | None = None
+
+    @property
+    def live(self) -> bool:
+        return self.closed_at is None
+
+
+#: Ceremonies that have a live room. Mirrors the CHECK constraint above; a
+#: third board would need a server before it needed a row here.
+ROOM_KINDS = ("retro", "poker")
 
 
 def _new_id(prefix: str) -> str:
@@ -340,4 +385,83 @@ class AppStore:
             return False
         with self._connect() as conn:
             conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
+        return True
+
+    # ── rooms ──────────────────────────────────────────────────────────
+
+    def open_room(
+        self,
+        project_id: str,
+        user_id: str,
+        kind: str,
+        invite_url: str,
+        *,
+        title: str = "",
+        join_code: str = "",
+    ) -> Room | None:
+        """Register a running board against a project.
+
+        Refuses anything that is not an ``http(s)`` URL. The value is rendered
+        as an ``href`` a member clicks, so a ``javascript:`` scheme here would
+        be stored XSS with a friendly label on it — and unlike the front end's
+        ``safeUrl``, this one is worth refusing at the door rather than
+        degrading to plain text, because a room nobody can open is useless
+        anyway.
+        """
+        if kind not in ROOM_KINDS:
+            raise ValueError(f"unknown room kind: {kind}")
+        if not invite_url.startswith(("http://", "https://")):
+            raise ValueError("invite_url must be an http(s) URL")
+        current = self.project(project_id, user_id)
+        if current is None or current.role == "viewer":
+            return None
+        room = Room(
+            id=_new_id("room"),
+            project_id=project_id,
+            kind=kind,
+            title=title.strip(),
+            invite_url=invite_url,
+            join_code=join_code.strip(),
+            opened_by=user_id,
+            opened_at=time.time(),
+        )
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO rooms (id, project_id, kind, title, invite_url, join_code, opened_by, opened_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    room.id,
+                    project_id,
+                    room.kind,
+                    room.title,
+                    room.invite_url,
+                    room.join_code,
+                    user_id,
+                    room.opened_at,
+                ),
+            )
+        return room
+
+    def rooms_for(self, project_id: str, user_id: str, *, live_only: bool = True) -> list[Room]:
+        if self.project(project_id, user_id) is None:
+            return []
+        query = "SELECT * FROM rooms WHERE project_id = ?"
+        if live_only:
+            query += " AND closed_at IS NULL"
+        query += " ORDER BY opened_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(query, (project_id,)).fetchall()
+        return [Room(**dict(row)) for row in rows]
+
+    def close_room(self, room_id: str, user_id: str) -> bool:
+        """Mark a room finished. Soft, so the history survives the ceremony."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT r.project_id FROM rooms r JOIN memberships m ON m.project_id = r.project_id "
+                "WHERE r.id = ? AND m.user_id = ? AND m.role != 'viewer'",
+                (room_id, user_id),
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute("UPDATE rooms SET closed_at = ? WHERE id = ? AND closed_at IS NULL", (time.time(), room_id))
         return True
