@@ -25,12 +25,20 @@ swappable, and let the human's pass land on a system that is cheap to re-skin.**
 Concretely, the ordering rule is: *if a decision would be expensive to reverse
 after a design pass, defer it; if it is invisible to a design pass, do it now.*
 
-### Milestone 1 — Substrate (taste-neutral, do now)
-- Routing + app shell architecture (structure, not styling)
-- Client state + data layer against the existing Python API
-- Persistence: projects/sessions beyond the current file-scoped model
-- Auth beyond the share gate
-- Loading / empty / error states as *structural* slots, unstyled
+### Milestone 1 — Substrate (taste-neutral) — **DONE**
+- [x] Server routing — `app/router.py`, a table not an if-chain; auth declared
+      per route and asserted exhaustive by `PUBLIC_ROUTES`
+- [x] Persistence — `app/store.py`, SQLite in its own `app.db`; reads scoped to
+      the asker, no fetch-by-id, a foreign project 404s rather than 403s
+- [x] Auth — `app/sessions.py`, HttpOnly cookie + CSRF double submit
+- [x] Client data layer — `frontend/src/app/api.ts`
+- [x] Client routing + shell — `router.ts`, `App.tsx`, deep-refresh via
+      `SHELL_ROUTES`
+- [x] Loading / empty / error as one typed union — `useAsync.ts`, `Slots.tsx`
+- [x] Two design guards: no raw literals under `app/`, and no undefined token
+
+**Not yet:** importing a TUI project into the app (`persistence.py` copy), and a
+real identity provider behind `TODO(auth)` in `routes.py`.
 
 ### Milestone 2 — App chrome primitives (thin skin)
 The vocabulary that does not exist yet: `Button`, `Input`, `Field`, `Select`,
