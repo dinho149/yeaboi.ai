@@ -222,9 +222,16 @@ class LoginTokens:
         """Mint a token, or ``None`` when the address is over its rate limit.
 
         The caller must answer identically either way — see the module header.
+
+        Expired rows are swept here rather than by a scheduler. The table only
+        grows when someone asks for a link, so the moment one is asked for is
+        exactly when it is worth tidying — and a sweep that runs on the one code
+        path that causes the growth cannot drift out of sync with it, which a
+        cron job or a background thread eventually does.
         """
         email = normalise_email(email)
         now = time.time()
+        self.purge_expired()
         with self._store._connect() as conn:  # noqa: SLF001 - same package, one owner
             recent = conn.execute(
                 "SELECT COUNT(*) AS n FROM login_tokens WHERE email = ? AND created_at > ?",

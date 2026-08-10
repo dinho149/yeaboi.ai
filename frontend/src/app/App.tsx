@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ImportDialog } from './Import';
 import { NewProjectDialog } from './NewProject';
 import { ProjectAdmin } from './ProjectAdmin';
@@ -20,7 +21,7 @@ import { Settings } from './Settings';
 import { Credit } from '../shared/Credit';
 import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
-import { AsyncView, EmptyState, Loading } from './Slots';
+import { AsyncView, EmptyState, ErrorState, Loading } from './Slots';
 import { useEnterList, useFlip } from './useMotion';
 import { useRouteAnnounce } from './useRouteAnnounce';
 import { useAsync } from './useAsync';
@@ -351,7 +352,18 @@ export function App({ user: initial }: { user: User | null }) {
       {/* tabIndex -1: focusable by the router on navigation, but not in the
           tab order. See useRouteAnnounce for why focus moves at all. */}
       <main className={styles.content} ref={mainRef} tabIndex={-1}>
-        {view}
+        {/* Scoped to the content region, not the shell: a report that will not
+            draw should not take the navigation with it. resetKey is the path,
+            so moving to another screen clears the error rather than showing
+            the fallback for a page that is fine. */}
+        <ErrorBoundary
+          resetKey={path}
+          fallback={(error, reset) => (
+            <ErrorState error={`This screen could not be drawn. ${error.message}`} retry={reset} />
+          )}
+        >
+          {view}
+        </ErrorBoundary>
       </main>
       <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
         {announcement}

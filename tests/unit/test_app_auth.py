@@ -495,3 +495,36 @@ class TestSignOutEverywhere:
     def test_it_needs_the_csrf_header(self, app):
         cookies, _ = sign_in(app)
         assert call(app, "DELETE", "/api/auth/sessions", cookies=cookies).code == 403
+
+
+class TestExpiredTokensDoNotAccumulate:
+    """The table only grows when a link is asked for, so that is where it is swept."""
+
+    def _count(self, store):
+        with store._connect() as conn:  # noqa: SLF001
+            return int(conn.execute("SELECT COUNT(*) AS n FROM login_tokens").fetchone()["n"])
+
+    def test_requesting_a_link_clears_out_dead_rows(self, store, logins, monkeypatch):
+        import yeaboi.app.auth as auth_module
+
+        logins.request("old@example.com")
+        assert self._count(store) == 1
+
+        later = time.time() + LOGIN_TTL_SECONDS + 1
+        monkeypatch.setattr(auth_module.time, "time", lambda: later)
+        logins.request("new@example.com")
+
+        # The dead one is gone; the fresh one remains.
+        assert self._count(store) == 1
+
+    def test_a_live_token_is_never_swept(self, store, logins):
+        first = logins.request("ada@example.com")
+        logins.request("bob@example.com")
+        assert logins.consume(first.token) == "ada@example.com"
+
+    def test_sweeping_does_not_resurrect_the_rate_limit(self, logins, monkeypatch):
+        # The limit counts recent requests; a sweep of *expired* rows must not
+        # be a way to reset it, since the window is shorter than the TTL.
+        for _ in range(LOGIN_RATE_LIMIT):
+            logins.request("ada@example.com")
+        assert logins.request("ada@example.com") is None
