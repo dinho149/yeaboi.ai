@@ -37,8 +37,10 @@ after a design pass, defer it; if it is invisible to a design pass, do it now.*
 - [x] Loading / empty / error as one typed union — `useAsync.ts`, `Slots.tsx`
 - [x] Two design guards: no raw literals under `app/`, and no undefined token
 
-**Not yet:** importing a TUI project into the app (`persistence.py` copy), and a
-real identity provider behind `TODO(auth)` in `routes.py`.
+- [x] Importing a TUI plan into the app (`app/importer.py`) — copies, never
+      shares, so `yeaboi` keeps working offline
+
+**Not yet:** a real identity provider behind `TODO(auth)` in `routes.py`.
 
 ### Milestone 2 — App chrome primitives (thin skin) — **DONE**
 - [x] `Button` (3 variants), `Field`/`Input`/`Select`, `Modal`, `Toast`,
@@ -57,9 +59,11 @@ building a menu primitive before a screen needs one is speculation.
       `anonymize` render through `export/Report.tsx` from a stored payload
 - [x] **Quantitative dashboard** — `performance`, `profile`, `poker`,
       `reporting` — same path, same renderer
-- [ ] **Live / interactive** — NOT wired, and it is not a small job.
+- [x] **Live / interactive** — wired as a **registry** (`rooms`): the app lists
+      running boards and hands over. Option 1 below, chosen because options 2
+      and 3 both need this table first, so it forecloses neither.
 
-**Why live is still open.** The retro and poker boards are separate
+**Still open: whether to go further than a registry.** The boards are separate
 `ThreadingHTTPServer`s with their own in-memory state, their own query-token
 auth and a long-poll loop. They are *ceremonies*: one host, one room, gone when
 the TUI closes. Bringing them inside the app is a genuine port — session
@@ -129,3 +133,20 @@ stale committed bundles, which is how an autonomous run silently corrupts a repo
 - Tokens vs thesis: unanswered. Assume **thesis is up for grabs** but do not
   destroy the terminal identity until told — keep it swappable instead.
 - Do the 5 themes stay user-facing in the app, or does the app pin one?
+
+
+## Where this stands
+
+**Done:** milestones 1, 2, 3 (all four archetypes), and the motion foundation.
+12 commits on `app-shell`; `main` untouched.
+
+**Open, in the order I would take them:**
+
+1. **`TODO(auth)`** — sign-in trusts the email address. Fine locally, not
+   shippable. Needs a decision: magic link, OAuth, or SSO.
+2. **Shared-element / FLIP transitions** — the part that pays for GSAP's 70 KB.
+3. **Live rooms beyond a registry** — embed or port, if a registry is not enough.
+4. **Milestone 5, Tauri** — deliberately last; the self-contained IIFE bundles
+   already run without a server, so most of it is done accidentally.
+5. **Hosting** — `app/importer.py` reads `~/.yeaboi` on the server's own disk.
+   Correct single-tenant, wrong the moment it is hosted for someone else.
