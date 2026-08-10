@@ -59,8 +59,16 @@ Optional extras can still be requested at install time if you prefer:
 ```bash
 uv tool install "yeaboi[voice]"                # 🎤 dictation, pre-installed rather than on demand
 uv tool install "yeaboi[all-providers]"        # OpenAI, Google, and Bedrock providers
+uv tool install "yeaboi[core]"                 # ⚡ prebuilt Go engine for the Agents pages
 pipx install "yeaboi[voice]"                   # equivalent with pipx
 ```
+
+> **The `core` extra** installs `yeaboi-core`, a small prebuilt Go binary that serves the
+> Agents pages' local scans (usage, standup, security) and the Daily Standup's deterministic
+> aggregation (grouping, practice signals, confidence). yeaboi detects it automatically —
+> nothing to configure — and every result is verified byte-identical to the built-in Python
+> implementation, which remains the complete fallback (set `YEABOI_GO=0` to force it).
+> Wheels ship for 64-bit macOS, Linux (glibc *and* musl — the binary is static) and Windows.
 
 > **Voice input** transcribes on-device with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 > — **no API key**, works with every LLM provider (Anthropic, Bedrock, …). On **macOS/Windows** it is

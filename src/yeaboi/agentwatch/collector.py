@@ -28,8 +28,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import multiprocessing
+import os
 import re
+import sqlite3
 from collections.abc import Callable, Iterable
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +44,22 @@ from yeaboi.analysis.progress import send_component_progress
 from yeaboi.redaction import _TOKEN_PATTERNS
 
 logger = logging.getLogger(__name__)
+
+# Parsed files per write transaction on a cold sweep. Bounds how long the
+# shared sessions.db write lock is held (SessionStore saves must not starve)
+# and how much work an interrupted sweep re-does, while still collapsing
+# ~20 autocommit fsyncs per file into one commit per batch.
+_INGEST_BATCH_SIZE = 64
+
+# Files-to-parse count at which refresh() switches from inline parsing to a
+# process pool. Below this, spawn cost (~100-300ms/worker on macOS spawn)
+# outweighs the win — the warm path (0-2 changed files) must never pay it.
+_PARALLEL_THRESHOLD = 16
+
+# Worker-count ceiling: parse throughput saturates well before high core
+# counts (SQLite writes are serialized in the parent anyway), and unbounded
+# pools hurt on shared CI machines.
+_MAX_PARSE_WORKERS = 8
 
 # ---------------------------------------------------------------------------
 # Security signal patterns (labels only — matched text is never stored)
@@ -66,8 +87,41 @@ def _pattern_label(pattern: str) -> str:
     return f"secret-{literal.rstrip('-_').lower()}" if literal else "secret-token"
 
 
-_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
-    (_pattern_label(p), re.compile(p)) for p in _TOKEN_PATTERNS
+_BEARER_GUARD_RE = re.compile(r"(?i:bearer|basic)")
+
+
+def _guard_bearer(line: str) -> bool:
+    """Any match of the bearer/basic pattern must contain one of the two words.
+
+    A regex, not a ``line.lower()`` substring check: ``(?i:…)`` case-folds
+    U+017F (ſ) to "s" where ``str.lower()`` does not, and a guard that is not
+    exactly implied by the pattern it gates silently drops a finding.
+    """
+    return _BEARER_GUARD_RE.search(line) is not None
+
+
+def _guard_url_credentials(line: str) -> bool:
+    """Any match of the ``://user:pass@`` pattern needs both mandatory chars."""
+    return "://" in line and "@" in line
+
+
+# Cheap substring pre-checks for the two patterns that dominate scan cost
+# (~70% of the 718MB-corpus regex time, measured): neither has a literal
+# prefix, so `re` probes every position of every line. Keyed on the EXACT
+# pattern text from redaction._TOKEN_PATTERNS — a pattern that changes there
+# simply loses its guard and runs unguarded (slow but never skipped), so a
+# stale key can only cost speed, not findings. Each guard must be logically
+# implied by its regex; test_agentwatch_collector.py proves gated == ungated
+# over a differential corpus. Do NOT collapse the patterns into one
+# alternation instead — these two defeat re's literal-prefix optimizer and
+# make the combined scan ~10x slower (measured).
+_PATTERN_GUARDS: dict[str, Callable[[str], bool]] = {
+    r"(?i:bearer|basic)\s+[A-Za-z0-9._~+/=-]{16,}": _guard_bearer,
+    r"(?<=://)[^/\s:@]+:[^/\s@]{4,}(?=@)": _guard_url_credentials,
+}
+
+_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str], Callable[[str], bool] | None], ...] = tuple(
+    (_pattern_label(p), re.compile(p), _PATTERN_GUARDS.get(p)) for p in _TOKEN_PATTERNS
 )
 
 
@@ -164,7 +218,9 @@ def _scan_security(
     session_id: str,
 ) -> None:
     """Emit security findings for one raw line. Pattern + location only."""
-    for label, regex in _SECRET_PATTERNS:
+    for label, regex, guard in _SECRET_PATTERNS:
+        if guard is not None and not guard(line):
+            continue
         if regex.search(line):
             on_finding("secret", "critical", label, line_no, session_id)
     if record is None:
@@ -330,14 +386,21 @@ def refresh(
 
     if on_progress is not None and total:
         _emit_scan(0)
-    for index, (source, path) in enumerate(pending):
+
+    # ── Pass 1: disposition every file via the cursor (cheap stat + head
+    # hash). Skips count toward the meter immediately; changed files queue for
+    # parsing WITH their pre-parse stat, so the cursor later records the
+    # size/mtime the parse saw — an append landing mid-parse makes the next
+    # run reparse rather than being silently absorbed.
+    to_parse: list[tuple[str, Path, os.stat_result]] = []
+    handled = 0
+    for source, path in pending:
         stats.files_seen += 1
-        handled = index + 1
         try:
             file_stat = path.stat()
         except OSError:
+            handled += 1
             continue
-        ingested = False
         cursor = store.get_cursor(str(path))
         skip = False
         if cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
@@ -347,31 +410,122 @@ def refresh(
             # a match rather than reparsing every file once.
             stored_sha = cursor["first_line_sha"]
             skip = not stored_sha or stored_sha == _first_line_sha(path)
-        if skip:
-            stats.files_skipped += 1
-        else:
-            ingested = True
-            try:
-                _ingest_one(store, source, path, stats)
-            except Exception as exc:  # one bad file must not sink the sweep
-                # The exception TEXT never reaches the warning: an exception
-                # raised while parsing an untrusted transcript can carry a
-                # fragment of that transcript in its message (int('<value>')),
-                # and warnings are persisted to SQLite, written to the export
-                # and rendered on screen. The class name says as much for
-                # triage; the detail goes to the log.
-                logger.warning("agentwatch ingest failed for %s: %s", path, exc)
-                stats.warnings.append(f"failed to ingest {path.name} ({type(exc).__name__} — see logs)")
-            else:
-                store.set_cursor(
-                    str(path),
-                    source=source,
-                    size=file_stat.st_size,
-                    mtime=file_stat.st_mtime,
-                    first_line_sha=_first_line_sha(path),
-                )
-        if on_progress is not None and (ingested or handled == total or (handled * 100) // total != last_pct):
+        if not skip:
+            to_parse.append((source, path, file_stat))
+            continue
+        stats.files_skipped += 1
+        handled += 1
+        if on_progress is not None and (handled == total or (handled * 100) // total != last_pct):
             _emit_scan(handled)
+
+    # ── Pass 2: parse the queue — in a process pool when it is deep enough to
+    # repay spawn cost, inline otherwise (the warm path, 0–2 files, never pays
+    # pool spin-up). Processes, not threads: the cold cost is json.loads +
+    # regex matching and neither releases the GIL. Each file is fully
+    # independent (the requestId dedup is deliberately whole-file), and the
+    # parent keeps the ONLY SQLite connection — workers return plain data and
+    # every write happens here.
+    #
+    # Writes are batched into explicit transactions: the store's connection is
+    # autocommit, so per-statement commits made a cold sweep pay ~1,500
+    # fsyncs. Batches are BOUNDED (not one sweep-long transaction) because
+    # sessions.db is shared with SessionStore — a minutes-long write lock
+    # would block TUI session saves. ExitStack holds the open batch across
+    # iterations; on an unwinding exception (Ctrl-C) the finally COMMITS the
+    # completed files rather than rolling back: a file is cursored in the same
+    # batch as its rollup, so committed work is consistent and the interrupted
+    # file simply reparses next run.
+    batch = ExitStack()
+    in_batch = 0
+
+    def _apply(source: str, path: Path, file_stat: os.stat_result, result: tuple) -> None:
+        nonlocal in_batch, handled
+        handled += 1
+        if in_batch == 0:
+            batch.enter_context(store.transaction())
+        in_batch += 1
+        if result[0] == "error":
+            # Only the exception CLASS NAME reaches the warning: an exception
+            # raised while parsing an untrusted transcript can carry a
+            # fragment of that transcript in its message (int('<value>')),
+            # and warnings are persisted to SQLite, written to the export
+            # and rendered on screen. The detail goes to the local log.
+            _tag, exc_type, detail = result
+            logger.warning("agentwatch ingest failed for %s: %s", path, detail)
+            stats.warnings.append(f"failed to ingest {path.name} ({exc_type} — see logs)")
+            # No cursor either — the file reparses next run, as before.
+        else:
+            _tag, rollup, findings, malformed = result
+            stats.malformed_lines += malformed
+            _store_parsed(store, source, path, rollup, findings, stats)
+            store.set_cursor(
+                str(path),
+                source=source,
+                size=file_stat.st_size,
+                mtime=file_stat.st_mtime,
+                first_line_sha=_first_line_sha(path),
+            )
+        if in_batch >= _INGEST_BATCH_SIZE:
+            batch.close()  # COMMIT
+            in_batch = 0
+        if on_progress is not None:
+            # Every parsed file emits — this is the live meter on a cold run;
+            # the consumer folds events per frame.
+            _emit_scan(handled)
+
+    try:
+        use_pool = len(to_parse) >= _PARALLEL_THRESHOLD
+        if use_pool:
+            try:
+                # spawn, never the platform default: refresh() runs on a TUI
+                # worker thread, and fork() from a multi-threaded process can
+                # deadlock the child on a lock the parent held at fork time
+                # (Linux's default through 3.13; macOS already spawns, which is
+                # why it never reproduces here).
+                pool = ProcessPoolExecutor(
+                    max_workers=min(os.cpu_count() or 4, _MAX_PARSE_WORKERS, len(to_parse)),
+                    mp_context=multiprocessing.get_context("spawn"),
+                )
+            except Exception as exc:  # spawn limits/sandbox — degrade, never fail
+                logger.warning(
+                    "agentwatch: process pool unavailable (%s: %s), parsing serially", type(exc).__name__, exc
+                )
+                use_pool = False
+        if use_pool:
+            with pool:
+                futures = [
+                    (source, path, file_stat, pool.submit(_parse_worker, str(path)))
+                    for source, path, file_stat in to_parse
+                ]
+                # Drain in SUBMISSION order, not completion order: warnings are
+                # persisted, exported and rendered, and the Go twin
+                # (collector.go) applies results in submission order — draining
+                # as_completed would make the warning order nondeterministic
+                # run-to-run and diverge from the sidecar on any corpus with
+                # two unparseable files. Workers still run in parallel; only
+                # the apply step is ordered.
+                for source, path, file_stat, future in futures:
+                    try:
+                        result = future.result()
+                    except Exception as exc:  # worker died (BrokenProcessPool, pickling)
+                        result = ("error", type(exc).__name__, str(exc))
+                    _apply(source, path, file_stat, result)
+        else:
+            for source, path, file_stat in to_parse:
+                _apply(source, path, file_stat, _parse_worker(str(path)))
+    except sqlite3.OperationalError as exc:
+        # sessions.db is shared: another writer (a scheduled headless standup,
+        # the TUI saving a session) can hold the write lock past the 5s busy
+        # timeout, and BEGIN/COMMIT then raises. refresh() promises to never
+        # raise — keep what committed, warn, and let the next run reparse the
+        # rest (uncommitted files were never cursored).
+        logger.warning("agentwatch ingest aborted mid-scan: %s", exc)
+        stats.warnings.append("scan interrupted: sessions.db was busy — partial results, rerun to complete")
+    finally:
+        try:
+            batch.close()
+        except sqlite3.OperationalError as exc:
+            logger.warning("agentwatch batch commit failed: %s", exc)
     # Guarantee the meter closes at N/N even when the last file's stat() failed
     # and its per-file emit was skipped — the bar must never freeze short.
     if on_progress is not None and total and last_pct != 100:
@@ -403,14 +557,40 @@ def refresh(
     return stats
 
 
-def _ingest_one(store: AgentWatchStore, source: str, path: Path, stats: IngestStats) -> None:
-    """Reparse one transcript and replace its rollup + findings."""
+def _parse_worker(path_str: str) -> tuple:
+    """Parse one transcript into plain builtins — the process-pool work unit.
+
+    Runs in a worker process (or inline below the pool threshold), so the
+    argument and the return value must both survive pickling:
+    ``("ok", rollup, findings, malformed_line_count)`` or
+    ``("error", exception_class_name, detail)``. Exceptions become the marker
+    INSIDE the worker so the parent keeps its class-name-only warning rule —
+    a parse exception can quote transcript text, and while ``detail`` may go
+    to the local log, it must never reach ``stats.warnings`` (persisted,
+    exported, rendered).
+    """
+    local = IngestStats()
     findings: list[tuple[str, str, str, int, str]] = []
 
     def on_finding(category: str, severity: str, pattern: str, line_no: int, session_id: str) -> None:
         findings.append((category, severity, pattern, line_no, session_id))
 
-    rollup = _parse_file(path, stats=stats, on_finding=on_finding)
+    try:
+        rollup = _parse_file(Path(path_str), stats=local, on_finding=on_finding)
+    except Exception as exc:
+        return ("error", type(exc).__name__, str(exc))
+    return ("ok", rollup, findings, local.malformed_lines)
+
+
+def _store_parsed(
+    store: AgentWatchStore,
+    source: str,
+    path: Path,
+    rollup: _SessionRollup,
+    findings: list[tuple[str, str, str, int, str]],
+    stats: IngestStats,
+) -> None:
+    """Write one parsed transcript's rollup + findings (replacing priors)."""
     stats.files_parsed += 1
     if not rollup.model_usage and not rollup.turns and not rollup.tool_counts:
         return  # not a session transcript (some other tool's JSONL)

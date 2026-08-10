@@ -1,4 +1,14 @@
-"""CLI entry point for yeaboi."""
+"""CLI entry point for yeaboi.
+
+Module-level imports here are deliberately limited to the stdlib and yeaboi's
+lightweight config/paths modules: `yeaboi --version`/`--help` (and every
+subcommand's fixed overhead) pay for everything imported at the top of this
+file before argparse even runs. Anything that pulls rich, prompt_toolkit, or
+the langchain/anthropic stack is imported at its call site instead — the same
+convention as beta.py, enforced by tests/unit/test_cli_startup.py.
+"""
+
+from __future__ import annotations
 
 import argparse
 import logging
@@ -6,12 +16,7 @@ import os
 import re
 import sys
 from pathlib import Path
-
-from prompt_toolkit import PromptSession
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+from typing import TYPE_CHECKING
 
 from yeaboi import __version__, fs_policy, paths
 from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE
@@ -21,18 +26,11 @@ from yeaboi.config import (
     is_langsmith_enabled,
     load_user_config,
 )
-from yeaboi.formatters import build_theme
-from yeaboi.persistence import migrate_history_file
-from yeaboi.questionnaire_io import (
-    build_questionnaire_from_answers,
-    export_questionnaire_md,
-    parse_questionnaire_md,
-)
-from yeaboi.repl import run_repl
-from yeaboi.sessions import SessionStore, make_display_name, make_unique_display_names
-from yeaboi.setup_wizard import is_first_run, run_setup_wizard
-from yeaboi.ui.mode_select import select_mode
-from yeaboi.ui.splash import show_splash
+
+if TYPE_CHECKING:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
 
 # Default filename for exported questionnaire templates
 DEFAULT_QUESTIONNAIRE_FILENAME = "scrum-questionnaire.md"
@@ -70,6 +68,9 @@ def _build_welcome_panel() -> Panel:
     # See docs: "Architecture" — the CLI layer is the outermost layer,
     # responsible for user-facing chrome like the welcome screen.
     """
+    from rich.panel import Panel
+    from rich.text import Text
+
     body = Text.from_markup(
         f"[bold cyan]yeaboi.ai[/bold cyan]  [dim]v{__version__}[/dim]\n"
         "[white]Best friend to engineers and agents[/white]\n\n"
@@ -94,6 +95,8 @@ def _build_sessions_table(sessions: list[dict], display_names: dict[str, str] | 
             ``make_unique_display_names()``. When provided, the Project column
             shows the collision-free display name instead of the raw project_name.
     """
+    from rich.table import Table
+
     table = Table(title="Saved sessions", show_lines=False, padding=(0, 1))
     table.add_column("#", style="bold", width=3)
     table.add_column("Project", style="cyan")
@@ -118,6 +121,8 @@ def _print_sessions_table(console: Console) -> None:
     Used by --list-sessions. Opens its own SessionStore so it works
     independently from the REPL.
     """
+    from yeaboi.sessions import SessionStore, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -135,6 +140,10 @@ def _clear_sessions(console: Console) -> None:
     Shows a numbered list plus an [A] All option. The user picks a session
     number to delete one, or 'a'/'all' to wipe everything.
     """
+    from prompt_toolkit import PromptSession
+
+    from yeaboi.sessions import SessionStore, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -190,6 +199,10 @@ def _resolve_resume(console: Console, resume_arg: str) -> tuple[dict | None, str
 
     # See docs: "Memory & State" — session persistence, --resume
     """
+    from prompt_toolkit import PromptSession
+
+    from yeaboi.sessions import SessionStore, make_display_name, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -948,7 +961,11 @@ def _run_headless(args: argparse.Namespace) -> None:
 
     # See docs: "Architecture" — headless mode for CI/CD pipelines
     """
+    from rich.console import Console
+
     from yeaboi.formatters import build_theme
+    from yeaboi.questionnaire_io import build_questionnaire_from_answers
+    from yeaboi.repl import run_repl
 
     output_format = args.output or "markdown"
 
@@ -1317,7 +1334,7 @@ def _print_beta_notice(notice: str) -> None:
         print(f"⚠ {notice}", file=sys.stderr)
 
 
-def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_report(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.reporting.engine import run_delivery_report
     from yeaboi.reporting.render import format_report_rich
 
@@ -1361,7 +1378,7 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, report.warnings, empty=not report.delivered_items)
 
 
-def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup(args: argparse.Namespace, console: Console) -> int:
     # Route this run's records to ~/.yeaboi/logs/standup/ like every other
     # standup entry point (CLAUDE.md "Observability" — each mode logs to its own
     # directory). Only the --standup-run scheduler path did this before, so a
@@ -1372,7 +1389,7 @@ def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
         return _cmd_standup_inner(args, console)
 
 
-def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.standup.engine import run_standup
     from yeaboi.standup.render import format_standup_rich
 
@@ -1430,7 +1447,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, report.warnings)
 
 
-def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_id: str) -> int:
+def _cmd_standup_schedule(args: argparse.Namespace, console: Console, session_id: str) -> int:
     """`yeaboi standup --schedule install|remove|status` — manage the OS-native daily job.
 
     Uses the session's saved standup config (time/weekdays/lead) — set it via the
@@ -1466,7 +1483,7 @@ def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_
     return 0
 
 
-def _format_review_text(review, console: "Console") -> None:
+def _format_review_text(review, console: Console) -> None:
     """Print a transcript review as scannable text."""
     console.print(f"[bold]Transcript review — {review.standup_date or 'unknown date'}[/bold]")
     if review.sources:
@@ -1528,7 +1545,7 @@ def _resolve_review_inputs(args: argparse.Namespace) -> tuple[list[str] | None, 
     return (paths or None), text
 
 
-def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_review(args: argparse.Namespace, console: Console) -> int:
     """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
     from yeaboi.logging_setup import mode_log
 
@@ -1536,7 +1553,7 @@ def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
         return _cmd_standup_review_inner(args, console)
 
 
-def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_review_inner(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.paths import get_db_path
     from yeaboi.standup.engine import file_transcript_issues, run_transcript_review, transcript_nudge
     from yeaboi.standup.store import StandupStore
@@ -1614,7 +1631,7 @@ def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> i
     return _strict_exit(args.strict, warnings)
 
 
-def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
     logging.getLogger(__name__).info("perf %s (beta)", args.perf_command)
     # One call site ahead of the branch covers all five subcommands.
     _print_beta_notice(PERFORMANCE_BETA_NOTICE)
@@ -1699,7 +1716,7 @@ def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_agents(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
     """The Agents family headless: same engines the TUI cards and MCP tools use
     (CLAUDE.md "REQUIRED: Surface Parity")."""
     logging.getLogger(__name__).info("agents %s (beta)", args.agents_command)
@@ -1763,7 +1780,7 @@ def _cmd_agents(args: argparse.Namespace, console: "Console") -> int:
     return 1
 
 
-def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_retro(args: argparse.Namespace, console: Console) -> int:
     """Read-back of past retro boards. The live collaborative board needs a TTY
     host and stays in the TUI (see the surface-parity registry)."""
     import json
@@ -1827,7 +1844,7 @@ def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_poker(args: argparse.Namespace, console: Console) -> int:
     """Read-back of past poker sessions. The live voting board needs a TTY host
     and stays in the TUI (see the surface-parity registry)."""
     import json
@@ -1870,7 +1887,7 @@ def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_analyze(args: argparse.Namespace, console: Console) -> int:
     from rich.table import Table
 
     from yeaboi.analysis import run_team_analysis
@@ -1949,7 +1966,7 @@ def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, result["warnings"])
 
 
-def _print_profile_summary(console: "Console", sub: dict) -> None:
+def _print_profile_summary(console: Console, sub: dict) -> None:
     """Print one delivery tracker's summary (saved profile + top coaching insights)."""
     profile = sub["profile"]
     console.print(f"[green]Team profile saved for {profile.source}/{profile.project_key}[/green]")
@@ -1963,7 +1980,7 @@ def _print_profile_summary(console: "Console", sub: dict) -> None:
             console.print(f"  [bold]{category.upper()}[/bold]: {item.get('title', '')}")
 
 
-def _print_code_summary(console: "Console", code: dict) -> None:
+def _print_code_summary(console: Console, code: dict) -> None:
     """Print selected-user Code activity, changed-file, and coverage summary."""
     sig = code.get("signal")
     examples = code.get("examples") or {}
@@ -2003,7 +2020,7 @@ def _print_code_summary(console: "Console", code: dict) -> None:
         console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
-def _print_docs_summary(console: "Console", docs: dict) -> None:
+def _print_docs_summary(console: Console, docs: dict) -> None:
     """Print the global Docs (clarity) scan summary."""
     sig = docs.get("signal")
     examples = docs.get("examples") or {}
@@ -2026,7 +2043,7 @@ def _print_docs_summary(console: "Console", docs: dict) -> None:
         console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
-def _run_learn(console: "Console") -> None:
+def _run_learn(console: Console) -> None:
     """Run the full team analysis via the analysis engine and print a summary.
 
     Delegates to analysis/engine.py:run_team_analysis — the same pipeline the
@@ -2079,7 +2096,7 @@ def _run_learn(console: "Console") -> None:
         console.print(table)
 
 
-def _run_team_profile(console: "Console") -> None:
+def _run_team_profile(console: Console) -> None:
     """Display the current stored team calibration profile."""
 
     from yeaboi.paths import get_db_path
@@ -2115,7 +2132,7 @@ def _run_team_profile(console: "Console") -> None:
                     )
 
 
-def _run_retro(console: "Console", session_id: str) -> None:
+def _run_retro(console: Console, session_id: str) -> None:
     """Run compare_plan_to_actuals and display the result."""
     import json
 
@@ -2277,6 +2294,15 @@ def main(argv: list[str] | None = None) -> None:
 
     configure_logging()
 
+    # Interactive-path imports — deferred so the headless flows above (and
+    # --version/--help) never pay for rich or the setup/splash machinery.
+    from rich.console import Console
+
+    from yeaboi.formatters import build_theme
+    from yeaboi.persistence import migrate_history_file
+    from yeaboi.setup_wizard import is_first_run, run_setup_wizard
+    from yeaboi.ui.splash import show_splash
+
     # Create the console with the requested theme so semantic style names
     # ([command], [hint], [success], etc.) resolve correctly throughout the
     # REPL. Must be created after arg parsing so args.theme is available.
@@ -2365,6 +2391,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # --export-questionnaire: write a blank template and exit (no REPL)
     if args.export_questionnaire is not None:
+        from yeaboi.questionnaire_io import export_questionnaire_md
+
         path = export_questionnaire_md(None, Path(args.export_questionnaire))
         console.print(f"[green]Questionnaire template exported to {path}[/green]")
         return
@@ -2378,6 +2406,8 @@ def main(argv: list[str] | None = None) -> None:
         resume_state, resume_session_id = _resolve_resume(console, args.resume)
         if resume_state is None:
             return  # user cancelled or no sessions
+        from yeaboi.repl import run_repl
+
         run_repl(
             console=console,
             bell=not args.no_bell,
@@ -2395,6 +2425,8 @@ def main(argv: list[str] | None = None) -> None:
             console.print(f"[red]Error: file not found: {qpath}[/red]")
             sys.exit(1)
         try:
+            from yeaboi.questionnaire_io import build_questionnaire_from_answers, parse_questionnaire_md
+
             parsed = parse_questionnaire_md(qpath)
             questionnaire = build_questionnaire_from_answers(parsed)
             console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
@@ -2431,6 +2463,8 @@ def main(argv: list[str] | None = None) -> None:
     #
     # See docs: "Architecture" — mode selection is a CLI-layer concern.
     if use_old_repl:
+        from yeaboi.repl import run_repl
+
         startup_mode = args.mode or "project-planning"
         if startup_mode == "project-planning":
             run_repl(
@@ -2452,6 +2486,7 @@ def main(argv: list[str] | None = None) -> None:
         # the app instead of the terminal's own scrollback buffer.
         import atexit
 
+        from yeaboi.ui.mode_select import select_mode
         from yeaboi.ui.shared._input import (
             disable_mouse_tracking,
             enable_mouse_tracking,
@@ -2535,6 +2570,8 @@ def main(argv: list[str] | None = None) -> None:
         if questionnaire_path and questionnaire is None:
             qpath = Path(questionnaire_path)
             try:
+                from yeaboi.questionnaire_io import build_questionnaire_from_answers, parse_questionnaire_md
+
                 parsed = parse_questionnaire_md(qpath)
                 questionnaire = build_questionnaire_from_answers(parsed)
                 console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
@@ -2543,6 +2580,8 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(1)
         # Import flow falls through to REPL for review
         if startup_mode == "project-planning":
+            from yeaboi.repl import run_repl
+
             run_repl(
                 console=console,
                 questionnaire=questionnaire,

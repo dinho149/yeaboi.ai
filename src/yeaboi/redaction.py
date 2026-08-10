@@ -87,6 +87,10 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
 _MIN_SECRET_LEN = 8
 
 # Token shapes for secrets that never passed through our env vars.
+# NOTE: agentwatch/collector.py attaches substring perf pre-checks to two of
+# these, keyed on the EXACT pattern strings (see _PATTERN_GUARDS there). If
+# you edit one of those patterns, its guard silently detaches — scans get
+# slower but stay correct; re-key the guard to restore the speed.
 # Prefixes are anchored (sk-ant-, ghp_, xoxb-, AKIA…) so prose can't match;
 # the Bearer/Basic pattern is the loosest and therefore requires a 16+ char
 # token tail to avoid matching ordinary sentences.
