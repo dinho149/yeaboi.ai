@@ -14,6 +14,8 @@ import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitiv
 import { ArtifactView } from './Artifact';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ImportDialog } from './Import';
+import { Landing } from './Modes';
+import { ModeScreen } from './ModeScreen';
 import { NewProjectDialog } from './NewProject';
 import { ProjectAdmin } from './ProjectAdmin';
 import { RoomList } from './Rooms';
@@ -30,6 +32,7 @@ import styles from './app.module.css';
 
 const ROUTES = new Routes([
   '/',
+  '/modes/{key}',
   '/projects',
   '/projects/{id}',
   '/projects/{id}/artifacts/{artifactId}',
@@ -38,6 +41,7 @@ const ROUTES = new Routes([
 
 /** Modes, in the order the TUI lists them. */
 const RAIL = [
+  { href: '/', label: 'Modes' },
   { href: '/projects', label: 'Projects' },
   { href: '/settings', label: 'Settings' },
 ];
@@ -322,6 +326,8 @@ export function App({ user: initial }: { user: User | null }) {
 
   let view: preact.ComponentChildren;
   if (!match) view = <EmptyState title="No such page" hint={path} />;
+  else if (match.pattern === '/') view = <Landing />;
+  else if (match.pattern === '/modes/{key}') view = <ModeScreen modeKey={match.params.key ?? ''} />;
   else if (match.pattern === '/projects/{id}/artifacts/{artifactId}')
     view = <ArtifactView id={match.params.artifactId ?? ''} />;
   else if (match.pattern === '/projects/{id}')
@@ -354,7 +360,12 @@ export function App({ user: initial }: { user: User | null }) {
             key={item.href}
             className={styles.railLink}
             href={item.href}
-            aria-current={path.startsWith(item.href) ? 'page' : undefined}
+            // startsWith would light "/" for every route.
+            aria-current={
+              (item.href === '/' ? path === '/' || path.startsWith('/modes') : path.startsWith(item.href))
+                ? 'page'
+                : undefined
+            }
           >
             {item.label}
           </a>

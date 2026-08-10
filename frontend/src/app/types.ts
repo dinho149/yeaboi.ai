@@ -51,3 +51,15 @@ export interface ImportCandidate {
   stories: number;
   updated_at: string;
 }
+
+export interface ModeCard {
+  key: string;
+  title: string;
+  description: string;
+  family: 'humans' | 'agents';
+  /** A [data-mode] key from design/tokens.css, or '' for the default. */
+  accent: string;
+  support: 'run' | 'view' | 'soon';
+  beta: boolean;
+  note: string;
+}

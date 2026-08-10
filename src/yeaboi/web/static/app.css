@@ -2688,7 +2688,7 @@ a._issueKey_wm1hn_351:hover {
  * build on a hex literal or a bare px in this directory.
  */
 
-._shell_13gbs_11 {
+._shell_1uflk_11 {
   display: grid;
   /* Rail + content. The rail is a token so the design pass can move it. */
   grid-template-columns: var(--rail-w) 1fr;
@@ -2699,7 +2699,7 @@ a._issueKey_wm1hn_351:hover {
   font-family: var(--font-sans);
 }
 
-._masthead_13gbs_22 {
+._masthead_1uflk_22 {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -2709,7 +2709,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._rail_13gbs_32 {
+._rail_1uflk_32 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2718,7 +2718,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._railLink_13gbs_41 {
+._railLink_1uflk_41 {
   display: block;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2730,17 +2730,17 @@ a._issueKey_wm1hn_351:hover {
   text-decoration: none;
 }
 
-._railLink_13gbs_41[aria-current='page'] {
+._railLink_1uflk_41[aria-current='page'] {
   background: var(--card);
   color: var(--text);
 }
 
-._content_13gbs_58 {
+._content_1uflk_58 {
   padding: var(--s5);
   min-width: 0; /* lets long tables scroll instead of stretching the grid */
 }
 
-._footer_13gbs_63 {
+._footer_1uflk_63 {
   grid-column: 1 / -1;
   padding: var(--s4) var(--s5);
   border-top: 1px solid var(--line);
@@ -2748,7 +2748,7 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-xs);
 }
 
-._slot_13gbs_71 {
+._slot_1uflk_71 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2756,13 +2756,13 @@ a._issueKey_wm1hn_351:hover {
   padding: var(--s6) 0;
 }
 
-._slotLabel_13gbs_79,
-._slotHint_13gbs_80 {
+._slotLabel_1uflk_79,
+._slotHint_1uflk_80 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._slotTitle_13gbs_85 {
+._slotTitle_1uflk_85 {
   margin: 0;
   color: var(--text);
   font-size: var(--fs-l);
@@ -2771,29 +2771,99 @@ a._issueKey_wm1hn_351:hover {
 /* Reused rather than redeclared: three copies of this rule already exist
    (shared, retro, poker) and a fourth is how they drift. `composes` is the
    CSS-Modules way to share one. */
-._srOnly_13gbs_94 {
+._srOnly_1uflk_94 {
 }
 
-._settings_13gbs_98 {
+._modeSection_1uflk_98 {
+  margin-bottom: var(--s6);
+}
+
+._eyebrow_1uflk_102 {
+  margin: 0 0 var(--s3);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+
+._modeGrid_1uflk_112 {
+  display: grid;
+  /* auto-fill so the grid reflows without a breakpoint per column count. */
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+._modeCard_1uflk_122 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  /* The accent is the mode's identity; a left edge carries it without
+     colouring text, which would fight the contrast matrix. */
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+._modeHead_1uflk_136 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+._modeTitle_1uflk_142 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-l);
+}
+
+._beta_1uflk_148 {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+._modeDescription_1uflk_156 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+._modeNote_1uflk_162 {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+}
+
+._settings_1uflk_168 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
   max-width: 40rem;
 }
 
-._settingRow_13gbs_105 {
+._settingRow_1uflk_175 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._themeRow_13gbs_111 {
+._themeRow_1uflk_181 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
 }
 
-._label_13gbs_117 {
+._label_1uflk_187 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2801,13 +2871,13 @@ a._issueKey_wm1hn_351:hover {
   text-transform: uppercase;
 }
 
-._toolbar_13gbs_125 {
+._toolbar_1uflk_195 {
   display: flex;
   gap: var(--s2);
   margin-bottom: var(--s4);
 }
 
-._projectList_13gbs_131 {
+._projectList_1uflk_201 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -2816,7 +2886,7 @@ a._issueKey_wm1hn_351:hover {
   list-style: none;
 }
 
-._projectRow_13gbs_140 {
+._projectRow_1uflk_210 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2827,7 +2897,7 @@ a._issueKey_wm1hn_351:hover {
   background: var(--panel);
 }
 
-._projectName_13gbs_151 {
+._projectName_1uflk_221 {
   color: var(--text);
   font-size: var(--fs-m);
   text-decoration: none;
@@ -2835,7 +2905,7 @@ a._issueKey_wm1hn_351:hover {
   overflow-wrap: anywhere;
 }
 
-._role_13gbs_159 {
+._role_1uflk_229 {
   flex: none;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -2844,7 +2914,7 @@ a._issueKey_wm1hn_351:hover {
   text-transform: uppercase;
 }
 
-._signin_13gbs_168 {
+._signin_1uflk_238 {
   display: flex;
   flex-direction: column;
   gap: var(--s3);

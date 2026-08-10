@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from yeaboi.app.auth import looks_like_email, normalise_email
 from yeaboi.app.importer import import_plan, importable_projects
+from yeaboi.app.modes import payload as modes_payload
 from yeaboi.app.page import render_app_page
 from yeaboi.app.router import HTTPError, Request, Response, Router, json_response
 from yeaboi.app.sessions import SESSION_COOKIE, clear_cookie_headers, cookie_headers
@@ -41,6 +42,7 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
 SHELL_ROUTES: tuple[str, ...] = (
     "/",
     "/signin",
+    "/modes/{mode_key}",
     "/projects",
     "/projects/{project_id}",
     "/projects/{project_id}/artifacts/{artifact_id}",
@@ -198,6 +200,14 @@ def build_router(app: AppServer) -> Router:
         return json_response({"id": user.id, "email": user.email, "name": user.name})
 
     router.get("/api/auth/me", me)
+
+    # ── modes ──────────────────────────────────────────────────────────
+
+    def list_modes(_: Request) -> Response:
+        """The catalogue the landing and the rail are built from."""
+        return json_response({"modes": modes_payload()})
+
+    router.get("/api/modes", list_modes)
 
     # ── projects ───────────────────────────────────────────────────────
 

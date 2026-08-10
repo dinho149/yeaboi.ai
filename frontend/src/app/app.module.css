@@ -95,6 +95,76 @@
   composes: srOnly from '../shared/shared.module.css';
 }
 
+.modeSection {
+  margin-bottom: var(--s6);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+
+.modeGrid {
+  display: grid;
+  /* auto-fill so the grid reflows without a breakpoint per column count. */
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  /* The accent is the mode's identity; a left edge carries it without
+     colouring text, which would fight the contrast matrix. */
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+.modeHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.modeTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-l);
+}
+
+.beta {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.modeDescription {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.modeNote {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+}
+
 .settings {
   display: flex;
   flex-direction: column;
