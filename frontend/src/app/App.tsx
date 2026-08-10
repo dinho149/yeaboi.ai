@@ -8,7 +8,7 @@
  * colour decision.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'preact/compat';
 import { Button, Field, Input, ToastRegion, useToasts } from '../design/primitives';
 import { ArtifactView } from './Artifact';
@@ -22,6 +22,7 @@ import { del, get, post } from './api';
 import { interceptLinks, navigate, Routes } from './router';
 import { AsyncView, EmptyState, Loading } from './Slots';
 import { useEnterList, useFlip } from './useMotion';
+import { useRouteAnnounce } from './useRouteAnnounce';
 import { useAsync } from './useAsync';
 import type { ArtifactSummary, ProjectDetail, ProjectSummary, User } from './types';
 import styles from './app.module.css';
@@ -290,6 +291,8 @@ export function App({ user: initial }: { user: User | null }) {
   const { toasts, push, dismiss } = useToasts();
   const path = usePath();
   const match = useMemo(() => ROUTES.match(path), [path]);
+  const mainRef = useRef<HTMLElement>(null);
+  const announcement = useRouteAnnounce(match?.pattern ?? null, path, mainRef);
 
   if (!user) {
     return (
@@ -345,7 +348,14 @@ export function App({ user: initial }: { user: User | null }) {
           </a>
         ))}
       </nav>
-      <main className={styles.content}>{view}</main>
+      {/* tabIndex -1: focusable by the router on navigation, but not in the
+          tab order. See useRouteAnnounce for why focus moves at all. */}
+      <main className={styles.content} ref={mainRef} tabIndex={-1}>
+        {view}
+      </main>
+      <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
       <footer className={styles.footer}>
         <Credit>Built with yeaboi.ai</Credit>
       </footer>

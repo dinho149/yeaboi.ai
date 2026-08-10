@@ -118,7 +118,15 @@ export function ProjectAdmin({
             )}
           </Field>
           <div className={styles.themeRow}>
-            <Select value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value as Role)}>
+            {/* The visible label belongs to the email field beside it, so this
+                control carries its own name rather than borrowing one. Without
+                it a screen reader announces an unnamed combo box, which the
+                a11y floor in a11y.test.tsx caught. */}
+            <Select
+              aria-label="Role"
+              value={role}
+              onChange={(e) => setRole((e.target as HTMLSelectElement).value as Role)}
+            >
               {ROLES.map((option) => (
                 <option key={option} value={option}>
                   {option}

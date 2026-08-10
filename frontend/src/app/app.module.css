@@ -88,6 +88,13 @@
   font-size: var(--fs-l);
 }
 
+/* Reused rather than redeclared: three copies of this rule already exist
+   (shared, retro, poker) and a fourth is how they drift. `composes` is the
+   CSS-Modules way to share one. */
+.srOnly {
+  composes: srOnly from '../shared/shared.module.css';
+}
+
 .settings {
   display: flex;
   flex-direction: column;
