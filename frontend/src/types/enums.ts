@@ -67,6 +67,21 @@ export type DuelStatuses = (typeof DUEL_STATUSES)[number];
 export const EDIT_OPS = ["set", "append", "remove", "note", "field", "revert"] as const;
 export type EditOps = (typeof EDIT_OPS)[number];
 
+/** Every activity source a standup can collect from. */
+export const ACTIVITY_SOURCES = ["jira", "azure_devops", "azdo_repos", "github", "local_git", "confluence", "notion"] as const;
+export type ActivitySources = (typeof ACTIVITY_SOURCES)[number];
+
+/** How a source is named to a user. Generated so the report, the progress steps and the exports agree — "azdo_repos".title() reads as "Azdo Repos", which looks like a different source from the one the steps just named. */
+export const ACTIVITY_SOURCE_LABELS: Record<ActivitySources, string> = {
+  "jira": "Jira",
+  "azure_devops": "Azure DevOps tickets",
+  "azdo_repos": "Azure DevOps code",
+  "github": "GitHub",
+  "local_git": "Local Git",
+  "confluence": "Confluence",
+  "notion": "Notion",
+};
+
 /**
  * The two-line block font, one entry per character: `[top, bottom]`.
  *

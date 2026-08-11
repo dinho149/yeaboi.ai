@@ -138,14 +138,125 @@ def _collector_sources(
     return enabled
 
 
+def _skipped_sources(
+    source_params: dict,
+    enabled: set[str],
+    tracker_sources: list[str],
+    code_sources: list[str] | None,
+    documentation_sources: list[str] | None,
+    dropped_code_sources: list[str] | None = None,
+) -> tuple[list[tuple[str, str]], set[str]]:
+    """Why each source we did NOT scan is missing, in the words the user needs.
+
+    ``collect_recent_activity`` can auto-detect this only when it picks the source
+    set itself; a standup always hands it an explicit set, so the reasons have to
+    be worked out here — and here is also the only place that can tell the three
+    cases apart:
+
+    * the source was ticked in setup but has no repository/project behind it
+      (``dropped_code_sources``, stripped by :func:`_resolve_code_scope`),
+    * the integration is connected but the source was never ticked, a
+      two-keypress fix rather than a ``.env`` one, and
+    * nothing is configured at all, which is what ``SKIP_REASONS`` describes.
+
+    Collapsing these into one line is what made a deselected GitHub look exactly
+    like a GitHub that had nothing to report.
+
+    Returns ``(skipped, unmet)``. ``skipped`` is every source that did not run,
+    for the progress steps and the report's "Not scanned" panel. ``unmet`` is the
+    subset the user actually asked for and did not get — the only ones worth a ⚠
+    notice, because warning about a source nobody selected is a nag that repeats
+    on every single run.
+    """
+    from yeaboi.config import get_github_token
+
+    dropped = set(dropped_code_sources or ())
+    selected_code = set(code_sources or ()) | dropped
+    selected_docs = set(documentation_sources or ())
+    selected = {
+        collector.SOURCE_JIRA: "jira" in tracker_sources,
+        collector.SOURCE_AZDO: "azure_devops" in tracker_sources,
+        collector.SOURCE_GITHUB: "github" in selected_code,
+        collector.SOURCE_CONFLUENCE: "confluence" in selected_docs,
+        collector.SOURCE_NOTION: "notion" in selected_docs,
+    }
+    # Whether the integration behind the source is reachable at all, independent
+    # of the picker. GitHub counts a bare token: the setup wizard offers it on the
+    # token alone, so "no repo" is a scope problem, not a credentials one.
+    configured = {
+        collector.SOURCE_JIRA: bool(source_params["jira_project"]),
+        collector.SOURCE_AZDO: bool(source_params["azdo_project"]),
+        collector.SOURCE_GITHUB: bool(
+            source_params.get("github_repositories") or source_params["github_repo"] or get_github_token()
+        ),
+        collector.SOURCE_LOCAL_GIT: bool(source_params["local_repo_path"]),
+        collector.SOURCE_CONFLUENCE: bool(source_params["confluence_space"]),
+        collector.SOURCE_NOTION: bool(source_params["notion_root"]),
+    }
+    unconfigured = dict(collector.SKIP_REASONS)
+    unconfigured[collector.SOURCE_GITHUB] = "GITHUB_TOKEN not set"
+    unconfigured[collector.SOURCE_AZDO_REPOS] = unconfigured[collector.SOURCE_AZDO]
+    selected[collector.SOURCE_AZDO_REPOS] = "azure_devops" in selected_code
+    configured[collector.SOURCE_AZDO_REPOS] = bool(
+        source_params["azdo_project"] or source_params.get("azdo_projects") or source_params.get("azdo_repositories")
+    )
+    # A code source stripped for an empty scope, keyed by the collector source it
+    # feeds — Azure Repos is "azure_devops" in the picker but ``azdo_repos`` here.
+    empty_scope = {
+        collector.SOURCE_GITHUB: ("github", "selected, but no repositories chosen"),
+        collector.SOURCE_AZDO_REPOS: ("azure_devops", "selected, but no Azure projects chosen"),
+    }
+    skipped: list[tuple[str, str]] = []
+    unmet: set[str] = set()
+    azdo_deduped = False
+    for source in collector.ALL_SOURCES:
+        if source in enabled:
+            continue
+        # Azure tickets and Azure code share one .env block: when neither ran and
+        # neither was asked for, say so once rather than twice.
+        if (
+            source == collector.SOURCE_AZDO_REPOS
+            and collector.SOURCE_AZDO not in enabled
+            and not selected[collector.SOURCE_AZDO_REPOS]
+        ):
+            azdo_deduped = True
+            continue
+        picker_key, empty_reason = empty_scope.get(source, ("", ""))
+        if picker_key and picker_key in dropped:
+            skipped.append((source, empty_reason))
+            unmet.add(source)
+        elif selected.get(source):
+            # Ticked but unreachable: the .env reason is the honest one, and this
+            # is a real disappointment — the user asked and did not get it.
+            skipped.append((source, unconfigured.get(source, "not configured")))
+            unmet.add(source)
+        elif configured.get(source):
+            skipped.append((source, "not selected in setup"))
+        else:
+            skipped.append((source, unconfigured.get(source, "not configured")))
+    if azdo_deduped:
+        # The surviving row stands for BOTH Azure surfaces, but its label reads
+        # "Azure DevOps tickets" — which invites the reader to wonder what happened
+        # to the code side. Say that the one row covers both.
+        skipped = [
+            (src, f"{reason} — tickets and code" if src == collector.SOURCE_AZDO else reason) for src, reason in skipped
+        ]
+    return skipped, unmet
+
+
 def _resolve_code_scope(
     config: dict | None,
     code_sources: list[str] | None,
     github_repositories: list[str] | None,
     azdo_projects: list[str] | None,
     azdo_repositories: list[str] | None,
-) -> tuple[list[str], list[str], list[str], list[str] | None]:
-    """Resolve GitHub repositories and Azure project scope."""
+) -> tuple[list[str], list[str], list[str], list[str] | None, list[str]]:
+    """Resolve GitHub repositories and Azure project scope.
+
+    The fifth element is the sources dropped for having an empty scope — selected
+    in setup, but with no repository or project behind them. That used to happen
+    silently, which is indistinguishable from the source having found nothing.
+    """
     from yeaboi.standup.code_scope import default_code_scope, validate_code_sources
 
     default_sources, default_github, default_azdo_projects = default_code_scope()
@@ -189,16 +300,19 @@ def _resolve_code_scope(
                 if separator and project
             )
         )
+    dropped: list[str] = []
     if configured:
         if "github" in sources and not github:
             sources.remove("github")
+            dropped.append("github")
         if "azure_devops" in sources and not projects and not legacy_repositories:
             sources.remove("azure_devops")
+            dropped.append("azure_devops")
     # Explicit project scope wins. Legacy repositories remain available only
     # when callers supply them and do not supply projects.
     if azdo_projects is not None or projects:
         legacy_repositories = None
-    return sources, github, projects, legacy_repositories
+    return sources, github, projects, legacy_repositories, dropped
 
 
 def _resolve_documentation_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
@@ -1347,9 +1461,13 @@ def run_standup(
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
     selected_trackers = _resolve_tracker_sources(config, tracker_sources, source_params)
-    selected_code_sources, selected_github_repos, selected_azdo_projects, selected_azdo_repos = _resolve_code_scope(
-        config, code_sources, github_repositories, azdo_projects, azdo_repositories
-    )
+    (
+        selected_code_sources,
+        selected_github_repos,
+        selected_azdo_projects,
+        selected_azdo_repos,
+        dropped_code_sources,
+    ) = _resolve_code_scope(config, code_sources, github_repositories, azdo_projects, azdo_repositories)
     source_params["github_repositories"] = selected_github_repos
     source_params["azdo_projects"] = selected_azdo_projects
     source_params["azdo_repositories"] = selected_azdo_repos
@@ -1359,6 +1477,22 @@ def run_standup(
         selected_trackers,
         selected_code_sources,
         selected_documentation_sources,
+    )
+    # Worked out here, not in the collector: only this scope knows the difference
+    # between "you never ticked GitHub" and "GITHUB_TOKEN is missing".
+    skipped_sources, unmet_sources = _skipped_sources(
+        source_params,
+        enabled_sources,
+        selected_trackers,
+        selected_code_sources,
+        selected_documentation_sources,
+        dropped_code_sources,
+    )
+    # The one line that answers "why is there no GitHub in this run?" after the fact.
+    logger.info(
+        "run_standup: collecting %s; skipping %s",
+        ", ".join(sorted(enabled_sources)) or "nothing",
+        ", ".join(f"{src} ({reason})" for src, reason in skipped_sources) or "nothing",
     )
 
     # 2. Collect recent activity across all resolved sources. Window: start of
@@ -1382,6 +1516,7 @@ def run_standup(
             on_progress=collection_progress,
             cache_db_path=db_path,
             ticket_context=practices_wanted,
+            skipped=skipped_sources,
             **source_params,
         )
     else:
@@ -1392,6 +1527,7 @@ def run_standup(
             on_progress=collection_progress,
             cache_db_path=db_path,
             ticket_context=practices_wanted,
+            skipped=skipped_sources,
             **source_params,
         )
 
@@ -1525,6 +1661,14 @@ def run_standup(
         self_reported_images=self_reported_images,
     )
 
+    # One rule, two audiences. A skip is worth chasing when the user asked for the
+    # source and did not get it, or when the collector itself gave up mid-run on a
+    # source it was told to read (a missing SDK). Everything else is a deliberate
+    # non-choice: listed on the diagnostic surfaces, never warned or broadcast about.
+    advisable_sources = {
+        src for src, reason in bundle.skipped if src in unmet_sources or reason == collector.SKIP_SDK_MISSING
+    }
+
     # Warnings the user must see: source auth failures (from the collector) first,
     # then any LLM/config issue. These render as a "Notices" section, never silent.
     warnings = (
@@ -1538,11 +1682,19 @@ def run_standup(
             "No activity sources configured — set a local repo path via Configure, or connect "
             "GitHub/Jira/Azure DevOps/Confluence/Notion in .env, so updates can be inferred from real activity.",
         )
-    elif bundle.skipped:
+    else:
         # Partial coverage is advised, not silent: one combined line (last — auth/LLM
         # problems above are more urgent) naming each unscanned source and its fix.
-        skipped = ", ".join(f"{src.replace('_', ' ').title()} ({reason})" for src, reason in bundle.skipped)
-        warnings.append(f"Not scanned: {skipped} — connect these in .env to include their activity in the standup.")
+        # Only sources the user ASKED for get a notice; the rest are reported in the
+        # report's "Not scanned" panel and the progress steps, because a warning
+        # about a source nobody selected would repeat on every run forever.
+        advisable = [(src, reason) for src, reason in bundle.skipped if src in advisable_sources]
+        if advisable:
+            skipped = ", ".join(f"{collector.source_label(src)} ({reason})" for src, reason in advisable)
+            warnings.append(
+                f"Not scanned: {skipped} — pick sources in Standup → Sources, or connect them in .env, "
+                "to include their activity in the standup."
+            )
 
     # Transcript-review findings, capped so the notices stay scannable. They go
     # last: an auth failure or a missing source is more urgent than a diagnosis
@@ -1594,6 +1746,9 @@ def run_standup(
         activity_counts=tuple((str(s), int(n)) for s, n in result["counts"]),
         activity_window=activity_window,
         skipped_sources=tuple(bundle.skipped),
+        # Carried so the broadcast renderers can tell a disappointment from a
+        # deliberate non-choice long after the run that classified them.
+        unmet_sources=tuple(sorted(advisable_sources)),
         category_coverage=category_coverage,
         my_name=my_name,
         warnings=tuple(warnings),

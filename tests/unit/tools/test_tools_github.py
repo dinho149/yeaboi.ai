@@ -8,6 +8,7 @@ each tool and the _parse_repo helper.
 from unittest.mock import MagicMock, patch
 
 import github as _gh_import_check  # noqa: F401 — ensures PyGithub is installed
+import pytest
 
 from yeaboi.tools import detect_platform, get_tools
 from yeaboi.tools.github import (
@@ -504,6 +505,65 @@ class TestGithubListIssuesRateLimitAndPagination:
 # ---------------------------------------------------------------------------
 # Activity-scan caps (analysis cold-run bounds)
 # ---------------------------------------------------------------------------
+
+
+class TestActivityFailuresAreSurfaced:
+    """A GitHub failure must not render as "this repository had nothing today".
+
+    Only 401 used to reach the user. A 403, a 404 or a rate limit returned ``[]``
+    with a log line, which a standup shows as silence — wrong and quiet, which is
+    worse than missing and loud.
+    """
+
+    @pytest.mark.parametrize(
+        ("status", "fragment"),
+        [
+            (401, "check GITHUB_TOKEN"),
+            (403, "access denied"),
+            (404, "repository not found"),
+        ],
+    )
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_failures_raise_a_standup_source_error(self, mock_client, status, fragment):
+        import github as gh_module
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.github import github_recent_commits
+
+        mock_client.return_value.get_repo.side_effect = gh_module.GithubException(status, {"message": "no"}, {})
+        with pytest.raises(StandupSourceError) as excinfo:
+            github_recent_commits("owner/repo", days=1)
+        assert fragment in excinfo.value.message
+
+    @pytest.mark.parametrize(
+        "fetch",
+        ["github_recent_commits", "github_recent_prs", "github_recent_reviews"],
+    )
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_rate_limit_is_surfaced_from_every_fetcher(self, mock_client, fetch):
+        import github as gh_module
+
+        from yeaboi import tools
+        from yeaboi.standup.errors import StandupSourceError
+
+        mock_client.return_value.get_repo.side_effect = gh_module.RateLimitExceededException(
+            403, {"message": "API rate limit exceeded"}, {}
+        )
+        with pytest.raises(StandupSourceError) as excinfo:
+            getattr(tools.github, fetch)("owner/repo", days=1)
+        assert "rate limit" in excinfo.value.message
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_the_repository_is_named_so_the_user_knows_which_one(self, mock_client):
+        import github as gh_module
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.github import github_recent_commits
+
+        mock_client.return_value.get_repo.side_effect = gh_module.GithubException(404, {"message": "no"}, {})
+        with pytest.raises(StandupSourceError) as excinfo:
+            github_recent_commits("acme/gone", days=1)
+        assert "acme/gone" in excinfo.value.message
 
 
 class TestActivityScanCaps:

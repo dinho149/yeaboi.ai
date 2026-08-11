@@ -42,6 +42,7 @@ from yeaboi.retro.board import (
     RETRO_GRIDS,
     RETRO_THEMES,
 )
+from yeaboi.standup.collector import ALL_SOURCES, source_label
 from yeaboi.ui.shared._ansi_font import SHADOW_GLYPHS, render_shadow_text
 from yeaboi.ui.shared._ascii_font import BLOCK_GLYPHS, render_ascii_text
 
@@ -216,6 +217,15 @@ def render() -> str:
             "What one correction does to a shared artifact. Server-validated, so it is "
             "generated rather than shipped in a boot payload — a payload would win at "
             "runtime and let a stale bundle offer an op the server rejects.",
+        ),
+        _tuple_const("ACTIVITY_SOURCES", ALL_SOURCES, "Every activity source a standup can collect from."),
+        _label_map(
+            "ACTIVITY_SOURCE_LABELS",
+            "ActivitySources",
+            {source: source_label(source) for source in ALL_SOURCES},
+            "How a source is named to a user. Generated so the report, the progress "
+            'steps and the exports agree — "azdo_repos".title() reads as "Azdo Repos", '
+            "which looks like a different source from the one the steps just named.",
         ),
         _block_glyphs(),
         _wordmark_samples(),

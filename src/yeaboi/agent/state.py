@@ -452,6 +452,11 @@ class StandupReport:
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
     activity_window: str = ""  # human-readable look-back window, e.g. "Fri 2026-07-17 00:00 → now"
     skipped_sources: tuple[tuple[str, str], ...] = ()  # (source, reason) for sources NOT scanned — visible, not silent
+    # The subset of skipped_sources the user actually ASKED for and did not get.
+    # Diagnostic surfaces (the TUI panel, the HTML details) list every skip; the
+    # broadcast ones (Slack/email plaintext, Markdown) list only these, or a
+    # Jira-only team reads the same five-source apology in every standup forever.
+    unmet_sources: tuple[str, ...] = ()
     category_coverage: tuple[tuple[str, str], ...] = ()  # category -> covered/partial/failed/not_configured
     my_name: str = ""  # the standup user's resolved display name (drives the "My Update" row)
     warnings: tuple[str, ...] = ()  # surfaced problems (missing API key, source 401/403) — shown, never silent

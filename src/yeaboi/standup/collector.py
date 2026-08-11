@@ -54,8 +54,25 @@ _SOURCE_LABELS = {
     SOURCE_NOTION: "Notion",
 }
 
+
+def source_label(source: str) -> str:
+    """The name a user sees for a collector source ("azdo_repos" → "Azure DevOps code").
+
+    Public because the report renderers show the same skip list the progress steps
+    do, and ``"azdo_repos".title()`` reads as "Azdo Repos" in all three.
+    """
+    return _SOURCE_LABELS.get(source, source.replace("_", " ").title())
+
+
+# The one reason string the collector appends at run time rather than being told.
+# Shared because the engine keys its "worth chasing" rule off it, and a reword
+# here would otherwise silently stop that rule firing.
+SKIP_SDK_MISSING = "SDK not installed"
+
 # Human-readable reason shown when a source is auto-disabled (config missing).
-_SKIP_REASONS = {
+# Public for the same reason ``source_label`` is: the engine builds the skip
+# list for an explicit source set and needs the identical wording.
+SKIP_REASONS = {
     SOURCE_JIRA: "JIRA_PROJECT_KEY not set",
     SOURCE_AZDO: "AZURE_DEVOPS_PROJECT not set",
     SOURCE_GITHUB: "STANDUP_GITHUB_REPO not set",
@@ -174,6 +191,7 @@ def collect_recent_activity(
     on_progress=None,
     cache_db_path=None,
     ticket_context: bool = True,
+    skipped: list[tuple[str, str]] | None = None,
 ) -> ActivityBundle:
     """Gather and normalize recent activity from all enabled sources.
 
@@ -192,6 +210,13 @@ def collect_recent_activity(
     Azure WIQL plus batch fetch — so a team that has turned practice detection
     off must not pay it. Off means the standup is exactly as expensive as it was
     before this existed.
+
+    ``skipped`` is how a caller that passes an explicit ``sources`` set still gets
+    a coverage story. Auto-detection below can work out why a source is off, but a
+    caller with an explicit set knows more than we do — it can tell "no token" from
+    "the user unticked it in setup" — so it hands the reasons in rather than having
+    them guessed. Without this a deselected source is invisible: no skip line, no
+    progress step, and a report that reads as though GitHub had nothing to say.
     """
     enabled = _resolve_sources(
         sources,
@@ -218,13 +243,17 @@ def collect_recent_activity(
             metadata_cache = StandupMetadataCache(cache_db_path)
         except Exception:
             logger.warning("standup metadata cache unavailable", exc_info=True)
-    if sources is None:
+    if skipped:
+        # The caller worked out the reasons; keep only sources that really are off,
+        # so a stale list can never claim we skipped something we just collected.
+        bundle.skipped.extend((src, reason) for src, reason in skipped if src not in enabled)
+    elif sources is None:
         # Record WHY each source was auto-disabled so the report can show what
         # wasn't covered (a silently-skipped source reads as "no activity").
         for src in ALL_SOURCES:
             if src in enabled or src == SOURCE_AZDO_REPOS:
                 continue  # azdo_repos shares azure_devops config — one skip line, not two
-            bundle.skipped.append((src, _SKIP_REASONS.get(src, "not configured")))
+            bundle.skipped.append((src, SKIP_REASONS.get(src, "not configured")))
 
     bundle_lock = threading.Lock()
     completed_sources = 0
@@ -239,7 +268,7 @@ def collect_recent_activity(
             logger.debug("standup collector progress callback failed", exc_info=True)
 
     def _source_label(source: str) -> str:
-        return _SOURCE_LABELS.get(source, source.replace("_", " ").title())
+        return source_label(source)
 
     def _run(source: str, fetcher) -> None:
         """Call one source fetcher with bounded retry, then merge atomically."""
@@ -281,7 +310,7 @@ def collect_recent_activity(
         except ImportError as e:
             logger.warning("Source %s skipped — SDK not installed: %s", source, e)
             with bundle_lock:
-                bundle.skipped.append((source, "SDK not installed"))
+                bundle.skipped.append((source, SKIP_SDK_MISSING))
             _finished("skipped")
             return
         except Exception as e:  # defensive — helpers already guard, but never let one source abort
@@ -519,6 +548,11 @@ def collect_recent_activity(
     total_sources = len(fetchers)
     running_labels = ", ".join(_source_label(source) for source in fetchers)
     _progress(f"Running concurrently · {running_labels}")
+    # Name what we are NOT scanning, one step per source. The progress list is the
+    # only place a user watches a standup being built, and a source that never
+    # appears there is indistinguishable from a source that found nothing.
+    for source, reason in bundle.skipped:
+        _progress(f"{_source_label(source)} · skipped — {reason}")
     with ThreadPoolExecutor(
         max_workers=min(7, max(1, len(fetchers))),
         thread_name_prefix="standup-source",

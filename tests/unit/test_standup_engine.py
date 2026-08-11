@@ -994,6 +994,167 @@ class TestWipFlow:
         assert seen["activity_count"] == 1
 
 
+class TestSkippedSourceReasons:
+    """``_skipped_sources`` is the only place that can tell the three cases apart."""
+
+    def _params(self, **overrides):
+        params = {
+            "jira_project": "",
+            "azdo_project": "",
+            "confluence_space": "",
+            "notion_root": "",
+            "github_repo": "",
+            "local_repo_path": "",
+            "github_repositories": [],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+        }
+        params.update(overrides)
+        return params
+
+    def test_connected_but_unticked_reads_as_a_choice(self, monkeypatch):
+        # A GitHub token is present, so this is two keypresses in the picker — not
+        # a .env problem, and not worth a notice.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["github"] == "not selected in setup"
+        assert "github" not in unmet
+
+    def test_unticked_and_unconfigured_names_the_env_var(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["github"] == "GITHUB_TOKEN not set"
+        assert "github" not in unmet
+
+    def test_ticked_but_unreachable_is_unmet(self, monkeypatch):
+        # Asked for and not delivered — the one case that earns a ⚠ notice.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], ["github"], [])
+        assert dict(skipped)["github"] == "GITHUB_TOKEN not set"
+        assert "github" in unmet
+
+    def test_empty_scope_says_so_rather_than_blaming_credentials(self, monkeypatch):
+        # The user ticked GitHub and chose no repos; _resolve_code_scope stripped it.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [], ["github"]
+        )
+        assert dict(skipped)["github"] == "selected, but no repositories chosen"
+        assert "github" in unmet
+
+    def test_a_source_that_ran_is_never_listed(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, _ = engine._skipped_sources(
+            self._params(jira_project="PROJ", github_repositories=["o/r"]),
+            {"jira", "github"},
+            ["jira"],
+            ["github"],
+            [],
+        )
+        assert "github" not in dict(skipped)
+
+    def test_azure_tickets_and_code_report_once_when_neither_was_asked_for(self, monkeypatch):
+        # They share one .env block; two lines for one missing integration is noise.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert "azure_devops" in dict(skipped)
+        assert "azdo_repos" not in dict(skipped)
+
+    def test_the_deduped_azure_row_says_it_covers_both_surfaces(self, monkeypatch):
+        # The surviving row is labelled "Azure DevOps tickets", so without this the
+        # reader is left wondering what happened to the code half.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["azure_devops"] == "AZURE_DEVOPS_PROJECT not set — tickets and code"
+
+    def test_azure_row_is_not_annotated_when_code_reports_separately(self, monkeypatch):
+        # Nothing was deduped here, so the qualifier would be a lie.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], ["azure_devops"], []
+        )
+        assert dict(skipped)["azdo_repos"] == "AZURE_DEVOPS_PROJECT not set"
+        assert "— tickets and code" not in dict(skipped)["azure_devops"]
+
+    def test_a_deliberate_non_choice_is_listed_but_never_chased(self, monkeypatch):
+        # The whole point of the (skipped, unmet) split: someone with no local repo
+        # must not read "Not scanned: Local Git" at the bottom of every standup forever.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["local_git"] == "no repo path configured"
+        assert "local_git" not in unmet
+
+    def test_documentation_sources_classify_like_the_rest(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        # Confluence is connected but unticked; Notion is neither.
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ", confluence_space="ENG"), {"jira"}, ["jira"], [], []
+        )
+        assert dict(skipped)["confluence"] == "not selected in setup"
+        assert dict(skipped)["notion"] == "NOTION_ROOT_PAGE_ID not set"
+        assert not {"confluence", "notion"} & unmet
+
+    def test_a_ticked_documentation_source_that_cannot_run_is_unmet(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], ["confluence"]
+        )
+        assert dict(skipped)["confluence"] == "CONFLUENCE_SPACE_KEY not set"
+        assert "confluence" in unmet
+
+    def test_azure_code_reports_separately_when_it_was_asked_for(self, monkeypatch):
+        # Tickets ran, code did not: "Azure DevOps" alone would be ambiguous.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ", azdo_project="P"),
+            {"jira", "azure_devops"},
+            ["jira", "azure_devops"],
+            [],
+            [],
+            ["azure_devops"],
+        )
+        assert dict(skipped)["azdo_repos"] == "selected, but no Azure projects chosen"
+        assert "azdo_repos" in unmet
+
+
+class TestCodeScopeReportsWhatItDropped:
+    """The fifth return value of ``_resolve_code_scope``.
+
+    A source ticked in setup with nothing behind it used to be stripped silently,
+    which is indistinguishable from the source having found nothing.
+    """
+
+    def test_a_ticked_source_with_no_repos_is_reported_as_dropped(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": []}
+        sources, github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert sources == [] and github == []
+        assert dropped == ["github"]
+
+    def test_azure_with_neither_projects_nor_repositories_is_dropped(self):
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["azure_devops"],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+        }
+        sources, _github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert sources == []
+        assert dropped == ["azure_devops"]
+
+    def test_a_source_with_a_real_scope_is_not_dropped(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": ["o/r"]}
+        sources, github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert sources == ["github"] and github == ["o/r"]
+        assert dropped == []
+
+    def test_nothing_is_dropped_before_the_scope_has_ever_been_configured(self):
+        # Defaults are a guess, not a choice — stripping them would report a
+        # decision the user never made.
+        config = {"code_scope_configured": False, "code_sources": ["github"], "github_repositories": []}
+        _sources, _github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert dropped == []
+
+
 class TestSkippedSources:
     def _run(self, monkeypatch, db_path, seeded_session, bundle):
         monkeypatch.setattr(engine.collector, "collect_recent_activity", lambda **kw: bundle)
@@ -1021,10 +1182,15 @@ class TestSkippedSources:
         assert report.skipped_sources == (("github", "STANDUP_GITHUB_REPO not set"),)
 
     def test_partial_coverage_advises_configuring_skipped_sources(self, monkeypatch, db_path, seeded_session):
-        # Jira ran but GitHub/AzDO were not set up → the report itself must say
-        # so (⚠ Notices) and advise connecting them, not just the Activity detail.
+        # Jira ran but GitHub/AzDO were SELECTED and could not run → the report
+        # itself must say so (⚠ Notices), not just the Activity detail.
         from yeaboi.standup.collector import ActivityBundle
 
+        monkeypatch.setattr(
+            engine,
+            "_skipped_sources",
+            lambda *a, **kw: ([], {"github", "azure_devops"}),
+        )
         bundle = ActivityBundle(
             items=[],
             counts=[("jira", 2)],
@@ -1035,10 +1201,41 @@ class TestSkippedSources:
         )
         report = self._run(monkeypatch, db_path, seeded_session, bundle)
         notice = next((w for w in report.warnings if w.startswith("Not scanned:")), "")
-        assert "Github (STANDUP_GITHUB_REPO not set)" in notice
-        assert "Azure Devops (AZURE_DEVOPS_PROJECT not set)" in notice
-        assert "connect these in .env" in notice
+        assert "GitHub (STANDUP_GITHUB_REPO not set)" in notice
+        assert "Azure DevOps tickets (AZURE_DEVOPS_PROJECT not set)" in notice
+        assert "connect them in .env" in notice
         assert notice == report.warnings[-1]  # advisory, so auth/LLM problems stay on top
+
+    def test_unselected_source_is_reported_but_never_warned_about(self, monkeypatch, db_path, seeded_session):
+        # Deliberately not ticking GitHub is a choice, not a problem. It belongs in
+        # the report's "Not scanned" panel — never in a ⚠ notice that would repeat
+        # on every run for the rest of the team's life.
+        from yeaboi.standup.collector import ActivityBundle
+
+        monkeypatch.setattr(engine, "_skipped_sources", lambda *a, **kw: ([], set()))
+        bundle = ActivityBundle(
+            items=[],
+            counts=[("jira", 2)],
+            skipped=[("github", "not selected in setup")],
+        )
+        report = self._run(monkeypatch, db_path, seeded_session, bundle)
+        assert report.skipped_sources == (("github", "not selected in setup"),)
+        assert not [w for w in report.warnings if w.startswith("Not scanned:")]
+
+    def test_missing_sdk_always_warns_even_if_unselected(self, monkeypatch, db_path, seeded_session):
+        # An ImportError is never a choice — the collector only records it for a
+        # source it actually tried to run.
+        from yeaboi.standup.collector import ActivityBundle
+
+        monkeypatch.setattr(engine, "_skipped_sources", lambda *a, **kw: ([], set()))
+        bundle = ActivityBundle(
+            items=[],
+            counts=[("jira", 2)],
+            skipped=[("notion", "SDK not installed")],
+        )
+        report = self._run(monkeypatch, db_path, seeded_session, bundle)
+        notice = next((w for w in report.warnings if w.startswith("Not scanned:")), "")
+        assert "Notion (SDK not installed)" in notice
 
     def test_nothing_configured_keeps_single_generic_notice(self, monkeypatch, db_path, seeded_session):
         # All sources skipped → the existing "No activity sources configured"

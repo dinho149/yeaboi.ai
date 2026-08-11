@@ -200,6 +200,28 @@ def _run_output_share_flow(
     )
 
 
+def _standup_editable_session(report, run_id: int, history):
+    """A correctable standup share, or None when there is nothing to anchor edits to.
+
+    Shared by the live standup page and the saved-runs hub so both offer the same
+    thing. Edits are appended as a new row that supersedes its parent, so the
+    session needs the run it came from — without ``run_id`` there is no base to
+    replay onto and the share stays read-only.
+    """
+    if not run_id:
+        logger.info("standup share: no run_id on this report — sharing read-only, edits are not possible")
+        return None
+    from yeaboi.artifacts.session import EditableSession
+
+    return EditableSession(
+        report,
+        kind="standup",
+        db_path=_ana_dbp,
+        run_id=run_id,
+        history=tuple(history or ()),
+    )
+
+
 def _next_log_level(current: str) -> str:
     """Return the next level in the Settings cycle: DEBUG → INFO → WARNING → ERROR → DEBUG.
 
@@ -5649,11 +5671,17 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
     def get_share_document(run):
         """A past run, shared read-only.
 
-        Deliberately NOT correctable, unlike the live page's Share Online. This
-        path already offers ``get_editable_session`` below, and a document cannot
-        be both: the editable share re-renders from its own edit log, so a
-        practice vote written straight to the run underneath it would be
-        overwritten by the next edit. One writer per shared document.
+        Deliberately NOT correctable. This path already offers
+        ``get_editable_session`` below, and a document cannot be both: the
+        editable share re-renders from its own edit log, so a practice vote
+        written straight to the run underneath it would be overwritten by the
+        next edit. One writer per shared document.
+
+        Since the live page's Share Online became editable too, no surface builds
+        a practice-correctable document any more — signals are answered from the
+        TUI's "Practices" action. The share path stays because carrying a verdict
+        THROUGH the edit log (a third op beside OP_NOTE/OP_FIELD) is what would
+        let both exist on one document; see YEA-80.
         """
         report = _report(run.run_id)
         if report is None:
@@ -5667,15 +5695,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         report = _report(run.run_id)
         if report is None:
             return None
-        from yeaboi.artifacts.session import EditableSession
-
-        return EditableSession(
-            report,
-            kind="standup",
-            db_path=_ana_dbp,
-            run_id=run.run_id,
-            history=tuple(_history_for(report)),
-        )
+        return _standup_editable_session(report, run.run_id, _history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
@@ -6239,7 +6259,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
             if _votable_practices():
@@ -6449,33 +6469,37 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                         with _SStore(_ana_dbp) as _sstore:
                             share_history = _sstore.get_history(session_id, limit=30)
                             share_run_id = _sstore.get_latest_run_id(session_id)
-                    _run_output_share_flow(
+                    # The same correctable share the saved-runs hub offers: a
+                    # reader can fix a wrong line and add a note, attributed and
+                    # versioned. Never while anonymized — an edit made against a
+                    # mask cannot be matched back to a member.
+                    #
+                    # This share is deliberately NOT practice-votable. One writer
+                    # per document: the editable share re-renders from its own
+                    # edit log, so a verdict written straight to the run beneath
+                    # it would be overwritten by the next edit. Practice signals
+                    # are answered from the "Practices" action instead.
+                    editing = (
+                        _standup_editable_session(report, share_run_id or 0, share_history) if anon is None else None
+                    )
+                    recorded = _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        # session_id + run_id make the share correctable: a reader
-                        # who knows a practice signal is wrong can say so, and it
-                        # is written back here. Withheld while anonymized — the
-                        # names on that page are masks.
-                        document=standup_document(
-                            report,
-                            anon=anon,
-                            history=share_history,
-                            session_id="" if anon is not None else session_id,
-                            run_id=share_run_id or 0,
-                            db_path=_ana_dbp,
-                        ),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
+                        editable=editing.share if editing is not None else None,
+                        on_edit=editing.persist if editing is not None else None,
                     )
-                    # A reader may have answered a practice signal while the
-                    # share was up, which rewrites the stored run. Re-read it, or
-                    # the screen keeps offering "Practices" on a signal that is
-                    # no longer there and pressing it does nothing.
-                    if anon is None and share_run_id:
-                        data = _collect_standup_data()
+                    if recorded and editing is not None:
+                        # Appended, so the generated original is still there and
+                        # every trend chart picks the corrected row up on its own.
+                        editing.commit()
+                        noun = "correction" if recorded == 1 else "corrections"
+                        data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)
@@ -6554,6 +6578,25 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 except Exception as e:
                     logger.error("standup team selection failed: %s", e, exc_info=True)
                     msg = f"Team selection failed: {e}"
+                data = _collect_standup_data(message=msg)
+                _reset_to_overview()
+            elif act == "Sources":
+                # The only way back into the code-source picker after first setup.
+                # Without it, a standup that has never been told about GitHub can
+                # only be corrected by declining the saved setup mid-Generate.
+                try:
+                    logger.info("standup: Sources pressed (session=%s)", session_id)
+                    _saved, msg = _standup_code_configure(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        session_id,
+                    )
+                except Exception as e:
+                    logger.error("standup code-source selection failed: %s", e, exc_info=True)
+                    msg = f"Source selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
             elif act == "Identity":  # in-TUI themed input (stays inside Live)

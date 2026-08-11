@@ -41,6 +41,31 @@ const BASE = {
   warnings: [],
 };
 
+describe('Standup source labels', () => {
+  it('names a source the same way in the legend and the details line', () => {
+    // One Details section shows both. `azdo_repos` reading as "Azdo Repos" in
+    // the legend and "Azure DevOps code" three lines below it is the exact drift
+    // the shared label table exists to stop.
+    render(<Standup {...BASE} activityCounts={[['azdo_repos', 12]]} />);
+    expect(screen.getByText(/Activity examined/).textContent).toContain('Azure DevOps code: 12');
+    expect(document.body.textContent).not.toContain('azdo_repos');
+  });
+
+  it('labels a skipped source too', () => {
+    render(<Standup {...BASE} skipped={[['azure_devops', 'not selected in setup']]} />);
+    expect(screen.getByText(/Sources skipped/).textContent).toContain(
+      'Azure DevOps tickets (not selected in setup)'
+    );
+  });
+
+  it('title-cases an unknown source rather than leaking the raw key', () => {
+    // Mirrors Python's `source_label` fallback: a source the server knows about
+    // before the bundle is rebuilt still has to read as a name.
+    render(<Standup {...BASE} activityCounts={[['shiny_new_thing', 3]]} />);
+    expect(screen.getByText(/Activity examined/).textContent).toContain('Shiny New Thing: 3');
+  });
+});
+
 describe('Standup', () => {
   it('pluralises the count chips, and leaves "code" uncountable', () => {
     const { container } = render(

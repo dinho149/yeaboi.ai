@@ -442,19 +442,89 @@ class TestExportWrites:
 
 
 class TestSkippedSourcesLine:
-    def test_markdown_lists_skipped_sources(self):
-        md = build_standup_markdown(_report(skipped_sources=(("github", "STANDUP_GITHUB_REPO not set"),)))
-        assert "Sources skipped — github (STANDUP_GITHUB_REPO not set)" in md
+    """Two audiences, one field.
 
-    def test_html_lists_skipped_sources_in_details(self):
-        report = island(build_standup_html(_report(skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),))))
-        assert report["report"]["skipped"] == [["notion", "NOTION_ROOT_PAGE_ID not set"]]
+    The diagnostic surfaces (HTML details, and the TUI panel tested elsewhere) list
+    every skip, because someone is reading them to answer "where is my GitHub?".
+    The broadcast surfaces — Slack/email plaintext and the Markdown export — list
+    only ``unmet_sources``, or a Jira-only team appends the same five-source
+    apology to every standup it ever posts.
+    """
 
-    def test_plaintext_lists_skipped_sources(self):
+    def test_markdown_lists_a_source_the_user_asked_for(self):
+        md = build_standup_markdown(
+            _report(skipped_sources=(("github", "STANDUP_GITHUB_REPO not set"),), unmet_sources=("github",))
+        )
+        assert "Sources skipped — GitHub (STANDUP_GITHUB_REPO not set)" in md
+
+    def test_plaintext_lists_a_source_the_user_asked_for(self):
         from yeaboi.standup.render import format_standup_plaintext
 
-        text = format_standup_plaintext(_report(skipped_sources=(("confluence", "CONFLUENCE_SPACE_KEY not set"),)))
-        assert "Sources skipped — confluence (CONFLUENCE_SPACE_KEY not set)" in text
+        text = format_standup_plaintext(
+            _report(
+                skipped_sources=(("confluence", "CONFLUENCE_SPACE_KEY not set"),),
+                unmet_sources=("confluence",),
+            )
+        )
+        assert "Sources skipped — Confluence (CONFLUENCE_SPACE_KEY not set)" in text
+
+    def test_broadcast_surfaces_stay_silent_about_a_deliberate_non_choice(self):
+        # Nothing here was asked for. Saying so on every standup forever is a nag,
+        # and Slack/email are exactly where a nag cannot be ignored.
+        from yeaboi.standup.render import format_standup_plaintext
+
+        report = _report(
+            skipped_sources=(
+                ("github", "GITHUB_TOKEN not set"),
+                ("local_git", "no repo path configured"),
+                ("notion", "NOTION_ROOT_PAGE_ID not set"),
+            ),
+            unmet_sources=(),
+        )
+        assert "Sources skipped" not in format_standup_plaintext(report)
+        assert "Sources skipped" not in build_standup_markdown(report)
+
+    def test_a_broadcast_names_only_the_unmet_subset(self):
+        from yeaboi.standup.render import format_standup_plaintext
+
+        report = _report(
+            skipped_sources=(
+                ("github", "selected, but no repositories chosen"),
+                ("local_git", "no repo path configured"),
+            ),
+            unmet_sources=("github",),
+        )
+        text = format_standup_plaintext(report)
+        assert "GitHub (selected, but no repositories chosen)" in text
+        assert "Local Git" not in text
+
+    def test_html_details_still_list_every_skip(self):
+        # The diagnostic surface keeps the full picture — this is the one place a
+        # reader goes on purpose to find out what was not scanned.
+        report = island(
+            build_standup_html(
+                _report(
+                    skipped_sources=(
+                        ("notion", "NOTION_ROOT_PAGE_ID not set"),
+                        ("local_git", "no repo path configured"),
+                    ),
+                    unmet_sources=(),
+                )
+            )
+        )
+        assert report["report"]["skipped"] == [
+            ["notion", "NOTION_ROOT_PAGE_ID not set"],
+            ["local_git", "no repo path configured"],
+        ]
+
+    def test_every_surface_names_a_source_the_same_way(self):
+        # The progress steps label sources; a report that says "azdo_repos" looks
+        # like a different source from the one the steps just named.
+        from yeaboi.standup.render import format_standup_plaintext
+
+        report = _report(skipped_sources=(("azdo_repos", "not selected in setup"),), unmet_sources=("azdo_repos",))
+        assert "Azure DevOps code" in build_standup_markdown(report)
+        assert "Azure DevOps code" in format_standup_plaintext(report)
 
     def test_no_skipped_sources_no_line(self):
         from yeaboi.standup.render import format_standup_plaintext
