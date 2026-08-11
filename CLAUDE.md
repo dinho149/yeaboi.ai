@@ -117,7 +117,7 @@ Three Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with
 |---|---|---|
 | agentwatch | `agentwatch/{collector,store,engine,security_checks}.py` | `go/internal/agentwatch/` |
 | standup core | `standup/{aggregate,references,relatedness,habits,automation,insights,confidence,categories}.py` + the engine's evidence helpers | `go/internal/standup/` |
-| analysis core | `analysis/{aggregate,code_health,coverage,practices}.py` + `ai_usage.py`'s classifier block (the marker tables, `_classify_ai_*`, `aggregate_ai_markers`, `_activity_bucket`, `_collect_samples`) | `go/internal/analysis/` |
+| analysis core | `analysis/{aggregate,code_health,coverage,practices}.py` + `ai_usage.py`'s classifier block (the marker tables, `_classify_ai_*`, `aggregate_ai_markers`, `_activity_bucket`, `_collect_samples`) + `doc_quality.py`'s scoring region (`_count_syllables` through `_prioritize_doc_actions`, plus `_fallback_doc_quality_insights`) | `go/internal/analysis/` |
 
 Python is the reference implementation. **Any behaviour change in those files MUST be mirrored in the Go twin** — otherwise `make parity` fails and the change cannot merge. Purely additive Python work that the sidecar does not serve (new prose, new store columns, rendering) is exempt; when in doubt, run `make parity`.
 

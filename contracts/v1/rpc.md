@@ -35,7 +35,7 @@ version does not match or the handshake fails.
 ### core.hello
 
 Params: `{}` →
-`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate", "analysis.classify_markers", "analysis.score_code"]}`
+`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate", "analysis.classify_markers", "analysis.score_code", "analysis.score_docs"]}`
 
 Adding a method is additive and does NOT bump `contract_version`: an older
 binary answers `-32601` for a method it lacks, which the client surfaces as a
@@ -127,6 +127,21 @@ provenance and LLM prose on the returned scaffold. No DB, no progress;
 result key order is contractual. See `analysis.score_code.json` and
 `src/yeaboi/analysis/aggregate.py` (`score_code` is the reference
 implementation; `build_score_inputs` builds the params).
+
+### analysis.score_docs
+
+The deterministic tail of the TEAM ANALYSIS documentation pipeline: per-page
+clarity/usefulness/disclosure scoring over every cache-miss body, aggregation
+into the doc-quality signal, findings, the action plan, and the coaching
+insights. One method where the code pipeline needed two, because the docs
+path has no LLM anywhere — there is no concurrency to preserve. Page bodies
+cross the wire as params and never appear in the result; the caller writes
+the score cache by zipping the returned `assets` against its scoreable pages
+(which is why an asset-count mismatch is treated as a malformed result), and
+gates the always-computed `insights` on real coverage. Pure; no DB, no
+progress. See `analysis.score_docs.json` and
+`src/yeaboi/analysis/aggregate.py` (`score_docs` is the reference
+implementation; `build_score_docs_inputs` builds the params).
 
 ## Semantics the Go side must preserve
 
