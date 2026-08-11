@@ -26,14 +26,12 @@ from __future__ import annotations
 import calendar
 import dataclasses
 import importlib.util
-import io
 import json
 import re
 import shutil
 import subprocess
 import sys
 import unicodedata
-import urllib.error
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
@@ -49,11 +47,6 @@ setup = importlib.util.module_from_spec(_spec)
 # sys.modules[cls.__module__], which is None for a module loaded off a path.
 sys.modules["cowork_setup"] = setup
 _spec.loader.exec_module(setup)
-
-# Captured before `_no_live_github` swaps `_api` out for a refusal: the tests
-# that exercise the transport itself need the real one, and every other test
-# must not have it.
-_REAL_API = setup._api
 
 ROUTINES = setup.parse_routines()
 TIERS = setup.parse_tiers()
@@ -85,12 +78,12 @@ def _no_live_github(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
     monkeypatch.setattr(setup, "TRANSPORT", "gh")
-    monkeypatch.setattr(setup, "_SLUG", setup._UNRESOLVED)
+    setup.transport.reset_slug_cache()
 
     def refuse(method, path, body=None):
         raise AssertionError(f"a test reached the REST transport unstubbed: {method} {path}")
 
-    monkeypatch.setattr(setup, "_api", refuse)
+    monkeypatch.setattr(setup.transport, "api", refuse)
 
 
 class TestRoutinesResolve:
@@ -1165,7 +1158,7 @@ class TestMergeGateCheck:
             {"type": "deletion"},
             {"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "ci"}]}},
         ]
-        monkeypatch.setattr(setup, "_api", lambda *a, **k: setup.ApiResult(True, ruleset))
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(True, ruleset))
         assert setup.merge_gate_armed() is False
 
         ruleset[1]["parameters"]["required_status_checks"].append({"context": "pr-feedback"})
@@ -1175,7 +1168,7 @@ class TestMergeGateCheck:
         monkeypatch.setattr(setup, "TRANSPORT", "api")
         monkeypatch.setenv("GH_TOKEN", "t")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
-        monkeypatch.setattr(setup, "_api", lambda *a, **k: setup.ApiResult(False, error="HTTP 404"))
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(False, error="HTTP 404"))
         assert setup.merge_gate_armed() is None
 
     def test_the_probe_reports_none_when_the_query_fails(self, monkeypatch):
@@ -1209,6 +1202,8 @@ class TestCheckMode:
         copy = tmp_path / "repo"
         (copy / "scripts").mkdir(parents=True)
         shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
         shutil.copytree(ROOT / "cowork", copy / "cowork")
         return copy
 
@@ -1309,6 +1304,8 @@ class TestApplyRunExitCodes:
         copy = tmp_path / "repo"
         (copy / "scripts").mkdir(parents=True)
         shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
         shutil.copytree(ROOT / "cowork", copy / "cowork")
         return copy
 
@@ -2110,7 +2107,7 @@ class TestApiTransport:
                 return setup.ApiResult(True, answer)
             return setup.ApiResult(True, [])
 
-        monkeypatch.setattr(setup, "_api", fake)
+        monkeypatch.setattr(setup.transport, "api", fake)
         monkeypatch.setattr(setup, "TRANSPORT", "api")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
         monkeypatch.setenv("GH_TOKEN", "t")
@@ -2259,24 +2256,6 @@ class TestApiTransport:
         deletes = [path for method, path, _ in api.calls if method == "DELETE"]
         assert "/repos/o/r/labels/workstream%3Asecurity" in deletes
 
-    # --- pagination ----------------------------------------------------------
-
-    def test_a_second_page_is_fetched(self, monkeypatch):
-        """`gh label list --limit 200` was one oversized page. REST caps at 100,
-        and this repo already carries more cowork labels than fit in one."""
-        pages = {1: [{"name": f"l{i}"} for i in range(100)], 2: [{"name": "last"}]}
-        seen: list[int] = []
-
-        def fake(method: str, path: str, body: dict | None = None):
-            page = int(re.search(r"[?&]page=(\d+)", path).group(1))
-            seen.append(page)
-            return setup.ApiResult(True, pages.get(page, []))
-
-        monkeypatch.setattr(setup, "_api", fake)
-        result = setup._api_paged("/repos/o/r/labels")
-        assert seen == [1, 2]
-        assert len(result.data) == 101
-
     # --- slug resolution -----------------------------------------------------
 
     def test_the_env_names_the_repo_when_gh_cannot(self, monkeypatch):
@@ -2318,117 +2297,13 @@ class TestApiTransport:
         monkeypatch.setattr(setup, "gh_ready", lambda: False)
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
         monkeypatch.setenv("GH_TOKEN", "ghp_notarealtoken")
-        monkeypatch.setattr(setup, "_api", lambda *a, **k: setup.ApiResult(False, error="HTTP 403"))
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(False, error="HTTP 403"))
         setup.STRICT.degraded.clear()
         setup.github_ready()
         setup.existing_labels()
         captured = capsys.readouterr()
         assert "ghp_notarealtoken" not in captured.out + captured.err
         setup.STRICT.degraded.clear()
-
-
-class TestApiRequests:
-    """``_api`` itself — the one function that touches a socket and the only
-    place the token is handled.
-
-    Everything else stubs it, so without this nothing covers the URL, the header
-    set, or the promise in its docstring that it never raises and never logs the
-    token. `urlopen` is the seam here; no socket is opened.
-    """
-
-    @pytest.fixture
-    def urlopen(self, monkeypatch):
-        """Record the Request objects; reply with a scripted body or raise."""
-        sent: list = []
-        outcome: dict = {"body": "{}", "raise": None}
-
-        class _Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def read(self):
-                body = outcome["body"]
-                return body.encode() if isinstance(body, str) else body
-
-        def fake(request, timeout=None):
-            sent.append(request)
-            if outcome["raise"] is not None:
-                raise outcome["raise"]
-            return _Response()
-
-        monkeypatch.setattr(setup.urllib.request, "urlopen", fake)
-        monkeypatch.setenv("GH_TOKEN", "ghp_notarealtoken")
-        return type("U", (), {"sent": sent, "outcome": outcome})()
-
-    def test_the_url_is_the_literal_host_plus_the_path(self, urlopen):
-        _REAL_API("GET", "/repos/o/r/labels?per_page=100&page=1")
-        assert urlopen.sent[0].full_url == "https://api.github.com/repos/o/r/labels?per_page=100&page=1"
-        assert urlopen.sent[0].get_method() == "GET"
-
-    def test_the_headers_authenticate_and_pin_the_api_version(self, urlopen):
-        _REAL_API("GET", "/repos/o/r/labels")
-        headers = {k.lower(): v for k, v in urlopen.sent[0].header_items()}
-        assert headers["authorization"] == "Bearer ghp_notarealtoken"
-        assert headers["accept"] == "application/vnd.github+json"
-        assert headers["x-github-api-version"] == "2022-11-28"
-        assert "user-agent" in headers
-
-    def test_a_body_is_json_and_only_then_is_a_content_type_sent(self, urlopen):
-        _REAL_API("GET", "/repos/o/r/labels")
-        assert "Content-type" not in dict(urlopen.sent[0].header_items())
-        _REAL_API("POST", "/repos/o/r/labels", {"name": "cowork", "color": "5319e7"})
-        request = urlopen.sent[1]
-        assert request.get_method() == "POST"
-        assert json.loads(request.data.decode()) == {"name": "cowork", "color": "5319e7"}
-        assert dict(request.header_items())["Content-type"] == "application/json"
-
-    def test_no_token_never_reaches_the_socket(self, monkeypatch):
-        opened = []
-        monkeypatch.setattr(setup.urllib.request, "urlopen", lambda *a, **k: opened.append(a))
-        result = _REAL_API("GET", "/repos/o/r/labels")
-        assert result.ok is False and "GH_TOKEN" in result.error
-        assert opened == []
-
-    def test_an_empty_body_is_success_with_no_data(self, urlopen):
-        """A 204 is what `DELETE` and `PATCH` on a variable answer with."""
-        urlopen.outcome["body"] = ""
-        result = _REAL_API("DELETE", "/repos/o/r/labels/cowork")
-        assert result.ok is True and result.data is None
-
-    def test_an_http_error_carries_githubs_own_message(self, urlopen):
-        urlopen.outcome["raise"] = urllib.error.HTTPError(
-            "https://api.github.com/x",
-            403,
-            "Forbidden",
-            {},
-            io.BytesIO(b'{"message": "Resource not accessible by integration"}'),
-        )
-        result = _REAL_API("POST", "/repos/o/r/actions/variables", {"name": "X", "value": "y"})
-        assert result.ok is False
-        assert "403" in result.error and "not accessible by integration" in result.error
-
-    def test_a_transport_error_is_a_result_not_an_exception(self, urlopen):
-        urlopen.outcome["raise"] = urllib.error.URLError("name resolution failed")
-        result = _REAL_API("GET", "/repos/o/r/labels")
-        assert result.ok is False and "failed" in result.error
-
-    def test_a_non_json_body_is_a_failure_not_a_traceback(self, urlopen):
-        """What an egress proxy's HTML error page looks like — a plausible shape
-        in exactly the cloud session this transport exists for."""
-        urlopen.outcome["body"] = "<html>502 Bad Gateway</html>"
-        result = _REAL_API("GET", "/repos/o/r/labels")
-        assert result.ok is False and "not JSON" in result.error
-
-    def test_the_token_is_in_no_error_it_returns(self, urlopen):
-        urlopen.outcome["raise"] = urllib.error.URLError("connect to api.github.com failed")
-        assert "ghp_notarealtoken" not in _REAL_API("GET", "/repos/o/r/labels").error
-        urlopen.outcome["raise"] = urllib.error.HTTPError(
-            "https://api.github.com/x", 401, "Unauthorized", {}, io.BytesIO(b"bad credentials")
-        )
-        assert "ghp_notarealtoken" not in _REAL_API("GET", "/repos/o/r/labels").error
 
 
 class TestSnapshotFlags:
@@ -2558,6 +2433,8 @@ class TestWebhookDoctor:
         copy = tmp_path / "repo"
         (copy / "scripts").mkdir(parents=True)
         shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
         shutil.copytree(ROOT / "cowork", copy / "cowork")
         return copy
 

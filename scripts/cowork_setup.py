@@ -65,20 +65,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import TextIO
 from zoneinfo import ZoneInfo
+
+# scripts/ is not a package, so the sibling transport is imported by path. It is
+# stdlib-only like this file, so this adds no dependency — only a second file
+# that has to travel with this one (the test fixtures copy both).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COWORK = REPO_ROOT / "cowork"
@@ -1444,170 +1446,67 @@ def check_charter_coverage(report: Report) -> None:
 
 # --- GitHub ------------------------------------------------------------------
 #
-# Two transports behind one set of operations. `gh` is preferred whenever it is
-# there — it is what a developer has already authenticated, and keeping that path
-# byte-for-byte identical means this script behaves locally exactly as it always
-# has.
+# Two transports behind one set of operations, both of them `_gh_transport`'s.
+# `gh` is preferred whenever it is there — it is what a developer has already
+# authenticated, and keeping that path byte-for-byte identical means this script
+# behaves locally exactly as it always has.
 #
 # The REST fallback exists because the environment that matters most has no `gh`
 # at all. `cron/cd-deploy.md` runs this script from a cloud routine session, and
 # that session is handed a GitHub *token* rather than the CLI. So every firing
 # took the "not on PATH" branch, exited 1 under `--strict`, and the routine's own
 # stop condition halted it before step 4 — the fleet reconciliation it exists to
-# do. A missing binary is not a reason to stop deploying, and a token that is
-# sitting right there is not a reason to report nothing was applied.
+# do. A missing binary is not a reason to stop deploying.
 #
-# stdlib only, deliberately: this script imports nothing from `src/yeaboi` and
-# nothing off PyPI, so it runs in a checkout with no environment built.
+# The transport itself lives next door because `pr_feedback.py` and
+# `cowork_relay.py` need the identical thing, and a transport written three
+# times is a transport wrong in the same way three times. What stays here is the
+# *choosing* and the reporting: which transport this run picked, and how a
+# refusal is spoken as a `STRICT.note`.
 
-GITHUB_API = "https://api.github.com"
+# Delegating wrappers rather than bare aliases. An alias binds the function
+# object at import, so a test replacing `_api` here would still leave
+# `transport.api_paged` calling the real one underneath it — the seam would leak
+# for exactly the paged reads that do the most work. These forward by name, and
+# `transport.api` stays the one place to intercept.
+
+
+def _gh(*args: str) -> subprocess.CompletedProcess[str]:
+    return transport.gh(*args)
+
+
+def _api(method: str, path: str, body: dict | None = None) -> transport.ApiResult:
+    return transport.api(method, path, body)
+
+
+def _api_paged(path: str, key: str | None = None) -> transport.ApiResult:
+    return transport.api_paged(path, key)
+
+
+def _segment(name: str) -> str:
+    return transport.segment(name)
+
+
+def github_token() -> str | None:
+    return transport.github_token()
+
+
+ApiResult = transport.ApiResult
 
 # Which transport this run resolved. "gh" is the default rather than None so a
 # caller that never asked keeps the historical path; `github_ready()` is what
 # actually chooses, and `main()` resets this the way it resets STRICT.
 TRANSPORT = "gh"
 
-# `repo_slug()`'s memo. A distinct sentinel, because None is a real answer here —
-# "this checkout has no GitHub remote" — and caching a miss matters as much as
-# caching a hit: without the distinction every miss re-shells the whole lookup.
-_UNRESOLVED = object()
-_SLUG: object = _UNRESOLVED
-
-
-@dataclass(frozen=True)
-class ApiResult:
-    """A REST call's outcome.
-
-    Shaped like the ``returncode``/``stderr`` pair the `gh` branch inspects, so
-    both halves of every operation below read the same and neither needs to know
-    which one ran.
-    """
-
-    ok: bool
-    data: object = None
-    error: str = ""
-
-
-def _gh(*args: str) -> subprocess.CompletedProcess[str]:
-    """One `gh` call, reporting a missing binary the way `gh` reports a failure.
-
-    127 rather than an exception, matching the shell: every caller here already
-    branches on ``returncode``, and there is now a path — `repo_slug()` resolving
-    from the git remote — that can reach a `gh` call on a machine with no `gh` at
-    all. A FileNotFoundError there is a traceback out of a script whose entire
-    contract is to degrade with the remedy printed.
-    """
-    try:
-        return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
-    except OSError as error:
-        return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
-
-
-def github_token() -> str | None:
-    """The token the REST transport authenticates with.
-
-    ``GH_TOKEN`` first, matching `gh`'s own precedence, so a machine that sets
-    both gets the same identity either way. (``src/yeaboi/config.py`` reads only
-    ``GITHUB_TOKEN`` — that is the library's environment, not this script's.)
-    """
-    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
-
-
-def _api(method: str, path: str, body: dict | None = None) -> ApiResult:
-    """One REST call against `GITHUB_API`. Never raises; never logs the token.
-
-    The URL is a literal scheme and host with a caller-supplied path appended, so
-    the S310 audit — "check for permitted schemes" — has a fixed answer here.
-    """
-    token = github_token()
-    if not token:
-        return ApiResult(False, error="no GH_TOKEN or GITHUB_TOKEN in the environment")
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "yeaboi-cowork-setup",
-    }
-    if body is not None:
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(  # noqa: S310 - GITHUB_API is a literal https:// host
-        f"{GITHUB_API}{path}",
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers=headers,
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - GITHUB_API is a literal https:// host
-            raw = response.read().decode()
-        parsed = json.loads(raw) if raw.strip() else None
-    except urllib.error.HTTPError as error:
-        # The response body carries GitHub's own message — "Resource not
-        # accessible by integration" for a scope gap, which is the failure most
-        # worth reading, and the one a token-shaped setup actually hits. The
-        # request headers carry the token and are never surfaced.
-        try:
-            detail = error.read().decode()[:300]
-        except Exception:
-            detail = ""
-        return ApiResult(False, error=f"HTTP {error.code} on {method} {path}" + (f": {detail}" if detail else ""))
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        return ApiResult(False, error=f"{method} {path} failed: {error}")
-    except (ValueError, UnicodeDecodeError) as error:
-        # A 2xx body that is not JSON is what an egress proxy's HTML error page
-        # looks like, which is a plausible shape in exactly the cloud session
-        # this transport exists for. A failure, not a traceback.
-        return ApiResult(False, error=f"{method} {path} returned a body that is not JSON: {error}")
-    return ApiResult(True, parsed)
-
-
-def _segment(name: str) -> str:
-    """One path segment, escaped. Label names carry a `:` (`workstream:security`,
-    `type:bug`), which is why this is not optional — and it is applied to every
-    segment rather than only the ones needing it today, so a name that starts
-    needing it later does not become a 404 nobody expects."""
-    return urllib.parse.quote(name, safe="")
-
-
-def _api_paged(path: str, key: str | None = None) -> ApiResult:
-    """Every page of a list endpoint, concatenated.
-
-    `gh label list --limit 200` asked for one oversized page and got it. REST
-    caps a page at 100, and this repo already carries twenty-nine cowork labels
-    on top of whatever else it has, so the second page is not hypothetical.
-
-    ``key`` names the wrapper field for endpoints that return an object rather
-    than a bare array — ``/actions/variables`` is the one that does.
-    """
-    items: list = []
-    for page in range(1, 21):  # 2000 items; a repo past that is not one this script set up
-        result = _api("GET", f"{path}?per_page=100&page={page}")
-        if not result.ok:
-            return result
-        batch = result.data
-        if key is not None and isinstance(batch, dict):
-            batch = batch.get(key)
-        if not isinstance(batch, list):
-            return ApiResult(False, error=f"GET {path} returned no list of results")
-        items.extend(batch)
-        if len(batch) < 100:
-            return ApiResult(True, items)
-    # Ran out of pages with a full one still in hand. A failure rather than a
-    # short answer: the callers turn a partial list into "these labels do not
-    # exist", which is the same "an empty set read as truth" trap that
-    # `existing_labels` returns None for.
-    return ApiResult(False, error=f"GET {path} did not end within 20 pages")
-
 
 def gh_ready() -> bool:
     """Whether the `gh` CLI is installed and authenticated.
 
-    Reports nothing on its own: "no `gh`" is only a degradation once the REST
-    transport has also declined, and `github_ready()` owns that judgement. Kept
-    as its own function because it is the seam a test forces to pick a transport.
+    A thin wrapper rather than a direct re-export: it is the seam a test forces
+    to pick a transport, so it has to be a name on *this* module that monkeypatch
+    can replace without reaching into the shared one.
     """
-    if shutil.which("gh") is None:
-        return False
-    return _gh("auth", "status").returncode == 0
+    return transport.gh_ready()
 
 
 def api_ready() -> bool:
@@ -1758,61 +1657,13 @@ def delete_variable(name: str) -> tuple[bool, str]:
 
 
 def repo_slug() -> str | None:
-    """``owner/name`` for the repository this checkout points at, resolved once.
+    """``owner/name`` for this checkout, memoised by the shared transport.
 
-    Cached because it is now asked per operation rather than once: `create_label`
-    needs it for each of the twenty-nine labels, and on a machine with `gh`
-    installed but unauthenticated the uncached version shells `gh repo view` — a
-    network round-trip — every single time. `main()` clears the memo the way it
-    clears STRICT.
-
-    Three sources, and deliberately independent of the transport — `api_ready()`
-    asks this before a transport exists. `gh` when it is there, the
-    ``GITHUB_REPOSITORY`` a workflow exports, and otherwise the `origin` remote.
-    The remote is what makes the REST transport work in a routine session: step 1
-    of `cron/cd-deploy.md` runs `git fetch origin main`, so a remote is
-    guaranteed there even though `gh` is not.
+    A wrapper rather than a re-export for the same reason as `gh_ready()`: tests
+    replace this name to point the script at a fixed repository, and a bare
+    re-export would leave them patching an alias the callers never look up.
     """
-    global _SLUG
-    if _SLUG is not _UNRESOLVED:
-        return _SLUG
-    _SLUG = _resolve_slug()
-    return _SLUG
-
-
-def _resolve_slug() -> str | None:
-    if shutil.which("gh"):
-        result = _gh("repo", "view", "--json", "nameWithOwner")
-        if result.returncode == 0:
-            slug = json.loads(result.stdout or "{}").get("nameWithOwner")
-            if slug:
-                return slug
-    from_env = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    if from_env.count("/") == 1:
-        return from_env
-    return _slug_from_remote()
-
-
-def _slug_from_remote() -> str | None:
-    """``owner/name`` parsed out of `git remote get-url origin`.
-
-    Both forms GitHub hands out: ``git@github.com:owner/name.git`` and
-    ``https://github.com/owner/name(.git)``, with or without the suffix.
-    """
-    result = subprocess.run(  # noqa: S603 - literal argv
-        ["git", "-C", str(REPO_ROOT), "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-    url = result.stdout.strip()
-    if not url:
-        return None
-    tail = url.split("github.com", 1)[-1].lstrip(":/") if "github.com" in url else ""
-    tail = tail.removesuffix(".git").strip("/")
-    return tail if tail.count("/") == 1 else None
+    return transport.resolve_slug(REPO_ROOT)
 
 
 def repo_url() -> str | None:
@@ -3084,11 +2935,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # test suite, and a degradation carried over from a previous call would fail a
     # run that did nothing wrong. TRANSPORT is reset for the same reason — a run
     # that resolved REST must not decide the next run's transport for it.
-    global TRANSPORT, _SLUG
+    global TRANSPORT
     STRICT.strict = args.strict
     STRICT.degraded.clear()
     TRANSPORT = "gh"
-    _SLUG = _UNRESOLVED
+    transport.reset_slug_cache()
 
     if (args.plan or args.urls) and not args.triggers:
         fail("--plan and --urls need a snapshot: --triggers <file> (see /cowork)")

@@ -49,6 +49,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# scripts/ is not a package, so the sibling transport is imported by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+
 ROOT = Path(__file__).resolve().parent.parent
 RELAY_ROUTINE = ROOT / "cowork" / "routines" / "cron" / "slack-relay.md"
 
@@ -175,8 +179,37 @@ def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None
 
 
 def _gh_labels(argv: list[str]) -> str | None:
-    result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
-    return result.stdout if result.returncode == 0 else None
+    """Read one issue's labels, through whichever transport this machine has.
+
+    The argv is still the input, and still literal, because the caller's whole
+    point is that a command is data here rather than a format string. What
+    changed is that a routine session has no `gh` to run it with: every relay run
+    there answered ``None`` to "is this the release ask?", which routes to `ask`
+    — safe, and silently useless, since the maintainer's ✅ then did nothing at
+    all.
+
+    The REST half reads the same issue and reshapes the answer into the
+    ``{"labels": [{"name": …}]}`` the caller already parses, rather than teaching
+    the caller a second shape.
+    """
+    if transport.gh_available():
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+        return result.stdout if result.returncode == 0 else None
+    slug = transport.resolve_slug(ROOT)
+    if not slug:
+        return None
+    # argv is ["gh", "issue", "view", "<n>", "--json", "labels"] — the number is
+    # the only part that varies, and it is read rather than reassembled so a
+    # future verb cannot quietly change which issue is asked about.
+    number = next((part for part in argv if part.isdigit()), None)
+    if number is None:
+        return None
+    answer = transport.api("GET", f"/repos/{slug}/issues/{number}")
+    if not answer.ok or not isinstance(answer.data, dict):
+        return None
+    labels = answer.data.get("labels") or []
+    names = [entry.get("name") for entry in labels if isinstance(entry, dict)]
+    return json.dumps({"labels": [{"name": name} for name in names if name]})
 
 
 def _command(verb: str, issue: int) -> list[str]:

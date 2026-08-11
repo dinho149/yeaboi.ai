@@ -50,12 +50,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+# scripts/ is not a package, so the sibling transport is imported by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+
+ROOT = Path(__file__).resolve().parent.parent
 
 # The status context a branch ruleset makes required. Changing this string
 # silently un-blocks every PR, because the ruleset keeps waiting on a context
@@ -608,7 +614,7 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
 
 
 def _gh(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    return transport.gh(*args)
 
 
 def _gh_json(*args: str) -> object | None:
@@ -623,10 +629,103 @@ def _gh_json(*args: str) -> object | None:
         return None
 
 
-REVIEW_THREADS_QUERY = """
+# --- reads and writes, through whichever transport this machine has -----------
+#
+# `gh` when it is installed, REST with a token when it is not. Both branches ask
+# for the same thing; only the spelling differs. This gate is why the distinction
+# matters more here than anywhere: it runs in a cloud routine session that has a
+# token and no CLI, and a gate that cannot read a PR does not fail loudly — it
+# finds nothing, which reads exactly like a clean PR.
+
+
+def _read_paged(path: str) -> list | None:
+    """Every page of a list endpoint. None when the question could not be asked.
+
+    None rather than ``[]`` deliberately, and the callers depend on it: an empty
+    list of review threads means "nothing to answer" while a failed fetch means
+    "unknown", and collapsing them opens the gate on a network blip.
+    """
+    if transport.gh_available():
+        payload = _gh_json("api", path, "--paginate")
+        return payload if isinstance(payload, list) else None
+    result = transport.api_paged(f"/{path.lstrip('/')}")
+    if not result.ok:
+        print(f"[pr-feedback] GET {path} failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data if isinstance(result.data, list) else None
+
+
+def _read(path: str) -> object | None:
+    if transport.gh_available():
+        return _gh_json("api", path)
+    result = transport.api("GET", f"/{path.lstrip('/')}")
+    if not result.ok:
+        print(f"[pr-feedback] GET {path} failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data
+
+
+def _graphql(variables: dict) -> dict | None:
+    """`PR_QUERY`, through whichever transport this machine has.
+
+    The transport routes this one itself, because `gh api graphql` takes a shape
+    (`-f query=`, `-F var=`) no caller should have to know, and because a
+    GraphQL error arrives inside a 200 — something has to notice that, and it is
+    not the caller.
+    """
+    result = transport.graphql(PR_QUERY, variables)
+    if not result.ok:
+        print(f"[pr-feedback] graphql failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data if isinstance(result.data, dict) else None
+
+
+def _write(method: str, path: str, fields: dict[str, object]) -> bool:
+    """One write. `gh api -f k=v` and a JSON body say the same thing.
+
+    `-f` sends strings, which is why the REST branch need not reproduce `-F`'s
+    typing: nothing written from here is a number.
+    """
+    if transport.gh_available():
+        args = ["api", "-X", method, path]
+        for key, value in fields.items():
+            # A list is `gh api`'s repeated-field spelling: `-f labels[]=x`. The
+            # REST branch below sends the real list, so callers write one shape.
+            if isinstance(value, list):
+                args += [arg for item in value for arg in ("-f", f"{key}[]={item}")]
+            else:
+                args += ["-f", f"{key}={value}"]
+        result = _gh(*args)
+        if result.returncode != 0:
+            print(f"[pr-feedback] {method} {path} failed: {result.stderr.strip()}", file=sys.stderr)
+            return False
+        return True
+    result = transport.api(method, f"/{path.lstrip('/')}", dict(fields))
+    if not result.ok:
+        print(f"[pr-feedback] {method} {path} failed: {result.error}", file=sys.stderr)
+        return False
+    return True
+
+
+# One query for the metadata *and* the threads, rather than `gh pr view` for the
+# first and GraphQL for the second.
+#
+# Not a tidy-up: `reviewDecision` is a v4 field with no REST equivalent at all,
+# and `classify` reads it to hold the gate on a CHANGES_REQUESTED review. Asking
+# for it here is what lets both transports answer the same question — the
+# alternative was a REST branch that silently never saw a requested change.
+# It also costs one call instead of two, on every run.
+PR_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $page: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      number
+      headRefOid
+      headRefName
+      isDraft
+      reviewDecision
+      author { login }
+      labels(first: 50) { nodes { name } }
       reviewThreads(first: $page) {
         pageInfo { hasNextPage }
         nodes {
@@ -648,15 +747,15 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
     """Read the PR once, from four read-only calls, into the shape ``classify`` wants."""
     owner, _, name = slug.partition("/")
 
-    meta = _gh_json(
-        "pr", "view", str(number), "--json", "number,headRefOid,headRefName,isDraft,author,labels,reviewDecision"
-    )
-    if not isinstance(meta, dict):
+    graph = _graphql({"owner": owner, "name": name, "number": number, "page": THREAD_PAGE})
+    pull = (((graph or {}).get("data") or {}).get("repository") or {}).get("pullRequest")
+    if not isinstance(pull, dict):
         return None
-    head_sha = meta.get("headRefOid") or ""
+    head_sha = pull.get("headRefOid") or ""
+    labels = tuple(node.get("name", "") for node in ((pull.get("labels") or {}).get("nodes") or []))
 
-    raw_comments = _gh_json("api", f"repos/{slug}/issues/{number}/comments", "--paginate")
-    if not isinstance(raw_comments, list):
+    raw_comments = _read_paged(f"repos/{slug}/issues/{number}/comments")
+    if raw_comments is None:
         return None
     comments = tuple(
         Comment(
@@ -670,48 +769,25 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         for item in raw_comments
     ) + fetch_reviews(slug, number)
 
-    graph = _gh_json(
-        "api",
-        "graphql",
-        "-f",
-        f"query={REVIEW_THREADS_QUERY}",
-        "-F",
-        f"owner={owner}",
-        "-F",
-        f"name={name}",
-        "-F",
-        f"number={number}",
-        "-F",
-        f"page={THREAD_PAGE}",
-    )
-    threads: tuple[Thread, ...] = ()
-    truncated = False
-    if isinstance(graph, dict):
-        block = (((graph.get("data") or {}).get("repository") or {}).get("pullRequest") or {}).get(
-            "reviewThreads"
-        ) or {}
-        truncated = bool((block.get("pageInfo") or {}).get("hasNextPage"))
-        threads = tuple(_thread(node) for node in block.get("nodes") or [])
+    block = pull.get("reviewThreads") or {}
+    truncated = bool((block.get("pageInfo") or {}).get("hasNextPage"))
+    threads = tuple(_thread(node) for node in block.get("nodes") or [])
 
     return Snapshot(
         number=number,
         head_sha=head_sha,
-        author=(meta.get("author") or {}).get("login", ""),
-        is_draft=bool(meta.get("isDraft")),
-        labels=tuple(label.get("name", "") for label in meta.get("labels") or []),
-        review_decision=meta.get("reviewDecision") or None,
+        author=(pull.get("author") or {}).get("login", ""),
+        is_draft=bool(pull.get("isDraft")),
+        labels=labels,
+        review_decision=pull.get("reviewDecision") or None,
         comments=comments,
         threads=threads,
         ci=fetch_ci(slug, head_sha),
         threads_truncated=truncated,
-        head_ref=meta.get("headRefName") or "",
+        head_ref=pull.get("headRefName") or "",
         # Only asked when the label is actually present — one paginated call for a
         # question that is almost always moot.
-        override_actor=(
-            fetch_override_actor(slug, number)
-            if OVERRIDE_LABEL in tuple(label.get("name", "") for label in meta.get("labels") or [])
-            else ""
-        ),
+        override_actor=(fetch_override_actor(slug, number) if OVERRIDE_LABEL in labels else ""),
     )
 
 
@@ -746,8 +822,8 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
     would turn "LGTM, nice work" into a merge block, which is how a check gets
     deleted rather than answered.
     """
-    raw = _gh_json("api", f"repos/{slug}/pulls/{number}/reviews", "--paginate")
-    if not isinstance(raw, list):
+    raw = _read_paged(f"repos/{slug}/pulls/{number}/reviews")
+    if raw is None:
         return ()
     return tuple(
         Comment(
@@ -774,8 +850,8 @@ def fetch_override_actor(slug: str, number: int) -> str:
     any failure, and ``classify`` reads that as "unknown" rather than as "the
     author", so a timeline this cannot fetch never turns into a blocked PR.
     """
-    raw = _gh_json("api", f"repos/{slug}/issues/{number}/events", "--paginate")
-    if not isinstance(raw, list):
+    raw = _read_paged(f"repos/{slug}/issues/{number}/events")
+    if raw is None:
         return ""
     actor = ""
     for item in raw:
@@ -793,7 +869,7 @@ def fetch_ci(slug: str, head_sha: str) -> CIState:
     """The CI run for this exact SHA — not the branch's latest, which may be older."""
     if not head_sha:
         return CIState(None, None)
-    payload = _gh_json("api", f"repos/{slug}/actions/runs?head_sha={head_sha}&per_page=100")
+    payload = _read(f"repos/{slug}/actions/runs?head_sha={head_sha}&per_page=100")
     if not isinstance(payload, dict):
         return CIState(None, None)
     runs = [run for run in payload.get("workflow_runs") or [] if run.get("name") == CI_WORKFLOW_NAME]
@@ -804,38 +880,55 @@ def fetch_ci(slug: str, head_sha: str) -> CIState:
 
 
 def repo_slug() -> str | None:
-    payload = _gh_json("repo", "view", "--json", "nameWithOwner")
-    return payload.get("nameWithOwner") if isinstance(payload, dict) else None
+    return transport.resolve_slug(ROOT)
 
 
 def current_pr() -> int | None:
-    payload = _gh_json("pr", "view", "--json", "number")
-    return int(payload["number"]) if isinstance(payload, dict) and payload.get("number") else None
+    """The open PR for the branch this checkout is on.
+
+    `gh pr view` works this out from the current branch. Without `gh` there is no
+    "current" anything, so the REST branch asks the same question explicitly:
+    which open PR has this branch as its head. A detached HEAD or a branch with
+    no PR answers None, which the caller already reports as "say which PR".
+    """
+    if transport.gh_available():
+        payload = _gh_json("pr", "view", "--json", "number")
+        return int(payload["number"]) if isinstance(payload, dict) and payload.get("number") else None
+    slug = repo_slug()
+    branch = _current_branch()
+    if not slug or not branch:
+        return None
+    owner, _, _name = slug.partition("/")
+    payload = _read(f"repos/{slug}/pulls?head={owner}:{branch}&state=open&per_page=1")
+    if not isinstance(payload, list) or not payload:
+        return None
+    number = payload[0].get("number")
+    return int(number) if number else None
+
+
+def _current_branch() -> str | None:
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch if result.returncode == 0 and branch and branch != "HEAD" else None
 
 
 # --- emit --------------------------------------------------------------------
 
 
 def post_status(slug: str, head_sha: str, verdict: Verdict, target_url: str | None = None) -> bool:
-    args = [
-        "api",
-        "-X",
-        "POST",
-        f"repos/{slug}/statuses/{head_sha}",
-        "-f",
-        f"state={verdict.state}",
-        "-f",
-        f"context={STATUS_CONTEXT}",
-        "-f",
-        f"description={verdict.description[:DESCRIPTION_LIMIT]}",
-    ]
+    fields: dict[str, object] = {
+        "state": verdict.state,
+        "context": STATUS_CONTEXT,
+        "description": verdict.description[:DESCRIPTION_LIMIT],
+    }
     if target_url:
-        args += ["-f", f"target_url={target_url}"]
-    result = _gh(*args)
-    if result.returncode != 0:
-        print(f"[pr-feedback] could not post the status: {result.stderr.strip()}", file=sys.stderr)
-        return False
-    return True
+        fields["target_url"] = target_url
+    return _write("POST", f"repos/{slug}/statuses/{head_sha}", fields)
 
 
 def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
@@ -917,9 +1010,9 @@ def upsert_sticky(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) 
             existing = comment.id
     body = sticky_body(snapshot, verdict)
     if existing is not None:
-        _gh("api", "-X", "PATCH", f"repos/{slug}/issues/comments/{existing}", "-f", f"body={body}")
+        _write("PATCH", f"repos/{slug}/issues/comments/{existing}", {"body": body})
     elif verdict.state == "failure":
-        _gh("api", "-X", "POST", f"repos/{slug}/issues/{number}/comments", "-f", f"body={body}")
+        _write("POST", f"repos/{slug}/issues/{number}/comments", {"body": body})
 
 
 def apply_capped_label(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) -> None:
@@ -937,7 +1030,12 @@ def apply_capped_label(slug: str, number: int, snapshot: Snapshot, verdict: Verd
     capped = verdict.state == "success" and bool(verdict.items)
     if not capped or CAPPED_LABEL in snapshot.labels:
         return
-    _gh("api", "-X", "POST", f"repos/{slug}/issues/{number}/labels", "-f", f"labels[]={CAPPED_LABEL}")
+    # `labels[]=` is `gh api`'s spelling of a repeated field; the JSON body wants
+    # a real list. `_write` sends what each transport reads, so the value is a
+    # list here and the gh branch flattens it. Adds rather than replaces either
+    # way — POST to the collection, never PUT, for the reason
+    # `cowork_relay.py:_command` spells out at length.
+    _write("POST", f"repos/{slug}/issues/{number}/labels", {"labels": [CAPPED_LABEL]})
 
 
 def render_report(snapshot: Snapshot, verdict: Verdict) -> str:
@@ -956,8 +1054,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--target-url", help="with --status, the run URL the check links to")
     args = parser.parse_args(argv)
 
-    if shutil.which("gh") is None:
-        print("[pr-feedback] `gh` is not on PATH — install it: brew install gh", file=sys.stderr)
+    if not transport.gh_available() and not transport.github_token():
+        print(
+            "[pr-feedback] no `gh` on PATH and no GH_TOKEN — install gh (brew install gh), "
+            "or export GH_TOKEN for the REST fallback",
+            file=sys.stderr,
+        )
         return 2
     slug = repo_slug()
     if slug is None:
@@ -974,8 +1076,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             # A *required* status that was never posted shows as "Expected —
             # waiting for status", which looks exactly like this workflow not
             # existing. Say what actually happened, on whatever SHA is reachable.
-            meta = _gh_json("pr", "view", str(number), "--json", "headRefOid")
-            head = meta.get("headRefOid") if isinstance(meta, dict) else None
+            # REST spells it `head.sha`; the GraphQL read above spells the same
+            # value `headRefOid`. This path exists for when that read failed.
+            meta = _read(f"repos/{slug}/pulls/{number}")
+            head = (meta.get("head") or {}).get("sha") if isinstance(meta, dict) else None
             if head:
                 post_status(slug, head, Verdict("pending", "could not read the PR — see the run log"), args.target_url)
         return 2
