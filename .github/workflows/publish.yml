@@ -193,9 +193,11 @@ jobs:
           set -euo pipefail
           MSG="promoted **v${VERSION}** — https://pypi.org/project/yeaboi/${VERSION}/"
           if [ "$DRIFTED" = "true" ]; then
-            MSG="${MSG}
-
-_note: this ask named ${ASKED}; main had moved to ${VERSION} by the time it was approved, and ${VERSION} is what shipped._"
+            # `$'\n\n'` rather than a literal blank line: a continuation at
+            # column 1 inside a `run: |` block ends the YAML scalar and becomes a
+            # top-level key. That is what `_note` was — the whole file stopped
+            # parsing, GitHub refused it, and every run became a zero-job failure.
+            MSG="${MSG}"$'\n\n'"_note: this ask named ${ASKED}; main had moved to ${VERSION} by the time it was approved, and ${VERSION} is what shipped._"
           fi
           gh issue comment "$N" --body "$MSG"
           gh issue close "$N"
