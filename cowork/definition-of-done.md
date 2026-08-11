@@ -49,6 +49,15 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 
   It is answered, not obeyed: a finding you disagree with is closed by a reply saying why, which the
   next review pass reads and stops raising. What is not allowed is silence.
+
+  **There is a third exit, and it is deliberate: the review runs out of rounds.** After
+  `MAX_REVIEW_ROUNDS` verdicts that found something, `scripts/pr_feedback.py` stops blocking on
+  Claude Review, labels the PR `review-capped`, and lists what was left in the sticky comment. An
+  adversarial review of a large diff finds something every time, so running the loop to zero is not
+  a condition that reliably arrives — four consecutive rounds on PR #222 each produced real
+  findings. Unresolved *human* threads and a requested-changes review are never capped: a person
+  waiting for an answer is not a loop. What makes the cap safe is that a merge no longer reaches
+  users; it publishes a pre-release, and the weekly promotion is where a human looks.
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a
   Python-only change), say so in the PR body in one line. Silence is not an exemption.
 

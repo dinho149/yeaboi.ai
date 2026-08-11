@@ -452,6 +452,11 @@ def expected_labels() -> list[Label]:
         Label("cowork:proposal", "d4c5f9", "A cowork find awaiting a human's claude-implement"),
         Label("claude-implement", "0e8a16", "Approved — the claude.yml implement job builds this"),
         Label("feedback-override", "b60205", "Clears the pr-feedback merge gate — a human's call, recorded on the PR"),
+        # Applied by scripts/pr_feedback.py when a PR merges past findings the
+        # review ran out of rounds to pursue. Descriptive, not a gate — but it is
+        # the only durable record that a merge was capped, and applying a label
+        # that does not exist silently does nothing.
+        Label("review-capped", "fbca04", "Merged with review findings recorded but not fixed"),
     ]
     labels += [Label(f"workstream:{name}", "1d76db", f"cowork workstream: {name}") for name in parse_workstreams()]
     labels += [Label(f"type:{kind}", _TYPE_COLORS[kind], f"issue type: {kind}") for kind in PROPOSAL_TYPES]

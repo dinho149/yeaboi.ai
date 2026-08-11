@@ -89,6 +89,28 @@ CI_WORKFLOW_NAME = "CI"
 # GitHub truncates a status description past 140 characters.
 DESCRIPTION_LIMIT = 140
 
+# How many times Claude Review may speak on one PR before its findings stop
+# blocking the merge.
+#
+# Two, because the loop has no natural terminator otherwise. An adversarial
+# reviewer reading a large diff will always find *something* — four consecutive
+# rounds on PR #222 each produced real should-fix findings, and there was no
+# reason to expect a fifth to be empty. "Merge when the reviewer reports zero" is
+# therefore not a condition that reliably arrives, and a gate whose exit
+# condition may never occur is a gate that gets deleted.
+#
+# At the cap the findings do not vanish: they are still listed in the sticky
+# comment, the PR is labelled `review-capped`, and the daily standup names it.
+# What changes is that they stop holding the merge. That is a real loosening, and
+# what makes it defensible is that a merge no longer reaches users — it publishes
+# a pre-release, and the weekly promotion is a human checkpoint. If that ever
+# stops being true, revisit this number with it.
+MAX_REVIEW_ROUNDS = 2
+
+# Applied when the cap is reached with findings still open, so the state is
+# visible on the PR list and queryable afterwards rather than buried in a comment.
+CAPPED_LABEL = "review-capped"
+
 # One page of review threads. Cheap to raise, and never silently exceeded — a
 # truncated page becomes an open item of its own rather than a quiet undercount.
 THREAD_PAGE = 100
@@ -108,6 +130,13 @@ class Producer:
     label: str
     required: bool
     pattern: re.Pattern[str]
+    # The exact login this producer speaks under, when there is one. Without it a
+    # verdict has no author check at all — weaker than the acknowledgement rule
+    # below, despite being the stronger statement: an ack answers findings, a
+    # verdict replaces the count of them. On a public repo that meant any account
+    # could post `open=0` and turn the gate green, and with the round cap it would
+    # also mean two comments could exhaust the cap on somebody else's PR.
+    authors: frozenset[str] | None = None
 
 
 # Two of the five commenters named above are registered here, and the omissions
@@ -121,6 +150,10 @@ PRODUCERS: tuple[Producer, ...] = (
         label="Claude Review",
         required=True,
         pattern=re.compile(r"<!--\s*pr-feedback:\s*claude-review\s+open=(\d+)\s*-->"),
+        # `claude-review.yml` posts through the Claude GitHub App. Verified
+        # against the live comments on PR #222, not assumed. A `[bot]` suffix
+        # cannot be forged — GitHub logins may not contain brackets.
+        authors=frozenset({"claude[bot]"}),
     ),
     Producer(
         key="cowork-dod",
@@ -261,6 +294,54 @@ def acknowledged_producers(body: str) -> set[str]:
     return {match.group(1).lower() for match in ACK_RE.finditer(body)}
 
 
+def is_authentic_verdict(comment: Comment, producer: Producer) -> bool:
+    """Whether this comment is allowed to *be* a verdict from ``producer``.
+
+    Where a producer speaks under a known login, that login is the whole test.
+    Claude Review always arrives from ``claude[bot]``, and a ``[bot]`` suffix
+    cannot be forged because GitHub logins may not contain brackets.
+
+    Association is deliberately *not* also required: a bot commenting through
+    ``GITHUB_TOKEN`` carries ``author_association: NONE``, so demanding write
+    access would reject every genuine review and wedge the PR on one that could
+    never qualify — the deadlock this module exists to avoid.
+
+    A producer with no pinned login (the DoD audit, which a cowork routine writes
+    as the maintainer or as a bot depending on how it runs) falls back to write
+    access, which still stops a stranger on a public repo.
+    """
+    if producer.authors is not None:
+        return comment.author in producer.authors
+    if comment.author.endswith("[bot]"):
+        return True
+    return comment.association.upper() in TRUSTED_ASSOCIATIONS
+
+
+def review_rounds(comments: Iterable[Comment], producer: Producer) -> int:
+    """How many times this producer has posted a verdict **that found something**.
+
+    Two deliberate narrowings.
+
+    *Authentic only*, so a forged comment cannot inflate the count toward
+    ``MAX_REVIEW_ROUNDS`` and hand somebody a free pass on a PR they do not own.
+
+    *Non-empty only*, which is the difference between bounding the loop and
+    breaking the gate. Counting every verdict would cap a PR whose first review
+    was clean the moment a second one ran — so a regression introduced after a
+    clean pass could never reopen the gate, and "review found a new problem" and
+    "review ran out of patience" would be the same state. What runs forever is
+    the *findings* loop: find, fix, find again. That is what gets counted.
+    """
+    total = 0
+    for comment in comments:
+        match = producer.pattern.search(comment.body)
+        if match is None or not is_authentic_verdict(comment, producer):
+            continue
+        if int(match.group(1)) > 0:
+            total += 1
+    return total
+
+
 def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Comment, int] | None:
     """The newest countable verdict from one producer, or None if it never posted.
 
@@ -276,6 +357,8 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     for comment in comments:
         match = producer.pattern.search(comment.body)
         if match is None:
+            continue
+        if not is_authentic_verdict(comment, producer):
             continue
         count = int(match.group(1))
         # Ties broken by id: two comments can share a timestamp at second
@@ -397,6 +480,23 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
 
     producer_items, waiting = open_producers(snapshot, now)
     items.extend(producer_items)
+
+    # The cap. Reached only on the required producer's own findings — an
+    # unresolved human thread or a requested-changes review is a person waiting
+    # for an answer, and running out of *review rounds* says nothing about those.
+    # Capping them too would let a PR merge past somebody who is still talking.
+    review = PRODUCERS[0]
+    if review_rounds(snapshot.comments, review) >= MAX_REVIEW_ROUNDS:
+        human = [item for item in items if item.kind != "producer" or item.key != review.key]
+        if not human:
+            capped = [item for item in items if item.kind == "producer" and item.key == review.key]
+            if capped:
+                noun = "finding" if len(capped) == 1 else "findings"
+                return Verdict(
+                    "success",
+                    f"review capped at {MAX_REVIEW_ROUNDS} rounds — {len(capped)} {noun} recorded, not fixed",
+                    tuple(capped),
+                )
 
     # Open items win over waiting: something is already unanswered, and a later
     # review pass can only add to that.
@@ -616,6 +716,24 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         # the one thing this comment must never say.
         lines += [f"**Review feedback: waiting.** {verdict.description}"]
         return "\n".join(lines)
+    if verdict.state == "success" and verdict.items:
+        # Green, but not clean, and the comment must not blur the two. These
+        # findings were read by nobody and fixed by nobody; the merge stopped
+        # waiting for them because the review ran out of rounds, which is a
+        # decision about the loop and not a judgement about the code.
+        noun = "finding" if len(verdict.items) == 1 else "findings"
+        lines += [
+            f"**Review capped at {MAX_REVIEW_ROUNDS} rounds — {len(verdict.items)} {noun} "
+            f"recorded, not fixed.** This PR can merge.",
+            "",
+            *[f"- {item.detail}" for item in verdict.items],
+            "",
+            "An adversarial review of a large diff finds something every time, so the loop is "
+            f"bounded rather than run to zero. What is above was left undone deliberately — it is "
+            f"worth reading before merging, and worth filing if it matters. The `{CAPPED_LABEL}` "
+            "label marks this PR so it can be found again.",
+        ]
+        return "\n".join(lines)
     if verdict.state != "failure":
         lines += [f"**Review feedback: clear.** {verdict.description}"]
         return "\n".join(lines)
@@ -653,6 +771,24 @@ def upsert_sticky(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) 
         _gh("api", "-X", "PATCH", f"repos/{slug}/issues/comments/{existing}", "-f", f"body={body}")
     elif verdict.state == "failure":
         _gh("api", "-X", "POST", f"repos/{slug}/issues/{number}/comments", "-f", f"body={body}")
+
+
+def apply_capped_label(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) -> None:
+    """Mark a PR that merged past unfixed findings, so it can be found again.
+
+    Only added, never removed: the label records that a cap was hit on this PR,
+    and a later push that happens to produce a clean review does not undo the
+    fact. Idempotent — GitHub ignores adding a label that is already present, and
+    the guard below keeps it to one call.
+
+    Applying a label that does not exist silently does nothing, so
+    ``review-capped`` is in ``expected_labels()`` and `make cowork-setup` creates
+    it. A missing label costs the record, not the merge.
+    """
+    capped = verdict.state == "success" and bool(verdict.items)
+    if not capped or CAPPED_LABEL in snapshot.labels:
+        return
+    _gh("api", "-X", "POST", f"repos/{slug}/issues/{number}/labels", "-f", f"labels[]={CAPPED_LABEL}")
 
 
 def render_report(snapshot: Snapshot, verdict: Verdict) -> str:
@@ -702,6 +838,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # unanswered review, and would be the first thing anyone disabled.
         ok = post_status(slug, snapshot.head_sha, verdict, args.target_url)
         upsert_sticky(slug, number, snapshot, verdict)
+        apply_capped_label(slug, number, snapshot, verdict)
         print(render_report(snapshot, verdict))
         return 0 if ok else 2
 
