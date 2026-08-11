@@ -23,22 +23,30 @@ Procedure:
    **never yours to edit**, whatever the item says. An item whose fix lands in a `Reads` path was
    mis-classified — stop and report it rather than editing there.
 3. Branch off `main`: `cowork/<workstream>-<short-slug>`.
-4. Implement. Follow the repo's conventions rather than your own: the three observability pillars,
+4. **A `type:bug` item starts with the failing test.** Write the regression test first, run it
+   against unfixed code and capture the failure, then fix and capture the pass. Both runs go in the
+   PR body verbatim. This is the auto lane's admission ticket for a bug (`house-rules.md`), not a
+   formality — if the test will not fail before the fix, you have not reproduced the bug, and the
+   item goes back as a proposal rather than into an unwatched merge.
+5. Implement. Follow the repo's conventions rather than your own: the three observability pillars,
    frozen-dataclass defaults, parse → fallback → format, prompts in `prompts/`, TUI shared
    primitives, `# See docs: <section>` comments on first use of a LangGraph/LangChain concept.
-5. **Gate** — `make test` and `make lint` must both pass. `make test-fast` is not enough. If the
+6. **Gate** — `make test` and `make lint` must both pass. `make test-fast` is not enough. If the
    change touches `frontend/`, run `make web` and commit `src/yeaboi/web/static/` in the same commit.
    If it adds a capability, add its `CAPABILITIES` row and its `FeatureTip`.
-6. Commit with a lowercase imperative message and the `Co-Authored-By` trailer from `CLAUDE.md`.
+7. Commit with a lowercase imperative message and the `Co-Authored-By` trailer from `CLAUDE.md`.
    Push, then `gh pr create` against `main` with a Summary, a Test plan, a `Closes YEA-NN` line
    using the ticket identifier from your inputs (the magic word is what makes the Linear GitHub
    integration attach the PR and move the ticket to Done on merge — a bare Linear URL does
    neither), and a line for any DoD item that genuinely does not apply.
-7. Label the PR `cowork` and `workstream:<name>`.
+8. Label the PR `cowork` and `workstream:<name>`.
 
 Rules:
 
 - **Never push to `main`, never merge, never `--force`.**
+- **Never write an `<!-- addressed: … -->` marker.** On a cowork PR the gate refuses an ack from the
+  PR's own author, so it would not work anyway — but the rule is what matters: you may *fix* a
+  review finding, never dismiss one. A finding you disagree with is reported back, not overruled.
 - **Never apply `claude-implement`.**
 - Do not post to Slack, Linear, or Notion — `cowork-scribe` owns all of that.
 - If the gate fails and the fix is outside your item's scope, **stop and report** rather than growing

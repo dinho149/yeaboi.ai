@@ -13,7 +13,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 | 6 | **Observability** — the three pillars from `CLAUDE.md`: `logger.info()` on every user action, log paths from `paths.py`, tests | review |
 | 7 | **Web bundles** — anything under `frontend/` ⇒ `make web` and the rebuilt `src/yeaboi/web/static/` committed in the *same* commit | CI `web` job |
 | 8 | **Notion** — page created or updated under 🤙 yeaboi for any user-facing change | scribe |
-| 9 | **Slack** — one `#yeaboi-claude` post: what shipped, PR link, Linear link | scribe |
+| 9 | **Slack** — the merge appears in the day's `cron/shipped-standup.md` post: what shipped, what proved it, which pre-release it is in | scribe |
 | 10 | **Review feedback** — every finding the PR's reviewers rated blocker or should-fix is fixed or answered, and every human review thread is resolved by someone who replied to it | the `pr-feedback` commit status (`scripts/pr_feedback.py`), required by the `main-branch` ruleset |
 
 ## Rules
@@ -27,7 +27,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   Filing a ticket per proposal cost four writes across two trackers for every idea, and left a dead
   ticket behind each of the ~70% that age out unapproved. GitHub issues are the queue — Linear
   carries work, not candidates.
-- **Items 8 and 9 happen on merge**, not on PR open — driven by the `pr-merged-close-loop` routine.
+- **Item 8 happens on merge, and item 9 in that evening's standup**, not on PR open — driven by the `pr-merged-close-loop` routine.
 - **The ticket's state is part of item 1**, not an optional courtesy: the scribe opens it In
   Progress and moves it to In Review when the PR is attached; the merge → Done transition belongs
   to the Linear GitHub integration, fired by the `Closes YEA-NN` line every PR body must carry.
@@ -49,6 +49,14 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 
   It is answered, not obeyed: a finding you disagree with is closed by a reply saying why, which the
   next review pass reads and stops raising. What is not allowed is silence.
+
+  **On an unattended PR the disagreement half is withdrawn**, because there is nobody on the other
+  end of it. A cowork PR, a `feature/issue-N-…` branch, a triage or sentinel branch: the only way to
+  clear a finding there is to fix it and let the re-review report `open=0` itself.
+  `scripts/pr_feedback.py` refuses an `<!-- addressed: … -->` marker from the PR's own author on
+  those branches — the account that wrote the change also has write access, so without that refusal
+  the applicant would be holding the key to the gate. A machine that disagrees with a reviewer hands
+  the work back as a proposal; it never overrules one.
 
   **There is a third exit, and it is deliberate: the review runs out of rounds.** After
   `MAX_REVIEW_ROUNDS` verdicts that found something, `scripts/pr_feedback.py` stops blocking on

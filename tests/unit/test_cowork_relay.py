@@ -48,6 +48,11 @@ def item(number: int, ts: str = "1", **reactions: list[str]) -> dict:
     return reply(ts, f"#{number} — [bug][platform] something — https://example.invalid/{number}", **reactions)
 
 
+def promotion(number: int, version: str = "3.6.1", ts: str = "1", **reactions: list[str]) -> dict:
+    """The ask routine's reply, in the exact contract `PROMOTE_RE` parses."""
+    return reply(ts, f"#{number} — promote {version} — https://example.invalid/{number}", **reactions)
+
+
 class TestRecordedFailure:
     """The #172 thread, exactly as Slack holds it."""
 
@@ -121,6 +126,58 @@ class TestVerbs:
     def test_the_plan_is_oldest_first(self):
         thread = [item(2, ts="200.5", white_check_mark=[HUMAN]), item(1, ts="100.5", white_check_mark=[HUMAN])]
         assert [p["issue"] for p in relay.build_plan(thread, ALLOWLIST)["plan"]] == [1, 2]
+
+
+class TestPromotion:
+    """✅ on the weekly ask releases the accumulated batch.
+
+    The verb rides the proven `--add-label` path rather than dispatching a
+    workflow, because a workflow cannot start another with GITHUB_TOKEN — but the
+    relay is not CI, and `gh issue edit --add-label claude-implement` is already
+    trusted here. This is that path with a different label.
+    """
+
+    def test_an_approval_on_a_promotion_ask_promotes(self):
+        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "promote"
+        assert plan[0]["command"] == ["gh", "issue", "edit", "231", "--add-label", "release:promote"]
+
+    def test_an_ordinary_proposal_is_still_an_approval(self):
+        plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "approve"
+        assert plan[0]["command"][-1] == "claude-implement"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "#12 — [feature][web-ux] promote the share gate — https://example.invalid/12",
+            "#12 — promote everything — https://example.invalid/12",
+            "#12 — promoted 3.6.1 — https://example.invalid/12",
+            "promote 3.6.1 — #12",
+        ],
+    )
+    def test_a_title_that_merely_mentions_promote_does_not(self, text):
+        """A proposal title is quoted verbatim into the thread, and anyone can
+        file an issue on a public repo. Only the fixed contract routes the label."""
+        plan = relay.build_plan([reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        assert all(entry["verb"] != "promote" for entry in plan)
+
+    def test_a_rejection_on_a_promotion_ask_just_closes_it(self):
+        """ "Not this week" — next Monday's run opens a fresh ask."""
+        plan = relay.build_plan([promotion(231, x=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "reject"
+        assert plan[0]["command"] == ["gh", "issue", "close", "231"]
+
+    def test_the_promote_command_still_cannot_replace_a_label_set(self):
+        for entry in relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]:
+            argv = entry["command"]
+            assert "api" not in argv
+            assert not {"PUT", "-X", "--method"} & set(argv)
+            assert "--remove-label" not in argv
+
+    def test_an_unauthorised_reaction_promotes_nothing(self):
+        plan = relay.build_plan([promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST)["plan"]
+        assert plan == []
 
 
 class TestAuthorisation:

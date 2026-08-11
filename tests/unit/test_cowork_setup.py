@@ -119,10 +119,11 @@ class TestFilesAgreeWithTheTable:
         ]
         assert sorted(declaring) == sorted(
             [
-                "cron/day-ahead.md",
                 "cron/digest.md",
                 "cron/cd-deploy.md",
                 "cron/marketing-weekly.md",
+                "cron/release-promote-ask.md",
+                "cron/shipped-standup.md",
                 "cron/slack-relay.md",
                 "events/pr-merged-close-loop.md",
                 "events/pr-opened-dod-audit.md",
@@ -314,7 +315,7 @@ class TestCronTimes:
 
 
 class TestAgenda:
-    """The payload and the rendered message the day-ahead routine posts."""
+    """The payload and the rendered schedule `make cowork-agenda` prints."""
 
     ZONE = setup.display_zone()[0]
 
@@ -406,10 +407,10 @@ class TestAgenda:
         four-line post that says nothing. It stays in the payload, which is the
         fleet's schedule and does include it."""
         payload = setup.agenda(date(2026, 8, 16))
-        assert setup.MESSENGER in {entry["name"] for entry in payload["today"]}
-        assert setup.MESSENGER in payload["daily"]
+        assert setup.DAILY_POSTER in {entry["name"] for entry in payload["today"]}
+        assert setup.DAILY_POSTER in payload["daily"]
         blob = "\n".join(payload["lines"])
-        assert setup.MESSENGER not in blob
+        assert setup.DAILY_POSTER not in blob
 
     def test_the_payload_is_json_serialisable(self):
         assert json.loads(json.dumps(setup.agenda(date(2026, 8, 13))))
@@ -468,7 +469,7 @@ class TestAgenda:
         payload = setup.agenda(date(2026, 8, 13))
         blob = "\n".join(payload["lines"])
         for entry in payload["today"] + payload["background"]:
-            if entry["name"] == setup.MESSENGER:
+            if entry["name"] == setup.DAILY_POSTER:
                 continue  # the one documented omission — see the test above
             assert entry["name"] in blob, entry["name"]
 
@@ -492,7 +493,7 @@ class TestAgenda:
         called "nothing" — and spends a line of the post saying so."""
         payload = setup.agenda(date(2026, 8, 16))
         quiet = [
-            entry for entry in payload["ahead"] if not [name for name in entry["names"] if name != setup.MESSENGER]
+            entry for entry in payload["ahead"] if not [name for name in entry["names"] if name != setup.DAILY_POSTER]
         ]
         assert quiet, "16 Aug 2026 is chosen for having a quiet day in its tail"
         for entry in quiet:
@@ -710,7 +711,7 @@ class TestSummaries:
     @pytest.mark.parametrize("routine", ROUTINES, ids=_routine_ids)
     def test_every_routine_has_a_summary_line(self, routine):
         assert routine.summary, (
-            f"{routine.path} has no `**Summary** — ...` line, so the day-ahead post "
+            f"{routine.path} has no `**Summary** — ...` line, so the rendered agenda "
             "would name it with nothing beside it"
         )
 
@@ -766,7 +767,15 @@ class TestLabels:
     def test_the_label_set_is_shared_plus_workstreams_plus_types(self):
         names = {label.name for label in setup.expected_labels()}
         assert names == (
-            {"cowork", "cowork:proposal", "claude-implement", "feedback-override", "review-capped"}
+            {
+                "cowork",
+                "cowork:proposal",
+                "claude-implement",
+                "feedback-override",
+                "release:promotion",
+                "release:promote",
+                "review-capped",
+            }
             | {f"workstream:{w}" for w in WORKSTREAMS}
             | {f"type:{t}" for t in setup.PROPOSAL_TYPES}
         )
@@ -1627,13 +1636,26 @@ class TestToolOverrides:
         text it did not write."""
         assert "Bash" in set(setup.routine_tools("cd-deploy"))
 
-    def test_the_day_ahead_routine_cannot_write(self):
-        """`cron/day-ahead.md` states this as a safety property — it runs one script
-        and posts one message — so it is pinned rather than left as prose. Task
-        stays: unlike the relay, it spawns the scribe."""
-        tools = setup.routine_tools("day-ahead")
+    def test_the_daily_poster_cannot_write(self):
+        """`cron/shipped-standup.md` states this as a safety property — it reads a
+        day of merged PRs and posts one message — so it is pinned rather than left
+        as prose. Task stays: unlike the relay, it spawns the scribe."""
+        tools = setup.routine_tools(setup.DAILY_POSTER)
         assert not {"Write", "Edit"} & set(tools)
         assert "Task" in tools and "Bash" in tools
+
+    def test_the_promotion_ask_cannot_answer_itself(self):
+        """The routine that asks whether to release must not be able to approve it.
+
+        `publish.yml` fires on `release:promote`, which is applied by the relay
+        carrying a human's ✅. A grant of `gh issue edit` here would let the ask
+        label its own issue and cut a release nobody approved — the same shape as
+        a sweep applying `claude-implement` to its own proposal.
+        """
+        tools = setup.routine_tools("release-promote-ask")
+        assert not {"Write", "Edit"} & set(tools)
+        assert not any("gh issue edit" in tool for tool in tools)
+        assert "Bash" not in tools, "a bare Bash grant would include `gh issue edit`"
 
     def test_every_override_names_a_real_routine(self):
         """A renamed relay would otherwise silently lose its extra tools."""
@@ -1729,10 +1751,17 @@ class TestTeardown:
 
         ``claude-implement`` predates cowork and gates the claude.yml implement
         job; ``feedback-override`` is the escape hatch on the pr-feedback merge
-        gate. Removing either with the fleet would break a live gate, and the
-        breakage is silent: applying a label that does not exist does nothing.
+        gate; the ``release:*`` pair is what ``publish.yml`` fires on, so deleting
+        either disarms the only path that cuts an official release. Removing any
+        of them with the fleet would break a live gate, and the breakage is
+        silent: applying a label that does not exist does nothing.
         """
-        assert setup.KEEP_LABELS == {"claude-implement", "feedback-override"}
+        assert setup.KEEP_LABELS == {
+            "claude-implement",
+            "feedback-override",
+            "release:promotion",
+            "release:promote",
+        }
         assert not (setup.KEEP_LABELS & {label.name for label in setup.teardown_labels()})
 
     def test_everything_else_cowork_creates_is_in_scope(self):

@@ -46,6 +46,70 @@ class TestParseVersion:
         assert update_check.parse_version("2.x.0") == (2,)
 
 
+class TestPrereleases:
+    """The beta channel: `pip install --pre` opts in, and nothing else may.
+
+    Merging to `main` publishes `X.Y.ZrcN` on PyPI. Two things must hold for that
+    to be safe — a stable user is never invited onto one, and a beta user is
+    still told when the final ships. The second is the easy one to miss: before
+    `release_rank`, `parse_version` dropped the suffix, so `3.6.0rc7` and `3.6.0`
+    compared equal and an rc install would have been stranded forever.
+    """
+
+    @pytest.mark.parametrize("version", ["3.6.0rc7", "3.6.0rc1", "3.6.0b1", "3.6.0a2", "3.6.0dev1"])
+    def test_a_prerelease_is_recognised(self, version):
+        assert update_check.is_prerelease(version) is True
+
+    @pytest.mark.parametrize("version", ["3.6.0", "3.6.0+dev", "0.0.0+dev", "10.0.1", ""])
+    def test_a_final_is_not(self, version):
+        assert update_check.is_prerelease(version) is False
+
+    def test_a_prerelease_sorts_below_its_final(self):
+        assert update_check.release_rank("3.6.0rc7") < update_check.release_rank("3.6.0")
+
+    def test_prereleases_sort_among_themselves(self):
+        assert update_check.release_rank("3.6.0rc7") < update_check.release_rank("3.6.0rc9")
+
+    def test_the_final_is_offered_to_a_beta_user(self):
+        assert update_check.is_newer("3.6.0", "3.6.0rc7") is True
+
+    def test_an_older_final_is_not_offered_to_a_beta_user(self):
+        assert update_check.is_newer("3.5.0", "3.6.0rc7") is False
+
+    def test_a_stable_user_is_never_nagged_onto_a_prerelease(self):
+        assert update_check.is_newer("3.6.0rc1", "3.5.0") is True  # ordering says yes...
+
+    def test_but_pypi_never_hands_one_back(self, monkeypatch):
+        """...so the filter is in the fetch, where the channel is actually chosen."""
+
+        class _Resp:
+            def read(self):
+                return json.dumps({"info": {"version": "3.6.0rc7"}}).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(update_check.urllib.request, "urlopen", lambda *a, **k: _Resp())
+        assert update_check.fetch_latest_version() is None
+
+    def test_a_final_still_comes_back(self, monkeypatch):
+        class _Resp:
+            def read(self):
+                return json.dumps({"info": {"version": "3.6.0"}}).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(update_check.urllib.request, "urlopen", lambda *a, **k: _Resp())
+        assert update_check.fetch_latest_version() == "3.6.0"
+
+
 class TestIsNewer:
     def test_newer(self):
         assert update_check.is_newer("2.11.0", "2.10.0") is True

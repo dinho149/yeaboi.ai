@@ -77,7 +77,17 @@ jobs:
           # jq exit non-zero, and `run:` steps are `bash -e`, so the review job
           # would die rather than fall through to the skip below.
           cowork=$(jq -r '[.labels[]?.name] | index("cowork") != null' <<< "$pr")
-          echo "PR #$number by $author (draft=$draft, cowork=$cowork)"
+          branch=$(jq -r '.head.ref' <<< "$pr")
+          # The branch namespaces an unattended run pushes to, kept in step with
+          # UNATTENDED_BRANCH_PREFIXES in scripts/pr_feedback.py. That gate now
+          # refuses to wave through a machine PR, so if this filter skipped one
+          # the PR would sit red forever waiting for a review nobody was going to
+          # write. Widen both or neither.
+          case "$branch" in
+            cowork/*|feature/issue-*|security/codeql-triage*|ci-sentinel/*) unattended=true ;;
+            *) unattended=false ;;
+          esac
+          echo "PR #$number by $author on $branch (draft=$draft, cowork=$cowork, unattended=$unattended)"
           # `cowork`-labelled PRs are never skipped for authorship. The claude.yml
           # `implement` job opens them unattended from an issue a human approved,
           # and if the action pushes as github-actions[bot] the bot filter below
@@ -105,8 +115,8 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$cowork" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
-            echo "Bot-authored PR without the cowork label — skipping review."
+          if [ "$cowork" != "true" ] && [ "$unattended" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
+            echo "Bot-authored PR, no cowork label and not an unattended branch — skipping review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -124,13 +124,14 @@ escape hatch, and remains the only place a webhook for a pre-existing routine ca
 uv run python scripts/cowork_setup.py --agenda --text
 ```
 
-Print exactly what it prints. This is the same text `cron/day-ahead.md` posts to Slack at 05:45
-UTC each morning, which is the point: the local answer and the posted one come from one renderer,
-so they cannot disagree.
+Print exactly what it prints. Nothing posts this on a schedule — a routine used to, at 05:45 every
+morning including empty Sundays, and announcing what is *about* to run turned out to be worth much
+less than `cron/shipped-standup.md`'s report of what did. The schedule is still worth having on
+demand, which is what this is.
 
-That is why the terminal shows Markdown source — `**cd-deploy**`, backticked times — rather than a
-terminal's own idea of bold. Rendering it here would mean a second renderer, and a second renderer
-is a second thing that can be wrong about a Tuesday.
+The terminal shows Markdown source — `**cd-deploy**`, backticked times — rather than a terminal's
+own idea of bold. Rendering it here would mean a second renderer, and a second renderer is a second
+thing that can be wrong about a Tuesday.
 
 `--date YYYY-MM-DD` answers "what is on next Monday?". Nothing here touches the account — the
 schedule lives in `cowork/README.md`, not in the routines API, so this verb skips the

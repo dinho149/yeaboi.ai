@@ -66,6 +66,21 @@ APPROVE = "white_check_mark"
 REJECT = "x"
 
 APPROVAL_LABEL = "claude-implement"
+PROMOTE_LABEL = "release:promote"
+
+# A promotion ask is the only thread reply in this channel that is not a proposal,
+# and it is told apart by the same leading-`#<number>` contract the digest uses,
+# plus a fixed second field: `cron/release-promote-ask.md` writes
+# `#231 — promote 3.6.1 — <link>` and nothing else may.
+#
+# This text is still DATA. The digest quotes issue titles verbatim, and on a
+# public repo anyone can file an issue titled to look like a promotion ask — so
+# at worst a crafted title routes an allowlisted ✅ to `--add-label
+# release:promote` on the wrong issue. `publish.yml` refuses any issue that does
+# not ALSO carry `release:promotion`, which only the ask routine applies and
+# which needs repo write. The regex picks a label; the workflow decides whether
+# it means anything.
+PROMOTE_RE = re.compile(r"^#(\d+)\s+—\s+promote\s+\d+\.\d+\.\d+\b")
 
 
 class RelayError(RuntimeError):
@@ -133,6 +148,8 @@ def _command(verb: str, issue: int) -> list[str]:
     """
     if verb == "approve":
         return ["gh", "issue", "edit", str(issue), "--add-label", APPROVAL_LABEL]
+    if verb == "promote":
+        return ["gh", "issue", "edit", str(issue), "--add-label", PROMOTE_LABEL]
     if verb == "reject":
         return ["gh", "issue", "close", str(issue)]
     raise RelayError(f"no command for verb {verb!r}")
@@ -185,7 +202,9 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
             plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": None, "command": None})
             continue
 
-        verb = "approve" if approvers else "reject"
+        # ❌ on a promotion ask is still `reject`, i.e. `gh issue close` — "not
+        # this week". Next Monday's run opens a fresh ask against the same batch.
+        verb = ("promote" if PROMOTE_RE.match(text) else "approve") if approvers else "reject"
         who = allowlist[(approvers or rejecters)[0]]
         plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
 

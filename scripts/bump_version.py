@@ -2,9 +2,20 @@
 """Bump the single-source project version in ``pyproject.toml``.
 
 The version lives only in ``pyproject.toml`` (``src/yeaboi/__init__.py`` reads
-it from the installed package metadata). ``publish.yml`` releases whenever that
-version has no matching ``v<version>`` tag on ``main``, so bumping this one line is
-the whole release trigger.
+it from the installed package metadata), and it is always a plain ``X.Y.Z``: the
+*next final*, whether or not it has been released yet.
+
+Bumping this line is what makes a merge release-worthy. ``publish-beta.yml`` then
+publishes a PyPI **pre-release** — ``X.Y.ZrcN``, numbered by
+``scripts/release_channel.py`` and stamped into a throwaway checkout, never
+committed — and those accumulate until a human promotes the batch, at which point
+``publish.yml`` publishes the plain ``X.Y.Z`` and tags it. Merging no longer ships
+to users on its own.
+
+``bump()`` below rejects anything that is not ``X.Y.Z``, and that refusal is
+load-bearing rather than fussy: ``auto-version.yml`` runs this script on every
+release-worthy PR, so an rc string committed to ``main`` would break the next PR's
+bump, and the one after, with no obvious cause.
 
 This helper keeps the arithmetic deterministic and testable so the ``auto-version``
 GitHub workflow only has to *choose the level* — the LLM never hand-computes a

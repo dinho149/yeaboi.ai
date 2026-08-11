@@ -27,7 +27,7 @@ scout routine (per workstream, own cron)
                                                        │
                     pr-merged-close-loop ──────────────┘
                     merge closes Linear via `Closes YEA-NN`;
-                    scribe: verify Done, Slack ship note, Notion page
+                    scribe: verify Done, Notion page; the standup reports it
 ```
 
 A proposal is a question, so it costs one GitHub issue and nothing else. The Linear ticket opens when
@@ -155,9 +155,10 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 |---|---|---|---|---|
 | `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
-| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01DHtR33hCFgDhoz7yA5jXUi |
+| `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` |  |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
+| `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` |  |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
@@ -192,11 +193,24 @@ means Claude Review ran and every blocking finding was answered. It never dismis
 never applies `claude-implement`. The three guardrail exemptions it takes are written down in
 [house-rules.md](house-rules.md), not assumed.
 
-**The unattended merge needs one thing this repo does not have yet**: `pr-feedback` on the ruleset's
-required checks, the manual step listed under *What neither can do* below. Without it `--auto` would
-merge as soon as the five CI contexts went green, with no review in the loop — so the survey step
-checks for the context and leaves auto-merge **disarmed** when it is absent, warning in the run log.
-Add the context once and the loop closes; until then the PR opens green and waits for a click.
+**The whole unattended lane needs one thing this repo does not have yet**, and it is one click:
+`pr-feedback` on the ruleset's required checks, the manual step listed under *What neither can do*
+below. Without it `--auto` merges as soon as the five CI contexts go green, with no review in the
+loop — so every workflow that would arm auto-merge checks for the context first and leaves it
+**disarmed** when it is absent, warning in the run log. Add the context once and the loop closes;
+until then the PR opens green and waits for a click.
+
+This matters more now than it did. Security, bugs and chores go straight to a PR
+([house-rules.md](house-rules.md)), and the gate is what makes that safe rather than reckless: an
+independent `code-reviewer` before the PR opens, `claude-review.yml` after CI, and
+`scripts/pr_feedback.py` refusing an `<!-- addressed: … -->` marker from the PR's own author on an
+unattended branch — so a machine may *fix* a finding and never *dismiss* one. Before that refusal
+existed, the routine that opened a PR could also declare the review of it answered.
+
+**And nothing ships to users on merge.** A merge publishes a PyPI pre-release; the accumulated batch
+becomes an official version only when a human ✅s
+[`cron/release-promote-ask.md`](routines/cron/release-promote-ask.md)'s weekly question. That is the
+last backstop, and the only one involving somebody who has actually been running the code.
 
 ## Setting this up
 
@@ -213,11 +227,12 @@ from [models.md](models.md#workflows), and the routines from the table above —
 routine actually runs on is the one written down here. `tests/unit/test_cowork_setup.py` fails on the
 same drift in `make test-fast`.
 
-**What each command covers.** `make cowork-setup` does the twenty-seven GitHub labels (`cowork`,
-`cowork:proposal`, `claude-implement`, `feedback-override`, `workstream:<name>` for each of the
-sixteen, and the seven `type:*` labels shared with the feedback system) and the four
+**What each command covers.** `make cowork-setup` does the twenty-nine GitHub labels (`cowork`,
+`cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
+pair the promotion path fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*`
+labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-three routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

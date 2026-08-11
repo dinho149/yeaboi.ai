@@ -196,16 +196,24 @@ The single decision point. It is the only routine that posts proposals to Slack.
    One **channel-level** message, never a second on the same day — the channel-noise rule holds;
    the per-item replies live inside its thread, not in the channel.
 
-   That rule is about *this* routine. `cron/day-ahead.md` posts one other channel-level message
-   each morning, three hours earlier, and it is not a violation: it carries the day's schedule,
-   not findings. The two rules that look like they forbid it both survive. "Never a second on the
-   same day" keeps the digest from splitting itself across two messages, which is what makes ✅ on
-   a thread reply mean one issue — a different routine posting a different kind of thing does not
-   touch that. And "a digest that says nothing today every day trains everyone to ignore the
-   channel" is about *absence of findings*, which is why this routine stays silent on an empty
-   queue. A schedule is never absent: on a Sunday with no sweeps, "no sweeps today" is the fact
-   being asked for, and a reminder you cannot rely on arriving is not a reminder. Keep them
-   separate — never fold the schedule in here, and never let the day-ahead post carry a proposal.
+   That rule is about *this* routine. Two other routines post channel-level messages on the same
+   day — `cron/agents-standup.md` in the morning and `cron/shipped-standup.md` at 18:00 — and
+   neither is a violation: they carry what *happened*, not what needs deciding. "Never a second on
+   the same day" keeps the digest from splitting itself across two messages, which is what makes ✅
+   on a thread reply mean one issue; a different routine posting a different kind of thing does not
+   touch that.
+
+   Keep the split clean in both directions. **Never report a merge here** — the standup owns the
+   record, and a proposal list that also announces shipped work stops reading as a list of
+   decisions. **And never let the standup carry a proposal**, for the same reason in reverse. The
+   division is what a reader relies on: this message is asking you something, the standup is
+   telling you something.
+
+   Note what this routine no longer competes with. Security, bug and chore finds go straight to a
+   PR now (`house-rules.md`), so those three sections are empty on most days and the queue this
+   digest reports is mostly `feature` and `improvement` — the finds that genuinely need a human.
+   That shrinkage is behaviour, not an edit: the sections stay declared, and an empty one is
+   omitted exactly as before.
 
 4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
    "closed unapproved after 14 days — re-file if still relevant". Never touch an issue that carries

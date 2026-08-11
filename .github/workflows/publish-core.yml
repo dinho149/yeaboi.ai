@@ -1,7 +1,7 @@
 name: Publish yeaboi-core to PyPI
 
-# Auto-release of the Go sidecar's platform wheels on version bump — the same
-# model as publish.yml: on every push to main, publish *iff* the version in
+# Auto-release of the Go sidecar's platform wheels on version bump: on every
+# push to main, publish *iff* the version in
 # packaging/yeaboi-core/pyproject.toml has no matching `core-v*` tag yet. So
 # releasing the sidecar is: bump binaryVersion in go/cmd/yeaboi-core/main.go
 # AND the packaging version together (tests/unit/test_gocore_packaging.py
@@ -13,6 +13,15 @@ name: Publish yeaboi-core to PyPI
 # Wheels only, no sdist: the sdist would need the whole repo plus a Go
 # toolchain to build, so publishing one would turn "unsupported platform" from
 # a clear resolver error into a confusing build failure.
+#
+# The asymmetry with publish.yml is deliberate, not an oversight: `yeaboi`
+# publishes a PRE-RELEASE on every release-worthy merge and a final only when a
+# human promotes, while `yeaboi-core` still publishes a final on merge. The
+# sidecar is bumped by hand and rarely, its version lives on its own `core-v*`
+# tag line, and `pip install --pre yeaboi[core]` correctly resolves the extra to
+# a final wheel — the range in the root pyproject.toml is pinned by
+# tests/unit/test_gocore_packaging.py and widens on the same merge that ships it.
+# Do not "fix" this to match.
 on:
   push:
     branches: [main]

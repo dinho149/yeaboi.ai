@@ -85,12 +85,20 @@ def review(
     )
 
 
-def ack(producer: str = "claude-review", *, minutes_ago: int = 30, ident: int = 2, association: str = "OWNER", **kw):
+def ack(
+    producer: str = "claude-review",
+    *,
+    minutes_ago: int = 30,
+    ident: int = 2,
+    association: str = "OWNER",
+    author: str = AUTHOR,
+    **kw,
+):
     """A won't-fix reply. Trusted by default — the untrusted case is its own test."""
     return comment(
         f"Won't fix, because the caller already guards it.\n\n<!-- addressed: {producer} -->",
         minutes_ago=minutes_ago,
-        author=AUTHOR,
+        author=author,
         ident=ident,
         association=association,
         **kw,
@@ -482,6 +490,80 @@ class TestWhoMayAnswer:
     def test_an_acknowledgement_in_the_same_second_still_counts(self):
         """`latest_verdict` breaks second-granularity ties on id; so does this."""
         snap = snapshot(comments=(review(2, minutes_ago=30, ident=1), ack(minutes_ago=30, ident=2)))
+        assert prf.classify(snap, NOW).state == "success"
+
+
+class TestUnattendedPRs:
+    """A machine PR may fix a finding. It may not declare one answered.
+
+    Once security, bug and chore fixes merge without a human clicking anything,
+    `TRUSTED_ASSOCIATIONS` stops being a gate: a cowork routine posts under an
+    account with write access, so the thing that wrote the change could also
+    write `<!-- addressed: claude-review -->` under the review of it and merge.
+    The way out is a push — a re-review then reports `open=0` on its own — which
+    is why these tests check that the honest path still clears.
+    """
+
+    @pytest.mark.parametrize(
+        "branch",
+        ["cowork/security-pin-shas", "feature/issue-231-fix", "security/codeql-triage-2026-08", "ci-sentinel/red-main"],
+    )
+    def test_every_machine_branch_counts_as_unattended(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is True
+
+    @pytest.mark.parametrize("branch", ["", "feature/nice-thing", "main", "coworker/typo"])
+    def test_an_ordinary_branch_does_not(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is False
+
+    def test_the_label_alone_is_enough(self):
+        assert prf.is_unattended(snapshot(labels=("cowork",))) is True
+
+    def test_the_author_cannot_answer_its_own_review(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_an_unlabelled_machine_branch_is_gated_the_same_way(self):
+        """A run truncated between `git push` and `gh pr create --label` lands here."""
+        snap = snapshot(
+            head_ref="cowork/standup-confidence",
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_somebody_else_with_write_access_still_can(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(
+                review(2, minutes_ago=60),
+                ack(minutes_ago=30, association="OWNER", author="a-different-human"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_fix_still_clears_it(self):
+        """The honest path: push, get re-reviewed, and the reviewer reports zero."""
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60, ident=1), review(0, minutes_ago=10, ident=3)),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_pr_on_a_machine_branch_is_not_waved_through(self):
+        """Without this, the widest lane in the fleet has no gate at all."""
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="cowork/platform-pin-actions",
+            comments=(review(2),),
+            ci=prf.CIState("success", NOW - timedelta(hours=3)),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_human_answering_their_own_pr_is_untouched(self):
+        """Nothing above applies to a person: one already read the review."""
+        snap = snapshot(comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")))
         assert prf.classify(snap, NOW).state == "success"
 
 

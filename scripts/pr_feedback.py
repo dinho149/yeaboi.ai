@@ -79,6 +79,22 @@ OVERRIDE_LABEL = "feedback-override"
 BOT_AUTHORS = frozenset({"dependabot[bot]", "github-actions[bot]"})
 COWORK_LABEL = "cowork"
 
+# Branch namespaces an unattended run pushes to: `cowork/…` (cowork-builder),
+# `feature/issue-N-…` (claude.yml's implement job), plus the two workflows that
+# open their own fix PRs. A PR from one of these was written by a machine, which
+# has two consequences below — it is never waved through as "bot-authored, review
+# not applicable", and its author cannot answer its own review.
+#
+# Kept in step with the author filter in `claude-review.yml`: this gate must
+# never expect a review that the reviewer was never going to write, or the PR
+# sits red with nothing to fix. Widen both or neither.
+UNATTENDED_BRANCH_PREFIXES = (
+    "cowork/",
+    "feature/issue-",
+    "security/codeql-triage",
+    "ci-sentinel/",
+)
+
 # How long after CI goes green a review may take before its absence is treated as
 # a fault rather than as latency.
 REVIEW_GRACE = timedelta(minutes=20)
@@ -175,6 +191,9 @@ ACK_RE = re.compile(r"<!--\s*addressed:\s*([a-z0-9][a-z0-9-]*)\s*-->", re.IGNORE
 # ordinary prose; the sticky comment still says how to clear the check, so the
 # way out of a wrongly-red gate is never closed, only moved to someone with
 # write access.
+#
+# Write access is necessary and, on an unattended PR, not sufficient: see
+# `is_acknowledged`, which additionally refuses an ack from the PR's own author.
 TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
@@ -245,6 +264,7 @@ class Snapshot:
     threads: tuple[Thread, ...]
     ci: CIState
     threads_truncated: bool = False
+    head_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -368,16 +388,48 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     return best
 
 
-def is_acknowledged(comments: Iterable[Comment], producer_key: str, after: datetime, after_id: int = 0) -> bool:
+def is_unattended(snapshot: Snapshot) -> bool:
+    """Whether this PR was written by a machine rather than by a person.
+
+    Two signals, either of which is enough: the ``cowork`` label, and a head
+    branch in one of the namespaces an unattended run pushes to. The label alone
+    was not enough once the auto lane widened — `cowork/house-rules.md` requires
+    it on every routine PR, but a run truncated between `git push` and
+    `gh pr create --label` leaves an unlabelled machine PR behind, and that is
+    exactly the PR that must not be trusted more than a labelled one.
+    """
+    return COWORK_LABEL in snapshot.labels or snapshot.head_ref.startswith(UNATTENDED_BRANCH_PREFIXES)
+
+
+def is_acknowledged(
+    comments: Iterable[Comment],
+    producer_key: str,
+    after: datetime,
+    after_id: int = 0,
+    deny_author: str | None = None,
+) -> bool:
     """Whether a trusted reply newer than ``after`` answers this producer's pass.
 
     ``after_id`` breaks the same second-granularity tie ``latest_verdict`` breaks:
     a reply posted in the same second as the verdict it answers is newer, and a
     strict ``>`` on the timestamp alone would drop it.
+
+    ``deny_author`` is the PR's own author, passed only for an unattended PR, and
+    it is what makes this gate mean anything once machines merge their own work.
+    A cowork routine posts under an account with write access, so
+    ``TRUSTED_ASSOCIATIONS`` alone would let the thing that wrote the change also
+    declare the review of it answered — a gate whose key is held by the applicant.
+    It may still *fix* a finding: a push triggers a re-review, and
+    ``latest_verdict`` then reads ``open=0`` from the reviewer itself. What it may
+    no longer do is disagree in a comment and merge anyway.
+
+    A human answering the review on their own PR is untouched: a person read it,
+    which is the whole thing being checked for.
     """
     return any(
         (comment.created_at, comment.id) > (after, after_id)
         and comment.association.upper() in TRUSTED_ASSOCIATIONS
+        and (deny_author is None or comment.author != deny_author)
         and producer_key in acknowledged_producers(comment.body)
         for comment in comments
     )
@@ -441,7 +493,13 @@ def open_producers(snapshot: Snapshot, now: datetime) -> tuple[list[OpenItem], s
         comment, count = latest
         if count == 0:
             continue
-        if is_acknowledged(snapshot.comments, producer.key, after=comment.written_at, after_id=comment.id):
+        if is_acknowledged(
+            snapshot.comments,
+            producer.key,
+            after=comment.written_at,
+            after_id=comment.id,
+            deny_author=snapshot.author if is_unattended(snapshot) else None,
+        ):
             continue
         plural = "finding" if count == 1 else "findings"
         items.append(
@@ -467,7 +525,7 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
         return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label")
     if snapshot.is_draft:
         return Verdict("success", "draft — review not applicable")
-    if snapshot.author in BOT_AUTHORS and COWORK_LABEL not in snapshot.labels:
+    if snapshot.author in BOT_AUTHORS and not is_unattended(snapshot):
         return Verdict("success", f"{snapshot.author} — review not applicable")
 
     items = open_threads(snapshot)
@@ -551,7 +609,9 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
     """Read the PR once, from four read-only calls, into the shape ``classify`` wants."""
     owner, _, name = slug.partition("/")
 
-    meta = _gh_json("pr", "view", str(number), "--json", "number,headRefOid,isDraft,author,labels,reviewDecision")
+    meta = _gh_json(
+        "pr", "view", str(number), "--json", "number,headRefOid,headRefName,isDraft,author,labels,reviewDecision"
+    )
     if not isinstance(meta, dict):
         return None
     head_sha = meta.get("headRefOid") or ""
@@ -605,6 +665,7 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         threads=threads,
         ci=fetch_ci(slug, head_sha),
         threads_truncated=truncated,
+        head_ref=meta.get("headRefName") or "",
     )
 
 
