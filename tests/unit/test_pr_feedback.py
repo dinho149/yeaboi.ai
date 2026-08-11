@@ -686,6 +686,34 @@ class TestReviewBodies:
         assert prf.classify(snap, NOW).state == "failure"
 
 
+class TestStickyAdviceMatchesThePR:
+    """The check must not instruct a human to do the one thing that cannot work.
+
+    On a cowork PR the author is the maintainer's own account, so a person who
+    reads the red check, disagrees with a finding and replies exactly as told gets
+    silence and the same red check re-rendered, with no diagnostic anywhere.
+    """
+
+    def _body(self, **overrides):
+        snap = snapshot(comments=(review(2),), **overrides)
+        return prf.sticky_body(snap, prf.classify(snap, NOW))
+
+    def test_an_ordinary_pr_still_offers_the_reply_route(self):
+        body = self._body()
+        assert "<!-- addressed: <producer> -->" in body
+
+    def test_a_machine_pr_says_the_reply_route_does_not_apply(self):
+        body = self._body(labels=("cowork",))
+        assert "cannot clear a finding here" in body
+        assert "<!-- addressed: <producer> -->" not in body
+
+    def test_a_machine_pr_still_names_a_way_out(self):
+        """Never a dead end: fixing, or the override, and the override is a human's."""
+        body = self._body(head_ref="cowork/platform-x")
+        assert "fix and " in body
+        assert prf.OVERRIDE_LABEL in body
+
+
 class TestStickyIsInert:
     def test_a_pending_verdict_is_not_called_clear(self):
         """Pending holds the merge exactly as firmly as a failure does."""

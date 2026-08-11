@@ -816,6 +816,25 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         "",
     ]
     lines += [f"- {item.detail}" for item in verdict.items]
+    # The advice has to match the PR. On an unattended PR an `<!-- addressed: -->`
+    # reply from the PR's own author is discarded, and on the cowork lane that
+    # author *is* the maintainer — so a human who reads this comment, disagrees
+    # with a finding and replies exactly as instructed would get silence and a
+    # re-rendered red check, with nothing anywhere saying why. Telling somebody to
+    # do the one thing that cannot work is worse than telling them nothing.
+    if is_unattended(snapshot):
+        lines += [
+            "",
+            "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and "
+            "push — the next review pass reports `open=0` and this clears itself. Hit "
+            "**Resolve conversation** on any thread you have answered.",
+            "",
+            "**This PR is machine-authored, so a reply cannot clear a finding here.** An "
+            "`<!-- addressed: … -->` marker written by this PR's own author is ignored: the account "
+            "that wrote the change would otherwise be answering the review of it. Fix the finding, or "
+            f"apply the `{OVERRIDE_LABEL}` label — a human's call, recorded here.",
+        ]
+        return "\n".join(lines)
     lines += [
         "",
         "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and push "

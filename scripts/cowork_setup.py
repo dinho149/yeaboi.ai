@@ -119,6 +119,16 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
         # Closing supersedes a stale ask. `gh issue edit` stays out: it is the verb
         # that could apply `release:promote`, and the routine that asks may not
         # answer. Closing cannot label anything.
+        #
+        # The reasoning is narrower than it looks, so it is written down rather
+        # than left to read as complete: `gh issue create` accepts `--label` too,
+        # so this grant does not make applying `release:promote` *impossible* —
+        # only impossible on an issue that already exists. Whether a label set at
+        # creation even fires the `labeled` webhook `publish.yml` listens for is
+        # unverified. What actually holds is the routine's own stop condition,
+        # plus `publish.yml` requiring `release:promotion`, which the ask applies
+        # to itself and which is therefore no barrier here either. Treat this
+        # grant as defence in depth, not as the lock.
         "Bash(gh issue close:*)",
         "Bash(uv run python scripts/release_channel.py:*)",
         "Glob",
@@ -1533,6 +1543,58 @@ def apply_variables() -> None:
             )
 
 
+def merge_gate_armed() -> bool | None:
+    """Whether `pr-feedback` is a required status check on the `main-branch` ruleset.
+
+    None when the question could not be asked — no `gh`, no repo, or a failed
+    query — which is deliberately not the same answer as False. A missing gate is
+    a finding; an unanswerable question is a note, and conflating them would fail
+    the doctor on every machine without `gh` authenticated.
+
+    This is the setting that decides whether the auto lane merges anything. Every
+    workflow that would arm `gh pr merge --auto` runs this same query first and
+    refuses when it is false, so without it the lane opens PRs that sit waiting
+    for a human click — the thing it exists to remove.
+    """
+    if not shutil.which("gh"):
+        return None
+    slug = repo_slug()
+    if not slug:
+        return None
+    query = (
+        'any(.[]; .type=="required_status_checks" and '
+        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
+    )
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() == "true"
+
+
+def check_merge_gate(report: Report) -> None:
+    """The doctor's half: a missing merge gate is a finding, not a footnote.
+
+    `cron/cd-deploy.md` runs `--check` on every merge to `main`, so this is what
+    would notice `pr-feedback` being dropped from the ruleset later. Nothing else
+    would: the workflows that depend on it fail *quietly* by declining to arm
+    auto-merge, which looks exactly like a lane that had nothing to do.
+    """
+    armed = merge_gate_armed()
+    if armed is None:
+        report.notes.append("the main-branch ruleset was not checked — `gh` unavailable or the query failed")
+        return
+    if not armed:
+        report.fail(
+            "`pr-feedback` is not a required status check on the main-branch ruleset",
+            "add it at Settings → Rules → main-branch; until then no auto-lane PR merges unattended",
+        )
+
+
 def report_merge_gate() -> None:
     """Probe the one setting that decides whether the unattended lane works.
 
@@ -1546,26 +1608,15 @@ def report_merge_gate() -> None:
     written for. The `gh api` call is the one `.github/workflows/codeql-triage.yml`
     already makes.
     """
-    if not shutil.which("gh"):
-        print("     · pr-feedback on the main-branch ruleset's required checks — `gh` not found,")
-        print("       so this was not checked. Without it the auto lane never merges unattended.")
+    armed = merge_gate_armed()
+    if armed is None:
+        print("     · pr-feedback on the main-branch ruleset's required checks — not checked here")
+        print("       (`gh` unavailable, or the query failed). Without it no auto-lane PR merges.")
         return
-    slug = repo_slug()
-    if not slug:
-        return
-    query = (
-        'any(.[]; .type=="required_status_checks" and '
-        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
-    )
-    result = subprocess.run(  # noqa: S603 - literal argv
-        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0 and result.stdout.strip() == "true":
+    if armed:
         say("pr-feedback is a required status check — the unattended merge is armed")
         return
+    slug = repo_slug() or "<owner>/<repo>"
     # Reported, not STRICT.note()'d: this is a gap to fix, like the connectors and
     # the GitHub App above it, not a degradation of *this* run — and `cd-deploy`
     # runs under --strict, where failing on it would stop the fleet deploying over
@@ -2581,6 +2632,7 @@ def run_check(local_only: bool, triggers: str | None = None) -> int:
     if local_only:
         note("--local: skipping every GitHub check")
     elif gh_ready():
+        check_merge_gate(report)
         # A failed query is not an empty repo. Reported by the helper and skipped
         # here, rather than turning one gh error into twenty-two findings.
         present = existing_labels()

@@ -1066,6 +1066,60 @@ class TestManifest:
             assert routine["cron"] and routine["model"] and routine["prompt"] and routine["trigger_name"]
 
 
+class TestMergeGateCheck:
+    """The doctor's probe of the one setting that decides if the lane merges.
+
+    `pr-feedback` on the main-branch ruleset is what every workflow checks before
+    arming `gh pr merge --auto`. If it were dropped later, those workflows would
+    fail *quietly* — declining to arm auto-merge looks exactly like a lane that
+    had nothing to do — so `cron/cd-deploy.md` running `--check` on every merge is
+    the thing that would notice.
+    """
+
+    def test_an_armed_gate_is_silent(self, monkeypatch):
+        monkeypatch.setattr(setup, "merge_gate_armed", lambda: True)
+        report = setup.Report()
+        setup.check_merge_gate(report)
+        assert report.ok
+        assert report.notes == []
+
+    def test_a_missing_gate_is_a_finding(self, monkeypatch):
+        monkeypatch.setattr(setup, "merge_gate_armed", lambda: False)
+        report = setup.Report()
+        setup.check_merge_gate(report)
+        assert not report.ok
+        assert "pr-feedback" in report.problems[0]
+
+    def test_an_unanswerable_question_is_a_note_not_a_finding(self, monkeypatch):
+        """No `gh` is not the same answer as no gate.
+
+        Conflating them reddens the doctor on every machine without `gh`
+        authenticated, which is how a check gets ignored rather than fixed.
+        """
+        monkeypatch.setattr(setup, "merge_gate_armed", lambda: None)
+        report = setup.Report()
+        setup.check_merge_gate(report)
+        assert report.ok
+        assert report.notes and "not checked" in report.notes[0]
+
+    def test_the_probe_reports_none_without_gh(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        assert setup.merge_gate_armed() is None
+
+    def test_the_probe_reports_none_when_the_query_fails(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"))
+        assert setup.merge_gate_armed() is None
+
+    @pytest.mark.parametrize(("stdout", "expected"), [("true", True), ("false", False), ("", False)])
+    def test_the_probe_reads_the_jq_answer(self, monkeypatch, stdout, expected):
+        monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout, ""))
+        assert setup.merge_gate_armed() is expected
+
+
 class TestCheckMode:
     """``--check --local`` is the half that needs no network, so it is testable."""
 

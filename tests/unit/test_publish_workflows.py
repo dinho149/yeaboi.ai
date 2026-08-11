@@ -72,9 +72,24 @@ class TestTheOfficialChannelIsPromotionOnly:
         """
         jobs = load(PUBLISH)["jobs"]
         check_steps = " ".join(str(step) for step in jobs["check"]["steps"])
-        assert "--manifest --markdown" in check_steps, "the batch manifest must be built in `check`"
+        assert "--manifest" in check_steps, "the batch manifest must be built in `check`"
         release_steps = " ".join(str(step) for step in jobs["release"]["steps"])
-        assert "--manifest --markdown" not in release_steps
+        assert "--manifest" not in release_steps
+
+    def test_the_release_body_is_not_the_promotion_ask(self):
+        """`markdown()` renders two things and only one belongs on a public page.
+
+        The ask opens "Promote 3.7.0?" and closes with the ✅/❌ verbs and the
+        `<!-- promote: -->` marker. Published as the Release body, every shipped
+        release would permanently ask whether to ship it, and copies of the marker
+        the promotion path trusts would litter public pages.
+        """
+        # Match the invocation, not the prose: the step carries a comment naming
+        # `--markdown` to say why it is *not* used, and a bare substring test on
+        # the flag would fail on the explanation.
+        check_steps = " ".join(str(step) for step in load(PUBLISH)["jobs"]["check"]["steps"])
+        assert "--manifest --release-notes" in check_steps
+        assert "--manifest --markdown" not in check_steps
 
     def test_promotion_refuses_a_version_that_went_backwards(self):
         """A bare tag-exists check walks straight past the dual-PR race."""

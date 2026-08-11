@@ -56,7 +56,9 @@ jobs:
         # release-published-announce.md, the only announcement path there is.
         run: |
           set -euo pipefail
-          python3 scripts/release_channel.py --manifest --markdown > notes.md
+          # --release-notes, not --markdown: the ask's "Promote X?" header and its
+          # ✅/❌ footer must not become the public release page.
+          python3 scripts/release_channel.py --manifest --release-notes > notes.md
           cat notes.md
       - uses: actions/upload-artifact@v4
         with:
@@ -100,7 +102,13 @@ jobs:
           # second match and sed can exit 141, failing the step. `q` on first hit
           # keeps it a single process. Read from the end so a commit subject
           # interpolated into the manifest above cannot spoof the marker.
-          ASKED=$(printf '%s' "${ISSUE_BODY:-}" | tac | sed -nE 's/.*<!-- promote: ([0-9]+\.[0-9]+\.[0-9]+) -->.*/\1/{p;q;}')
+          # grep -o | tail -1: tail drains its input, so nothing is left holding a
+          # closed pipe under `set -o pipefail`. `sed …{q;}` and `head -1` both
+          # quit early, which is exactly the shape that can strand the writer.
+          ASKED=$(printf '%s' "${ISSUE_BODY:-}" \
+            | grep -oE '<!-- promote: [0-9]+\.[0-9]+\.[0-9]+ -->' \
+            | tail -1 \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
           echo "asked=$ASKED" >> "$GITHUB_OUTPUT"
           # Disclose drift, do not refuse it. A ✅ approves "cut a release now",
           # and every commit on main is already published as an rc, so promoting

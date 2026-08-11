@@ -213,19 +213,33 @@ def pending(ref: str = "HEAD") -> dict:
     }
 
 
-def markdown(batch: dict) -> str:
-    """The promotion issue body, and the text the Slack ask quotes.
+def markdown(batch: dict, *, asking: bool = True) -> str:
+    """The batch, rendered. One renderer, two audiences.
 
-    Ends with the `<!-- promote: X.Y.Z -->` marker `publish.yml` reads to tell
-    whether `main` moved between the ask and the approval.
+    ``asking=True`` is the promotion issue body and the text the Slack ask quotes:
+    it opens with the question and closes with the ✅/❌ verbs and the
+    `<!-- promote: X.Y.Z -->` marker `publish.yml` reads to tell whether `main`
+    moved between the ask and the approval.
+
+    ``asking=False`` is the **released** notes, and the difference is not
+    cosmetic. `publish.yml` publishes this as the GitHub Release body, which is
+    the most public artefact the channel produces and the text
+    `release-published-announce.md` reads back. Leading a shipped release with
+    "Promote 3.7.0?" and closing it with an invitation to react to a decision made
+    an hour ago on a now-closed issue reads as a draft nobody finished — and it
+    would scatter copies of the promote marker, which the promotion path trusts,
+    across public pages. The changelog half is identical either way; only the
+    question and the call to action are dropped.
     """
     target, last = batch["target"], batch["last_final"]
     since = f"since `{last}`" if last else "since the beginning of the project"
     age = f" ({batch['last_final_date']})" if batch["last_final_date"] else ""
-    lines = [
-        f"**Promote `{target}`?**  {batch['commits_since']} commits {since}{age}.",
-        "",
-    ]
+    head = (
+        f"**Promote `{target}`?**  {batch['commits_since']} commits {since}{age}."
+        if asking
+        else f"{batch['commits_since']} commits {since}{age}."
+    )
+    lines = [head, ""]
     for entry in batch["entries"]:
         lines.append(f"**{entry.get('version', '?')}** — {entry.get('summary', '')}".rstrip(" —"))
         for highlight in entry.get("highlights") or []:
@@ -242,15 +256,18 @@ def markdown(batch: dict) -> str:
         "",
         "</details>",
         "",
-        (
-            f"Latest pre-release: `pip install --pre yeaboi=={batch['latest_prerelease']}`"
-            if batch["latest_prerelease"]
-            else "_No pre-release published for this batch._"
-        ),
-        f"✅ to release `{target}` to PyPI + GitHub · ❌ to wait another week",
-        "",
-        f"<!-- promote: {target} -->",
     ]
+    if asking:
+        lines += [
+            (
+                f"Latest pre-release: `pip install --pre yeaboi=={batch['latest_prerelease']}`"
+                if batch["latest_prerelease"]
+                else "_No pre-release published for this batch._"
+            ),
+            f"✅ to release `{target}` to PyPI + GitHub · ❌ to wait another week",
+            "",
+            f"<!-- promote: {target} -->",
+        ]
     return "\n".join(lines)
 
 
@@ -259,7 +276,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--next-rc", action="store_true", help="print the pre-release version for HEAD")
     parser.add_argument("--check-promotable", action="store_true", help="print the version safe to promote, or fail")
     parser.add_argument("--manifest", action="store_true", help="what is pending promotion")
-    parser.add_argument("--markdown", action="store_true", help="render --manifest as the issue body")
+    parser.add_argument("--markdown", action="store_true", help="render --manifest as the promotion ask body")
+    parser.add_argument(
+        "--release-notes", action="store_true", help="render --manifest as published release notes (no ask)"
+    )
     parser.add_argument("--json", action="store_true", help="render --manifest as JSON")
     parser.add_argument("--write", action="store_true", help="stamp --version into pyproject.toml")
     parser.add_argument("--version", help="the version --write stamps")
@@ -290,7 +310,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.manifest:
             batch = pending(args.ref)
-            print(json.dumps(batch, indent=2) if args.json or not args.markdown else markdown(batch))
+            if args.markdown or args.release_notes:
+                print(markdown(batch, asking=not args.release_notes))
+            else:
+                print(json.dumps(batch, indent=2))
             return 0
     except ReleaseChannelError as error:
         print(f"[release-channel] {error}", file=sys.stderr)

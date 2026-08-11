@@ -227,6 +227,13 @@ from [models.md](models.md#workflows), and the routines from the table above —
 routine actually runs on is the one written down here. `tests/unit/test_cowork_setup.py` fails on the
 same drift in `make test-fast`.
 
+`make cowork-check` additionally probes the **`pr-feedback` required status check** on the
+`main-branch` ruleset, because that one setting decides whether the auto lane merges anything
+and the workflows that depend on it fail *quietly* — declining to arm `--auto` looks exactly
+like a lane that had nothing to do. `cron/cd-deploy.md` runs the same check on every merge to
+`main`, so removing the context later is noticed rather than silently absorbed. No `gh`, or a
+failed query, is reported as a note: an unanswerable question is not the same as a missing gate.
+
 **What each command covers.** `make cowork-setup` does the twenty-nine GitHub labels (`cowork`,
 `cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
 pair the promotion path fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*`

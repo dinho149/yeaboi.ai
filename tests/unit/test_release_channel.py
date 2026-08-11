@@ -211,6 +211,48 @@ class TestMarkdown:
         assert "✅" in body and "❌" in body
 
 
+class TestReleaseNotes:
+    """The published release page is not the promotion ask.
+
+    `publish.yml` uses this as the GitHub Release body, so an ask footer riding
+    along would leave every shipped release asking whether to ship it — on the
+    most public artefact the channel produces, permanently.
+    """
+
+    def _batch(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "second")
+        return rc.pending()
+
+    def test_the_ask_carries_the_question_and_the_verbs(self, repo, monkeypatch):
+        body = rc.markdown(self._batch(repo, monkeypatch), asking=True)
+        assert "Promote `1.1.0`?" in body
+        assert "✅" in body and "❌" in body
+        assert "<!-- promote: 1.1.0 -->" in body
+
+    def test_the_release_notes_carry_none_of_them(self, repo, monkeypatch):
+        body = rc.markdown(self._batch(repo, monkeypatch), asking=False)
+        assert "Promote" not in body
+        assert "✅" not in body and "❌" not in body
+        assert "promote:" not in body, "the marker the promotion path trusts must not be scattered publicly"
+
+    def test_both_describe_the_same_batch(self, repo, monkeypatch):
+        """Only the question and the call to action differ; the changelog is one renderer."""
+        batch = self._batch(repo, monkeypatch)
+        asking = rc.markdown(batch, asking=True)
+        notes = rc.markdown(batch, asking=False)
+        assert "1 commits since `v1.0.0`" in asking
+        assert "1 commits since `v1.0.0`" in notes
+
+    def test_the_cli_renders_each(self, repo, monkeypatch, capsys):
+        self._batch(repo, monkeypatch)
+        assert rc.main(["--manifest", "--release-notes"]) == 0
+        assert "Promote" not in capsys.readouterr().out
+        assert rc.main(["--manifest", "--markdown"]) == 0
+        assert "Promote" in capsys.readouterr().out
+
+
 class TestWrite:
     @pytest.mark.parametrize("version", ["3.6.0", "3.6.0rc12"])
     def test_it_stamps_a_valid_version(self, tmp_path, monkeypatch, version):
