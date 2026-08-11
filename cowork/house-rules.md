@@ -94,8 +94,11 @@ The lane is wide; what keeps it safe is the merge path, and none of it is discre
 - **`claude-review.yml` reviews the PR** once CI is green, and the `pr-feedback` status counts what
   it found.
 - **A machine may fix a finding; it may never dismiss one.** `scripts/pr_feedback.py` refuses an
-  `<!-- addressed: … -->` marker from the PR's own author on an unattended PR, so the only way to
-  clear one is to push a fix and let the reviewer report `open=0` itself. A finding you disagree
+  `<!-- addressed: … -->` marker from the PR's own author on an unattended PR, and refuses a
+  `feedback-override` label applied by that same author — the override is the stronger lever, since
+  it clears every finding, every unresolved thread and a requested-changes review at once, and
+  `gh pr edit --add-label` sits inside the sweeps' own grant. So the only way to clear a finding is
+  to push a fix and let the reviewer report `open=0` itself. A finding you disagree
   with ends the auto lane for that find: file it as a proposal and let a human answer. Before this
   was enforced, the routine that opened the PR could also declare the review of it answered — the
   applicant holding the key.
@@ -124,6 +127,11 @@ mostly express nervousness, and the honest answer to nervousness here is the gat
 - **Stay in your paths.** A find outside your charter's paths becomes a proposal issue labelled for
   the owning workstream. Never edit another workstream's files — this is what keeps two routines off
   `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface).
+- **Never apply `feedback-override`.** It is the escape hatch for a gate that has genuinely gone
+  wrong — a review that errored, a producer that changed format — and it is a human's call, recorded
+  on the PR. A routine applying it to its own PR is the applicant clearing its own review with the
+  largest lever available, and `pr_feedback.py` now refuses exactly that; this rule is here so the
+  closed allowlist covers the label rather than leaving it to the code alone.
 - **Never apply `claude-implement`.** Only a human does. That label is the approval gate; a routine
   applying it would be approving its own work. The one carve-out is `routines/cron/slack-relay.md`,
   which applies the label (or closes an issue) **only** as the relay of a ✅/❌ reaction from a human

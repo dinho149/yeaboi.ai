@@ -54,7 +54,8 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   end of it. A cowork PR, a `feature/issue-N-…` branch, a triage or sentinel branch: the only way to
   clear a finding there is to fix it and let the re-review report `open=0` itself.
   `scripts/pr_feedback.py` refuses an `<!-- addressed: … -->` marker from the PR's own author on
-  those branches — the account that wrote the change also has write access, so without that refusal
+  those branches — and a `feedback-override` label from that author too, since the override clears
+  more at once than any marker does — the account that wrote the change also has write access, so without that refusal
   the applicant would be holding the key to the gate. A machine that disagrees with a reviewer hands
   the work back as a proposal; it never overrules one.
 

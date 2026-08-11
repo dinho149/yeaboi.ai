@@ -272,6 +272,10 @@ class Snapshot:
     ci: CIState
     threads_truncated: bool = False
     head_ref: str = ""
+    # Who applied `feedback-override`, when it is present. Empty when nobody did,
+    # or when the timeline could not be read — those are different, and
+    # ``classify`` treats them differently.
+    override_actor: str = ""
 
 
 @dataclass(frozen=True)
@@ -532,7 +536,32 @@ def describe(items: Sequence[OpenItem]) -> str:
 def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     """The whole decision. Everything above feeds this; nothing below re-decides it."""
     if OVERRIDE_LABEL in snapshot.labels:
-        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label")
+        # The override is a stronger dismissal than any marker — it clears every
+        # finding, every unresolved thread and a CHANGES_REQUESTED review at once —
+        # so the rule that governs the marker has to govern it too, or the lane
+        # simply uses the bigger lever. On an unattended PR the applicant holds
+        # write access, and `gh pr edit --add-label` sits inside the sweeps' bare
+        # `Bash` grant, so "a human's call" was a convention rather than a fact.
+        #
+        # Unknown actor still honours the override. This label exists to unbrick a
+        # gate that has genuinely gone wrong, and refusing it on a timeline we
+        # could not read would turn one API failure into a PR nobody can merge —
+        # the exact outcome it is the escape hatch for.
+        if is_unattended(snapshot) and snapshot.override_actor and snapshot.override_actor == snapshot.author:
+            return Verdict(
+                "failure",
+                f"`{OVERRIDE_LABEL}` was applied by this PR's own author — it does not count here",
+                (
+                    OpenItem(
+                        "override",
+                        OVERRIDE_LABEL,
+                        f"`{OVERRIDE_LABEL}` applied by {snapshot.override_actor}, who authored this "
+                        f"machine PR — a human other than the author must apply it, or fix the findings",
+                    ),
+                ),
+            )
+        who = f" by {snapshot.override_actor}" if snapshot.override_actor else ""
+        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label{who}")
     if snapshot.is_draft:
         return Verdict("success", "draft — review not applicable")
     if snapshot.author in BOT_AUTHORS and not is_unattended(snapshot):
@@ -676,6 +705,13 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         ci=fetch_ci(slug, head_sha),
         threads_truncated=truncated,
         head_ref=meta.get("headRefName") or "",
+        # Only asked when the label is actually present — one paginated call for a
+        # question that is almost always moot.
+        override_actor=(
+            fetch_override_actor(slug, number)
+            if OVERRIDE_LABEL in tuple(label.get("name", "") for label in meta.get("labels") or [])
+            else ""
+        ),
     )
 
 
@@ -728,6 +764,29 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
         for item in raw
         if (item.get("body") or "").strip()
     )
+
+
+def fetch_override_actor(slug: str, number: int) -> str:
+    """Who most recently applied ``feedback-override``, or "" if unknown.
+
+    Read from the issue events timeline, which is the only place the *actor* of a
+    label is recorded — the labels on a PR carry no provenance at all. Empty on
+    any failure, and ``classify`` reads that as "unknown" rather than as "the
+    author", so a timeline this cannot fetch never turns into a blocked PR.
+    """
+    raw = _gh_json("api", f"repos/{slug}/issues/{number}/events", "--paginate")
+    if not isinstance(raw, list):
+        return ""
+    actor = ""
+    for item in raw:
+        if not isinstance(item, dict) or item.get("event") != "labeled":
+            continue
+        if ((item.get("label") or {}).get("name")) != OVERRIDE_LABEL:
+            continue
+        # Events arrive oldest-first; the last one wins, matching "most recently
+        # applied" after any remove/re-add.
+        actor = ((item.get("actor") or {}).get("login")) or ""
+    return actor
 
 
 def fetch_ci(slug: str, head_sha: str) -> CIState:

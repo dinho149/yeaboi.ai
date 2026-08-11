@@ -686,6 +686,71 @@ class TestReviewBodies:
         assert prf.classify(snap, NOW).state == "failure"
 
 
+class TestTheOverrideIsNotAFreeLever:
+    """`feedback-override` clears more than a marker ever could, so it needs the rule.
+
+    It returns success before the producers, the threads and a
+    CHANGES_REQUESTED review are even looked at. The sweeps hold bare `Bash` and
+    already run `gh pr merge --auto` on their own PR, so `gh pr edit --add-label
+    feedback-override` sits inside the same grant — meaning "a human's call" was a
+    convention, and the lane that just lost the `<!-- addressed: -->` route had a
+    bigger lever sitting beside it.
+    """
+
+    def _snap(self, **overrides):
+        base = dict(labels=("cowork", prf.OVERRIDE_LABEL), comments=(review(3),))
+        base.update(overrides)
+        return snapshot(**base)
+
+    def test_the_author_of_a_machine_pr_cannot_override_their_own(self):
+        snap = self._snap(author="cowork-bot", override_actor="cowork-bot")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "own author" in verdict.description
+
+    def test_another_human_still_can(self):
+        snap = self._snap(author="cowork-bot", override_actor="a-different-human")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert "a-different-human" in verdict.description
+
+    def test_an_unknown_actor_still_honours_it(self):
+        """This label exists to unbrick a wedged gate.
+
+        Refusing it on a timeline we could not read would turn one API failure
+        into a PR nobody can merge — precisely what it is the escape hatch for.
+        """
+        snap = self._snap(author="cowork-bot", override_actor="")
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_an_ordinary_pr_is_untouched(self):
+        """A person overriding their own PR is a person making a call."""
+        snap = self._snap(labels=(prf.OVERRIDE_LABEL,), author=AUTHOR, override_actor=AUTHOR)
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_the_actor_is_read_from_the_timeline_newest_wins(self):
+        events = [
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "first"}},
+            {"event": "labeled", "label": {"name": "cowork"}, "actor": {"login": "noise"}},
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "second"}},
+        ]
+        with_json = lambda *a: events  # noqa: E731 - a one-line stub
+        original = prf._gh_json
+        try:
+            prf._gh_json = with_json
+            assert prf.fetch_override_actor("o/r", 1) == "second"
+        finally:
+            prf._gh_json = original
+
+    def test_an_unreadable_timeline_reads_as_unknown_not_as_the_author(self):
+        original = prf._gh_json
+        try:
+            prf._gh_json = lambda *a: None
+            assert prf.fetch_override_actor("o/r", 1) == ""
+        finally:
+            prf._gh_json = original
+
+
 class TestStickyAdviceMatchesThePR:
     """The check must not instruct a human to do the one thing that cannot work.
 

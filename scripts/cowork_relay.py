@@ -139,29 +139,38 @@ def _by_name(reply: dict[str, Any]) -> dict[str, list[str]]:
     return out
 
 
-def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool:
+def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
     """Whether ``issue`` carries the `release:promotion` label the ask routine applies.
 
     Read from GitHub rather than inferred from the reply text, because the text is
     attacker-influenceable and the label is not: `cron/release-promote-ask.md`
     applies it at creation time, and applying a label needs repo write.
 
-    Fails **closed** — an unreachable API, a malformed response, or an issue that
-    simply does not carry it all return False, which downgrades the verb to an
-    ordinary approval. That is the safe direction: a promotion not carried out is
-    re-asked next Monday, while a release cut by mistake cannot be unpublished.
+    **Tristate, and the third state is the point.** True and False are answers;
+    ``None`` means the question could not be asked — an unreachable API, a rate
+    limit, a malformed response. Collapsing ``None`` into False looks like failing
+    closed and is not: the fallback verb is ``approve``, which applies
+    `claude-implement`, and `claude.yml`'s implement job fires on *any* issue
+    receiving that label. A single `gh` blip would therefore turn the maintainer's
+    ✅ on the release ask into an unattended `deep`-tier agent building
+    "Promote 3.7.0?" as though it were a feature request — the release not
+    happening, nobody told, and something else happening instead.
+
+    ``None`` routes to `ask` in `build_plan`, the verb that already exists for "do
+    not guess". Same reasoning as `merge_gate_armed` in `scripts/cowork_setup.py`:
+    an unanswerable question is not a no.
     """
     run = runner or _gh_labels
     payload = run(["gh", "issue", "view", str(issue), "--json", "labels"])
     if not payload:
-        return False
+        return None
     try:
         data = json.loads(payload)
     except (TypeError, ValueError):
-        return False
+        return None
     labels = data.get("labels") if isinstance(data, dict) else None
     if not isinstance(labels, list):
-        return False
+        return None
     return any(isinstance(entry, dict) and entry.get("name") == PROMOTION_LABEL for entry in labels)
 
 
@@ -259,12 +268,20 @@ def build_plan(
         # `claude-implement`, and nothing would say so. `is_promotion` confirms
         # against the `release:promotion` label, which only the ask routine
         # applies, so a matching title on an ordinary proposal stays an approval.
-        verb = (
-            ("promote" if (PROMOTE_RE.match(text) and is_promotion_issue(issue)) else "approve")
-            if approvers
-            else "reject"
-        )
         who = allowlist[(approvers or rejecters)[0]]
+        if not approvers:
+            verb = "reject"
+        elif not PROMOTE_RE.match(text):
+            verb = "approve"
+        else:
+            confirmed = is_promotion_issue(issue)
+            if confirmed is None:
+                # Could not tell — not the same as "not a promotion". `approve`
+                # applies `claude-implement`, which starts an implementation run
+                # against the release ask itself. Ask a human; that is the verb.
+                plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None})
+                continue
+            verb = "promote" if confirmed else "approve"
         plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
 
     plan.sort(key=lambda item: str(item["ts"]))

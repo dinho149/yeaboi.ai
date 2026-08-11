@@ -14,7 +14,7 @@ pre-releases — a ✅ on `cron/release-promote-ask.md`'s weekly question, not a
 tells people about it. Everything runs through `cowork-scribe`.
 
 Two consequences of that channel split, both of which change what this routine is looking at. The
-release body now *is* a batch manifest — `scripts/release_channel.py --manifest --markdown`, one
+release body now *is* a batch manifest — `scripts/release_channel.py --manifest --release-notes`, one
 section per changelog entry since the last final tag — so the span you are describing is a week or
 more of merges rather than one, and there is more to group. And a pre-release never reaches here at
 all: `publish-beta.yml` creates no tag and no GitHub Release, so the webhook simply does not fire

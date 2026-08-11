@@ -157,11 +157,23 @@ class TestPromotion:
         assert plan[0]["verb"] == "approve"
         assert plan[0]["command"][-1] == "claude-implement"
 
-    def test_an_unreachable_github_downgrades_to_approve(self):
-        """Fails closed: a promotion missed is re-asked; a release cut cannot be undone."""
-        assert relay.is_promotion(231, runner=lambda argv: None) is False
-        assert relay.is_promotion(231, runner=lambda argv: "not json") is False
-        assert relay.is_promotion(231, runner=lambda argv: '{"labels": "wrong shape"}') is False
+    @pytest.mark.parametrize("payload", [None, "not json", '{"labels": "wrong shape"}', ""])
+    def test_an_unanswerable_question_is_not_a_no(self, payload):
+        """`None`, never `False` — the difference decides whether an agent starts.
+
+        `approve` is not a no-op: it applies `claude-implement`, and `claude.yml`
+        fires on any issue receiving that label. Collapsing "could not reach
+        GitHub" into "not a promotion" would turn one rate-limited `gh` call into
+        an unattended implementation run against the release ask itself.
+        """
+        assert relay.is_promotion(231, runner=lambda argv: payload) is None
+
+    def test_an_unreachable_github_asks_rather_than_approving(self):
+        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: None)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "ask"
+        assert plan[0]["command"] is None, "no command at all — not `claude-implement` by another name"
 
     def test_the_label_is_read_from_github(self):
         seen = {}
