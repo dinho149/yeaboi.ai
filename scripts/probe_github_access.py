@@ -76,7 +76,7 @@ class Probe:
     results: list[Outcome] = field(default_factory=list)
 
     def record(self, name: str, consumer: str, result: transport.ApiResult) -> transport.ApiResult:
-        self.results.append(Outcome(name, consumer, result.ok, "" if result.ok else result.error[:160]))
+        self.results.append(Outcome(name, consumer, result.ok, "" if result.ok else result.error[:400]))
         return result
 
     def get(self, name: str, consumer: str, path: str) -> transport.ApiResult:

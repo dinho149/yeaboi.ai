@@ -133,7 +133,7 @@ def api(method: str, path: str, body: dict | None = None) -> ApiResult:
         # actually hits and the one worth reading. The request headers carry the
         # token and are never surfaced.
         try:
-            detail = error.read().decode()[:300]
+            detail = error.read().decode()[:400]
         except Exception:
             detail = ""
         return ApiResult(False, error=f"HTTP {error.code} on {method} {path}" + (f": {detail}" if detail else ""))
