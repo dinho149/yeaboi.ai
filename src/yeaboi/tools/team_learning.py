@@ -2752,18 +2752,10 @@ def _run_doc_quality_component(
             kwargs.pop("progress", None)
             kwargs.pop("db_path", None)
             dq_signal, dq_examples = run_doc_quality(source, project_key, **kwargs)
-        # Documentation recommendations are derived from every structured page
-        # result; the removed stylometric AI detector is never sent to an LLM.
-        from yeaboi.analysis.doc_quality import _fallback_doc_quality_insights
-
-        coverage = dq_examples.get("coverage_report", {})
-        if dq_signal.pages_scanned > 0 and coverage.get("status") not in {"failed", "no_data"}:
-            dq_examples["insights"] = _fallback_doc_quality_insights(
-                dq_signal,
-                dq_examples.get("samples"),
-            )
-        else:
-            dq_examples["insights"] = {}
+        # Documentation recommendations (deterministic — the removed stylometric
+        # AI detector is never sent to an LLM) now ride the blob: the scoring
+        # seam computes them and run_doc_quality gates them on real coverage.
+        dq_examples.setdefault("insights", {})
         return dq_signal, dq_examples
     except Exception:  # pragma: no cover - defensive; run_doc_quality already guards
         logger.exception("Doc-quality analysis failed; continuing without it")

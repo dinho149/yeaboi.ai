@@ -11,10 +11,12 @@ import time
 from types import SimpleNamespace
 
 from yeaboi.analysis.doc_quality import (
+    _aggregate_doc_assets,
+    _analyse_page_asset,
     _clarity_metrics,
     _fallback_doc_quality_insights,
     _read_page_inventory,
-    aggregate_doc_quality,
+    _write_doc_cache,
     collect_doc_pages,
     generate_doc_quality_insights,
     run_doc_quality,
@@ -152,15 +154,16 @@ class TestScoringCacheVersion:
 
 
 class TestAggregate:
-    def _pages(self):
-        return [
+    def _assets(self):
+        pages = [
             {"platform": "confluence", "title": "Clear one", "text": _CLEAR_TEXT},
             {"platform": "confluence", "title": "Dense one", "text": _DENSE_TEXT},
             {"platform": "notion", "title": "Verbose one", "text": _VERBOSE_TEXT},
         ]
+        return [_analyse_page_asset(page) for page in pages]
 
     def test_counts_and_distribution(self):
-        sig = aggregate_doc_quality(self._pages())
+        sig = _aggregate_doc_assets(self._assets())
         assert sig.pages_scanned == 3
         assert set(sig.platforms_scanned) == {"confluence", "notion"}
         assert sig.clear_pages + sig.mixed_pages + sig.unclear_pages == 3
@@ -168,7 +171,7 @@ class TestAggregate:
         assert sig.is_ai_estimate is False
 
     def test_usefulness_replaces_ai_estimate(self):
-        sig = aggregate_doc_quality(self._pages())
+        sig = _aggregate_doc_assets(self._assets())
         assert sig.avg_usefulness > 0
         assert sig.likely_ai_pages == 0
         assert sig.avg_ai_likelihood == 0
@@ -179,25 +182,25 @@ class TestAggregate:
             {"platform": "notion", "title": "Disclosed", "text": disclosed},
             {"platform": "notion", "title": "Plain", "text": _CLEAR_TEXT},
         ]
-        sig = aggregate_doc_quality(pages)
+        sig = _aggregate_doc_assets([_analyse_page_asset(page) for page in pages])
         assert sig.ai_marked_pages == 1
 
     def test_page_about_ai_tools_is_not_marked(self):
         # Regression: a page that documents AI tooling (pasting a marker address
         # or URL as an example) is ABOUT AI, not written by it.
         about = "AI tooling guide. Example trailer address: copilot@github.com. See https://claude.com/claude-code."
-        sig = aggregate_doc_quality([{"platform": "notion", "title": "About AI", "text": about}])
+        sig = _aggregate_doc_assets([_analyse_page_asset({"platform": "notion", "title": "About AI", "text": about})])
         assert sig.ai_marked_pages == 0
 
     def test_flagged_pages_populated(self):
-        sig = aggregate_doc_quality(self._pages())
+        sig = _aggregate_doc_assets(self._assets())
         # Low-quality pages surface as call-outs.
         assert sig.flagged_pages
         titles = {t for t, _ in sig.flagged_pages}
         assert "Dense one" in titles or "Verbose one" in titles
 
     def test_empty_returns_zeros(self):
-        sig = aggregate_doc_quality([])
+        sig = _aggregate_doc_assets([])
         assert sig == DocQualitySignal()
         assert sig.pages_scanned == 0
 
@@ -439,6 +442,8 @@ class TestCollectDocPages:
         assert pages[0]["read_error"] == ""
 
     def test_version_cache_reuses_derived_asset_without_storing_body(self, tmp_path):
+        # Scoring moved behind the analysis.score_docs seam, so the cache write
+        # is the caller's post-seam batch (_write_doc_cache), not the reader's.
         database = tmp_path / "analysis.db"
         inventory = [
             {
@@ -457,13 +462,36 @@ class TestCollectDocPages:
             return {"text": _CLEAR_TEXT, "truncated": False, "error": ""}
 
         first = _read_page_inventory(inventory, {"confluence": _read}, db_path=database)
+        assert "asset" not in first[0]  # readers no longer score
+        asset = _analyse_page_asset(first[0])
+        _write_doc_cache(first, [asset], database)
         second = _read_page_inventory(inventory, {"confluence": _read}, db_path=database)
 
         assert calls == 1
-        assert first[0]["asset"] == second[0]["asset"]
+        assert second[0]["asset"] == asset
         assert second[0]["cache_status"] == "hit"
         assert second[0]["text"] == ""
         assert _CLEAR_TEXT not in database.read_bytes().decode("utf-8", errors="ignore")
+
+    def test_cache_write_skips_cached_and_keyless_pages(self, tmp_path):
+        database = tmp_path / "analysis.db"
+        cached_page = {"platform": "confluence", "key": "hit", "version": "1", "asset": {"clarity": 50.0}}
+        keyless_page = {"platform": "notion", "key": "p2", "title": "No version", "text": _CLEAR_TEXT}
+        fresh_page = {"platform": "notion", "key": "p3", "version": "9", "title": "Fresh", "text": _CLEAR_TEXT}
+        assets = [cached_page["asset"], _analyse_page_asset(keyless_page), _analyse_page_asset(fresh_page)]
+
+        _write_doc_cache([cached_page, keyless_page, fresh_page], assets, database)
+
+        refetched = _read_page_inventory(
+            [
+                {"platform": "notion", "key": "p2", "title": "No version"},
+                {"platform": "notion", "key": "p3", "version": "9", "title": "Fresh"},
+            ],
+            {"notion": lambda _page_id: {"text": _CLEAR_TEXT, "truncated": False, "error": ""}},
+            db_path=database,
+        )
+        assert "asset" not in refetched[0]  # no version → no cache key → re-read
+        assert refetched[1]["cache_status"] == "hit"
 
     def test_version_change_refetches_only_changed_page(self, tmp_path):
         database = tmp_path / "analysis.db"
@@ -483,12 +511,14 @@ class TestCollectDocPages:
             calls += 1
             return {"text": _CLEAR_TEXT, "truncated": False, "error": ""}
 
-        _read_page_inventory(inventory, {"notion": _read}, db_path=database)
+        first = _read_page_inventory(inventory, {"notion": _read}, db_path=database)
+        _write_doc_cache(first, [_analyse_page_asset(first[0])], database)
         inventory[0]["version"] = "2026-01-02"
         changed = _read_page_inventory(inventory, {"notion": _read}, db_path=database)
 
         assert calls == 2
-        assert changed[0]["cache_status"] == "miss"
+        assert changed[0].get("cache_status") != "hit"
+        assert str(changed[0].get("text", "")).strip()  # body present for the seam to score
 
     def test_source_error_recorded_not_raised(self, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_confluence_token", lambda: "tok")

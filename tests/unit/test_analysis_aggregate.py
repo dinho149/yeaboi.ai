@@ -228,3 +228,215 @@ class TestGoDispatch:
             assert aggregate.go_score(_score_inputs()) == canned_score
         assert "analysis.classify_markers served by the sidecar" in caplog.text
         assert "analysis.score_code served by the sidecar" in caplog.text
+
+
+def _doc_pages() -> list[dict]:
+    return [
+        {
+            "platform": "confluence",
+            "container": "PSO",
+            "key": "hit",
+            "version": "7",
+            "title": "Cached runbook",
+            "text": "",
+            "cache_status": "hit",
+            "asset": {
+                "title": "Cached runbook",
+                "platform": "confluence",
+                "clarity": 72.5,
+                "usefulness": 80.0,
+                "owned": True,
+                "actionable": True,
+                "structured": True,
+                "has_code_blocks": False,
+                "marked": False,
+                "url": "https://x/wiki/hit",
+                "key": "hit",
+                "container": "PSO",
+                "version": "7",
+            },
+        },
+        {
+            "platform": "notion",
+            "container": "root",
+            "key": "fresh",
+            "version": "2026-01-01",
+            "title": "Fresh guide",
+            "text": "# Purpose\n\nOwner: SRE\n\n- Run the check.\n- Verify the result.",
+        },
+        {
+            "platform": "notion",
+            "container": "root",
+            "key": "empty",
+            "title": "Unreadable",
+            "text": "   ",
+            "read_error": "empty page body",
+        },
+    ]
+
+
+def _docs_inputs(**overrides) -> dict:
+    pages = overrides.pop("pages", _doc_pages())
+    return aggregate.build_score_docs_inputs(pages=pages)
+
+
+class TestDocsWireSafety:
+    def test_inputs_survive_a_json_round_trip(self):
+        inputs = _docs_inputs()
+        assert json.loads(json.dumps(inputs)) == inputs
+
+    def test_results_survive_a_json_round_trip(self):
+        result = aggregate.score_docs(_docs_inputs())
+        assert json.loads(json.dumps(result)) == result
+
+    def test_input_building_copies_rather_than_aliases(self):
+        pages = _doc_pages()
+        inputs = aggregate.build_score_docs_inputs(pages=pages)
+        pages[1]["text"] = "mutated after build"
+        assert inputs["pages"][1]["text"].startswith("# Purpose")
+
+
+class TestDocsReferenceImplementation:
+    def test_cached_assets_pass_through_and_fresh_pages_are_scored_in_order(self):
+        from yeaboi.analysis.doc_quality import _analyse_page_asset
+
+        inputs = _docs_inputs()
+        result = aggregate.score_docs(inputs)
+        # The blank-bodied page is dropped; the cached asset crosses untouched.
+        assert [asset["key"] for asset in result["assets"]] == ["hit", "fresh"]
+        assert result["assets"][0] == inputs["pages"][0]["asset"]
+        assert result["assets"][1] == _analyse_page_asset(inputs["pages"][1])
+
+    def test_result_and_summary_key_order_are_the_wire_contract(self):
+        result = aggregate.score_docs(_docs_inputs())
+        assert list(result) == ["assets", "signal", "summary", "findings", "action_plan", "insights"]
+        assert list(result["summary"]) == [
+            "pages_scanned",
+            "platforms_scanned",
+            "avg_clarity",
+            "avg_usefulness",
+            "clear_pages",
+            "mixed_pages",
+            "unclear_pages",
+            "owned_pages",
+            "actionable_pages",
+            "structured_pages",
+            "ai_marked_pages",
+            "per_platform",
+            "flagged_pages",
+            "is_ai_estimate",
+            "small_sample",
+        ]
+        assert list(result["insights"]) == ["start", "stop", "keep", "try"]
+
+    def test_summary_and_findings_mirror_the_reference_helpers(self):
+        from yeaboi.analysis.doc_quality import (
+            _aggregate_doc_assets,
+            _doc_findings,
+            _prioritize_doc_actions,
+            doc_small_sample,
+        )
+
+        result = aggregate.score_docs(_docs_inputs())
+        signal = _aggregate_doc_assets(result["assets"])
+        assert result["signal"] == aggregate.doc_signal_to_wire(signal)
+        assert result["summary"]["pages_scanned"] == 2
+        assert result["summary"]["small_sample"] == doc_small_sample(signal)
+        assert result["findings"] == _doc_findings(result["assets"])
+        assert result["action_plan"] == _prioritize_doc_actions(result["findings"])
+
+    def test_empty_pages_produce_the_empty_scaffold(self):
+        result = aggregate.score_docs(_docs_inputs(pages=[]))
+        assert result["assets"] == []
+        assert result["signal"]["pages_scanned"] == 0
+        assert result["findings"] == []
+        assert result["action_plan"] == []
+        # Insights still exist (the caller gates them on coverage, not the seam).
+        assert set(result["insights"]) == {"start", "stop", "keep", "try"}
+
+
+class TestDocSignalWire:
+    def test_round_trip_is_lossless_including_legacy_fields(self):
+        from yeaboi.team_profile import DocQualitySignal
+
+        signal = DocQualitySignal(
+            pages_scanned=7,
+            platforms_scanned=("confluence", "notion"),
+            avg_clarity=61.5,
+            avg_usefulness=48.0,
+            clear_pages=3,
+            mixed_pages=2,
+            unclear_pages=2,
+            owned_pages=4,
+            actionable_pages=5,
+            structured_pages=6,
+            avg_ai_likelihood=12.5,
+            likely_ai_pages=2,
+            ai_marked_pages=1,
+            per_platform=(("confluence", 5), ("notion", 2)),
+            flagged_pages=(("Dense page", "clarity 20/100 — dense or long-winded"),),
+            is_ai_estimate=True,
+        )
+        assert aggregate.doc_signal_from_wire(aggregate.doc_signal_to_wire(signal)) == signal
+
+    def test_wire_key_order_matches_the_dataclass_declaration(self):
+        from yeaboi.team_profile import DocQualitySignal
+
+        wire = aggregate.doc_signal_to_wire(DocQualitySignal())
+        assert list(wire) == [field for field in DocQualitySignal.__dataclass_fields__]
+
+    def test_empty_payload_rehydrates_the_default_signal(self):
+        from yeaboi.team_profile import DocQualitySignal
+
+        assert aggregate.doc_signal_from_wire({}) == DocQualitySignal()
+
+
+class TestGoDocsDispatch:
+    """analysis.score_docs dispatch: Go results win; any failure → Python."""
+
+    def test_no_client_means_python_path(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: None)
+        assert aggregate.go_score_docs(_docs_inputs()) is None
+
+    def test_core_error_returns_none_for_fallback(self, monkeypatch):
+        from yeaboi.gocore import CoreError
+
+        class BrokenClient:
+            def request(self, *args, **kwargs):
+                raise CoreError("sidecar exploded")
+
+        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: BrokenClient())
+        assert aggregate.go_score_docs(_docs_inputs()) is None
+
+    def test_malformed_results_return_none(self, monkeypatch):
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                return {"assets": []}
+
+        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
+        assert aggregate.go_score_docs(_docs_inputs()) is None
+
+    def test_asset_count_mismatch_returns_none(self, monkeypatch):
+        canned = aggregate.score_docs(_docs_inputs())
+        short = {**canned, "assets": canned["assets"][:1]}
+
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                return short
+
+        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
+        # A one-short asset list would mis-key the post-seam cache writes.
+        assert aggregate.go_score_docs(_docs_inputs()) is None
+
+    def test_good_results_are_returned_verbatim(self, monkeypatch, caplog):
+        canned = aggregate.score_docs(_docs_inputs())
+
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                assert method == "analysis.score_docs"
+                return canned
+
+        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
+        with caplog.at_level(logging.INFO, logger="yeaboi.analysis.aggregate"):
+            assert aggregate.go_score_docs(_docs_inputs()) == canned
+        assert "analysis.score_docs served by the sidecar" in caplog.text
