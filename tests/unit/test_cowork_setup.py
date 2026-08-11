@@ -766,7 +766,7 @@ class TestLabels:
     def test_the_label_set_is_shared_plus_workstreams_plus_types(self):
         names = {label.name for label in setup.expected_labels()}
         assert names == (
-            {"cowork", "cowork:proposal", "claude-implement", "feedback-override"}
+            {"cowork", "cowork:proposal", "claude-implement", "feedback-override", "review-capped"}
             | {f"workstream:{w}" for w in WORKSTREAMS}
             | {f"type:{t}" for t in setup.PROPOSAL_TYPES}
         )
@@ -1742,7 +1742,9 @@ class TestTeardown:
             if label.name not in setup.KEEP_LABELS and not label.name.startswith("type:")
         }
         assert {label.name for label in setup.teardown_labels()} == expected
-        assert len(expected) == len(WORKSTREAMS) + 2
+        # cowork, cowork:proposal, review-capped — the three non-workstream,
+        # non-type labels cowork creates and may therefore also remove.
+        assert len(expected) == len(WORKSTREAMS) + 3
 
     def test_it_refuses_without_yes(self):
         result = subprocess.run(

@@ -132,6 +132,33 @@ jobs:
       - run: uv sync --extra dev
       - run: make lint
 
+  # Nothing in CI read the workflow files themselves until this job existed, and
+  # the cost of that was four days of a dead merge gate: `pr-feedback.yml`
+  # carried a trigger GitHub rejects, so the whole file was unparseable, every
+  # run was a zero-job failure attributed to `push`, and the required status it
+  # was supposed to post never appeared on a single commit. Every other check was
+  # green throughout. A workflow that cannot parse is invisible to every tool
+  # that reads workflows — including the ones that would have told us.
+  workflows:
+    name: Workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The pinned release tarball rather than a third-party action: this repo
+      # requires every third-party `uses:` to be SHA-pinned
+      # (tests/unit/test_codeql_triage.py), and adding a linter is a poor reason
+      # to add a supply-chain dependency whose SHA nobody here can verify. The
+      # version moves deliberately, in a diff.
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+        run: |
+          set -euo pipefail
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
+
   format-check:
     name: Format check (ruff)
     runs-on: ubuntu-latest

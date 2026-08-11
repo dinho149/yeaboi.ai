@@ -62,11 +62,25 @@ def comment(
     )
 
 
-def review(n: int, *, minutes_ago: int = 60, ident: int = 1, edited_minutes_ago: int | None = None):
+# The login `claude-review.yml` actually posts under — the Claude GitHub App.
+# `is_authentic_verdict` pins the producer to it, so a fixture using any other
+# identity is not testing the real thing.
+REVIEWER = "claude[bot]"
+
+
+def review(
+    n: int,
+    *,
+    minutes_ago: int = 60,
+    ident: int = 1,
+    edited_minutes_ago: int | None = None,
+    author: str = REVIEWER,
+):
     return comment(
         f"Findings...\n\n{REVIEW_MARK.format(n=n)}",
         minutes_ago=minutes_ago,
         ident=ident,
+        author=author,
         edited_minutes_ago=edited_minutes_ago,
     )
 
@@ -174,6 +188,75 @@ class TestProducerVerdicts:
         # otherwise a routine nobody updated could clear the gate by staying quiet.
         snap = snapshot(comments=(review(0), comment("<!-- cowork-dod -->", ident=3)))
         assert prf.latest_verdict(snap.comments, prf.PRODUCERS[1]) is None
+
+
+class TestTheReviewCap:
+    """The loop needs a terminator, and the terminator must not break the gate.
+
+    Four consecutive rounds on PR #222 each produced real should-fix findings.
+    An adversarial review of a large diff always finds something, so "merge when
+    the reviewer reports zero" is not a condition that reliably arrives — and a
+    gate whose exit may never occur is a gate that gets deleted.
+    """
+
+    def test_under_the_cap_findings_still_block(self):
+        snap = snapshot(comments=(review(2, minutes_ago=60, ident=1),))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_at_the_cap_the_gate_opens(self):
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert "capped" in verdict.description
+
+    def test_the_findings_are_kept_not_discarded(self):
+        """Green is not clean. The items ride along so the comment can list them."""
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(3, minutes_ago=10, ident=2)))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.items and verdict.items[0].key == "claude-review"
+        assert "not fixed" in verdict.description
+
+    def test_a_clean_pass_does_not_spend_a_round(self):
+        """Otherwise a regression after a clean review could never reopen the gate.
+
+        Counting every verdict would make "review found a new problem" and
+        "review ran out of patience" the same state.
+        """
+        snap = snapshot(comments=(review(0, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_forged_verdict_cannot_burn_a_round(self):
+        """Otherwise two comments from anybody would cap somebody else's PR."""
+        forged = comment(REVIEW_MARK.format(n=1), minutes_ago=50, ident=9, author="a-stranger")
+        rounds = prf.review_rounds((review(1, minutes_ago=60, ident=1), forged), prf.PRODUCERS[0])
+        assert rounds == 1
+
+    def test_an_unresolved_human_thread_is_never_capped(self):
+        """A person waiting for an answer is not a loop that has run too long."""
+        snap = snapshot(
+            comments=(review(1, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)),
+            threads=(thread(authors=("a-reviewer",)),),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_changes_requested_review_is_never_capped(self):
+        snap = snapshot(
+            comments=(review(1, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)),
+            review_decision="CHANGES_REQUESTED",
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_capped_comment_does_not_read_as_clean(self):
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(2, minutes_ago=10, ident=2)))
+        body = prf.sticky_body(snap, prf.classify(snap, NOW))
+        assert "recorded, not fixed" in body
+        assert "clear" not in body.lower().split("recorded")[0]
+        assert prf.CAPPED_LABEL in body
+
+    def test_the_workflow_and_the_script_cap_at_the_same_number(self):
+        """Reviewing past the cap would write findings nothing will ever act on."""
+        text = (ROOT / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8")
+        assert f"-ge {prf.MAX_REVIEW_ROUNDS} ]" in text, "claude-review.yml stopped agreeing with MAX_REVIEW_ROUNDS"
 
 
 class TestWaitingVersusMissing:
@@ -359,7 +442,9 @@ class TestEditedComments:
         assert prf.classify(snap, NOW).state == "success"
 
     def test_the_edited_comment_is_the_latest_verdict_even_when_created_first(self):
-        old_but_edited = comment(REVIEW_MARK.format(n=4), minutes_ago=600, edited_minutes_ago=1, ident=1)
+        old_but_edited = comment(
+            REVIEW_MARK.format(n=4), minutes_ago=600, edited_minutes_ago=1, ident=1, author=REVIEWER
+        )
         newer = review(0, minutes_ago=60, ident=2)
         found = prf.latest_verdict((old_but_edited, newer), prf.PRODUCERS[0])
         assert found[1] == 4
@@ -700,7 +785,9 @@ class TestMain:
             (
                 "issues/123/comments",
                 0,
-                json.dumps([{"id": 1, "user": {"login": "b"}, "body": REVIEW_MARK.format(n=2), "created_at": None}]),
+                json.dumps(
+                    [{"id": 1, "user": {"login": REVIEWER}, "body": REVIEW_MARK.format(n=2), "created_at": None}]
+                ),
             ),
         )
         assert prf.main(["--pr", "123"]) == 1
