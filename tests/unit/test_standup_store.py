@@ -565,6 +565,33 @@ class TestSkippedSourcesRoundTrip:
         assert latest is not None
         assert latest.skipped_sources == ()
 
+    def test_unmet_sources_round_trip(self, db_path):
+        # The broadcast renderers read this long after the run that classified it,
+        # so "asked for and not delivered" has to survive the store.
+        report = _make_report(
+            skipped_sources=(("github", "GITHUB_TOKEN not set"), ("local_git", "no repo path configured")),
+            unmet_sources=("github",),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest.unmet_sources == ("github",)
+
+    def test_old_report_without_unmet_sources_deserializes(self, db_path):
+        # A run stored before the split has skips but no verdict on them; the
+        # broadcast line must stay off rather than replay an old nag.
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(skipped_sources=(("github", "GITHUB_TOKEN not set"),)))
+            (raw,) = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(raw)
+            d.pop("unmet_sources", None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None
+        assert latest.unmet_sources == ()
+
 
 class TestMemberLinksRoundTrip:
     def test_round_trips(self, db_path):

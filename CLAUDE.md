@@ -120,7 +120,11 @@ and never builds anything.
   (`OutputShareServer(editable=…)`), and a **correctable** standup, whose reader answers a practice
   signal (`ShareDocument.corrections`, set only when the TUI passes `session_id`+`run_id`). One
   policy rather than one each, because they differ in what they send and not at all in what they may
-  reach. `export/actions.ts` (edits) and `export/vote.ts` (verdicts) are the only network code in
+  reach. **The correctable half currently has no host**: both standup share paths went editable,
+  and one document cannot have two writers — an editable share replays its own edit log, a practice
+  vote rewrites the run beneath it. The path, its route and its tests stay because carrying a
+  verdict *through* the edit log (a third op beside `OP_NOTE`/`OP_FIELD`) is what would let both
+  live on one document; signals are answered from the TUI's Practices action until then. `export/actions.ts` (edits) and `export/vote.ts` (verdicts) are the only network code in
   the export bundle; gate any new control on the payload's capability flag — `edit`, `correctable` —
   or written exports render a button that does nothing. Post via `mutate('/api/…', {…})` with a
   literal path and body, and read via `payload.get("…")`, so `test_web_request_keys.py` keeps seeing

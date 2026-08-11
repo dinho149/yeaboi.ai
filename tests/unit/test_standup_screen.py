@@ -1,5 +1,7 @@
 """Render tests for the Daily Standup TUI screen builder and helpers."""
 
+import dataclasses
+
 import pytest
 from rich.console import Console
 from rich.panel import Panel
@@ -1428,11 +1430,227 @@ class TestUncheckedStandupCard:
         assert not [line for line in out.splitlines() if len(line) > 80]
 
 
+class TestLiveShareIsEditable:
+    """Share Online on the live page must offer the same correctable share the
+    saved-runs hub does.
+
+    It did not, and that is the whole reason the edit/notes feature read as
+    missing: it shipped, it worked, and the only door to it was to leave the page
+    you had just generated on, re-open the run from the hub, and share it again.
+    """
+
+    def _drive(self, monkeypatch, keys, *, anonymize=False):
+        captured: dict = {}
+
+        monkeypatch.setattr(
+            mode_select,
+            "_collect_standup_data",
+            lambda message="": {
+                "session_id": "s1",
+                "session_name": "Demo",
+                "report": _report(),
+                "config": None,
+                "schedule": {},
+                "message": message,
+            },
+        )
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select.screens._screens_secondary._build_standup_screen",
+            lambda *args, **kwargs: Text("standup"),
+        )
+        monkeypatch.setattr(
+            "yeaboi.sharing.documents.standup_document",
+            lambda report, **kw: ("doc", kw),
+        )
+
+        class _Store:
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get_history(self, *a, **k):
+                return []
+
+            def get_latest_run_id(self, *a, **k):
+                return 7
+
+        monkeypatch.setattr("yeaboi.standup.store.StandupStore", _Store)
+        monkeypatch.setattr(
+            mode_select,
+            "_standup_editable_session",
+            lambda report, run_id, history: type(
+                "Session", (), {"share": "SHARE", "persist": "PERSIST", "commit": lambda self: None}
+            )(),
+        )
+        monkeypatch.setattr(
+            mode_select,
+            "_run_output_share_flow",
+            lambda *a, **kw: captured.update(kw) or 0,
+        )
+        if anonymize:
+            monkeypatch.setattr(
+                mode_select,
+                "_standup_document",
+                lambda session_id, data: ("Standup", "# md"),
+            )
+            monkeypatch.setattr(
+                mode_select,
+                "_run_anonymize_pass",
+                lambda *a, **kw: type("Anon", (), {"replacements": {}})(),
+            )
+            monkeypatch.setattr("yeaboi.anonymize.apply.mask_artifact", lambda report, replacements: report)
+
+        script = iter([*keys, "q"])
+        mode_select._run_standup_page(
+            type("Console", (), {"size": (120, 40)})(),
+            type("Live", (), {"update": lambda self, renderable: None})(),
+            lambda **kwargs: next(script, "q"),
+            0.001,
+            True,
+        )
+        return captured
+
+    def test_share_online_offers_the_editable_document(self, monkeypatch):
+        # Actions: Generate Review Team Sources Anonymize Identity [Share Online] Back
+        keys = [*["right"] * 6, "enter"]
+        captured = self._drive(monkeypatch, keys)
+        assert captured.get("editable") == "SHARE"
+        assert captured.get("on_edit") == "PERSIST"
+
+    def test_an_anonymized_share_is_never_editable(self, monkeypatch):
+        # An edit made against a mask cannot be matched back to a member, so the
+        # masked share stays exactly the read-only publish it has always been.
+        # Actions while masked: … Sources Adjust Revert Identity [Share Online] Back
+        keys = [*["right"] * 4, "enter", "right", *["right"] * 7, "enter"]
+        captured = self._drive(monkeypatch, keys, anonymize=True)
+        assert captured, "Share Online was never reached — the assertion below would pass vacuously"
+        assert captured.get("editable") is None
+        assert captured.get("on_edit") is None
+
+
+class TestSourcesAction:
+    """After first setup the code-source picker had no door.
+
+    ``_standup_code_configure`` was reachable only by declining the saved setup
+    mid-Generate, so a standup that had never been told about GitHub could not be
+    corrected from the page that was failing to show it.
+    """
+
+    def test_pressing_sources_opens_the_code_picker(self, monkeypatch):
+        opened: list = []
+        monkeypatch.setattr(
+            mode_select,
+            "_collect_standup_data",
+            lambda message="": {
+                "session_id": "s1",
+                "session_name": "Demo",
+                "report": _report(),
+                "config": None,
+                "schedule": {},
+                "message": message,
+            },
+        )
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select.screens._screens_secondary._build_standup_screen",
+            lambda *a, **kw: Text("standup"),
+        )
+        monkeypatch.setattr(
+            mode_select,
+            "_standup_code_configure",
+            lambda *a, **kw: opened.append(a[-1]) or (True, "Saved."),
+        )
+        script = iter(["right", "right", "right", "enter", "q"])
+        mode_select._run_standup_page(
+            type("Console", (), {"size": (120, 40)})(),
+            type("Live", (), {"update": lambda self, r: None})(),
+            lambda **kw: next(script, "q"),
+            0.001,
+            True,
+        )
+        assert opened == ["s1"]
+
+
+class TestEditableSessionGuard:
+    def test_no_run_id_means_no_editable_share(self):
+        # Edits are appended as a row that supersedes its parent; with no run to
+        # anchor to there is no base to replay onto, so the share stays read-only.
+        assert mode_select._standup_editable_session(_report(), 0, []) is None
+
+    def test_a_real_run_gets_a_session_anchored_to_it(self, tmp_path, monkeypatch):
+        # The live page and the saved-runs hub both go through here, so this is
+        # the one place that proves either of them can actually take an edit.
+        monkeypatch.setattr(mode_select, "_ana_dbp", tmp_path / "sessions.db")
+        report = _report()
+        session = mode_select._standup_editable_session(report, 42, [])
+        assert session is not None
+        assert session.kind == "standup"
+        assert session.run_id == 42
+        # The share is what the browser is handed; it must carry the report.
+        assert session.share is not None
+
+    def test_the_share_really_renders_an_editable_page(self, tmp_path, monkeypatch):
+        # The complaint that started this was "I no longer see the edit UI", so
+        # asserting a session object exists is not enough — the page a reader
+        # opens has to carry the `editing` key that switches the edit stack on.
+        monkeypatch.setattr(mode_select, "_ana_dbp", tmp_path / "sessions.db")
+        from yeaboi.sharing.documents import render_editable_page
+
+        session = mode_select._standup_editable_session(_report(), 7, [])
+        assert '"editing"' in render_editable_page(session.share)
+
+
+class TestNotScannedPanel:
+    """The Activity detail is where a user goes to ask "did it look at GitHub?".
+
+    Until this shipped, ``skipped_sources`` was empty on every real run, so the
+    panel existed and never once drew — a source that was never scanned looked
+    exactly like a source that found nothing.
+    """
+
+    def _data(self, skipped):
+        return {
+            "session_name": "demo",
+            "report": dataclasses.replace(_report(), skipped_sources=skipped),
+            "schedule": {},
+            "my_name": "Alice",
+        }
+
+    def test_a_skipped_source_is_named_with_its_reason(self):
+        out = _render(
+            _build_standup_screen(
+                self._data((("github", "not selected in setup"),)), width=100, height=40, view="activity"
+            ),
+            100,
+        )
+        assert "Not scanned" in out
+        assert "not selected in setup" in out
+
+    def test_the_source_is_named_the_way_the_product_names_it(self):
+        # "azdo_repos".title() reads as "Azdo Repos"; the progress steps and the
+        # report must agree, or they look like two different sources.
+        out = _render(
+            _build_standup_screen(
+                self._data((("azdo_repos", "not selected in setup"),)), width=100, height=40, view="activity"
+            ),
+            100,
+        )
+        assert "Azure DevOps code" in out
+
+    def test_no_panel_when_everything_was_scanned(self):
+        out = _render(_build_standup_screen(self._data(()), width=100, height=40, view="activity"), 100)
+        assert "Not scanned" not in out
+
+
 class TestActionRowWrapping:
-    """Six standup actions outgrow an 80-column terminal, so the bar must wrap —
+    """The standup actions outgrow an 80-column terminal, so the bar must wrap —
     a clipped button is reachable with the arrow keys and invisible on screen."""
 
-    ACTIONS = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
+    ACTIONS = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Share Online", "Back"]
 
     def test_every_button_is_drawn_at_80_columns(self):
         out = _render(_build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS), 80)
@@ -1446,7 +1664,7 @@ class TestActionRowWrapping:
     def test_wide_terminal_keeps_one_row(self):
         from yeaboi.ui.shared._components import action_rows_height
 
-        assert action_rows_height(self.ACTIONS, 200) == 4
+        assert action_rows_height(self.ACTIONS, 220) == 4
 
     def test_narrow_terminal_takes_the_extra_height_from_the_viewport(self):
         from yeaboi.ui.shared._components import action_rows_height
@@ -1464,9 +1682,9 @@ class TestActionRowWrapping:
         which for these bars is 87-88 and 91-96/105-106 columns respectively —
         nowhere near the 80 every other test here checks. Hence the sweep.
         """
-        six = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
-        seven = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
-        for actions in (six, seven):
+        seven = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
+        eight = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Share Online", "Back"]
+        for actions in (seven, eight):
             for width in range(80, 121):
                 out = _render(_build_standup_screen(_review_data(), width=width, height=30, actions=actions), width)
                 for label in actions:

@@ -15,6 +15,7 @@ from rich.console import Group
 from rich.text import Text
 
 from yeaboi.agent.state import StandupReport
+from yeaboi.standup import collector
 
 logger = logging.getLogger(__name__)
 
@@ -176,10 +177,26 @@ def format_standup_lines(report: StandupReport) -> list[str]:
     if report.category_coverage:
         coverage = ", ".join(f"{category}: {status.replace('_', ' ')}" for category, status in report.category_coverage)
         lines.append(f"Coverage — {coverage}")
-    if report.skipped_sources:
-        skipped = ", ".join(f"{src} ({reason})" for src, reason in report.skipped_sources)
+    skipped = broadcast_skipped(report)
+    if skipped:
         lines.append(f"Sources skipped — {skipped}")
     return lines
+
+
+def broadcast_skipped(report: StandupReport) -> str:
+    """The skipped-source line for a surface that goes OUT — Slack, email, Markdown.
+
+    Deliberately not the full ``skipped_sources`` list. Diagnostic surfaces (the
+    TUI "Not scanned" panel, the HTML details) show every skip, because someone is
+    looking at them to answer "where is my GitHub?". A broadcast has no such reader:
+    listing five sources a Jira-only team never selected would append the same
+    apology to every standup it ever posts. Only ``unmet_sources`` — asked for and
+    not delivered — is news, and it stops once the user acts on it.
+    """
+    unmet = set(report.unmet_sources)
+    return ", ".join(
+        f"{collector.source_label(src)} ({reason})" for src, reason in report.skipped_sources if src in unmet
+    )
 
 
 def format_standup_plaintext(report: StandupReport) -> str:

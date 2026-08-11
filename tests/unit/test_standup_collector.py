@@ -251,13 +251,69 @@ class TestSkippedSources:
         bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ")
         assert bundle.skipped == []
 
+    def test_caller_supplied_skips_are_recorded(self, monkeypatch):
+        # The engine always passes an explicit source set, so auto-detection never
+        # runs for a real standup — the reasons have to be handed in, or the report
+        # has no coverage story at all.
+        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", lambda project, days=1, since=None, **kw: [])
+        bundle = collect_recent_activity(
+            sources={SOURCE_JIRA},
+            jira_project="PROJ",
+            skipped=[("github", "not selected in setup")],
+        )
+        assert bundle.skipped == [("github", "not selected in setup")]
+
+    def test_caller_supplied_skips_never_contradict_what_ran(self, monkeypatch):
+        # A stale list must not claim we skipped a source we just collected.
+        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", lambda project, days=1, since=None, **kw: [])
+        bundle = collect_recent_activity(
+            sources={SOURCE_JIRA},
+            jira_project="PROJ",
+            skipped=[("jira", "not selected in setup"), ("github", "GITHUB_TOKEN not set")],
+        )
+        assert bundle.skipped == [("github", "GITHUB_TOKEN not set")]
+
+    def test_skipped_sources_are_announced_as_progress_steps(self, monkeypatch):
+        # The progress list is the only place a user watches a standup being built.
+        # A source that never appears there reads as a source that found nothing.
+        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", lambda project, days=1, since=None, **kw: [])
+        steps: list[str] = []
+        collect_recent_activity(
+            sources={SOURCE_JIRA},
+            jira_project="PROJ",
+            skipped=[("github", "not selected in setup")],
+            on_progress=steps.append,
+        )
+        assert "GitHub · skipped — not selected in setup" in steps
+
     def test_missing_sdk_recorded_as_skipped(self, monkeypatch):
         def import_error(*a, **k):
             raise ImportError("No module named 'jira'")
 
         monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", import_error)
         bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ")
-        assert ("jira", "SDK not installed") in bundle.skipped
+        assert ("jira", collector.SKIP_SDK_MISSING) in bundle.skipped
+
+
+class TestSourceLabel:
+    """One vocabulary, four surfaces — the TUI panel, plaintext, Markdown, the web export."""
+
+    def test_known_sources_read_as_names(self):
+        assert collector.source_label("azdo_repos") == "Azure DevOps code"
+        assert collector.source_label("azure_devops") == "Azure DevOps tickets"
+        assert collector.source_label("github") == "GitHub"
+
+    def test_every_collector_source_has_an_explicit_label(self):
+        # A source added without one falls back to Title Case, which is how
+        # "azdo_repos" read as "Azdo Repos" in the report and "Azure DevOps code"
+        # in the progress steps beside it.
+        missing = [s for s in collector.ALL_SOURCES if s not in collector._SOURCE_LABELS]
+        assert not missing, f"no label for: {missing}"
+
+    def test_an_unknown_source_title_cases_rather_than_leaking_the_key(self):
+        # Mirrored by `sourceLabel` in the web export: a source the server knows
+        # about before the bundle is rebuilt must still read as a name.
+        assert collector.source_label("shiny_new_thing") == "Shiny New Thing"
 
 
 class TestAzdoReposSource:

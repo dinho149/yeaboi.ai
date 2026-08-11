@@ -30,6 +30,7 @@ from yeaboi.html_theme import prose_bullets as _summary_bullets
 from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
 from yeaboi.standup import categories, references
+from yeaboi.standup.render import broadcast_skipped
 
 logger = logging.getLogger(__name__)
 
@@ -643,8 +644,9 @@ def build_standup_markdown(report: StandupReport) -> str:
     if report.category_coverage:
         coverage = ", ".join(f"{category}: {status.replace('_', ' ')}" for category, status in report.category_coverage)
         lines += ["", f"_Coverage — {coverage}_"]
-    if report.skipped_sources:
-        skipped = ", ".join(f"{src} ({reason})" for src, reason in report.skipped_sources)
+    # Only the sources the user asked for and did not get — see render.broadcast_skipped.
+    skipped = broadcast_skipped(report)
+    if skipped:
         lines += ["", f"_Sources skipped — {skipped}_"]
 
     lines += annotations_markdown(report.annotations)

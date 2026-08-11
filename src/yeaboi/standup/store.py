@@ -288,6 +288,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         activity_counts=counts,
         activity_window=d.get("activity_window", ""),
         skipped_sources=skipped,
+        unmet_sources=tuple(str(s) for s in d.get("unmet_sources", ())),
         category_coverage=category_coverage,
         my_name=d.get("my_name", ""),
         warnings=tuple(d.get("warnings", ())),
