@@ -4,13 +4,15 @@ package analysis
 // src/yeaboi/analysis/doc_quality.py (_count_syllables, _clarity_metrics,
 // _usefulness_metrics, _has_ai_disclosure, _analyse_page_asset,
 // _aggregate_doc_assets, _doc_findings, _prioritize_doc_actions,
-// _fallback_doc_quality_insights) plus the seam's result assembly in
-// src/yeaboi/analysis/aggregate.py (scoreable_doc_pages, score_docs,
-// doc_signal_to_wire) and _insight_item / _INSIGHT_MAX_ITEMS from
-// src/yeaboi/tools/team_learning.py. Keep in lockstep: the Python modules are
-// the reference implementation; tests/parity/test_analysis_parity.py diffs
-// whole-seam output, and tests/unit/test_doc_scoring.py pins the exact values
-// mirrored by doc_quality_test.go.
+// _fallback_doc_quality_insights, with their constants _AI_DISCLOSURE_CONTEXT,
+// _MIN_DOC_SAMPLE/doc_small_sample and _CLEAR_MIN/_UNCLEAR_MAX) plus the
+// seam's result assembly in src/yeaboi/analysis/aggregate.py
+// (scoreable_doc_pages, score_docs, doc_signal_to_wire) and _insight_item /
+// _INSIGHT_MAX_ITEMS from src/yeaboi/tools/team_learning.py. Keep in
+// lockstep: the Python modules are the reference implementation;
+// tests/parity/test_docs_parity.py diffs whole-seam output, and
+// tests/unit/test_doc_scoring.py pins the exact values mirrored by
+// doc_quality_test.go.
 //
 // Privacy: nothing from the pages — titles, bodies, authors — is ever logged
 // (no log import anywhere in this package) and never appears in an error (no
@@ -474,7 +476,11 @@ func clarityMetrics(text string) clarityMetricsResult {
 	lists := docHasLists(prose)
 
 	// Flesch Reading Ease — exact operation order, unrounded average in.
-	flesch := 206.835 - 1.015*avgSentenceWords - 84.6*(float64(syllables)/float64(nWords))
+	// The explicit float64 conversions force intermediate rounding: without
+	// them the compiler may fuse each multiply-subtract into an FMA (it does,
+	// on arm64), computing a ≤1-ULP-different value that can flip a banker's
+	// rounding tie — and the amd64 CI parity job would never see it.
+	flesch := 206.835 - float64(1.015*avgSentenceWords) - float64(84.6*(float64(syllables)/float64(nWords)))
 	clarity := flesch
 	if headings != 0 {
 		clarity += 4

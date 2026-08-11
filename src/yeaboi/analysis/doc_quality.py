@@ -337,9 +337,11 @@ def _write_doc_cache(scoreable: list[dict], assets: list[dict], db_path) -> None
     """
     if db_path is None:
         return
+    # strict: a misaligned pair would write asset i+1 under page i's cache key
+    # and serve that wrong score from cache until _DOC_SCORING_VERSION bumps.
     fresh = [
         (page, asset)
-        for page, asset in zip(scoreable, assets)
+        for page, asset in zip(scoreable, assets, strict=True)
         if not isinstance(page.get("asset"), dict) and isinstance(asset, dict)
     ]
     if not fresh:
@@ -613,7 +615,9 @@ def _read_page_inventory(
             # Reading only — scoring happens in one batch behind the
             # ``analysis.score_docs`` seam after every body is in (see
             # ``run_doc_quality``), which also moved the score-cache write
-            # there: an interrupted run no longer checkpoints partial scores.
+            # there: an interrupted run no longer checkpoints partial scores,
+            # and a raise while scoring is no longer isolated to one failed
+            # page — it fails the whole component via run_doc_quality's guard.
             gate.acquire()
             page: dict = {}
             try:
