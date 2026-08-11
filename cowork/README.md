@@ -241,6 +241,21 @@ session is handed a token and no CLI, so `cron/cd-deploy.md` had no way to apply
 its own stop condition turned that into a halted deploy on every firing. Only when *neither* answers
 is it a degradation, and under `--strict` that is what exits non-zero.
 
+**And a token is not the same as access.** That session's egress goes through a proxy with its own
+allowlist, which was probed on 2026-08-11 and written down in
+`tests/fixtures/cowork_github_access_live.json` — 15 of 19 operations served, and the four refusals
+each close off an approach that looks obvious:
+
+| Refused there | Consequence |
+|---|---|
+| `POST /graphql` — *"only the pinned set of PR-review operations is served. Use REST … instead"* | Installing `gh` fixes nothing: `gh pr list --json` and `gh issue list --json` are GraphQL underneath, so the reads the sweeps and the digest are built on are exactly what would still fail. And `pr_feedback.py` cannot answer at all there — `reviewDecision` and thread resolution are v4-only — so it says so rather than reporting a PR it never read. |
+| `GET`/`PATCH /repos/…/actions/variables` | The `YEABOI_MODEL_*` half of `cd-deploy` step 3 can never succeed in-session. It moved to `.github/workflows/cowork-repo-setup.yml`, where a runner has no proxy. |
+| `POST /repos/…/statuses/{sha}` | The `pr-feedback` commit status can only be posted from CI — which is where `.github/workflows/pr-feedback.yml` already posts it. |
+
+The labels half, by contrast, is genuinely repaired by the REST path: `gh label list` is GraphQL and
+was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
+`scripts/probe_github_access.py`; never edit the fixture by feel.
+
 **What each command covers.** `make cowork-setup` does the twenty-nine GitHub labels (`cowork`,
 `cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
 pair the promotion path fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*`

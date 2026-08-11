@@ -1175,3 +1175,45 @@ class TestMain:
         gh.reply("pr view", "", code=1)
         assert prf.main([]) == 2
         assert "no PR given" in capsys.readouterr().err
+
+
+class TestAnUnreadablePRIsNotACleanOne:
+    """The failure this whole gate exists to prevent, in its newest form.
+
+    A routine session's GitHub egress refuses GraphQL (403, recorded in
+    `tests/fixtures/cowork_github_access_live.json`), and review threads plus
+    `reviewDecision` exist in v4 and nowhere in v3. So there the gate reads
+    *nothing* — and the one thing it must never do is let that look like a PR
+    with nothing to answer.
+    """
+
+    def test_the_proxy_refusal_is_named_with_its_remedy(self):
+        prf.LAST_FAILURE = (
+            "graphql: HTTP 403 on POST /graphql: This GraphQL query is not enabled for this session "
+            "— only the pinned set of PR-review operations is served."
+        )
+        reason = prf.unreadable_reason()
+        assert "NOTHING was determined" in reason
+        assert "Do not read this as a clean PR" in reason
+        assert "pr-feedback.yml" in reason
+
+    def test_an_ordinary_failure_is_not_dressed_up_as_the_proxy(self):
+        """A 403 from a token-scope problem is a different fault with a different
+        remedy, so the proxy wording must not be reached for every failure."""
+        prf.LAST_FAILURE = "graphql: HTTP 401 on POST /graphql: Bad credentials"
+        reason = prf.unreadable_reason()
+        assert "Bad credentials" in reason
+        assert "NOTHING was determined" not in reason
+
+    def test_an_unreadable_pr_says_so_on_stderr_and_exits_non_zero(self, monkeypatch, capsys):
+        monkeypatch.setattr(prf.transport, "gh_available", lambda: False)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(prf, "repo_slug", lambda: "owner/name")
+        monkeypatch.setattr(prf, "fetch_snapshot", lambda number, slug: None)
+        prf.LAST_FAILURE = "graphql: this GraphQL query is not enabled for this session"
+
+        assert prf.main(["--pr", "7"]) == 2
+
+        err = capsys.readouterr().err
+        assert "could not read PR #7" in err
+        assert "Do not read this as a clean PR" in err

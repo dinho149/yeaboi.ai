@@ -665,6 +665,23 @@ def _read(path: str) -> object | None:
     return result.data
 
 
+# Why the last read failed, for `main` to explain with. Module state rather than
+# a return value because `fetch_snapshot` has one caller and four ways to come
+# back empty, and threading a reason through all of them would be more moving
+# parts than the problem has.
+#
+# It exists because of what a routine session does to this script: GraphQL is
+# refused there outright (403, recorded in tests/fixtures/cowork_github_access_live.json),
+# so the gate reads *nothing* — and a gate that reads nothing must never be
+# mistaken for a gate that found nothing.
+LAST_FAILURE = ""
+
+# The refusal a routine session gets. Matched on the two stable halves of
+# GitHub's own message rather than the status code, because a 403 on this path
+# from a *token scope* problem is a different fault with a different remedy.
+_PROXY_REFUSAL = "not enabled for this session"
+
+
 def _graphql(variables: dict) -> dict | None:
     """`PR_QUERY`, through whichever transport this machine has.
 
@@ -673,11 +690,33 @@ def _graphql(variables: dict) -> dict | None:
     GraphQL error arrives inside a 200 — something has to notice that, and it is
     not the caller.
     """
+    global LAST_FAILURE
     result = transport.graphql(PR_QUERY, variables)
     if not result.ok:
+        LAST_FAILURE = f"graphql: {result.error}"
         print(f"[pr-feedback] graphql failed: {result.error}", file=sys.stderr)
         return None
     return result.data if isinstance(result.data, dict) else None
+
+
+def unreadable_reason() -> str:
+    """What to print when the PR could not be read, in terms someone can act on.
+
+    The distinction this draws is the whole point: a session whose egress refuses
+    GraphQL cannot answer the question *at all*, and saying so is the difference
+    between "go look at the CI run" and "this PR is fine". `reviewDecision` and
+    whether a thread is resolved exist in v4 and nowhere in v3, so there is no
+    partial answer to fall back to — only a smaller answer that would read as a
+    whole one.
+    """
+    if _PROXY_REFUSAL in LAST_FAILURE:
+        return (
+            "this session's GitHub egress refuses GraphQL, and review threads plus "
+            "reviewDecision exist only there — so NOTHING was determined about this PR. "
+            "Do not read this as a clean PR. The full gate runs in "
+            ".github/workflows/pr-feedback.yml, where the query is served."
+        )
+    return LAST_FAILURE or "see the run log"
 
 
 def _write(method: str, path: str, fields: dict[str, object]) -> bool:
@@ -1072,6 +1111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     snapshot = fetch_snapshot(number, slug)
     if snapshot is None:
+        print(f"[pr-feedback] could not read PR #{number} — {unreadable_reason()}", file=sys.stderr)
         if args.status:
             # A *required* status that was never posted shows as "Expected —
             # waiting for status", which looks exactly like this workflow not

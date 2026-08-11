@@ -77,18 +77,33 @@ test has ever seen.
    `YEABOI_MODEL_*` repository variables. `--strict` is the point: without it a rejected write is a
    note on a stream nobody is reading, and "created no labels, exited 0" reads exactly like success.
    The script reaches GitHub through `gh` when it is there and the REST API with `GH_TOKEN` when it
-   is not, which is what makes this step work at all from a session that has no CLI.
+   is not, which is what makes the label half work at all from a session that has no CLI.
+
+   **Expect the variables half to be refused here, and do not treat that as news.** This session's
+   egress goes through a proxy, and `/repos/…/actions/variables` is not on its allowlist — 403,
+   `Access to this GitHub Actions path is not permitted through this proxy`, on read and on write
+   alike, whatever transport asks. The full probe is in
+   `tests/fixtures/cowork_github_access_live.json`. No rewrite of this step can fix it, so the
+   variables are applied by `.github/workflows/cowork-repo-setup.yml` on the same merge, on a runner
+   that has no such proxy. What is left here is the labels, which *are* permitted over REST — and
+   which is why the earlier "install `gh`" theory went nowhere: `gh label list` is GraphQL
+   underneath, and GraphQL is refused outright.
 
    **Read the exit code; it decides whether the run continues.**
 
    - **2 — stop.** `cowork/` disagrees with itself. Report and stop: registering anything from
      files in that state is how a routine ends up pointing at instructions that do not exist.
    - **1 — note it and carry on to step 4.** A GitHub write degraded: a label was not created, or
-     a variable was rejected for want of `administration: write`. Record the exact note text and
+     — the ordinary case — the variables were refused by the proxy. Record the exact note text and
      carry it into the step 7 post — but do **not** stop. A label has no bearing on a trigger
      body: those are built from the `cowork/` files step 2 just validated, not from anything this
      step touches. This step used to stop the run outright, and a routine session with no `gh`
      binary therefore halted every automatic deploy at this line while reporting a clean repo.
+
+     Because the variables refusal is now the *expected* state rather than an incident, say it in
+     one line and do not editorialise: `variables: refused by the proxy, applied by CI instead`.
+     A routine that files the same paragraph every morning is a routine nobody reads by Thursday —
+     the same reason an empty plan posts nothing at all.
    - **0 — carry on.**
 
    This is deliberately not step 4's rule, where exit 1 *does* stop the run. The difference is what

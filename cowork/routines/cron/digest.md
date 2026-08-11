@@ -282,6 +282,15 @@ The single decision point. It is the only routine that posts proposals to Slack.
    A workstream stalled three weeks on two unanswered findings reads as "blocked on PR #123" without
    this, which is indistinguishable from a slow build and gets treated like one.
 
+   **A non-zero exit from that command is never "nothing blocking".** It exits 2 when it could not
+   read the PR at all, and in this session that is the *expected* outcome rather than a rare one:
+   the routine environment's GitHub egress refuses GraphQL, and review threads and `reviewDecision`
+   exist only there (`tests/fixtures/cowork_github_access_live.json`). The script says so on stderr
+   in as many words. Report it as **"could not read — review state unknown"** and move on; never as
+   a clean PR, and never by omitting the line. The full gate runs in
+   `.github/workflows/pr-feedback.yml`, on a runner where the query is served, and the PR's own
+   `pr-feedback` commit status is the answer a human should be pointed at.
+
 6. **Report the calibration line** under a 📊 **Calibration** heading — for each workstream, the
    approval rate over the last 90 days:
    proposals that received `claude-implement` ÷ proposals filed. One
