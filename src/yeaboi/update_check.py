@@ -99,7 +99,10 @@ def release_rank(version: str) -> tuple[int, ...] | None:
     # comparison stops being like-for-like: unpadded, ("3","6") ranks as
     # (3, 6, 1, 0) and beats ("3","6","0") at (3, 6, 0, 1, 0). Both channels emit
     # X.Y.Z today, so this is unreachable — and a fixed width costs one line.
-    padded = (*base, 0, 0, 0)[:3]
+    # `max(3, len(base))` rather than a flat `[:3]`: padding short versions while
+    # *truncating* long ones would make 3.6.0.1 compare equal to 3.6.0, which is
+    # the same class of bug in the other direction.
+    padded = (*base, 0, 0, 0)[: max(3, len(base))]
     match = _PRERELEASE_RE.search(version.split("+", 1)[0].split(".")[-1].strip())
     if match is None:
         return (*padded, 1, 0)

@@ -545,7 +545,7 @@ class TestForgedVerdicts:
         one later.
         """
         assert prf.is_authentic_verdict(
-            comment(REVIEW_MARK.format(n=0), author="github-actions[bot]", association="NONE"),
+            comment(REVIEW_MARK.format(n=0), author=REVIEWER, association="NONE"),
             prf.PRODUCERS[0],
         )
 
@@ -563,6 +563,31 @@ class TestForgedVerdicts:
         verdict = prf.classify(snap, NOW)
         assert verdict.state == "failure"
         assert "never posted a verdict" in verdict.description
+
+    def test_only_the_reviewer_login_may_post_a_review_verdict(self):
+        """ "Any bot" is not specific enough where the applicant is also a bot.
+
+        `claude.yml`, `codeql-triage.yml` and `ci-sentinel.yml` all open their PRs
+        from an Actions job, so on those lanes the author and the reviewer are
+        indistinguishable by bot-ness, and a job on the applicant side could post
+        the reviewer's `open=0`. Only comment ordering stopped it — a coincidence,
+        not a check.
+        """
+        producer = prf.PRODUCERS[0]
+        assert prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=REVIEWER), producer)
+        for impostor in ("github-actions[bot]", "dependabot[bot]", "some-app[bot]"):
+            assert not prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=impostor), producer)
+
+    def test_another_bot_cannot_clear_the_gate_on_a_machine_pr(self):
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="feature/issue-9-thing",
+            comments=(
+                review(2, minutes_ago=60, ident=1),
+                comment(REVIEW_MARK.format(n=0), minutes_ago=5, ident=2, author="github-actions[bot]"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
 
     def test_the_dod_audit_accepts_a_maintainer_because_a_routine_writes_it(self):
         """Advisory and never required — and a stranger still cannot write it."""
@@ -757,7 +782,7 @@ class TestFetch:
                     [
                         {
                             "id": 7,
-                            "user": {"login": "github-actions[bot]"},
+                            "user": {"login": "claude[bot]"},
                             "body": REVIEW_MARK.format(n=1),
                             "created_at": "2026-08-06T10:00:00Z",
                             "updated_at": "2026-08-06T11:00:00Z",

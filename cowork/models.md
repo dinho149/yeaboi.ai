@@ -60,7 +60,7 @@ session and carry a `**Model**` line.
 | `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
 | `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
 | `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
-| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done, one Slack line, a Notion page from a merged PR |
+| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done and write a Notion page from a merged PR; the daily standup carries the Slack line |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |
 
 ### Agents

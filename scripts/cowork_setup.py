@@ -116,6 +116,10 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
         "Bash(gh issue create:*)",
         "Bash(gh issue view:*)",
         "Bash(gh issue comment:*)",
+        # Closing supersedes a stale ask. `gh issue edit` stays out: it is the verb
+        # that could apply `release:promote`, and the routine that asks may not
+        # answer. Closing cannot label anything.
+        "Bash(gh issue close:*)",
         "Bash(uv run python scripts/release_channel.py:*)",
         "Glob",
         "Grep",

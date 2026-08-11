@@ -54,7 +54,11 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          ver() { sed -nE 's/^version = "([^"]+)".*/\1/p' | head -1; }
+          # `{p;q;}` rather than `| head -1`: under `set -o pipefail` head closes
+          # the pipe and sed can exit 141, failing the step. Safe today only
+          # because pyproject.toml has one `version = ` line — which is a fact
+          # about the file, not about this function.
+          ver() { sed -nE 's/^version = "([^"]+)".*/\1/{p;q;}'; }
           BASE=$(ver < pyproject.toml)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
 

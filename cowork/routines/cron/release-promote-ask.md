@@ -30,11 +30,23 @@ entry, and the entry it drops is the one nobody then knows shipped.
    `<!-- promote: X.Y.Z -->` marker that `publish.yml` reads to tell whether `main` moved between
    this ask and the approval. **Never edit the marker, and never write one by hand.**
 
-3. **Find or open the issue** — `gh issue list --label release:promotion --state open --limit 1`.
-   - One already open: `gh issue comment` the refreshed body onto it and reuse it. Never open a
-     second — two open asks means a ✅ on the stale one promotes against a manifest nobody read.
-   - None: `gh issue create --label release:promotion --label type:chore` titled
+3. **Open the issue, and never reuse a stale one** —
+   `gh issue list --label release:promotion --state open --limit 1`.
+   - None open: `gh issue create --label release:promotion --label type:chore` titled
      `[chore] promote X.Y.Z — N pre-releases pending`, with the rendered body.
+   - One already open: **close it and open a fresh one.** Comment on the old one first, saying it
+     is superseded and linking the new issue, then `gh issue close`.
+
+   Commenting a refreshed manifest onto the open issue would be the obvious move and it is wrong.
+   `publish.yml` reads the version the human approved from `<!-- promote: X.Y.Z -->` in the
+   **issue body**, and this routine holds no `gh issue edit`, so it cannot update that body — the
+   marker would keep saying last week's version while the manifest the human actually read sat in
+   a comment underneath. Every promotion of a reused issue would then take the drift branch and
+   announce a discrepancy that did not happen, which is worse than no disclosure because it is
+   confidently wrong about the common case. A fresh issue per ask keeps the body, the title and
+   the marker describing the same batch.
+
+   Never leave two open. A ✅ on a stale ask promotes against a manifest nobody read.
 
 4. **Ask, through `cowork-scribe`** — one message to `#yeaboi-claude` naming the version, the number
    of changes, how long the batch has been accumulating, and the install line. Then **one thread
@@ -54,7 +66,10 @@ entry, and the entry it drops is the one nobody then knows shipped.
 - **Never apply `release:promote` yourself**, and never hold a grant that could. The routine that
   asks the question must not be able to answer it — this is the same rule that keeps a sweep from
   applying `claude-implement` to its own proposal.
-- **Never open a second `release:promotion` issue** while one is open.
+- **Never leave two `release:promotion` issues open.** Superseding one is closing it, not
+  commenting on it.
+- **Never apply a label to an issue.** Closing and creating are the only two writes here; the grant
+  withholds `gh issue edit` precisely so this routine cannot label its own ask `release:promote`.
 - **Never edit or invent a version.** Everything numeric on the page comes from
   `release_channel.py`; if it refuses to number the commit, report its message and stop rather than
   working around it — a version that goes backwards is exactly what it is refusing to let happen.
