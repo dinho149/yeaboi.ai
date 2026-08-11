@@ -15,6 +15,12 @@ None of that data needs re-authoring. Every routine file carries a regular
 ``models.md`` maps a tier to an id. This script parses those and applies what a
 shell can apply.
 
+**It reaches GitHub two ways.** `gh` when it is installed and authenticated, and
+the REST API with ``GH_TOKEN``/``GITHUB_TOKEN`` when it is not. The fallback is
+not a convenience: `cron/cd-deploy.md` runs this script from a cloud routine
+session that is handed a token and no CLI, so without it every automatic deploy
+stopped at the labels step and the fleet was never reconciled.
+
 **It deliberately names no model.** The ids come out of ``cowork/models.md`` at
 run time, because that file being the only place a model is written down is the
 whole contract — see ``tests/unit/test_cowork_models.py``, which fails if one is
@@ -43,16 +49,30 @@ Usage::
 
     # …and the shell half of teardown (routines are /cowork teardown's job):
     uv run python scripts/cowork_setup.py --teardown --labels --variables --yes
+
+Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 3 reads to
+decide whether to keep going:
+
+    0   applied, or nothing needed applying
+    1   a GitHub write degraded — reported as a note, and non-zero only under
+        --strict. Nothing downstream reads a label, so this does not invalidate
+        a routine reconciliation.
+    2   `cowork/` disagrees with itself. Nothing was applied and nothing further
+        should be registered from these files. Same meaning as --plan's 2.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -1422,64 +1442,382 @@ def check_charter_coverage(report: Report) -> None:
         )
 
 
-# --- gh ----------------------------------------------------------------------
+# --- GitHub ------------------------------------------------------------------
+#
+# Two transports behind one set of operations. `gh` is preferred whenever it is
+# there — it is what a developer has already authenticated, and keeping that path
+# byte-for-byte identical means this script behaves locally exactly as it always
+# has.
+#
+# The REST fallback exists because the environment that matters most has no `gh`
+# at all. `cron/cd-deploy.md` runs this script from a cloud routine session, and
+# that session is handed a GitHub *token* rather than the CLI. So every firing
+# took the "not on PATH" branch, exited 1 under `--strict`, and the routine's own
+# stop condition halted it before step 4 — the fleet reconciliation it exists to
+# do. A missing binary is not a reason to stop deploying, and a token that is
+# sitting right there is not a reason to report nothing was applied.
+#
+# stdlib only, deliberately: this script imports nothing from `src/yeaboi` and
+# nothing off PyPI, so it runs in a checkout with no environment built.
+
+GITHUB_API = "https://api.github.com"
+
+# Which transport this run resolved. "gh" is the default rather than None so a
+# caller that never asked keeps the historical path; `github_ready()` is what
+# actually chooses, and `main()` resets this the way it resets STRICT.
+TRANSPORT = "gh"
+
+# `repo_slug()`'s memo. A distinct sentinel, because None is a real answer here —
+# "this checkout has no GitHub remote" — and caching a miss matters as much as
+# caching a hit: without the distinction every miss re-shells the whole lookup.
+_UNRESOLVED = object()
+_SLUG: object = _UNRESOLVED
+
+
+@dataclass(frozen=True)
+class ApiResult:
+    """A REST call's outcome.
+
+    Shaped like the ``returncode``/``stderr`` pair the `gh` branch inspects, so
+    both halves of every operation below read the same and neither needs to know
+    which one ran.
+    """
+
+    ok: bool
+    data: object = None
+    error: str = ""
 
 
 def _gh(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    """One `gh` call, reporting a missing binary the way `gh` reports a failure.
+
+    127 rather than an exception, matching the shell: every caller here already
+    branches on ``returncode``, and there is now a path — `repo_slug()` resolving
+    from the git remote — that can reach a `gh` call on a machine with no `gh` at
+    all. A FileNotFoundError there is a traceback out of a script whose entire
+    contract is to degrade with the remedy printed.
+    """
+    try:
+        return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    except OSError as error:
+        return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
+
+
+def github_token() -> str | None:
+    """The token the REST transport authenticates with.
+
+    ``GH_TOKEN`` first, matching `gh`'s own precedence, so a machine that sets
+    both gets the same identity either way. (``src/yeaboi/config.py`` reads only
+    ``GITHUB_TOKEN`` — that is the library's environment, not this script's.)
+    """
+    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+def _api(method: str, path: str, body: dict | None = None) -> ApiResult:
+    """One REST call against `GITHUB_API`. Never raises; never logs the token.
+
+    The URL is a literal scheme and host with a caller-supplied path appended, so
+    the S310 audit — "check for permitted schemes" — has a fixed answer here.
+    """
+    token = github_token()
+    if not token:
+        return ApiResult(False, error="no GH_TOKEN or GITHUB_TOKEN in the environment")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "yeaboi-cowork-setup",
+    }
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(  # noqa: S310 - GITHUB_API is a literal https:// host
+        f"{GITHUB_API}{path}",
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - GITHUB_API is a literal https:// host
+            raw = response.read().decode()
+        parsed = json.loads(raw) if raw.strip() else None
+    except urllib.error.HTTPError as error:
+        # The response body carries GitHub's own message — "Resource not
+        # accessible by integration" for a scope gap, which is the failure most
+        # worth reading, and the one a token-shaped setup actually hits. The
+        # request headers carry the token and are never surfaced.
+        try:
+            detail = error.read().decode()[:300]
+        except Exception:
+            detail = ""
+        return ApiResult(False, error=f"HTTP {error.code} on {method} {path}" + (f": {detail}" if detail else ""))
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        return ApiResult(False, error=f"{method} {path} failed: {error}")
+    except (ValueError, UnicodeDecodeError) as error:
+        # A 2xx body that is not JSON is what an egress proxy's HTML error page
+        # looks like, which is a plausible shape in exactly the cloud session
+        # this transport exists for. A failure, not a traceback.
+        return ApiResult(False, error=f"{method} {path} returned a body that is not JSON: {error}")
+    return ApiResult(True, parsed)
+
+
+def _segment(name: str) -> str:
+    """One path segment, escaped. Label names carry a `:` (`workstream:security`,
+    `type:bug`), which is why this is not optional — and it is applied to every
+    segment rather than only the ones needing it today, so a name that starts
+    needing it later does not become a 404 nobody expects."""
+    return urllib.parse.quote(name, safe="")
+
+
+def _api_paged(path: str, key: str | None = None) -> ApiResult:
+    """Every page of a list endpoint, concatenated.
+
+    `gh label list --limit 200` asked for one oversized page and got it. REST
+    caps a page at 100, and this repo already carries twenty-nine cowork labels
+    on top of whatever else it has, so the second page is not hypothetical.
+
+    ``key`` names the wrapper field for endpoints that return an object rather
+    than a bare array — ``/actions/variables`` is the one that does.
+    """
+    items: list = []
+    for page in range(1, 21):  # 2000 items; a repo past that is not one this script set up
+        result = _api("GET", f"{path}?per_page=100&page={page}")
+        if not result.ok:
+            return result
+        batch = result.data
+        if key is not None and isinstance(batch, dict):
+            batch = batch.get(key)
+        if not isinstance(batch, list):
+            return ApiResult(False, error=f"GET {path} returned no list of results")
+        items.extend(batch)
+        if len(batch) < 100:
+            return ApiResult(True, items)
+    # Ran out of pages with a full one still in hand. A failure rather than a
+    # short answer: the callers turn a partial list into "these labels do not
+    # exist", which is the same "an empty set read as truth" trap that
+    # `existing_labels` returns None for.
+    return ApiResult(False, error=f"GET {path} did not end within 20 pages")
 
 
 def gh_ready() -> bool:
-    """Whether `gh` is installed and authenticated, with the remedy printed if not."""
+    """Whether the `gh` CLI is installed and authenticated.
+
+    Reports nothing on its own: "no `gh`" is only a degradation once the REST
+    transport has also declined, and `github_ready()` owns that judgement. Kept
+    as its own function because it is the seam a test forces to pick a transport.
+    """
     if shutil.which("gh") is None:
-        STRICT.note(
-            "`gh` is not on PATH — skipping every GitHub check",
-            "install it: brew install gh",
-        )
         return False
-    if _gh("auth", "status").returncode != 0:
-        STRICT.note(
-            "`gh` is not authenticated — skipping every GitHub check",
-            "run: gh auth login",
-        )
-        return False
-    return True
+    return _gh("auth", "status").returncode == 0
+
+
+def api_ready() -> bool:
+    """Whether the REST transport has both halves it needs: a token, and a
+    repository to point it at. Neither is worth a note on its own — a machine
+    with `gh` working needs neither."""
+    return bool(github_token()) and bool(repo_slug())
+
+
+def _why_no_gh() -> tuple[str, str]:
+    """Which of the two `gh` problems this is, and what fixes it. Said the same
+    way whether it ends in a fallback or a degradation."""
+    if shutil.which("gh") is None:
+        return "is not on PATH", "install it: brew install gh"
+    return "is not authenticated", "run: gh auth login"
+
+
+def github_ready() -> bool:
+    """Choose this run's transport, reporting the remedy when neither answers."""
+    global TRANSPORT
+    if gh_ready():
+        TRANSPORT = "gh"
+        return True
+    problem, remedy = _why_no_gh()
+    if api_ready():
+        TRANSPORT = "api"
+        say(f"github: `gh` {problem} — using the REST API against {repo_slug()}")
+        return True
+    TRANSPORT = "gh"
+    STRICT.note(
+        f"`gh` {problem} and no API token answered — skipping every GitHub check",
+        f"{remedy} — or export GH_TOKEN, which is all the REST fallback needs",
+    )
+    return False
 
 
 def existing_labels() -> set[str] | None:
     """Every label on the repo, or None if the query itself failed.
 
     None rather than an empty set, and the same for the variables below: they are
-    different facts and the difference matters. ``gh_ready()`` passing does not
-    mean the next call succeeds — a missing remote, the wrong repo, a rate limit —
+    different facts and the difference matters. A ready transport does not mean
+    the next call succeeds — a missing remote, the wrong repo, a rate limit —
     and an empty set read as truth makes the doctor report all twenty-nine labels
     missing and ``apply_labels`` try to create every one of them.
     """
-    result = _gh("label", "list", "--limit", "200", "--json", "name")
-    if result.returncode != 0:
-        STRICT.note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
+    if TRANSPORT == "gh":
+        result = _gh("label", "list", "--limit", "200", "--json", "name")
+        if result.returncode != 0:
+            STRICT.note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
+            return None
+        return {item["name"] for item in json.loads(result.stdout or "[]")}
+    slug = repo_slug()
+    if not slug:
+        STRICT.note("could not list the repo's labels", "no owner/name resolved for this checkout")
         return None
-    return {item["name"] for item in json.loads(result.stdout or "[]")}
+    result = _api_paged(f"/repos/{slug}/labels")
+    if not result.ok:
+        STRICT.note("could not list the repo's labels", result.error)
+        return None
+    return {item["name"] for item in result.data}
 
 
 def existing_variables() -> dict[str, str] | None:
-    result = _gh("variable", "list", "--json", "name,value")
-    if result.returncode != 0:
-        STRICT.note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
+    if TRANSPORT == "gh":
+        result = _gh("variable", "list", "--json", "name,value")
+        if result.returncode != 0:
+            STRICT.note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
+            return None
+        return {item["name"]: item.get("value", "") for item in json.loads(result.stdout or "[]")}
+    slug = repo_slug()
+    if not slug:
+        STRICT.note("could not list the repo's variables", "no owner/name resolved for this checkout")
         return None
-    return {item["name"]: item.get("value", "") for item in json.loads(result.stdout or "[]")}
+    result = _api_paged(f"/repos/{slug}/actions/variables", key="variables")
+    if not result.ok:
+        STRICT.note("could not list the repo's variables", result.error)
+        return None
+    return {item["name"]: item.get("value", "") for item in result.data}
+
+
+def create_label(label: Label) -> tuple[bool, str]:
+    """Create one label. Returns (created, why not) so the caller does the noting."""
+    if TRANSPORT == "gh":
+        result = _gh(
+            "label",
+            "create",
+            label.name,
+            "--color",
+            label.color,
+            "--description",
+            label.description,
+        )
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    # Bare hex, no leading `#` — which is how expected_labels() already spells
+    # every colour, because that is what `gh label create --color` wanted too.
+    result = _api(
+        "POST",
+        f"/repos/{slug}/labels",
+        {"name": label.name, "color": label.color.lstrip("#"), "description": label.description},
+    )
+    return result.ok, result.error
+
+
+def set_variable(name: str, value: str, exists: bool) -> tuple[bool, str]:
+    """Set one repository variable, creating or updating as needed.
+
+    `gh variable set` is one verb for both. REST is not: a create is a POST to
+    the collection and an update is a PATCH to the item, and using the wrong one
+    is a 409 or a 404 rather than a silent no-op. The caller already knows which
+    it is — it had to list them to decide there was anything to do.
+    """
+    if TRANSPORT == "gh":
+        result = _gh("variable", "set", name, "--body", value)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    if exists:
+        result = _api("PATCH", f"/repos/{slug}/actions/variables/{_segment(name)}", {"name": name, "value": value})
+    else:
+        result = _api("POST", f"/repos/{slug}/actions/variables", {"name": name, "value": value})
+    return result.ok, result.error
+
+
+def delete_label(name: str) -> tuple[bool, str]:
+    if TRANSPORT == "gh":
+        result = _gh("label", "delete", name, "--yes")
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    result = _api("DELETE", f"/repos/{slug}/labels/{_segment(name)}")
+    return result.ok, result.error
+
+
+def delete_variable(name: str) -> tuple[bool, str]:
+    if TRANSPORT == "gh":
+        result = _gh("variable", "delete", name)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    result = _api("DELETE", f"/repos/{slug}/actions/variables/{_segment(name)}")
+    return result.ok, result.error
 
 
 def repo_slug() -> str | None:
-    result = _gh("repo", "view", "--json", "nameWithOwner")
+    """``owner/name`` for the repository this checkout points at, resolved once.
+
+    Cached because it is now asked per operation rather than once: `create_label`
+    needs it for each of the twenty-nine labels, and on a machine with `gh`
+    installed but unauthenticated the uncached version shells `gh repo view` — a
+    network round-trip — every single time. `main()` clears the memo the way it
+    clears STRICT.
+
+    Three sources, and deliberately independent of the transport — `api_ready()`
+    asks this before a transport exists. `gh` when it is there, the
+    ``GITHUB_REPOSITORY`` a workflow exports, and otherwise the `origin` remote.
+    The remote is what makes the REST transport work in a routine session: step 1
+    of `cron/cd-deploy.md` runs `git fetch origin main`, so a remote is
+    guaranteed there even though `gh` is not.
+    """
+    global _SLUG
+    if _SLUG is not _UNRESOLVED:
+        return _SLUG
+    _SLUG = _resolve_slug()
+    return _SLUG
+
+
+def _resolve_slug() -> str | None:
+    if shutil.which("gh"):
+        result = _gh("repo", "view", "--json", "nameWithOwner")
+        if result.returncode == 0:
+            slug = json.loads(result.stdout or "{}").get("nameWithOwner")
+            if slug:
+                return slug
+    from_env = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if from_env.count("/") == 1:
+        return from_env
+    return _slug_from_remote()
+
+
+def _slug_from_remote() -> str | None:
+    """``owner/name`` parsed out of `git remote get-url origin`.
+
+    Both forms GitHub hands out: ``git@github.com:owner/name.git`` and
+    ``https://github.com/owner/name(.git)``, with or without the suffix.
+    """
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["git", "-C", str(REPO_ROOT), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if result.returncode != 0:
         return None
-    return json.loads(result.stdout or "{}").get("nameWithOwner")
+    url = result.stdout.strip()
+    if not url:
+        return None
+    tail = url.split("github.com", 1)[-1].lstrip(":/") if "github.com" in url else ""
+    tail = tail.removesuffix(".git").strip("/")
+    return tail if tail.count("/") == 1 else None
 
 
 def repo_url() -> str | None:
     """The clone URL a routine's ``git_repository`` source points at."""
-    slug = repo_slug() if shutil.which("gh") else None
+    slug = repo_slug()
     return f"https://github.com/{slug}" if slug else None
 
 
@@ -1501,19 +1839,11 @@ def apply_labels() -> None:
         say(f"labels: all {len(expected_labels())} already present")
         return
     for label in missing:
-        result = _gh(
-            "label",
-            "create",
-            label.name,
-            "--color",
-            label.color,
-            "--description",
-            label.description,
-        )
-        if result.returncode == 0:
+        created, why = create_label(label)
+        if created:
             say(f"labels: created {label.name}")
         else:
-            STRICT.note(f"labels: could not create {label.name}", result.stderr.strip() or "unknown gh error")
+            STRICT.note(f"labels: could not create {label.name}", why)
     say(f"labels: {len(present)} already present, {len(missing)} attempted")
 
 
@@ -1531,49 +1861,75 @@ def apply_variables() -> None:
         if current.get(name) == value:
             say(f"variables: {name} already set")
             continue
-        result = _gh("variable", "set", name, "--body", value)
-        if result.returncode == 0:
+        was_set, why = set_variable(name, value, exists=name in current)
+        if was_set:
             say(f"variables: set {name}")
         else:
             STRICT.note(
                 f"variables: could not set {name}",
-                result.stderr.strip()
+                why
                 or "repository variables need admin on the repo — "
-                "`gh auth refresh -h github.com -s repo` (a 403 here is the silent-green case)",
+                "`gh auth refresh -h github.com -s repo`, or a token carrying "
+                "`administration: write` (a 403 here is the silent-green case)",
             )
 
 
 def merge_gate_armed() -> bool | None:
     """Whether `pr-feedback` is a required status check on the `main-branch` ruleset.
 
-    None when the question could not be asked — no `gh`, no repo, or a failed
-    query — which is deliberately not the same answer as False. A missing gate is
-    a finding; an unanswerable question is a note, and conflating them would fail
-    the doctor on every machine without `gh` authenticated.
+    None when the question could not be asked — no transport, no repo, or a
+    failed query — which is deliberately not the same answer as False. A missing
+    gate is a finding; an unanswerable question is a note, and conflating them
+    would fail the doctor on every machine with neither `gh` nor a token.
 
     This is the setting that decides whether the auto lane merges anything. Every
     workflow that would arm `gh pr merge --auto` runs this same query first and
     refuses when it is false, so without it the lane opens PRs that sit waiting
     for a human click — the thing it exists to remove.
     """
-    if not shutil.which("gh"):
-        return None
     slug = repo_slug()
     if not slug:
         return None
-    query = (
-        'any(.[]; .type=="required_status_checks" and '
-        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
-    )
-    result = subprocess.run(  # noqa: S603 - literal argv
-        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
+    # Keyed on the transport this run resolved, not on `gh` being on PATH: a
+    # machine with `gh` installed but unauthenticated and a token exported reads
+    # every other check over REST, and having this one alone answer "cannot ask"
+    # would report the gate unchecked on a run that checked everything else.
+    if TRANSPORT == "gh":
+        # `shutil.which` is still consulted here, because this is the one probe
+        # reached on a run where no transport resolved at all:
+        # `report_manual_remainder()` calls it after `github_ready()` has already
+        # declined, and TRANSPORT is "gh" then by default rather than by evidence.
+        if shutil.which("gh") is None:
+            return None
+        query = (
+            'any(.[]; .type=="required_status_checks" and '
+            'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
+        )
+        result = subprocess.run(  # noqa: S603 - literal argv
+            ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() == "true"
+    if not github_token():
         return None
-    return result.stdout.strip() == "true"
+    # The same question the jq expression above asks, asked in Python because
+    # there is no jq here either.
+    answer = _api("GET", f"/repos/{slug}/rules/branches/main")
+    if not answer.ok or not isinstance(answer.data, list):
+        return None
+    return any(
+        rule.get("type") == "required_status_checks"
+        and any(
+            check.get("context") == "pr-feedback"
+            for check in (rule.get("parameters") or {}).get("required_status_checks") or []
+        )
+        for rule in answer.data
+        if isinstance(rule, dict)
+    )
 
 
 def check_merge_gate(report: Report) -> None:
@@ -1669,7 +2025,7 @@ def manifest() -> dict:
     routine pointing at a file that does not exist.
     """
     return {
-        "repo": repo_slug() if shutil.which("gh") else None,
+        "repo": repo_slug(),
         "repo_url": repo_url(),
         "connectors": list(CONNECTORS),
         "default_allowed_tools": list(ALLOWED_TOOLS),
@@ -2538,7 +2894,7 @@ def apply_teardown(labels: bool, variables: bool) -> int:
             "pass --labels and/or --variables; the routines are /cowork teardown's half",
         )
         return 1
-    if not gh_ready():
+    if not github_ready():
         return 1
 
     if labels:
@@ -2548,11 +2904,11 @@ def apply_teardown(labels: bool, variables: bool) -> int:
         for label in teardown_labels():
             if label.name not in present:
                 continue
-            result = _gh("label", "delete", label.name, "--yes")
-            if result.returncode == 0:
+            deleted, why = delete_label(label.name)
+            if deleted:
                 say(f"teardown: deleted label {label.name}")
             else:
-                note(f"teardown: could not delete {label.name}", result.stderr.strip() or "unknown gh error")
+                note(f"teardown: could not delete {label.name}", why)
         say(f"teardown: kept {', '.join(sorted(KEEP_LABELS))} — live gates outside cowork depend on them")
         say("teardown: kept the type:* labels — the feedback system shares them")
 
@@ -2563,11 +2919,11 @@ def apply_teardown(labels: bool, variables: bool) -> int:
         for name in parse_model_variables():
             if name not in current:
                 continue
-            result = _gh("variable", "delete", name)
-            if result.returncode == 0:
+            unset, why = delete_variable(name)
+            if unset:
                 say(f"teardown: unset {name}")
             else:
-                note(f"teardown: could not unset {name}", result.stderr.strip() or "unknown gh error")
+                note(f"teardown: could not unset {name}", why)
         note(
             "teardown: the workflows now fall back to their pinned defaults",
             "that is by design — every --model expression carries a `||` fallback",
@@ -2631,7 +2987,7 @@ def run_check(local_only: bool, triggers: str | None = None) -> int:
 
     if local_only:
         note("--local: skipping every GitHub check")
-    elif gh_ready():
+    elif github_ready():
         check_merge_gate(report)
         # A failed query is not an empty repo. Reported by the helper and skipped
         # here, rather than turning one gh error into twenty-two findings.
@@ -2726,9 +3082,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Reset, not just set: `main()` is called more than once in a process by the
     # test suite, and a degradation carried over from a previous call would fail a
-    # run that did nothing wrong.
+    # run that did nothing wrong. TRANSPORT is reset for the same reason — a run
+    # that resolved REST must not decide the next run's transport for it.
+    global TRANSPORT, _SLUG
     STRICT.strict = args.strict
     STRICT.degraded.clear()
+    TRANSPORT = "gh"
+    _SLUG = _UNRESOLVED
 
     if (args.plan or args.urls) and not args.triggers:
         fail("--plan and --urls need a snapshot: --triggers <file> (see /cowork)")
@@ -2825,17 +3185,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
     if not report.ok:
+        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 3 reads.
+        # 1 here means the GitHub apply degraded, which has no bearing on a
+        # routine's trigger body — those are built from these same files, and
+        # these files are fine. 2 means the files are not, and nothing further
+        # should be registered from them. Same convention as `--plan`, where 2 is
+        # already "it refused itself; a human should look".
         fail("cowork/ disagrees with itself — fix this before registering anything:")
         for problem in report.problems:
             fail(f"  ✗ {problem}")
-        return 1
+        return 2
 
     routines = parse_routines()
-    if gh_ready():
+    if github_ready():
         apply_labels()
         apply_variables()
     else:
-        STRICT.note("nothing was applied to GitHub", "authenticate with `gh auth login`, then re-run")
+        STRICT.note(
+            "nothing was applied to GitHub",
+            "authenticate with `gh auth login`, or export GH_TOKEN, then re-run",
+        )
 
     report_manual_remainder(routines)
     return strict_exit()

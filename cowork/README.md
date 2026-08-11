@@ -230,9 +230,16 @@ same drift in `make test-fast`.
 `make cowork-check` additionally probes the **`pr-feedback` required status check** on the
 `main-branch` ruleset, because that one setting decides whether the auto lane merges anything
 and the workflows that depend on it fail *quietly* — declining to arm `--auto` looks exactly
-like a lane that had nothing to do. `cron/cd-deploy.md` runs the same check on every merge to
-`main`, so removing the context later is noticed rather than silently absorbed. No `gh`, or a
+like a lane that had nothing to do. `cron/cd-deploy.md` reports the same probe on every merge to
+`main` — from its apply step, not its check step, which is deliberately `--local` there — so
+removing the context later is noticed rather than silently absorbed. No transport, or a
 failed query, is reported as a note: an unanswerable question is not the same as a missing gate.
+
+**How the script reaches GitHub.** `gh` when it is installed and authenticated; the REST API with
+`GH_TOKEN`/`GITHUB_TOKEN` when it is not. The second path is not a convenience — a cloud routine
+session is handed a token and no CLI, so `cron/cd-deploy.md` had no way to apply a label at all, and
+its own stop condition turned that into a halted deploy on every firing. Only when *neither* answers
+is it a degradation, and under `--strict` that is what exits non-zero.
 
 **What each command covers.** `make cowork-setup` does the twenty-nine GitHub labels (`cowork`,
 `cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`

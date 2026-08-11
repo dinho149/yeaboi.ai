@@ -59,22 +59,49 @@ test has ever seen.
    Deploy what is on `origin/main` and nothing else: a feature branch's `cowork/` edits are not
    deployable, because nobody has reviewed them.
 
-2. **`make cowork-check`** — abort on non-zero, reporting to Slack. This is not redundant with CI: it
-   is what stops step 4 composing a prompt that points at a file which does not exist. A README row
-   naming a missing routine file registers a routine that wakes up, cannot read its own instructions,
-   and does something unpredictable — and it would be *this* run that did it.
+2. **`uv run python scripts/cowork_setup.py --check --local`** — abort on non-zero, reporting to
+   Slack. This is not redundant with CI: it is what stops step 4 composing a prompt that points at a
+   file which does not exist. A README row naming a missing routine file registers a routine that
+   wakes up, cannot read its own instructions, and does something unpredictable — and it would be
+   *this* run that did it.
+
+   **`--local`, not the full `make cowork-check`, and the flag is load-bearing.** The full check also
+   asks GitHub whether every label exists and every `YEABOI_MODEL_*` matches `models.md`, and a
+   missing label is a `check: 1 problem(s)` — so a run deploying a *new* workstream or a changed
+   model id would abort here, one step before step 3 creates the very thing it just failed on. That
+   is the same halted-deploy this routine was repaired for, moved earlier. The GitHub half belongs to
+   step 3, which applies rather than merely reports, and which prints the `pr-feedback` merge-gate
+   probe on its way through.
 
 3. **`uv run python scripts/cowork_setup.py --strict`** — the GitHub labels and the four
-   `YEABOI_MODEL_*` repository variables. `--strict` is the point: without it a rejected `gh` call is
-   a note on a stream nobody is reading, and "created no labels, exited 0" reads exactly like
-   success. If it fails, report and stop — do not proceed to the routines with a half-applied repo.
+   `YEABOI_MODEL_*` repository variables. `--strict` is the point: without it a rejected write is a
+   note on a stream nobody is reading, and "created no labels, exited 0" reads exactly like success.
+   The script reaches GitHub through `gh` when it is there and the REST API with `GH_TOKEN` when it
+   is not, which is what makes this step work at all from a session that has no CLI.
+
+   **Read the exit code; it decides whether the run continues.**
+
+   - **2 — stop.** `cowork/` disagrees with itself. Report and stop: registering anything from
+     files in that state is how a routine ends up pointing at instructions that do not exist.
+   - **1 — note it and carry on to step 4.** A GitHub write degraded: a label was not created, or
+     a variable was rejected for want of `administration: write`. Record the exact note text and
+     carry it into the step 7 post — but do **not** stop. A label has no bearing on a trigger
+     body: those are built from the `cowork/` files step 2 just validated, not from anything this
+     step touches. This step used to stop the run outright, and a routine session with no `gh`
+     binary therefore halted every automatic deploy at this line while reporting a clean repo.
+   - **0 — carry on.**
+
+   This is deliberately not step 4's rule, where exit 1 *does* stop the run. The difference is what
+   the exit code is about: there, a degraded plan is untrustworthy input to a POST, and applying it
+   would write the fleet from a snapshot the script itself declined to stand behind. Here, nothing
+   downstream reads the labels.
 
 4. **Reconcile the routines.** `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
    scratch file, then
    `uv run python scripts/cowork_setup.py --plan --strict --no-create --triggers <file>`.
    - **If the plan is empty, exit silently.** This is the common outcome and the reason step 1 does
      not try to guess: most firings reach here, find a fleet that already matches, and stop.
-   - Exit 1 means a step degraded — a `gh` call was rejected. Report it and stop; nothing was applied.
+   - Exit 1 means a step degraded — a GitHub call was rejected. Report it and stop; nothing was applied.
    - Exit 2 means the plan refused itself — a suspicious snapshot, an unresolved `needs`, or more
      routines created and updated together than `MASS_CHANGE_LIMIT`. Report the stderr to Slack and
      stop. **Never** re-run it without `--strict`, and never pass `--allow-mass-change`, to get past
@@ -112,16 +139,25 @@ test has ever seen.
 
 7. **Report.** Spawn `cowork-scribe` for the Linear `workstream:*` label mirroring and one
    `#yeaboi-claude` post: what was updated (field by field), anything in `creates_blocked` that needs
-   `/cowork deploy`, any orphans, any blocked webhooks, and the README PR link. **If `self_update` in the plan is not null, say so
-   explicitly with both the live and the wanted value** — that is this routine changing itself, and
-   it is the one change that must never land quietly.
+   `/cowork deploy`, any orphans, any blocked webhooks, the README PR link, and **any labels or
+   variables step 3 could not apply** — named, with the reason.
+
+   That last one is the price of no longer stopping on it: a scope gap nobody ever reads about is a
+   scope gap that never gets fixed, and unlike the fleet reconciliation there is nothing else in the
+   day that would mention it.
+
+   **If `self_update` in the plan is not null, say so explicitly with both the live and the wanted
+   value** — that is this routine changing itself, and it is the one change that must never land
+   quietly.
 
 ## Stop conditions
 
 - **Nothing to do is the common outcome**, and by design it is *most* runs — the webhook fires on
   every push to every branch, and all but a few of those reach step 4 and find a fleet that already
   matches. An empty plan posts nothing to Slack at all. A routine that reports every morning is a
-  routine nobody reads by Thursday.
+  routine nobody reads by Thursday. The one thing that breaks the silence without a plan is a step 3
+  degradation: a label or variable that could not be applied is posted even when the fleet needed no
+  change, because nothing else in the day would mention it.
 - **Never compose a request body.** Only bodies that came out of `--plan` are ever POSTed. In
   particular never send `{"enabled": …}`: the plan never carries it, because `pause` is a supported
   verb and a deploy that silently un-paused the fleet would undo a human's decision with nothing
