@@ -54,11 +54,14 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          # `{p;q;}` rather than `| head -1`: under `set -o pipefail` head closes
-          # the pipe and sed can exit 141, failing the step. Safe today only
-          # because pyproject.toml has one `version = ` line — which is a fact
-          # about the file, not about this function.
-          ver() { sed -nE 's/^version = "([^"]+)".*/\1/{p;q;}'; }
+          # An *address block* then a substitution, not a substitution with a
+          # block glued to it: `s/…/\1/{p;q;}` is not valid sed — it reads the
+          # brace as a substitute flag and dies with "unknown option to `s'"',
+          # which is exactly how this workflow failed on its first real run.
+          # The block form is what makes `q` legal: quit after the first match,
+          # so nothing is left holding a closed pipe the way `| head -1` would
+          # under `set -o pipefail`.
+          ver() { sed -nE '/^version = /{s/.*"([^"]+)".*/\1/p;q;}'; }
           BASE=$(ver < pyproject.toml)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
 

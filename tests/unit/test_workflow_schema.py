@@ -22,6 +22,8 @@ would have caught `_note` on the commit that introduced it.
 
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -99,6 +101,37 @@ class TestEveryWorkflowParses:
 
     def test_it_has_at_least_one_job(self, path: Path):
         assert load(path).get("jobs"), f"{path.name} defines no jobs"
+
+
+class TestInlineSedExpressionsAreValid:
+    """`sed` expressions in workflows must be ones `sed` will actually accept.
+
+    `publish-beta.yml` shipped `s/…/\\1/{p;q;}` — a substitution with a block
+    glued to it, which sed reads as a substitute *flag* and rejects with
+    "unknown option to `s'". actionlint passed it, shellcheck passed it, YAML
+    passed it, and the workflow died on its first real run: the merge that was
+    supposed to publish the first pre-release published nothing.
+
+    Nothing statically checks a sed program, so this runs each one against empty
+    input and asks sed whether it parses. Cheap, and it is the only thing in the
+    suite that would have caught it.
+    """
+
+    # `sed -nE '<expr>'` / `sed -n -E '<expr>'`, single-quoted, as written in a
+    # `run:` block. Double-quoted forms are skipped: they interpolate shell and
+    # cannot be validated without evaluating them.
+    SED_CALL = re.compile(r"sed\s+(?:-[a-zA-Z]+\s+)*'([^']+)'")
+
+    def test_every_workflow_sed_program_parses(self):
+        checked = 0
+        for path in WORKFLOWS:
+            for expr in self.SED_CALL.findall(path.read_text(encoding="utf-8")):
+                if "${{" in expr:  # a GitHub expression, not a sed program
+                    continue
+                result = subprocess.run(["sed", "-nE", expr], input="", capture_output=True, text=True, check=False)
+                assert result.returncode == 0, f"{path.name}: sed rejects {expr!r} — {result.stderr.strip()}"
+                checked += 1
+        assert checked, "no sed expressions found — this test would pass vacuously"
 
 
 class TestTheGateSurvives:
