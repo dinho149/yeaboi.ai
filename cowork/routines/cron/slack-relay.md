@@ -48,11 +48,17 @@ announce who is unauthorized.
    idempotency (below) makes the overlap free, whereas a gap after a failed run would drop a
    human's approval on the floor.
 
-   There is a **second** daily channel-level bot message now: `cron/day-ahead.md` posts the
-   schedule at 05:45 UTC. It has no thread and references no issue or PR, so it is not a digest and
-   must never be treated as one — a reaction on it resolves to nothing, which is the correct
-   outcome and not an error worth a reply. Identify a digest by its per-item thread replies, never
-   by "the bot posted at the top level".
+   **Not every bot message is a digest.** `cron/shipped-standup.md` posts the day's merges at
+   18:00 UTC, and `cron/agents-standup.md` posts on weekday mornings. Neither has a thread and
+   neither references an issue or a PR, so a reaction on one resolves to nothing — which is the
+   correct outcome and not an error worth a reply. Identify a digest by its per-item thread
+   replies, never by "the bot posted at the top level".
+
+   `cron/release-promote-ask.md`'s reply *is* actionable and does have the leading `#<number>`, but
+   it is not a proposal: `PROMOTE_RE` in `scripts/cowork_relay.py` matches its
+   `#<issue> — promote X.Y.Z — <link>` shape and a ✅ there applies `release:promote` instead of
+   `claude-implement`. You do not decide that — the script does, and it is the script's plan you
+   carry out.
 
    **Follow `slack_read_thread`'s pagination to the end; never read the first page and stop.** Since
    the digest gained a section per proposal type, one thread carries up to twenty-one item replies

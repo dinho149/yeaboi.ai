@@ -62,10 +62,58 @@ def parse_version(version: str) -> tuple[int, ...] | None:
     return tuple(numbers) if numbers else None
 
 
+# A PEP 440 pre-release suffix on the final component: `3.6.0rc7`, `3.6.0b1`.
+# The beta channel publishes `rc` only; the rest are matched so a hand-cut
+# `b1` cannot slip past the nag filter below.
+_PRERELEASE_RE = re.compile(r"(?:a|b|rc|dev)\d*$")
+
+
+def is_prerelease(version: str) -> bool:
+    """True for ``X.Y.ZrcN`` and friends — the beta channel.
+
+    Merging to `main` publishes one of these on PyPI (`publish-beta.yml`), and
+    they exist to be installed deliberately with ``pip install --pre``. Nothing
+    should ever be *nagged* onto one.
+    """
+    if not version:
+        return False
+    return bool(_PRERELEASE_RE.search(version.split("+", 1)[0].split(".")[-1].strip()))
+
+
+def release_rank(version: str) -> tuple[int, ...] | None:
+    """``parse_version`` plus a release stage, so ``3.6.0rc7`` sorts below ``3.6.0``.
+
+    Kept separate from ``parse_version``, whose tuple shape other callers and
+    tests depend on: this is the only place ordering *across* the two channels
+    matters. Without it an rc user is never told the final shipped — the suffix
+    is dropped, the two tuples compare equal, and ``is_newer`` is False forever.
+
+    The appended pair is ``(stage, serial)``: ``(1, 0)`` for a final, ``(0, N)``
+    for the Nth pre-release of it. So ``3.6.0rc7 < 3.6.0rc9 < 3.6.0``.
+    """
+    base = parse_version(version)
+    if base is None:
+        return None
+    # Pad to three components before appending the stage pair, or the pair lands
+    # at a position that depends on how many components the string had and the
+    # comparison stops being like-for-like: unpadded, ("3","6") ranks as
+    # (3, 6, 1, 0) and beats ("3","6","0") at (3, 6, 0, 1, 0). Both channels emit
+    # X.Y.Z today, so this is unreachable — and a fixed width costs one line.
+    # `max(3, len(base))` rather than a flat `[:3]`: padding short versions while
+    # *truncating* long ones would make 3.6.0.1 compare equal to 3.6.0, which is
+    # the same class of bug in the other direction.
+    padded = (*base, 0, 0, 0)[: max(3, len(base))]
+    match = _PRERELEASE_RE.search(version.split("+", 1)[0].split(".")[-1].strip())
+    if match is None:
+        return (*padded, 1, 0)
+    digits = re.search(r"\d+$", match.group())
+    return (*padded, 0, int(digits.group()) if digits else 0)
+
+
 def is_newer(latest: str, current: str) -> bool:
     """True when ``latest`` is strictly newer than ``current``; False when unsure."""
-    latest_t = parse_version(latest)
-    current_t = parse_version(current)
+    latest_t = release_rank(latest)
+    current_t = release_rank(current)
     if latest_t is None or current_t is None:
         return False
     return latest_t > current_t
@@ -269,7 +317,17 @@ def fetch_latest_version(timeout: float = 3.0) -> str | None:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https PyPI constant
             data = json.loads(resp.read().decode("utf-8"))
         version = data["info"]["version"]
-        return version if isinstance(version, str) else None
+        if not isinstance(version, str):
+            return None
+        if is_prerelease(version):
+            # PyPI's `info.version` already prefers a final when one exists, so
+            # this is belt and braces — but "probably" is not a thing to bet the
+            # upgrade nag on, and the failure would be inviting every stable user
+            # onto an rc that merged an hour ago. A repo with only pre-releases
+            # now behaves exactly like being offline, which is the safe direction.
+            logger.debug("latest on PyPI is a pre-release (%s) — not offering it", version)
+            return None
+        return version
     except Exception:
         # Never let the update check crash or nag — offline is a normal state.
         logger.debug("update check failed (this is fine)", exc_info=True)

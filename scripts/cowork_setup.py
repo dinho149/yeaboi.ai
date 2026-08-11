@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — sixteen charters, twenty-two routines, a
+``cowork/`` is a complete specification — sixteen charters, twenty-four routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 22 web
+registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -102,11 +102,41 @@ ALLOWED_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoW
 
 # The per-routine exceptions to ALLOWED_TOOLS, keyed by routine stem.
 TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
-    # day-ahead runs one script and posts one message. It needs Bash for the
-    # agenda, Read for the repo, and Task for the scribe — and nothing else: a
-    # routine that only reports the schedule has no business editing a file or
-    # searching the tree, and narrowing it says so where the grant is reviewed.
-    "day-ahead": ("Bash", "Read", "Task", "TodoWrite"),
+    # shipped-standup reads a day of merged PRs and posts one message. Bash for
+    # `gh` and the release script, Read for the repo, Task for the scribe — and
+    # nothing else: a routine that only reports what already happened has no
+    # business editing a file, and narrowing it says so where the grant is
+    # reviewed.
+    "shipped-standup": ("Bash", "Read", "Glob", "Grep", "Task", "TodoWrite"),
+    # The routine that asks may not answer: no `gh issue edit`, so it cannot apply
+    # `release:promote` to its own ask. Same shape as the sweeps' inability to
+    # apply `claude-implement`.
+    "release-promote-ask": (
+        "Bash(gh issue list:*)",
+        "Bash(gh issue create:*)",
+        "Bash(gh issue view:*)",
+        "Bash(gh issue comment:*)",
+        # Closing supersedes a stale ask. `gh issue edit` stays out: it is the verb
+        # that could apply `release:promote`, and the routine that asks may not
+        # answer. Closing cannot label anything.
+        #
+        # The reasoning is narrower than it looks, so it is written down rather
+        # than left to read as complete: `gh issue create` accepts `--label` too,
+        # so this grant does not make applying `release:promote` *impossible* —
+        # only impossible on an issue that already exists. Whether a label set at
+        # creation even fires the `labeled` webhook `publish.yml` listens for is
+        # unverified. What actually holds is the routine's own stop condition,
+        # plus `publish.yml` requiring `release:promotion`, which the ask applies
+        # to itself and which is therefore no barrier here either. Treat this
+        # grant as defence in depth, not as the lock.
+        "Bash(gh issue close:*)",
+        "Bash(uv run python scripts/release_channel.py:*)",
+        "Glob",
+        "Grep",
+        "Read",
+        "Task",
+        "TodoWrite",
+    ),
     # slack-relay relays a human's verbs and nothing else: the routines API
     # (RemoteTrigger) for pause/resume/run — which nothing else gets, because a
     # sweep that can reach it is a sweep that can un-pause the fleet — the repo
@@ -213,7 +243,11 @@ DEPLOY_ROUTINE = "cd-deploy"
 # ``feedback-override`` is the escape hatch on the ``pr-feedback`` merge gate
 # (``.github/workflows/pr-feedback.yml``). Deleting either breaks a live gate
 # silently — applying a label that does not exist simply does nothing.
-KEEP_LABELS = frozenset({"claude-implement", "feedback-override"})
+# ``release:promotion`` and ``release:promote`` join them for the same reason:
+# ``publish.yml`` fires on the second landing on an issue that already carries the
+# first, so a teardown that deleted either would disarm the only path that can cut
+# an official release, and nothing would say so.
+KEEP_LABELS = frozenset({"claude-implement", "feedback-override", "release:promotion", "release:promote"})
 
 # The proposal-type vocabulary, carried in issue titles as `[type][workstream] …`
 # and on issues as `type:<kind>` labels. Shared with the feedback system:
@@ -452,6 +486,13 @@ def expected_labels() -> list[Label]:
         Label("cowork:proposal", "d4c5f9", "A cowork find awaiting a human's claude-implement"),
         Label("claude-implement", "0e8a16", "Approved — the claude.yml implement job builds this"),
         Label("feedback-override", "b60205", "Clears the pr-feedback merge gate — a human's call, recorded on the PR"),
+        # The promotion pair. `release:promotion` marks the weekly ask issue and is
+        # applied only by `cron/release-promote-ask.md`; `release:promote` is the
+        # human's ✅, carried by the relay. `publish.yml` requires BOTH, so the
+        # first is what stops a crafted issue title from routing a ✅ onto an issue
+        # nobody meant — see the note on PROMOTE_RE in `scripts/cowork_relay.py`.
+        Label("release:promotion", "c2e0c6", "The weekly ask: promote the accumulated pre-releases?"),
+        Label("release:promote", "0e8a16", "Approved — publish.yml cuts the official release"),
         # Applied by scripts/pr_feedback.py when a PR merges past findings the
         # review ran out of rounds to pursue. Descriptive, not a gate — but it is
         # the only durable record that a merge was capped, and applying a label
@@ -720,13 +761,15 @@ def restricts_both_day_fields(cron: str) -> bool:
 
 # --- the agenda: what the fleet runs on one day -------------------------------
 #
-# The schedule above is nineteen cron expressions on five cadences, and a cron
+# The schedule above is twenty-one cron expressions on five cadences, and a cron
 # expression is not a thing anybody reads at six in the morning: `30 7 11,25 * *`
 # is written for a scheduler. Everything below turns the same table into "what
 # runs today, and when" — including the finished Slack lines, so
-# `cron/day-ahead.md` posts what this computed instead of interpreting nineteen
-# expressions itself. A model that reads a cron field correctly most of the time
-# is a model that tells you the wrong morning, once.
+# `make cowork-agenda` and `/cowork today` print what this computed instead of
+# interpreting twenty-one expressions by eye. A model that reads a cron field
+# correctly most of the time is a model that tells you the wrong morning, once.
+# Nothing posts this on a schedule any more — `cron/day-ahead.md` did, and the
+# fleet reports what it shipped now rather than what it is about to run.
 
 
 # The zone the agenda *renders* in. UTC stays the source of truth — every cron in
@@ -741,12 +784,20 @@ DISPLAY_TZ = "Europe/London"
 # next hourly routine is handled without an edit here.
 BACKGROUND_AFTER = 3
 
-# The routine that posts the agenda. It is left out of the *rendered* message — a
-# line announcing the message you are holding is the one line in a four-line post
-# that tells the reader nothing, and "Every day: day-ahead" is stranger still. It
-# stays in the payload, because the payload is the fleet's schedule and this is
-# genuinely part of it; `/cowork status` is what audits whether it is registered.
-MESSENGER = "day-ahead"
+# The fleet's daily poster, left out of the *rendered* agenda. "Every day:
+# shipped-standup" is the one line in a four-line schedule that tells a reader
+# nothing they are not already holding — they got yesterday's, they will get
+# today's. It stays in the payload, because the payload is the fleet's schedule
+# and this is genuinely part of it; `/cowork status` is what audits whether it is
+# registered.
+#
+# This used to be `day-ahead`, the routine that posted the agenda itself. That
+# routine is gone: announcing what is *about* to run is worth much less than
+# reporting what ran, and it was the one routine in the fleet forbidden from
+# staying quiet. `agenda_lines()` below outlived it — `make cowork-agenda` and
+# `/cowork today` still print it on demand, which is when a schedule is actually
+# wanted.
+DAILY_POSTER = "shipped-standup"
 
 # One fixed emoji per section, which is `cron/digest.md`'s convention and the only
 # decoration `.claude/agents/cowork-scribe.md` permits: constant per section, so a
@@ -1025,7 +1076,7 @@ def agenda_lines(payload: dict) -> list[str]:
         lines.append(payload["note"])
     lines.append("")
 
-    listed = [entry for entry in payload["today"] if entry["name"] != MESSENGER]
+    listed = [entry for entry in payload["today"] if entry["name"] != DAILY_POSTER]
     if listed:
         for entry in listed:
             summary = f" — {entry['summary']}" if entry["summary"] else ""
@@ -1092,7 +1143,7 @@ def agenda_lines(payload: dict) -> list[str]:
         future = date.fromisoformat(entry["date"])
         # Only when it changes: "Tue 1" a week out is ambiguous, "Tue 1 Sep" is not.
         stamp = f"{entry['weekday']} {future.day}" + (f" {future:%b}" if future.month != shown else "")
-        names = [name for name in entry["names"] if name != MESSENGER]
+        names = [name for name in entry["names"] if name != DAILY_POSTER]
         if names:
             upcoming_lines.append(f"**{stamp}** — " + ", ".join(names))
             shown = future.month
@@ -1113,7 +1164,7 @@ def agenda_lines(payload: dict) -> list[str]:
     closing = []
     if quiet:
         closing.append(f"{_joined(quiet)} {'is' if len(quiet) == 1 else 'are'} clear.")
-    daily = [name for name in payload["daily"] if name != MESSENGER]
+    daily = [name for name in payload["daily"] if name != DAILY_POSTER]
     if daily:
         closing.append("Every day: " + ", ".join(daily) + ".")
     if closing:
@@ -1214,8 +1265,10 @@ def check_repo(report: Report) -> None:
                         )
 
         # The agenda has nothing to say about a routine that will not say what it
-        # does, and `cron/day-ahead.md` posts these lines verbatim — so a missing
-        # one is a blank in tomorrow morning's message, not a cosmetic gap.
+        # does, and `make cowork-agenda` / `/cowork today` print these lines
+        # verbatim — so a missing one is a blank in the rendered schedule, not a
+        # cosmetic gap. It is also the one-line description of the routine in the
+        # README table's sibling prose, which is the other reason to require it.
         if not routine.summary:
             report.fail(
                 f"{routine.path} has no `**Summary** — ...` line",
@@ -1399,7 +1452,7 @@ def existing_labels() -> set[str] | None:
     None rather than an empty set, and the same for the variables below: they are
     different facts and the difference matters. ``gh_ready()`` passing does not
     mean the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all twenty-seven labels
+    and an empty set read as truth makes the doctor report all twenty-nine labels
     missing and ``apply_labels`` try to create every one of them.
     """
     result = _gh("label", "list", "--limit", "200", "--json", "name")
@@ -1490,6 +1543,89 @@ def apply_variables() -> None:
             )
 
 
+def merge_gate_armed() -> bool | None:
+    """Whether `pr-feedback` is a required status check on the `main-branch` ruleset.
+
+    None when the question could not be asked — no `gh`, no repo, or a failed
+    query — which is deliberately not the same answer as False. A missing gate is
+    a finding; an unanswerable question is a note, and conflating them would fail
+    the doctor on every machine without `gh` authenticated.
+
+    This is the setting that decides whether the auto lane merges anything. Every
+    workflow that would arm `gh pr merge --auto` runs this same query first and
+    refuses when it is false, so without it the lane opens PRs that sit waiting
+    for a human click — the thing it exists to remove.
+    """
+    if not shutil.which("gh"):
+        return None
+    slug = repo_slug()
+    if not slug:
+        return None
+    query = (
+        'any(.[]; .type=="required_status_checks" and '
+        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
+    )
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() == "true"
+
+
+def check_merge_gate(report: Report) -> None:
+    """The doctor's half: a missing merge gate is a finding, not a footnote.
+
+    `cron/cd-deploy.md` runs `--check` on every merge to `main`, so this is what
+    would notice `pr-feedback` being dropped from the ruleset later. Nothing else
+    would: the workflows that depend on it fail *quietly* by declining to arm
+    auto-merge, which looks exactly like a lane that had nothing to do.
+    """
+    armed = merge_gate_armed()
+    if armed is None:
+        report.notes.append("the main-branch ruleset was not checked — `gh` unavailable or the query failed")
+        return
+    if not armed:
+        report.fail(
+            "`pr-feedback` is not a required status check on the main-branch ruleset",
+            "add it at Settings → Rules → main-branch; until then no auto-lane PR merges unattended",
+        )
+
+
+def report_merge_gate() -> None:
+    """Probe the one setting that decides whether the unattended lane works.
+
+    `pr-feedback` on the `main-branch` ruleset's required checks is what makes
+    "the ruleset decides, not the routine" true. Every workflow that would arm
+    `--auto` refuses when it is absent, so without it the whole auto lane opens
+    PRs that sit waiting for a human click — the thing it exists to remove.
+
+    Probed rather than described. It was documented in four markdown files and
+    reported by nothing, which is the same shape as the gaps this function was
+    written for. The `gh api` call is the one `.github/workflows/codeql-triage.yml`
+    already makes.
+    """
+    armed = merge_gate_armed()
+    if armed is None:
+        print("     · pr-feedback on the main-branch ruleset's required checks — not checked here")
+        print("       (`gh` unavailable, or the query failed). Without it no auto-lane PR merges.")
+        return
+    if armed:
+        say("pr-feedback is a required status check — the unattended merge is armed")
+        return
+    slug = repo_slug() or "<owner>/<repo>"
+    # Reported, not STRICT.note()'d: this is a gap to fix, like the connectors and
+    # the GitHub App above it, not a degradation of *this* run — and `cd-deploy`
+    # runs under --strict, where failing on it would stop the fleet deploying over
+    # a setting the deploy has no way to change.
+    print("     · add `pr-feedback` to the main-branch ruleset's required status checks.")
+    print("       Until then every auto-lane PR opens green and waits for a human click:")
+    print(f"       https://github.com/{slug}/settings/rules")
+
+
 def report_manual_remainder(routines: Sequence[Routine]) -> None:
     """Print what no shell can do, with the link for each.
 
@@ -1509,6 +1645,10 @@ def report_manual_remainder(routines: Sequence[Routine]) -> None:
     print("       https://claude.ai/customize/connectors")
     print("     · install the Claude GitHub App on this repo, if it is not already")
     print("     · set the AUTO_VERSION_PAT secret, or Claude Review never sees workflow_run events")
+    print("     · add a PyPI trusted publisher for publish-beta.yml (workflow `publish-beta.yml`,")
+    print("       environment `pypi`) — without it every merge's pre-release dies at upload, and")
+    print("       'nothing ships to users on merge' has nothing behind it")
+    report_merge_gate()
     print("     · confirm what fires each event routine — the API stores a webhook filter and")
     print("       never reads one back, so nothing but the routine's own first step verifies it:")
     for routine in events:
@@ -1561,7 +1701,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across twenty-two routines is exactly
+# split is the point: comparing seven fields across twenty-four routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -1573,7 +1713,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering twenty-two routines that already exist.
+    propose registering twenty-four routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -2267,7 +2407,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers twenty-two routines pointing at no repository — which looks like it
+    # registers twenty-four routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.postable_creates:
         if not repo_url:
@@ -2492,6 +2632,7 @@ def run_check(local_only: bool, triggers: str | None = None) -> int:
     if local_only:
         note("--local: skipping every GitHub check")
     elif gh_ready():
+        check_merge_gate(report)
         # A failed query is not an empty repo. Reported by the helper and skipped
         # here, rather than turning one gh error into twenty-two findings.
         present = existing_labels()

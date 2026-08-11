@@ -85,12 +85,34 @@ def review(
     )
 
 
-def ack(producer: str = "claude-review", *, minutes_ago: int = 30, ident: int = 2, association: str = "OWNER", **kw):
+def forged(
+    n: int = 0,
+    *,
+    producer: str = "claude-review",
+    minutes_ago: int = 5,
+    ident: int = 9,
+    author: str = "a-stranger",
+    association: str = "NONE",
+):
+    """A verdict somebody other than the producer wrote, claiming ``n`` findings."""
+    mark = REVIEW_MARK if producer == "claude-review" else DOD_MARK
+    return comment(mark.format(n=n), minutes_ago=minutes_ago, ident=ident, author=author, association=association)
+
+
+def ack(
+    producer: str = "claude-review",
+    *,
+    minutes_ago: int = 30,
+    ident: int = 2,
+    association: str = "OWNER",
+    author: str = AUTHOR,
+    **kw,
+):
     """A won't-fix reply. Trusted by default — the untrusted case is its own test."""
     return comment(
         f"Won't fix, because the caller already guards it.\n\n<!-- addressed: {producer} -->",
         minutes_ago=minutes_ago,
-        author=AUTHOR,
+        author=author,
         ident=ident,
         association=association,
         **kw,
@@ -485,6 +507,171 @@ class TestWhoMayAnswer:
         assert prf.classify(snap, NOW).state == "success"
 
 
+class TestForgedVerdicts:
+    """A verdict is stronger than an ack, and until this existed it had no checks.
+
+    Blocking the `<!-- addressed: -->` marker closed the weaker hole. Anyone could
+    still post `<!-- pr-feedback: claude-review open=0 -->`, which does not
+    *answer* the findings — it replaces the count of them — and the gate went
+    green. On a public repo that was any account at all; on a cowork PR it was the
+    routine that wrote the code. Survivable while a human clicked merge, and the
+    entire gate now that `sweep-procedure.md` arms `gh pr merge --auto`.
+    """
+
+    def test_a_stranger_cannot_post_a_verdict(self):
+        snap = snapshot(comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5)))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_write_access_alone_cannot_post_one_either(self):
+        """This is the applicant's route: a cowork routine posts as the maintainer."""
+        snap = snapshot(
+            labels=("cowork",),
+            author="cowork-bot",
+            comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5, author="cowork-bot", association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_real_reviewer_still_clears_it(self):
+        """The honest path must survive: a re-review reports zero and the gate opens."""
+        snap = snapshot(comments=(review(3, minutes_ago=60, ident=1), review(0, minutes_ago=5, ident=2)))
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_association_is_not_required_to_be_trusted(self):
+        """A bot commenting through GITHUB_TOKEN carries `author_association: NONE`.
+
+        Requiring write access *as well* would reject every genuine Claude Review
+        and wedge every PR on a review that could never qualify — the deadlock
+        this module is built to avoid. Pinned so the rule is not "hardened" into
+        one later.
+        """
+        assert prf.is_authentic_verdict(
+            comment(REVIEW_MARK.format(n=0), author=REVIEWER, association="NONE"),
+            prf.PRODUCERS[0],
+        )
+
+    def test_a_forged_verdict_cannot_win_the_newest_wins_race(self):
+        """It is skipped outright, not merely outranked."""
+        latest = prf.latest_verdict(
+            (review(3, minutes_ago=60, ident=1), forged(0, minutes_ago=1, ident=2)),
+            prf.PRODUCERS[0],
+        )
+        assert latest is not None and latest[1] == 3
+
+    def test_a_rejected_verdict_reads_as_absent_not_as_zero(self):
+        """The fail-closed direction: red saying the review never posted."""
+        snap = snapshot(comments=(forged(0, minutes_ago=5),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "never posted a verdict" in verdict.description
+
+    def test_only_the_reviewer_login_may_post_a_review_verdict(self):
+        """ "Any bot" is not specific enough where the applicant is also a bot.
+
+        `claude.yml`, `codeql-triage.yml` and `ci-sentinel.yml` all open their PRs
+        from an Actions job, so on those lanes the author and the reviewer are
+        indistinguishable by bot-ness, and a job on the applicant side could post
+        the reviewer's `open=0`. Only comment ordering stopped it — a coincidence,
+        not a check.
+        """
+        producer = prf.PRODUCERS[0]
+        assert prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=REVIEWER), producer)
+        for impostor in ("github-actions[bot]", "dependabot[bot]", "some-app[bot]"):
+            assert not prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=impostor), producer)
+
+    def test_another_bot_cannot_clear_the_gate_on_a_machine_pr(self):
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="feature/issue-9-thing",
+            comments=(
+                review(2, minutes_ago=60, ident=1),
+                comment(REVIEW_MARK.format(n=0), minutes_ago=5, ident=2, author="github-actions[bot]"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_dod_audit_accepts_a_maintainer_because_a_routine_writes_it(self):
+        """Advisory and never required — and a stranger still cannot write it."""
+        producer = next(p for p in prf.PRODUCERS if p.key == "cowork-dod")
+        maintainer = comment(DOD_MARK.format(n=1), author=AUTHOR, association="OWNER")
+        stranger = comment(DOD_MARK.format(n=1), author="a-stranger", association="NONE")
+        assert prf.is_authentic_verdict(maintainer, producer)
+        assert not prf.is_authentic_verdict(stranger, producer)
+
+
+class TestUnattendedPRs:
+    """A machine PR may fix a finding. It may not declare one answered.
+
+    Once security, bug and chore fixes merge without a human clicking anything,
+    `TRUSTED_ASSOCIATIONS` stops being a gate: a cowork routine posts under an
+    account with write access, so the thing that wrote the change could also
+    write `<!-- addressed: claude-review -->` under the review of it and merge.
+    The way out is a push — a re-review then reports `open=0` on its own — which
+    is why these tests check that the honest path still clears.
+    """
+
+    @pytest.mark.parametrize(
+        "branch",
+        ["cowork/security-pin-shas", "feature/issue-231-fix", "security/codeql-triage-2026-08", "ci-sentinel/red-main"],
+    )
+    def test_every_machine_branch_counts_as_unattended(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is True
+
+    @pytest.mark.parametrize("branch", ["", "feature/nice-thing", "main", "coworker/typo"])
+    def test_an_ordinary_branch_does_not(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is False
+
+    def test_the_label_alone_is_enough(self):
+        assert prf.is_unattended(snapshot(labels=("cowork",))) is True
+
+    def test_the_author_cannot_answer_its_own_review(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_an_unlabelled_machine_branch_is_gated_the_same_way(self):
+        """A run truncated between `git push` and `gh pr create --label` lands here."""
+        snap = snapshot(
+            head_ref="cowork/standup-confidence",
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_somebody_else_with_write_access_still_can(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(
+                review(2, minutes_ago=60),
+                ack(minutes_ago=30, association="OWNER", author="a-different-human"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_fix_still_clears_it(self):
+        """The honest path: push, get re-reviewed, and the reviewer reports zero."""
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60, ident=1), review(0, minutes_ago=10, ident=3)),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_pr_on_a_machine_branch_is_not_waved_through(self):
+        """Without this, the widest lane in the fleet has no gate at all."""
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="cowork/platform-pin-actions",
+            comments=(review(2),),
+            ci=prf.CIState("success", NOW - timedelta(hours=3)),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_human_answering_their_own_pr_is_untouched(self):
+        """Nothing above applies to a person: one already read the review."""
+        snap = snapshot(comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")))
+        assert prf.classify(snap, NOW).state == "success"
+
+
 class TestReviewBodies:
     """A review's top-level body is not an issue comment and needs folding in."""
 
@@ -497,6 +684,99 @@ class TestReviewBodies:
             comments=(review(2, minutes_ago=60), ack(minutes_ago=30, kind="review", ident=9, association="NONE"))
         )
         assert prf.classify(snap, NOW).state == "failure"
+
+
+class TestTheOverrideIsNotAFreeLever:
+    """`feedback-override` clears more than a marker ever could, so it needs the rule.
+
+    It returns success before the producers, the threads and a
+    CHANGES_REQUESTED review are even looked at. The sweeps hold bare `Bash` and
+    already run `gh pr merge --auto` on their own PR, so `gh pr edit --add-label
+    feedback-override` sits inside the same grant — meaning "a human's call" was a
+    convention, and the lane that just lost the `<!-- addressed: -->` route had a
+    bigger lever sitting beside it.
+    """
+
+    def _snap(self, **overrides):
+        base = dict(labels=("cowork", prf.OVERRIDE_LABEL), comments=(review(3),))
+        base.update(overrides)
+        return snapshot(**base)
+
+    def test_the_author_of_a_machine_pr_cannot_override_their_own(self):
+        snap = self._snap(author="cowork-bot", override_actor="cowork-bot")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "own author" in verdict.description
+
+    def test_another_human_still_can(self):
+        snap = self._snap(author="cowork-bot", override_actor="a-different-human")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert "a-different-human" in verdict.description
+
+    def test_an_unknown_actor_still_honours_it(self):
+        """This label exists to unbrick a wedged gate.
+
+        Refusing it on a timeline we could not read would turn one API failure
+        into a PR nobody can merge — precisely what it is the escape hatch for.
+        """
+        snap = self._snap(author="cowork-bot", override_actor="")
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_an_ordinary_pr_is_untouched(self):
+        """A person overriding their own PR is a person making a call."""
+        snap = self._snap(labels=(prf.OVERRIDE_LABEL,), author=AUTHOR, override_actor=AUTHOR)
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_the_actor_is_read_from_the_timeline_newest_wins(self):
+        events = [
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "first"}},
+            {"event": "labeled", "label": {"name": "cowork"}, "actor": {"login": "noise"}},
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "second"}},
+        ]
+        with_json = lambda *a: events  # noqa: E731 - a one-line stub
+        original = prf._gh_json
+        try:
+            prf._gh_json = with_json
+            assert prf.fetch_override_actor("o/r", 1) == "second"
+        finally:
+            prf._gh_json = original
+
+    def test_an_unreadable_timeline_reads_as_unknown_not_as_the_author(self):
+        original = prf._gh_json
+        try:
+            prf._gh_json = lambda *a: None
+            assert prf.fetch_override_actor("o/r", 1) == ""
+        finally:
+            prf._gh_json = original
+
+
+class TestStickyAdviceMatchesThePR:
+    """The check must not instruct a human to do the one thing that cannot work.
+
+    On a cowork PR the author is the maintainer's own account, so a person who
+    reads the red check, disagrees with a finding and replies exactly as told gets
+    silence and the same red check re-rendered, with no diagnostic anywhere.
+    """
+
+    def _body(self, **overrides):
+        snap = snapshot(comments=(review(2),), **overrides)
+        return prf.sticky_body(snap, prf.classify(snap, NOW))
+
+    def test_an_ordinary_pr_still_offers_the_reply_route(self):
+        body = self._body()
+        assert "<!-- addressed: <producer> -->" in body
+
+    def test_a_machine_pr_says_the_reply_route_does_not_apply(self):
+        body = self._body(labels=("cowork",))
+        assert "cannot clear a finding here" in body
+        assert "<!-- addressed: <producer> -->" not in body
+
+    def test_a_machine_pr_still_names_a_way_out(self):
+        """Never a dead end: fixing, or the override, and the override is a human's."""
+        body = self._body(head_ref="cowork/platform-x")
+        assert "fix and " in body
+        assert prf.OVERRIDE_LABEL in body
 
 
 class TestStickyIsInert:
@@ -595,7 +875,7 @@ class TestFetch:
                     [
                         {
                             "id": 7,
-                            "user": {"login": "github-actions[bot]"},
+                            "user": {"login": "claude[bot]"},
                             "body": REVIEW_MARK.format(n=1),
                             "created_at": "2026-08-06T10:00:00Z",
                             "updated_at": "2026-08-06T11:00:00Z",

@@ -79,6 +79,22 @@ OVERRIDE_LABEL = "feedback-override"
 BOT_AUTHORS = frozenset({"dependabot[bot]", "github-actions[bot]"})
 COWORK_LABEL = "cowork"
 
+# Branch namespaces an unattended run pushes to: `cowork/…` (cowork-builder),
+# `feature/issue-N-…` (claude.yml's implement job), plus the two workflows that
+# open their own fix PRs. A PR from one of these was written by a machine, which
+# has two consequences below — it is never waved through as "bot-authored, review
+# not applicable", and its author cannot answer its own review.
+#
+# Kept in step with the author filter in `claude-review.yml`: this gate must
+# never expect a review that the reviewer was never going to write, or the PR
+# sits red with nothing to fix. Widen both or neither.
+UNATTENDED_BRANCH_PREFIXES = (
+    "cowork/",
+    "feature/issue-",
+    "security/codeql-triage",
+    "ci-sentinel/",
+)
+
 # How long after CI goes green a review may take before its absence is treated as
 # a fault rather than as latency.
 REVIEW_GRACE = timedelta(minutes=20)
@@ -159,6 +175,13 @@ PRODUCERS: tuple[Producer, ...] = (
         key="cowork-dod",
         label="DoD audit",
         required=False,
+        # No pinned `authors`, deliberately: a cowork routine writes this one, and
+        # it may run as the maintainer or as a bot depending on how it is invoked.
+        # So it falls back to write access, which still stops a stranger on a
+        # public repo. It is advisory and never required — forging its `open=0`
+        # suppresses DoD-audit findings and leaves `claude-review`, the producer
+        # that gates the merge, untouched. Named here rather than left as an
+        # asymmetry to notice.
         # `open=` is what makes it countable. A bare `<!-- cowork-dod -->` is the
         # older format and deliberately reads as no verdict rather than as zero:
         # a routine that has not been updated yet must not be able to clear a gate
@@ -175,6 +198,9 @@ ACK_RE = re.compile(r"<!--\s*addressed:\s*([a-z0-9][a-z0-9-]*)\s*-->", re.IGNORE
 # ordinary prose; the sticky comment still says how to clear the check, so the
 # way out of a wrongly-red gate is never closed, only moved to someone with
 # write access.
+#
+# Write access is necessary and, on an unattended PR, not sufficient: see
+# `is_acknowledged`, which additionally refuses an ack from the PR's own author.
 TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
@@ -245,6 +271,11 @@ class Snapshot:
     threads: tuple[Thread, ...]
     ci: CIState
     threads_truncated: bool = False
+    head_ref: str = ""
+    # Who applied `feedback-override`, when it is present. Empty when nobody did,
+    # or when the timeline could not be read — those are different, and
+    # ``classify`` treats them differently.
+    override_actor: str = ""
 
 
 @dataclass(frozen=True)
@@ -352,6 +383,9 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     Dated by ``written_at``: the DoD audit is instructed to edit one comment in
     place on every push, so its ``created_at`` is the hour the PR opened while
     the verdict inside it may be a minute old.
+
+    Comments that are not authentic verdicts (see ``is_authentic_verdict``) are
+    skipped entirely, so a forged one cannot even win the newest-wins race.
     """
     best: tuple[Comment, int] | None = None
     for comment in comments:
@@ -368,16 +402,48 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     return best
 
 
-def is_acknowledged(comments: Iterable[Comment], producer_key: str, after: datetime, after_id: int = 0) -> bool:
+def is_unattended(snapshot: Snapshot) -> bool:
+    """Whether this PR was written by a machine rather than by a person.
+
+    Two signals, either of which is enough: the ``cowork`` label, and a head
+    branch in one of the namespaces an unattended run pushes to. The label alone
+    was not enough once the auto lane widened — `cowork/house-rules.md` requires
+    it on every routine PR, but a run truncated between `git push` and
+    `gh pr create --label` leaves an unlabelled machine PR behind, and that is
+    exactly the PR that must not be trusted more than a labelled one.
+    """
+    return COWORK_LABEL in snapshot.labels or snapshot.head_ref.startswith(UNATTENDED_BRANCH_PREFIXES)
+
+
+def is_acknowledged(
+    comments: Iterable[Comment],
+    producer_key: str,
+    after: datetime,
+    after_id: int = 0,
+    deny_author: str | None = None,
+) -> bool:
     """Whether a trusted reply newer than ``after`` answers this producer's pass.
 
     ``after_id`` breaks the same second-granularity tie ``latest_verdict`` breaks:
     a reply posted in the same second as the verdict it answers is newer, and a
     strict ``>`` on the timestamp alone would drop it.
+
+    ``deny_author`` is the PR's own author, passed only for an unattended PR, and
+    it is what makes this gate mean anything once machines merge their own work.
+    A cowork routine posts under an account with write access, so
+    ``TRUSTED_ASSOCIATIONS`` alone would let the thing that wrote the change also
+    declare the review of it answered — a gate whose key is held by the applicant.
+    It may still *fix* a finding: a push triggers a re-review, and
+    ``latest_verdict`` then reads ``open=0`` from the reviewer itself. What it may
+    no longer do is disagree in a comment and merge anyway.
+
+    A human answering the review on their own PR is untouched: a person read it,
+    which is the whole thing being checked for.
     """
     return any(
         (comment.created_at, comment.id) > (after, after_id)
         and comment.association.upper() in TRUSTED_ASSOCIATIONS
+        and (deny_author is None or comment.author != deny_author)
         and producer_key in acknowledged_producers(comment.body)
         for comment in comments
     )
@@ -441,7 +507,13 @@ def open_producers(snapshot: Snapshot, now: datetime) -> tuple[list[OpenItem], s
         comment, count = latest
         if count == 0:
             continue
-        if is_acknowledged(snapshot.comments, producer.key, after=comment.written_at, after_id=comment.id):
+        if is_acknowledged(
+            snapshot.comments,
+            producer.key,
+            after=comment.written_at,
+            after_id=comment.id,
+            deny_author=snapshot.author if is_unattended(snapshot) else None,
+        ):
             continue
         plural = "finding" if count == 1 else "findings"
         items.append(
@@ -464,10 +536,35 @@ def describe(items: Sequence[OpenItem]) -> str:
 def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     """The whole decision. Everything above feeds this; nothing below re-decides it."""
     if OVERRIDE_LABEL in snapshot.labels:
-        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label")
+        # The override is a stronger dismissal than any marker — it clears every
+        # finding, every unresolved thread and a CHANGES_REQUESTED review at once —
+        # so the rule that governs the marker has to govern it too, or the lane
+        # simply uses the bigger lever. On an unattended PR the applicant holds
+        # write access, and `gh pr edit --add-label` sits inside the sweeps' bare
+        # `Bash` grant, so "a human's call" was a convention rather than a fact.
+        #
+        # Unknown actor still honours the override. This label exists to unbrick a
+        # gate that has genuinely gone wrong, and refusing it on a timeline we
+        # could not read would turn one API failure into a PR nobody can merge —
+        # the exact outcome it is the escape hatch for.
+        if is_unattended(snapshot) and snapshot.override_actor and snapshot.override_actor == snapshot.author:
+            return Verdict(
+                "failure",
+                f"`{OVERRIDE_LABEL}` was applied by this PR's own author — it does not count here",
+                (
+                    OpenItem(
+                        "override",
+                        OVERRIDE_LABEL,
+                        f"`{OVERRIDE_LABEL}` applied by {snapshot.override_actor}, who authored this "
+                        f"machine PR — a human other than the author must apply it, or fix the findings",
+                    ),
+                ),
+            )
+        who = f" by {snapshot.override_actor}" if snapshot.override_actor else ""
+        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label{who}")
     if snapshot.is_draft:
         return Verdict("success", "draft — review not applicable")
-    if snapshot.author in BOT_AUTHORS and COWORK_LABEL not in snapshot.labels:
+    if snapshot.author in BOT_AUTHORS and not is_unattended(snapshot):
         return Verdict("success", f"{snapshot.author} — review not applicable")
 
     items = open_threads(snapshot)
@@ -551,7 +648,9 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
     """Read the PR once, from four read-only calls, into the shape ``classify`` wants."""
     owner, _, name = slug.partition("/")
 
-    meta = _gh_json("pr", "view", str(number), "--json", "number,headRefOid,isDraft,author,labels,reviewDecision")
+    meta = _gh_json(
+        "pr", "view", str(number), "--json", "number,headRefOid,headRefName,isDraft,author,labels,reviewDecision"
+    )
     if not isinstance(meta, dict):
         return None
     head_sha = meta.get("headRefOid") or ""
@@ -605,6 +704,14 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         threads=threads,
         ci=fetch_ci(slug, head_sha),
         threads_truncated=truncated,
+        head_ref=meta.get("headRefName") or "",
+        # Only asked when the label is actually present — one paginated call for a
+        # question that is almost always moot.
+        override_actor=(
+            fetch_override_actor(slug, number)
+            if OVERRIDE_LABEL in tuple(label.get("name", "") for label in meta.get("labels") or [])
+            else ""
+        ),
     )
 
 
@@ -657,6 +764,29 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
         for item in raw
         if (item.get("body") or "").strip()
     )
+
+
+def fetch_override_actor(slug: str, number: int) -> str:
+    """Who most recently applied ``feedback-override``, or "" if unknown.
+
+    Read from the issue events timeline, which is the only place the *actor* of a
+    label is recorded — the labels on a PR carry no provenance at all. Empty on
+    any failure, and ``classify`` reads that as "unknown" rather than as "the
+    author", so a timeline this cannot fetch never turns into a blocked PR.
+    """
+    raw = _gh_json("api", f"repos/{slug}/issues/{number}/events", "--paginate")
+    if not isinstance(raw, list):
+        return ""
+    actor = ""
+    for item in raw:
+        if not isinstance(item, dict) or item.get("event") != "labeled":
+            continue
+        if ((item.get("label") or {}).get("name")) != OVERRIDE_LABEL:
+            continue
+        # Events arrive oldest-first; the last one wins, matching "most recently
+        # applied" after any remove/re-add.
+        actor = ((item.get("actor") or {}).get("login")) or ""
+    return actor
 
 
 def fetch_ci(slug: str, head_sha: str) -> CIState:
@@ -745,6 +875,25 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         "",
     ]
     lines += [f"- {item.detail}" for item in verdict.items]
+    # The advice has to match the PR. On an unattended PR an `<!-- addressed: -->`
+    # reply from the PR's own author is discarded, and on the cowork lane that
+    # author *is* the maintainer — so a human who reads this comment, disagrees
+    # with a finding and replies exactly as instructed would get silence and a
+    # re-rendered red check, with nothing anywhere saying why. Telling somebody to
+    # do the one thing that cannot work is worse than telling them nothing.
+    if is_unattended(snapshot):
+        lines += [
+            "",
+            "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and "
+            "push — the next review pass reports `open=0` and this clears itself. Hit "
+            "**Resolve conversation** on any thread you have answered.",
+            "",
+            "**This PR is machine-authored, so a reply cannot clear a finding here.** An "
+            "`<!-- addressed: … -->` marker written by this PR's own author is ignored: the account "
+            "that wrote the change would otherwise be answering the review of it. Fix the finding, or "
+            f"apply the `{OVERRIDE_LABEL}` label — a human's call, recorded here.",
+        ]
+        return "\n".join(lines)
     lines += [
         "",
         "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and push "

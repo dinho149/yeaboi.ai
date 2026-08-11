@@ -45,6 +45,16 @@ all point here rather than restating it.
    post it after the review, not before. If you push again afterwards, the next review
    pass will have read your reply and should stop reporting the finding at all.
 
+   **On an unattended PR this step does not exist.** A cowork PR, a `feature/issue-N-…`
+   branch, a triage or sentinel branch — `scripts/pr_feedback.py` refuses an ack from
+   the PR's own author there, so the marker is inert and the gate stays red.
+   `CLAUDE.md` prescribes `feature/<description>` for human branches, so if you happen
+   to name one `feature/issue-…` you land in this rule too — rename the branch, or use
+   `feedback-override`, which is recorded on the PR either way. That is
+   deliberate: the account that wrote the change also has write access, so without it
+   the applicant would be holding the key. Fix the finding (step 4) or hand the PR back
+   to a human as a proposal. Only step 4 clears an unattended PR.
+
 6. **Human threads** — reply in the thread, then resolve it:
 
    ```bash
@@ -63,6 +73,10 @@ the `pr-responder` subagent (`.claude/agents/pr-responder.md`) per PR in its own
 - **Never resolve a thread you did not answer**, and never write an `<!-- addressed: -->`
   marker without the reply that justifies it. The marker means "there is a reason below".
   Closing feedback silently is the behaviour this gate exists to stop.
+- **A machine never answers its own review.** On an unattended PR the only way to clear a
+  finding is to fix it; disagreement is escalated to a human, never asserted. This one is
+  enforced in code rather than trusted, because it is the single rule standing between an
+  unattended merge and no review at all.
 - **The `feedback-override` label is a last resort and a human's call** — for a gate that
   has genuinely gone wrong (a review that errored, a producer that changed format), not
   for feedback that is inconvenient. It is recorded in the sticky comment, so an

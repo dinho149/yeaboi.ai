@@ -42,8 +42,18 @@ Procedure:
    10-find cap, ranked with everything else. **Zero opportunities is as normal an outcome as zero
    defects** — never pad either list.
 5. Classify each find `auto` or `propose` against the allowlist in `house-rules.md`. The allowlist is
-   closed: if the find does not clearly sit in one of its five categories **and** clear every
+   closed: if the find does not clearly sit in one of its seven categories **and** clear every
    condition, it is `propose`. When you are arguing with yourself, it is `propose`.
+
+   Two of those conditions do most of the work, and both are questions of fact rather than taste:
+
+   - **Behaviour may change, wording may not.** Correcting a wrong number, guarding a crash or
+     wiring up a dead control is `auto` even though a user would notice. Rewording the label above
+     that number is `propose`.
+   - **A `bug` is `auto` only if you can name the regression test that would prove it** — the
+     assertion that fails on today's `main` and passes once fixed. Name it in `evidence`. If you
+     cannot describe that test concretely, you do not understand the bug well enough to hand it to
+     an unwatched builder: mark it `propose` and say so in `why_it_matters`.
 6. Deduplicate against `gh issue list --label "workstream:<name>" --state all --limit 60`. A find that
    restates an open proposal, or one closed unapproved, is dropped.
 
@@ -58,8 +68,13 @@ Return JSON and nothing else:
 ```
 
 `type` is a closed vocabulary. The auto-lane categories map onto it — security patch → `security`,
-flaky or broken test → `bug`, dead code and lint → `chore`, doc drift → `docs`. `feature` and
-`improvement` are **always** `lane: propose`.
+a reproducible defect or a flaky test → `bug`, dead code, lint and no-behaviour-delta refactors →
+`chore`, doc drift → `docs`. `feature` and `improvement` are **always** `lane: propose`.
+
+`impact` and `risk` are not decoration: the sweep takes the highest-`impact` `auto` find and breaks
+ties toward the lower `risk`, so those two fields choose what ships unattended today. Score impact
+by who feels it and how often, not by how interesting the fix is, and score risk by how much of the
+surface the change can reach.
 
 Rank by impact over effort, highest first. **Return at most 10 finds** — if you have more, the
 charter's scope is wrong and that itself is the finding. **Returning zero finds is a normal, good

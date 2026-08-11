@@ -4,7 +4,7 @@
 **Summary** — the daily agent digest: what the AI agents shipped, spent, and left open
 **Workstream** — [`workstreams/agents.md`](../../workstreams/agents.md)
 
-Not a sweep — this routine *runs the product*, like `day-ahead.md` runs the schedule. It composes
+Not a sweep — this routine *runs the product* rather than surveying the code. It composes
 nothing itself: the engine builds the digest, the routine posts it.
 
 ## Run

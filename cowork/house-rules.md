@@ -2,7 +2,11 @@
 
 Binding on every cowork routine and every crew agent. Read this before your charter.
 
-## The auto lane is narrow and closed
+## The auto lane
+
+Security, bugs and chores ship without asking. That is the point of the lane: the maintainer's
+attention is a scarce resource and none of those three needs it. What replaces the approval is not
+trust — it is a gate that a machine cannot open on its own (see **The gate** below).
 
 A find may skip the proposal step and go straight to a PR only when **every** condition holds:
 
@@ -10,18 +14,33 @@ A find may skip the proposal step and go straight to a PR only when **every** co
 - no public API, schema, or state-field change
 - no prompt change (`src/yeaboi/prompts/`)
 - no new capability — i.e. it needs no `test_surface_parity.py` registry edit
-- no user-visible copy or UX change
+- no change to user-facing wording or labels
+
+That last one is the line, and it is narrower than it looks: **behaviour may change, copy may
+not.** Correcting a wrong total, guarding a crash, or wiring up a button that does nothing are all
+inside the lane even though a user would notice. Rewording the label above that total is not. The
+distinction is that behaviour has a right answer the tests can hold, and wording is a matter of
+taste — which is exactly the kind of judgement the proposal queue exists to put in front of a
+human.
 
 …**and** it falls in one of these categories, which is the complete list:
 
 1. security patch to a known guardrail gap, or a `pip-audit` CVE — see the carve-out below
-2. a flaky or outright broken test
-3. dead code removal
-4. documentation drift (docs that contradict the code)
-5. lint / type-annotation cleanup
-6. a CodeQL alert whose rule id is on the `auto` list in
+2. a **bug**, with a regression test that fails before the fix and passes after — see below
+3. a flaky or outright broken test
+4. dead code removal, or a refactor with no behaviour delta
+5. documentation drift (docs that contradict the code)
+6. lint / type-annotation cleanup
+7. a CodeQL alert whose rule id is on the `auto` list in
    [`.github/codeql/triage-policy.yml`](../.github/codeql/triage-policy.yml) — belongs to
    `codeql-triage.yml`, not to a routine; see the carve-out below
+
+**A bug enters the lane on a failing test, not on an argument.** Write the regression test first,
+run it against unfixed `main` and watch it fail, then fix and watch it pass, and paste both runs
+into the PR body. A bug you cannot reproduce that way is one whose shape you do not yet understand
+well enough to fix unwatched — file it as a proposal. This is the whole admission ticket for
+category 2, and it is what makes "is this really a bug?" a mechanical question instead of a
+judgement.
 
 **Everything else proposes.** If you are arguing with yourself about whether something qualifies,
 it does not. Marketing always proposes.
@@ -35,7 +54,7 @@ qualifies for the auto lane.
 opens those PRs and `dependabot-auto.yml` verifies and merges them; a builder bumping the same
 dependency in its own branch produces a second PR that conflicts with the first. Nothing to
 consolidate — the producer is a GitHub service, not a workflow. Leave the bump; a *usage* fix the
-bump requires is ordinary work and proposes like anything else.
+bump requires is ordinary work and rides category 2 like any other bug.
 
 **A `pip-audit` CVE is the one exception**, because waiting for Dependabot's next scheduled run is
 not an acceptable posture on a known exploitable version. It stays auto-lane, with one precondition:
@@ -43,7 +62,7 @@ check `gh pr list --author "app/dependabot" --state open` first, and if a PR alr
 dependency, **drive that PR instead of opening your own**. Two PRs raising the same pin is the exact
 collision the paragraph above exists to prevent, and a CVE is not a reason to cause it.
 
-**CodeQL alerts belong to a workflow, not a routine, and category 6 takes three exemptions from the
+**CodeQL alerts belong to a workflow, not a routine, and category 7 takes three exemptions from the
 guardrails below.** They are listed here rather than assumed, because each one is a rule this file
 otherwise enforces:
 
@@ -60,16 +79,45 @@ otherwise enforces:
   fix is mechanical, local and provably behaviour-preserving are on the `auto` list, and the policy
   file records the prescribed fix for each.
 
-None of that removes a gate. The triage PR still opens only after `make test`, `make lint`,
-`make security` and a `code-reviewer` pass, and it merges via `gh pr merge --auto`, so the
-main-branch ruleset — including the `pr-feedback` status — is what actually decides. A wrong fix
-does not merge; it sits red.
+None of that removes a gate: the triage PR goes through **The gate** below like everything else,
+and merges via `gh pr merge --auto` so the ruleset is what decides. A wrong fix does not merge; it
+sits red.
 
-That last sentence is only true while **`pr-feedback` is a required status check on the ruleset**,
-which is a manual setup step and is not one today. The workflow checks for it and refuses to arm
-auto-merge when it is missing, rather than merging on CI alone and calling it reviewed. Until it is
-added, the triage PR opens green and waits for a human click — the automation is real, the
-unattended *merge* is not.
+## The gate
+
+The lane is wide; what keeps it safe is the merge path, and none of it is discretionary.
+
+- **`make test` and `make lint` pass before the commit** — `make test-fast` is not enough at PR
+  time. The full contract is in [definition-of-done.md](definition-of-done.md), items 2–7.
+- **An independent `code-reviewer` reads the diff** before the PR opens. The builder never reviews
+  its own work.
+- **`claude-review.yml` reviews the PR** once CI is green, and the `pr-feedback` status counts what
+  it found.
+- **A machine may fix a finding; it may never dismiss one.** `scripts/pr_feedback.py` refuses an
+  `<!-- addressed: … -->` marker from the PR's own author on an unattended PR, and refuses a
+  `feedback-override` label applied by that same author — the override is the stronger lever, since
+  it clears every finding, every unresolved thread and a requested-changes review at once, and
+  `gh pr edit --add-label` sits inside the sweeps' own grant. So the only way to clear a finding is
+  to push a fix and let the reviewer report `open=0` itself. A finding you disagree
+  with ends the auto lane for that find: file it as a proposal and let a human answer. Before this
+  was enforced, the routine that opened the PR could also declare the review of it answered — the
+  applicant holding the key.
+- **The merge waits on the ruleset**, which decides, not on any routine. `pr-feedback` must be a
+  required status check on the `main-branch` ruleset for that sentence to be true; it is a manual
+  setup step. Every workflow that would arm `--auto` checks for it first and refuses when it is
+  absent, rather than merging on CI alone and calling it reviewed.
+- **Nothing ships to users on merge.** A merge to `main` publishes a PyPI *pre-release*;
+  `pip install yeaboi` is unaffected. The accumulated batch becomes an official version only when a
+  human promotes it — see [`routines/cron/release-promote-ask.md`](routines/cron/release-promote-ask.md).
+  This is the last backstop: a wrong fix that survives everything above still has to get past a
+  person who has been running it.
+
+## Throughput is already bounded — do not add a throttle
+
+One `auto` find per run and one open PR per workstream (see Guardrails) together cap a heavy
+weekday at roughly eight merges and a typical one at two to four. That is the intended volume, and
+it is bounded by structure rather than by a counter someone has to tune. A new limit on top would
+mostly express nervousness, and the honest answer to nervousness here is the gate above.
 
 ## Guardrails
 
@@ -79,21 +127,30 @@ unattended *merge* is not.
 - **Stay in your paths.** A find outside your charter's paths becomes a proposal issue labelled for
   the owning workstream. Never edit another workstream's files — this is what keeps two routines off
   `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface).
+- **Never apply `feedback-override`.** It is the escape hatch for a gate that has genuinely gone
+  wrong — a review that errored, a producer that changed format — and it is a human's call, recorded
+  on the PR. A routine applying it to its own PR is the applicant clearing its own review with the
+  largest lever available, and `pr_feedback.py` now refuses exactly that; this rule is here so the
+  closed allowlist covers the label rather than leaving it to the code alone.
 - **Never apply `claude-implement`.** Only a human does. That label is the approval gate; a routine
   applying it would be approving its own work. The one carve-out is `routines/cron/slack-relay.md`,
   which applies the label (or closes an issue) **only** as the relay of a ✅/❌ reaction from a human
   on its written allowlist, and records who and the message link on the issue. The human is
   approving; the relay is transport — it never applies the label to anything no allowlisted human
   reacted to.
-- **Never push to `main`, never merge a PR, never `--force`.**
+- **Never push to `main`, never `--force`, and never merge a PR yourself.** `gh pr merge --auto`
+  is not a merge — it hands the decision to the ruleset, which merges only once every required
+  check is green. Arming it is allowed; clicking merge, bypassing a check, or pushing to `main`
+  is not, and no widening of the auto lane changes that.
 - **One coherent change per run.** No grab-bags.
 - **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no Slack message. A routine
   that always finds something is a routine inventing work.
-- **Label every PR** `cowork`, `workstream:<name>`, and the find's `type:<type>` — the merge ship
-  note takes its `[type]` tag from the PR's labels. The `cowork` label is what guarantees
+- **Label every PR** `cowork`, `workstream:<name>`, and the find's `type:<type>` — the daily
+  standup takes its `[type]` tag from the PR's labels. The `cowork` label is also what guarantees
   `claude-review.yml` reviews it: that workflow skips `dependabot[bot]` and `github-actions[bot]`,
-  and an unattended job's PR may carry one of those authors. An unlabelled PR can go unreviewed with
-  nothing said about it.
+  and an unattended job's PR may carry one of those authors. A truncated run that pushes without
+  labelling no longer goes unreviewed — both that workflow and `scripts/pr_feedback.py` also
+  recognise the `cowork/` branch namespace — but it does ship untagged in the standup, so label it.
 
 ## Verification is not optional
 
