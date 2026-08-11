@@ -9,6 +9,8 @@ description: CI/CD workflow internals, version management and auto-bump mechanic
 
 Version is **single-sourced in `pyproject.toml`** (`version = "…"`). `src/yeaboi/__init__.py` reads it at runtime from the installed package metadata (`importlib.metadata.version("yeaboi")`, with a `0.0.0+dev` fallback for uninstalled source trees). `__version__` is imported by `cli.py` for the `--version` flag. Package entry points: `yeaboi = "yeaboi.cli:main"` (canonical) and a one-release back-compat alias `scrum-agent = "yeaboi.cli:main"`. The PyPI distribution was renamed `scrum-agent` → `yeaboi`; a thin `scrum-agent` redirect package (`packaging/scrum-agent-shim/`) depends on `yeaboi` so existing installs migrate.
 
+**Two manual prerequisites, and both fail in ways nothing else reports.** `publish-beta.yml` needs its *own* PyPI trusted-publisher entry (workflow `publish-beta.yml`, environment `pypi`) alongside `publish.yml`'s — without it every pre-release dies at upload with `invalid-publisher`, loudly, and the official channel is untouched, which is why the new trigger lives in a new file. And `pr-feedback` must be a required status check on the `main-branch` ruleset, or every workflow that would arm `--auto` refuses and the unattended lane opens PRs that wait for a click. `make cowork-setup` probes the second one on every run and reports it.
+
 **There are two channels, and merging only reaches the first.**
 
 - **Pre-release, on every release-worthy merge.** A merge to `main` that changed the `version` line fires `publish-beta.yml`, which publishes `X.Y.ZrcN` to PyPI and creates **no tag and no GitHub Release**. `pip install yeaboi` cannot see it; `pip install --pre yeaboi` can. Merges that don't change the version are a no-op, same as before.

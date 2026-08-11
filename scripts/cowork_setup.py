@@ -4,7 +4,7 @@
 ``cowork/`` is a complete specification — sixteen charters, twenty-four routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 22 web
+registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -1529,6 +1529,48 @@ def apply_variables() -> None:
             )
 
 
+def report_merge_gate() -> None:
+    """Probe the one setting that decides whether the unattended lane works.
+
+    `pr-feedback` on the `main-branch` ruleset's required checks is what makes
+    "the ruleset decides, not the routine" true. Every workflow that would arm
+    `--auto` refuses when it is absent, so without it the whole auto lane opens
+    PRs that sit waiting for a human click — the thing it exists to remove.
+
+    Probed rather than described. It was documented in four markdown files and
+    reported by nothing, which is the same shape as the gaps this function was
+    written for. The `gh api` call is the one `.github/workflows/codeql-triage.yml`
+    already makes.
+    """
+    if not shutil.which("gh"):
+        print("     · pr-feedback on the main-branch ruleset's required checks — `gh` not found,")
+        print("       so this was not checked. Without it the auto lane never merges unattended.")
+        return
+    slug = repo_slug()
+    if not slug:
+        return
+    query = (
+        'any(.[]; .type=="required_status_checks" and '
+        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
+    )
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip() == "true":
+        say("pr-feedback is a required status check — the unattended merge is armed")
+        return
+    # Reported, not STRICT.note()'d: this is a gap to fix, like the connectors and
+    # the GitHub App above it, not a degradation of *this* run — and `cd-deploy`
+    # runs under --strict, where failing on it would stop the fleet deploying over
+    # a setting the deploy has no way to change.
+    print("     · add `pr-feedback` to the main-branch ruleset's required status checks.")
+    print("       Until then every auto-lane PR opens green and waits for a human click:")
+    print(f"       https://github.com/{slug}/settings/rules")
+
+
 def report_manual_remainder(routines: Sequence[Routine]) -> None:
     """Print what no shell can do, with the link for each.
 
@@ -1548,6 +1590,10 @@ def report_manual_remainder(routines: Sequence[Routine]) -> None:
     print("       https://claude.ai/customize/connectors")
     print("     · install the Claude GitHub App on this repo, if it is not already")
     print("     · set the AUTO_VERSION_PAT secret, or Claude Review never sees workflow_run events")
+    print("     · add a PyPI trusted publisher for publish-beta.yml (workflow `publish-beta.yml`,")
+    print("       environment `pypi`) — without it every merge's pre-release dies at upload, and")
+    print("       'nothing ships to users on merge' has nothing behind it")
+    report_merge_gate()
     print("     · confirm what fires each event routine — the API stores a webhook filter and")
     print("       never reads one back, so nothing but the routine's own first step verifies it:")
     for routine in events:

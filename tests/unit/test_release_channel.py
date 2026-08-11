@@ -255,6 +255,52 @@ class TestEnvironmentIsolation:
         assert git(repo, "rev-list", "--count", "HEAD") == "2"
 
 
+class TestExitCodes:
+    """`publish-beta.yml` branches on these, so they are a contract, not a detail.
+
+    0 publishes an rc, 1 is "the version has not moved — no-op this merge", and 2
+    stops the workflow. Confusing 1 with 2 either publishes nothing on a real
+    release or reds every quiet merge.
+    """
+
+    def test_a_bumped_version_exits_zero_and_prints_the_rc(self, repo, monkeypatch, capsys):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "second")
+        assert rc.main(["--next-rc"]) == 0
+        assert capsys.readouterr().out.strip() == "1.1.0rc1"
+
+    def test_an_unbumped_version_exits_one(self, repo, monkeypatch, capsys):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.0.0")
+        assert rc.main(["--next-rc"]) == 1
+        assert "nothing to pre-release" in capsys.readouterr().err
+
+    def test_a_backwards_version_exits_two(self, repo, monkeypatch, capsys):
+        git(repo, "tag", "v2.0.0")
+        set_version(monkeypatch, "1.9.0")
+        assert rc.main(["--next-rc"]) == 2
+        assert "below the last final" in capsys.readouterr().err
+
+    def test_check_promotable_refuses_a_backwards_version(self, repo, monkeypatch, capsys):
+        """The promotion path had a weaker check than the beta path it promotes."""
+        git(repo, "tag", "v2.0.0")
+        set_version(monkeypatch, "1.9.0")
+        assert rc.main(["--check-promotable"]) == 2
+        assert "sorts backwards" in capsys.readouterr().err
+
+    def test_check_promotable_refuses_an_already_released_version(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.0.0")
+        assert rc.main(["--check-promotable"]) == 2
+
+    def test_check_promotable_accepts_a_real_bump(self, repo, monkeypatch, capsys):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        assert rc.main(["--check-promotable"]) == 0
+        assert capsys.readouterr().out.strip() == "1.1.0"
+
+
 class TestCommittedVersionShape:
     def test_pyproject_holds_a_plain_version(self):
         """An rc string on `main` would crash every later auto-version bump.

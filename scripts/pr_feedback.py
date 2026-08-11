@@ -175,6 +175,13 @@ PRODUCERS: tuple[Producer, ...] = (
         key="cowork-dod",
         label="DoD audit",
         required=False,
+        # No pinned `authors`, deliberately: a cowork routine writes this one, and
+        # it may run as the maintainer or as a bot depending on how it is invoked.
+        # So it falls back to write access, which still stops a stranger on a
+        # public repo. It is advisory and never required — forging its `open=0`
+        # suppresses DoD-audit findings and leaves `claude-review`, the producer
+        # that gates the merge, untouched. Named here rather than left as an
+        # asymmetry to notice.
         # `open=` is what makes it countable. A bare `<!-- cowork-dod -->` is the
         # older format and deliberately reads as no verdict rather than as zero:
         # a routine that has not been updated yet must not be able to clear a gate
@@ -372,6 +379,9 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     Dated by ``written_at``: the DoD audit is instructed to edit one comment in
     place on every push, so its ``created_at`` is the hour the PR opened while
     the verdict inside it may be a minute old.
+
+    Comments that are not authentic verdicts (see ``is_authentic_verdict``) are
+    skipped entirely, so a forged one cannot even win the newest-wins race.
     """
     best: tuple[Comment, int] | None = None
     for comment in comments:

@@ -9,15 +9,26 @@ about what mattered
 {"source": "github", "events": ["release"], "filter": {"actions": ["published"]}}
 ```
 
-`publish.yml` cuts the tag and the GitHub Release after a version bump lands on `main`. This routine
+`publish.yml` cuts the tag and the GitHub Release when a human **promotes** the accumulated
+pre-releases — a ✅ on `cron/release-promote-ask.md`'s weekly question, not a merge. This routine
 tells people about it. Everything runs through `cowork-scribe`.
+
+Two consequences of that channel split, both of which change what this routine is looking at. The
+release body now *is* a batch manifest — `scripts/release_channel.py --manifest --markdown`, one
+section per changelog entry since the last final tag — so the span you are describing is a week or
+more of merges rather than one, and there is more to group. And a pre-release never reaches here at
+all: `publish-beta.yml` creates no tag and no GitHub Release, so the webhook simply does not fire
+for one. The stop condition below is belt and braces rather than the thing keeping rc noise out.
 
 ## Run
 
 1. `gh release view <tag> --json tagName,body,publishedAt` and
    `git log <previous-tag>..<tag> --oneline --no-merges` for the real change list.
 
-2. **Write the release note from the commits, not from the auto-generated body.** Group by what a
+2. **Write the release note from the commits, not from the auto-generated body.** The batch manifest
+   in the body is a faithful list and still not the announcement — it is grouped by version, and a
+   reader wants it grouped by what changed for them. Read it for the user-facing prose
+   `auto-version.yml` wrote per bump; take the change list from the commits. Group by what a
    user would care about — new capability, fixed behaviour, integration change — and drop pure
    chores. If the whole release is chores and dependency bumps, say that in one line rather than
    inflating it.

@@ -48,6 +48,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # tags, and the manifest's commit range
+      - id: notes
+        # Built here, in `check`, and carried to the release job as an artifact.
+        # It used to run after the PyPI upload, under `bash -e`, and this script
+        # exits non-zero on a git failure — which would have left a final
+        # published with no tag, no GitHub Release, and therefore no
+        # release-published-announce.md, the only announcement path there is.
+        run: |
+          set -euo pipefail
+          python3 scripts/release_channel.py --manifest --markdown > notes.md
+          cat notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          retention-days: 1
       - id: v
         env:
           # The version the human actually saw, carried in the issue body as
@@ -72,12 +87,20 @@ jobs:
             exit 1
           fi
 
-          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "::error::v$VERSION is already released — main has not been bumped since."
+          # Delegate the ordering question to the script that owns it. A bare
+          # "does refs/tags/v$VERSION exist" check passes the dual-PR race — main
+          # at 1.9.0 with v2.0.0 already out has no v1.9.0 tag — and PyPI has no
+          # delete, so a final that sorts backwards is unrecoverable.
+          if ! python3 scripts/release_channel.py --check-promotable >/dev/null; then
+            echo "::error::refusing to promote $VERSION — see the message above."
             exit 1
           fi
 
-          ASKED=$(printf '%s' "${ISSUE_BODY:-}" | sed -nE 's/.*<!-- promote: ([0-9]+\.[0-9]+\.[0-9]+) -->.*/\1/p' | head -1)
+          # `sed … | head -1` under `set -o pipefail`: head closes the pipe on the
+          # second match and sed can exit 141, failing the step. `q` on first hit
+          # keeps it a single process. Read from the end so a commit subject
+          # interpolated into the manifest above cannot spoof the marker.
+          ASKED=$(printf '%s' "${ISSUE_BODY:-}" | tac | sed -nE 's/.*<!-- promote: ([0-9]+\.[0-9]+\.[0-9]+) -->.*/\1/{p;q;}')
           echo "asked=$ASKED" >> "$GITHUB_OUTPUT"
           # Disclose drift, do not refuse it. A ✅ approves "cut a release now",
           # and every commit on main is already published as an rc, so promoting
@@ -131,16 +154,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Batch release notes
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: /tmp/notes
+      - name: Fall back to a minimal body rather than skipping the release
         run: |
-          python3 scripts/release_channel.py --manifest --markdown > /tmp/notes.md
-          cat /tmp/notes.md
+          # Publishing without tagging is the one unrecoverable ordering here:
+          # PyPI has the final, and nothing announces it. A thin body is fine.
+          if [ ! -s /tmp/notes/notes.md ]; then
+            echo "::warning::batch manifest missing — releasing with a minimal body."
+            echo "Release v${{ needs.check.outputs.version }}." > /tmp/notes/notes.md
+          fi
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: v${{ needs.check.outputs.version }}
           name: v${{ needs.check.outputs.version }}
-          body_path: /tmp/notes.md
+          body_path: /tmp/notes/notes.md
           generate_release_notes: true # appended under the batch manifest
       - name: Close the promotion issue
         if: github.event_name == 'issues'

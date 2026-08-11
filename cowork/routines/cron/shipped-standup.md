@@ -22,7 +22,10 @@ reactable, and a reply shape that looked like the digest's would be parsed as on
 ## Run
 
 1. **What merged** — `gh pr list --state merged --search "merged:>=<the last post's date>" --json
-   number,title,labels,mergedAt,url,body`. Restrict to PRs carrying the `cowork` label. If you
+   number,title,labels,mergedAt,url,body`. Keep the PRs carrying the `cowork` label **or** the
+   `ci-sentinel` label — `ci-sentinel.yml` opens unattended fix PRs for a red `main` and labels
+   them only `ci-sentinel`, so a `cowork`-only filter would silently omit exactly the merges
+   nobody watched. (`codeql-triage` needs no special case: it labels `cowork` on purpose.) If you
    cannot establish when the last post was, use the last 24 hours; never guess a longer window,
    because a double-reported merge reads as a second change that never happened.
 

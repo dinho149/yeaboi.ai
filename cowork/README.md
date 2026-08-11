@@ -238,7 +238,10 @@ need a Claude session, since a routine is account-scoped and has no CLI behind i
 
 **What neither can do**, and both report: connecting Linear/Slack/Notion at
 [claude.ai/customize/connectors](https://claude.ai/customize/connectors), installing the Claude GitHub
-App, setting the `AUTO_VERSION_PAT` secret, the **`pr-feedback` status context** on the
+App, setting the `AUTO_VERSION_PAT` secret, a **second PyPI trusted publisher** for
+`publish-beta.yml` (workflow `publish-beta.yml`, environment `pypi`; without it every merge's
+pre-release dies at upload with `invalid-publisher`, and the official channel stays untouched —
+which is why that trigger lives in its own file), the **`pr-feedback` status context** on the
 `main-branch` ruleset's required checks (DoD item 10; without it `.github/workflows/pr-feedback.yml`
 still computes and posts a red status, and GitHub simply lets the PR merge anyway — see
 `.claude/skills/ci-and-release/SKILL.md` for the `gh api` that verifies it) — and the **Linear GitHub

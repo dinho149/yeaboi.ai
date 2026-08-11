@@ -94,11 +94,17 @@ def release_rank(version: str) -> tuple[int, ...] | None:
     base = parse_version(version)
     if base is None:
         return None
+    # Pad to three components before appending the stage pair, or the pair lands
+    # at a position that depends on how many components the string had and the
+    # comparison stops being like-for-like: unpadded, ("3","6") ranks as
+    # (3, 6, 1, 0) and beats ("3","6","0") at (3, 6, 0, 1, 0). Both channels emit
+    # X.Y.Z today, so this is unreachable — and a fixed width costs one line.
+    padded = (*base, 0, 0, 0)[:3]
     match = _PRERELEASE_RE.search(version.split("+", 1)[0].split(".")[-1].strip())
     if match is None:
-        return (*base, 1, 0)
+        return (*padded, 1, 0)
     digits = re.search(r"\d+$", match.group())
-    return (*base, 0, int(digits.group()) if digits else 0)
+    return (*padded, 0, int(digits.group()) if digits else 0)
 
 
 def is_newer(latest: str, current: str) -> bool:

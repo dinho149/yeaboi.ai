@@ -85,6 +85,20 @@ def review(
     )
 
 
+def forged(
+    n: int = 0,
+    *,
+    producer: str = "claude-review",
+    minutes_ago: int = 5,
+    ident: int = 9,
+    author: str = "a-stranger",
+    association: str = "NONE",
+):
+    """A verdict somebody other than the producer wrote, claiming ``n`` findings."""
+    mark = REVIEW_MARK if producer == "claude-review" else DOD_MARK
+    return comment(mark.format(n=n), minutes_ago=minutes_ago, ident=ident, author=author, association=association)
+
+
 def ack(
     producer: str = "claude-review",
     *,
@@ -491,6 +505,72 @@ class TestWhoMayAnswer:
         """`latest_verdict` breaks second-granularity ties on id; so does this."""
         snap = snapshot(comments=(review(2, minutes_ago=30, ident=1), ack(minutes_ago=30, ident=2)))
         assert prf.classify(snap, NOW).state == "success"
+
+
+class TestForgedVerdicts:
+    """A verdict is stronger than an ack, and until this existed it had no checks.
+
+    Blocking the `<!-- addressed: -->` marker closed the weaker hole. Anyone could
+    still post `<!-- pr-feedback: claude-review open=0 -->`, which does not
+    *answer* the findings — it replaces the count of them — and the gate went
+    green. On a public repo that was any account at all; on a cowork PR it was the
+    routine that wrote the code. Survivable while a human clicked merge, and the
+    entire gate now that `sweep-procedure.md` arms `gh pr merge --auto`.
+    """
+
+    def test_a_stranger_cannot_post_a_verdict(self):
+        snap = snapshot(comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5)))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_write_access_alone_cannot_post_one_either(self):
+        """This is the applicant's route: a cowork routine posts as the maintainer."""
+        snap = snapshot(
+            labels=("cowork",),
+            author="cowork-bot",
+            comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5, author="cowork-bot", association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_real_reviewer_still_clears_it(self):
+        """The honest path must survive: a re-review reports zero and the gate opens."""
+        snap = snapshot(comments=(review(3, minutes_ago=60, ident=1), review(0, minutes_ago=5, ident=2)))
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_association_is_not_required_to_be_trusted(self):
+        """A bot commenting through GITHUB_TOKEN carries `author_association: NONE`.
+
+        Requiring write access *as well* would reject every genuine Claude Review
+        and wedge every PR on a review that could never qualify — the deadlock
+        this module is built to avoid. Pinned so the rule is not "hardened" into
+        one later.
+        """
+        assert prf.is_authentic_verdict(
+            comment(REVIEW_MARK.format(n=0), author="github-actions[bot]", association="NONE"),
+            prf.PRODUCERS[0],
+        )
+
+    def test_a_forged_verdict_cannot_win_the_newest_wins_race(self):
+        """It is skipped outright, not merely outranked."""
+        latest = prf.latest_verdict(
+            (review(3, minutes_ago=60, ident=1), forged(0, minutes_ago=1, ident=2)),
+            prf.PRODUCERS[0],
+        )
+        assert latest is not None and latest[1] == 3
+
+    def test_a_rejected_verdict_reads_as_absent_not_as_zero(self):
+        """The fail-closed direction: red saying the review never posted."""
+        snap = snapshot(comments=(forged(0, minutes_ago=5),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "never posted a verdict" in verdict.description
+
+    def test_the_dod_audit_accepts_a_maintainer_because_a_routine_writes_it(self):
+        """Advisory and never required — and a stranger still cannot write it."""
+        producer = next(p for p in prf.PRODUCERS if p.key == "cowork-dod")
+        maintainer = comment(DOD_MARK.format(n=1), author=AUTHOR, association="OWNER")
+        stranger = comment(DOD_MARK.format(n=1), author="a-stranger", association="NONE")
+        assert prf.is_authentic_verdict(maintainer, producer)
+        assert not prf.is_authentic_verdict(stranger, producer)
 
 
 class TestUnattendedPRs:

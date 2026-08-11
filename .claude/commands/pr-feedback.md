@@ -47,7 +47,10 @@ all point here rather than restating it.
 
    **On an unattended PR this step does not exist.** A cowork PR, a `feature/issue-N-…`
    branch, a triage or sentinel branch — `scripts/pr_feedback.py` refuses an ack from
-   the PR's own author there, so the marker is inert and the gate stays red. That is
+   the PR's own author there, so the marker is inert and the gate stays red.
+   `CLAUDE.md` prescribes `feature/<description>` for human branches, so if you happen
+   to name one `feature/issue-…` you land in this rule too — rename the branch, or use
+   `feedback-override`, which is recorded on the PR either way. That is
    deliberate: the account that wrote the change also has write access, so without it
    the applicant would be holding the key. Fix the finding (step 4) or hand the PR back
    to a human as a proposal. Only step 4 clears an unattended PR.

@@ -43,7 +43,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +69,10 @@ REJECT = "x"
 
 APPROVAL_LABEL = "claude-implement"
 PROMOTE_LABEL = "release:promote"
+# Applied only by `cron/release-promote-ask.md`, at creation time, as the
+# maintainer. `publish.yml` requires it too — this is the same fact checked on
+# both sides of the hand-off.
+PROMOTION_LABEL = "release:promotion"
 
 # A promotion ask is the only thread reply in this channel that is not a proposal,
 # and it is told apart by the same leading-`#<number>` contract the digest uses,
@@ -133,6 +139,37 @@ def _by_name(reply: dict[str, Any]) -> dict[str, list[str]]:
     return out
 
 
+def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool:
+    """Whether ``issue`` carries the `release:promotion` label the ask routine applies.
+
+    Read from GitHub rather than inferred from the reply text, because the text is
+    attacker-influenceable and the label is not: `cron/release-promote-ask.md`
+    applies it at creation time, and applying a label needs repo write.
+
+    Fails **closed** — an unreachable API, a malformed response, or an issue that
+    simply does not carry it all return False, which downgrades the verb to an
+    ordinary approval. That is the safe direction: a promotion not carried out is
+    re-asked next Monday, while a release cut by mistake cannot be unpublished.
+    """
+    run = runner or _gh_labels
+    payload = run(["gh", "issue", "view", str(issue), "--json", "labels"])
+    if not payload:
+        return False
+    try:
+        data = json.loads(payload)
+    except (TypeError, ValueError):
+        return False
+    labels = data.get("labels") if isinstance(data, dict) else None
+    if not isinstance(labels, list):
+        return False
+    return any(isinstance(entry, dict) and entry.get("name") == PROMOTION_LABEL for entry in labels)
+
+
+def _gh_labels(argv: list[str]) -> str | None:
+    result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+    return result.stdout if result.returncode == 0 else None
+
+
 def _command(verb: str, issue: int) -> list[str]:
     """The literal argv for a verb — never a format string, never an API call.
 
@@ -155,7 +192,12 @@ def _command(verb: str, issue: int) -> list[str]:
     raise RelayError(f"no command for verb {verb!r}")
 
 
-def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict[str, Any]:
+def build_plan(
+    replies: list[dict[str, Any]],
+    allowlist: dict[str, str],
+    *,
+    promotion_check: Callable[[int], bool] | None = None,
+) -> dict[str, Any]:
     """Turn a thread into the list of actions still owed, oldest first.
 
     Every skip below is one of the ways the 2026-08-09 run went wrong, made
@@ -166,6 +208,10 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
         # allowlist means nobody can authorise anything, so nothing is actionable.
         empty = {"replies": len(replies), "item_replies": 0, "marked": 0, "ignored_markers": 0, "actionable": 0}
         return {"counts": empty, "plan": []}
+
+    # Injection seam: the real check calls `gh`, and every other decision here is
+    # pure. Tests pass a stub; nothing else should.
+    is_promotion_issue = promotion_check or is_promotion
 
     plan: list[dict[str, Any]] = []
     item_replies = marked = ignored_markers = 0
@@ -204,7 +250,20 @@ def build_plan(replies: list[dict[str, Any]], allowlist: dict[str, str]) -> dict
 
         # ❌ on a promotion ask is still `reject`, i.e. `gh issue close` — "not
         # this week". Next Monday's run opens a fresh ask against the same batch.
-        verb = ("promote" if PROMOTE_RE.match(text) else "approve") if approvers else "reject"
+        #
+        # The text shape is a hint, never the decision. The digest quotes issue
+        # titles verbatim and `feature-candidate` titles come from the in-app
+        # feedback form, so a user can write one that matches `PROMOTE_RE` — and
+        # the damage would not be a stray label but a *lost approval*: the ✅ the
+        # maintainer meant as "build this" would apply `release:promote` and never
+        # `claude-implement`, and nothing would say so. `is_promotion` confirms
+        # against the `release:promotion` label, which only the ask routine
+        # applies, so a matching title on an ordinary proposal stays an approval.
+        verb = (
+            ("promote" if (PROMOTE_RE.match(text) and is_promotion_issue(issue)) else "approve")
+            if approvers
+            else "reject"
+        )
         who = allowlist[(approvers or rejecters)[0]]
         plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
 

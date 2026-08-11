@@ -138,9 +138,41 @@ class TestPromotion:
     """
 
     def test_an_approval_on_a_promotion_ask_promotes(self):
-        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True)[
+            "plan"
+        ]
         assert plan[0]["verb"] == "promote"
         assert plan[0]["command"] == ["gh", "issue", "edit", "231", "--add-label", "release:promote"]
+
+    def test_the_shape_alone_is_not_enough_without_the_label(self):
+        """A user-written title can match the regex; only the label is authoritative.
+
+        The damage is a *lost approval*, not a stray label: `publish.yml` would
+        refuse the release anyway, but the ✅ meant as "build this" would have
+        applied `release:promote` and never `claude-implement`, with nothing said.
+        """
+        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: False)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "approve"
+        assert plan[0]["command"][-1] == "claude-implement"
+
+    def test_an_unreachable_github_downgrades_to_approve(self):
+        """Fails closed: a promotion missed is re-asked; a release cut cannot be undone."""
+        assert relay.is_promotion(231, runner=lambda argv: None) is False
+        assert relay.is_promotion(231, runner=lambda argv: "not json") is False
+        assert relay.is_promotion(231, runner=lambda argv: '{"labels": "wrong shape"}') is False
+
+    def test_the_label_is_read_from_github(self):
+        seen = {}
+
+        def runner(argv):
+            seen["argv"] = argv
+            return '{"labels": [{"name": "release:promotion"}, {"name": "type:chore"}]}'
+
+        assert relay.is_promotion(231, runner=runner) is True
+        assert seen["argv"] == ["gh", "issue", "view", "231", "--json", "labels"]
+        assert relay.is_promotion(231, runner=lambda a: '{"labels": [{"name": "type:chore"}]}') is False
 
     def test_an_ordinary_proposal_is_still_an_approval(self):
         plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
@@ -159,24 +191,30 @@ class TestPromotion:
     def test_a_title_that_merely_mentions_promote_does_not(self, text):
         """A proposal title is quoted verbatim into the thread, and anyone can
         file an issue on a public repo. Only the fixed contract routes the label."""
-        plan = relay.build_plan([reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        plan = relay.build_plan(
+            [reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True
+        )["plan"]
         assert all(entry["verb"] != "promote" for entry in plan)
 
     def test_a_rejection_on_a_promotion_ask_just_closes_it(self):
         """ "Not this week" — next Monday's run opens a fresh ask."""
-        plan = relay.build_plan([promotion(231, x=[HUMAN])], ALLOWLIST)["plan"]
+        plan = relay.build_plan([promotion(231, x=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True)["plan"]
         assert plan[0]["verb"] == "reject"
         assert plan[0]["command"] == ["gh", "issue", "close", "231"]
 
     def test_the_promote_command_still_cannot_replace_a_label_set(self):
-        for entry in relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]:
+        for entry in relay.build_plan(
+            [promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True
+        )["plan"]:
             argv = entry["command"]
             assert "api" not in argv
             assert not {"PUT", "-X", "--method"} & set(argv)
             assert "--remove-label" not in argv
 
     def test_an_unauthorised_reaction_promotes_nothing(self):
-        plan = relay.build_plan([promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST)["plan"]
+        plan = relay.build_plan(
+            [promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST, promotion_check=lambda n: True
+        )["plan"]
         assert plan == []
 
 

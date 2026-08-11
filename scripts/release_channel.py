@@ -150,6 +150,32 @@ def _changelog_entries() -> list[dict]:
     return entries if isinstance(entries, list) else []
 
 
+def check_promotable(ref: str = "HEAD") -> str:
+    """The version safe to promote, or raise saying why it is not.
+
+    ``next_prerelease`` refuses a version that sorts below the last final tag,
+    but only the *beta* path calls it — so without this the promotion path had a
+    weaker check than the pre-release path it promotes. `publish.yml` only
+    refused an exactly-matching tag, which the dual-PR race walks straight past:
+    ``main`` at 1.9.0 with ``v2.0.0`` already released has no ``v1.9.0`` tag, so
+    the final uploaded to PyPI would sort *below* one already published, and PyPI
+    has no delete.
+    """
+    version = read_current()
+    triple = _triple(version)
+    tag = last_final_tag()
+    if tag is not None:
+        name, released = tag
+        if triple == released:
+            raise ReleaseChannelError(f"{name} is already released — main has not been bumped since")
+        if triple < released:
+            raise ReleaseChannelError(
+                f"pyproject version {version} is below the last final {name} — "
+                f"promoting it would publish a version that sorts backwards"
+            )
+    return version
+
+
 def pending(ref: str = "HEAD") -> dict:
     """Everything between the last final release and ``ref`` — the promotion batch.
 
@@ -231,6 +257,7 @@ def markdown(batch: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Pre-release numbering and the promotion batch")
     parser.add_argument("--next-rc", action="store_true", help="print the pre-release version for HEAD")
+    parser.add_argument("--check-promotable", action="store_true", help="print the version safe to promote, or fail")
     parser.add_argument("--manifest", action="store_true", help="what is pending promotion")
     parser.add_argument("--markdown", action="store_true", help="render --manifest as the issue body")
     parser.add_argument("--json", action="store_true", help="render --manifest as JSON")
@@ -247,6 +274,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise ReleaseChannelError(f"refusing to stamp {args.version!r} — expected X.Y.Z or X.Y.ZrcN")
             write_version(args.version)
             print(args.version)
+            return 0
+        if args.check_promotable:
+            print(check_promotable(args.ref))
             return 0
         if args.next_rc:
             version = next_prerelease(args.ref)
@@ -266,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[release-channel] {error}", file=sys.stderr)
         return 2
 
-    parser.error("pass one of --next-rc, --manifest, --write")
+    parser.error("pass one of --next-rc, --check-promotable, --manifest, --write")
     return 2
 
 
