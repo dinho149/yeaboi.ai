@@ -177,6 +177,17 @@ class ChatComposer:
         """True while a cleared draft is still recoverable."""
         return self._stash is not None
 
+    def forget_stash(self) -> None:
+        """Drop the undo history — the draft it belonged to has been sent.
+
+        handle_key's Submit branch does this for a typed message, but the input
+        loop also returns from a choices answer and from an inline /command,
+        and neither goes through handle_key. A stash surviving the turn both
+        blocks every later suggestion prefill (the guard tests has_stash) and
+        lets a Ctrl+U three questions later resurrect a draft from this one.
+        """
+        self._stash = None
+
     def clear_with_stash(self) -> Cleared | Restored | None:
         """Ctrl+U: empty the box, stashing it — or restore the last stash.
 

@@ -1273,6 +1273,7 @@ class _ChatDriver:
             if key == "enter":
                 inline = self._pop_inline_command()
                 if inline is not None:
+                    self.composer.forget_stash()
                     return inline
 
             event = self.composer.handle_key(key, dropped=take_paste_dropped())
@@ -1321,6 +1322,9 @@ class _ChatDriver:
 
     def _choice_answer(self) -> str:
         assert self.choices is not None
+        # This return leaves the input loop without touching handle_key, so the
+        # stash has to be burned here as it is on a typed submit.
+        self.composer.forget_stash()
         checked = [label for label, is_checked in self.choices.options if is_checked]
         if self.choices.multi and checked:
             return ", ".join(checked)

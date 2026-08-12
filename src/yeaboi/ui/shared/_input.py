@@ -42,15 +42,17 @@ _last_paste_dropped = 0
 # to the end marker.
 _paste_discarding = False
 
-# Bracketed paste bounds. The keep limit is deliberately far above the app's own
-# message cap (input_guardrails.MAX_CHAT_INPUT_CHARS) so the *field* does the
-# truncating and can quote real numbers; the reader's job is only to stop a
-# runaway stream from eating memory. The drain limit and the two clocks bound a
-# paste whose end marker never arrives — a byte-at-a-time blocking read used to
-# hang the TUI outright in that case.
-_PASTE_KEEP_LIMIT = 100_000
+# Bracketed paste bounds. The keep limit is the de-facto ceiling for every
+# single-line field in the app — most take a payload with no bound of their own,
+# and a six-figure paste into one builds a Text of that many cells and re-wraps
+# it every frame. Raising it does NOT buy the chat box better reporting: the
+# overflow is counted into take_paste_dropped() either way, so "Pasted 34,812
+# characters" survives a ceiling far below 34,812. The drain limit and the two
+# clocks bound a paste whose end marker never arrives — a byte-at-a-time
+# blocking read used to hang the TUI outright in that case.
+_PASTE_KEEP_LIMIT = 10_000
 _PASTE_DRAIN_LIMIT = 4_000_000
-_PASTE_IDLE_SECONDS = 0.5
+_PASTE_IDLE_SECONDS = 1.5
 _PASTE_DRAIN_SECONDS = 5.0
 _PASTE_END = b"\x1b[201~"
 _PASTE_CHUNK = 65536
@@ -178,6 +180,8 @@ def _read_paste(fd: int) -> tuple[str, int]:
         if not _select.select([fd], [], [], _PASTE_IDLE_SECONDS)[0]:
             # Paste bytes stream continuously; a gap this long means the stream
             # died without a terminator. Take what we have rather than block.
+            # Generous on purpose: a short gap is latency on a lossy link, and
+            # calling that death costs more than waiting does.
             abandoned = True
             break
         chunk = os.read(fd, _PASTE_CHUNK)

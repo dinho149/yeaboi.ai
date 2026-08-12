@@ -1824,6 +1824,23 @@ class TestClearUndo:
         driver._processing_key("clear", threading.Event())
         assert driver.composer.text() == "mid-turn draft"
 
+    def test_answering_a_menu_burns_the_stash(self):
+        """The choices answer leaves the loop without touching handle_key.
+
+        A stash surviving it blocks every later suggestion prefill (the guard
+        tests has_stash) and lets a Ctrl+U three questions on resurrect a draft
+        from a different question.
+        """
+        driver = self._drafted("a prefilled suggestion", ["clear", "enter", "esc", "esc"])
+        driver.choices = ChoiceRows(options=[("Greenfield", False), ("Existing", False)], highlight=0)
+        assert driver._input_loop() == "Greenfield"
+        assert not driver.composer.has_stash()
+
+    def test_an_inline_command_burns_the_stash(self):
+        driver = self._drafted("build an app /small", ["clear", "clear", "enter"])
+        assert driver._input_loop() == "/small"
+        assert not driver.composer.has_stash()
+
     def test_a_sent_message_is_not_recoverable(self):
         driver = self._drafted("send me", ["enter"])
         assert driver._input_loop() == "send me"
