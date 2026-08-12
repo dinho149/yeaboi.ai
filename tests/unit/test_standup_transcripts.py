@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -10,6 +11,12 @@ import pytest
 from yeaboi.standup import transcripts
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "transcripts"
+
+# A process with euid 0 bypasses DAC permission checks on Linux, so chmod(0o000)
+# hides nothing from it. Any test that proves a scan skips an unreadable
+# directory therefore reports a false failure under a root-run test environment
+# (containers, dev containers, some CI images) and says nothing about the code.
+RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 @pytest.fixture
@@ -854,7 +861,9 @@ class TestScanBounds:
         found = transcripts._candidate_files(tmp_path, recurse=True)
         assert [p.name for p in found] == ["real.txt"]
 
+    @pytest.mark.skipif(RUNNING_AS_ROOT, reason="root bypasses DAC permission bits, so chmod(0o000) hides nothing")
     def test_unreadable_directory_is_skipped_not_fatal(self, tmp_path):
+        """Only meaningful for a non-root euid — see RUNNING_AS_ROOT above."""
         (tmp_path / "ok.txt").write_text("Alice: hi")
         locked = tmp_path / "locked"
         locked.mkdir()
