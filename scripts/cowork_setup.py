@@ -2023,6 +2023,136 @@ def report_proposal_slots(workstream: str | None, now: datetime | None = None) -
     return 0
 
 
+# The title prefix every standing-fault report carries, and the whole of its
+# identity. A title rather than a label on purpose: a label would have to be added
+# to the `workstreams/` vocabulary, created by `make cowork-setup` and counted by
+# `make cowork-check` — three files edited so one routine can ask one question,
+# and a fleet that cannot report a fault until a deploy has run is a fleet that
+# cannot report the fault that stops deploys running.
+BLOCKED_TITLE = "[blocked] "
+
+
+def open_blocked_reports(marker: str) -> tuple[list[dict] | None, str]:
+    """The open issues already reporting ``marker``, or None and why not.
+
+    REST on both transports for the reason `open_proposals` gives at length: the
+    `gh issue list --json` path is GraphQL underneath and comes back 403 from the
+    routine sessions' egress proxy, while ``GET /repos/{slug}/issues`` is served.
+    This query runs almost exclusively in exactly those sessions, so building it
+    on the refused call would mean it worked everywhere except where it is used.
+
+    None rather than an empty list on failure, and the caller must keep them
+    apart: "nothing has reported this" is the one answer that produces a Slack
+    post, and turning "could not ask" into it is how a standing fault posts once
+    per push forever.
+    """
+    slug = repo_slug()
+    if not slug:
+        return None, "no owner/name resolved for this checkout"
+    # No label filter: the marker lives in the title precisely so this works
+    # before any label exists, and before a deploy has run to create one.
+    #
+    # Which makes paging load-bearing here in a way it is not for
+    # `open_proposals`. That query is bounded by two labels and fits a page; this
+    # one filters nothing, so it is bounded only by how many issues the repo has
+    # open — 47 today against `gh api`'s default page of 30. An open report
+    # sitting on page two reads back as "nobody has said it", and the routine
+    # then posts *and* files a duplicate: this whole change failing in the one
+    # direction it exists to prevent.
+    path = f"/repos/{slug}/issues?state=open"
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return None, "gh is not on PATH"
+        # `--paginate` walks the Link headers and merges the arrays; `per_page`
+        # is appended only here because `transport.api_paged` adds its own, and
+        # two of them in one URL is a query nobody meant.
+        result = _gh("api", "--paginate", f"{path.lstrip('/')}&per_page=100")
+        if result.returncode != 0:
+            return None, result.stderr.strip() or "unknown gh error"
+        try:
+            items = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError as error:  # an egress proxy's HTML error page
+            return None, f"gh api returned no JSON: {error}"
+    else:
+        answer = _api_paged(path)
+        if not answer.ok:
+            return None, answer.error
+        items = answer.data
+    if not isinstance(items, list):
+        return None, "the issues endpoint did not return a list"
+    wanted = f"{BLOCKED_TITLE}{marker}"
+    return [
+        item
+        for item in items
+        # `/issues` returns pull requests too, and a PR titled after the fault it
+        # fixes would otherwise read as the report itself — silencing the routine
+        # from the moment somebody starts fixing it until they merge.
+        if isinstance(item, dict) and "pull_request" not in item and (item.get("title") or "").strip() == wanted
+    ], ""
+
+
+def blocked_report(marker: str) -> dict:
+    """Whether ``marker`` has already been reported, for a routine to branch on.
+
+    Three states, and the routine owes each a different behaviour, which is why
+    this is not a bool:
+
+    - ``reported: true`` — an open issue already says it. Post nothing. The run
+      log still records the firing, and that is where "how often" is answered.
+    - ``reported: false`` — nobody has said it. Post once, and file the issue.
+    - ``reported: null`` — the query itself failed. **Post nothing**, the same
+      way `proposal_slots` turns an unreadable queue into zero slots rather than
+      into a full allowance: a routine that cannot tell whether it has already
+      spoken must not assume it has not.
+
+    This replaces reading the last 24 hours of Slack, which cannot work at all
+    when a routine fires twice from one push — both sessions read the channel
+    before either has posted, both see nothing, and both post. An issue is
+    durable shared state that exists *before* the concurrent runs look at it,
+    which is the property Slack history does not have.
+    """
+    issues, error = open_blocked_reports(marker)
+    if issues is None:
+        return {"marker": marker, "reported": None, "issue": None, "error": error}
+    # A numberless item sorts last rather than first: `or 0` would let one win
+    # the `min` and hand back `issue.number: null`, which reads as a report
+    # nobody can open.
+    first = min(issues, key=lambda item: item.get("number") or sys.maxsize) if issues else None
+    return {
+        "marker": marker,
+        "reported": bool(issues),
+        "issue": (
+            {
+                "number": first.get("number"),
+                "url": first.get("html_url", ""),
+                "title": first.get("title", ""),
+            }
+            if first
+            else None
+        ),
+        "error": "",
+    }
+
+
+def report_blocked(marker: str) -> int:
+    """Print the blocked-report JSON for one marker.
+
+    Exit code stays 0 for all three states. A routine branching on the status
+    would read "already reported" — the *common* and desired outcome — as a
+    failure, and the whole point of this call is to make silence the normal path.
+
+    An empty marker is the one refusal, for the reason `report_proposal_slots`
+    refuses an unknown workstream: it would match every report titled exactly
+    ``[blocked]`` and nothing else, so it answers `false` forever and posts
+    forever, while looking like a working call.
+    """
+    if not marker.strip():
+        print("--blocked-report needs a marker: the fault's identity, e.g. 'cd-deploy: …'", file=sys.stderr)
+        return 2
+    print(json.dumps(blocked_report(marker), indent=2))
+    return 0
+
+
 def report_manual_remainder(routines: Sequence[Routine]) -> None:
     """Print what no shell can do, with the link for each.
 
@@ -3370,6 +3500,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="WORKSTREAM",
         help="print how many proposals a workstream may still file (omit the name for all fifteen)",
     )
+    parser.add_argument(
+        "--blocked-report",
+        metavar="MARKER",
+        help="print whether an open issue already reports this standing fault "
+        "(reported=null means the query failed — stay silent, do not post)",
+    )
     parser.add_argument("--text", action="store_true", help="with --agenda, print the rendered message, not JSON")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="with --agenda, the day to report on (default today)")
     parser.add_argument(
@@ -3442,6 +3578,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         # already knows how to read.
         github_ready()
         return report_proposal_slots(args.proposal_slots or None)
+
+    if args.blocked_report is not None:
+        # Same shape as --proposal-slots above: a read that needs a transport and
+        # nothing else. Without one the marker reports `reported: null`, which the
+        # routine reads as "stay silent" — the safe direction for a call whose
+        # only job is to decide whether to speak.
+        github_ready()
+        return report_blocked(args.blocked_report)
 
     if args.agenda:
         try:
