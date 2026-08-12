@@ -809,6 +809,7 @@ class TestLabels:
                 "cowork",
                 "cowork:proposal",
                 "claude-implement",
+                "cowork:queued",
                 "feedback-override",
                 "release:promotion",
                 "release:promote",
@@ -2234,11 +2235,15 @@ class TestTeardown:
             if label.name not in setup.KEEP_LABELS and not label.name.startswith("type:")
         }
         assert {label.name for label in setup.teardown_labels()} == expected
-        # cowork, cowork:proposal, review-capped, integration:candidate — the four
-        # non-workstream, non-type labels cowork creates and may therefore also
-        # remove. `integration:approved` is not among them: it is a live gate, so
-        # it sits in KEEP_LABELS beside the `release:*` pair for the same reason.
-        assert len(expected) == len(WORKSTREAMS) + 4
+        # cowork, cowork:proposal, cowork:queued, review-capped,
+        # integration:candidate — the five non-workstream, non-type labels cowork
+        # creates and may therefore also remove. `integration:approved` is not
+        # among them: it is a live gate, so it sits in KEEP_LABELS beside the
+        # `release:*` pair for the same reason.
+        #
+        # `cowork:queued` is deletable for the same reason `cowork:proposal` is:
+        # it records which lane owns a find, and a torn-down fleet owns nothing.
+        assert len(expected) == len(WORKSTREAMS) + 5
 
     def test_it_refuses_without_yes(self):
         result = subprocess.run(
@@ -3477,6 +3482,205 @@ class TestProposalSlots:
         assert f"`PROPOSAL_CAP = {setup.PROPOSAL_CAP}`" in rules, (
             f"house-rules.md no longer states a cap of {setup.PROPOSAL_CAP}"
         )
+
+
+class TestTheQueueSplitsTheBacklog:
+    """`cowork:queued` — a work item waiting on the fleet, not a question waiting
+    on a human.
+
+    The failure this ends: the propose lane was the only lane with an exit, and
+    the exit was a human verb nobody ever used. Forty-two proposals accumulated
+    against a cap of two per workstream, and because both dedupe passes were
+    lane-blind, a bug that the auto lane could have shipped *that morning* was
+    dropped for up to fourteen days on the strength of an unanswered question
+    about the same bug — then closed on the age-out timer, which both passes read
+    as a rejection and suppressed permanently.
+
+    Every assertion below fails silently at run time. A queued issue counted
+    against the cap is a work item holding a slot that only a human verb can
+    release, on an issue no human will ever be shown; the number looks perfectly
+    reasonable either way.
+    """
+
+    NOW = TestProposalSlots.NOW
+    _issue = staticmethod(TestProposalSlots._issue)
+    _serve = TestProposalSlots._serve
+
+    def _serve_split(self, monkeypatch, *, proposals, queued):
+        """Answer the two REST reads differently, keyed on the label in the path.
+
+        `proposal_slots` makes both calls now, and the whole point of the split is
+        that they return different sets — a fixture that serves one page to both
+        cannot tell a passing filter from an absent one.
+        """
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        seen: list[str] = []
+
+        def paged(path, key=None):
+            seen.append(path)
+            wanted = queued if f"labels={setup.QUEUE_LABEL}," in path else proposals
+            return setup.ApiResult(True, wanted, "")
+
+        monkeypatch.setattr(setup.transport, "api_paged", paged)
+        return seen
+
+    def test_the_label_exists_so_cowork_setup_creates_it(self):
+        """A label the routines apply but `make cowork-setup` never creates is a
+        reclassification that 404s on the first sweep to try it."""
+        assert setup.QUEUE_LABEL in {label.name for label in setup.expected_labels()}
+
+    def test_the_two_labels_are_different_labels(self):
+        """Reusing `claude-implement` would have been shorter and wrong: that one
+        fires a 110-turn `claude.yml` job, and the closed list of labels a machine
+        may apply must not widen just to let a sweep pick up its own backlog."""
+        assert setup.QUEUE_LABEL != setup.PROPOSAL_LABEL != "claude-implement"
+
+    def test_a_queued_issue_does_not_eat_a_proposal_slot(self, monkeypatch):
+        """The whole point. A find the auto lane owns is work, not a question, so
+        it must not hold a slot that only a human verb can release."""
+        self._serve_split(monkeypatch, proposals=[self._issue(1)], queued=[self._issue(2), self._issue(3)])
+        answer = setup.proposal_slots("platform", now=self.NOW)
+        assert (answer["open"], answer["slots"], answer["queued"]) == (1, 1, 2)
+        assert [item["number"] for item in answer["blocking"]] == [1]
+
+    def test_both_labels_reads_as_queued_never_as_proposed(self, monkeypatch):
+        """The crash window. Reclassification is add-then-remove, so a run that
+        dies between the two calls leaves both labels on. Counted as a proposal it
+        holds a slot no verb can release; counted as queued it costs one line in
+        one digest. The safe direction is written down here rather than left to
+        whichever filter happened to run first."""
+        both = self._issue(9, labels=[{"name": setup.PROPOSAL_LABEL}, {"name": setup.QUEUE_LABEL}])
+        self._serve_split(monkeypatch, proposals=[both], queued=[both])
+        assert setup.proposal_slots("platform", now=self.NOW)["slots"] == setup.PROPOSAL_CAP
+
+    def test_a_string_label_list_is_read_too(self, monkeypatch):
+        """`labels` is a list of objects on this endpoint and a list of bare
+        strings in one or two places GitHub still emits the older shape. Reading
+        only the first would silently count every queued issue against the cap
+        again."""
+        self._serve_split(monkeypatch, proposals=[self._issue(9, labels=[setup.QUEUE_LABEL])], queued=[])
+        assert setup.proposal_slots("platform", now=self.NOW)["open"] == 0
+
+    def test_an_approved_issue_is_never_offered_to_a_sweep(self, monkeypatch):
+        """A human can add `claude-implement` to anything at any moment, and
+        `claude.yml` then fires an implement job on it. Offering the same issue to
+        a sweep races two builders at one item and opens two PRs for it. The
+        digest already watches these under "Approved, no PR yet" — they have a
+        different owner, not no owner."""
+        self._serve_split(
+            monkeypatch,
+            proposals=[],
+            queued=[self._issue(7), self._issue(8, labels=[{"name": "claude-implement"}])],
+        )
+        assert [item["number"] for item in setup.queue_report("platform", now=self.NOW)["items"]] == [7]
+
+    def test_an_unreadable_queue_is_null_and_never_zero(self, monkeypatch):
+        """Same rule `slots` follows. A queue reported as empty when it could not
+        be asked is a workstream that looks finished rather than blind, and the
+        digest's "queued but nothing merged in 21 days" alarm never fires."""
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.transport, "api_paged", lambda *a, **k: setup.ApiResult(False, None, "403"))
+        assert setup.queue_report("platform", now=self.NOW)["queued"] is None
+        assert setup.proposal_slots("platform", now=self.NOW)["queued"] is None
+
+    def test_the_queue_read_is_rest_on_both_transports(self, monkeypatch):
+        """The same argument `open_proposals` makes at length: `gh issue list
+        --json` is GraphQL underneath and comes back 403 from the routine
+        sessions' egress proxy, while `GET /repos/{slug}/issues` is served. A
+        queue a sweep cannot read is a drain that silently stops."""
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        calls: list[tuple[str, ...]] = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            return subprocess.CompletedProcess(list(args), 0, json.dumps([self._issue(1)]), "")
+
+        monkeypatch.setattr(setup.transport, "gh", fake_gh)
+        assert setup.queue_report("platform", now=self.NOW)["queued"] == 1
+        assert calls[0][0] == "api", f"the gh branch must ask REST, not {calls[0]}"
+        assert f"labels={setup.QUEUE_LABEL},workstream:platform" in calls[0][1]
+
+    def test_a_pull_request_is_not_a_queued_item(self, monkeypatch):
+        """GitHub models a PR as an issue and `/issues` returns both. A cowork PR
+        carries `workstream:<name>` by house rule, so an open PR would read as
+        work still waiting to be built — the item it *is* the build of."""
+        self._serve_split(
+            monkeypatch,
+            proposals=[],
+            queued=[self._issue(7), self._issue(8, pull_request={"url": "…"})],
+        )
+        assert [item["number"] for item in setup.queue_report("platform", now=self.NOW)["items"]] == [7]
+
+    def test_the_queue_is_reported_in_build_order(self, monkeypatch):
+        """Highest impact first, ties to lower risk, ties to the oldest — the same
+        key the auto lane has always sorted on, with age added so the queue
+        drains. Computed here because a routine asked to sort fifteen queues by
+        eye will get one wrong and nothing downstream would notice."""
+        body = "**Impact** {i} · **Effort** M · **Risk** {r}"
+        self._serve_split(
+            monkeypatch,
+            proposals=[],
+            queued=[
+                self._issue(1, days_old=1, body=body.format(i=3, r=1)),
+                self._issue(2, days_old=1, body=body.format(i=5, r=3)),
+                self._issue(3, days_old=1, body=body.format(i=5, r=1)),
+                self._issue(4, days_old=9, body=body.format(i=3, r=1)),
+            ],
+        )
+        items = setup.queue_report("platform", now=self.NOW)["items"]
+        assert [item["number"] for item in items] == [3, 2, 4, 1]
+
+    def test_a_body_with_no_score_line_ranks_in_the_middle(self, monkeypatch):
+        """An unparsed line is a missing fact, not a low score. Ranking it last
+        would quietly bury every find the scribe wrote before that template
+        existed — which is most of the backlog this queue was seeded from."""
+        self._serve_split(
+            monkeypatch,
+            proposals=[],
+            queued=[
+                self._issue(1, body="no scores here"),
+                self._issue(2, body="**Impact** 5 · **Effort** M · **Risk** 1"),
+                self._issue(3, body="**Impact** 1 · **Effort** M · **Risk** 1"),
+            ],
+        )
+        items = setup.queue_report("platform", now=self.NOW)["items"]
+        assert [item["number"] for item in items] == [2, 1, 3]
+        assert items[1]["impact"] is None, "a missing score must be reported as missing, not as 3"
+
+    def test_the_type_label_rides_along(self, monkeypatch):
+        """The sweep needs it to apply the right allowlist condition — a `type:bug`
+        owes a regression test that a `type:docs` does not."""
+        self._serve_split(
+            monkeypatch,
+            proposals=[],
+            queued=[self._issue(1, labels=[{"name": "type:bug"}, {"name": "workstream:platform"}])],
+        )
+        assert setup.queue_report("platform", now=self.NOW)["items"][0]["type"] == "bug"
+
+    def test_an_unknown_workstream_is_an_error_not_an_empty_queue(self, monkeypatch, capsys):
+        """A typo must not read as "nothing to build" — the one wrong answer this
+        command can give, because it is indistinguishable from a finished drain."""
+        self._serve_split(monkeypatch, proposals=[], queued=[])
+        assert setup.report_queued("web-ui", now=self.NOW) == 2
+        assert "unknown workstream" in capsys.readouterr().err
+
+    def test_the_fleet_report_covers_every_workstream(self, monkeypatch, capsys):
+        self._serve_split(monkeypatch, proposals=[], queued=[])
+        assert setup.report_queued(None, now=self.NOW) == 0
+        rows = json.loads(capsys.readouterr().out)
+        assert [row["workstream"] for row in rows] == setup.parse_workstreams()
+
+    def test_an_empty_queue_still_exits_zero(self, monkeypatch, capsys):
+        """An empty queue is the goal state, not a failure."""
+        self._serve_split(monkeypatch, proposals=[], queued=[])
+        assert setup.report_queued("platform", now=self.NOW) == 0
+        assert json.loads(capsys.readouterr().out)["queued"] == 0
 
 
 class TestBlockedReport:

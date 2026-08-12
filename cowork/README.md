@@ -299,8 +299,9 @@ The labels half, by contrast, is genuinely repaired by the REST path: `gh label 
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the thirty-one GitHub labels (`cowork`,
-`cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
+**What each command covers.** `make cowork-setup` does the thirty-two GitHub labels (`cowork`,
+`cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
+`release:promotion`/`release:promote`
 pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
 campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
@@ -337,6 +338,7 @@ rest of the verbs on it:
 | `/cowork today` | what runs today and over the next week, in one message shape. Read-only. |
 | `make cowork-check` | the repo half of `status`, with no session needed. |
 | `make cowork-slots` | how full each workstream's proposal queue is, and which issues are holding it. Read-only. |
+| `make cowork-queue` | what each workstream's sweep should build next, in build order. The counterpart of `cowork-slots`: that one answers "may I file?", this one answers "what do I owe?". Read-only. |
 | `make cowork-blocked` | whether a standing fault has already been reported, so a routine says it once. Read-only. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 
