@@ -68,6 +68,13 @@ workstream and any per-run focus; everything else is here.
      unattended lane came to have forty-two open proposals, none of them ever answered, and nothing
      shipped.
 
+     **Never reclassify a `codeql:` issue.** `codeql-triage.yml` opens one only for a rule whose
+     `propose` entry in `.github/codeql/triage-policy.yml` records why a human has to decide it,
+     so queuing it hands a recorded human decision back to a machine to re-make. It also breaks
+     that workflow's own dedupe, which searches `--label cowork:proposal` for the rule id: once
+     the issue carries `cowork:queued` instead, next week's run does not find it and opens a
+     second **public** issue re-asking the same question. Leave it a proposal.
+
      **Only for an issue whose find you classified `auto` yourself, this run, having read the
      issue.** Never in bulk, never on the strength of a matching title. The one-time backfill of an
      existing backlog is `scripts/cowork_setup.py --migrate-proposals`, which a human runs and no
@@ -119,7 +126,7 @@ workstream and any per-run focus; everything else is here.
    - **it clears the allowlist** → build it. Everything below this line is unchanged.
    - **it does not clear it** — no reproducible test, the fix would change user-facing wording, the
      paths fall outside your charter's `Owns` → **bounce it**:
-     `gh issue edit <n> --remove-label cowork:queued --add-label cowork:proposal`, comment one line
+     `gh issue edit <n> --add-label cowork:proposal --remove-label cowork:queued`, comment one line
      naming the condition that failed, and move to the next item on the list. A wrongly-queued item
      costs one comment; it never costs a merge.
    - **the evidence no longer reproduces** — the `**Evidence**` line points at code that has

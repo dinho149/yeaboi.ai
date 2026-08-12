@@ -3629,15 +3629,20 @@ class TestTheQueueSplitsTheBacklog:
         key the auto lane has always sorted on, with age added so the queue
         drains. Computed here because a routine asked to sort fifteen queues by
         eye will get one wrong and nothing downstream would notice."""
+        # The scribe's template verbatim, `cowork-scribe.md:66` — impact a number
+        # and risk a WORD. The first version of this test wrote `**Risk** 1`, a
+        # shape no issue in the repo contains, and the regex under it matched
+        # nothing real: every queued item ranked as a neutral 3 and the queue
+        # degenerated to oldest-first, with CI fully green over it.
         body = "**Impact** {i} · **Effort** M · **Risk** {r}"
         self._serve_split(
             monkeypatch,
             proposals=[],
             queued=[
-                self._issue(1, days_old=1, body=body.format(i=3, r=1)),
-                self._issue(2, days_old=1, body=body.format(i=5, r=3)),
-                self._issue(3, days_old=1, body=body.format(i=5, r=1)),
-                self._issue(4, days_old=9, body=body.format(i=3, r=1)),
+                self._issue(1, days_old=1, body=body.format(i=3, r="low")),
+                self._issue(2, days_old=1, body=body.format(i=5, r="high")),
+                self._issue(3, days_old=1, body=body.format(i=5, r="low")),
+                self._issue(4, days_old=9, body=body.format(i=3, r="low")),
             ],
         )
         items = setup.queue_report("platform", now=self.NOW)["items"]
@@ -3652,13 +3657,44 @@ class TestTheQueueSplitsTheBacklog:
             proposals=[],
             queued=[
                 self._issue(1, body="no scores here"),
-                self._issue(2, body="**Impact** 5 · **Effort** M · **Risk** 1"),
-                self._issue(3, body="**Impact** 1 · **Effort** M · **Risk** 1"),
+                self._issue(2, body="**Impact** 5 · **Effort** M · **Risk** low"),
+                self._issue(3, body="**Impact** 1 · **Effort** M · **Risk** low"),
             ],
         )
         items = setup.queue_report("platform", now=self.NOW)["items"]
         assert [item["number"] for item in items] == [2, 1, 3]
         assert items[1]["impact"] is None, "a missing score must be reported as missing, not as 3"
+
+    @pytest.mark.parametrize(
+        ("line", "expected"),
+        [
+            ("**Impact** 4 · **Effort** S · **Risk** low", (4, 1)),
+            ("**Impact** 2 · **Effort** M · **Risk** med", (2, 2)),
+            ("**Impact** 5 · **Effort** L · **Risk** high", (5, 3)),
+            ("**Impact** 5 · **Effort** L · **Risk** medium", (5, 2)),
+            ("**Impact** 3 · **Effort** M · **Risk** 1", (3, 1)),
+            ("**Impact** 3 with no risk at all", (3, None)),
+            ("**Risk** high with no impact at all", (None, 3)),
+            ("neither", (None, None)),
+        ],
+    )
+    def test_the_score_line_parses_in_the_shape_the_scribe_writes_it(self, line, expected):
+        """`cowork-scribe.md:66` writes impact as a number and **risk as a word**.
+
+        The first version required `\\d+` for both, in one pattern — so it matched
+        no issue anybody has ever filed, and because the two groups shared a match
+        the unparsed risk discarded the impact beside it. Every queued item then
+        ranked as a neutral 3 and the queue degenerated to oldest-first, which is
+        precisely the silent miscount `_queue_rank` exists to prevent. The numeric
+        form stays accepted because a hand-written issue may use it.
+        """
+        assert setup._scores(line) == expected
+
+    def test_half_a_score_line_still_yields_the_half_that_is_there(self):
+        """An older or hand-written issue may carry one and not the other. Losing a
+        fact that is present because a different one is missing is the same class
+        of bug as not parsing it at all."""
+        assert setup._scores("**Impact** 4 and nothing else") == (4, None)
 
     def test_the_type_label_rides_along(self, monkeypatch):
         """The sweep needs it to apply the right allowlist condition — a `type:bug`
@@ -3868,6 +3904,27 @@ class TestMigrateProposals:
         for kind in ("feature", "improvement", "other"):
             labels = ("cowork:proposal", "workstream:platform", f"type:{kind}")
             assert self._actions(self._issue(1, labels=labels)) == ["hold"], kind
+
+    def test_the_codeql_carve_out_exists_in_the_recurring_path_too(self):
+        """The backfill is not the only door into the queue — `sweep-procedure.md`
+        step 4 reclassifies in place on every run, and a carve-out that exists in
+        one and not the other is a hole that opens a week later rather than never.
+
+        `codeql-triage.yml` dedupes by searching for the rule id, and once its
+        issue carries `cowork:queued` that search does not find it: next week's run
+        opens a second **public** issue re-asking a decision `triage-policy.yml`
+        already records. This is the one consumer for which the two labels being
+        mutually exclusive is a hazard rather than a convenience.
+        """
+        sweep = (setup.COWORK / "sweep-procedure.md").read_text(encoding="utf-8")
+        rules = (setup.COWORK / "house-rules.md").read_text(encoding="utf-8")
+        assert "codeql" in sweep.lower(), "step 4 can reclassify a codeql proposal with nothing to stop it"
+        assert "codeql" in rules.lower()
+        workflow = setup.REPO_ROOT / ".github" / "workflows" / "codeql-triage.yml"
+        dedupe = workflow.read_text(encoding="utf-8")
+        assert "--label cowork --search" in dedupe, (
+            "the workflow still dedupes on cowork:proposal alone, which a reclassified issue escapes"
+        )
 
     def test_a_codeql_proposal_is_held(self):
         """`codeql-triage.yml` opens one only for a rule whose `propose` entry in

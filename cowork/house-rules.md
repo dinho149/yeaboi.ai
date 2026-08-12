@@ -246,6 +246,13 @@ Four rules, and they are the whole contract:
   fails back to `cowork:proposal` with the failing condition named, and closes what no longer
   reproduces. A wrongly-queued item costs one comment. Nothing downstream trusts the label, which
   is exactly why a mechanical backfill is safe.
+- **A `codeql:` issue is never queued.** `codeql-triage.yml` files one only for a rule whose
+  `propose` entry in `.github/codeql/triage-policy.yml` records why a human must decide it — and it
+  dedupes by searching `--label cowork:proposal` for the rule id, so an issue moved to
+  `cowork:queued` is one that workflow can no longer see. Next week's run then opens a second
+  **public** issue re-asking a question already answered. This is the one consumer for which the
+  two labels being exclusive is a hazard rather than a convenience, so it is carved out in both
+  places work enters the queue: `sweep-procedure.md` step 4, and `--migrate-proposals`.
 - **A merge closes a queue entry, and nothing else does.** `Closes #<n>` in the PR body. In
   particular `cron/digest.md` must never age one out: both dedupe passes read a closing as a
   human's rejection, so closing a queued item would destroy the write-up *and* suppress the find

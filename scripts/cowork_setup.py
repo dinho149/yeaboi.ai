@@ -2171,10 +2171,19 @@ def _queue_rank(issue: dict) -> tuple:
     )
 
 
-_SCORE_RE = re.compile(
-    r"\*\*Impact\*\*\s*(?P<impact>\d+).*?\*\*Risk\*\*\s*(?P<risk>\d+)",
-    re.IGNORECASE | re.DOTALL,
-)
+# `cowork-scribe.md` writes `**Impact** <1-5> · **Effort** <S/M/L> · **Risk**
+# <low/med/high>`. Impact is a number and **risk is a word** — which the first
+# version of this did not allow for, so it matched nothing any scribe has ever
+# written and every queued item ranked as a neutral 3. Worse, both halves were one
+# pattern, so an unmatched risk discarded the impact beside it.
+#
+# Two independent searches now. A body may carry one and not the other (an older
+# issue, a hand-written one), and losing a fact that is present because a
+# different one is missing is exactly the silent miscount `_queue_rank` exists to
+# prevent. Risk comes back on one 1-3 scale whichever way it was written.
+_IMPACT_RE = re.compile(r"\*\*Impact\*\*\s*(?P<impact>\d+)", re.IGNORECASE)
+_RISK_RE = re.compile(r"\*\*Risk\*\*\s*(?P<risk>low|med(?:ium)?|high|\d+)", re.IGNORECASE)
+_RISK_WORDS = {"low": 1, "med": 2, "medium": 2, "high": 3}
 
 
 def _has_section(body: str, name: str) -> bool:
@@ -2199,11 +2208,16 @@ CODEQL_PROPOSAL = "codeql:"
 
 
 def _scores(body: str | None) -> tuple[int | None, int | None]:
-    """``(impact, risk)`` parsed out of a scribe-written issue body, or (None, None)."""
-    match = _SCORE_RE.search(body or "")
-    if not match:
-        return None, None
-    return int(match["impact"]), int(match["risk"])
+    """``(impact, risk)`` parsed out of an issue body; either half may be None."""
+    text = body or ""
+    impact_match = _IMPACT_RE.search(text)
+    risk_match = _RISK_RE.search(text)
+    impact = int(impact_match["impact"]) if impact_match else None
+    risk = None
+    if risk_match:
+        raw = risk_match["risk"].lower()
+        risk = _RISK_WORDS.get(raw, int(raw) if raw.isdigit() else None)
+    return impact, risk
 
 
 def queue_report(workstream: str, now: datetime | None = None) -> dict:
