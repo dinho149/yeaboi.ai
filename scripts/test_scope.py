@@ -365,6 +365,7 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_publish_workflows.py",
     "tests/unit/test_codeql_triage.py",
     "tests/unit/test_claude_workflow.py",
+    "tests/unit/test_implement_reconcile.py",
     "tests/unit/test_claude_plugin.py",
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
