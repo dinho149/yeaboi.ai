@@ -77,20 +77,46 @@ jobs:
           # jq exit non-zero, and `run:` steps are `bash -e`, so the review job
           # would die rather than fall through to the skip below.
           cowork=$(jq -r '[.labels[]?.name] | index("cowork") != null' <<< "$pr")
-          echo "PR #$number by $author (draft=$draft, cowork=$cowork)"
+          branch=$(jq -r '.head.ref' <<< "$pr")
+          # The branch namespaces an unattended run pushes to, kept in step with
+          # UNATTENDED_BRANCH_PREFIXES in scripts/pr_feedback.py. That gate now
+          # refuses to wave through a machine PR, so if this filter skipped one
+          # the PR would sit red forever waiting for a review nobody was going to
+          # write. Widen both or neither.
+          case "$branch" in
+            cowork/*|feature/issue-*|security/codeql-triage*|ci-sentinel/*) unattended=true ;;
+            *) unattended=false ;;
+          esac
+          echo "PR #$number by $author on $branch (draft=$draft, cowork=$cowork, unattended=$unattended)"
           # `cowork`-labelled PRs are never skipped for authorship. The claude.yml
           # `implement` job opens them unattended from an issue a human approved,
           # and if the action pushes as github-actions[bot] the bot filter below
           # would silently drop the review on exactly the PRs that most need one.
           # This is the same failure shape as the AUTO_VERSION_PAT incident above:
           # no run, no skip notice, no signal. Drafts are still skipped.
+          # Stop after MAX_REVIEW_ROUNDS findings-bearing verdicts. Kept in step
+          # with scripts/pr_feedback.py, which stops *blocking* at the same
+          # number — if this kept reviewing past the cap the findings would be
+          # written and immediately ignored, which is worse than not writing
+          # them. Counted the same way there: only verdicts that found something,
+          # so a clean pass never spends a round.
+          rounds=$(gh api "repos/${{ github.repository }}/issues/$number/comments" --paginate \
+            --jq '[.[] | select(.user.login == "claude[bot]") | .body
+                   | capture("<!-- pr-feedback: claude-review open=(?<n>[0-9]+) -->")
+                   | select(.n != "0")] | length' 2>/dev/null || echo 0)
+          echo "findings-bearing review rounds so far: $rounds (cap 2)"
+          if [ "${rounds:-0}" -ge 2 ]; then
+            echo "Review cap reached — not reviewing again. pr_feedback.py stops blocking at the same count."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$draft" = "true" ]; then
             echo "Draft PR — skipping review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$cowork" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
-            echo "Bot-authored PR without the cowork label — skipping review."
+          if [ "$cowork" != "true" ] && [ "$unattended" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
+            echo "Bot-authored PR, no cowork label and not an unattended branch — skipping review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -78,7 +78,7 @@ from yeaboi.ui.shared._animations import (
 )
 from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
-from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
@@ -197,6 +197,28 @@ def _run_output_share_flow(
         title_fn=title_fn,
         editable=editable,
         on_edit=on_edit,
+    )
+
+
+def _standup_editable_session(report, run_id: int, history):
+    """A correctable standup share, or None when there is nothing to anchor edits to.
+
+    Shared by the live standup page and the saved-runs hub so both offer the same
+    thing. Edits are appended as a new row that supersedes its parent, so the
+    session needs the run it came from — without ``run_id`` there is no base to
+    replay onto and the share stays read-only.
+    """
+    if not run_id:
+        logger.info("standup share: no run_id on this report — sharing read-only, edits are not possible")
+        return None
+    from yeaboi.artifacts.session import EditableSession
+
+    return EditableSession(
+        report,
+        kind="standup",
+        db_path=_ana_dbp,
+        run_id=run_id,
+        history=tuple(history or ()),
     )
 
 
@@ -1504,7 +1526,7 @@ def _settings_edit_keypress(sk: str, edit: dict) -> None:
     elif sk == "end":
         edit["cur"] = len(buf)
     elif isinstance(sk, str) and sk.startswith("paste:"):
-        txt = sk[len("paste:") :]
+        txt = paste_payload(sk)
         edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
     elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
         edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
@@ -3129,7 +3151,7 @@ def _standup_read_line(
         elif k == "word_backspace":  # Ctrl+W
             value = value.rstrip().rsplit(" ", 1)[0] if " " in value.strip() else ""
         elif isinstance(k, str) and k.startswith("paste:"):
-            value += k[len("paste:") :]
+            value += paste_payload(k, multiline=box_rows > 1)
         elif k == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)
@@ -3401,9 +3423,12 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
             return None
         if not set(config.get("code_sources", ())) <= code_available:
             return None
+        owners = list(config.get("github_owners", ()))
         github = list(config.get("github_repositories", ()))
         projects = list(config.get("azdo_projects", ()))
         parts = []
+        if owners:
+            parts.append(f"{len(owners)} GitHub org(s)")
         if github:
             parts.append(f"{len(github)} GitHub repo(s)")
         if projects:
@@ -3412,7 +3437,7 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
         # Second line names them. A count alone can't tell you whether the saved
         # scope is the one you want back. The newline is the builder's cue to
         # give this a second row — the value is still plain text.
-        names = _standup_name_summary(github + projects, shown=4)
+        names = _standup_name_summary(owners + github + projects, shown=4)
         rows.append(("Code", f"{counts}\n{names}" if counts else "none"))
 
     # Documentation. An empty selection is a real answer here (the picker allows
@@ -3444,6 +3469,7 @@ _STANDUP_SETUP_FIELDS = (
     "team_members",
     "roster_configured",
     "code_sources",
+    "github_owners",
     "github_repositories",
     "azdo_projects",
     "azdo_repositories",
@@ -3776,6 +3802,7 @@ def _standup_team_configure(
             team_members=selected_members,
             roster_configured=True,
             code_sources=merged.get("code_sources", []),
+            github_owners=merged.get("github_owners", []),
             github_repositories=merged.get("github_repositories", []),
             azdo_projects=merged.get("azdo_projects", []),
             azdo_repositories=merged.get("azdo_repositories", []),
@@ -3807,7 +3834,13 @@ def _standup_code_configure(
     supports_timeout,
     session_id: str,
 ) -> tuple[bool, str]:
-    """Choose GitHub repositories/Azure projects and persist the code scope."""
+    """Choose GitHub organisations/Azure projects and persist the code scope.
+
+    Both sides of this picker are *containers*: an Azure project has always meant
+    "every repo in it", and a GitHub owner now means the same. That is the whole
+    difference from the old screen, which asked for repositories one at a time and
+    so went stale the moment someone created a new one.
+    """
     import threading
 
     from yeaboi.config import (
@@ -3877,22 +3910,32 @@ def _standup_code_configure(
     discovered = result_box[0] or {}
     github_choices = list(discovered.get("github", ()))
     azdo_project_choices = list(discovered.get("azure_devops", ()))
-    github_labels = {f"GitHub · {repo}": repo for repo in github_choices}
+    github_labels = {f"GitHub · {owner}": owner for owner in github_choices}
     azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
     choices = [*github_labels, *azdo_labels]
-    saved_github = list(existing.get("github_repositories", ()))
+    # Only owners the user actually chose. Deriving them from a saved repository
+    # list would pre-tick "GitHub · acme" for someone whose scope is one repo, and
+    # accepting the default — while here to add an Azure project, say — would widen
+    # their standup to the whole org off a row that says nothing about it. Their
+    # repositories are preserved instead (see prior_repositories below), so nothing
+    # is lost by leaving these unticked; widening is a tick they have to make.
+    saved_owners = {owner.lower() for owner in existing.get("github_owners", ())}
     saved_azdo_projects = list(existing.get("azdo_projects", ()))
     if existing.get("code_scope_configured"):
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in saved_github),
+            *(label for label, owner in github_labels.items() if owner.lower() in saved_owners),
             *(label for label, project in azdo_labels.items() if project in saved_azdo_projects),
         ]
     else:
         from yeaboi.config import get_azure_devops_project
 
         legacy_project = (get_azure_devops_project() or "").lower()
+        # Nothing configured: everything the token can see is in scope, matching
+        # what an unconfigured run already does (engine._resolve_code_scope) — but
+        # a pinned STANDUP_GITHUB_REPO is an explicit narrow scope, so it pre-ticks
+        # nothing and survives as a repository entry, exactly as the engine treats it.
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in default_github),
+            *([] if default_github else github_labels),
             *(label for label, project in azdo_labels.items() if project.lower() == legacy_project),
         ]
     selected_repositories = _run_standup_member_select(
@@ -3903,17 +3946,30 @@ def _standup_code_configure(
         supports_timeout,
         choices,
         initial_repositories,
-        heading="Choose GitHub repositories and Azure projects",
-        empty_message="No accessible repositories or projects found for the selected code source(s).",
+        heading="Choose GitHub organisations and Azure projects",
+        empty_message="No accessible organisations or projects found for the selected code source(s).",
     )
     if selected_repositories == "cancel":
         return False, "Code scope selection cancelled."
     if not selected_repositories:
-        return False, "No accessible repositories or projects found — check integration permissions."
+        return False, "No accessible organisations or projects found — check integration permissions."
 
     selected_set = set(selected_repositories)
-    selected_github = [repo for label, repo in github_labels.items() if label in selected_set]
+    selected_github_owners = [owner for label, owner in github_labels.items() if label in selected_set]
     selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
+    # Repositories survive unless a chosen owner already covers them. Clearing the
+    # list outright lost three things: a pinned STANDUP_GITHUB_REPO on the first
+    # walk, a deliberately narrow saved scope, and — worst, because it is invisible
+    # — any repo whose owner never surfaced in discovery (github_list_owners caps
+    # at 100 and either of its lookups can fail and be skipped).
+    prior_repositories = list(existing.get("github_repositories", ())) or list(default_github)
+    covered_owners = {owner.lower() for owner in selected_github_owners}
+    preserved_repositories = [
+        repository
+        for repository in prior_repositories
+        for owner, separator, _name in [str(repository).partition("/")]
+        if not (separator and owner.lower() in covered_owners)
+    ]
     defaults = {
         "enabled": False,
         "time": "10:00",
@@ -3943,7 +3999,8 @@ def _standup_code_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=selected_sources,
-            github_repositories=selected_github,
+            github_owners=selected_github_owners,
+            github_repositories=preserved_repositories,
             azdo_projects=selected_azdo_projects,
             azdo_repositories=[],
             code_scope_configured=True,
@@ -3957,8 +4014,18 @@ def _standup_code_configure(
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
         )
+    logger.info(
+        "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d azdo_projects=%d",
+        session_id,
+        selected_sources,
+        len(selected_github_owners),
+        len(preserved_repositories),
+        len(selected_azdo_projects),
+    )
+    kept = f" + {len(preserved_repositories)} pinned repo(s)" if preserved_repositories else ""
     return True, (
-        f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
+        f"Code scope saved — {len(selected_github_owners)} GitHub org(s){kept}, "
+        f"{len(selected_azdo_projects)} Azure project(s)."
     )
 
 
@@ -4023,6 +4090,7 @@ def _standup_documentation_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -4044,6 +4112,7 @@ def _standup_documentation_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -4199,6 +4268,7 @@ def _standup_transcripts_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -4222,6 +4292,7 @@ def _standup_transcripts_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -4598,6 +4669,7 @@ def _run_standup_schedule_wizard(
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -4707,6 +4779,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -5649,11 +5722,17 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
     def get_share_document(run):
         """A past run, shared read-only.
 
-        Deliberately NOT correctable, unlike the live page's Share Online. This
-        path already offers ``get_editable_session`` below, and a document cannot
-        be both: the editable share re-renders from its own edit log, so a
-        practice vote written straight to the run underneath it would be
-        overwritten by the next edit. One writer per shared document.
+        Deliberately NOT correctable. This path already offers
+        ``get_editable_session`` below, and a document cannot be both: the
+        editable share re-renders from its own edit log, so a practice vote
+        written straight to the run underneath it would be overwritten by the
+        next edit. One writer per shared document.
+
+        Since the live page's Share Online became editable too, no surface builds
+        a practice-correctable document any more — signals are answered from the
+        TUI's "Practices" action. The share path stays because carrying a verdict
+        THROUGH the edit log (a third op beside OP_NOTE/OP_FIELD) is what would
+        let both exist on one document; see YEA-80.
         """
         report = _report(run.run_id)
         if report is None:
@@ -5667,15 +5746,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         report = _report(run.run_id)
         if report is None:
             return None
-        from yeaboi.artifacts.session import EditableSession
-
-        return EditableSession(
-            report,
-            kind="standup",
-            db_path=_ana_dbp,
-            run_id=run.run_id,
-            history=tuple(_history_for(report)),
-        )
+        return _standup_editable_session(report, run.run_id, _history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
@@ -6239,7 +6310,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
             if _votable_practices():
@@ -6449,33 +6520,37 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                         with _SStore(_ana_dbp) as _sstore:
                             share_history = _sstore.get_history(session_id, limit=30)
                             share_run_id = _sstore.get_latest_run_id(session_id)
-                    _run_output_share_flow(
+                    # The same correctable share the saved-runs hub offers: a
+                    # reader can fix a wrong line and add a note, attributed and
+                    # versioned. Never while anonymized — an edit made against a
+                    # mask cannot be matched back to a member.
+                    #
+                    # This share is deliberately NOT practice-votable. One writer
+                    # per document: the editable share re-renders from its own
+                    # edit log, so a verdict written straight to the run beneath
+                    # it would be overwritten by the next edit. Practice signals
+                    # are answered from the "Practices" action instead.
+                    editing = (
+                        _standup_editable_session(report, share_run_id or 0, share_history) if anon is None else None
+                    )
+                    recorded = _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        # session_id + run_id make the share correctable: a reader
-                        # who knows a practice signal is wrong can say so, and it
-                        # is written back here. Withheld while anonymized — the
-                        # names on that page are masks.
-                        document=standup_document(
-                            report,
-                            anon=anon,
-                            history=share_history,
-                            session_id="" if anon is not None else session_id,
-                            run_id=share_run_id or 0,
-                            db_path=_ana_dbp,
-                        ),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
+                        editable=editing.share if editing is not None else None,
+                        on_edit=editing.persist if editing is not None else None,
                     )
-                    # A reader may have answered a practice signal while the
-                    # share was up, which rewrites the stored run. Re-read it, or
-                    # the screen keeps offering "Practices" on a signal that is
-                    # no longer there and pressing it does nothing.
-                    if anon is None and share_run_id:
-                        data = _collect_standup_data()
+                    if recorded and editing is not None:
+                        # Appended, so the generated original is still there and
+                        # every trend chart picks the corrected row up on its own.
+                        editing.commit()
+                        noun = "correction" if recorded == 1 else "corrections"
+                        data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)
@@ -6554,6 +6629,25 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 except Exception as e:
                     logger.error("standup team selection failed: %s", e, exc_info=True)
                     msg = f"Team selection failed: {e}"
+                data = _collect_standup_data(message=msg)
+                _reset_to_overview()
+            elif act == "Sources":
+                # The only way back into the code-source picker after first setup.
+                # Without it, a standup that has never been told about GitHub can
+                # only be corrected by declining the saved setup mid-Generate.
+                try:
+                    logger.info("standup: Sources pressed (session=%s)", session_id)
+                    _saved, msg = _standup_code_configure(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        session_id,
+                    )
+                except Exception as e:
+                    logger.error("standup code-source selection failed: %s", e, exc_info=True)
+                    msg = f"Source selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
             elif act == "Identity":  # in-TUI themed input (stays inside Live)
@@ -14913,7 +15007,7 @@ def select_mode(
                             import_value = ""
                             import_error = ""
                         elif key.startswith("paste:") if isinstance(key, str) else False:
-                            import_value += key[6:]
+                            import_value += paste_payload(key)
                             import_error = ""
                         elif key == "ctrl+v":
                             # A file-path field never reaches an LLM — reject image paste.

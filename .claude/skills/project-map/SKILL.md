@@ -231,7 +231,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).
 - `ANONYMIZE_MASK_TERMS` — optional, comma-separated company-specific terms the Anonymize action always masks (e.g. `"YouLend,YL"`); seeds the deterministic pre-mask pass so they're redacted even when no LLM is available
 - `STANDUP_USER_NAME` — optional, your display name for your own standup update (default: "Me")
-- `STANDUP_GITHUB_REPO` — optional, GitHub repo (owner/repo) scanned for Daily Standup code activity
+- `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
@@ -248,6 +248,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `VOICE_EXTRA_INSTALLED` — set once yeaboi has installed dictation itself, so a `uv tool upgrade` that wipes it can be explained rather than silently regressed
 - `VOICE_DEVICE` — microphone for dictation: a PortAudio index (`2`) or a case-insensitive name substring (`shure`). Empty = system default. Set it from Settings → Voice Input → Input Device (an arrow-selectable picker with a live level test), or discover names with `yeaboi --list-audio-devices`
 - `SESSION_PRUNE_DAYS` — auto-prune sessions older than N days (default: 30, 0 = disabled)
+- `YEABOI_GO` — three-state switch for the Go core sidecar serving agentwatch AND the Daily Standup's deterministic aggregation (`standup.aggregate`; see `contracts/v1/rpc.md`, `src/yeaboi/gocore/`, `src/yeaboi/standup/aggregate.py`). Unset = **auto**: use the sidecar iff a binary is discovered (the default since the `yeaboi[core]` wheel). `0`/`false` = off; `1`/`true` = forced on (a missing binary then logs a line). Any sidecar failure silently falls back to the Python engines
+- `YEABOI_CORE_BIN` — explicit path to the `yeaboi-core` binary (`make go-build` puts it at `bin/yeaboi-core`); otherwise the `yeaboi-core` platform wheel (installed via `pip install "yeaboi[core]"`, released by `publish-core.yml` on its own `core-v*` tags) or `$PATH` is searched
 - `LOG_LEVEL` — file logger level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — optional, enables LangSmith tracing
 - Copy `.env.example` to `.env` and fill in keys (`make env`)

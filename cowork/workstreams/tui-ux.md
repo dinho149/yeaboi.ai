@@ -48,14 +48,12 @@ A missing render test, a dead screen, an `is_new=True` tip that should have been
 ago, doc drift. Layout, copy, colour, key bindings, and navigation always propose — they are what the
 user sees.
 
-## Opportunity space
-
-Where a `[feature]`/`[improvement]` find is most likely to be real here: flows a user repeats every
-session (mode select, settings round-trips), outputs a user copies elsewhere by hand (the usage
-page's export), and parity gaps where a sibling mode's screen affords something this one's does not.
-The evidence bar in `cowork-scout.md` applies — name the friction, the gap, or the repeated step.
-
 ## Out of scope
 
 Browser surfaces of any kind (**web-ux**). `ui/session/` — the planning intake, review and editor
 screens belong to **planning**. Every mode's engine logic belongs to that mode's own workstream.
+
+**integrations** may append one wizard step and one `_verify_*` probe under `ui/provider_select/`,
+and one Credentials section in `ui/mode_select/screens/_screens_secondary.py`, from a campaign run
+(`house-rules.md`, **Extends**) — those two sites and that operation only. `ui/mode_select/__init__.py`
+is deliberately outside the grant; nothing may append there.

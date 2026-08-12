@@ -167,6 +167,144 @@ class TestSecurityFindings:
                 assert "please use it" not in blob, f"message text leaked into {table}"
                 assert "evil.sh" not in blob, f"command text leaked into {table}"
 
+    def test_both_perf_guards_are_attached(self):
+        """The two patterns without a literal prefix dominate scan cost; if a
+        redaction.py edit re-words one, its guard silently detaches (correct
+        but slow) — this failing is the signal to re-key _PATTERN_GUARDS."""
+        guarded = [label for label, _, guard in collector._SECRET_PATTERNS if guard is not None]
+        assert len(guarded) == 2, guarded
+
+    def test_guards_never_skip_what_the_regex_would_match(self):
+        """Differential invariant: gating is a pure speedup. For every line,
+        the gated scan must report exactly the labels a direct ungated sweep
+        of every secret regex reports — a guard not implied by its pattern
+        would silently drop *security findings*."""
+        corpus = [
+            f"Authorization: BeArEr {'A' * 20}",  # mixed case, guard must lower()
+            f"auth basic {'x' * 16}.tail",  # lowercase basic
+            "BASIC dGVzdDp0ZXN0MTIzNA%3D%3Dpadpad",  # upper, url-escaped tail
+            f"BEARER\t{'t' * 24}",  # tab as the \s+ whitespace
+            "pip index-url https://svc:t0ken123@nexus.corp/simple",  # url creds
+            "git clone https://user:hunter2@host/repo.git",
+            "no secrets here at all",
+            "bearer short",  # word present, token too short — guard passes, regex says no
+            "scheme://user:pass-but-no-at-sign",  # '@' missing — guard rejects, regex would too
+            "user:pass@host without a scheme",  # '://' missing
+            f"sk-ant-{'x' * 12}",  # unguarded pattern still fires
+            "",
+        ]
+        for line in corpus:
+            direct = {label for label, regex, _ in collector._SECRET_PATTERNS if regex.search(line)}
+            gated: set[str] = set()
+            collector._scan_security(
+                line,
+                1,
+                None,
+                on_finding=lambda _cat, _sev, label, _ln, _sid, hits=gated: hits.add(label),
+                session_id="s",
+            )
+            assert gated == direct, f"guard changed findings for line: {line!r}"
+
+    def test_guarded_secrets_reach_the_store_end_to_end(self, store, tmp_path):
+        """The guarded patterns must still produce findings through refresh()."""
+        root = tmp_path / "projects" / "p"
+        root.mkdir(parents=True)
+        lines = [
+            {
+                "type": "user",
+                "origin": {"kind": "human"},
+                "timestamp": "2026-08-07T09:00:00.000Z",
+                "sessionId": "sess-g",
+                "message": {"role": "user", "content": f"header is BeArEr {'A' * 20} ok"},
+            },
+            {
+                "type": "user",
+                "origin": {"kind": "human"},
+                "timestamp": "2026-08-07T09:01:00.000Z",
+                "sessionId": "sess-g",
+                "message": {"role": "user", "content": "mirror is https://svc:t0ken123@nexus.corp/simple"},
+            },
+        ]
+        (root / "sess-g.jsonl").write_text("\n".join(json.dumps(rec) for rec in lines) + "\n", encoding="utf-8")
+        collector.refresh(store, roots=(("claude_code", tmp_path / "projects"),))
+        found = {f["pattern"] for f in store.list_findings()}
+        expected = {label for label, _, guard in collector._SECRET_PATTERNS if guard is not None}
+        assert expected <= found, f"guarded patterns missing from findings: {expected - found}"
+
+
+def _session_projection(store):
+    """Deterministic view of every session row (no timestamps of ingestion)."""
+    return sorted(
+        (
+            r["source_path"],
+            r["session_id"],
+            r["turns"],
+            json.dumps(r["model_usage"], sort_keys=True),
+            json.dumps(r["tool_counts"], sort_keys=True),
+        )
+        for r in store.list_sessions()
+    )
+
+
+def _finding_projection(store):
+    return sorted(
+        (f["category"], f["severity"], f["pattern"], f["line_no"], f["source_path"]) for f in store.list_findings()
+    )
+
+
+class TestParallelIngest:
+    """The process-pool path must be invisible: same store end-state, same
+    warning rules, same privacy invariant as the inline path."""
+
+    @pytest.fixture
+    def multi_roots(self, tmp_path):
+        root = tmp_path / "projects" / "p"
+        root.mkdir(parents=True)
+        for i in range(4):
+            write_fixture(root / f"sess-{i}.jsonl")
+        return (("claude_code", tmp_path / "projects"),)
+
+    def test_parallel_end_state_matches_serial(self, tmp_path, multi_roots, monkeypatch):
+        with AgentWatchStore(tmp_path / "serial.db") as serial_store:
+            collector.refresh(serial_store, roots=multi_roots)
+            expected_sessions = _session_projection(serial_store)
+            expected_findings = _finding_projection(serial_store)
+        assert expected_sessions  # the fixture must actually produce rows
+        monkeypatch.setattr(collector, "_PARALLEL_THRESHOLD", 0)
+        with AgentWatchStore(tmp_path / "parallel.db") as parallel_store:
+            stats = collector.refresh(parallel_store, roots=multi_roots)
+            assert stats.files_parsed == 4
+            assert _session_projection(parallel_store) == expected_sessions
+            assert _finding_projection(parallel_store) == expected_findings
+            for i in range(4):
+                path = tmp_path / "projects" / "p" / f"sess-{i}.jsonl"
+                assert parallel_store.get_cursor(str(path)) is not None
+
+    def test_bad_file_is_a_class_name_warning_others_ingest(self, tmp_path, multi_roots, monkeypatch):
+        monkeypatch.setattr(collector, "_PARALLEL_THRESHOLD", 0)
+        # A directory named *.jsonl: stats fine in pass 1, raises on open in
+        # the worker — exercising the error marker across the pickle boundary.
+        (tmp_path / "projects" / "p" / "bad.jsonl").mkdir()
+        with AgentWatchStore(tmp_path / "sessions.db") as store:
+            stats = collector.refresh(store, roots=multi_roots)
+        assert stats.files_parsed == 4
+        assert any("bad.jsonl" in w and "IsADirectoryError" in w for w in stats.warnings)
+
+    def test_privacy_invariant_survives_the_ipc_boundary(self, tmp_path, roots, monkeypatch):
+        """Findings cross process boundaries as tuples now — re-prove that no
+        transcript text lands in the DB when the pool path runs."""
+        monkeypatch.setattr(collector, "_PARALLEL_THRESHOLD", 0)
+        with AgentWatchStore(tmp_path / "sessions.db") as store:
+            collector.refresh(store, roots=roots)
+            tables = [
+                row[0] for row in store._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            ]
+            for table in tables:
+                for row in store._conn.execute(f"SELECT * FROM {table}").fetchall():  # noqa: S608
+                    blob = " ".join(str(value) for value in row)
+                    assert PLANTED_SECRET not in blob, f"secret leaked into {table}"
+                    assert "please use it" not in blob, f"message text leaked into {table}"
+
 
 class TestCursorBehaviour:
     def test_second_refresh_skips_unchanged(self, store, roots):

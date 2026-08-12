@@ -62,21 +62,57 @@ def comment(
     )
 
 
-def review(n: int, *, minutes_ago: int = 60, ident: int = 1, edited_minutes_ago: int | None = None):
+# The login `claude-review.yml` actually posts under — the Claude GitHub App.
+# `is_authentic_verdict` pins the producer to it, so a fixture using any other
+# identity is not testing the real thing.
+REVIEWER = "claude[bot]"
+
+
+def review(
+    n: int,
+    *,
+    minutes_ago: int = 60,
+    ident: int = 1,
+    edited_minutes_ago: int | None = None,
+    author: str = REVIEWER,
+):
     return comment(
         f"Findings...\n\n{REVIEW_MARK.format(n=n)}",
         minutes_ago=minutes_ago,
         ident=ident,
+        author=author,
         edited_minutes_ago=edited_minutes_ago,
     )
 
 
-def ack(producer: str = "claude-review", *, minutes_ago: int = 30, ident: int = 2, association: str = "OWNER", **kw):
+def forged(
+    n: int = 0,
+    *,
+    producer: str = "claude-review",
+    minutes_ago: int = 5,
+    ident: int = 9,
+    author: str = "a-stranger",
+    association: str = "NONE",
+):
+    """A verdict somebody other than the producer wrote, claiming ``n`` findings."""
+    mark = REVIEW_MARK if producer == "claude-review" else DOD_MARK
+    return comment(mark.format(n=n), minutes_ago=minutes_ago, ident=ident, author=author, association=association)
+
+
+def ack(
+    producer: str = "claude-review",
+    *,
+    minutes_ago: int = 30,
+    ident: int = 2,
+    association: str = "OWNER",
+    author: str = AUTHOR,
+    **kw,
+):
     """A won't-fix reply. Trusted by default — the untrusted case is its own test."""
     return comment(
         f"Won't fix, because the caller already guards it.\n\n<!-- addressed: {producer} -->",
         minutes_ago=minutes_ago,
-        author=AUTHOR,
+        author=author,
         ident=ident,
         association=association,
         **kw,
@@ -174,6 +210,75 @@ class TestProducerVerdicts:
         # otherwise a routine nobody updated could clear the gate by staying quiet.
         snap = snapshot(comments=(review(0), comment("<!-- cowork-dod -->", ident=3)))
         assert prf.latest_verdict(snap.comments, prf.PRODUCERS[1]) is None
+
+
+class TestTheReviewCap:
+    """The loop needs a terminator, and the terminator must not break the gate.
+
+    Four consecutive rounds on PR #222 each produced real should-fix findings.
+    An adversarial review of a large diff always finds something, so "merge when
+    the reviewer reports zero" is not a condition that reliably arrives — and a
+    gate whose exit may never occur is a gate that gets deleted.
+    """
+
+    def test_under_the_cap_findings_still_block(self):
+        snap = snapshot(comments=(review(2, minutes_ago=60, ident=1),))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_at_the_cap_the_gate_opens(self):
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert "capped" in verdict.description
+
+    def test_the_findings_are_kept_not_discarded(self):
+        """Green is not clean. The items ride along so the comment can list them."""
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(3, minutes_ago=10, ident=2)))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.items and verdict.items[0].key == "claude-review"
+        assert "not fixed" in verdict.description
+
+    def test_a_clean_pass_does_not_spend_a_round(self):
+        """Otherwise a regression after a clean review could never reopen the gate.
+
+        Counting every verdict would make "review found a new problem" and
+        "review ran out of patience" the same state.
+        """
+        snap = snapshot(comments=(review(0, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_forged_verdict_cannot_burn_a_round(self):
+        """Otherwise two comments from anybody would cap somebody else's PR."""
+        forged = comment(REVIEW_MARK.format(n=1), minutes_ago=50, ident=9, author="a-stranger")
+        rounds = prf.review_rounds((review(1, minutes_ago=60, ident=1), forged), prf.PRODUCERS[0])
+        assert rounds == 1
+
+    def test_an_unresolved_human_thread_is_never_capped(self):
+        """A person waiting for an answer is not a loop that has run too long."""
+        snap = snapshot(
+            comments=(review(1, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)),
+            threads=(thread(authors=("a-reviewer",)),),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_changes_requested_review_is_never_capped(self):
+        snap = snapshot(
+            comments=(review(1, minutes_ago=90, ident=1), review(1, minutes_ago=10, ident=2)),
+            review_decision="CHANGES_REQUESTED",
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_capped_comment_does_not_read_as_clean(self):
+        snap = snapshot(comments=(review(2, minutes_ago=90, ident=1), review(2, minutes_ago=10, ident=2)))
+        body = prf.sticky_body(snap, prf.classify(snap, NOW))
+        assert "recorded, not fixed" in body
+        assert "clear" not in body.lower().split("recorded")[0]
+        assert prf.CAPPED_LABEL in body
+
+    def test_the_workflow_and_the_script_cap_at_the_same_number(self):
+        """Reviewing past the cap would write findings nothing will ever act on."""
+        text = (ROOT / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8")
+        assert f"-ge {prf.MAX_REVIEW_ROUNDS} ]" in text, "claude-review.yml stopped agreeing with MAX_REVIEW_ROUNDS"
 
 
 class TestWaitingVersusMissing:
@@ -359,7 +464,9 @@ class TestEditedComments:
         assert prf.classify(snap, NOW).state == "success"
 
     def test_the_edited_comment_is_the_latest_verdict_even_when_created_first(self):
-        old_but_edited = comment(REVIEW_MARK.format(n=4), minutes_ago=600, edited_minutes_ago=1, ident=1)
+        old_but_edited = comment(
+            REVIEW_MARK.format(n=4), minutes_ago=600, edited_minutes_ago=1, ident=1, author=REVIEWER
+        )
         newer = review(0, minutes_ago=60, ident=2)
         found = prf.latest_verdict((old_but_edited, newer), prf.PRODUCERS[0])
         assert found[1] == 4
@@ -400,6 +507,171 @@ class TestWhoMayAnswer:
         assert prf.classify(snap, NOW).state == "success"
 
 
+class TestForgedVerdicts:
+    """A verdict is stronger than an ack, and until this existed it had no checks.
+
+    Blocking the `<!-- addressed: -->` marker closed the weaker hole. Anyone could
+    still post `<!-- pr-feedback: claude-review open=0 -->`, which does not
+    *answer* the findings — it replaces the count of them — and the gate went
+    green. On a public repo that was any account at all; on a cowork PR it was the
+    routine that wrote the code. Survivable while a human clicked merge, and the
+    entire gate now that `sweep-procedure.md` arms `gh pr merge --auto`.
+    """
+
+    def test_a_stranger_cannot_post_a_verdict(self):
+        snap = snapshot(comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5)))
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_write_access_alone_cannot_post_one_either(self):
+        """This is the applicant's route: a cowork routine posts as the maintainer."""
+        snap = snapshot(
+            labels=("cowork",),
+            author="cowork-bot",
+            comments=(review(3, minutes_ago=60), forged(0, minutes_ago=5, author="cowork-bot", association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_real_reviewer_still_clears_it(self):
+        """The honest path must survive: a re-review reports zero and the gate opens."""
+        snap = snapshot(comments=(review(3, minutes_ago=60, ident=1), review(0, minutes_ago=5, ident=2)))
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_association_is_not_required_to_be_trusted(self):
+        """A bot commenting through GITHUB_TOKEN carries `author_association: NONE`.
+
+        Requiring write access *as well* would reject every genuine Claude Review
+        and wedge every PR on a review that could never qualify — the deadlock
+        this module is built to avoid. Pinned so the rule is not "hardened" into
+        one later.
+        """
+        assert prf.is_authentic_verdict(
+            comment(REVIEW_MARK.format(n=0), author=REVIEWER, association="NONE"),
+            prf.PRODUCERS[0],
+        )
+
+    def test_a_forged_verdict_cannot_win_the_newest_wins_race(self):
+        """It is skipped outright, not merely outranked."""
+        latest = prf.latest_verdict(
+            (review(3, minutes_ago=60, ident=1), forged(0, minutes_ago=1, ident=2)),
+            prf.PRODUCERS[0],
+        )
+        assert latest is not None and latest[1] == 3
+
+    def test_a_rejected_verdict_reads_as_absent_not_as_zero(self):
+        """The fail-closed direction: red saying the review never posted."""
+        snap = snapshot(comments=(forged(0, minutes_ago=5),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "never posted a verdict" in verdict.description
+
+    def test_only_the_reviewer_login_may_post_a_review_verdict(self):
+        """ "Any bot" is not specific enough where the applicant is also a bot.
+
+        `claude.yml`, `codeql-triage.yml` and `ci-sentinel.yml` all open their PRs
+        from an Actions job, so on those lanes the author and the reviewer are
+        indistinguishable by bot-ness, and a job on the applicant side could post
+        the reviewer's `open=0`. Only comment ordering stopped it — a coincidence,
+        not a check.
+        """
+        producer = prf.PRODUCERS[0]
+        assert prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=REVIEWER), producer)
+        for impostor in ("github-actions[bot]", "dependabot[bot]", "some-app[bot]"):
+            assert not prf.is_authentic_verdict(comment(REVIEW_MARK.format(n=0), author=impostor), producer)
+
+    def test_another_bot_cannot_clear_the_gate_on_a_machine_pr(self):
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="feature/issue-9-thing",
+            comments=(
+                review(2, minutes_ago=60, ident=1),
+                comment(REVIEW_MARK.format(n=0), minutes_ago=5, ident=2, author="github-actions[bot]"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_dod_audit_accepts_a_maintainer_because_a_routine_writes_it(self):
+        """Advisory and never required — and a stranger still cannot write it."""
+        producer = next(p for p in prf.PRODUCERS if p.key == "cowork-dod")
+        maintainer = comment(DOD_MARK.format(n=1), author=AUTHOR, association="OWNER")
+        stranger = comment(DOD_MARK.format(n=1), author="a-stranger", association="NONE")
+        assert prf.is_authentic_verdict(maintainer, producer)
+        assert not prf.is_authentic_verdict(stranger, producer)
+
+
+class TestUnattendedPRs:
+    """A machine PR may fix a finding. It may not declare one answered.
+
+    Once security, bug and chore fixes merge without a human clicking anything,
+    `TRUSTED_ASSOCIATIONS` stops being a gate: a cowork routine posts under an
+    account with write access, so the thing that wrote the change could also
+    write `<!-- addressed: claude-review -->` under the review of it and merge.
+    The way out is a push — a re-review then reports `open=0` on its own — which
+    is why these tests check that the honest path still clears.
+    """
+
+    @pytest.mark.parametrize(
+        "branch",
+        ["cowork/security-pin-shas", "feature/issue-231-fix", "security/codeql-triage-2026-08", "ci-sentinel/red-main"],
+    )
+    def test_every_machine_branch_counts_as_unattended(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is True
+
+    @pytest.mark.parametrize("branch", ["", "feature/nice-thing", "main", "coworker/typo"])
+    def test_an_ordinary_branch_does_not(self, branch):
+        assert prf.is_unattended(snapshot(head_ref=branch)) is False
+
+    def test_the_label_alone_is_enough(self):
+        assert prf.is_unattended(snapshot(labels=("cowork",))) is True
+
+    def test_the_author_cannot_answer_its_own_review(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_an_unlabelled_machine_branch_is_gated_the_same_way(self):
+        """A run truncated between `git push` and `gh pr create --label` lands here."""
+        snap = snapshot(
+            head_ref="cowork/standup-confidence",
+            comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_somebody_else_with_write_access_still_can(self):
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(
+                review(2, minutes_ago=60),
+                ack(minutes_ago=30, association="OWNER", author="a-different-human"),
+            ),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_fix_still_clears_it(self):
+        """The honest path: push, get re-reviewed, and the reviewer reports zero."""
+        snap = snapshot(
+            labels=("cowork",),
+            comments=(review(2, minutes_ago=60, ident=1), review(0, minutes_ago=10, ident=3)),
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_bot_pr_on_a_machine_branch_is_not_waved_through(self):
+        """Without this, the widest lane in the fleet has no gate at all."""
+        snap = snapshot(
+            author="github-actions[bot]",
+            head_ref="cowork/platform-pin-actions",
+            comments=(review(2),),
+            ci=prf.CIState("success", NOW - timedelta(hours=3)),
+        )
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_a_human_answering_their_own_pr_is_untouched(self):
+        """Nothing above applies to a person: one already read the review."""
+        snap = snapshot(comments=(review(2, minutes_ago=60), ack(minutes_ago=30, association="OWNER")))
+        assert prf.classify(snap, NOW).state == "success"
+
+
 class TestReviewBodies:
     """A review's top-level body is not an issue comment and needs folding in."""
 
@@ -412,6 +684,99 @@ class TestReviewBodies:
             comments=(review(2, minutes_ago=60), ack(minutes_ago=30, kind="review", ident=9, association="NONE"))
         )
         assert prf.classify(snap, NOW).state == "failure"
+
+
+class TestTheOverrideIsNotAFreeLever:
+    """`feedback-override` clears more than a marker ever could, so it needs the rule.
+
+    It returns success before the producers, the threads and a
+    CHANGES_REQUESTED review are even looked at. The sweeps hold bare `Bash` and
+    already run `gh pr merge --auto` on their own PR, so `gh pr edit --add-label
+    feedback-override` sits inside the same grant — meaning "a human's call" was a
+    convention, and the lane that just lost the `<!-- addressed: -->` route had a
+    bigger lever sitting beside it.
+    """
+
+    def _snap(self, **overrides):
+        base = dict(labels=("cowork", prf.OVERRIDE_LABEL), comments=(review(3),))
+        base.update(overrides)
+        return snapshot(**base)
+
+    def test_the_author_of_a_machine_pr_cannot_override_their_own(self):
+        snap = self._snap(author="cowork-bot", override_actor="cowork-bot")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert "own author" in verdict.description
+
+    def test_another_human_still_can(self):
+        snap = self._snap(author="cowork-bot", override_actor="a-different-human")
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert "a-different-human" in verdict.description
+
+    def test_an_unknown_actor_still_honours_it(self):
+        """This label exists to unbrick a wedged gate.
+
+        Refusing it on a timeline we could not read would turn one API failure
+        into a PR nobody can merge — precisely what it is the escape hatch for.
+        """
+        snap = self._snap(author="cowork-bot", override_actor="")
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_an_ordinary_pr_is_untouched(self):
+        """A person overriding their own PR is a person making a call."""
+        snap = self._snap(labels=(prf.OVERRIDE_LABEL,), author=AUTHOR, override_actor=AUTHOR)
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_the_actor_is_read_from_the_timeline_newest_wins(self):
+        events = [
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "first"}},
+            {"event": "labeled", "label": {"name": "cowork"}, "actor": {"login": "noise"}},
+            {"event": "labeled", "label": {"name": prf.OVERRIDE_LABEL}, "actor": {"login": "second"}},
+        ]
+        with_json = lambda *a: events  # noqa: E731 - a one-line stub
+        original = prf._gh_json
+        try:
+            prf._gh_json = with_json
+            assert prf.fetch_override_actor("o/r", 1) == "second"
+        finally:
+            prf._gh_json = original
+
+    def test_an_unreadable_timeline_reads_as_unknown_not_as_the_author(self):
+        original = prf._gh_json
+        try:
+            prf._gh_json = lambda *a: None
+            assert prf.fetch_override_actor("o/r", 1) == ""
+        finally:
+            prf._gh_json = original
+
+
+class TestStickyAdviceMatchesThePR:
+    """The check must not instruct a human to do the one thing that cannot work.
+
+    On a cowork PR the author is the maintainer's own account, so a person who
+    reads the red check, disagrees with a finding and replies exactly as told gets
+    silence and the same red check re-rendered, with no diagnostic anywhere.
+    """
+
+    def _body(self, **overrides):
+        snap = snapshot(comments=(review(2),), **overrides)
+        return prf.sticky_body(snap, prf.classify(snap, NOW))
+
+    def test_an_ordinary_pr_still_offers_the_reply_route(self):
+        body = self._body()
+        assert "<!-- addressed: <producer> -->" in body
+
+    def test_a_machine_pr_says_the_reply_route_does_not_apply(self):
+        body = self._body(labels=("cowork",))
+        assert "cannot clear a finding here" in body
+        assert "<!-- addressed: <producer> -->" not in body
+
+    def test_a_machine_pr_still_names_a_way_out(self):
+        """Never a dead end: fixing, or the override, and the override is a human's."""
+        body = self._body(head_ref="cowork/platform-x")
+        assert "fix and " in body
+        assert prf.OVERRIDE_LABEL in body
 
 
 class TestStickyIsInert:
@@ -476,26 +841,58 @@ class FakeGh:
 def gh(monkeypatch):
     fake = FakeGh()
     monkeypatch.setattr(prf, "_gh", fake)
+    # `transport.graphql` routes itself and calls the transport's own `gh`, so
+    # patching only `prf._gh` leaves the GraphQL read going out over the network.
+    # It did, briefly, and the test failure named a real repository.
+    monkeypatch.setattr(prf.transport, "gh", fake)
+    monkeypatch.setattr(prf.transport, "gh_available", lambda: True)
     return fake
 
 
+@pytest.fixture(autouse=True)
+def _no_live_github(monkeypatch):
+    """No ambient token, no memoised repository, and no unstubbed REST call.
+
+    ``_gh`` is no longer the only seam: the transport authenticates from the
+    *environment*, so a developer with GH_TOKEN exported would have any gap in a
+    stub go live against their own repo rather than fail.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    prf.transport.reset_slug_cache()
+
+    def refuse(method, path, body=None):
+        raise AssertionError(f"a test reached the REST transport unstubbed: {method} {path}")
+
+    monkeypatch.setattr(prf.transport, "api", refuse)
+
+
 def _seed_pr(gh, **over):
-    gh.reply(
-        "pr view",
-        {
-            "number": 123,
-            "headRefOid": HEAD,
-            "isDraft": False,
-            "author": {"login": AUTHOR},
-            "labels": [{"name": "cowork"}],
-            "reviewDecision": None,
-            **over,
-        },
-    )
     gh.reply("issues/123/comments", [])
     gh.reply("pulls/123/reviews", [])
-    gh.reply("graphql", {"data": {"repository": {"pullRequest": {"reviewThreads": {"pageInfo": {}, "nodes": []}}}}})
+    gh.reply("graphql", {"data": {"repository": {"pullRequest": _pull(**over)}}})
     gh.reply("actions/runs", {"workflow_runs": []})
+
+
+def _pull(threads=None, has_next=False, **over):
+    """The `pullRequest` node `PR_QUERY` returns — metadata and threads together.
+
+    They used to come from two calls, `gh pr view` and a GraphQL query. One call
+    now, because `reviewDecision` has no REST equivalent and asking for it here
+    is what lets both transports answer the same question.
+    """
+    return {
+        "number": 123,
+        "headRefOid": HEAD,
+        "headRefName": "feature/x",
+        "isDraft": False,
+        "reviewDecision": None,
+        "author": {"login": AUTHOR},
+        "labels": {"nodes": [{"name": "cowork"}]},
+        "reviewThreads": {"pageInfo": {"hasNextPage": has_next}, "nodes": threads or []},
+        **over,
+    }
 
 
 class TestFetch:
@@ -510,7 +907,7 @@ class TestFetch:
                     [
                         {
                             "id": 7,
-                            "user": {"login": "github-actions[bot]"},
+                            "user": {"login": "claude[bot]"},
                             "body": REVIEW_MARK.format(n=1),
                             "created_at": "2026-08-06T10:00:00Z",
                             "updated_at": "2026-08-06T11:00:00Z",
@@ -528,7 +925,9 @@ class TestFetch:
         assert snap.comments[0].written_at > snap.comments[0].created_at
 
     def test_a_failed_read_is_none_rather_than_a_half_snapshot(self, gh):
-        gh.reply("pr view", "", code=1)
+        """The metadata read is the GraphQL one now. A half snapshot would be
+        read as a PR with no threads and no labels — a clean one."""
+        gh.reply("graphql", "", code=1)
         assert prf.fetch_snapshot(123, "o/r") is None
 
     def test_threads_are_normalised_and_truncation_is_carried(self, gh):
@@ -630,9 +1029,19 @@ class TestFetch:
         assert prf.fetch_ci("o/r", HEAD) == prf.CIState(None, None)
         assert prf.fetch_ci("o/r", "") == prf.CIState(None, None)
 
-    def test_the_repo_and_pr_lookups_survive_a_gh_failure(self, gh):
+    def test_the_repo_and_pr_lookups_survive_a_gh_failure(self, gh, monkeypatch):
+        """A rejected lookup is None, not a guess.
+
+        `repo_slug` falls through `gh` to the environment to the git remote, so
+        failing only the `gh` call would still find this checkout's own repo —
+        the autouse guard clears GITHUB_REPOSITORY and the remote is stubbed
+        away here, leaving nothing to answer with.
+        """
         gh.reply("repo view", "", code=1)
         gh.reply("pr view", "", code=1)
+        monkeypatch.setattr(
+            prf.transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "no remote")
+        )
         assert prf.repo_slug() is None
         assert prf.current_pr() is None
 
@@ -649,7 +1058,7 @@ class TestPosting:
     def test_a_failed_post_is_reported_rather_than_swallowed(self, gh, capsys):
         gh.reply("statuses", "", code=1)
         assert prf.post_status("o/r", HEAD, prf.Verdict("success", "fine")) is False
-        assert "could not post the status" in capsys.readouterr().err
+        assert f"POST repos/o/r/statuses/{HEAD} failed" in capsys.readouterr().err
 
     def test_a_clear_verdict_never_creates_a_comment(self, gh):
         """Only ever edited into an existing sticky. A PR with nothing to say
@@ -685,7 +1094,10 @@ class TestPosting:
 class TestMain:
     @pytest.fixture(autouse=True)
     def _gh_on_path(self, monkeypatch):
-        monkeypatch.setattr(prf.shutil, "which", lambda _: "/usr/bin/gh")
+        """`gh` present and answering, which is what the `gh` fixture already
+        fakes — pinned here too so `main`'s "no transport at all" guard is only
+        exercised by the test that means to."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: "/usr/bin/gh")
 
     def _repo(self, gh):
         gh.reply("repo view", {"nameWithOwner": "o/r"})
@@ -700,7 +1112,9 @@ class TestMain:
             (
                 "issues/123/comments",
                 0,
-                json.dumps([{"id": 1, "user": {"login": "b"}, "body": REVIEW_MARK.format(n=2), "created_at": None}]),
+                json.dumps(
+                    [{"id": 1, "user": {"login": REVIEWER}, "body": REVIEW_MARK.format(n=2), "created_at": None}]
+                ),
             ),
         )
         assert prf.main(["--pr", "123"]) == 1
@@ -725,19 +1139,81 @@ class TestMain:
         """A required status that was never posted is indistinguishable in the UI
         from this workflow not existing, and blocks the merge with nothing to do."""
         self._repo(gh)
-        gh.reply("issues/123/comments", "", code=1)
-        gh.reply("pr view", {"headRefOid": HEAD})
+        _seed_pr(gh)
+        # The comments read fails, so the snapshot is None and the fallback path
+        # re-reads the head SHA on its own — over REST's spelling, `head.sha`.
+        gh.replies.insert(0, ("issues/123/comments", 1, ""))
+        gh.reply("repos/o/r/pulls/123", {"head": {"sha": HEAD}})
         assert prf.main(["--pr", "123", "--status"]) == 2
         posted = " ".join(gh.sent(f"statuses/{HEAD}")[0])
         assert "state=pending" in posted
 
-    def test_a_missing_gh_says_how_to_get_one(self, monkeypatch, capsys):
-        monkeypatch.setattr(prf.shutil, "which", lambda _: None)
+    def test_no_transport_at_all_says_how_to_get_one(self, monkeypatch, capsys):
+        """No `gh` *and* no token. Either alone is fine now, and saying so is the
+        point: the routine session that runs this has only the second, and the
+        old message sent it to `brew install gh`."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: None)
         assert prf.main(["--pr", "1"]) == 2
-        assert "brew install gh" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "brew install gh" in err and "GH_TOKEN" in err
+
+    def test_a_token_alone_is_enough_to_start(self, monkeypatch, gh, capsys):
+        """The production shape: a token, no CLI. It must get past the guard —
+        it used to exit 2 here and post nothing, which reads as a gate that was
+        never asked to run."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: None)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(prf.transport, "gh_available", lambda: False)
+        monkeypatch.setattr(prf, "repo_slug", lambda: None)
+        assert prf.main(["--pr", "1"]) == 2
+        err = capsys.readouterr().err
+        assert "brew install gh" not in err
+        assert "could not resolve the repo" in err
 
     def test_no_pr_and_none_on_this_branch_is_an_error_not_a_pass(self, gh, capsys):
         self._repo(gh)
         gh.reply("pr view", "", code=1)
         assert prf.main([]) == 2
         assert "no PR given" in capsys.readouterr().err
+
+
+class TestAnUnreadablePRIsNotACleanOne:
+    """The failure this whole gate exists to prevent, in its newest form.
+
+    A routine session's GitHub egress refuses GraphQL (403, recorded in
+    `tests/fixtures/cowork_github_access_live.json`), and review threads plus
+    `reviewDecision` exist in v4 and nowhere in v3. So there the gate reads
+    *nothing* — and the one thing it must never do is let that look like a PR
+    with nothing to answer.
+    """
+
+    def test_the_proxy_refusal_is_named_with_its_remedy(self):
+        prf.LAST_FAILURE = (
+            "graphql: HTTP 403 on POST /graphql: This GraphQL query is not enabled for this session "
+            "— only the pinned set of PR-review operations is served."
+        )
+        reason = prf.unreadable_reason()
+        assert "NOTHING was determined" in reason
+        assert "Do not read this as a clean PR" in reason
+        assert "pr-feedback.yml" in reason
+
+    def test_an_ordinary_failure_is_not_dressed_up_as_the_proxy(self):
+        """A 403 from a token-scope problem is a different fault with a different
+        remedy, so the proxy wording must not be reached for every failure."""
+        prf.LAST_FAILURE = "graphql: HTTP 401 on POST /graphql: Bad credentials"
+        reason = prf.unreadable_reason()
+        assert "Bad credentials" in reason
+        assert "NOTHING was determined" not in reason
+
+    def test_an_unreadable_pr_says_so_on_stderr_and_exits_non_zero(self, monkeypatch, capsys):
+        monkeypatch.setattr(prf.transport, "gh_available", lambda: False)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(prf, "repo_slug", lambda: "owner/name")
+        monkeypatch.setattr(prf, "fetch_snapshot", lambda number, slug: None)
+        prf.LAST_FAILURE = "graphql: this GraphQL query is not enabled for this session"
+
+        assert prf.main(["--pr", "7"]) == 2
+
+        err = capsys.readouterr().err
+        assert "could not read PR #7" in err
+        assert "Do not read this as a clean PR" in err

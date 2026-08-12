@@ -35,6 +35,7 @@ import {
   type LozengeCategory,
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
+import { ACTIVITY_SOURCE_LABELS, type ActivitySources } from '../../types/enums';
 import { cx } from '../../runtime/cx';
 import { safeUrl } from '../../runtime/url';
 import type {
@@ -87,6 +88,21 @@ const CATEGORY_NOUNS: ReadonlyArray<readonly [string, string]> = [
   ['code', 'code'],
   ['doc', 'docs'],
 ];
+
+/** A collector source's display name; an unknown id falls back to its raw key.
+ *
+ * Generated from the Python table rather than spelled here, so the report, the
+ * progress steps and the plain-text export cannot drift — `azdo_repos` read as
+ * "Azdo Repos" in one place and "Azure DevOps code" in another. */
+function sourceLabel(source: string): string {
+  // The fallback mirrors Python's `source_label`: an unknown key title-cases
+  // rather than passing through raw, so a source added on the server before the
+  // bundle is rebuilt still reads as a name and not as `azdo_repos`.
+  return (
+    ACTIVITY_SOURCE_LABELS[source as ActivitySources] ??
+    source.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
 
 function tone(map: Record<string, Tone>, key: string): Tone {
   return map[key] ?? 'low';
@@ -868,7 +884,10 @@ export function Standup({
 }) {
   const confidenceTone = tone(CONFIDENCE_TONE, confidence.label);
   const known = confidence.label && confidence.label !== 'Insufficient data';
-  const sources = countedSegments(activityCounts);
+  // Labelled before it is charted: the legend and the "Activity examined" line
+  // sit three lines apart in one section, so a raw `azdo_repos` in either is the
+  // exact drift sourceLabel exists to stop.
+  const sources = countedSegments(activityCounts.map(([src, n]) => [sourceLabel(src), n] as const));
   const hasDetails = activityCounts.length > 0 || coverage.length > 0 || skipped.length > 0;
 
   return (
@@ -980,7 +999,7 @@ export function Standup({
           <ul className={styles['details']}>
             {activityCounts.length ? (
               <li>
-                Activity examined — {activityCounts.map(([src, n]) => `${src}: ${n}`).join(', ')}
+                Activity examined — {activityCounts.map(([src, n]) => `${sourceLabel(src)}: ${n}`).join(', ')}
                 {activityWindow ? ` (${activityWindow})` : ''}
               </li>
             ) : null}
@@ -1002,7 +1021,10 @@ export function Standup({
               </li>
             ) : null}
             {skipped.length ? (
-              <li>Sources skipped — {skipped.map(([src, reason]) => `${src} (${reason})`).join(', ')}</li>
+              <li>
+                Sources skipped —{' '}
+                {skipped.map(([src, reason]) => `${sourceLabel(src)} (${reason})`).join(', ')}
+              </li>
             ) : null}
           </ul>
         </section>

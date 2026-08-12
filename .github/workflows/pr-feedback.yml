@@ -14,9 +14,16 @@
 # the states they produce.
 #
 # ONE MANUAL STEP, and nothing in this repo can do it: the `pr-feedback` status
-# context must be added to the `main-branch` ruleset's required checks. Until it
-# is, this workflow is advisory too — which is exactly the failure it was built
-# to end. `gh api repos/OWNER/REPO/rulesets` is where it lives.
+# context must be added to the `main-branch` ruleset's required checks.
+# `gh api repos/OWNER/REPO/rulesets` is where it lives, and
+# `make cowork-check` probes for it on every run.
+#
+# That required check and this file are load-bearing for each other, in a way
+# that bit once and would bite again: a *required* context that nothing posts
+# blocks every PR in the repo forever, with all other checks green and nothing in
+# the UI saying why. If this workflow is ever failing to run, take the context
+# off the ruleset first, fix the workflow, confirm a `pull_request_target` run
+# appears, and only then put it back.
 name: PR Feedback
 
 on:
@@ -45,13 +52,30 @@ on:
     types: [submitted, dismissed, edited]
   pull_request_review_comment:
     types: [created, edited, deleted]
-  # Resolving a thread is the terminal step of the procedure this gate ships
-  # (/pr-feedback step 6: reply, then resolve). The reply fires the event above
-  # while the thread is still unresolved, so that run posts red; without this
-  # trigger the resolve itself fires nothing and the status stays red with no
-  # remaining action — a false red only an unrelated push could clear.
-  pull_request_review_thread:
-    types: [resolved, unresolved]
+  # NO `pull_request_review_thread` HERE, AND THAT IS DELIBERATE — it is what
+  # made this whole workflow unparseable. GitHub rejected the file outright: all
+  # 108 runs between 2026-08-07 and 2026-08-11 were attributed to `push`, an
+  # event this workflow does not declare, with zero jobs; GitHub reported the
+  # workflow's name as its own file path, which is the fallback for a file it
+  # cannot read; and `actionlint` named this trigger as the only defect. The
+  # trigger was present in the file's first commit, so the gate never ran once —
+  # DoD item 10 was enforced by nothing for four days while five files described
+  # it as the thing that made review enforceable. Re-adding this without checking
+  # that `pull_request_target` runs still appear takes the gate back to dead.
+  #
+  # What is lost: resolving a review thread no longer re-runs the gate. The
+  # /pr-feedback procedure is reply-then-resolve, and the reply fires
+  # `pull_request_review_comment` while the thread is still unresolved, so that
+  # run posts red and the resolve itself fires nothing — leaving a stale red with
+  # no remaining action. Two ways out, both cheap: any later comment re-runs
+  # this, and `workflow_dispatch` below refreshes it on demand. Locally,
+  # `uv run python scripts/pr_feedback.py --pr N --status` posts the same status
+  # without a workflow at all.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to recompute the status for"
+        required: true
   # Claude Review posts minutes after CI goes green, long after `pull_request`
   # fired. Without this trigger the status would sit `pending` until the next
   # push — i.e. the gate would be waiting for a comment that had already arrived.
@@ -90,8 +114,11 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ github.event_name }}" in
-            pull_request_target|pull_request_review|pull_request_review_comment|pull_request_review_thread)
+            pull_request_target|pull_request_review|pull_request_review_comment)
               number="${{ github.event.pull_request.number || github.event.issue.number }}"
+              ;;
+            workflow_dispatch)
+              number="${{ inputs.pr }}"
               ;;
             issue_comment)
               number="${{ github.event.issue.number }}"

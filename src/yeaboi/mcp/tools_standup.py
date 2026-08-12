@@ -28,6 +28,7 @@ _CONFIG_DEFAULTS = {
     "team_members": [],
     "roster_configured": False,
     "code_sources": [],
+    "github_owners": [],
     "github_repositories": [],
     "azdo_projects": [],
     "azdo_repositories": [],
@@ -63,6 +64,7 @@ def _standup_run(
     tracker_sources: list | None,
     team_members: list | None,
     code_sources: list | None,
+    github_owners: list | None,
     github_repositories: list | None,
     azdo_projects: list | None,
     azdo_repositories: list | None,
@@ -82,6 +84,7 @@ def _standup_run(
         tracker_sources=tracker_sources,
         team_members=team_members,
         code_sources=code_sources,
+        github_owners=github_owners,
         github_repositories=github_repositories,
         azdo_projects=azdo_projects,
         azdo_repositories=azdo_repositories,
@@ -236,13 +239,26 @@ def _standup_practice_feedback(session_id: str, member: str, rule: str, verdict:
 
 
 def _standup_repositories(code_sources: list | None) -> dict:
-    from yeaboi.standup.code_scope import CODE_SOURCES, discover_code_repositories, validate_code_sources
+    from yeaboi.standup.code_scope import (
+        CODE_SOURCES,
+        SOURCE_GITHUB,
+        discover_code_repositories,
+        discover_github_repositories,
+        validate_code_sources,
+    )
 
     selected = validate_code_sources(code_sources or list(CODE_SOURCES))
     discovered = discover_code_repositories(selected)
     return {
         "code_sources": selected,
-        "github_repositories": discovered.get("github", []),
+        # Owners/organisations, the GitHub analog of an Azure project: one entry
+        # stands for every repository inside it. github_repositories stays for the
+        # narrower "these exact repos" scope and is listed separately — a second
+        # page-through, not free, but it answers a different question (every repo
+        # the token can see, unfiltered by activity) and dropping the key would
+        # silently break any caller that pins repositories.
+        "github_owners": discovered.get("github", []),
+        "github_repositories": discover_github_repositories() if SOURCE_GITHUB in selected else [],
         "azdo_projects": discovered.get("azure_devops", []),
     }
 
@@ -271,6 +287,7 @@ def _standup_config_set(
     tracker_sources: list | None,
     team_members: list | None,
     code_sources: list | None,
+    github_owners: list | None,
     github_repositories: list | None,
     azdo_projects: list | None,
     azdo_repositories: list | None,
@@ -346,6 +363,9 @@ def _standup_config_set(
             "code_sources": (
                 current.get("code_sources", []) if code_sources is None else validate_code_sources(code_sources)
             ),
+            "github_owners": (
+                current.get("github_owners", []) if github_owners is None else list(dict.fromkeys(github_owners))
+            ),
             "github_repositories": (
                 current.get("github_repositories", [])
                 if github_repositories is None
@@ -362,6 +382,7 @@ def _standup_config_set(
             "code_scope_configured": (
                 current.get("code_scope_configured", False)
                 or code_sources is not None
+                or github_owners is not None
                 or github_repositories is not None
                 or azdo_projects is not None
                 or azdo_repositories is not None
@@ -408,6 +429,7 @@ def register(app) -> None:
         tracker_sources: list[str] | None = None,
         team_members: list[str] | None = None,
         code_sources: list[str] | None = None,
+        github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
@@ -419,8 +441,9 @@ def register(app) -> None:
         additionally sends it to the session's configured channels (Slack/email/desktop) — ask the
         user before enabling. channels overrides the saved channels for this run (terminal,
         desktop, slack, email). tracker_sources/team_members override the saved Team scope;
-        code_sources, github_repositories (owner/repo), and azdo_projects override the saved
-        code scope without changing it. azdo_repositories is a legacy compatibility override.
+        code_sources, github_owners (a GitHub org/user — covers every active repo inside it, like
+        an Azure project), github_repositories (exact owner/repo slugs), and azdo_projects override
+        the saved code scope without changing it. azdo_repositories is a legacy compatibility override.
         documentation_sources selects
         Confluence/Notion providers without changing saved config. days overrides the activity look-back
         window. review_transcripts (default true) first reviews any unreviewed standup meeting
@@ -436,6 +459,7 @@ def register(app) -> None:
             tracker_sources,
             team_members,
             code_sources,
+            github_owners,
             github_repositories,
             azdo_projects,
             azdo_repositories,
@@ -499,7 +523,9 @@ def register(app) -> None:
 
     @app.tool()
     async def standup_repositories(code_sources: list[str] | None = None) -> dict:
-        """Discover accessible GitHub repositories and Azure DevOps projects for Standup code scope."""
+        """Discover the Standup code scope you can pick from: GitHub owners/organisations
+        (github_owners — each covers every active repo inside it) and Azure DevOps projects,
+        plus github_repositories for pinning exact repos."""
         return await run_readonly(_standup_repositories, code_sources)
 
     @app.tool()
@@ -553,6 +579,7 @@ def register(app) -> None:
         tracker_sources: list[str] | None = None,
         team_members: list[str] | None = None,
         code_sources: list[str] | None = None,
+        github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
@@ -569,8 +596,9 @@ def register(app) -> None:
         time is HH:MM (the meeting time), weekdays like '1-5' or '1,3,5', delivery_channels from
         terminal/desktop/slack/email, my_aliases a comma-separated identity list across tools,
         tracker_sources a subset of jira/azure_devops, team_members the authoritative roster,
-        code_sources a subset of github/azure_devops, github_repositories and azdo_projects
-        define the explicit code scope,
+        code_sources a subset of github/azure_devops; github_owners (GitHub orgs/users, each
+        covering every active repo inside it), github_repositories (exact owner/repo slugs) and
+        azdo_projects define the code scope,
         and documentation_sources a subset of confluence/notion.
         automation_markers is a comma-separated list of content signatures (e.g. 'wiz') marking
         service-hook/bot comments posted under a member's identity; automation_handling is
@@ -598,6 +626,7 @@ def register(app) -> None:
             tracker_sources,
             team_members,
             code_sources,
+            github_owners,
             github_repositories,
             azdo_projects,
             azdo_repositories,

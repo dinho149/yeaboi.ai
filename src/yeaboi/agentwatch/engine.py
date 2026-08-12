@@ -125,6 +125,140 @@ def _resolve_db_path(db_path):
     return get_db_path()
 
 
+# ---------------------------------------------------------------------------
+# Go core dispatch (see contracts/v1/rpc.md; YEABOI_GO=0 opts out)
+# ---------------------------------------------------------------------------
+# The sidecar serves each pipeline's deterministic half: transcript scanning,
+# usage aggregation/pricing, the standup session rollup, and the security
+# audit. Discovery is automatic — installing the yeaboi[core] wheel is enough.
+# The LLM prose calls, tracker scans, delivery, history and exports all stay
+# in Python. Every failure downgrades to the Python path with one log line —
+# the Go path is never the only path.
+
+
+def _go_client():
+    """The sidecar client when one is discovered and healthy, else None."""
+    try:
+        from yeaboi import gocore
+
+        return gocore.get_client()
+    except Exception as exc:  # noqa: BLE001 — dispatch must never sink a pipeline
+        logger.warning("gocore: client unavailable (%s: %s) — using the Python path", type(exc).__name__, exc)
+        return None
+
+
+def _go_standup_digest(*, window_start: str, digest_date: str, db_path, on_progress):
+    """Scan + summarise local sessions in the Go core → deterministic AgentStandupDigest.
+
+    Local half only — tracker scanning, prose, delivery and history stay
+    Python. The artifact comes back in the payload shape ``report_from_payload``
+    accepts, with empty repo/prose fields for Python to fill. None → caller
+    computes in Python.
+    """
+    client = _go_client()
+    if client is None:
+        return None
+    from yeaboi.gocore import CoreError
+
+    try:
+        result = client.request(
+            "agentwatch.standup",
+            {
+                "db_path": str(_resolve_db_path(db_path)),
+                "window_start": window_start,
+                "digest_date": digest_date,
+            },
+            on_progress=on_progress,
+        )
+    except CoreError as exc:
+        logger.warning("gocore: agentwatch.standup failed (%s) — falling back to Python", exc)
+        return None
+    from yeaboi.agentwatch.store import report_from_payload
+
+    digest = report_from_payload("standup", result.get("artifact"))
+    if digest is None:
+        logger.warning("gocore: agentwatch.standup artifact did not hydrate — falling back to Python")
+        return None
+    logger.info("gocore: agentwatch.standup served by the sidecar")
+    return digest
+
+
+def _go_security_report(*, scan_date: str, deep: bool, db_path, on_progress):
+    """Scan + audit + rank in the Go core → deterministic AgentSecurityReport.
+
+    The config roots travel as params (the same paths ``_config_roots``
+    resolves, so test overrides reach the sidecar too); the LLM summary and
+    history stay Python. None → caller computes in Python.
+    """
+    client = _go_client()
+    if client is None:
+        return None
+    from yeaboi.agentwatch import security_checks
+    from yeaboi.gocore import CoreError
+
+    claude_dir, claude_json = security_checks._config_roots()
+    try:
+        result = client.request(
+            "agentwatch.security",
+            {
+                "db_path": str(_resolve_db_path(db_path)),
+                "scan_date": scan_date,
+                "reset_cursors": deep,
+                "claude_dir": str(claude_dir),
+                "claude_json": str(claude_json),
+            },
+            on_progress=on_progress,
+        )
+    except CoreError as exc:
+        logger.warning("gocore: agentwatch.security failed (%s) — falling back to Python", exc)
+        return None
+    from yeaboi.agentwatch.store import report_from_payload
+
+    report = report_from_payload("security", result.get("artifact"))
+    if report is None:
+        logger.warning("gocore: agentwatch.security artifact did not hydrate — falling back to Python")
+        return None
+    logger.info("gocore: agentwatch.security served by the sidecar")
+    return report
+
+
+def _go_usage_report(*, window_days, project, source, db_path, today, on_progress):
+    """Scan + aggregate + price in the Go core → deterministic AgentUsageReport.
+
+    The artifact comes back in the exact payload shape ``report_from_payload``
+    already accepts (that is the contract), with empty insights/prose fields
+    for the Python side to fill. None → caller computes in Python.
+    """
+    client = _go_client()
+    if client is None:
+        return None
+    from yeaboi.gocore import CoreError
+
+    try:
+        result = client.request(
+            "agentwatch.usage",
+            {
+                "db_path": str(_resolve_db_path(db_path)),
+                "window_days": int(window_days),
+                "project": project,
+                "source": source,
+                "today": today.isoformat(),
+            },
+            on_progress=on_progress,
+        )
+    except CoreError as exc:
+        logger.warning("gocore: agentwatch.usage failed (%s) — falling back to Python", exc)
+        return None
+    from yeaboi.agentwatch.store import report_from_payload
+
+    report = report_from_payload("usage", result.get("artifact"))
+    if report is None:
+        logger.warning("gocore: agentwatch.usage artifact did not hydrate — falling back to Python")
+        return None
+    logger.info("gocore: agentwatch.usage served by the sidecar")
+    return report
+
+
 def _distinct_session_count(sessions: list[dict]) -> int:
     """Count logical sessions, not rollup rows.
 
@@ -182,26 +316,23 @@ def _fallback_usage_insights(report_rows: dict) -> tuple[tuple[str, ...], tuple[
     return tuple(insights), ()
 
 
-def run_agent_usage(
+def _deterministic_usage_report(
     *,
-    window_days: int = 30,
+    window_days: int,
     project: str = "",
     source: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
-    dry_run: bool = False,
+    roots=None,
 ) -> AgentUsageReport:
-    """Build the agent cost/usage dashboard over locally monitored sessions.
+    """Everything in the usage pipeline up to (not including) the LLM.
 
-    Deterministic gather: refresh the collector's ingest, aggregate the stored
-    session rollups over the window, and price every (model, session) pair from
-    the shared pricing table. The single LLM call writes ``insights`` and
-    ``recommendations`` prose over the computed aggregates — never numbers.
-
-    project: substring filter on the session's project directory name.
-    source:  exact filter on the telemetry source (currently "claude_code").
-    dry_run: skip the LLM (deterministic artifact only, no warning).
+    Scan, aggregate, price — returns the artifact with empty ``insights``/
+    ``recommendations``/``generated_at`` for the caller to fill. This function
+    is the exact computation the Go core mirrors (contracts/v1/
+    agentwatch.usage.json); tests/parity runs both over the same fixtures, so
+    behavior changes here must bump or update the contract.
 
     Two deliberate approximations in the windowing, both erring toward showing
     work rather than hiding it. A session is placed by its ``ended_at``, so one
@@ -214,19 +345,11 @@ def run_agent_usage(
     window_days = max(1, int(window_days))
     period_start = (resolved_today - timedelta(days=window_days - 1)).isoformat()
     period_end = resolved_today.isoformat()
-    logger.info(
-        "agent usage: window %s..%s (project=%r source=%r dry_run=%s)",
-        period_start,
-        period_end,
-        project,
-        source,
-        dry_run,
-    )
 
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
         _emit(on_progress, "scan", "running", label="Scan agent sessions")
-        stats = collector.refresh(store, on_progress=on_progress)
+        stats = collector.refresh(store, roots=roots, on_progress=on_progress)
         _emit(
             on_progress,
             "scan",
@@ -346,17 +469,94 @@ def run_agent_usage(
     price_status = "completed" if sessions else "no_data"
     _emit(on_progress, "price", price_status, label="Price usage", detail=f"{len(sessions)} transcript(s)")
 
+    return AgentUsageReport(
+        period_start=period_start,
+        period_end=period_end,
+        session_count=_distinct_session_count(sessions),
+        total_cost_usd=round(total_cost, 4),
+        total_input_tokens=sum(r.input_tokens for r in by_model),
+        total_output_tokens=sum(r.output_tokens for r in by_model),
+        total_cache_write_tokens=sum(r.cache_write_tokens for r in by_model),
+        total_cache_read_tokens=sum(r.cache_read_tokens for r in by_model),
+        unknown_model_cost_share=round(unknown_cost / total_cost, 4) if total_cost > 0 else 0.0,
+        pricing_as_of=PRICING_AS_OF,
+        by_model=by_model,
+        by_project=by_project,
+        by_source=by_source,
+        daily_trend=daily_trend,
+        warnings=tuple(warnings),
+    )
+
+
+def run_agent_usage(
+    *,
+    window_days: int = 30,
+    project: str = "",
+    source: str = "",
+    db_path=None,
+    today: date | None = None,
+    on_progress=None,
+    dry_run: bool = False,
+) -> AgentUsageReport:
+    """Build the agent cost/usage dashboard over locally monitored sessions.
+
+    Deterministic gather: refresh the collector's ingest, aggregate the stored
+    session rollups over the window, and price every (model, session) pair from
+    the shared pricing table — served by the Go core when a sidecar binary is
+    discovered (yeaboi[core]; YEABOI_GO=0 opts out), by
+    ``_deterministic_usage_report`` otherwise, with identical results
+    (tests/parity). The single LLM call then writes ``insights`` and
+    ``recommendations`` prose over the computed aggregates — never numbers.
+
+    project: substring filter on the session's project directory name.
+    source:  exact filter on the telemetry source (currently "claude_code").
+    dry_run: skip the LLM (deterministic artifact only, no warning).
+    """
+    resolved_today = today or datetime.now(UTC).date()
+    window_days = max(1, int(window_days))
+    logger.info(
+        "agent usage: %d-day window to %s (project=%r source=%r dry_run=%s)",
+        window_days,
+        resolved_today.isoformat(),
+        project,
+        source,
+        dry_run,
+    )
+
+    report = _go_usage_report(
+        window_days=window_days,
+        project=project,
+        source=source,
+        db_path=db_path,
+        today=resolved_today,
+        on_progress=on_progress,
+    )
+    if report is None:
+        report = _deterministic_usage_report(
+            window_days=window_days,
+            project=project,
+            source=source,
+            db_path=db_path,
+            today=resolved_today,
+            on_progress=on_progress,
+        )
+
+    warnings = list(report.warnings)
+    by_model = report.by_model
+    by_project = report.by_project
+    has_sessions = report.session_count > 0
+
     # ── The one LLM call: prose over finished numbers ─────────────────────
     insights: tuple[str, ...] = ()
     recommendations: tuple[str, ...] = ()
-    if sessions and not dry_run:
+    if has_sessions and not dry_run:
         _emit(on_progress, "insights", "running", label="Write insights")
         from yeaboi.prompts.agentwatch import get_usage_insights_prompt
 
         prompt = get_usage_insights_prompt(
-            period_start=period_start,
-            period_end=period_end,
-            total_cost_usd=round(total_cost, 2),
+            period_start=report.period_start,
+            period_end=report.period_end,
+            total_cost_usd=round(report.total_cost_usd, 2),
             by_model=[(r.model, r.cost_usd, r.input_tokens, r.output_tokens) for r in by_model[:8]],
             by_project=[(r.key, r.cost_usd, r.sessions) for r in by_project[:8]],
             cache_read_tokens=sum(r.cache_read_tokens for r in by_model),
@@ -384,21 +584,10 @@ def run_agent_usage(
         insights = fallback_insights
         recommendations = recommendations or fallback_recs
 
-    report = AgentUsageReport(
-        period_start=period_start,
-        period_end=period_end,
-        session_count=_distinct_session_count(sessions),
-        total_cost_usd=round(total_cost, 4),
-        total_input_tokens=sum(r.input_tokens for r in by_model),
-        total_output_tokens=sum(r.output_tokens for r in by_model),
-        total_cache_write_tokens=sum(r.cache_write_tokens for r in by_model),
-        total_cache_read_tokens=sum(r.cache_read_tokens for r in by_model),
-        unknown_model_cost_share=round(unknown_cost / total_cost, 4) if total_cost > 0 else 0.0,
-        pricing_as_of=PRICING_AS_OF,
-        by_model=by_model,
-        by_project=by_project,
-        by_source=by_source,
-        daily_trend=daily_trend,
+    from dataclasses import replace
+
+    report = replace(
+        report,
         insights=insights,
         recommendations=recommendations,
         warnings=tuple(warnings),
@@ -408,7 +597,7 @@ def run_agent_usage(
     # Persist + auto-export (blueprint: every run leaves an artifact on disk).
     try:
         with AgentWatchStore(_resolve_db_path(db_path)) as store:
-            store.record_report("usage", report, key_date=period_start)
+            store.record_report("usage", report, key_date=report.period_start)
     except Exception as exc:  # noqa: BLE001 — history is best-effort
         logger.warning("agent usage: could not record report history: %s", exc)
     try:
@@ -552,6 +741,61 @@ def _fallback_standup_prose(summaries: tuple, repo_rows: tuple) -> tuple[tuple[s
     return tuple(highlights[:6]), tuple(attention[:6]), narrative
 
 
+def _deterministic_standup_digest(
+    *,
+    window_start: str,
+    digest_date: str,
+    db_path=None,
+    on_progress=None,
+    roots=None,
+) -> AgentStandupDigest:
+    """The standup pipeline's local half, up to (not including) trackers + LLM.
+
+    Scan, list the window's sessions, summarise and total them — returns the
+    digest with empty ``repo_activity``/prose/``generated_at`` for the caller
+    to fill: the tracker leg and the LLM run in Python on BOTH paths. This
+    function is the exact computation the Go core mirrors (contracts/v1/
+    agentwatch.standup.json); tests/parity runs both over the same fixtures.
+
+    The no-local-sessions coverage note is deterministic and lives here: a
+    cloud/CI environment has no ~/.claude at all, so its digest is
+    tracker-only — without the note the reader cannot tell "the agents were
+    idle" from "this machine can't see them", and the cowork routine's
+    scheduled run is exactly that case.
+    """
+    warnings: list[str] = []
+    _emit(on_progress, "scan", "running", label="Scan agent sessions")
+    with AgentWatchStore(_resolve_db_path(db_path)) as store:
+        stats = collector.refresh(store, roots=roots, on_progress=on_progress)
+        _emit(
+            on_progress,
+            "scan",
+            "completed",
+            label="Scan agent sessions",
+            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+        )
+        warnings.extend(stats.warnings)
+        sessions = store.list_sessions(since=window_start)
+    summaries = _summarise_sessions(sessions)
+    coverage_notes: tuple[str, ...] = ()
+    if not sessions:
+        coverage_notes = (
+            "No local agent sessions in the window — this environment has no agent session history, "
+            "so the digest covers tracker activity only.",
+        )
+    return AgentStandupDigest(
+        digest_date=digest_date,
+        window_start=window_start,
+        window_end=digest_date,
+        sessions_worked=len(summaries),
+        total_cost_usd=round(sum(s.cost_usd for s in summaries), 4),
+        agents_seen=tuple(sorted({s.source for s in summaries})),
+        session_summaries=summaries,
+        coverage_notes=coverage_notes,
+        warnings=tuple(warnings),
+    )
+
+
 def run_agent_standup(
     *,
     days: int | None = None,
@@ -590,21 +834,20 @@ def run_agent_standup(
     digest_date = resolved_today.isoformat()
     logger.info("agent standup: window %s..%s (deliver=%s dry_run=%s)", window_start, digest_date, deliver, dry_run)
 
-    warnings: list[str] = []
-    with AgentWatchStore(_resolve_db_path(db_path)) as store:
-        _emit(on_progress, "scan", "running", label="Scan agent sessions")
-        stats = collector.refresh(store, on_progress=on_progress)
-        _emit(
-            on_progress,
-            "scan",
-            "completed",
-            label="Scan agent sessions",
-            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+    # Go core first (single-writer: the sidecar scans and summarises before
+    # Python opens the store); None falls back to the Python local half. Both
+    # produce the identical deterministic digest (tests/parity), and the
+    # tracker leg + LLM below run in Python either way.
+    digest = _go_standup_digest(
+        window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
+    )
+    if digest is None:
+        digest = _deterministic_standup_digest(
+            window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
         )
-        warnings.extend(stats.warnings)
-        sessions = store.list_sessions(since=window_start)
-    summaries = _summarise_sessions(sessions)
-    total_cost = round(sum(s.cost_usd for s in summaries), 4)
+    warnings = list(digest.warnings)
+    summaries = digest.session_summaries
+    total_cost = digest.total_cost_usd
 
     repo_rows, tracker_coverage = _collect_agent_repo_activity(
         window_days=window_days,
@@ -614,21 +857,12 @@ def run_agent_standup(
         on_progress=on_progress,
     )
 
-    # Say so when half the picture is missing. A cloud/CI environment has no
-    # ~/.claude at all, so its digest is tracker-only — without this note the
-    # reader cannot tell "the agents were idle" from "this machine can't see
-    # them", and the cowork routine's scheduled run is exactly that case.
-    coverage_notes = list(tracker_coverage)
-    if not sessions:
-        coverage_notes.insert(
-            0,
-            "No local agent sessions in the window — this environment has no agent session history, "
-            "so the digest covers tracker activity only.",
-        )
-    coverage_notes = tuple(coverage_notes)
+    # The deterministic no-local-sessions note (if any) leads; tracker
+    # coverage gaps follow.
+    coverage_notes = (*digest.coverage_notes, *tracker_coverage)
 
     agents_seen = tuple(
-        sorted({s.source for s in summaries} | {m for r in repo_rows for m in r.agent_marker.split(", ") if m})
+        sorted(set(digest.agents_seen) | {m for r in repo_rows for m in r.agent_marker.split(", ") if m})
     )
     in_flight = tuple(f"{row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open")[:8]
 
@@ -661,14 +895,11 @@ def run_agent_standup(
     if not narrative:
         highlights, attention, narrative = _fallback_standup_prose(summaries, repo_rows)
 
-    digest = AgentStandupDigest(
-        digest_date=digest_date,
-        window_start=window_start,
-        window_end=digest_date,
-        sessions_worked=len(summaries),
-        total_cost_usd=total_cost,
+    from dataclasses import replace
+
+    digest = replace(
+        digest,
         agents_seen=agents_seen,
-        session_summaries=summaries,
         repo_activity=repo_rows,
         highlights=highlights,
         in_flight=in_flight,
@@ -804,36 +1035,32 @@ def _stored_findings(store: AgentWatchStore) -> list:
     return rows
 
 
-def run_agent_security(
+def _deterministic_security_report(
     *,
+    scan_date: str,
     deep: bool = False,
     db_path=None,
-    today: date | None = None,
     on_progress=None,
-    dry_run: bool = False,
+    roots=None,
 ) -> AgentSecurityReport:
-    """Audit the local agent setup: settings, MCP servers, secrets, risky tools.
+    """Everything in the security pipeline up to (not including) the LLM.
 
-    Every check is a deterministic pattern scan (see security_checks.py) — an
-    indicator, not a security audit. The single LLM call writes the ``summary``
-    and prioritised ``recommendations`` prose over the finished findings.
-
-    deep=True forgets the ingest cursors first, so every transcript is
-    re-scanned rather than only new/changed files.
+    Scan (deep forgets the cursors first), map the stored findings, audit the
+    settings files, inventory the MCP servers, rank and score — returns the
+    report with empty ``summary``/``recommendations``/``generated_at`` for the
+    caller to fill. This is the exact computation the Go core mirrors
+    (contracts/v1/agentwatch.security.json); tests/parity runs both over the
+    same fixtures.
     """
     from yeaboi.agentwatch import security_checks
 
-    resolved_today = today or datetime.now(UTC).date()
-    scan_date = resolved_today.isoformat()
-    logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
-
     warnings: list[str] = []
+    scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
+    _emit(on_progress, "scan", "running", label=scan_label)
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
         if deep:
             store.reset_cursors()
-        scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
-        _emit(on_progress, "scan", "running", label=scan_label)
-        stats = collector.refresh(store, on_progress=on_progress)
+        stats = collector.refresh(store, roots=roots, on_progress=on_progress)
         _emit(
             on_progress,
             "scan",
@@ -856,9 +1083,54 @@ def run_agent_security(
     _emit(on_progress, "mcp", "completed", label="Inventory MCP servers", detail=f"{len(mcp_servers)} server(s)")
 
     ranked = security_checks.rank_findings(findings)
-    posture = security_checks.compute_posture(ranked)
-    secrets_found = sum(1 for f in ranked if f.category == "secret")
-    settings_flags = tuple(sorted({f.pattern for f in ranked if f.category == "settings" and f.severity != "info"}))
+    return AgentSecurityReport(
+        scan_date=scan_date,
+        posture=security_checks.compute_posture(ranked),
+        sessions_scanned=sessions_scanned,
+        files_scanned=files_scanned,
+        secrets_found=sum(1 for f in ranked if f.category == "secret"),
+        findings=ranked,
+        mcp_servers=tuple(mcp_servers),
+        settings_flags=tuple(sorted({f.pattern for f in ranked if f.category == "settings" and f.severity != "info"})),
+        warnings=tuple(warnings),
+    )
+
+
+def run_agent_security(
+    *,
+    deep: bool = False,
+    db_path=None,
+    today: date | None = None,
+    on_progress=None,
+    dry_run: bool = False,
+) -> AgentSecurityReport:
+    """Audit the local agent setup: settings, MCP servers, secrets, risky tools.
+
+    Every check is a deterministic pattern scan (see security_checks.py) — an
+    indicator, not a security audit. The single LLM call writes the ``summary``
+    and prioritised ``recommendations`` prose over the finished findings.
+
+    deep=True forgets the ingest cursors first, so every transcript is
+    re-scanned rather than only new/changed files.
+    """
+    resolved_today = today or datetime.now(UTC).date()
+    scan_date = resolved_today.isoformat()
+    logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
+
+    # Go core first (deep travels as reset_cursors over the wire); None falls
+    # back to the Python pipeline. Both produce the identical deterministic
+    # report (tests/parity); the LLM prose below runs in Python either way.
+    report = _go_security_report(scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress)
+    if report is None:
+        report = _deterministic_security_report(
+            scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress
+        )
+
+    warnings = list(report.warnings)
+    ranked = report.findings
+    mcp_servers = report.mcp_servers
+    sessions_scanned = report.sessions_scanned
+    posture = report.posture
 
     # ── The one LLM call: summary + prioritised advice over the findings ──
     summary = ""
@@ -895,15 +1167,10 @@ def run_agent_security(
         )
         recommendations = recommendations or tuple(f.remediation for f in ranked[:3] if f.remediation)
 
-    report = AgentSecurityReport(
-        scan_date=scan_date,
-        posture=posture,
-        sessions_scanned=sessions_scanned,
-        files_scanned=files_scanned,
-        secrets_found=secrets_found,
-        findings=ranked,
-        mcp_servers=tuple(mcp_servers),
-        settings_flags=settings_flags,
+    from dataclasses import replace
+
+    report = replace(
+        report,
         summary=summary,
         recommendations=recommendations,
         warnings=tuple(warnings),

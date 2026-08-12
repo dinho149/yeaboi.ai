@@ -34,6 +34,7 @@ from yeaboi.ui.provider_select.screens._screens import (
 )
 from yeaboi.ui.provider_select.screens._screens_vc import _build_issue_tracking_screen
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
+from yeaboi.ui.shared._input import paste_payload
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +260,7 @@ def _run_notion_form(
         elif key == "tab":
             selected = (selected + 1) % n
         elif key.startswith("paste:"):
-            values[selected] = values.get(selected, "") + key[6:]
+            values[selected] = values.get(selected, "") + paste_payload(key)
             errors.pop(selected, None)
             verified.pop(selected, None)
         elif key == "ctrl+v":

@@ -35,12 +35,12 @@ from rich.live import Live
 from yeaboi.agent.chat_intake import GREETING_TEXT, SIZE_QUESTION_TEXT, parse_size_reply, resolve_intake_mode
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
 from yeaboi.agent.streaming import ChatStreamCancelledError, predict_next_node, stream_chat_turn
-from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS, validate_chat_input
+from yeaboi.input_guardrails import validate_chat_input
 from yeaboi.persistence import save_project_snapshot
 from yeaboi.prompts.intake import decorate_question_for_chat
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
-from yeaboi.ui.shared._input import set_text_entry
+from yeaboi.ui.shared._input import set_text_entry, take_paste_dropped
 from yeaboi.ui.shared._music_bar import (
     poke_duck,
     quack_duck,
@@ -51,7 +51,17 @@ from yeaboi.ui.shared._music_bar import (
 from yeaboi.ui.shared._scroll import SCROLL_BOTTOM, coalesce_scroll
 
 from ._commands import ChatContext, dispatch, matching_commands
-from ._composer import ChatComposer, PasteImage, Submit, Truncated, Voice
+from ._composer import (
+    ChatComposer,
+    Cleared,
+    PasteImage,
+    Restored,
+    Submit,
+    Truncated,
+    Voice,
+    clear_notice,
+    paste_notice,
+)
 from ._duck import ChatDuck
 from ._question_view import derive_question_view
 from ._screen import ChoiceRows, PipelineProgress, build_chat_screen
@@ -277,6 +287,33 @@ class _ChatDriver:
     def _note(self, text: str) -> None:
         self.transcript.add_system(text)
         self._pin_bottom()
+
+    def _composer_cleared(self, event: Cleared | Restored) -> None:
+        """Report a Ctrl+U clear or its undo.
+
+        Logged as well as shown: it is the one destructive thing the box does,
+        so "my draft vanished" needs to be answerable from the log.
+        """
+        logger.info(
+            "Chat composer %s: chars=%d images=%d",
+            "cleared" if isinstance(event, Cleared) else "restored",
+            event.chars,
+            event.images,
+        )
+        self.notice = clear_notice(event)
+
+    def _paste_truncated(self, event: Truncated) -> None:
+        """Report a paste that did not fit — loudly, and in two places.
+
+        The hint line is gone on the very next keypress and clips below ~120
+        columns, so the same sentence also goes into the transcript, which wraps
+        and stays put. Someone who pastes a document and keeps typing must still
+        be able to find out that half of it never arrived.
+        """
+        message = paste_notice(event)
+        logger.info("Chat paste truncated: offered=%d kept=%d dropped=%d", event.offered, event.kept, event.dropped)
+        self.notice = message
+        self._note(message)
 
     def _bubble(self, text: str, hold: float | None = None) -> None:
         """Give the corner duck an ephemeral line (an ack, a stage quip).
@@ -567,7 +604,11 @@ class _ChatDriver:
 
         spoken = record_voice_input(self.live, self.console, self._key, render_status=render_status)
         if spoken:
-            self.composer.insert_text(spoken)
+            result = self.composer.insert_text(spoken)
+            if not result.ok:
+                # A long dictation can hit the cap; an image chip (~11 chars)
+                # cannot, which is why _paste_image ignores its result.
+                self._paste_truncated(Truncated(offered=result.offered, kept=result.kept, dropped=result.dropped))
 
     # ------------------------------------------------------------- graph turns
 
@@ -711,7 +752,15 @@ class _ChatDriver:
         elif key == "enter":
             self.notice = "Still working — your message will send when this finishes."
         else:
-            self.composer.handle_key(key)
+            # Typing continues during a turn, so clearing and truncation have to
+            # report here too — this branch used to discard the event entirely,
+            # which made both silent for the whole time the graph was working.
+            # Voice and image capture stay suppressed mid-turn, as before.
+            event = self.composer.handle_key(key, dropped=take_paste_dropped())
+            if isinstance(event, Cleared | Restored):
+                self._composer_cleared(event)
+            elif isinstance(event, Truncated):
+                self._paste_truncated(event)
 
     def _at_intake_summary(self) -> bool:
         """True when the newest reply is the intake summary awaiting a verdict.
@@ -1224,9 +1273,10 @@ class _ChatDriver:
             if key == "enter":
                 inline = self._pop_inline_command()
                 if inline is not None:
+                    self.composer.forget_stash()
                     return inline
 
-            event = self.composer.handle_key(key)
+            event = self.composer.handle_key(key, dropped=take_paste_dropped())
             if isinstance(event, Submit):
                 text = event.text
                 self.composer.reset()
@@ -1235,8 +1285,10 @@ class _ChatDriver:
                 self._voice()
             elif isinstance(event, PasteImage):
                 self._paste_image()
+            elif isinstance(event, Cleared | Restored):
+                self._composer_cleared(event)
             elif isinstance(event, Truncated):
-                self.notice = f"Paste truncated at {MAX_CHAT_INPUT_CHARS:,} characters."
+                self._paste_truncated(event)
         return None
 
     def _pop_inline_command(self) -> str | None:
@@ -1270,6 +1322,9 @@ class _ChatDriver:
 
     def _choice_answer(self) -> str:
         assert self.choices is not None
+        # This return leaves the input loop without touching handle_key, so the
+        # stash has to be burned here as it is on a typed submit.
+        self.composer.forget_stash()
         checked = [label for label, is_checked in self.choices.options if is_checked]
         if self.choices.multi and checked:
             return ", ".join(checked)
@@ -1651,7 +1706,15 @@ class _ChatDriver:
                     )
                 else:
                     self.choices = None
-                    if view.suggestion and self.composer.is_empty() and self._prefilled_q != view.current_question:
+                    # not has_stash(): a box emptied by Ctrl+U is waiting for its
+                    # undo, and prefilling the suggestion into it would make the
+                    # second Ctrl+U clear the suggestion instead of restoring.
+                    if (
+                        view.suggestion
+                        and self.composer.is_empty()
+                        and not self.composer.has_stash()
+                        and self._prefilled_q != view.current_question
+                    ):
                         self.composer.set_text(view.suggestion)
                         # set_text resets the cursor to 0,0 — typing must land
                         # after the suggestion, not before it.

@@ -169,6 +169,31 @@ def github_analysis_inventory(
     return out
 
 
+def _take(paginated, limit: int):
+    """Yield up to ``limit`` items from a PaginatedList, tolerating a short page.
+
+    ``PaginatedList[:limit]`` raises IndexError when GitHub advertises a next
+    page and then serves nothing behind it — seen live on an enterprise account
+    whose org list is empty. The slice fails *mid-iteration*, so a caller that
+    wraps the whole loop in try/except throws away every item it had already
+    collected: three orgs become zero, and a picker that should list them comes
+    up empty with only a warning in the log.
+    """
+    count = 0
+    iterator = iter(paginated)
+    while count < limit:
+        try:
+            item = next(iterator)
+        except StopIteration:
+            return
+        except IndexError:
+            # The pagination bug above — everything yielded so far is still good.
+            logger.debug("github: pagination ended early (short page)", exc_info=True)
+            return
+        yield item
+        count += 1
+
+
 def github_list_owners(limit: int = 100) -> list[str]:
     """List the GitHub owners/orgs visible to the configured token.
 
@@ -183,6 +208,9 @@ def github_list_owners(limit: int = 100) -> list[str]:
     A failure in either optional lookup is logged and skipped rather than raised,
     so a narrow token still yields the login. A client/auth failure propagates —
     the caller owns the fallback (mirrors ``azdevops_list_projects``).
+
+    Both lookups page through :func:`_take` rather than a slice, so a short final
+    page keeps the owners already found instead of discarding the whole lookup.
     """
     client = _get_github_client()
     user = client.get_user()
@@ -191,7 +219,7 @@ def github_list_owners(limit: int = 100) -> list[str]:
     if login:
         owners.add(login)
     try:
-        for org in user.get_orgs()[:limit]:
+        for org in _take(user.get_orgs(), limit):
             name = str(getattr(org, "login", "") or "").strip()
             if name:
                 owners.add(name)
@@ -203,7 +231,7 @@ def github_list_owners(limit: int = 100) -> list[str]:
         # past the cut — silently hiding a "z…" org from the picker, which is the
         # very failure this lookup exists to prevent. Recency also matches what
         # the scan itself considers (repos active within the window).
-        for repo in user.get_repos(sort="pushed", direction="desc")[:limit]:
+        for repo in _take(user.get_repos(sort="pushed", direction="desc"), limit):
             name = str(getattr(getattr(repo, "owner", None), "login", "") or "").strip()
             if name:
                 owners.add(name)
@@ -499,17 +527,46 @@ def _author_type(user) -> str:
     return ""
 
 
-def _raise_if_github_auth(e: Exception) -> None:
-    """Re-raise a GitHub 401/403 credential error as a StandupSourceError.
+def _raise_if_github_unusable(e: Exception, repo: str = "") -> None:
+    """Re-raise a GitHub failure the user must act on as a StandupSourceError.
 
-    Rate-limit 403s are handled separately by the caller; this only fires for
-    bad/expired credentials so the standup can tell the user to fix GITHUB_TOKEN.
+    A 401 was always promoted. The rest — 403 (SSO or a token missing ``repo``
+    scope), 404 (renamed, deleted, or simply not visible to this token), and rate
+    limiting — used to return ``[]`` with nothing but a log line, which a standup
+    renders as "this repository had no activity today". Wrong and quiet is worse
+    than missing and loud.
+
+    Safe for the multi-repo fan-out: the collector's ``_safe`` wrapper catches
+    :class:`StandupSourceError` per call into ``bundle.errors``, so one
+    unreachable repository reports itself and the others still collect.
     """
-    status = getattr(e, "status", 0)
-    if isinstance(e, github.BadCredentialsException) or status == 401:
-        from yeaboi.standup.errors import StandupSourceError
+    from yeaboi.standup.errors import StandupSourceError
 
-        raise StandupSourceError("github", "authentication failed — check GITHUB_TOKEN")
+    where = f" for {repo}" if repo else ""
+    # Coerced defensively: this runs inside an ``except`` handler, and a ValueError
+    # raised HERE would escape as something the collector's _safe wrapper does not
+    # catch — the source would go silent, which is the failure this function exists
+    # to remove. PyGithub always uses ints; a wrapped exception might not.
+    try:
+        status = int(getattr(e, "status", 0) or 0)
+    except (TypeError, ValueError):
+        status = 0
+    if isinstance(e, github.BadCredentialsException) or status == 401:
+        message = "authentication failed — check GITHUB_TOKEN"
+    elif isinstance(e, github.RateLimitExceededException):
+        message = f"GitHub rate limit reached{where} — some activity is missing"
+    elif status == 403:
+        message = (
+            f"access denied{where} — GITHUB_TOKEN needs the 'repo' scope, and SSO authorisation if the org requires it"
+        )
+    elif status == 404:
+        message = f"repository not found{where} — check the name, or the token's access to it"
+    else:
+        return
+    # Logged here, not by the caller: raising skips the caller's own warning line,
+    # so this would otherwise be the one failure class that left no trace on disk.
+    logger.warning("GitHub source unusable (status %s)%s: %s", status or "?", where, message)
+    raise StandupSourceError("github", message)
 
 
 def _github_changed_files(
@@ -573,8 +630,10 @@ def github_recent_commits(
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
     else the last ``days`` days. Each item: {author, kind='commit', title, body,
     timestamp, key(sha)}. ``body`` is the commit message body (Co-Authored-By /
-    AI-tool trailers). Returns [] when the repo can't be read (no token /
-    not found / rate-limited).
+    AI-tool trailers). Returns [] when there is nothing to read (no token
+    configured, or an empty repository). A repository that exists but cannot be
+    read — 401, 403, 404, or rate limiting — raises ``StandupSourceError`` instead,
+    because an empty list is indistinguishable from "no activity today".
     """
     logger.info("github_recent_commits: repo=%r days=%d since=%s", repo_url, days, since)
     try:
@@ -619,11 +678,12 @@ def github_recent_commits(
             )
         logger.info("github_recent_commits: %d commit(s) in last %d day(s)", len(items), days)
         return items
-    except github.RateLimitExceededException:
+    except github.RateLimitExceededException as e:
         logger.warning("github_recent_commits skipped — rate limit reached")
+        _raise_if_github_unusable(e, repo_url)
         return []
     except Exception as e:
-        _raise_if_github_auth(e)
+        _raise_if_github_unusable(e, repo_url)
         logger.warning("github_recent_commits failed: %s", e)
         return []
 
@@ -696,7 +756,9 @@ def github_recent_prs(
     discussion items per PR; the default keeps the bounded standup behaviour —
     the standup collector fetches reviews separately via github_recent_reviews,
     so emitting them here would duplicate every review in the feed. Returns []
-    on any error. Sorted by updated desc; stops once older than the window.
+    when there is nothing to read; a repository that cannot be read (401/403/404/
+    rate limit) raises ``StandupSourceError`` rather than looking like a quiet day.
+    Sorted by updated desc; stops once older than the window.
     """
     logger.info("github_recent_prs: repo=%r days=%d since=%s", repo_url, days, since)
     try:
@@ -796,11 +858,12 @@ def github_recent_prs(
                 items.extend(_pr_branch_commit_items(pr, cutoff, limit=None if exhaustive else _MAX_COMMITS_PER_PR))
         logger.info("github_recent_prs: %d item(s) in last %d day(s)", len(items), days)
         return items
-    except github.RateLimitExceededException:
+    except github.RateLimitExceededException as e:
         logger.warning("github_recent_prs skipped — rate limit reached")
+        _raise_if_github_unusable(e, repo_url)
         return []
     except Exception as e:
-        _raise_if_github_auth(e)
+        _raise_if_github_unusable(e, repo_url)
         logger.warning("github_recent_prs failed: %s", e)
         return []
 
@@ -900,11 +963,12 @@ def github_recent_reviews(repo_url: str, days: int = 1, since=None, metadata_cac
             items = [item for batch in pool.map(_reviews_for_pr, enumerate(recent_prs)) for item in batch]
         logger.info("github_recent_reviews: %d review event(s)", len(items))
         return items
-    except github.RateLimitExceededException:
+    except github.RateLimitExceededException as exc:
         logger.warning("github_recent_reviews skipped — rate limit reached")
+        _raise_if_github_unusable(exc, repo_url)
         return []
     except Exception as exc:
-        _raise_if_github_auth(exc)
+        _raise_if_github_unusable(exc, repo_url)
         logger.warning("github_recent_reviews failed: %s", exc)
         return []
 

@@ -16,6 +16,7 @@ from yeaboi.ui.session._utils import _invoke_with_animation, _render_to_lines, _
 from yeaboi.ui.session.screens._accordion import _build_accordion_question_screen
 from yeaboi.ui.session.screens._screens import _build_summary_screen
 from yeaboi.ui.session.screens._screens_pipeline import _build_edit_prompt_screen
+from yeaboi.ui.shared._input import paste_payload
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
@@ -362,7 +363,7 @@ def _get_edit_input(
             word_start = _word_boundary_left(input_value, len(input_value))
             input_value = input_value[:word_start]
         elif isinstance(key, str) and key.startswith("paste:"):
-            input_value += key[6:]
+            input_value += paste_payload(key)
         elif key == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)

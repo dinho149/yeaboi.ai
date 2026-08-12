@@ -4,7 +4,9 @@
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
-`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`
+`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`, and the Go sidecar seam —
+`go/` (the `yeaboi-core` binary and its `internal/` twins of Python engines), `contracts/v1/`,
+`src/yeaboi/gocore/`, `tests/parity/` (the byte-parity gate between the twins)
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 
@@ -49,3 +51,7 @@ New flags, new MCP tools, workflow *behaviour* changes, and anything touching re
 
 Individual `mcp/tools_*.py` files and individual plugin skills — each belongs to its mode.
 `cowork/` itself — propose changes to it like anything else; it is reviewed by a human by design.
+
+**integrations** may append a provider's credential getters to `config.py` from a campaign run
+(`house-rules.md`, **Extends**) — that site and that operation only; everything else in the file is
+yours.

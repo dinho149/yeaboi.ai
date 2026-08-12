@@ -71,7 +71,45 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Prompt step 6 makes `make test` + `make lint` this job's own gate. With no
+      # toolchain both are `command not found`, so the gate passes by never having
+      # run. Mirrors ci.yml's install so there is one answer to "what does CI use".
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv python install 3.11
+      - run: uv sync --extra dev
+
+      # cowork/models.md: "Security never runs on `heavy`." Fable 5 reroutes
+      # cybersecurity queries to less capable models — fine for a chat, and
+      # unacceptable for an unattended run that may edit fs_policy.py or a CSP
+      # invariant, because you would not know which model actually read it.
+      #
+      # Both axes count. models.md scopes the rule to "any auto-lane item in the
+      # `security` workstream", and `workstream:security` and `type:security` are
+      # separate labels — a security-workstream bug is `[bug][security]`, which a
+      # type-only check misses entirely.
+      #
+      # The title is checked as well as the labels because a label can be lost:
+      # issue #172 had its entire set replaced when the relay applied
+      # `claude-implement`, and the `[type][workstream]` prefix cowork-scribe
+      # writes at filing time is the copy that survives that. Matching
+      # `[security]` anywhere in the prefix covers both positions, and the only
+      # way to be wrong is to route something to `deep` unnecessarily.
+      - name: Pick the model tier
+        id: model
+        env:
+          LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+          TITLE: ${{ github.event.issue.title }}
+        run: |
+          if jq -e 'index("type:security") or index("workstream:security")' <<< "$LABELS" >/dev/null \
+            || [[ "$TITLE" == *"[security]"* ]]; then
+            echo "id=${{ vars.YEABOI_MODEL_DEEP || 'claude-opus-5' }}" >> "$GITHUB_OUTPUT"
+            echo "Security issue — running at deep, never heavy."
+          else
+            echo "id=${{ vars.YEABOI_MODEL_HEAVY || 'claude-opus-5' }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Implement issue
+        id: implement
         uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -87,8 +125,18 @@ jobs:
           # added (it was missing, so the propose lane — which by definition builds
           # things outside the auto-lane allowlist — had a weaker gate than the auto
           # lane it dwarfs). A truncated run leaves a half-open PR behind.
+          #
+          # `--allowedTools` is not optional here and its absence is not benign.
+          # The action passes `settingSources: [user, project, local]`, so with no
+          # grant of its own this job inherits the repo's `.claude/settings.json`
+          # allowlist — which is deliberately read-only, for interactive sessions
+          # where a human approves the writes. On 2026-08-09 that combination ran
+          # issue #172 for 31 turns, denied all 17 tool calls it needed, and exited
+          # `success` having written nothing. Keep this list a superset of what the
+          # ten prompt steps below actually invoke.
           claude_args: >-
-            --model ${{ vars.YEABOI_MODEL_HEAVY || 'claude-opus-5' }} --max-turns 110
+            --model ${{ steps.model.outputs.id }} --max-turns 110
+            --allowedTools "Read,Grep,Glob,Edit,Write,Task,Bash(make:*),Bash(uv run:*),Bash(git:*),Bash(gh issue:*),Bash(gh pr:*),Bash(gh api:*)"
           prompt: |
             Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}.
 
@@ -132,10 +180,12 @@ jobs:
                (`Closes #${{ github.event.issue.number }}`). If step 3 could not create a ticket,
                write the item-1-deferred-to-merge line instead of the `Closes YEA-NN` line.
             9. Pass the labels to `gh pr create` itself — `--label cowork` plus the issue's
-               `workstream:<name>` and `type:<kind>` labels if it had them (the merge ship note
+               `workstream:<name>` and `type:<kind>` labels if it had them (the daily standup
                reads the type off the PR). Labelling in a second step means a run truncated
-               between the two leaves an unlabelled bot PR, which `claude-review.yml` then skips
-               silently; that is the failure the `cowork` carve-out exists to prevent.
+               between the two leaves an unlabelled bot PR. That no longer goes unreviewed —
+               `claude-review.yml` and `scripts/pr_feedback.py` both also recognise the
+               `feature/issue-` branch namespace — but it does ship untagged in the standup,
+               so label it here rather than afterwards.
             10. If step 3 produced a ticket, have `cowork-scribe` attach the PR to it and move it
                 to In Review. Then comment on the issue with a link to the PR.
 
@@ -145,3 +195,72 @@ jobs:
 
             If the issue is too ambiguous to implement safely, do NOT guess: comment on the
             issue with the specific questions that need answering, and stop.
+
+      # The failure this job is most prone to, and least able to report, is
+      # succeeding at nothing: the run above can deny every write it needs and
+      # still finish with `is_error: false`, which GitHub renders as a green
+      # check. Nothing else in the fleet would notice — `digest.md` explicitly
+      # refuses to age out an issue carrying `claude-implement`, so a silent
+      # no-op leaves the issue invisible to every routine. Assert the outcome
+      # rather than the exit status.
+      - name: Assert the run produced something
+        # Only when the action actually ran. `!= 'skipped'` also matches the empty
+        # conclusion a step has when an earlier one failed, which would stack a
+        # misleading "produced nothing" on top of a genuine `uv sync` failure.
+        if: always() && (steps.implement.conclusion == 'success' || steps.implement.conclusion == 'failure')
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # `permission_denials_count` is the field the action really writes — read
+          # off run 31312744716, the 2026-08-09 no-op on #172, which reported
+          # `"permission_denials_count": 17` beside `"num_turns": 31`.
+          log="${RUNNER_TEMP}/claude-execution-output.json"
+          if [ ! -f "$log" ]; then
+            # A diagnostic that silently stops diagnosing is the failure class this
+            # step exists to remove, so say so rather than reading it as "no denials".
+            echo "::warning::no execution log at $log — denials were not checked"
+            denials=0
+          else
+            denials=$(jq '[.. | .permission_denials_count? // empty] | last // 0' "$log")
+          fi
+          if [ "${denials:-0}" -gt 0 ]; then
+            echo "::error::$denials tool call(s) denied — the --allowedTools grant above is wrong."
+            exit 1
+          fi
+          branch=$(git ls-remote --heads origin "refs/heads/feature/issue-$ISSUE-*" | head -1 | sed 's|.*refs/heads/||')
+          if [ -n "$branch" ]; then
+            # A branch is not the deliverable; the PR is. A run truncated between
+            # step 8's push and its `gh pr create` — the state the --max-turns note
+            # above calls "a half-open PR" — would otherwise read as success here
+            # and be excluded from the digest's approved-with-no-PR section too.
+            if [ -n "$(gh pr list --head "$branch" --state all --json number --jq '.[0].number')" ]; then
+              echo "PR open for #$ISSUE on $branch."
+              exit 0
+            fi
+            echo "::error::Branch $branch was pushed for #$ISSUE but no PR was opened — truncated run."
+            exit 1
+          fi
+          # The prompt's closing instruction is a legitimate no-branch exit: too
+          # ambiguous to build safely, so it asks on the issue and stops. That
+          # leaves a comment; a broken run leaves nothing, and telling those two
+          # apart is the whole point of this check.
+          #
+          # Bot authors only. The approval that starts this job usually arrives via
+          # `cron/slack-relay.md`, which comments `approved via Slack ✅ by …` on the
+          # issue seconds beforehand — under a *human* login, because the Slack
+          # connector posts as the person. Counting every recent comment would let
+          # that one stand in for the exit note and wave through the exact failure
+          # this step exists to catch.
+          # `.author.login? // ""` — a deleted account renders `author: null`, and a
+          # raised jq under `bash -e` would abort the step with a traceback instead
+          # of the message below.
+          asked=$(gh issue view "$ISSUE" --json comments --jq \
+            '[.comments[] | select((.author.login? // "") | endswith("[bot]"))
+              | select(.createdAt > "'"$(date -u -d '2 hours ago' +%FT%TZ)"'")] | length')
+          if [ "${asked:-0}" -gt 0 ]; then
+            echo "No branch, but the run commented on #$ISSUE — the documented ambiguous-issue exit."
+            exit 0
+          fi
+          echo "::error::No branch and no comment on #$ISSUE — the run produced nothing."
+          exit 1

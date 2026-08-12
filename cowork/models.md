@@ -12,7 +12,7 @@ repository variable — see [Workflows](#workflows)).
 | Tier | Dropdown label | Id | For |
 |---|---|---|---|
 | `heavy` | Fable 5 | `claude-fable-5` | Long-running unattended implementation. **Never security** — see below. |
-| `deep` | Opus 5 | `claude-opus-5` | Work the repo lives with: building, reviewing, diagnosing, marketing prose, scouting security |
+| `deep` | Opus 5 | `claude-opus-5` | Work the repo lives with: building, reviewing, diagnosing, running an integration campaign, scouting security |
 | `standard` | Sonnet 5 | `claude-sonnet-5` | Bounded judgement over a known input: the other 12 scouts, the scribe, digest ranking, the DoD audit, release notes |
 | `fast` | Haiku 4.5 | `claude-haiku-4-5` | Mechanical: read a field, write a field |
 | `inherit` | — | — | Take the caller's model. The default for every agent. |
@@ -42,24 +42,23 @@ workstream.
 
 ### Routines
 
-The 14 sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which resolves it
-here. Two of them — `security` and `integrations` — scout at `deep` instead of the shared
-`standard`; both exceptions are named in that file, and neither carries a `**Model**` line,
-because a sweep's tier belongs in one place. The rest do model-worthy work in their own
-session and carry a `**Model**` line.
+The 13 maintenance sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which
+resolves it here. One of them — `security` — scouts at `deep` instead of the shared `standard`;
+that exception is named in that file, and no sweep carries a `**Model**` line, because a sweep's
+tier belongs in one place. The rest do model-worthy work in their own session and carry one.
 
 | Routine | Tier | Why |
 |---|---|---|
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
-| `cron/integrations-sweep.md` | `deep` | Its reach axis traces one provider through six modes' code in a single run — synthesis across paths it may read and never edit, not a survey of one directory |
+| `cron/integrations-campaign.md` | `deep` | Not a survey. It reads one provider's API docs, writes a client against them, and appends that provider to six other workstreams' registration sites — the one lane that adds capability, and the one that edits outside its own charter |
 | the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
-| `cron/marketing-weekly.md` | `deep` | Drafts prose inline rather than delegating; the prose is the output |
-| `cron/day-ahead.md` | `fast` | Runs one script and posts what it printed; every judgement in the message was made in Python |
+| `cron/shipped-standup.md` | `standard` | Reads a day of merged PRs and their checks, and writes the one-line-each trace of what shipped |
 | `cron/digest.md` | `standard` | Buckets ~20 issue titles by type and ranks each bucket into one message |
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
+| `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
 | `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
 | `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
-| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done, one Slack line, a Notion page from a merged PR |
+| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done and write a Notion page from a merged PR; the daily standup carries the Slack line |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |
 
 ### Agents

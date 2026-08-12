@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from yeaboi.ui.session.chat._commands import COMMANDS, ChatContext, dispatch, matching_commands
+from yeaboi.ui.session.chat._composer import NEWLINE_KEY, InsertResult
 
 
 def _ctx(**overrides) -> ChatContext:
@@ -11,7 +12,7 @@ def _ctx(**overrides) -> ChatContext:
         run_turn=MagicMock(),
         add_system=MagicMock(),
         add_artifact=MagicMock(),
-        insert_text=MagicMock(return_value=True),
+        insert_text=MagicMock(return_value=InsertResult(offered=0, kept=0, dropped=0)),
         trigger_voice=MagicMock(),
         trigger_image=MagicMock(),
         export=MagicMock(),
@@ -104,11 +105,27 @@ class TestDispatch:
         dispatch(ctx, "/summary")
         ctx.add_artifact.assert_called_with("intake_summary")
 
+    def test_help_names_the_keys_that_work(self):
+        ctx = _ctx()
+        dispatch(ctx, "/help")
+        text = ctx.add_system.call_args[0][0]
+        # The hint used to name Alt+Enter, which most terminals never deliver.
+        assert f"{NEWLINE_KEY} newline" in text
+        assert "Ctrl+U clear the box" in text
+        assert "Alt+Enter" not in text
+
     def test_paste_inserts_clipboard_text(self):
         ctx = _ctx()
         with patch("yeaboi.clipboard.read_clipboard_text", return_value="line1\nline2"):
             dispatch(ctx, "/paste")
         ctx.insert_text.assert_called_with("line1\nline2")
+
+    def test_paste_too_large_reports_the_numbers(self):
+        ctx = _ctx(insert_text=MagicMock(return_value=InsertResult(offered=34_812, kept=10_000, dropped=24_812)))
+        with patch("yeaboi.clipboard.read_clipboard_text", return_value="x" * 34_812):
+            dispatch(ctx, "/paste")
+        notice = ctx.add_system.call_args[0][0]
+        assert "34,812" in notice and "10,000" in notice and "24,812" in notice
 
     def test_paste_empty_clipboard_notices(self):
         ctx = _ctx()

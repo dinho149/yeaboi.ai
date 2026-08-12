@@ -41,6 +41,31 @@ class TestCursor:
         assert store.get_cursor("/a.jsonl") is None
 
 
+class TestTransaction:
+    def test_writes_are_visible_after_the_block(self, store):
+        with store.transaction():
+            store.set_cursor("/a.jsonl", source="claude_code", size=10, mtime=1.5, first_line_sha="abc")
+            store.set_cursor("/b.jsonl", source="claude_code", size=20, mtime=2.5, first_line_sha="def")
+        assert store.get_cursor("/a.jsonl")["size"] == 10
+        assert store.get_cursor("/b.jsonl")["size"] == 20
+
+    def test_exception_rolls_the_batch_back(self, store):
+        with pytest.raises(RuntimeError), store.transaction():
+            store.set_cursor("/a.jsonl", source="claude_code", size=10, mtime=1.5, first_line_sha="abc")
+            raise RuntimeError("boom")
+        assert store.get_cursor("/a.jsonl") is None
+
+    def test_autocommit_still_works_afterwards(self, store, tmp_path):
+        with store.transaction():
+            store.set_cursor("/a.jsonl", source="claude_code", size=10, mtime=1.5, first_line_sha="abc")
+        # Post-batch writes are autocommit again: a SECOND connection to the
+        # same DB must see them immediately, which it would not if a
+        # transaction were still open on the first connection.
+        store.set_cursor("/c.jsonl", source="claude_code", size=30, mtime=3.5, first_line_sha="ghi")
+        with AgentWatchStore(tmp_path / "sessions.db") as other:
+            assert other.get_cursor("/c.jsonl")["size"] == 30
+
+
 class TestSessions:
     def _upsert(self, store, session_id="s1", ended_at="2026-08-07T10:00:00+00:00", source_path=None):
         # One rollup per transcript FILE, so the default path tracks the id —
@@ -144,7 +169,7 @@ class TestMigration:
     def test_fresh_session_store_creates_agentwatch_tables(self, tmp_path):
         from yeaboi.sessions import CURRENT_SCHEMA_VERSION, SessionStore
 
-        assert CURRENT_SCHEMA_VERSION == 27
+        assert CURRENT_SCHEMA_VERSION == 28
         db = tmp_path / "sessions.db"
         with SessionStore(db) as s:
             assert s.schema_mismatch is False

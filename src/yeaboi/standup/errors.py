@@ -1,10 +1,12 @@
 """Typed errors for the Daily Standup subsystem.
 
 The recent-activity helpers normally degrade to ``[]`` on failure so a standup
-never crashes. But an *authentication* failure (401/403) is different: a silent
-empty result looks identical to "no activity", hiding a misconfigured token from
-the user. So the helpers raise ``StandupSourceError`` on auth failures; the
-collector catches it and records a warning that ends up on the StandupReport.
+never crashes. But a failure the user must ACT on is different: a silent empty
+result looks identical to "no activity", hiding a misconfigured token or an
+inaccessible repository. So the helpers raise ``StandupSourceError`` for those —
+401/403 (bad credentials, missing scope, SSO), 404 (renamed, deleted, or invisible
+to this token) and rate limiting — and the collector catches it per source and
+records a warning that ends up on the StandupReport.
 
 # See docs: "Daily Standup" — recent-activity collection, warnings
 """
@@ -13,7 +15,7 @@ from __future__ import annotations
 
 
 class StandupSourceError(Exception):
-    """An activity source failed in a way the user must see (e.g. auth 401/403).
+    """An activity source failed in a way the user must see (auth, access, or rate limit).
 
     Attributes:
         source: the source identifier (e.g. "jira", "github").

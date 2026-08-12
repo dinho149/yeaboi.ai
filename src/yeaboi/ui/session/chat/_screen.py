@@ -44,7 +44,7 @@ from yeaboi.ui.shared._scroll import publish_geometry
 from yeaboi.ui.shared._voice_input import input_box_title
 
 from ._commands import SlashCommand
-from ._composer import ChatComposer
+from ._composer import NEWLINE_KEY, ChatComposer
 from ._transcript import ChatTranscript
 
 _COL_W_MAX = 110
@@ -68,7 +68,8 @@ _TIPS_PAIRS = [
     ("/small /large", "set plan size"),
     ("␣␣", "double-tap Space to speak"),
     ("/form", "fill it out as a form"),
-    ("alt+enter", "new line"),
+    (NEWLINE_KEY, "new line"),
+    ("Ctrl+U", "clear the box"),
     ("/finish", "answer the rest with defaults (Esc stops)"),
     ("/export", "save plan + chat"),
     ("/questions", "see what I'll ask"),
@@ -77,6 +78,57 @@ _TIPS_PAIRS = [
 
 # Rendered once per column width — static copy, never per-frame work.
 _tips_cache: dict[int, list[Text]] = {}
+
+
+# Page-panel border (2) + padding (4): the cells the hint row loses to chrome.
+_HINT_CHROME = 6
+# "   Esc Esc leave" — reserved out of the budget, never dropped.
+_ESC_TAIL_CELLS = 16
+
+
+def _hint_cells(pairs: list[tuple[str, str]], extras: str) -> int:
+    """Rendered width of a hint row, counted arithmetically.
+
+    Integer maths only: this runs inside every frame at 30fps, so measuring by
+    building Rich objects would be per-frame work for a static string.
+    """
+    total = sum(len(key) + 1 + len(label) for key, label in pairs) + 3 * max(0, len(pairs) - 1)
+    if extras:
+        total += 2 + Text(extras).cell_len
+    return total
+
+
+def _fit_hint(pairs: list[tuple[str, str]], extras: str, avail: int) -> tuple[list[tuple[str, str]], str]:
+    """Drop the lowest-value hint segments until the row fits ``avail`` cells.
+
+    Rich ellipsizes from the right, which amputates whichever hints happen to be
+    last — below 120 columns that was "Esc Esc leave", so the escape hatch was
+    invisible on a normal terminal while the row still ended mid-word. Dropping
+    whole segments keeps the row honest: what is shown is shown completely, and
+    the controls drawer (panel._hint_tab) still lists every one of them.
+
+    Sacrifice order, cheapest first: the screenshot hint (also in the composer's
+    title chip and /help), "/ commands" (typing "/" opens the menu by itself),
+    "PgUp/PgDn scroll" (the wheel does it), "Ctrl+U clear" (in /help, and
+    recoverable), then the menu's own keys. Never dropped: Enter send, the
+    newline key, and the Esc tail the caller appends.
+
+    The list has to reach the menu pairs: with a choices menu up — the normal
+    intake state — dropping only the first three still overflows 80 columns,
+    and what gets amputated is the newline key this hint exists to teach.
+    """
+    budget = avail - _ESC_TAIL_CELLS
+    if _hint_cells(pairs, extras) <= budget:
+        return pairs, extras
+    if extras:
+        extras = ""
+        if _hint_cells(pairs, extras) <= budget:
+            return pairs, extras
+    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "Space", "↑/↓"):
+        if _hint_cells(pairs, extras) <= budget:
+            break
+        pairs = [pair for pair in pairs if pair[0] != victim]
+    return pairs, extras
 
 
 @dataclass
@@ -229,8 +281,11 @@ def _tips_card_lines(col_w: int, theme) -> list[Text]:
     grid = Table.grid(padding=(0, 3), pad_edge=False)
     grid.add_column()
     grid.add_column()
-    for left, right in zip(_TIPS_PAIRS[0::2], _TIPS_PAIRS[1::2]):
-        grid.add_row(build_key_hints([left]), build_key_hints([right]))
+    for i in range(0, len(_TIPS_PAIRS), 2):
+        row = _TIPS_PAIRS[i : i + 2]
+        # Pair up, but never silently drop a tip when the list is odd — zip()
+        # used to, which is a quiet way to lose the one you just added.
+        grid.add_row(build_key_hints([row[0]]), build_key_hints([row[1]]) if len(row) > 1 else Text(""))
     card = Panel(
         Group(Text(_EXAMPLE_TEXT, style="dim italic"), Text(""), grid),
         title=f"[bold {theme.accent}] Getting started [/]",
@@ -360,8 +415,9 @@ def build_chat_screen(
         pairs.append(("PgUp/PgDn", "scroll"))
         if choices.multi:
             pairs.append(("Space", "toggle"))
-    pairs += [("Enter", "send"), ("Alt+Enter", "newline"), ("/", "commands")]
+    pairs += [("Enter", "send"), (NEWLINE_KEY, "newline"), ("Ctrl+U", "clear"), ("/", "commands")]
     extras = (_voice_hint() + _image_hint()).strip()
+    # The drawer gets every pair whatever the width; only the inline row sheds.
     plain_hint = " · ".join(f"{k} {label}" for k, label in pairs)
     if extras:
         plain_hint += " " + extras
@@ -369,7 +425,8 @@ def build_chat_screen(
     if notice:
         hint = Text(indent + notice, style="bold white", justify="left", no_wrap=True, overflow="ellipsis")
     else:
-        hint = build_key_hints(pairs, pad=indent)
+        shown_pairs, extras = _fit_hint(pairs, extras, max(20, width - margin - _HINT_CHROME))
+        hint = build_key_hints(shown_pairs, pad=indent)
         if extras:
             hint.append("  " + extras.removeprefix("· "), style="rgb(110,110,125)")
         hint.append("   Esc Esc", style="bold rgb(210,210,220)")

@@ -36,12 +36,12 @@ if TYPE_CHECKING:
     from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
 from yeaboi.standup import (
     adjudicate,
+    aggregate,
     automation,
     categories,
     collector,
     confidence,
     habits,
-    insights,
     practice_feedback,
     references,
     sprint_context,
@@ -138,14 +138,135 @@ def _collector_sources(
     return enabled
 
 
+def _skipped_sources(
+    source_params: dict,
+    enabled: set[str],
+    tracker_sources: list[str],
+    code_sources: list[str] | None,
+    documentation_sources: list[str] | None,
+    dropped_code_sources: list[str] | None = None,
+) -> tuple[list[tuple[str, str]], set[str]]:
+    """Why each source we did NOT scan is missing, in the words the user needs.
+
+    ``collect_recent_activity`` can auto-detect this only when it picks the source
+    set itself; a standup always hands it an explicit set, so the reasons have to
+    be worked out here — and here is also the only place that can tell the three
+    cases apart:
+
+    * the source was ticked in setup but has no repository/project behind it
+      (``dropped_code_sources``, stripped by :func:`_resolve_code_scope`),
+    * the integration is connected but the source was never ticked, a
+      two-keypress fix rather than a ``.env`` one, and
+    * nothing is configured at all, which is what ``SKIP_REASONS`` describes.
+
+    Collapsing these into one line is what made a deselected GitHub look exactly
+    like a GitHub that had nothing to report.
+
+    Returns ``(skipped, unmet)``. ``skipped`` is every source that did not run,
+    for the progress steps and the report's "Not scanned" panel. ``unmet`` is the
+    subset the user actually asked for and did not get — the only ones worth a ⚠
+    notice, because warning about a source nobody selected is a nag that repeats
+    on every single run.
+    """
+    from yeaboi.config import get_github_token
+
+    dropped = set(dropped_code_sources or ())
+    selected_code = set(code_sources or ()) | dropped
+    selected_docs = set(documentation_sources or ())
+    selected = {
+        collector.SOURCE_JIRA: "jira" in tracker_sources,
+        collector.SOURCE_AZDO: "azure_devops" in tracker_sources,
+        collector.SOURCE_GITHUB: "github" in selected_code,
+        collector.SOURCE_CONFLUENCE: "confluence" in selected_docs,
+        collector.SOURCE_NOTION: "notion" in selected_docs,
+    }
+    # Whether the integration behind the source is reachable at all, independent
+    # of the picker. GitHub counts a bare token: the setup wizard offers it on the
+    # token alone, so "no repo" is a scope problem, not a credentials one.
+    configured = {
+        collector.SOURCE_JIRA: bool(source_params["jira_project"]),
+        collector.SOURCE_AZDO: bool(source_params["azdo_project"]),
+        collector.SOURCE_GITHUB: bool(
+            source_params.get("github_owners")
+            or source_params.get("github_repositories")
+            or source_params["github_repo"]
+            or get_github_token()
+        ),
+        collector.SOURCE_LOCAL_GIT: bool(source_params["local_repo_path"]),
+        collector.SOURCE_CONFLUENCE: bool(source_params["confluence_space"]),
+        collector.SOURCE_NOTION: bool(source_params["notion_root"]),
+    }
+    unconfigured = dict(collector.SKIP_REASONS)
+    unconfigured[collector.SOURCE_GITHUB] = "GITHUB_TOKEN not set"
+    unconfigured[collector.SOURCE_AZDO_REPOS] = unconfigured[collector.SOURCE_AZDO]
+    selected[collector.SOURCE_AZDO_REPOS] = "azure_devops" in selected_code
+    configured[collector.SOURCE_AZDO_REPOS] = bool(
+        source_params["azdo_project"] or source_params.get("azdo_projects") or source_params.get("azdo_repositories")
+    )
+    # A code source stripped for an empty scope, keyed by the collector source it
+    # feeds — Azure Repos is "azure_devops" in the picker but ``azdo_repos`` here.
+    empty_scope = {
+        # Covers both readings: nothing ticked in the picker, and a token that
+        # could not list a single organisation on an unconfigured run.
+        collector.SOURCE_GITHUB: ("github", "selected, but no organisations or repositories in scope"),
+        collector.SOURCE_AZDO_REPOS: ("azure_devops", "selected, but no Azure projects chosen"),
+    }
+    skipped: list[tuple[str, str]] = []
+    unmet: set[str] = set()
+    azdo_deduped = False
+    for source in collector.ALL_SOURCES:
+        if source in enabled:
+            continue
+        # Azure tickets and Azure code share one .env block: when neither ran and
+        # neither was asked for, say so once rather than twice.
+        if (
+            source == collector.SOURCE_AZDO_REPOS
+            and collector.SOURCE_AZDO not in enabled
+            and not selected[collector.SOURCE_AZDO_REPOS]
+        ):
+            azdo_deduped = True
+            continue
+        picker_key, empty_reason = empty_scope.get(source, ("", ""))
+        if picker_key and picker_key in dropped:
+            skipped.append((source, empty_reason))
+            unmet.add(source)
+        elif selected.get(source):
+            # Ticked but unreachable: the .env reason is the honest one, and this
+            # is a real disappointment — the user asked and did not get it.
+            skipped.append((source, unconfigured.get(source, "not configured")))
+            unmet.add(source)
+        elif configured.get(source):
+            skipped.append((source, "not selected in setup"))
+        else:
+            skipped.append((source, unconfigured.get(source, "not configured")))
+    if azdo_deduped:
+        # The surviving row stands for BOTH Azure surfaces, but its label reads
+        # "Azure DevOps tickets" — which invites the reader to wonder what happened
+        # to the code side. Say that the one row covers both.
+        skipped = [
+            (src, f"{reason} — tickets and code" if src == collector.SOURCE_AZDO else reason) for src, reason in skipped
+        ]
+    return skipped, unmet
+
+
 def _resolve_code_scope(
     config: dict | None,
     code_sources: list[str] | None,
     github_repositories: list[str] | None,
     azdo_projects: list[str] | None,
     azdo_repositories: list[str] | None,
-) -> tuple[list[str], list[str], list[str], list[str] | None]:
-    """Resolve GitHub repositories and Azure project scope."""
+    github_owners: list[str] | None = None,
+) -> tuple[list[str], list[str], list[str], list[str], list[str] | None, list[str]]:
+    """Resolve GitHub owner/repository and Azure project scope.
+
+    GitHub owners are the analog of Azure projects: one picked owner stands for
+    every repository inside it, and the collector expands it per run. Explicit
+    repositories still work and are unioned with the expansion.
+
+    The last element is the sources dropped for having an empty scope — selected
+    in setup, but with no repository or project behind them. That used to happen
+    silently, which is indistinguishable from the source having found nothing.
+    """
     from yeaboi.standup.code_scope import default_code_scope, validate_code_sources
 
     default_sources, default_github, default_azdo_projects = default_code_scope()
@@ -162,6 +283,22 @@ def _resolve_code_scope(
             else ((config or {}).get("github_repositories", []) if configured else default_github)
         )
     )
+    if github_owners is not None:
+        owners = list(dict.fromkeys(github_owners))
+    elif configured:
+        owners = list(dict.fromkeys((config or {}).get("github_owners", [])))
+    elif default_github:
+        # A pinned STANDUP_GITHUB_REPO is an explicit narrow scope; widening it to
+        # that repo's whole owner would be a surprise, so honour it verbatim.
+        owners = []
+    else:
+        # Deliberately NOT discovered here. An unconfigured GitHub source reaches
+        # the collector with an empty scope, and the collector — already on a
+        # worker thread, already reporting progress, already folding failures into
+        # bundle.errors — resolves it to every visible owner. Doing it here made
+        # scope resolution block on the network on the standup's critical path,
+        # and put a live API call inside every unit test that touched it.
+        owners = []
     legacy_repositories = list(
         dict.fromkeys(
             azdo_repositories
@@ -189,16 +326,19 @@ def _resolve_code_scope(
                 if separator and project
             )
         )
+    dropped: list[str] = []
     if configured:
-        if "github" in sources and not github:
+        if "github" in sources and not github and not owners:
             sources.remove("github")
+            dropped.append("github")
         if "azure_devops" in sources and not projects and not legacy_repositories:
             sources.remove("azure_devops")
+            dropped.append("azure_devops")
     # Explicit project scope wins. Legacy repositories remain available only
     # when callers supply them and do not supply projects.
     if azdo_projects is not None or projects:
         legacy_repositories = None
-    return sources, github, projects, legacy_repositories
+    return sources, owners, github, projects, legacy_repositories, dropped
 
 
 def _resolve_documentation_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
@@ -834,83 +974,143 @@ def _build_fallback_member_updates(
     never replacing the activity view. Detected blocker signals become the
     blockers text directly, so blocker highlighting works without an LLM.
 
+    Kept with this signature for direct callers/tests; ``run_standup`` goes
+    through the aggregate seam instead. Both routes build the same skeletons
+    (``aggregate._member_skeletons``) and assemble through
+    ``_updates_from_result``, so there is exactly one assembly implementation.
+    """
+    coverage = coverage or {category: categories.COVERED for category in categories.CATEGORIES}
+    skeletons = aggregate._member_skeletons(
+        grouped,
+        coverage=coverage,
+        yesterday=yesterday or {},
+        self_reported_names=set(self_reported),
+    )
+    return _updates_from_result(
+        skeletons,
+        self_reported=self_reported,
+        blocker_signals=blocker_signals or {},
+        yesterday_names=set(yesterday or {}),
+        practices=practices or {},
+        coverage=coverage,
+        llm_members=None,
+    )
+
+
+def _updates_from_result(
+    skeletons: list[dict],
+    *,
+    self_reported: dict[str, str],
+    blocker_signals: dict[str, tuple[str, ...]],
+    yesterday_names: Collection[str],
+    practices: dict[str, tuple],
+    coverage: dict[str, str],
+    llm_members: dict[str, dict] | None,
+) -> list[MemberUpdate]:
+    """Assemble MemberUpdates from aggregate skeletons, overlaying LLM prose.
+
+    ``llm_members`` None means the deterministic fallback path: every prose
+    field comes from the skeleton's ``fallback_*`` strings. With a parsed LLM
+    response, the model's words win where they exist, under the deterministic
+    clamps the old inline assembly always applied: a category with no evidence
+    keeps its coverage wording (the model can never turn absent evidence into
+    claimed work), no progress note without an actual previous standup (the
+    model can never invent a "yesterday"), and detected blocker signals surface
+    even if the model dropped them from its 'blockers'.
+
     Practice signals are deterministic to begin with, so unlike the summaries
     they are identical on both paths — nothing degrades when the LLM is gone.
     """
+    llm = llm_members is not None
     updates: list[MemberUpdate] = []
-    coverage = coverage or {category: categories.COVERED for category in categories.CATEGORIES}
-    blocker_signals = blocker_signals or {}
-    yesterday = yesterday or {}
-    practices = practices or {}
-    prefixes, work_item_ids = _reference_gates(grouped)
-    for name, acts in grouped.items():
-        split = categories.split_activity(acts)
-        summary = _fallback_summary(acts)
+    for sk in skeletons:
+        name = str(sk.get("name") or "")
+        m = (llm_members or {}).get(name, {})
+        summary = ((m.get("summary") or "").strip() if llm else "") or str(sk.get("fallback_summary") or "")
+        # Deliberate: the self-report overlay keys on the TEXT, not on which
+        # path produced it — an LLM that literally answers "No activity
+        # detected." is saying the same thing the fallback says, and a member
+        # who typed a self-report is a better source than either.
         if summary == "No activity detected." and self_reported.get(name):
             summary = self_reported[name]
+        joined_signals = "; ".join(blocker_signals.get(name, ()))
+        if llm:
+            blockers = (m.get("blockers") or "").strip() or joined_signals
+            progress_note = (m.get("progress_note") or "").strip() if name in yesterday_names else ""
+            outlook = (m.get("outlook") or "").strip()
+        else:
+            blockers = joined_signals
+            progress_note = str(sk.get("fallback_progress_note") or "")
+            outlook = str(sk.get("fallback_outlook") or "")
+
+        def _category(block: dict, llm_field: str) -> tuple:
+            fallback = str(block.get("summary") or "")
+            with_llm = (m.get(llm_field) or "").strip() if llm and block.get("count") else ""  # noqa: B023
+            return (
+                with_llm or fallback,
+                tuple((str(label), str(url)) for label, url in block.get("links") or ()),
+                int(block.get("count") or 0),
+                tuple(aggregate.evidence_from_wire(row) for row in block.get("evidence") or ()),
+            )
+
+        code_summary, code_links, code_count, code_evidence = _category(sk.get("code") or {}, "code_summary")
+        documentation_summary, documentation_links, documentation_count, documentation_evidence = _category(
+            sk.get("documentation") or {}, "documentation_summary"
+        )
+        ticketing_summary, ticketing_links, ticketing_count, ticketing_evidence = _category(
+            sk.get("ticketing") or {}, "ticketing_summary"
+        )
         updates.append(
             MemberUpdate(
                 name=name,
                 summary=summary,
-                blockers="; ".join(blocker_signals.get(name, ())),
-                progress_note=_fallback_progress_note(yesterday.get(name, {}), acts),
-                outlook=_fallback_outlook(acts),
+                blockers=blockers,
+                progress_note=progress_note,
+                outlook=outlook,
                 self_report=self_reported.get(name, ""),
-                source=_member_source(name in self_reported, bool(acts)),
-                links=_member_links(acts),
-                activity_count=len(acts),
-                code_summary=_fallback_category_summary(
-                    categories.CATEGORY_CODE, split[categories.CATEGORY_CODE], coverage[categories.CATEGORY_CODE]
-                ),
-                code_links=_member_links(split[categories.CATEGORY_CODE]),
-                code_activity_count=len(split[categories.CATEGORY_CODE]),
-                documentation_summary=_fallback_category_summary(
-                    categories.CATEGORY_DOCUMENTATION,
-                    split[categories.CATEGORY_DOCUMENTATION],
-                    coverage[categories.CATEGORY_DOCUMENTATION],
-                ),
-                documentation_links=_member_links(split[categories.CATEGORY_DOCUMENTATION]),
-                documentation_activity_count=len(split[categories.CATEGORY_DOCUMENTATION]),
-                ticketing_summary=_fallback_category_summary(
-                    categories.CATEGORY_TICKETING,
-                    split[categories.CATEGORY_TICKETING],
-                    coverage[categories.CATEGORY_TICKETING],
-                ),
-                ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
-                ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
-                ticketing_evidence=_member_evidence(
-                    split[categories.CATEGORY_TICKETING], prefixes=prefixes, work_item_ids=work_item_ids
-                ),
-                code_evidence=_member_evidence(
-                    _nest_pr_commits(split[categories.CATEGORY_CODE]),
-                    prefixes=prefixes,
-                    work_item_ids=work_item_ids,
-                ),
-                documentation_evidence=_member_evidence(
-                    split[categories.CATEGORY_DOCUMENTATION], prefixes=prefixes, work_item_ids=work_item_ids
-                ),
+                source=str(sk.get("source") or "inferred"),
+                links=tuple((str(label), str(url)) for label, url in sk.get("links") or ()),
+                activity_count=int(sk.get("activity_count") or 0),
+                code_summary=code_summary,
+                code_links=code_links,
+                code_activity_count=code_count,
+                documentation_summary=documentation_summary,
+                documentation_links=documentation_links,
+                documentation_activity_count=documentation_count,
+                ticketing_summary=ticketing_summary,
+                ticketing_links=ticketing_links,
+                ticketing_activity_count=ticketing_count,
+                ticketing_evidence=ticketing_evidence,
+                code_evidence=code_evidence,
+                documentation_evidence=documentation_evidence,
                 practices=practices.get(name, ()),
             )
         )
-    # Self-reporters missing from the grouping (shouldn't happen — run_standup
-    # adds them to the roster) still surface rather than silently dropping.
-    for name, text in self_reported.items():
-        if name not in grouped:
-            updates.append(
-                MemberUpdate(
-                    name=name,
-                    summary=text or "No activity detected.",
-                    self_report=text,
-                    source="self-reported",
-                    code_summary=categories.empty_summary(categories.CATEGORY_CODE, coverage[categories.CATEGORY_CODE]),
-                    documentation_summary=categories.empty_summary(
-                        categories.CATEGORY_DOCUMENTATION, coverage[categories.CATEGORY_DOCUMENTATION]
-                    ),
-                    ticketing_summary=categories.empty_summary(
-                        categories.CATEGORY_TICKETING, coverage[categories.CATEGORY_TICKETING]
-                    ),
+    if llm_members is None:
+        # Self-reporters missing from the grouping (shouldn't happen — run_standup
+        # adds them to the roster) still surface rather than silently dropping.
+        skeleton_names = {str(sk.get("name") or "") for sk in skeletons}
+        for name, text in self_reported.items():
+            if name not in skeleton_names:
+                updates.append(
+                    MemberUpdate(
+                        name=name,
+                        summary=text or "No activity detected.",
+                        self_report=text,
+                        source="self-reported",
+                        code_summary=categories.empty_summary(
+                            categories.CATEGORY_CODE, coverage.get(categories.CATEGORY_CODE, categories.COVERED)
+                        ),
+                        documentation_summary=categories.empty_summary(
+                            categories.CATEGORY_DOCUMENTATION,
+                            coverage.get(categories.CATEGORY_DOCUMENTATION, categories.COVERED),
+                        ),
+                        ticketing_summary=categories.empty_summary(
+                            categories.CATEGORY_TICKETING,
+                            coverage.get(categories.CATEGORY_TICKETING, categories.COVERED),
+                        ),
+                    )
                 )
-            )
     return updates
 
 
@@ -964,20 +1164,19 @@ def _strip_rationale_echo(team_summary: str, rationale: str) -> str:
 
 def _summarize_members(
     *,
-    bundle: collector.ActivityBundle,
-    progress: confidence.SprintProgress,
-    members: list[str],
+    result: dict,
     self_reported: dict[str, str],
     sprint_name: str,
     self_reported_images: dict[str, list[str]] | None = None,
-    alias_map: dict[str, set[str]] | None = None,
-    category_coverage: tuple[tuple[str, str], ...] = (),
-    grouped: dict[str, list[dict]] | None = None,
-    blocker_signals: dict[str, tuple[str, ...]] | None = None,
-    yesterday: dict[str, dict] | None = None,
-    practices: dict[str, tuple] | None = None,
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
+
+    ``result`` is the ``standup.aggregate`` wire dict — from
+    ``aggregate.aggregate_standup`` or the Go sidecar, byte-identical by
+    contract — carrying the grouping, insights, practices, confidence and the
+    per-member skeletons. This function only overlays prose on that scaffold,
+    so which backend served the aggregation can never change what a report
+    shows.
 
     An LLM auth/billing failure is NOT re-raised — it's turned into a
     user-facing *warning* and the deterministic fallback is used, so the standup
@@ -991,19 +1190,24 @@ def _summarize_members(
     self_reported_images: per-member screenshot paths pasted (Ctrl+V) into "My
         Update" — attached to the summary LLM call as multimodal image blocks so
         the model can fold what they show into the team summary.
-    grouped/blocker_signals/yesterday: precomputed by run_standup (grouping is
-        shared with insights); all default to None so direct callers/tests keep
-        working — grouped is recomputed here when absent.
     """
-    if grouped is None:
-        grouped = _group_activity_by_author(bundle.items, members, alias_map)
-    blocker_signals = blocker_signals or {}
-    yesterday = yesterday or {}
+    members = [str(m) for m in result.get("members") or ()]
+    grouped: dict[str, list[dict]] = result.get("grouped") or {}
+    blocker_signals = {
+        str(name): tuple(str(s) for s in signals) for name, signals in (result.get("blocker_signals") or {}).items()
+    }
+    yesterday: dict[str, dict] = result.get("yesterday") or {}
     # Practices never enter the prompt (they are already deterministic, and a
     # PR description per item would double it) — they only ride along to be set
     # on the MemberUpdates both paths build.
-    practices = practices or {}
-    coverage = dict(category_coverage) or {category: categories.COVERED for category in categories.CATEGORIES}
+    practices = aggregate.practices_from_wire(result.get("practices") or {})
+    progress = aggregate.progress_from_wire(result.get("progress") or {})
+    skeletons: list[dict] = result.get("member_skeletons") or []
+    activity_counts = [(str(s), int(n)) for s, n in result.get("counts") or ()]
+    fallback_team_summary = str(result.get("fallback_team_summary") or "")
+    coverage = dict((str(c), str(s)) for c, s in result.get("category_coverage") or ()) or {
+        category: categories.COVERED for category in categories.CATEGORIES
+    }
 
     def _for_llm(acts: list[dict]) -> list[dict]:
         # URLs (and the keys they duplicate — titles already carry ticket ids,
@@ -1070,21 +1274,22 @@ def _summarize_members(
 
     def _fallback(extra_warnings: list[str]) -> tuple[list[MemberUpdate], str, list[str]]:
         return (
-            _build_fallback_member_updates(
-                grouped,
-                self_reported,
-                coverage,
+            _updates_from_result(
+                skeletons,
+                self_reported=self_reported,
                 blocker_signals=blocker_signals,
-                yesterday=yesterday,
+                yesterday_names=set(yesterday),
                 practices=practices,
+                coverage=coverage,
+                llm_members=None,
             ),
-            _build_fallback_team_summary(bundle, progress),
+            fallback_team_summary,
             extra_warnings,
         )
 
     # Nothing to reason over (no activity anywhere and no self-reports) →
     # deterministic fallback only; don't spend an LLM call saying "no activity".
-    if (not member_payload or not bundle.items) and not self_reported:
+    if (not member_payload or not result.get("total_items")) and not self_reported:
         return _fallback([])
 
     # No LLM credentials → don't attempt the call; say so plainly.
@@ -1108,7 +1313,7 @@ def _summarize_members(
         confidence_label=progress.confidence_label,
         confidence_rationale=progress.confidence_rationale,
         members=member_payload,
-        activity_counts=bundle.counts,
+        activity_counts=activity_counts,
     )
 
     # Screenshots pasted into "My Update" — flattened across members and attached
@@ -1135,76 +1340,21 @@ def _summarize_members(
         return _fallback(["AI summary unavailable — LLM request failed (see logs)."])
 
     # Assemble: every member gets an activity-derived summary; self-reports ride
-    # alongside on self_report (shown as "their words" by the renderers).
-    updates: list[MemberUpdate] = []
+    # alongside on self_report (shown as "their words" by the renderers). The
+    # deterministic fields all come from the skeletons; only prose is overlaid.
     llm_members = {m.get("name", ""): m for m in parsed.get("members", []) if isinstance(m, dict)}
-    prefixes, work_item_ids = _reference_gates(grouped)
-    for name in members:
-        m = llm_members.get(name, {})
-        summary = (m.get("summary") or "").strip()
-        acts = grouped.get(name, [])
-        split = categories.split_activity(acts)
-        if not summary:
-            summary = _fallback_summary(acts)
-            if summary == "No activity detected." and self_reported.get(name):
-                summary = self_reported[name]
-
-        def _structured_summary(category: str, field: str) -> str:
-            evidence = split[category]
-            # The model is never allowed to turn absent/unavailable evidence
-            # into claimed work; deterministic coverage wording wins when empty.
-            if not evidence:
-                return _fallback_category_summary(category, evidence, coverage[category])
-            return (m.get(field) or "").strip() or _fallback_category_summary(category, evidence, coverage[category])
-
-        code_summary = _structured_summary(categories.CATEGORY_CODE, "code_summary")
-        documentation_summary = _structured_summary(categories.CATEGORY_DOCUMENTATION, "documentation_summary")
-        ticketing_summary = _structured_summary(categories.CATEGORY_TICKETING, "ticketing_summary")
-        # Deterministic clamps on the day-over-day fields: no progress note
-        # without an actual previous standup to compare against (the model can
-        # never invent a "yesterday"), and detected blocker signals surface
-        # even if the model dropped them from its 'blockers'.
-        progress_note = (m.get("progress_note") or "").strip() if name in yesterday else ""
-        blockers = (m.get("blockers") or "").strip()
-        if not blockers and blocker_signals.get(name):
-            blockers = "; ".join(blocker_signals[name])
-        updates.append(
-            MemberUpdate(
-                name=name,
-                summary=summary,
-                blockers=blockers,
-                progress_note=progress_note,
-                outlook=(m.get("outlook") or "").strip(),
-                self_report=self_reported.get(name, ""),
-                source=_member_source(name in self_reported, bool(acts)),
-                links=_member_links(acts),
-                activity_count=len(acts),
-                code_summary=code_summary,
-                code_links=_member_links(split[categories.CATEGORY_CODE]),
-                code_activity_count=len(split[categories.CATEGORY_CODE]),
-                documentation_summary=documentation_summary,
-                documentation_links=_member_links(split[categories.CATEGORY_DOCUMENTATION]),
-                documentation_activity_count=len(split[categories.CATEGORY_DOCUMENTATION]),
-                ticketing_summary=ticketing_summary,
-                ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
-                ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
-                ticketing_evidence=_member_evidence(
-                    split[categories.CATEGORY_TICKETING], prefixes=prefixes, work_item_ids=work_item_ids
-                ),
-                code_evidence=_member_evidence(
-                    _nest_pr_commits(split[categories.CATEGORY_CODE]),
-                    prefixes=prefixes,
-                    work_item_ids=work_item_ids,
-                ),
-                documentation_evidence=_member_evidence(
-                    split[categories.CATEGORY_DOCUMENTATION], prefixes=prefixes, work_item_ids=work_item_ids
-                ),
-                practices=practices.get(name, ()),
-            )
-        )
+    updates = _updates_from_result(
+        skeletons,
+        self_reported=self_reported,
+        blocker_signals=blocker_signals,
+        yesterday_names=set(yesterday),
+        practices=practices,
+        coverage=coverage,
+        llm_members=llm_members,
+    )
 
     team_summary = _strip_rationale_echo((parsed.get("team_summary") or "").strip(), progress.confidence_rationale)
-    team_summary = team_summary or _build_fallback_team_summary(bundle, progress)
+    team_summary = team_summary or fallback_team_summary
     return updates, team_summary, []
 
 
@@ -1221,6 +1371,7 @@ def run_standup(
     tracker_sources: list[str] | None = None,
     team_members: list[str] | None = None,
     code_sources: list[str] | None = None,
+    github_owners: list[str] | None = None,
     github_repositories: list[str] | None = None,
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
@@ -1337,9 +1488,15 @@ def run_standup(
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
     selected_trackers = _resolve_tracker_sources(config, tracker_sources, source_params)
-    selected_code_sources, selected_github_repos, selected_azdo_projects, selected_azdo_repos = _resolve_code_scope(
-        config, code_sources, github_repositories, azdo_projects, azdo_repositories
-    )
+    (
+        selected_code_sources,
+        selected_github_owners,
+        selected_github_repos,
+        selected_azdo_projects,
+        selected_azdo_repos,
+        dropped_code_sources,
+    ) = _resolve_code_scope(config, code_sources, github_repositories, azdo_projects, azdo_repositories, github_owners)
+    source_params["github_owners"] = selected_github_owners
     source_params["github_repositories"] = selected_github_repos
     source_params["azdo_projects"] = selected_azdo_projects
     source_params["azdo_repositories"] = selected_azdo_repos
@@ -1349,6 +1506,22 @@ def run_standup(
         selected_trackers,
         selected_code_sources,
         selected_documentation_sources,
+    )
+    # Worked out here, not in the collector: only this scope knows the difference
+    # between "you never ticked GitHub" and "GITHUB_TOKEN is missing".
+    skipped_sources, unmet_sources = _skipped_sources(
+        source_params,
+        enabled_sources,
+        selected_trackers,
+        selected_code_sources,
+        selected_documentation_sources,
+        dropped_code_sources,
+    )
+    # The one line that answers "why is there no GitHub in this run?" after the fact.
+    logger.info(
+        "run_standup: collecting %s; skipping %s",
+        ", ".join(sorted(enabled_sources)) or "nothing",
+        ", ".join(f"{src} ({reason})" for src, reason in skipped_sources) or "nothing",
     )
 
     # 2. Collect recent activity across all resolved sources. Window: start of
@@ -1372,6 +1545,7 @@ def run_standup(
             on_progress=collection_progress,
             cache_db_path=db_path,
             ticket_context=practices_wanted,
+            skipped=skipped_sources,
             **source_params,
         )
     else:
@@ -1382,6 +1556,7 @@ def run_standup(
             on_progress=collection_progress,
             cache_db_path=db_path,
             ticket_context=practices_wanted,
+            skipped=skipped_sources,
             **source_params,
         )
 
@@ -1445,102 +1620,83 @@ def run_standup(
 
     # The user's card first, then the rest of the team.
     members = [my_name] + [m for m in roster_members if m != my_name]
-    alias_map = _build_alias_map(
-        members,
+
+    # 4b. Deterministic aggregation: identity closure → roster filter → bot
+    #     filter → coverage → grouping → day-over-day insights → practice
+    #     detection → confidence. One pure function of the collected inputs
+    #     (aggregate.aggregate_standup), served byte-identically by the Go
+    #     sidecar when one is discovered (standup.aggregate — see
+    #     contracts/v1/rpc.md; YEABOI_GO=0 opts out), silent Python fallback.
+    #
+    #     The practice adjudicator is the one LLM interleave in that block, so
+    #     it is hoisted out by protocol: pass 1 returns the still-unattributed
+    #     changes as cases, the model may only DROP some (suppress-only seam —
+    #     it returns ids to remove, so there is no channel through which it
+    #     could invent or sharpen a report), and a second identical pass applies
+    #     the drops. The ledger's deterministic half suppresses the exact
+    #     changes the team excused; the model half generalises from the reasons
+    #     they gave (feedback_ledger.corrections()).
+    _notify("Scoring activity & practices")
+    adjudicator = adjudicate.build_adjudicator(config, feedback_ledger.corrections())
+    inputs = aggregate.build_aggregate_inputs(
+        bundle=bundle,
+        members=members,
         my_name=my_name,
         my_aliases=(config or {}).get("my_aliases", ""),
         repo_path=(config or {}).get("repo_path", ""),
-        # "Me" stays an alias so legacy self-reports/config still match.
-        extra_identities=(*tracker_identities, "Me"),
+        tracker_identities=tracker_identities,
+        self_reported_names=list(self_reported),
+        config=config,
+        previous_report=previous_report,
+        transcript_corrections=transcript_corrections,
+        corrections=corrections,
+        feedback_excused=feedback_ledger.excused,
+        enabled_sources=enabled_sources,
+        sprint=ctx,
+        history=prior_history,
+        today=date_str,
+        want_adjudication=adjudicator is not None,
     )
-    # Every member (not just the user) learns the emails the sources exposed for
-    # them, so cross-source work (git commits vs tracker display names) attaches
-    # to the right card instead of spawning a phantom member below.
-    _enrich_aliases_from_items(alias_map, bundle.items)
-    # Drop roster/plan entries that are actually the standup user under another
-    # name (e.g. their Jira displayName) — one person, one card.
-    my_alias_set = alias_map.get(my_name, set())
-    for dupe in [m for m in members if m != my_name and _normalize_author(m) & my_alias_set]:
-        members.remove(dupe)
-        alias_map.pop(dupe, None)
+    result = aggregate.go_aggregate(inputs) or aggregate.aggregate_standup(inputs)
+    cases = aggregate.cases_from_wire(result.get("adjudication_cases") or ())
+    if cases and adjudicator is not None:
+        try:
+            dropped = sorted({str(case_id) for case_id in adjudicator(cases)})
+        except Exception:  # an adjudicator failing must never cost the whole report
+            logger.warning("standup: practice adjudication failed — keeping every deterministic verdict", exc_info=True)
+            dropped = []
+        if dropped:
+            inputs = {**inputs, "dropped_case_ids": dropped}
+            result = aggregate.go_aggregate(inputs) or aggregate.aggregate_standup(inputs)
+
+    members = list(result["members"])
+    for dupe in result.get("merged") or ():
         logger.info("standup: merged roster entry %r into the standup user's card", dupe)
     selected_names = set(members)
     self_reported = {name: text for name, text in self_reported.items() if name in selected_names}
     self_reported_images = {name: paths for name, paths in self_reported_images.items() if name in selected_names}
-    # The Team selection is authoritative. Unlike the legacy behavior, an
-    # unmatched activity author is never promoted into a new standup member.
-    bundle = _filter_bundle_to_members(bundle, alias_map)
-    # Service hooks (e.g. a Wiz scanner using a member's PAT) post as the human;
-    # strip that noise BEFORE coverage/confidence/summaries so it never counts
-    # as personal work. Exclusions surface as Notices below.
-    bundle, automation_notices = _drop_automated_activity(bundle, config)
-    category_coverage = categories.coverage_states(enabled_sources, bundle)
-
-    # Day-over-day insights over the final (roster-filtered, de-botted) view:
-    # deterministic blocker evidence + each member's previous-standup context.
-    grouped = _group_activity_by_author(bundle.items, members, alias_map)
-    blocker_signals = insights.detect_blocker_signals(grouped, previous_report=previous_report)
-    yesterday = insights.yesterday_context(previous_report, transcript_corrections, corrections=corrections)
-    if blocker_signals:
-        logger.info("standup: blocker signals detected for %d member(s)", len(blocker_signals))
-    # Engineering-practice observations over the same grouping. Passed the
-    # coverage states because the tracker-shaped rules must stay silent when the
-    # tracker itself was unavailable, and the previous report so a signal that
-    # fired yesterday too can say so.
-    #
-    # The open tickets go in as MATCHING CONTEXT, never as activity: a change can
-    # belong to a ticket that saw no board movement today, and without them
-    # long-running work reads as unapproved scope. They are grouped by assignee
-    # through the same alias map so "a ticket this person holds" is answerable,
-    # and passed whole so a change can also match a teammate's ticket.
-    reference_grouped = _group_activity_by_author(bundle.reference_tickets, members, alias_map)
-    reference_items = [_projected_item(item) for item in bundle.reference_tickets]
-    practices = habits.detect_practices(
-        grouped,
-        config=config,
-        category_coverage=category_coverage,
-        previous_report=previous_report,
-        reference_grouped=reference_grouped,
-        reference_items=reference_items,
-        # The model half of the same question, and only ever a mute button —
-        # it returns changes to drop, so it cannot author a report about anyone.
-        # It is also where the team's recorded verdicts do their teaching: the
-        # ledger's deterministic half suppresses the exact changes they excused,
-        # this half generalises from the reasons they gave.
-        adjudicator=adjudicate.build_adjudicator(config, feedback_ledger.corrections()),
-        feedback=feedback_ledger.is_excused,
-    )
-
-    # Confidence must use the roster-filtered activity, otherwise work by an
-    # excluded outsider can make this team's sprint appear healthier. Prior
-    # runs feed the trend (delta + sustained-decline damping).
-    progress = confidence.compute(
-        sprint_name=ctx.sprint_name,
-        start_date=ctx.start_date,
-        sprint_length_weeks=ctx.sprint_length_weeks,
-        capacity_points=ctx.capacity_points if ctx.have_burn else 0.0,
-        completed_points=ctx.completed_points,
-        activity_count=bundle.total(exclude_kinds=("wip",)),
-        today=today,
-        history=prior_history,
-    )
+    automation_notices = list(result.get("automation_notices") or ())
+    category_coverage = tuple((str(c), str(s)) for c, s in result["category_coverage"])
+    if result.get("blocker_signals"):
+        logger.info("standup: blocker signals detected for %d member(s)", len(result["blocker_signals"]))
+    progress = aggregate.progress_from_wire(result["progress"])
 
     # 5. Per-member + team summary (one LLM call, deterministic fallback).
     _notify("Writing summaries with AI")
     member_updates, team_summary, llm_warnings = _summarize_members(
-        bundle=bundle,
-        progress=progress,
-        members=members,
+        result=result,
         self_reported=self_reported,
         sprint_name=ctx.sprint_name,
         self_reported_images=self_reported_images,
-        alias_map=alias_map,
-        category_coverage=category_coverage,
-        grouped=grouped,
-        blocker_signals=blocker_signals,
-        yesterday=yesterday,
-        practices=practices,
     )
+
+    # One rule, two audiences. A skip is worth chasing when the user asked for the
+    # source and did not get it, or when the collector itself gave up mid-run on a
+    # source it was told to read (a missing SDK). Everything else is a deliberate
+    # non-choice: listed on the diagnostic surfaces, never warned or broadcast about.
+    advisable_sources = {
+        src for src, reason in bundle.skipped if src in unmet_sources or reason == collector.SKIP_SDK_MISSING
+    }
 
     # Warnings the user must see: source auth failures (from the collector) first,
     # then any LLM/config issue. These render as a "Notices" section, never silent.
@@ -1555,11 +1711,19 @@ def run_standup(
             "No activity sources configured — set a local repo path via Configure, or connect "
             "GitHub/Jira/Azure DevOps/Confluence/Notion in .env, so updates can be inferred from real activity.",
         )
-    elif bundle.skipped:
+    else:
         # Partial coverage is advised, not silent: one combined line (last — auth/LLM
         # problems above are more urgent) naming each unscanned source and its fix.
-        skipped = ", ".join(f"{src.replace('_', ' ').title()} ({reason})" for src, reason in bundle.skipped)
-        warnings.append(f"Not scanned: {skipped} — connect these in .env to include their activity in the standup.")
+        # Only sources the user ASKED for get a notice; the rest are reported in the
+        # report's "Not scanned" panel and the progress steps, because a warning
+        # about a source nobody selected would repeat on every run forever.
+        advisable = [(src, reason) for src, reason in bundle.skipped if src in advisable_sources]
+        if advisable:
+            skipped = ", ".join(f"{collector.source_label(src)} ({reason})" for src, reason in advisable)
+            warnings.append(
+                f"Not scanned: {skipped} — pick sources in Standup → Sources, or connect them in .env, "
+                "to include their activity in the standup."
+            )
 
     # Transcript-review findings, capped so the notices stay scannable. They go
     # last: an auth failure or a missing source is more urgent than a diagnosis
@@ -1606,9 +1770,14 @@ def run_standup(
         confidence_trend=progress.confidence_trend,
         team_summary=team_summary,
         member_updates=tuple(member_updates),
-        activity_counts=tuple(bundle.counts),
+        # The aggregate's counts, not the raw collector's: the roster and
+        # automation filters recompute per-source numbers.
+        activity_counts=tuple((str(s), int(n)) for s, n in result["counts"]),
         activity_window=activity_window,
         skipped_sources=tuple(bundle.skipped),
+        # Carried so the broadcast renderers can tell a disappointment from a
+        # deliberate non-choice long after the run that classified them.
+        unmet_sources=tuple(sorted(advisable_sources)),
         category_coverage=category_coverage,
         my_name=my_name,
         warnings=tuple(warnings),
