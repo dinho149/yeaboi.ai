@@ -253,6 +253,17 @@ class TestHintRow:
         for width in (80, 100, 120, 160):
             assert "…" not in self._hint(width), f"hint clipped at {width} cols"
 
+    def test_row_never_ellipsizes_with_a_menu_up(self):
+        # The normal intake state: a choices menu adds three more pairs, and
+        # the row has to shed those too rather than amputate the newline key.
+        choices = ChoiceRows(options=[("Greenfield", False), ("Existing", False)], highlight=0, multi=True)
+        for width in (80, 100, 120, 160):
+            out = _ANSI.sub("", _render(_screen(width=width, console=_console(width), choices=choices), width=width))
+            line = next(ln for ln in out.splitlines() if "Enter" in ln and "send" in ln)
+            assert "…" not in line, f"hint clipped at {width} cols with a menu up"
+            assert "Ctrl+N newline" in line
+            assert "Esc Esc" in line
+
     def test_narrow_row_keeps_send_newline_and_the_way_out(self):
         line = self._hint(80)
         assert "Enter send" in line

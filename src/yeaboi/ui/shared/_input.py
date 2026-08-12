@@ -35,6 +35,12 @@ _pending_bytes = bytearray()
 # take_paste_dropped(); same "extra detail about the key just returned" pattern as
 # _last_read_had_input above.
 _last_paste_dropped = 0
+# Set when a paste was abandoned mid-stream. A one-shot tcflush only discards
+# what is queued at that instant, and both abandon triggers mean "the stream is
+# still coming" — so the remainder would arrive as keystrokes, including the
+# "\r" that means enter. While this is set, every read first swallows input up
+# to the end marker.
+_paste_discarding = False
 
 # Bracketed paste bounds. The keep limit is deliberately far above the app's own
 # message cap (input_guardrails.MAX_CHAT_INPUT_CHARS) so the *field* does the
@@ -83,14 +89,17 @@ def paste_payload(key: str, *, multiline: bool = False) -> str:
     """The text carried by a "paste:" key, shaped for the field receiving it.
 
     Bracketed paste preserves newlines (a pasted brief keeps its paragraphs), so
-    single-line fields — the default — collapse them to spaces and strip the edges:
-    a copied API token almost always carries a trailing newline, and a literal "\n"
-    in a one-row box is invisible corruption.
+    single-line fields — the default — drop the edge newlines and collapse the
+    inner ones to spaces: a copied API token almost always carries a trailing
+    newline, and a literal "\n" in a one-row box is invisible corruption.
+
+    Only newlines are stripped, not whitespace generally — pasting mid-cell in
+    an editor must not silently lose a space the user meant to paste.
     """
     text = key[len("paste:") :] if key.startswith("paste:") else ""
     if multiline:
         return text
-    return text.replace("\n", " ").strip()
+    return text.strip("\r\n").replace("\n", " ")
 
 
 # True when the most recent "esc" event came from clicking the back tab rather
@@ -150,6 +159,7 @@ def _read_paste(fd: int) -> tuple[str, int]:
     3. Every read is bounded. The old loop's blocking read hung the TUI forever if
        a paste was aborted mid-stream.
     """
+    global _paste_discarding
     import select as _select
     import time as _time
 
@@ -159,10 +169,11 @@ def _read_paste(fd: int) -> tuple[str, int]:
     _pending_bytes.clear()
     deadline = _time.monotonic() + _PASTE_DRAIN_SECONDS
     end = buf.find(_PASTE_END)
-    abandoned = False
+    abandoned = overflowing = False
     while end == -1:
         if _time.monotonic() > deadline or len(buf) > _PASTE_DRAIN_LIMIT:
-            abandoned = True
+            # Still gushing when we gave up — the rest is on its way.
+            abandoned = overflowing = True
             break
         if not _select.select([fd], [], [], _PASTE_IDLE_SECONDS)[0]:
             # Paste bytes stream continuously; a gap this long means the stream
@@ -189,6 +200,11 @@ def _read_paste(fd: int) -> tuple[str, int]:
         # Only here: the stream is malformed or absurd, so its remainder must be
         # discarded rather than replayed as fake keystrokes. The normal path must
         # never flush — per-call reads preserve type-ahead (see _read_key_impl).
+        # The flush clears what is queued now; _paste_discarding covers whatever
+        # the terminal is still writing — armed only when we gave up on a stream
+        # that was still flowing. After a stall the stream is dead, and staying
+        # armed would swallow the user's next keypress instead.
+        _paste_discarding = overflowing
         try:
             termios.tcflush(fd, termios.TCIFLUSH)
         except Exception:  # noqa: BLE001 - a failed flush must not break input
@@ -202,6 +218,34 @@ def _read_paste(fd: int) -> tuple[str, int]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = "".join(c for c in text if c == "\n" or c.isprintable())
     return text[:_PASTE_KEEP_LIMIT], len(text)
+
+
+def _discard_to_marker(fd: int) -> None:
+    """Swallow the remainder of an abandoned paste, up to its end marker.
+
+    Armed by _read_paste when it gives up on a stream. Disarms on the marker —
+    or on a long silence, which means the stream really did die and staying
+    armed would eat the user's next keypress instead.
+    """
+    global _paste_discarding
+    import select as _select
+    import time as _time
+
+    deadline = _time.monotonic() + _PASTE_DRAIN_SECONDS
+    window = b""
+    while _time.monotonic() < deadline:
+        if not _select.select([fd], [], [], _PASTE_IDLE_SECONDS)[0]:
+            break
+        chunk = os.read(fd, _PASTE_CHUNK)
+        if not chunk:
+            break
+        if _PASTE_END in window + chunk:
+            tail = (window + chunk).split(_PASTE_END, 1)[1]
+            if tail:
+                _pending_bytes.extend(tail)
+            break
+        window = (window + chunk)[-(len(_PASTE_END) - 1) :]
+    _paste_discarding = False
 
 
 def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
@@ -263,6 +307,10 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         new_settings[0] &= ~(termios.IXON | termios.ICRNL)  # input flags (c_iflag)
         new_settings[3] &= ~(termios.IEXTEN | termios.ISIG)  # local flags (c_lflag)
         termios.tcsetattr(fd, termios.TCSANOW, new_settings)
+        # After the mode is set, never before: in the terminal's cooked mode a
+        # read stops at the line ending, so the marker would never be found.
+        if _paste_discarding:
+            _discard_to_marker(fd)
         if timeout is not None and not _pending_bytes:
             try:
                 ready, _, _ = _select.select([fd], [], [], timeout)
@@ -278,13 +326,33 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             first and in order, so a key typed straight after a paste survives.
             """
             if _pending_bytes:
-                return bytes([_pending_bytes.pop(0)]).decode("utf-8", errors="replace")
+                # Take a whole UTF-8 sequence, not a byte: a curly quote typed
+                # straight after a paste would otherwise arrive as U+FFFD.
+                lead = _pending_bytes[0]
+                width = 4 if lead >= 0xF0 else 3 if lead >= 0xE0 else 2 if lead >= 0xC0 else 1
+                chunk = bytes(_pending_bytes[:width])
+                del _pending_bytes[:width]
+                return chunk.decode("utf-8", errors="replace")
             return os.read(fd, 1).decode("utf-8", errors="replace")
 
+        def _more_input(wait: float) -> bool:
+            """Is another byte available — from the read-ahead tail or the fd?
+
+            Every "is there more?" check must ask this rather than select() on
+            the fd alone. A tail holding an escape sequence (a second paste in
+            the same burst, or an arrow key typed straight after one) would
+            otherwise be read as a bare Esc followed by its literal characters
+            — and two of those inside the double-Esc window quit the chat and
+            throw the draft away.
+            """
+            if _pending_bytes:
+                return True
+            return bool(_select.select([fd], [], [], wait)[0])
+
         def _read_available(wait: float = 0.05) -> str:
-            """Read all immediately available bytes from fd."""
+            """Read all immediately available bytes (tail first, then the fd)."""
             buf = ""
-            while _select.select([fd], [], [], wait)[0]:
+            while _more_input(wait):
                 buf += _read1()
                 wait = 0.01  # shorter timeout for subsequent chars
             return buf
@@ -297,7 +365,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             # key or other escape sequence, which always sends \x1b[...
             # within microseconds). 100ms is imperceptible to a human
             # but safe for slow terminals / SSH connections.
-            if not _select.select([fd], [], [], 0.1)[0]:
+            if not _more_input(0.1):
                 return _esc()
             ch2 = _read1()
             if ch2 == "\x7f":

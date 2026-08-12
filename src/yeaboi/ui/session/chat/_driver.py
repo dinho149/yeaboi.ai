@@ -288,6 +288,20 @@ class _ChatDriver:
         self.transcript.add_system(text)
         self._pin_bottom()
 
+    def _composer_cleared(self, event: Cleared | Restored) -> None:
+        """Report a Ctrl+U clear or its undo.
+
+        Logged as well as shown: it is the one destructive thing the box does,
+        so "my draft vanished" needs to be answerable from the log.
+        """
+        logger.info(
+            "Chat composer %s: chars=%d images=%d",
+            "cleared" if isinstance(event, Cleared) else "restored",
+            event.chars,
+            event.images,
+        )
+        self.notice = clear_notice(event)
+
     def _paste_truncated(self, event: Truncated) -> None:
         """Report a paste that did not fit — loudly, and in two places.
 
@@ -744,7 +758,7 @@ class _ChatDriver:
             # Voice and image capture stay suppressed mid-turn, as before.
             event = self.composer.handle_key(key, dropped=take_paste_dropped())
             if isinstance(event, Cleared | Restored):
-                self.notice = clear_notice(event)
+                self._composer_cleared(event)
             elif isinstance(event, Truncated):
                 self._paste_truncated(event)
 
@@ -1271,7 +1285,7 @@ class _ChatDriver:
             elif isinstance(event, PasteImage):
                 self._paste_image()
             elif isinstance(event, Cleared | Restored):
-                self.notice = clear_notice(event)
+                self._composer_cleared(event)
             elif isinstance(event, Truncated):
                 self._paste_truncated(event)
         return None

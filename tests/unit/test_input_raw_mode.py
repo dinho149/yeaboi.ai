@@ -364,17 +364,155 @@ class TestBracketedPaste:
                 t.cancel()
 
     def test_drop_count_is_cleared_by_the_next_key(self, pty_pair):
-        self._paste(pty_pair, b"small")
+        import threading
+
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        _input._last_paste_dropped = 999
+        t = threading.Timer(0.2, os.write, args=(master, b"k"))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "k"
+        finally:
+            t.cancel()
         assert _input.take_paste_dropped() == 0
+
+    def test_an_escape_sequence_in_the_read_ahead_tail_still_decodes(self, pty_pair):
+        """The tail is read ahead of the caller, so every "is there more input?"
+        check has to see it too.
+
+        Reading it a byte at a time against a select() on the fd alone turns an
+        arrow key typed after a paste into "esc" plus its literal characters —
+        and two of those inside the double-Esc window quit the chat.
+        """
+        import threading
+
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        t = threading.Timer(0.2, os.write, args=(master, b"\x1b[200~hi\x1b[201~\x1b[A"))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "paste:hi"
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=2.0) == "up"
+        finally:
+            t.cancel()
+
+    def test_two_pastes_in_one_burst_both_decode(self, pty_pair):
+        import threading
+
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        payload = b"\x1b[200~first\x1b[201~" + b"\x1b[200~second\x1b[201~"
+        t = threading.Timer(0.2, os.write, args=(master, payload))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "paste:first"
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=2.0) == "paste:second"
+        finally:
+            t.cancel()
+
+    def test_multibyte_char_after_a_paste_is_not_mangled(self, pty_pair):
+        import threading
+
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        t = threading.Timer(0.2, os.write, args=(master, "\x1b[200~hi\x1b[201~é".encode()))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "paste:hi"
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=2.0) == "é"
+        finally:
+            t.cancel()
+
+    def test_giving_up_on_a_flowing_stream_arms_the_discard(self, pty_pair, monkeypatch):
+        import threading
+
+        monkeypatch.setattr(_input, "_PASTE_DRAIN_LIMIT", 200)
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        t = threading.Timer(0.2, os.write, args=(master, b"\x1b[200~" + b"a" * 2_000))
+        t.start()
+        try:
+            # What arrived is still handed over; the rest is now disowned.
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0).startswith("paste:")
+            assert _input._paste_discarding is True
+        finally:
+            t.cancel()
+            _input._paste_discarding = False
+
+    def test_the_armed_discard_swallows_the_remainder(self, pty_pair):
+        """A one-shot tcflush cannot hold a stream that is still being written:
+        the remaining "\r" would decode as enter and send a half-pasted message."""
+        import threading
+
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        _input._paste_discarding = True
+        t = threading.Timer(0.2, os.write, args=(master, b"rest\rmore\x1b[201~Q"))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "Q"
+            assert _input._paste_discarding is False
+        finally:
+            t.cancel()
+            _input._paste_discarding = False
+
+    def test_a_stalled_paste_does_not_stay_armed(self, pty_pair, monkeypatch):
+        # The opposite case: the stream died, so the next thing typed is a key.
+        import threading
+
+        monkeypatch.setattr(_input, "_PASTE_IDLE_SECONDS", 0.2)
+        master, slave = pty_pair
+
+        class _Stdin:
+            def fileno(self):
+                return slave
+
+        t = threading.Timer(0.1, os.write, args=(master, b"\x1b[200~abc"))
+        t.start()
+        try:
+            assert _input._read_key_impl(stdin=_Stdin(), timeout=3.0) == "paste:abc"
+            assert _input._paste_discarding is False
+        finally:
+            t.cancel()
 
 
 class TestPastePayload:
-    """paste_payload() shapes one payload for two kinds of field."""
+    """paste_payload() shapes one payload for the two kinds of field."""
 
-    def test_single_line_collapses_newlines_and_strips(self):
+    def test_single_line_collapses_newlines(self):
         # A copied token almost always carries a trailing newline.
         assert _input.paste_payload("paste:sk-abc\n") == "sk-abc"
         assert _input.paste_payload("paste:one\ntwo") == "one two"
+
+    def test_single_line_keeps_real_spaces(self):
+        # Only newlines are stripped: pasting mid-cell in an editor must not
+        # lose a space the user meant to paste.
+        assert _input.paste_payload("paste: padded ") == " padded "
 
     def test_multiline_preserves(self):
         assert _input.paste_payload("paste:one\ntwo", multiline=True) == "one\ntwo"

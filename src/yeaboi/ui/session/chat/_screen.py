@@ -108,9 +108,14 @@ def _fit_hint(pairs: list[tuple[str, str]], extras: str, avail: int) -> tuple[li
     the controls drawer (panel._hint_tab) still lists every one of them.
 
     Sacrifice order, cheapest first: the screenshot hint (also in the composer's
-    title chip and /help), then "/ commands" (typing "/" opens the menu by
-    itself), then "Ctrl+U clear" (in /help, and recoverable). Never dropped:
-    Enter send, the newline key, and the Esc tail the caller appends.
+    title chip and /help), "/ commands" (typing "/" opens the menu by itself),
+    "PgUp/PgDn scroll" (the wheel does it), "Ctrl+U clear" (in /help, and
+    recoverable), then the menu's own keys. Never dropped: Enter send, the
+    newline key, and the Esc tail the caller appends.
+
+    The list has to reach the menu pairs: with a choices menu up — the normal
+    intake state — dropping only the first three still overflows 80 columns,
+    and what gets amputated is the newline key this hint exists to teach.
     """
     budget = avail - _ESC_TAIL_CELLS
     if _hint_cells(pairs, extras) <= budget:
@@ -119,12 +124,10 @@ def _fit_hint(pairs: list[tuple[str, str]], extras: str, avail: int) -> tuple[li
         extras = ""
         if _hint_cells(pairs, extras) <= budget:
             return pairs, extras
-    for victim in ("/", "Ctrl+U"):
-        if len(pairs) <= 1:
-            break
-        pairs = [pair for pair in pairs if pair[0] != victim]
+    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "Space", "↑/↓"):
         if _hint_cells(pairs, extras) <= budget:
             break
+        pairs = [pair for pair in pairs if pair[0] != victim]
     return pairs, extras
 
 
