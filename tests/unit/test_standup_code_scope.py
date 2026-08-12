@@ -9,6 +9,7 @@ from yeaboi.standup.code_scope import (
     discover_github_owners,
     discover_github_repositories,
     expand_github_owners,
+    list_owner_repositories,
     validate_code_sources,
 )
 from yeaboi.standup.store import StandupStore
@@ -136,6 +137,9 @@ def test_code_picker_persists_explicit_repository_scope(monkeypatch, tmp_path):
         "yeaboi.standup.code_scope.discover_code_repositories",
         lambda sources: {"github": ["acme"], "azure_devops": ["Core"]},
     )
+    # Not under test here — an empty owner listing skips the repo-exclude screen
+    # entirely, so this stays a single-select-per-screen flow like before.
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
 
     ok, message = mode_select._standup_code_configure(
         SimpleNamespace(size=(100, 36)),
@@ -156,6 +160,242 @@ def test_code_picker_persists_explicit_repository_scope(monkeypatch, tmp_path):
     assert config["github_repositories"] == []
     assert config["azdo_projects"] == ["Core"]
     assert config["azdo_repositories"] == []
+
+
+def test_github_and_azure_devops_get_separate_picker_screens(monkeypatch, tmp_path):
+    """The redesign's other headline ask: no more one merged GitHub+Azure list."""
+    db = tmp_path / "sessions.db"
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+    monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_org_url", lambda: "https://dev.azure.com/acme")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+    monkeypatch.setattr(mode_select, "_run_standup_source_select", lambda *args, **kwargs: ["github", "azure_devops"])
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.discover_code_repositories",
+        lambda sources: {"github": ["acme"], "azure_devops": ["Core"]},
+    )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
+    choices_by_heading = {}
+
+    def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
+        choices_by_heading[kwargs.get("heading", "")] = list(choices)
+        return list(choices)
+
+    monkeypatch.setattr(mode_select, "_run_standup_member_select", _member_select)
+
+    mode_select._standup_code_configure(
+        SimpleNamespace(size=(100, 36)),
+        SimpleNamespace(update=lambda renderable: None),
+        lambda **kwargs: "",
+        0.001,
+        True,
+        "s1",
+    )
+
+    assert len(choices_by_heading) == 2
+    github_heading = next(h for h in choices_by_heading if "GitHub" in h)
+    azdo_heading = next(h for h in choices_by_heading if "Azure DevOps" in h)
+    assert github_heading != azdo_heading
+    assert choices_by_heading[github_heading] == ["GitHub · acme"]
+    assert choices_by_heading[azdo_heading] == ["Azure DevOps · Core"]
+
+
+def test_repo_exclude_screen_defaults_to_everything_and_persists_an_exclusion(monkeypatch, tmp_path):
+    db = tmp_path / "sessions.db"
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+    monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_org_url", lambda: "")
+    monkeypatch.setattr(mode_select, "_run_standup_source_select", lambda *args, **kwargs: ["github"])
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.discover_code_repositories",
+        lambda sources: {"github": ["acme"], "azure_devops": []},
+    )
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.list_owner_repositories",
+        lambda owners, **kwargs: ({"acme": ["acme/api", "acme/noisy", "acme/web"]}, []),
+    )
+    repo_calls = []
+
+    def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
+        heading = kwargs.get("heading", "")
+        if heading.startswith("Choose repositories"):
+            repo_calls.append({"choices": list(choices), "initial": list(initial)})
+            # Untick the one noisy repo — everything else stays selected.
+            return [repo for repo in choices if repo != "acme/noisy"]
+        return list(choices)
+
+    monkeypatch.setattr(mode_select, "_run_standup_member_select", _member_select)
+
+    ok, _message = mode_select._standup_code_configure(
+        SimpleNamespace(size=(100, 36)),
+        SimpleNamespace(update=lambda renderable: None),
+        lambda **kwargs: "",
+        0.001,
+        True,
+        "s1",
+    )
+
+    assert ok is True
+    assert len(repo_calls) == 1
+    # Everything pre-checked by default — nobody should have to build the list
+    # up from nothing, only deselect what they don't want.
+    assert repo_calls[0]["initial"] == repo_calls[0]["choices"] == ["acme/api", "acme/noisy", "acme/web"]
+    with StandupStore(db) as store:
+        config = store.load_config("s1")
+    assert config["github_excluded_repositories"] == ["acme/noisy"]
+
+
+def test_repo_exclude_screen_remembers_a_previous_exclusion(monkeypatch, tmp_path):
+    db = tmp_path / "sessions.db"
+    with StandupStore(db) as store:
+        store.save_config(
+            "s1",
+            enabled=False,
+            time="10:00",
+            weekdays="1-5",
+            delivery_channels=["terminal"],
+            code_sources=["github"],
+            github_owners=["acme"],
+            github_excluded_repositories=["acme/noisy"],
+            code_scope_configured=True,
+        )
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+    monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_org_url", lambda: "")
+    monkeypatch.setattr(mode_select, "_run_standup_source_select", lambda *args, **kwargs: ["github"])
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.discover_code_repositories",
+        lambda sources: {"github": ["acme"], "azure_devops": []},
+    )
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.list_owner_repositories",
+        lambda owners, **kwargs: ({"acme": ["acme/api", "acme/noisy"]}, []),
+    )
+    repo_initial = {}
+
+    def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
+        if kwargs.get("heading", "").startswith("Choose repositories"):
+            repo_initial["value"] = list(initial)
+        return list(initial)
+
+    monkeypatch.setattr(mode_select, "_run_standup_member_select", _member_select)
+
+    mode_select._standup_code_configure(
+        SimpleNamespace(size=(100, 36)),
+        SimpleNamespace(update=lambda renderable: None),
+        lambda **kwargs: "",
+        0.001,
+        True,
+        "s1",
+    )
+
+    # "acme/noisy" stays unticked — re-entering the screen must not silently
+    # un-exclude a repo the user already dropped.
+    assert repo_initial["value"] == ["acme/api"]
+
+
+def test_repo_exclude_screen_preserves_exclusions_for_an_owner_a_partial_listing_missed(monkeypatch, tmp_path, caplog):
+    """A partial ``list_owner_repositories`` failure (one owner errors, another
+    returns fine) must not read as "nothing excluded" for the owner the screen
+    never showed — that would silently un-exclude repos the listing simply
+    failed to fetch this time, and the discovery warning must be logged."""
+    db = tmp_path / "sessions.db"
+    with StandupStore(db) as store:
+        store.save_config(
+            "s1",
+            enabled=False,
+            time="10:00",
+            weekdays="1-5",
+            delivery_channels=["terminal"],
+            code_sources=["github"],
+            github_owners=["acme", "other"],
+            github_excluded_repositories=["other/noisy"],
+            code_scope_configured=True,
+        )
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+    monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_org_url", lambda: "")
+    monkeypatch.setattr(mode_select, "_run_standup_source_select", lambda *args, **kwargs: ["github"])
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.discover_code_repositories",
+        lambda sources: {"github": ["acme", "other"], "azure_devops": []},
+    )
+    # "other" fails outright this run — only "acme" comes back, with a warning.
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.list_owner_repositories",
+        lambda owners, **kwargs: ({"acme": ["acme/api"]}, ["GitHub owner other: rate limited"]),
+    )
+    monkeypatch.setattr(mode_select, "_run_standup_member_select", lambda *a, **kw: list(a[6]) if len(a) > 6 else [])
+
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="yeaboi.ui.mode_select"):
+        ok, _message = mode_select._standup_code_configure(
+            SimpleNamespace(size=(100, 36)),
+            SimpleNamespace(update=lambda renderable: None),
+            lambda **kwargs: "",
+            0.001,
+            True,
+            "s1",
+        )
+
+    assert ok is True
+    with StandupStore(db) as store:
+        config = store.load_config("s1")
+    # "other/noisy" was never shown on screen (its owner's listing failed), so
+    # it must survive untouched rather than being dropped from the exclusion list.
+    assert config["github_excluded_repositories"] == ["other/noisy"]
+    assert any("rate limited" in record.message for record in caplog.records)
+
+
+def test_adding_github_to_an_azure_only_configured_standup_defaults_to_every_owner(monkeypatch, tmp_path):
+    """The actual bug this redesign fixes: GitHub being 'new' shouldn't force a
+    from-scratch manual walk just because Azure was configured first."""
+    db = tmp_path / "sessions.db"
+    with StandupStore(db) as store:
+        store.save_config(
+            "s1",
+            enabled=False,
+            time="10:00",
+            weekdays="1-5",
+            delivery_channels=["terminal"],
+            code_sources=["azure_devops"],
+            azdo_projects=["Core"],
+            code_scope_configured=True,
+        )
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+    monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+    monkeypatch.setattr("yeaboi.config.get_azure_devops_org_url", lambda: "https://dev.azure.com/acme")
+    monkeypatch.setattr(mode_select, "_run_standup_source_select", lambda *args, **kwargs: ["github", "azure_devops"])
+    monkeypatch.setattr(
+        "yeaboi.standup.code_scope.discover_code_repositories",
+        lambda sources: {"github": ["acme", "other"], "azure_devops": ["Core"]},
+    )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
+    owner_initial = {}
+
+    def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
+        if kwargs.get("heading", "").startswith("Choose GitHub organisations"):
+            owner_initial["value"] = list(initial)
+        return list(initial)
+
+    monkeypatch.setattr(mode_select, "_run_standup_member_select", _member_select)
+
+    mode_select._standup_code_configure(
+        SimpleNamespace(size=(100, 36)),
+        SimpleNamespace(update=lambda renderable: None),
+        lambda **kwargs: "",
+        0.001,
+        True,
+        "s1",
+    )
+
+    assert owner_initial["value"] == ["GitHub · acme", "GitHub · other"]
 
 
 def test_collector_expands_each_selected_azure_project(monkeypatch):
@@ -218,6 +458,93 @@ def test_owner_expansion_keeps_active_repos_and_reports_a_failed_owner(monkeypat
     assert seen["include_trees"] is False
 
 
+def test_owner_expansion_drops_excluded_repos_before_the_cap(monkeypatch):
+    """An excluded repo frees its slot rather than wasting one of the caps."""
+    from yeaboi.standup import code_scope
+
+    def _inventory(owners, days=120, *, include_trees=True):
+        return [
+            {"container": "acme", "name": "acme/api", "active": True, "updated_at": "2026-08-10"},
+            {"container": "acme", "name": "acme/noisy", "active": True, "updated_at": "2026-08-11"},
+            {"container": "acme", "name": "acme/web", "active": True, "updated_at": "2026-08-09"},
+        ]
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _inventory)
+    monkeypatch.setattr(code_scope, "_MAX_REPOS_PER_OWNER", 2)
+    monkeypatch.setattr(code_scope, "_MAX_REPOS_TOTAL", 2)
+
+    repositories, _warnings = expand_github_owners(["acme"], days=1, excluded=["acme/noisy"])
+
+    # Without the exclusion, "noisy" (most recently pushed) would have taken a
+    # cap slot ahead of "web" — excluding it up front lets "web" in instead.
+    assert repositories == ["acme/api", "acme/web"]
+
+
+def test_owner_expansion_excluded_is_case_insensitive(monkeypatch):
+    def _inventory(owners, days=120, *, include_trees=True):
+        return [{"container": "acme", "name": "Acme/API", "active": True}]
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _inventory)
+    repositories, _warnings = expand_github_owners(["acme"], days=1, excluded=["acme/api"])
+
+    assert repositories == []
+
+
+def test_list_owner_repositories_skips_archived_and_reports_discovery_errors(monkeypatch):
+    def _inventory(owners, days=120, *, include_trees=True):
+        return [
+            {"container": "acme", "name": "acme/api", "active": True},
+            # Inactive but not archived: still a real, excludable candidate.
+            {"container": "acme", "name": "acme/quiet", "active": False},
+            {"container": "acme", "name": "acme/old", "active": False, "skip_reason": "archived repository"},
+            {"container": "ghost", "name": "ghost", "active": True, "discovery_error": True, "error": "404"},
+        ]
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _inventory)
+    by_owner, warnings = list_owner_repositories(["acme", "ghost"])
+
+    assert by_owner == {"acme": ["acme/api", "acme/quiet"]}
+    assert warnings == ["GitHub owner ghost: 404"]
+
+
+def test_list_owner_repositories_caps_a_huge_owner_and_says_what_it_dropped(monkeypatch):
+    """The picker shows far more than a run would scan, but an unbounded org
+    still can't turn "open the picker" into an unpaged wall of repos."""
+    from yeaboi.standup import code_scope
+
+    def _inventory(owners, days=120, *, include_trees=True):
+        return [{"container": "acme", "name": f"acme/repo-{i}", "active": True} for i in range(5)]
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _inventory)
+    monkeypatch.setattr(code_scope, "_MAX_PICKER_REPOS_PER_OWNER", 3)
+    monkeypatch.setattr(code_scope, "_MAX_PICKER_REPOS_TOTAL", 3)
+
+    by_owner, warnings = list_owner_repositories(["acme"])
+
+    assert by_owner == {"acme": ["acme/repo-0", "acme/repo-1", "acme/repo-2"]}
+    assert warnings and "capped" in warnings[0] and "acme (3 of 5)" in warnings[0]
+
+
+def test_list_owner_repositories_of_no_owners_makes_no_api_call(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("should not be called")
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _boom)
+    assert list_owner_repositories([]) == ({}, [])
+    assert list_owner_repositories(None) == ({}, [])
+
+
+def test_list_owner_repositories_degrades_to_a_warning_when_discovery_raises(monkeypatch):
+    def _boom(owners, days=120, *, include_trees=True):
+        raise RuntimeError("rate limited")
+
+    monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _boom)
+    by_owner, warnings = list_owner_repositories(["acme"])
+
+    assert by_owner == {}
+    assert warnings and "rate limited" in warnings[0]
+
+
 def test_owner_expansion_degrades_to_a_warning_when_discovery_raises(monkeypatch):
     def _boom(owners, days=120, *, include_trees=True):
         raise RuntimeError("rate limited")
@@ -241,7 +568,7 @@ def test_expanding_no_owners_makes_no_api_call(monkeypatch):
 def test_collector_fans_an_owner_out_to_every_repo_inside_it(monkeypatch):
     monkeypatch.setattr(
         "yeaboi.standup.code_scope.expand_github_owners",
-        lambda owners, *, days: (["acme/api", "acme/web"], []),
+        lambda owners, *, days, excluded=None: (["acme/api", "acme/web"], []),
     )
     monkeypatch.setattr(
         "yeaboi.tools.github.github_recent_commits",
@@ -259,11 +586,36 @@ def test_collector_fans_an_owner_out_to_every_repo_inside_it(monkeypatch):
     assert {item["repository"] for item in bundle.items} == {"acme/api", "acme/web"}
 
 
+def test_collector_passes_the_excluded_repository_list_through_to_expansion(monkeypatch):
+    """Wiring test: the collector's config knob reaches code_scope's filter."""
+    seen = {}
+
+    def _expand(owners, *, days, excluded=None):
+        seen["excluded"] = excluded
+        return (["acme/api"], [])
+
+    monkeypatch.setattr("yeaboi.standup.code_scope.expand_github_owners", _expand)
+    monkeypatch.setattr(
+        "yeaboi.tools.github.github_recent_commits",
+        lambda repo, **kwargs: [{"author": "Alice", "kind": "commit", "title": repo, "key": repo}],
+    )
+    monkeypatch.setattr("yeaboi.tools.github.github_recent_prs", lambda repo, **kwargs: [])
+    monkeypatch.setattr("yeaboi.tools.github.github_recent_reviews", lambda repo, **kwargs: [])
+
+    collector.collect_recent_activity(
+        sources={collector.SOURCE_GITHUB},
+        github_owners=["acme"],
+        github_excluded_repositories=["acme/noisy"],
+    )
+
+    assert seen["excluded"] == ["acme/noisy"]
+
+
 def test_collector_unions_pinned_repos_with_the_owner_fan_out(monkeypatch):
     monkeypatch.setattr(
         "yeaboi.standup.code_scope.expand_github_owners",
         # "Acme/API" repeats the pinned repo in a different case.
-        lambda owners, *, days: (["acme/web", "Acme/API"], ["GitHub owner ghost: 404"]),
+        lambda owners, *, days, excluded=None: (["acme/web", "Acme/API"], ["GitHub owner ghost: 404"]),
     )
     monkeypatch.setattr(
         "yeaboi.tools.github.github_recent_commits",
@@ -348,6 +700,7 @@ def test_picker_leaves_a_saved_repo_scope_narrow_and_intact(monkeypatch, tmp_pat
         "yeaboi.standup.code_scope.discover_code_repositories",
         lambda sources: {"github": ["acme", "other"], "azure_devops": []},
     )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
     preselected = {}
 
     def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
@@ -399,6 +752,7 @@ def test_picking_an_owner_absorbs_its_own_pinned_repositories(monkeypatch, tmp_p
         "yeaboi.standup.code_scope.discover_code_repositories",
         lambda sources: {"github": ["acme"], "azure_devops": []},
     )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
     monkeypatch.setattr(mode_select, "_run_standup_member_select", lambda *args, **kwargs: ["GitHub · acme"])
 
     ok, message = mode_select._standup_code_configure(
@@ -436,6 +790,7 @@ def test_a_legacy_pinned_repo_survives_the_first_setup_walk(monkeypatch, tmp_pat
         "yeaboi.standup.code_scope.discover_code_repositories",
         lambda sources: {"github": ["acme", "other"], "azure_devops": []},
     )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
     preselected = {}
 
     def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
@@ -473,6 +828,7 @@ def test_first_walk_with_no_pin_pre_ticks_every_visible_org(monkeypatch, tmp_pat
         "yeaboi.standup.code_scope.discover_code_repositories",
         lambda sources: {"github": ["acme", "other"], "azure_devops": []},
     )
+    monkeypatch.setattr("yeaboi.standup.code_scope.list_owner_repositories", lambda owners, **kwargs: ({}, []))
     preselected = {}
 
     def _member_select(live, console, read_key, frame_time, supports_timeout, choices, initial, **kwargs):
@@ -534,7 +890,7 @@ def test_collector_measures_the_window_from_an_aware_since(monkeypatch):
 
     seen = {}
 
-    def _expand(owners, *, days):
+    def _expand(owners, *, days, excluded=None):
         seen["days"] = days
         return [], []
 
@@ -555,7 +911,7 @@ def test_collector_resolves_a_bare_token_to_every_visible_owner(monkeypatch):
     monkeypatch.setattr("yeaboi.standup.code_scope.discover_github_owners", lambda: ["acme"])
     monkeypatch.setattr(
         "yeaboi.standup.code_scope.expand_github_owners",
-        lambda owners, *, days: ([f"{owners[0]}/api"], []),
+        lambda owners, *, days, excluded=None: ([f"{owners[0]}/api"], []),
     )
     monkeypatch.setattr(
         "yeaboi.tools.github.github_recent_commits",

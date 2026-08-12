@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS standup_config (
     code_sources      TEXT NOT NULL DEFAULT '[]',
     github_owners     TEXT NOT NULL DEFAULT '[]',
     github_repositories TEXT NOT NULL DEFAULT '[]',
+    github_excluded_repositories TEXT NOT NULL DEFAULT '[]',
     azdo_projects     TEXT NOT NULL DEFAULT '[]',
     azdo_repositories TEXT NOT NULL DEFAULT '[]',
     code_scope_configured INTEGER NOT NULL DEFAULT 0,
@@ -459,6 +460,11 @@ class StandupStore:
                ADD COLUMN github_owners TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
                ADD COLUMN github_repositories TEXT NOT NULL DEFAULT '[]'""",
+            # Repos the owner picker would otherwise cover but the user deliberately
+            # excluded — see code_scope.expand_github_owners. An exclusion list (not
+            # an inclusion list) so a repo created after this was set is still scanned.
+            """ALTER TABLE standup_config
+               ADD COLUMN github_excluded_repositories TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
                ADD COLUMN azdo_projects TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
@@ -550,6 +556,7 @@ class StandupStore:
         code_sources: list[str] | None = None,
         github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
+        github_excluded_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
         code_scope_configured: bool = False,
@@ -594,6 +601,7 @@ class StandupStore:
         code_sources_json = json.dumps(code_sources or [])
         github_owners_json = json.dumps(github_owners or [])
         github_repositories_json = json.dumps(github_repositories or [])
+        github_excluded_repositories_json = json.dumps(github_excluded_repositories or [])
         azdo_projects_json = json.dumps(azdo_projects or [])
         azdo_repositories_json = json.dumps(azdo_repositories or [])
         documentation_sources_json = json.dumps(documentation_sources or [])
@@ -609,13 +617,13 @@ class StandupStore:
             """INSERT INTO standup_config
                    (session_id, enabled, time, lead_minutes, timezone, weekdays, delivery_channels,
                     repo_path, my_aliases, tracker_sources, team_members, roster_configured,
-                    code_sources, github_owners, github_repositories,
+                    code_sources, github_owners, github_repositories, github_excluded_repositories,
                     azdo_projects, azdo_repositories, code_scope_configured,
                     documentation_sources, documentation_scope_configured,
                     automation_markers, automation_handling,
                     transcript_dir, transcript_review_enabled,
                     habit_detection, habit_rules, habit_ai_match, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -631,6 +639,7 @@ class StandupStore:
                    code_sources = excluded.code_sources,
                    github_owners = excluded.github_owners,
                    github_repositories = excluded.github_repositories,
+                   github_excluded_repositories = excluded.github_excluded_repositories,
                    azdo_projects = excluded.azdo_projects,
                    azdo_repositories = excluded.azdo_repositories,
                    code_scope_configured = excluded.code_scope_configured,
@@ -660,6 +669,7 @@ class StandupStore:
                 code_sources_json,
                 github_owners_json,
                 github_repositories_json,
+                github_excluded_repositories_json,
                 azdo_projects_json,
                 azdo_repositories_json,
                 int(code_scope_configured),
@@ -713,7 +723,7 @@ class StandupStore:
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
             "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
             "transcript_dir, transcript_review_enabled, "
-            "habit_detection, habit_rules, habit_ai_match, github_owners "
+            "habit_detection, habit_rules, habit_ai_match, github_owners, github_excluded_repositories "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -771,6 +781,9 @@ class StandupStore:
             # every repo in the org. The picker offers that upgrade explicitly.
             "github_owners": _json_list(row[26]),
             "github_repositories": _json_list(row[13]),
+            # Same never-widen rule as github_repositories: an excluded repo stays
+            # excluded, but nothing here ever ADDS a repo — only the picker does.
+            "github_excluded_repositories": _json_list(row[27]),
             "azdo_projects": azdo_projects,
             "azdo_repositories": legacy_azdo_repositories,
             "code_scope_configured": bool(row[16]),

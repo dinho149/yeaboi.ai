@@ -2,6 +2,47 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.10.0",
+      "date": "2026-08-12",
+      "summary": "GitHub configuration now gets its own dedicated picker flow in Daily Standup's Configure screen, replacing the combined GitHub/Azure DevOps interface. When you pick GitHub organizations, a second screen lists every repository in those organizations with a repo-exclude interface — all repos are pre-checked by default, and you only untick the ones to exclude. This opt-out model means newly created repos are scanned automatically without reconfiguration. The owner picker now correctly pre-selects all discovered organizations when GitHub is added to a standup previously configured for Azure DevOps only. Beyond the UI, the configuration now includes a new `github_excluded_repositories` field (schema v29), threaded through the store, engine, collector, MCP tools, and CLI. Setup and token documentation has been clarified: the GITHUB_TOKEN requires both the 'repo' scope and SSO authorization if your organization mandates it — both requirements are now documented in the setup wizard, Settings, and .env.example.",
+      "highlights": [
+        {
+          "text": "GitHub organizations now have their own picker and dedicated repo-exclude screen instead of sharing space with Azure DevOps",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "Repo-exclude interface lists all discovered repos pre-checked — untick only what you want to exclude, new repos are scanned automatically",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Fixed owner picker pre-selection when adding GitHub to a standup previously configured for Azure DevOps only — now correctly pre-ticks all discovered GitHub orgs",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "GITHUB_TOKEN scope and SSO requirements now clearly documented in setup wizard, Settings, and .env.example to prevent configuration errors",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "New CLI flag --github-excluded-repositories and MCP tool support for repository exclusion management",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.9.0",
       "date": "2026-08-12",
       "summary": "Cloudflare share tunnels now auto-expire with a configurable timeout to prevent accidentally leaving boards or shares internet-reachable indefinitely. By default, every retro board, planning poker session, and anonymized or editable share closes automatically 60 minutes after it opens. The timeout is adjustable via the new TUNNEL_TIMEOUT_MINUTES environment variable (any positive integer for minutes, or 0 to disable auto-expiry entirely), and surfaced on the TUI's Settings > System page for point-and-click configuration. Enforcement happens inside the CloudflareTunnel class itself with a background timer that fires only if the tunnel stays open — manual stop() cancels the timer. When a tunnel expires, retro and poker boards fall back to their existing \"Retry Link\" failure state, while output shares collapse to \"Back only\" with the expiry message.",

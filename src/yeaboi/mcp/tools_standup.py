@@ -30,6 +30,7 @@ _CONFIG_DEFAULTS = {
     "code_sources": [],
     "github_owners": [],
     "github_repositories": [],
+    "github_excluded_repositories": [],
     "azdo_projects": [],
     "azdo_repositories": [],
     "code_scope_configured": False,
@@ -66,6 +67,7 @@ def _standup_run(
     code_sources: list | None,
     github_owners: list | None,
     github_repositories: list | None,
+    github_excluded_repositories: list | None,
     azdo_projects: list | None,
     azdo_repositories: list | None,
     documentation_sources: list | None,
@@ -86,6 +88,7 @@ def _standup_run(
         code_sources=code_sources,
         github_owners=github_owners,
         github_repositories=github_repositories,
+        github_excluded_repositories=github_excluded_repositories,
         azdo_projects=azdo_projects,
         azdo_repositories=azdo_repositories,
         documentation_sources=documentation_sources,
@@ -289,6 +292,7 @@ def _standup_config_set(
     code_sources: list | None,
     github_owners: list | None,
     github_repositories: list | None,
+    github_excluded_repositories: list | None,
     azdo_projects: list | None,
     azdo_repositories: list | None,
     documentation_sources: list | None,
@@ -371,6 +375,11 @@ def _standup_config_set(
                 if github_repositories is None
                 else list(dict.fromkeys(github_repositories))
             ),
+            "github_excluded_repositories": (
+                current.get("github_excluded_repositories", [])
+                if github_excluded_repositories is None
+                else list(dict.fromkeys(github_excluded_repositories))
+            ),
             "azdo_projects": (
                 current.get("azdo_projects", []) if azdo_projects is None else list(dict.fromkeys(azdo_projects))
             ),
@@ -384,6 +393,7 @@ def _standup_config_set(
                 or code_sources is not None
                 or github_owners is not None
                 or github_repositories is not None
+                or github_excluded_repositories is not None
                 or azdo_projects is not None
                 or azdo_repositories is not None
             ),
@@ -431,6 +441,7 @@ def register(app) -> None:
         code_sources: list[str] | None = None,
         github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
+        github_excluded_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
         documentation_sources: list[str] | None = None,
@@ -443,7 +454,9 @@ def register(app) -> None:
         desktop, slack, email). tracker_sources/team_members override the saved Team scope;
         code_sources, github_owners (a GitHub org/user — covers every active repo inside it, like
         an Azure project), github_repositories (exact owner/repo slugs), and azdo_projects override
-        the saved code scope without changing it. azdo_repositories is a legacy compatibility override.
+        the saved code scope without changing it. github_excluded_repositories drops specific
+        owner/repo slugs from an included owner's expansion — never widens scope, only trims it.
+        azdo_repositories is a legacy compatibility override.
         documentation_sources selects
         Confluence/Notion providers without changing saved config. days overrides the activity look-back
         window. review_transcripts (default true) first reviews any unreviewed standup meeting
@@ -461,6 +474,7 @@ def register(app) -> None:
             code_sources,
             github_owners,
             github_repositories,
+            github_excluded_repositories,
             azdo_projects,
             azdo_repositories,
             documentation_sources,
@@ -581,6 +595,7 @@ def register(app) -> None:
         code_sources: list[str] | None = None,
         github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
+        github_excluded_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
         documentation_sources: list[str] | None = None,
@@ -597,7 +612,9 @@ def register(app) -> None:
         terminal/desktop/slack/email, my_aliases a comma-separated identity list across tools,
         tracker_sources a subset of jira/azure_devops, team_members the authoritative roster,
         code_sources a subset of github/azure_devops; github_owners (GitHub orgs/users, each
-        covering every active repo inside it), github_repositories (exact owner/repo slugs) and
+        covering every active repo inside it), github_repositories (exact owner/repo slugs),
+        github_excluded_repositories (owner/repo slugs dropped from an included owner's
+        expansion — never widens scope, only trims it) and
         azdo_projects define the code scope,
         and documentation_sources a subset of confluence/notion.
         automation_markers is a comma-separated list of content signatures (e.g. 'wiz') marking
@@ -628,6 +645,7 @@ def register(app) -> None:
             code_sources,
             github_owners,
             github_repositories,
+            github_excluded_repositories,
             azdo_projects,
             azdo_repositories,
             documentation_sources,

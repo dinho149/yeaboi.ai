@@ -141,6 +141,28 @@ class TestConfig:
         assert cfg["documentation_sources"] == ["confluence", "notion"]
         assert cfg["documentation_scope_configured"] is True
 
+    def test_github_excluded_repositories_round_trip(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                code_sources=["github"],
+                github_owners=["acme"],
+                github_excluded_repositories=["acme/legacy", "acme/archive-mirror"],
+                code_scope_configured=True,
+            )
+            cfg = store.load_config("s1")
+        assert cfg["github_excluded_repositories"] == ["acme/legacy", "acme/archive-mirror"]
+
+    def test_github_excluded_repositories_defaults_empty(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config("s1", enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            cfg = store.load_config("s1")
+        assert cfg["github_excluded_repositories"] == []
+
     def test_automation_fields_round_trip(self, db_path):
         with StandupStore(db_path) as store:
             store.save_config(
