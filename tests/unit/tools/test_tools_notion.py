@@ -264,6 +264,26 @@ class TestNotionReadPage:
 
         assert "Error" in result
 
+    def test_reads_past_the_first_block_page(self, monkeypatch):
+        # Notion returns at most 100 children per request and signals the rest with
+        # has_more/next_cursor. Reading only the first response silently halves any
+        # page longer than 100 top-level blocks.
+        first_page = [_para_block(f"block {i}") for i in range(100)]
+
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                return {"results": [_para_block("SECOND-PAGE-MARKER")], "has_more": False, "next_cursor": None}
+            return {"results": first_page, "has_more": True, "next_cursor": "cur2"}
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("abc", "Runbook")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "abc"})
+
+        assert "SECOND-PAGE-MARKER" in result
+
     def test_truncates_long_content(self, monkeypatch):
         long_text = "x" * 9000
         mock_client = MagicMock()
@@ -274,6 +294,24 @@ class TestNotionReadPage:
         result = notion_read_page.invoke({"page_id": "1"})
 
         assert "Truncated" in result
+
+    def test_stops_paging_at_the_content_ceiling_and_reports_it(self, monkeypatch):
+        # A page that never stops signalling has_more still terminates: the walk
+        # halts once it holds more text than may be returned, and that cut is
+        # reported through the existing truncation notice rather than being silent.
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("2", "Endless")
+        mock_client.blocks.children.list.return_value = {
+            "results": [_para_block("y" * 9000)],
+            "has_more": True,
+            "next_cursor": "next",
+        }
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "2"})
+
+        assert "Truncated" in result
+        assert mock_client.blocks.children.list.call_count == 1
 
     def test_http_error_404(self, monkeypatch):
         mock_client = MagicMock()

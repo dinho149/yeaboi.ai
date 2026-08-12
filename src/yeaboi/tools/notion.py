@@ -257,16 +257,47 @@ def notion_read_page(page_id: str) -> str:
         url = page.get("url", "")
 
         # Notion stores page body as a tree of child blocks — fetch the top level.
-        children = client.blocks.children.list(page_id, page_size=100)
-        blocks = children.get("results", []) if isinstance(children, dict) else []
+        # One response carries at most 100 children and signals the rest via
+        # has_more/next_cursor, so a page longer than that is only half-read unless
+        # the cursor is followed to exhaustion. Same walk as
+        # notion_read_page_text._children below and _ensure_notion_brand_parent.
+        blocks: list = []
+        cursor: str | None = None
+        requests = 0
+        # True when paging stopped at the content ceiling rather than at the end of
+        # the page — reported through the same [Truncated …] suffix as an over-long
+        # body, so the walk is bounded without ever cutting silently.
+        capped = False
+        while True:
+            kwargs = {"block_id": page_id, "page_size": 100}
+            if cursor:
+                kwargs["start_cursor"] = cursor
+            children = client.blocks.children.list(**kwargs)
+            requests += 1
+            blocks.extend(children.get("results", []) if isinstance(children, dict) else [])
+            cursor = children.get("next_cursor") if isinstance(children, dict) else None
+            if not isinstance(children, dict) or not children.get("has_more") or not cursor:
+                break
+            if len(_blocks_to_text(blocks)) >= _MAX_CONTENT_CHARS:
+                capped = True
+                break
+
         content = _blocks_to_text(blocks)
 
-        truncated = False
-        if len(content) > _MAX_CONTENT_CHARS:
+        # A ceiling-stopped walk is truncated even when the rendered prefix lands
+        # exactly on the limit, which a length test alone would read as complete.
+        truncated = capped or len(content) > _MAX_CONTENT_CHARS
+        if truncated:
             content = content[:_MAX_CONTENT_CHARS]
-            truncated = True
 
-        logger.debug("notion_read_page fetched %r (%d chars)", title, len(content))
+        logger.debug(
+            "notion_read_page fetched %r (%d blocks over %d request(s), %d chars, truncated=%s)",
+            title,
+            len(blocks),
+            requests,
+            len(content),
+            truncated,
+        )
         header = f"=== {title} ===\n"
         if url:
             header += f"URL: {url}\n"
