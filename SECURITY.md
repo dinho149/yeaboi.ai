@@ -44,6 +44,11 @@ worth understanding:
   adjustable — including switching it off entirely — from Settings > System), so
   a board or share left open by accident doesn't stay internet-reachable
   indefinitely. Closing the screen yourself still closes it immediately either way.
+  A retro or poker ceremony can run past an hour, and a quick tunnel gets a fresh
+  random URL on every relaunch, so the live boards warn the host in the status
+  line as expiry nears — with time to wrap up or re-share — rather than the link
+  just going dead mid-session. Raise `TUNNEL_TIMEOUT_MINUTES` for routinely longer
+  ceremonies.
 - **`cloudflared` is auto-downloaded** from a pinned Cloudflare release and
   verified against a bundled SHA-256 before it is made executable or run.
 - **Credentials are stored in `~/.yeaboi/.env`** (plaintext, `0600`, in a `0700`

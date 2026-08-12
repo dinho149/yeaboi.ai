@@ -222,10 +222,27 @@ class CloudflareTunnel:
         # Link"). Never called on a manual stop() — see stop()'s timer cancellation.
         self._on_expire = on_expire
         self._expire_timer: threading.Timer | None = None
+        # Deadline for the armed expiry timer, in time.monotonic() terms — lets a
+        # caller (a live board's per-frame status line) warn a host before the link
+        # dies out from under a ceremony still in progress, rather than the tunnel
+        # just vanishing with no notice. None whenever no timer is armed.
+        self._expires_at: float | None = None
 
     @property
     def public_url(self) -> str:
         return self._url
+
+    def time_until_expiry(self) -> float | None:
+        """Seconds until the auto-expiry timer fires, or ``None`` if none is armed.
+
+        A quick tunnel gets a fresh random hostname on every launch, so once this
+        tunnel expires the old invite link is gone for good — Retry Link produces a
+        *different* URL. Polling this lets a live board warn its host while there is
+        still time to act, instead of the link just dying mid-ceremony.
+        """
+        if self._expire_timer is None or self._expires_at is None:
+            return None
+        return max(0.0, self._expires_at - time.monotonic())
 
     def start(self, *, timeout: float = 45.0) -> str | None:
         """Launch cloudflared and wait up to ``timeout`` s for a *connected* tunnel.
@@ -284,6 +301,7 @@ class CloudflareTunnel:
         timer = threading.Timer(minutes * 60.0, self._expire)
         timer.daemon = True
         self._expire_timer = timer
+        self._expires_at = time.monotonic() + minutes * 60.0
         timer.start()
         logger.info("retro: tunnel will auto-expire after %d minute(s)", minutes)
 

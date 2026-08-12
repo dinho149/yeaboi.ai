@@ -312,6 +312,37 @@ class TestCloudflareTunnel:
         assert t._expire_timer is None
         t.stop()
 
+    def test_time_until_expiry_none_before_a_timer_is_armed(self, tmp_path, monkeypatch):
+        binary = _fake_cloudflared(tmp_path, emit_url=True)
+        t = tunnel.CloudflareTunnel(5173, binary=binary)
+        assert t.time_until_expiry() is None  # never started
+
+    def test_time_until_expiry_counts_down_from_the_configured_minutes(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_tunnel_timeout_minutes", lambda: 10)
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_wait_dns_live", lambda self, host, *, deadline: True)
+        binary = _fake_cloudflared(tmp_path, emit_url=True)
+        t = tunnel.CloudflareTunnel(5173, binary=binary)
+        assert t.start(timeout=10)
+        remaining = t.time_until_expiry()
+        assert remaining is not None
+        assert 0 < remaining <= 10 * 60
+        t.stop()
+
+    def test_time_until_expiry_none_when_disabled_or_after_stop(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_tunnel_timeout_minutes", lambda: 0)
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_wait_dns_live", lambda self, host, *, deadline: True)
+        binary = _fake_cloudflared(tmp_path, emit_url=True)
+        t = tunnel.CloudflareTunnel(5173, binary=binary)
+        assert t.start(timeout=10)
+        assert t.time_until_expiry() is None  # 0 = disabled, nothing armed
+
+        monkeypatch.setattr("yeaboi.config.get_tunnel_timeout_minutes", lambda: 10)
+        binary2 = _fake_cloudflared(tmp_path, emit_url=True)
+        t2 = tunnel.CloudflareTunnel(5173, binary=binary2)
+        assert t2.start(timeout=10)
+        t2.stop()
+        assert t2.time_until_expiry() is None  # cancelled on manual stop
+
 
 class TestDnsLiveGate:
     """The DoH DNS-liveness gate that stops us handing out a not-yet-live tunnel URL."""
