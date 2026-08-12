@@ -622,6 +622,32 @@ class TestFixesAreAccounted:
         )
         assert prf.classify(snap, NOW).state == "success"
 
+    def test_a_bare_marker_from_the_pr_author_does_not_account(self):
+        """The one hole the split marker left open.
+
+        A bare marker means "all of them, **answered**" — pure dismissal, with no
+        claim of work for the next review pass to check. Accepting one from the
+        applicant would have let an unattended PR close its whole account with a
+        contentless comment, which is exactly the silence this check exists to
+        stop. From anyone else it still means what it always meant.
+        """
+        comments = (review(3, minutes_ago=90, ident=1), review(0, minutes_ago=10, ident=2))
+        bare_from_author = comment(
+            "Addressed.\n\n<!-- addressed: claude-review -->",
+            minutes_ago=20,
+            author=AUTHOR,
+            ident=7,
+            association="OWNER",
+        )
+        assert prf.classify(snapshot(comments=(*comments, bare_from_author)), NOW).state == "failure"
+
+    def test_a_counted_marker_from_the_pr_author_still_accounts(self):
+        """The asymmetry has to stay narrow: `fixed=` is the half the reviewer's
+        next read of the diff verifies, so the account that did the work is
+        exactly who should be writing it down."""
+        comments = (review(3, minutes_ago=90, ident=1), review(0, minutes_ago=10, ident=2))
+        assert prf.classify(snapshot(comments=(*comments, account(fixed=3))), NOW).state == "success"
+
     def test_it_is_not_capped(self):
         """`BLOCKING_ROUNDS` bounds a loop with no natural end. This has one — it
         is a single comment, and it does not get harder the more rounds run."""

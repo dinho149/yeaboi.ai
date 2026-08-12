@@ -74,7 +74,9 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   clear a finding there is to fix it, let the re-review report `open=0`, and say what you changed.
   `scripts/pr_feedback.py` refuses an `answered=` claim from the PR's own author on
   those branches — while accepting `fixed=` from that same author, because a claimed fix is checked
-  by the reviewer's next read of the diff and a claimed disagreement is checked by nobody — and a `feedback-override` label from that author too, since the override clears
+  by the reviewer's next read of the diff and a claimed disagreement is checked by nobody — and the bare
+  marker from that author too, since "all of them, answered" is the same dismissal with the counts left
+  off — and a `feedback-override` label from that author too, since the override clears
   more at once than any marker does — the account that wrote the change also has write access, so without that refusal
   the applicant would be holding the key to the gate. A machine that disagrees with a reviewer hands
   the work back as a proposal; it never overrules one.

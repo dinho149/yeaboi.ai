@@ -52,28 +52,56 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          set -euo pipefail
+          # FAIL-SAFE: this step must never exit non-zero, and deliberately does
+          # not `set -e`. `unit` and `integration` are required contexts and they
+          # `needs: scope` — and a dependency that FAILS skips them exactly as a
+          # dependency that was skipped does. A required check that never posts
+          # blocks the PR forever with nothing in the UI naming the cause, which
+          # is the outage the comment block below this job describes. So every
+          # failure path here falls back to the full suite; the worst this job
+          # can do is cost minutes, never block a merge.
+          # `test_workflow_schema.py` asserts the fallback writes every key the
+          # script itself writes, so the two cannot drift.
+          set -uo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             # A push to `main` is the tree everything else is cut from, and it is
             # rare. Nothing is saved by being clever here.
             echo "push to ${{ github.ref }} — running everything"
             printf 'no-scope-on-push\n' > changed.txt
           else
-            git fetch --no-tags origin "$BASE_REF"
+            git fetch --no-tags origin "$BASE_REF" || true
             # The MERGE-BASE, not the base tip: against the tip, a branch that
             # simply has not been rebased reads every commit `main` gained since
             # as part of this PR. And from the local checkout, never
             # `gh pr diff` — the API refuses any diff over 20000 lines with a
             # 406, which is how PR #111 shipped with no version bump at all.
-            MERGE_BASE=$(git merge-base FETCH_HEAD HEAD)
-            echo "merge-base: $MERGE_BASE"
-            # `|| true`: an empty file reaches test_scope.py as "no changed files
-            # were reported", which it treats as a full run. A failed diff must
-            # never look like a change that touched nothing.
-            git diff --name-only "$MERGE_BASE...HEAD" > changed.txt || true
+            MERGE_BASE=$(git merge-base FETCH_HEAD HEAD || true)
+            echo "merge-base: ${MERGE_BASE:-<unresolved>}"
+            # `|| true` throughout: an empty file reaches test_scope.py as "no
+            # changed files were reported", which it treats as a full run. A
+            # failed diff must never look like a change that touched nothing.
+            # `--no-renames` so a move reports both the path it left and the one
+            # it arrived at — the source area's tests are the ones a move breaks.
+            if [ -n "$MERGE_BASE" ]; then
+              git diff --name-only --no-renames "$MERGE_BASE...HEAD" > changed.txt || true
+            fi
+            touch changed.txt
           fi
           wc -l < changed.txt
-          python3 scripts/test_scope.py --changed-files changed.txt --github-output
+          if ! python3 scripts/test_scope.py --changed-files changed.txt --github-output; then
+            echo "::warning::test_scope.py failed to resolve the scope — running everything"
+            {
+              echo "full=true"
+              echo "unit_paths=tests/unit/ tests/*.py"
+              echo "slow_paths=tests/integration/ tests/contract/"
+              echo "go=true"
+              echo "parity=true"
+              echo "web=true"
+              echo "site=true"
+              echo "package=true"
+              echo "eval=true"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   # ── Fast gate ────────────────────────────────────────────────────────────
   # Unit tests — also enforced locally by the pre-commit hook in
@@ -95,9 +123,12 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
-      # UNIT_PATHS is the scope job's selection; the Makefile's own default is
-      # the full lane, so a missing output degrades to running everything.
-      - run: make test-fast UNIT_PATHS="${{ needs.scope.outputs.unit_paths }}"
+      # UNIT_PATHS is the scope job's selection. A command-line make variable
+      # beats the Makefile's `?=`, so an empty output would NOT fall back to the
+      # default — `UNIT_LANE` in the Makefile resolves the empty case instead.
+      - env:
+          UNIT_PATHS: ${{ needs.scope.outputs.unit_paths }}
+        run: make test-fast UNIT_PATHS="$UNIT_PATHS"
 
   # ── Slow suite ───────────────────────────────────────────────────────────
   # Integration + contract tests (marked @pytest.mark.slow) — too slow for

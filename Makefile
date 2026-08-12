@@ -25,6 +25,13 @@ env: ## Copy .env.example to .env (won't overwrite existing)
 # both name subdirectories, and only `test-all`, which nothing calls, picked
 # them up. One of them had been failing that whole time.
 UNIT_PATHS ?= tests/unit/ $(wildcard tests/test_*.py)
+# A command-line `UNIT_PATHS=` beats `?=`, so CI handing over an empty selection
+# would reach pytest with no paths at all — and pytest then falls through to
+# pyproject's `testpaths = ["tests"]`, quietly collecting the integration,
+# contract, golden and parity suites as well. That is not the "degrades to the
+# full unit lane" the callers assume, so resolve the empty case here instead.
+UNIT_LANE = $(if $(strip $(UNIT_PATHS)),$(UNIT_PATHS),tests/unit/ $(wildcard tests/test_*.py))
+SLOW_LANE = $(if $(strip $(SLOW_PATHS)),$(SLOW_PATHS),tests/integration/ tests/contract/)
 SLOW_PATHS ?= tests/integration/ tests/contract/
 # `--dist loadfile`, not the default `load`: it keeps every test in a file on one
 # worker, so module-scoped fixtures, the shared `tmp_path` conventions and the
@@ -34,28 +41,32 @@ SLOW_PATHS ?= tests/integration/ tests/contract/
 PYTEST_PARALLEL ?= -n auto --dist loadfile
 
 test-fast: ## Unit tests only — the tight edit-test loop
-	$(UV) run pytest $(UNIT_PATHS) $(PYTEST_PARALLEL) --tb=short -q
+	$(UV) run pytest $(UNIT_LANE) $(PYTEST_PARALLEL) --tb=short -q
 	@echo "✓ Unit tests passed"
 
 test-slow: ## Integration + contract only — the half `test-fast` does not cover
-	$(UV) run pytest $(SLOW_PATHS) --tb=short
+	$(UV) run pytest $(SLOW_LANE) --tb=short
 	@echo "✓ Integration & contract tests passed"
 
 test: ## Unit + integration + contract tests — full suite, no API keys needed
-	$(UV) run pytest $(UNIT_PATHS) $(SLOW_PATHS) --tb=short
+	$(UV) run pytest $(UNIT_LANE) $(SLOW_LANE) --tb=short
 	@echo "✓ All tests passed"
 
 # `python3`, not `$(UV) run`: scripts/test_scope.py imports the standard library
 # only, and putting a dependency resolve in front of the hook that runs on every
 # commit is how a fast gate becomes one people disable.
+# The `||` is load-bearing: a non-zero exit inside `$$( )` is invisible to make,
+# so a crash in the selector would silently become an empty path list. Fall back
+# to the whole unit lane, the same direction CI falls back in.
 test-scoped: ## Only the areas the working tree touches, plus the always-run guards
-	@python3 scripts/test_scope.py --working-tree --explain
-	@$(UV) run pytest $$(python3 scripts/test_scope.py --working-tree --unit-paths) \
-		$(PYTEST_PARALLEL) --tb=short -q
+	@python3 scripts/test_scope.py --working-tree --explain || echo "scope failed — running the full unit lane"
+	@paths=$$(python3 scripts/test_scope.py --working-tree --unit-paths) || paths=""; \
+		[ -n "$$paths" ] || paths="$(UNIT_LANE)"; \
+		$(UV) run pytest $$paths $(PYTEST_PARALLEL) --tb=short -q
 	@echo "✓ Scoped unit tests passed"
 
 test-v: ## Unit + integration + contract tests (verbose)
-	$(UV) run pytest $(UNIT_PATHS) $(SLOW_PATHS) -v
+	$(UV) run pytest $(UNIT_LANE) $(SLOW_LANE) -v
 
 test-all: ## Everything including golden evaluators (requires make eval separately for golden)
 	$(UV) run pytest --ignore=tests/smoke --tb=short

@@ -22,6 +22,11 @@ would have caught `_note` on the commit that introduced it.
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -192,3 +197,72 @@ class TestRequiredChecksAlwaysReport:
         to every tool that reads workflows, including the one that would say so."""
         job = next(j for j in self._ci_jobs().values() if j.get("name", "").startswith("Workflow lint"))
         assert "if" not in job
+
+
+class TestTheScopeJobCannotBreakARequiredCheck:
+    """`unit` is a required context and it `needs: scope`.
+
+    A dependency that FAILS skips the dependent job exactly as a dependency that
+    was skipped does — and `test_a_required_job_never_depends_on_a_skippable_one`
+    above only checks for an `if:`, which is not how this one would go wrong. The
+    scope job resolves a git diff and runs a script; a fetch blip, a branch with
+    no common ancestor, or any traceback would take `Unit tests` down with it and
+    leave the PR unmergeable with nothing in the UI naming the cause.
+
+    So the step is written to never exit non-zero, and these assert that it stays
+    that way.
+    """
+
+    def _script_output_keys(self) -> set[str]:
+        """Every key `scripts/test_scope.py --github-output` actually writes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.txt"
+            changed = Path(tmp) / "changed.txt"
+            changed.write_text("src/yeaboi/poker/board.py\n", encoding="utf-8")
+            subprocess.run(
+                [sys.executable, "scripts/test_scope.py", "--changed-files", str(changed), "--github-output"],
+                cwd=ROOT,
+                env={**os.environ, "GITHUB_OUTPUT": str(out)},
+                check=True,
+                capture_output=True,
+            )
+            return {line.split("=", 1)[0] for line in out.read_text(encoding="utf-8").splitlines() if line}
+
+    def _scope_step(self) -> dict:
+        data = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        steps = data["jobs"]["scope"]["steps"]
+        return next(s for s in steps if s.get("id") == "scope")
+
+    def test_the_step_does_not_abort_on_the_first_error(self):
+        script = self._scope_step()["run"]
+        assert "set -euo pipefail" not in script, (
+            "`set -e` here aborts the step on any failing command, which fails the "
+            "job, which skips `Unit tests` — a required context that then never posts"
+        )
+        assert "FAIL-SAFE" in script, "the reason this step is shaped oddly must stay written down"
+
+    def test_the_fallback_writes_every_output_key(self):
+        """The fallback duplicates the script's output keys in bash, so it needs
+        a guard: a key added to `test_scope.py` and not here means the fallback
+        produces an empty output and the dependent `if:` reads it as false.
+
+        Ground truth is the script's own run, not a second hand-written list —
+        one more copy of the keys is one more thing to drift."""
+        script = self._scope_step()["run"]
+        fallback = script.split("::warning::", 1)[1]
+        written = set(re.findall(r'echo "([a-z_]+)=', fallback))
+        assert written == self._script_output_keys(), (
+            f"fallback writes {sorted(written)}, script writes {sorted(self._script_output_keys())}"
+        )
+
+    def test_every_declared_output_is_in_the_fallback(self):
+        data = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        declared = set(data["jobs"]["scope"]["outputs"])
+        fallback = self._scope_step()["run"].split("::warning::", 1)[1]
+        assert declared == set(re.findall(r'echo "([a-z_]+)=', fallback))
+
+    def test_the_fallback_runs_everything_rather_than_nothing(self):
+        """Which direction it fails in is the whole point."""
+        fallback = self._scope_step()["run"].split("::warning::", 1)[1]
+        assert 'echo "full=true"' in fallback
+        assert "=false" not in fallback

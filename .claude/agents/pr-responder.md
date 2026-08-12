@@ -49,6 +49,10 @@ the correct response to a good half of them is a sentence rather than a commit.
    next pass reads the diff and re-reports a fix that is not there, and nothing
    but a person checks a disagreement.
 
+   **Always write the counts.** A bare `<!-- addressed: claude-review -->` means
+   "all of them, answered", and answering is the one thing you may not do here —
+   so from you it accounts for nothing and the gate stays red.
+
    **A fix without this reply does not clear the gate.** "Push and the next
    verdict reads `open=0`" used to be enough; it is not, because the whole record
    of what you did about three findings would be a number going down, and nobody

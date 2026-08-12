@@ -77,22 +77,32 @@ AREAS: tuple[Area, ...] = (
     Area(
         "standup",
         src=("src/yeaboi/standup/", "src/yeaboi/mcp/tools_standup.py"),
-        tests=("tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),
+        tests=("tests/unit/test_mcp_server.py", "tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),
     ),
     Area(
         "retro",
         src=("src/yeaboi/retro/", "src/yeaboi/mcp/tools_retro.py"),
-        tests=("tests/unit/test_retro_*.py",),
+        tests=(
+            "tests/unit/test_mcp_server.py",
+            "tests/unit/test_retro_*.py",
+        ),
     ),
     Area(
         "poker",
         src=("src/yeaboi/poker/", "src/yeaboi/mcp/tools_poker.py"),
-        tests=("tests/unit/test_poker_*.py", "tests/unit/prompts/test_poker_prompt.py"),
+        tests=(
+            "tests/unit/test_mcp_server.py",
+            "tests/unit/test_poker_*.py",
+            "tests/unit/prompts/test_poker_prompt.py",
+        ),
     ),
     Area(
         "reporting",
         src=("src/yeaboi/reporting/", "src/yeaboi/mcp/tools_reporting.py"),
-        tests=("tests/unit/test_reporting_*.py",),
+        tests=(
+            "tests/unit/test_mcp_server.py",
+            "tests/unit/test_reporting_*.py",
+        ),
     ),
     Area(
         "roadmap",
@@ -102,7 +112,7 @@ AREAS: tuple[Area, ...] = (
     Area(
         "performance",
         src=("src/yeaboi/performance/", "src/yeaboi/mcp/tools_performance.py", "src/yeaboi/beta.py"),
-        tests=("tests/unit/test_performance_*.py", "tests/unit/test_beta*.py"),
+        tests=("tests/unit/test_mcp_server.py", "tests/unit/test_performance_*.py", "tests/unit/test_beta*.py"),
     ),
     Area(
         "analysis",
@@ -115,6 +125,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/mcp/tools_team.py",
         ),
         tests=(
+            "tests/unit/test_mcp_server.py",
             "tests/unit/test_analysis_*.py",
             "tests/unit/test_team_*.py",
             "tests/unit/test_doc_quality.py",
@@ -136,6 +147,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/ui/mode_select/screens/_screens_category.py",
         ),
         tests=(
+            "tests/unit/test_mcp_server.py",
             "tests/unit/test_agentwatch_*.py",
             "tests/unit/test_pricing.py",
             "tests/unit/test_category_screen.py",
@@ -155,6 +167,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/mcp/tools_sessions.py",
         ),
         tests=(
+            "tests/unit/test_mcp_server.py",
             "tests/unit/nodes/*.py",
             "tests/unit/prompts/*.py",
             "tests/unit/test_state.py",
@@ -281,7 +294,7 @@ AREAS: tuple[Area, ...] = (
             "scripts/gen_web_types.py",
             "scripts/gen_site_seo.py",
             "scripts/gen_og_card.py",
-            "scripts/dev_",
+            "scripts/dev_*",
         ),
         tests=(
             "tests/unit/test_web_*.py",
@@ -401,9 +414,7 @@ INERT: tuple[str, ...] = (
     "README.md",
     "SECURITY.md",
     "CLAUDE.md",
-    "CHANGELOG.md",
     ".gitignore",
-    ".github/ISSUE_TEMPLATE/",
     ".github/dependabot.yml",
 )
 
@@ -468,23 +479,47 @@ class Scope:
     slow: bool = False
 
 
-def _matches(path: str, prefixes: tuple[str, ...]) -> bool:
-    """A path is claimed by a prefix (directory or exact file) or a glob."""
+def _claim(path: str, prefixes: tuple[str, ...]) -> int:
+    """How specifically `prefixes` claims `path` — 0 when it does not.
+
+    The score is the length of the longest pattern that matched, which makes an
+    exact file beat the directory containing it. `area_for` uses that to pick a
+    winner instead of taking the first area listed.
+    """
+    best = 0
     for prefix in prefixes:
         if prefix.endswith("/"):
             if path.startswith(prefix):
-                return True
+                best = max(best, len(prefix))
         elif path == prefix or fnmatch.fnmatch(path, prefix):
-            return True
-    return False
+            best = max(best, len(prefix))
+    return best
+
+
+def _matches(path: str, prefixes: tuple[str, ...]) -> bool:
+    """A path is claimed by a prefix (directory or exact file) or a glob."""
+    return _claim(path, prefixes) > 0
 
 
 def area_for(path: str) -> Area | None:
-    """The area claiming this source path, or None. First match wins."""
+    """The area claiming this source path, or None. MOST SPECIFIC match wins.
+
+    It used to be first-match-wins, which silently made two entries unreachable:
+    `security` claims `sharing/access.py` and `sharing/gate.py` by name, but
+    `artifacts-sharing` claims the whole `sharing/` directory and is listed
+    first, so a change to the share access-control code ran the sharing tests
+    and never the guardrail ones. Ordering is invisible in a diff and the
+    failure is silent, so the tie-break is specificity rather than position;
+    `test_test_scope.py` now also asserts every `Area.src` entry resolves back
+    to its own area, which is what makes a future shadowing fail the build.
+    """
+    best: Area | None = None
+    best_score = 0
     for area in AREAS:
-        if _matches(path, area.src):
-            return area
-    return None
+        score = _claim(path, area.src)
+        if score > best_score:
+            best, best_score = area, score
+    return best
 
 
 def resolve(changed: list[str]) -> Scope:
@@ -522,7 +557,10 @@ def resolve(changed: list[str]) -> Scope:
             claimed = [a for a in AREAS if _matches(path, a.tests)]
             for area in claimed:
                 scope.areas.add(area.name)
-            if not claimed and path not in ("tests/parity/", *ALWAYS) and not _matches(path, ALWAYS):
+            # `path.startswith("tests/parity/")`, not `path in (...)`: this
+            # compared a file path against a directory string, so the carve-out
+            # never fired and every parity edit ran the whole suite.
+            if not claimed and not path.startswith("tests/parity/") and not _matches(path, ALWAYS):
                 scope.reasons.append(f"{path} is claimed by no area — running everything")
                 scope.full = True
             continue
@@ -574,8 +612,14 @@ def changed_from_git(base: str | None, working_tree: bool) -> list[str]:
         paths: list[str] = []
         for line in _git("status", "--porcelain").splitlines():
             entry = line[3:] if len(line) > 3 else ""
-            # Renames print `old -> new`; the new path is the one to test.
-            paths.append(entry.split(" -> ")[-1].strip().strip('"'))
+            # Renames print `old -> new`, and BOTH sides matter: the source area
+            # still has tests importing the path the file left, and they are
+            # exactly the ones a move breaks. Taking only the destination made a
+            # cross-area `git mv` run the new area's tests and nothing else,
+            # while the totality guard stayed green because the file *is*
+            # claimed — just by the wrong area.
+            for side in entry.split(" -> "):
+                paths.append(side.strip().strip('"'))
         return [p for p in paths if p]
     if base:
         merge_base = _git("merge-base", base, "HEAD").strip()
@@ -583,7 +627,9 @@ def changed_from_git(base: str | None, working_tree: bool) -> list[str]:
             # A base we cannot resolve is not an empty diff — say nothing and let
             # `resolve` fall through to the full suite.
             return []
-        return [p for p in _git("diff", "--name-only", f"{merge_base}...HEAD").splitlines() if p]
+        # `--no-renames`: with detection on, git prints a move as the single
+        # destination path, hiding the source area the move broke.
+        return [p for p in _git("diff", "--name-only", "--no-renames", f"{merge_base}...HEAD").splitlines() if p]
     return []
 
 

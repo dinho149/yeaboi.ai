@@ -16,12 +16,17 @@ rather than by a regression shipping months later.
 from __future__ import annotations
 
 import importlib.util
+import io
 import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# Every key `--github-output` writes. `test_workflow_schema.py` asserts ci.yml's
+# fail-safe fallback writes exactly these, so the two cannot drift.
+GITHUB_OUTPUT_KEYS = frozenset({"full", "unit_paths", "slow_paths", "go", "parity", "web", "site", "package", "eval"})
 
 # Loaded by path: scripts/ is not a package, and the module must be importable
 # without installing anything (CI runs it before `uv sync`).
@@ -207,3 +212,168 @@ class TestSelectionIsRunnable:
         """572 tests and about 100s — cheap enough that splitting it would buy
         less than the risk of getting the split wrong."""
         assert scope_mod.slow_paths(scope_mod.resolve(["src/yeaboi/poker/board.py"])) == list(scope_mod.FULL_SLOW)
+
+
+class TestEveryRegistryEntryIsReachable:
+    """A pattern that matches nothing looks exactly like one that works.
+
+    The totality guards above ask "is every file claimed by something". These
+    ask the mirror question — "does every claim reach a file" — which is the
+    half that caught two real bugs: `security` named
+    `src/yeaboi/sharing/access.py` and `sharing/gate.py`, but `artifacts-sharing`
+    claims the whole `sharing/` directory and was listed first, so under
+    first-match-wins those two entries were dead and a change to the share
+    access-control code never ran a single guardrail test.
+    """
+
+    def test_every_src_entry_resolves_to_its_own_area(self):
+        """The anti-shadowing check. `area_for` is most-specific-wins now, so a
+        directory can no longer swallow a file another area names outright."""
+        shadowed = []
+        for area in scope_mod.AREAS:
+            for entry in area.src:
+                probe = f"{entry}__probe__.py" if entry.endswith("/") else entry
+                won = scope_mod.area_for(probe)
+                if won is None or won.name != area.name:
+                    shadowed.append(f"{area.name} claims {entry}, but it resolves to {won.name if won else None}")
+        assert not shadowed, "unreachable registry entries:\n  " + "\n  ".join(shadowed)
+
+    def test_every_src_entry_matches_something_in_the_tree(self):
+        missing = []
+        for area in scope_mod.AREAS:
+            for entry in area.src:
+                if entry.endswith("/"):
+                    if not (ROOT / entry).is_dir():
+                        missing.append(f"{area.name}: {entry}")
+                elif "*" in entry:
+                    if not list(ROOT.glob(entry)):
+                        missing.append(f"{area.name}: {entry}")
+                elif not (ROOT / entry).exists():
+                    missing.append(f"{area.name}: {entry}")
+        assert not missing, "registry entries matching no file:\n  " + "\n  ".join(missing)
+
+    def test_the_inert_list_matches_something(self):
+        missing = [
+            entry
+            for entry in scope_mod.INERT
+            if not (ROOT / entry).is_dir() and not (ROOT / entry).exists() and not list(ROOT.glob(entry))
+        ]
+        assert not missing, f"INERT entries matching nothing: {missing}"
+
+
+class TestTheMcpServerTestFollowsItsTools:
+    """`mcp/tools_<mode>.py` belongs to the mode, per CLAUDE.md — but the test
+    that drives every tool end-to-end through `create_app` lives in one file
+    owned by `platform`. Without this coupling a tools change ran the mode's
+    tests and never the server's, and `test_surface_parity.py` (in ALWAYS) only
+    catches schema drift, not behaviour."""
+
+    def _tool_modules(self):
+        return sorted(p for p in (ROOT / "src" / "yeaboi" / "mcp").glob("tools_*.py"))
+
+    def test_there_is_at_least_one_tools_module(self):
+        assert self._tool_modules(), "the glob below would pass vacuously"
+
+    def test_a_tools_change_runs_the_mcp_server_test(self):
+        missed = []
+        for module in self._tool_modules():
+            rel = module.relative_to(ROOT).as_posix()
+            selected = scope_mod.unit_paths(scope_mod.resolve([rel]))
+            if not any("test_mcp_server.py" in path for path in selected):
+                missed.append(rel)
+        assert not missed, f"these select no MCP server test: {missed}"
+
+
+class TestARenameReportsBothSides:
+    """`git diff --name-only` prints a move as its destination only, so a
+    cross-area `git mv` selected the new area and never the old one — whose
+    tests still import the path the file left, and are exactly the ones a move
+    breaks. The totality guard stayed green throughout, because the file *is*
+    claimed; just by the wrong area."""
+
+    def test_the_merge_base_diff_disables_rename_detection(self):
+        source = (ROOT / "scripts" / "test_scope.py").read_text(encoding="utf-8")
+        assert '"--no-renames"' in source, "a rename would report only its destination"
+
+    def test_the_ci_diff_disables_rename_detection_too(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        assert "--no-renames" in workflow, "ci.yml resolves the diff itself and needs the same flag"
+
+    def test_a_working_tree_rename_reports_both_paths(self, monkeypatch):
+        monkeypatch.setattr(
+            scope_mod.subprocess,
+            "run",
+            lambda *a, **k: type(
+                "R", (), {"returncode": 0, "stdout": "R  src/yeaboi/standup/a.py -> src/yeaboi/analysis/a.py\n"}
+            )(),
+        )
+        paths = scope_mod.changed_from_git(None, working_tree=True)
+        assert paths == ["src/yeaboi/standup/a.py", "src/yeaboi/analysis/a.py"]
+
+    def test_a_cross_area_move_selects_both_areas(self):
+        scope = scope_mod.resolve(["src/yeaboi/standup/a.py", "src/yeaboi/analysis/a.py"])
+        assert {"standup", "analysis"} <= scope.areas
+
+
+class TestTheCiEntryPoints:
+    """`changed_from_git`, `explain` and `main` are what CI actually calls, and
+    they had no tests at all. Given that `unit` (a required context) depends on
+    this script's exit code, an uncaught exception in `main` is the thing that
+    skips a required check."""
+
+    def test_the_working_tree_parser_handles_every_porcelain_shape(self, monkeypatch):
+        porcelain = " M src/yeaboi/poker/board.py\n?? scripts/new_thing.py\nA  tests/unit/test_x.py\n"
+        monkeypatch.setattr(
+            scope_mod.subprocess,
+            "run",
+            lambda *a, **k: type("R", (), {"returncode": 0, "stdout": porcelain})(),
+        )
+        assert scope_mod.changed_from_git(None, working_tree=True) == [
+            "src/yeaboi/poker/board.py",
+            "scripts/new_thing.py",
+            "tests/unit/test_x.py",
+        ]
+
+    def test_a_failed_git_call_reports_nothing_which_means_everything(self, monkeypatch):
+        monkeypatch.setattr(
+            scope_mod.subprocess,
+            "run",
+            lambda *a, **k: type("R", (), {"returncode": 128, "stdout": ""})(),
+        )
+        assert scope_mod.changed_from_git("origin/main", working_tree=False) == []
+        assert scope_mod.resolve([]).full is True
+
+    def test_an_unresolvable_base_is_not_an_empty_diff(self, monkeypatch):
+        monkeypatch.setattr(
+            scope_mod.subprocess,
+            "run",
+            lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "\n"})(),
+        )
+        assert scope_mod.changed_from_git("origin/main", working_tree=False) == []
+
+    def test_explain_names_the_areas_and_survives_a_full_scope(self):
+        scoped = scope_mod.explain(scope_mod.resolve(["src/yeaboi/poker/board.py"]))
+        assert "poker" in scoped
+        assert "FULL" in scope_mod.explain(scope_mod.resolve([]))
+
+    def test_main_writes_every_github_output_key(self, tmp_path, monkeypatch, capsys):
+        changed = tmp_path / "changed.txt"
+        changed.write_text("src/yeaboi/poker/board.py\n", encoding="utf-8")
+        out = tmp_path / "out.txt"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+        assert scope_mod.main(["--changed-files", str(changed), "--github-output"]) == 0
+        written = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines())
+        assert set(written) == GITHUB_OUTPUT_KEYS
+        assert written["full"] == "false"
+        assert "tests/unit/test_poker_board.py" in written["unit_paths"]
+
+    def test_main_refuses_github_output_with_no_env(self, tmp_path, monkeypatch):
+        changed = tmp_path / "changed.txt"
+        changed.write_text("src/yeaboi/poker/board.py\n", encoding="utf-8")
+        monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+        assert scope_mod.main(["--changed-files", str(changed), "--github-output"]) == 2
+
+    def test_main_reads_stdin(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO("src/yeaboi/poker/board.py\n"))
+        assert scope_mod.main(["--changed-files", "-", "--unit-paths"]) == 0
+        assert "test_poker" in capsys.readouterr().out

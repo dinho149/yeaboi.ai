@@ -45,7 +45,9 @@ all point here rather than restating it.
    Two numbers rather than one because they are checked by different things: the
    reviewer's next pass reads the diff and re-reports a fix that is not there,
    and nothing but a person checks a disagreement. A bare `<!-- addressed:
-   claude-review -->` is the older shape and still means "all of them, answered".
+   claude-review -->` is the older shape and still means "all of them, answered"
+   — except from the PR's own author on the unattended lane, where "answered" is
+   the one thing that account may not say, so write the counts.
 
    **On an unattended PR a fix without this reply does not clear the gate.** The
    next verdict reporting `open=0` used to be the whole clearing mechanism, and it

@@ -667,6 +667,7 @@ def account_for(
     after: datetime,
     after_id: int,
     count: int,
+    deny_bare_from: str = "",
 ) -> Comment | None:
     """The reply that says what was done about ``count`` findings, or None.
 
@@ -675,6 +676,14 @@ def account_for(
     claim of *work*, and the reviewer's next pass checks it — claim a fix that is
     not there and the finding comes straight back. A dismissal has no such check
     behind it, which is why only that one is refused from the applicant.
+
+    ``deny_bare_from`` is the one place that asymmetry has to be spelled out. A
+    *bare* marker means "all of them, answered" — it is pure dismissal, carrying
+    no claim of work for the next review pass to check. Accepting one from the
+    PR's own author would have let an unattended PR clear its account with a
+    contentless comment, which is precisely the silence this check exists to
+    stop. A counted marker from that same author is still fine: ``fixed=`` is
+    the half that gets verified.
 
     Earliest match wins, so the ledger names the reply that answered the round
     rather than whichever later comment happened to repeat the marker.
@@ -687,6 +696,8 @@ def account_for(
             continue
         response = responses(comment.body).get(producer_key)
         if response is None or not response.covers(count):
+            continue
+        if response.bare and deny_bare_from and comment.author == deny_bare_from:
             continue
         if best is None or (comment.created_at, comment.id) < (best.created_at, best.id):
             best = comment
@@ -768,7 +779,17 @@ def unaccounted_rounds(snapshot: Snapshot) -> list[OpenItem]:
         if comment.id == latest_id:
             continue
         required = settled_count(history, index)
-        if account_for(snapshot.comments, producer.key, comment.written_at, comment.id, required) is not None:
+        if (
+            account_for(
+                snapshot.comments,
+                producer.key,
+                comment.written_at,
+                comment.id,
+                required,
+                deny_bare_from=snapshot.author,
+            )
+            is not None
+        ):
             continue
         settled = "finding" if required == 1 else "findings"
         items.append(
@@ -1426,7 +1447,14 @@ def review_ledger(snapshot: Snapshot) -> list[str]:
         if required:
             # A round the reviewer has already moved past. What is being looked
             # for is the account of what changed.
-            account = account_for(snapshot.comments, producer.key, comment.written_at, comment.id, required)
+            account = account_for(
+                snapshot.comments,
+                producer.key,
+                comment.written_at,
+                comment.id,
+                required,
+                deny_bare_from=snapshot.author if is_unattended(snapshot) else "",
+            )
             missing = "**nothing written back yet**"
         else:
             # The newest round. Nothing has settled, so there is nothing to
