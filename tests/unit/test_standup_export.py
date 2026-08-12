@@ -489,13 +489,13 @@ class TestSkippedSourcesLine:
 
         report = _report(
             skipped_sources=(
-                ("github", "selected, but no repositories chosen"),
+                ("github", "selected, but no organisations or repositories in scope"),
                 ("local_git", "no repo path configured"),
             ),
             unmet_sources=("github",),
         )
         text = format_standup_plaintext(report)
-        assert "GitHub (selected, but no repositories chosen)" in text
+        assert "GitHub (selected, but no organisations or repositories in scope)" in text
         assert "Local Git" not in text
 
     def test_html_details_still_list_every_skip(self):

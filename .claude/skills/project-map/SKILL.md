@@ -231,7 +231,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).
 - `ANONYMIZE_MASK_TERMS` — optional, comma-separated company-specific terms the Anonymize action always masks (e.g. `"YouLend,YL"`); seeds the deterministic pre-mask pass so they're redacted even when no LLM is available
 - `STANDUP_USER_NAME` — optional, your display name for your own standup update (default: "Me")
-- `STANDUP_GITHUB_REPO` — optional, GitHub repo (owner/repo) scanned for Daily Standup code activity
+- `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)

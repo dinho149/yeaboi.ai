@@ -22,7 +22,9 @@ import (
 // tests/unit/test_gocore_packaging.py::TestSchemaGuardLockstep. A database
 // whose schema_info version is newer than this must be refused (error 1001)
 // — the Python side owns migrations, Go must never write ahead.
-const currentSchemaVersion = 27
+// v28 adds standup_config.github_owners — a Standup code-scope column the
+// sidecar never reads or writes, so the ceiling rises with no Go change.
+const currentSchemaVersion = 28
 
 // ErrSchemaTooNew is the schema-guard sentinel; the RPC layer maps it to 1001.
 var ErrSchemaTooNew = errors.New("sessions.db schema is newer than this yeaboi-core understands")

@@ -1039,7 +1039,7 @@ class TestSkippedSourceReasons:
         skipped, unmet = engine._skipped_sources(
             self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [], ["github"]
         )
-        assert dict(skipped)["github"] == "selected, but no repositories chosen"
+        assert dict(skipped)["github"] == "selected, but no organisations or repositories in scope"
         assert "github" in unmet
 
     def test_a_source_that_ran_is_never_listed(self, monkeypatch):
@@ -1118,7 +1118,7 @@ class TestSkippedSourceReasons:
 
 
 class TestCodeScopeReportsWhatItDropped:
-    """The fifth return value of ``_resolve_code_scope``.
+    """The last return value of ``_resolve_code_scope``.
 
     A source ticked in setup with nothing behind it used to be stripped silently,
     which is indistinguishable from the source having found nothing.
@@ -1126,8 +1126,10 @@ class TestCodeScopeReportsWhatItDropped:
 
     def test_a_ticked_source_with_no_repos_is_reported_as_dropped(self):
         config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": []}
-        sources, github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
-        assert sources == [] and github == []
+        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == [] and github == [] and owners == []
         assert dropped == ["github"]
 
     def test_azure_with_neither_projects_nor_repositories_is_dropped(self):
@@ -1137,22 +1139,107 @@ class TestCodeScopeReportsWhatItDropped:
             "azdo_projects": [],
             "azdo_repositories": [],
         }
-        sources, _github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        sources, _owners, _github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
         assert sources == []
         assert dropped == ["azure_devops"]
 
     def test_a_source_with_a_real_scope_is_not_dropped(self):
         config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": ["o/r"]}
-        sources, github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        sources, _owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
         assert sources == ["github"] and github == ["o/r"]
         assert dropped == []
 
-    def test_nothing_is_dropped_before_the_scope_has_ever_been_configured(self):
-        # Defaults are a guess, not a choice — stripping them would report a
-        # decision the user never made.
-        config = {"code_scope_configured": False, "code_sources": ["github"], "github_repositories": []}
-        _sources, _github, _projects, _legacy, dropped = engine._resolve_code_scope(config, None, None, None, None)
+    def test_an_owner_is_scope_enough_to_keep_github(self):
+        """Owners are the GitHub analog of Azure projects — they count as scope."""
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["github"],
+            "github_owners": ["acme"],
+            "github_repositories": [],
+        }
+        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == ["github"] and owners == ["acme"] and github == []
         assert dropped == []
+
+    def test_nothing_is_dropped_before_the_scope_has_ever_been_configured(self, monkeypatch):
+        # Defaults are a guess, not a choice — stripping them would report a
+        # decision the user never made. An unconfigured GitHub source with an
+        # empty scope is "not resolved yet", not "empty": the collector resolves
+        # it and reports its own failure if the token can list nothing.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        config = {"code_scope_configured": False, "code_sources": ["github"], "github_repositories": []}
+        sources, *_rest, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert sources == ["github"]
+        assert dropped == []
+
+
+class TestGitHubOwnerScopeResolution:
+    """Where the owner list comes from when the caller does not supply one."""
+
+    def test_an_explicit_override_wins_over_saved_owners(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_owners": ["saved"]}
+        _sources, owners, *_rest = engine._resolve_code_scope(
+            config, None, None, None, None, github_owners=["override"]
+        )
+        assert owners == ["override"]
+
+    def test_a_bare_token_enables_github_without_resolving_a_scope(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        sources, owners, github, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        # The point of the change: a token alone now produces code coverage
+        # instead of a report that reads like a quiet day. Which owners that
+        # means is the collector's job — resolution stays network-free.
+        assert sources == ["github"]
+        assert owners == [] and github == []
+
+    def test_scope_resolution_never_touches_the_network(self, monkeypatch):
+        """It runs on every path, including inside unit tests.
+
+        Discovering here blocked the standup's critical path on a GitHub call and
+        put a live 401 inside the test suite.
+        """
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("scope resolution must not call GitHub")
+
+        monkeypatch.setattr("yeaboi.tools.github._get_github_client", _boom)
+        monkeypatch.setattr("yeaboi.standup.code_scope.discover_github_owners", _boom)
+
+        engine._resolve_code_scope(None, None, None, None, None)
+
+    def test_a_pinned_legacy_repo_is_honoured_verbatim(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "acme/api")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        _sources, owners, github, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        # A pin is an explicit narrow scope; it reaches the collector as a
+        # repository, which is what stops the auto-discovery branch firing.
+        assert owners == [] and github == ["acme/api"]
+
+    def test_no_token_and_no_repo_means_no_github_at_all(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        sources, owners, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        assert sources == [] and owners == []
 
 
 class TestSkippedSources:

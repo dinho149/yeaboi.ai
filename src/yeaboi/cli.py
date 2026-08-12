@@ -601,10 +601,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override saved code providers for this run",
     )
     standup_p.add_argument(
+        "--github-owners",
+        nargs="+",
+        metavar="OWNER",
+        help="Override saved GitHub owner/organisation scope (covers every active repo inside each)",
+    )
+    standup_p.add_argument(
         "--github-repositories",
         nargs="+",
         metavar="OWNER/REPO",
-        help="Override saved GitHub repository scope",
+        help="Override saved GitHub repository scope (exact repos, unioned with --github-owners)",
     )
     standup_p.add_argument(
         "--azdo-projects",
@@ -1432,6 +1438,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
         tracker_sources=args.tracker_sources,
         team_members=args.team_members,
         code_sources=args.code_sources,
+        github_owners=args.github_owners,
         github_repositories=args.github_repositories,
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,

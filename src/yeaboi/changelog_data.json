@@ -2,6 +2,40 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.8.0",
+      "date": "2026-08-12",
+      "summary": "Daily Standup now offers GitHub organization-level scoping, bringing it to feature parity with Azure DevOps project selection. Instead of manually ticking individual repositories, you can now pick GitHub organisations in Configure → Code Sources, and the standup automatically discovers and tracks all repositories within those organisations. The picker intelligently expands owners per run (not at configure time), so newly created repositories are immediately available without any reconfiguration. Repository discovery is capped at the 10 most recently pushed per owner to keep the collector efficient, and GitHub API errors are handled gracefully as warnings rather than blocking the entire source.",
+      "highlights": [
+        {
+          "text": "GitHub organizations now appear in the code sources picker alongside Azure DevOps projects",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "Organizations expand per run to discover repositories automatically, including newly created repos without reconfiguration",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Repository discovery is capped at 10 per owner and 30 total to prevent bottlenecking the standup's 10-minute run window",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "New github_owners CLI flag and MCP tool parameter brings feature parity across all surfaces",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.7.0",
       "date": "2026-08-11",
       "summary": "Daily Standup fixes two critical reachability defects: the browser-editable share now appears on live pages (not just saved runs), and skipped sources are now named with reasons in the progress steps, TUI panels, and broadcast surfaces. A new Sources action lets you reconfigure code sources on any standup page after initial setup. GitHub API errors (403/404/rate-limit) are now safely caught per-source, and one vocabulary bridges source labels across four surfaces \u2014 no more mismatches between \"GitHub\" and \"GitHub code\" between the report and progress steps.",

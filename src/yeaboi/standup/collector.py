@@ -75,7 +75,7 @@ SKIP_SDK_MISSING = "SDK not installed"
 SKIP_REASONS = {
     SOURCE_JIRA: "JIRA_PROJECT_KEY not set",
     SOURCE_AZDO: "AZURE_DEVOPS_PROJECT not set",
-    SOURCE_GITHUB: "STANDUP_GITHUB_REPO not set",
+    SOURCE_GITHUB: "GITHUB_TOKEN not set",
     SOURCE_LOCAL_GIT: "no repo path configured",
     SOURCE_CONFLUENCE: "CONFLUENCE_SPACE_KEY not set",
     SOURCE_NOTION: "NOTION_ROOT_PAGE_ID not set",
@@ -149,6 +149,7 @@ def _resolve_sources(
     local_repo_path: str,
     confluence_space: str,
     notion_root: str = "",
+    github_owners: list[str] | None = None,
 ) -> set[str]:
     """Decide which sources to attempt.
 
@@ -163,7 +164,7 @@ def _resolve_sources(
     if azdo_project:
         auto.add(SOURCE_AZDO)
         auto.add(SOURCE_AZDO_REPOS)  # same credential/project unlocks repo activity too
-    if github_repo:
+    if github_repo or github_owners:
         auto.add(SOURCE_GITHUB)
     if local_repo_path:
         auto.add(SOURCE_LOCAL_GIT)
@@ -182,6 +183,7 @@ def collect_recent_activity(
     jira_project: str = "",
     azdo_project: str = "",
     github_repo: str = "",
+    github_owners: list[str] | None = None,
     github_repositories: list[str] | None = None,
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
@@ -223,6 +225,7 @@ def collect_recent_activity(
         jira_project=jira_project,
         azdo_project=azdo_project,
         github_repo=github_repo,
+        github_owners=github_owners,
         local_repo_path=local_repo_path,
         confluence_space=confluence_space,
         notion_root=notion_root,
@@ -456,9 +459,50 @@ def collect_recent_activity(
                     source_errors.append((exc.source, exc.message))
                     return []
 
-            repositories = [
+            explicit = [
                 repo for repo in (github_repositories if github_repositories is not None else [github_repo]) if repo
             ]
+            # Owners are expanded here, per run, rather than being frozen into the
+            # saved config: picking an organisation is a standing instruction to
+            # cover everything inside it, so a repository created this morning is
+            # in tonight's standup with nothing to re-tick.
+            owners = list(github_owners or ())
+            if not owners and not explicit:
+                # Nothing chosen and nothing pinned: the source is enabled on the
+                # strength of the token alone, so cover everything that token can
+                # see rather than reporting a quiet day. An empty result here is a
+                # real answer about the token and is reported as one — silence is
+                # what made "no repo configured" look like "nobody did anything".
+                from yeaboi.standup.code_scope import discover_github_owners
+
+                _progress("GitHub · discovering organisations")
+                owners = discover_github_owners()
+                if not owners:
+                    source_errors.append(
+                        (
+                            SOURCE_GITHUB,
+                            "GITHUB_TOKEN could not list any organisation or repository — "
+                            "check the token's scopes, or choose a scope in the standup setup",
+                        )
+                    )
+            expanded: list[str] = []
+            if owners:
+                from yeaboi.standup.code_scope import expand_github_owners
+
+                _progress("GitHub · discovering repositories")
+                window_days = days
+                if since is not None:
+                    window_days = max(1, (datetime.now(since.tzinfo) - since).days)
+                expanded, scope_warnings = expand_github_owners(owners, days=window_days)
+                for warning in scope_warnings:
+                    source_errors.append((SOURCE_GITHUB, warning))
+            # Explicit repositories win the ordering: the owner fan-out is capped
+            # (code_scope._MAX_REPOS_*), and a hand-pinned repo must not be the one
+            # dropped by a busy org's expansion.
+            seen_repositories: dict[str, str] = {}
+            for repository in (*explicit, *expanded):
+                seen_repositories.setdefault(repository.lower(), repository)
+            repositories = list(seen_repositories.values())
             cache_kwargs = {"metadata_cache": metadata_cache} if metadata_cache is not None else {}
 
             calls = []

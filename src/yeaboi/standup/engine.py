@@ -187,7 +187,10 @@ def _skipped_sources(
         collector.SOURCE_JIRA: bool(source_params["jira_project"]),
         collector.SOURCE_AZDO: bool(source_params["azdo_project"]),
         collector.SOURCE_GITHUB: bool(
-            source_params.get("github_repositories") or source_params["github_repo"] or get_github_token()
+            source_params.get("github_owners")
+            or source_params.get("github_repositories")
+            or source_params["github_repo"]
+            or get_github_token()
         ),
         collector.SOURCE_LOCAL_GIT: bool(source_params["local_repo_path"]),
         collector.SOURCE_CONFLUENCE: bool(source_params["confluence_space"]),
@@ -203,7 +206,9 @@ def _skipped_sources(
     # A code source stripped for an empty scope, keyed by the collector source it
     # feeds — Azure Repos is "azure_devops" in the picker but ``azdo_repos`` here.
     empty_scope = {
-        collector.SOURCE_GITHUB: ("github", "selected, but no repositories chosen"),
+        # Covers both readings: nothing ticked in the picker, and a token that
+        # could not list a single organisation on an unconfigured run.
+        collector.SOURCE_GITHUB: ("github", "selected, but no organisations or repositories in scope"),
         collector.SOURCE_AZDO_REPOS: ("azure_devops", "selected, but no Azure projects chosen"),
     }
     skipped: list[tuple[str, str]] = []
@@ -250,10 +255,15 @@ def _resolve_code_scope(
     github_repositories: list[str] | None,
     azdo_projects: list[str] | None,
     azdo_repositories: list[str] | None,
-) -> tuple[list[str], list[str], list[str], list[str] | None, list[str]]:
-    """Resolve GitHub repositories and Azure project scope.
+    github_owners: list[str] | None = None,
+) -> tuple[list[str], list[str], list[str], list[str], list[str] | None, list[str]]:
+    """Resolve GitHub owner/repository and Azure project scope.
 
-    The fifth element is the sources dropped for having an empty scope — selected
+    GitHub owners are the analog of Azure projects: one picked owner stands for
+    every repository inside it, and the collector expands it per run. Explicit
+    repositories still work and are unioned with the expansion.
+
+    The last element is the sources dropped for having an empty scope — selected
     in setup, but with no repository or project behind them. That used to happen
     silently, which is indistinguishable from the source having found nothing.
     """
@@ -273,6 +283,22 @@ def _resolve_code_scope(
             else ((config or {}).get("github_repositories", []) if configured else default_github)
         )
     )
+    if github_owners is not None:
+        owners = list(dict.fromkeys(github_owners))
+    elif configured:
+        owners = list(dict.fromkeys((config or {}).get("github_owners", [])))
+    elif default_github:
+        # A pinned STANDUP_GITHUB_REPO is an explicit narrow scope; widening it to
+        # that repo's whole owner would be a surprise, so honour it verbatim.
+        owners = []
+    else:
+        # Deliberately NOT discovered here. An unconfigured GitHub source reaches
+        # the collector with an empty scope, and the collector — already on a
+        # worker thread, already reporting progress, already folding failures into
+        # bundle.errors — resolves it to every visible owner. Doing it here made
+        # scope resolution block on the network on the standup's critical path,
+        # and put a live API call inside every unit test that touched it.
+        owners = []
     legacy_repositories = list(
         dict.fromkeys(
             azdo_repositories
@@ -302,7 +328,7 @@ def _resolve_code_scope(
         )
     dropped: list[str] = []
     if configured:
-        if "github" in sources and not github:
+        if "github" in sources and not github and not owners:
             sources.remove("github")
             dropped.append("github")
         if "azure_devops" in sources and not projects and not legacy_repositories:
@@ -312,7 +338,7 @@ def _resolve_code_scope(
     # when callers supply them and do not supply projects.
     if azdo_projects is not None or projects:
         legacy_repositories = None
-    return sources, github, projects, legacy_repositories, dropped
+    return sources, owners, github, projects, legacy_repositories, dropped
 
 
 def _resolve_documentation_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
@@ -1345,6 +1371,7 @@ def run_standup(
     tracker_sources: list[str] | None = None,
     team_members: list[str] | None = None,
     code_sources: list[str] | None = None,
+    github_owners: list[str] | None = None,
     github_repositories: list[str] | None = None,
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
@@ -1463,11 +1490,13 @@ def run_standup(
     selected_trackers = _resolve_tracker_sources(config, tracker_sources, source_params)
     (
         selected_code_sources,
+        selected_github_owners,
         selected_github_repos,
         selected_azdo_projects,
         selected_azdo_repos,
         dropped_code_sources,
-    ) = _resolve_code_scope(config, code_sources, github_repositories, azdo_projects, azdo_repositories)
+    ) = _resolve_code_scope(config, code_sources, github_repositories, azdo_projects, azdo_repositories, github_owners)
+    source_params["github_owners"] = selected_github_owners
     source_params["github_repositories"] = selected_github_repos
     source_params["azdo_projects"] = selected_azdo_projects
     source_params["azdo_repositories"] = selected_azdo_repos

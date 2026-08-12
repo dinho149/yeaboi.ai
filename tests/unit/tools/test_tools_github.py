@@ -907,6 +907,39 @@ class TestGithubListOwners:
         assert github_list_owners() == ["acme-corp", "dinho"]
 
     @patch("yeaboi.tools.github._get_github_client")
+    def test_a_short_final_page_keeps_the_owners_already_found(self, mock_client):
+        """PyGithub raises IndexError mid-iteration when a page is short.
+
+        Seen live: GitHub advertises a next page and serves nothing behind it, so
+        ``PaginatedList[:limit]`` blows up *after* yielding real items. Wrapping
+        the loop in try/except would discard them — three orgs become zero and
+        the picker comes up empty with only a log line to show for it.
+        """
+        from yeaboi.tools.github import github_list_owners
+
+        class _ShortPage:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def __iter__(self):
+                yield from self._items
+                raise IndexError("list index out of range")
+
+        user = MagicMock()
+        user.login = "dinho"
+        user.get_orgs.side_effect = lambda: _ShortPage([self._named("Acme-Corp"), self._named("zeta-labs")])
+        user.get_repos.side_effect = lambda **_kwargs: _ShortPage([])
+        mock_client.return_value.get_user.return_value = user
+
+        assert github_list_owners() == ["Acme-Corp", "dinho", "zeta-labs"]
+
+    def test_take_stops_at_the_limit(self):
+        from yeaboi.tools.github import _take
+
+        assert list(_take(iter(range(10)), 3)) == [0, 1, 2]
+        assert list(_take(iter([]), 3)) == []
+
+    @patch("yeaboi.tools.github._get_github_client")
     def test_auth_failure_propagates_to_the_caller(self, mock_client):
         # The picker owns the fallback (configured owners + an on-screen warning),
         # so a dead client must not be flattened into "no owners exist".
