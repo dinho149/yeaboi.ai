@@ -226,6 +226,66 @@ def _no_real_package_install(monkeypatch):
     monkeypatch.setattr("yeaboi.voice_install._popen", _blocked)
 
 
+class RealGitHubWriteBlocked(BaseException):
+    """A test reached the real `gh` CLI. Never caught — see the fixture below.
+
+    ``BaseException`` for the same reason ``RealPackageInstallBlocked`` is: this
+    fires inside code whose whole contract is to degrade gracefully, and a broad
+    ``except Exception`` on the way out would swallow it and report a failed `gh`
+    call instead of failing the test.
+    """
+
+
+@pytest.fixture(autouse=True)
+def _no_real_gh_calls(monkeypatch):
+    """No test may shell out to the real `gh` CLI.
+
+    This is not hypothetical. ``TestMigrateProposalsApply`` stubbed
+    ``cowork_setup._api`` — the REST seam — and asserted on the calls. That was
+    complete for as long as ``_reclassify`` had only a REST branch. The moment it
+    grew a ``gh`` branch (``TRANSPORT`` defaults to ``"gh"``), those same tests
+    took the unstubbed path and ran real commands against the real repository:
+    ``gh issue edit 7 --add-label cowork:queued`` plus four ``gh issue comment``
+    calls, landing on a PR merged months earlier. They had to be undone by hand.
+
+    A test asserting on writes is exactly a test that will make them if a seam
+    moves, and "stub the right seam" is not a property anything checks. Blocking
+    the single process seam is, and it fails loudly rather than mutating anything.
+
+    Blocked at the **process spawn** inside ``_gh_transport``, not at ``gh()``
+    itself. That is deliberate and is the only level that works for everyone:
+    ``test_gh_transport.py`` calls ``transport.gh`` directly on purpose — proving a
+    missing binary degrades to 127 rather than a traceback — and stubs
+    ``transport._run`` beneath it, while ``test_cowork_setup.py`` stubs
+    ``transport.gh`` above it. Both are legitimate, both share this MonkeyPatch
+    instance, and a stub at either level lands after ours and wins. What is left
+    over is precisely the case with no stub at all, which is the one that reaches
+    the network.
+
+    ``scripts/`` is not a package, so the module is found by the name it registers
+    in ``sys.modules``; if it was never imported there is nothing to block and this
+    is a no-op.
+    """
+    import sys as _sys
+
+    transport = _sys.modules.get("_gh_transport")
+    if transport is None:
+        return
+    real = transport._run
+
+    def _blocked(argv, *args, **kwargs):
+        # `gh` only. Everything else through this seam is `git remote get-url
+        # origin` — a local, read-only lookup that cannot reach GitHub and that
+        # several tests legitimately let run. Blocking it too would fail seven
+        # tests that never did anything wrong, and a guard with collateral like
+        # that gets loosened rather than kept.
+        if argv and argv[0] == "gh":
+            raise RealGitHubWriteBlocked(f"test tried to spawn the real gh CLI: {argv}")
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(transport, "_run", _blocked, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _no_ambient_sidecar(monkeypatch):
     """Unit and integration tests always exercise the pure-Python path.

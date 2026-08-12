@@ -2592,14 +2592,14 @@ class TestApiTransport:
         monkeypatch.setattr(setup.shutil, "which", lambda name: None)
         monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
         monkeypatch.setattr(
-            setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", "")
+            setup.transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", "")
         )
         assert setup.repo_slug() == "owner/name"
 
     def test_an_unreadable_remote_is_none(self, monkeypatch):
         monkeypatch.setattr(setup.shutil, "which", lambda name: None)
         monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
-        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"))
+        monkeypatch.setattr(setup.transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"))
         assert setup.repo_slug() is None
 
     # --- the token never leaks ----------------------------------------------
@@ -3991,6 +3991,12 @@ class TestMigrateProposalsApply:
     """The verbs. This is the half that is not allowed to be wrong."""
 
     def _record(self, monkeypatch):
+        """Pin the REST branch explicitly. `TRANSPORT` defaults to `"gh"`, so a test
+        that stubs only `_api` and asserts on the calls does not exercise the path it
+        thinks it does — it exercises the real `gh` CLI. That is not a hypothetical
+        either: it is how `gh issue edit 7 --add-label cowork:queued` and four
+        comments landed on a merged PR and had to be undone by hand."""
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
         calls: list[tuple[str, str]] = []
 
@@ -4042,6 +4048,53 @@ class TestMigrateProposalsApply:
         calls = self._record(monkeypatch)
         setup._reclassify(7, "platform", repair=True)
         assert [method for method, _ in calls] == ["DELETE"], calls
+
+    def test_it_writes_over_gh_too_not_only_rest(self, monkeypatch):
+        """The read half asks REST on both transports deliberately; the write half
+        had only the REST branch.
+
+        So on a laptop with `gh` logged in and no `GH_TOKEN` exported — the
+        ordinary way a human runs this, and the only way it is *allowed* to be run —
+        all forty-five issues read back fine and every single write failed with "no
+        GH_TOKEN in the environment". The command reported a plan it had not
+        applied.
+        """
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        calls: list[tuple[str, ...]] = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            return subprocess.CompletedProcess(list(args), 0, "", "")
+
+        monkeypatch.setattr(setup.transport, "gh", fake_gh)
+        ok, _ = setup._reclassify(7, "platform", repair=False)
+        assert ok
+        verbs = [args[1] for args in calls]
+        assert verbs == ["edit", "comment", "edit"], calls
+        assert "--add-label" in calls[0] and "--remove-label" in calls[-1]
+        assert not any("api" in args for args in calls), "the gh branch must not reach for gh api"
+
+    def test_the_gh_branch_adds_before_it_removes(self, monkeypatch):
+        """Same ordering invariant as the REST branch, and for the same reason: a
+        crash between the two leaves both labels on, which every reader resolves as
+        queued. Removing first leaves the issue in neither queue."""
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        calls: list[tuple[str, ...]] = []
+        monkeypatch.setattr(
+            setup.transport,
+            "gh",
+            lambda *a: (calls.append(a), subprocess.CompletedProcess(list(a), 0, "", ""))[1],
+        )
+        setup._reclassify(7, "platform", repair=False)
+        flags = [
+            flag
+            for args in calls
+            for flag in args
+            if flag.startswith("--add-label") or flag.startswith("--remove-label")
+        ]
+        assert flags == ["--add-label", "--remove-label"], calls
 
     def test_a_strict_run_refuses_to_apply(self):
         """Reclassifying forty issues on a mechanical rule is a judgement about a

@@ -60,6 +60,20 @@ class ApiResult:
 
 # --- the CLI half ------------------------------------------------------------
 
+# This module's single process seam — EVERY spawn in this file goes through it,
+# `gh` and `git` alike, which is what makes replacing this one name total. Named
+# so it can be replaced without touching
+# the shared `subprocess` module — patching `subprocess.run` itself would patch it
+# for every other test in the suite, which is the trap `tests/conftest.py`'s
+# `_no_real_package_install` documents for the installer.
+#
+# It exists because the test suite reached the real `gh` once and wrote to the
+# real repository: a migration test stubbed the REST seam and asserted on the
+# calls, which was complete until the function under it grew a `gh` branch, and
+# then `gh issue edit 7 --add-label …` plus four comments landed on a merged PR.
+# `_no_real_gh_calls` blocks this name.
+_run = subprocess.run
+
 
 def gh(*args: str) -> subprocess.CompletedProcess[str]:
     """One `gh` call, reporting a missing binary the way `gh` reports a failure.
@@ -71,7 +85,7 @@ def gh(*args: str) -> subprocess.CompletedProcess[str]:
     traceback out of a script whose whole contract is to degrade with a remedy.
     """
     try:
-        return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+        return _run(["gh", *args], capture_output=True, text=True, check=False)
     except OSError as error:
         return subprocess.CompletedProcess(["gh", *args], 127, "", str(error))
 
@@ -292,7 +306,7 @@ def _slug_from_remote(root: Path | None) -> str | None:
     """``owner/name`` parsed out of `git remote get-url origin`."""
     argv = ["git"] + (["-C", str(root)] if root else []) + ["remote", "get-url", "origin"]
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+        result = _run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
     except OSError:
         return None
     if result.returncode != 0:
