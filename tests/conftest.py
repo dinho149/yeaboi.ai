@@ -10,6 +10,7 @@ See README: "Testing — Contract Tests" for background on VCR.py replay.
 
 from __future__ import annotations
 
+import os
 import webbrowser
 from pathlib import Path
 
@@ -38,6 +39,36 @@ def _sandbox_allows_test_dirs(tmp_path_factory):
     mp.setenv("YEABOI_ALLOWED_PATHS", f"{basetemp},{fixtures_dir},{Path.cwd()}")
     yield
     mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _no_env_leak():
+    """`os.environ` is restored after every test, whatever the test did to it.
+
+    Thirteen setters in ``config.py`` write straight to ``os.environ`` on
+    purpose — ``set_tips_enabled``, ``set_duck_enabled``, the beta ack, the log
+    level and the rest — so a preference change takes effect in the running
+    session without a reload. A test that calls one without putting the key under
+    ``monkeypatch`` therefore leaks it into every test that runs *after* it, in
+    whatever order the collector happened to pick.
+
+    That is invisible until the order changes, and it changed twice at once here:
+    ``tests/*.py`` joined the unit lane, and the lane went parallel.
+    ``test_set_tips_enabled_preserves_other_keys`` left ``TIPS_ENABLED=false``
+    behind, and four welcome-screen tests then rendered a screen with no tip
+    strip and failed on a missing row — passing alone, failing in the suite, with
+    nothing in either failure naming the environment.
+
+    Restoring wholesale rather than fixing the two callers, because the callers
+    are not the bug: writing to ``os.environ`` is what those functions are *for*,
+    there are thirteen of them, and the next one added would reintroduce this
+    with no test to catch it. Cost is one dict copy per test.
+    """
+    before = os.environ.copy()
+    yield
+    if os.environ != before:
+        os.environ.clear()
+        os.environ.update(before)
 
 
 class RealBrowserBlocked(BaseException):

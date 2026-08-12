@@ -71,6 +71,13 @@ on:
   # this, and `workflow_dispatch` below refreshes it on demand. Locally,
   # `uv run python scripts/pr_feedback.py --pr N --status` posts the same status
   # without a workflow at all.
+  #
+  # The two process checks added later — `unaccounted_rounds` and
+  # `silently_resolved` — both clear on an event that IS declared here, which is
+  # not a coincidence so much as luck worth writing down. An account is an
+  # `issue_comment`, and the way out of a silently-resolved thread is a reply in
+  # it (`pull_request_review_comment`), never an un-resolve. Neither check can
+  # therefore strand a PR behind the missing thread trigger.
   workflow_dispatch:
     inputs:
       pr:

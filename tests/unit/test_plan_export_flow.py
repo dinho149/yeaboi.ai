@@ -11,7 +11,7 @@ from yeaboi.ui.session.phases._phases import _plan_export_flow
 
 
 def _console() -> Console:
-    return Console(file=StringIO(), width=100, height=40, force_terminal=True)
+    return Console(file=StringIO(), width=100, height=40, force_terminal=True, color_system="truecolor")
 
 
 def _key(timeout: float = 0.0) -> str:

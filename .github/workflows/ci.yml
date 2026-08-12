@@ -16,19 +16,119 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── What does this change actually need? ─────────────────────────────────
+  # Every job below used to run on every push. A one-line docs edit rebuilt the
+  # front-end bundles, cross-compiled Go, and ran 11,000 unit tests twice.
+  #
+  # This job maps the changed paths onto areas (one per cowork workstream) and
+  # hands the rest of the workflow a pytest selection plus a set of job flags.
+  # `scripts/test_scope.py` owns every comparison — see its module docstring for
+  # the three rules, and tests/unit/test_test_scope.py for the totality checks
+  # that stop it losing a test file.
+  #
+  # Cheap on purpose: no `uv sync`, no `setup-uv`, stdlib-only Python. It sits in
+  # front of the whole pipeline, so anything slow here is paid by every run.
+  scope:
+    name: Decide what to run
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      unit_paths: ${{ steps.scope.outputs.unit_paths }}
+      slow_paths: ${{ steps.scope.outputs.slow_paths }}
+      go: ${{ steps.scope.outputs.go }}
+      parity: ${{ steps.scope.outputs.parity }}
+      web: ${{ steps.scope.outputs.web }}
+      site: ${{ steps.scope.outputs.site }}
+      package: ${{ steps.scope.outputs.package }}
+      eval: ${{ steps.scope.outputs.eval }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: the diff below is against the merge-base, which a
+          # shallow clone cannot compute.
+          fetch-depth: 0
+      - name: Resolve the scope
+        id: scope
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # FAIL-SAFE: this step must never exit non-zero, and deliberately does
+          # not `set -e`. `unit` and `integration` are required contexts and they
+          # `needs: scope` — and a dependency that FAILS skips them exactly as a
+          # dependency that was skipped does. A required check that never posts
+          # blocks the PR forever with nothing in the UI naming the cause, which
+          # is the outage the comment block below this job describes. So every
+          # failure path here falls back to the full suite; the worst this job
+          # can do is cost minutes, never block a merge.
+          # `test_workflow_schema.py` asserts the fallback writes every key the
+          # script itself writes, so the two cannot drift.
+          set -uo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            # A push to `main` is the tree everything else is cut from, and it is
+            # rare. Nothing is saved by being clever here.
+            echo "push to ${{ github.ref }} — running everything"
+            printf 'no-scope-on-push\n' > changed.txt
+          else
+            git fetch --no-tags origin "$BASE_REF" || true
+            # The MERGE-BASE, not the base tip: against the tip, a branch that
+            # simply has not been rebased reads every commit `main` gained since
+            # as part of this PR. And from the local checkout, never
+            # `gh pr diff` — the API refuses any diff over 20000 lines with a
+            # 406, which is how PR #111 shipped with no version bump at all.
+            MERGE_BASE=$(git merge-base FETCH_HEAD HEAD || true)
+            echo "merge-base: ${MERGE_BASE:-<unresolved>}"
+            # `|| true` throughout: an empty file reaches test_scope.py as "no
+            # changed files were reported", which it treats as a full run. A
+            # failed diff must never look like a change that touched nothing.
+            # `--no-renames` so a move reports both the path it left and the one
+            # it arrived at — the source area's tests are the ones a move breaks.
+            if [ -n "$MERGE_BASE" ]; then
+              git diff --name-only --no-renames "$MERGE_BASE...HEAD" > changed.txt || true
+            fi
+            touch changed.txt
+          fi
+          wc -l < changed.txt
+          if ! python3 scripts/test_scope.py --changed-files changed.txt --github-output; then
+            echo "::warning::test_scope.py failed to resolve the scope — running everything"
+            {
+              echo "full=true"
+              echo "unit_paths=tests/unit/ tests/*.py"
+              echo "slow_paths=tests/integration/ tests/contract/"
+              echo "go=true"
+              echo "parity=true"
+              echo "web=true"
+              echo "site=true"
+              echo "package=true"
+              echo "eval=true"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Fast gate ────────────────────────────────────────────────────────────
   # Unit tests — also enforced locally by the pre-commit hook in
   # .pre-commit-config.yaml. Running them in CI too catches contributors
   # who haven't installed pre-commit.
+  # NO `if:` ON THIS JOB, AND THE SAME GOES FOR `integration`, `lint`,
+  # `format-check` and `security`. Their names are required contexts on the
+  # `main-branch` ruleset, and a required context attached to a job that can be
+  # skipped is the failure this repo has already had once: a required check
+  # nothing posts blocks every PR forever, with all other checks green and
+  # nothing in the UI saying why (see the header of pr-feedback.yml). Scoping
+  # changes what these jobs *run*, never whether they report.
   unit:
     name: Unit tests
+    needs: scope
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
-      - run: make test-fast
+      # UNIT_PATHS is the scope job's selection. A command-line make variable
+      # beats the Makefile's `?=`, so an empty output would NOT fall back to the
+      # default — `UNIT_LANE` in the Makefile resolves the empty case instead.
+      - env:
+          UNIT_PATHS: ${{ needs.scope.outputs.unit_paths }}
+        run: make test-fast UNIT_PATHS="$UNIT_PATHS"
 
   # ── Slow suite ───────────────────────────────────────────────────────────
   # Integration + contract tests (marked @pytest.mark.slow) — too slow for
@@ -42,7 +142,15 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
-      - run: make test
+      # `make test-slow`, not `make test`. This job ran `make test`, which is
+      # tests/unit + tests/integration + tests/contract — so it re-ran, in full,
+      # the same 11,000 unit tests the job above had just run. 310 of its 408
+      # seconds were a duplicate. The genuinely additional work is 572 tests.
+      #
+      # `make test` keeps its meaning as the full local gate that /ship, the DoD
+      # and both publish workflows run; only CI splits the two halves, because
+      # only CI has a second job already covering one of them.
+      - run: make test-slow
 
   # ── Go core (the yeaboi-core sidecar) ────────────────────────────────────
   # Build + vet + test the Go tree, then hand the binary to the parity job.
@@ -50,6 +158,11 @@ jobs:
   go:
     name: Go core
     runs-on: ubuntu-latest
+    needs: scope
+    # Gated on the Go tree, the contract, the packaging dir, and the mirrored
+    # Python families named in CLAUDE.md's dual-maintenance section — a change to
+    # any twin must still prove parity. Not a required context, so a skip is free.
+    if: needs.scope.outputs.go == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -95,7 +208,8 @@ jobs:
   parity:
     name: Python ↔ Go parity
     runs-on: ubuntu-latest
-    needs: go
+    needs: [scope, go]
+    if: needs.scope.outputs.parity == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -114,6 +228,8 @@ jobs:
   eval:
     name: Golden evaluators
     runs-on: ubuntu-latest
+    needs: scope
+    if: needs.scope.outputs.eval == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -176,6 +292,8 @@ jobs:
   web:
     name: Front-end bundles
     runs-on: ubuntu-latest
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -197,6 +315,8 @@ jobs:
   site:
     name: Docs site (SEO block, sitemap, robots)
     runs-on: ubuntu-latest
+    needs: scope
+    if: needs.scope.outputs.site == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -211,6 +331,8 @@ jobs:
   package:
     name: Wheel contains the bundles
     runs-on: ubuntu-latest
+    needs: scope
+    if: needs.scope.outputs.package == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
