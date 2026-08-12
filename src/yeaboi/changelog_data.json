@@ -2,6 +2,41 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.9.0",
+      "date": "2026-08-12",
+      "summary": "Cloudflare share tunnels now auto-expire with a configurable timeout to prevent accidentally leaving boards or shares internet-reachable indefinitely. By default, every retro board, planning poker session, and anonymized or editable share closes automatically 60 minutes after it opens. The timeout is adjustable via the new TUNNEL_TIMEOUT_MINUTES environment variable (any positive integer for minutes, or 0 to disable auto-expiry entirely), and surfaced on the TUI's Settings > System page for point-and-click configuration. Enforcement happens inside the CloudflareTunnel class itself with a background timer that fires only if the tunnel stays open — manual stop() cancels the timer. When a tunnel expires, retro and poker boards fall back to their existing \"Retry Link\" failure state, while output shares collapse to \"Back only\" with the expiry message.",
+      "highlights": [
+        {
+          "text": "Share tunnels auto-expire 60 minutes after opening by default, preventing accidentally left-open boards",
+          "areas": [
+            "retro",
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Configurable via TUNNEL_TIMEOUT_MINUTES env var or new Settings > System page row; set to 0 to disable auto-expiry",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Retro/poker boards fall back to \"Retry Link\" state; shares collapse to \"Back only\" with expiry notice",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "Background timer runs only while tunnel is open and is safely cancelled on manual stop()",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.8.1",
       "date": "2026-08-12",
       "summary": "Fixed critical paste handling defects in the chat box that corrupted input and broke keyboard ergonomics. Pasted text larger than 10,000 characters now drains fully and stays within the cap instead of overflowing into the tty as keystrokes; newlines are preserved across platforms (Windows CRLF, Unix LF, old Mac CR); UTF-8 characters no longer decode as replacement characters; and escape sequences in the read-ahead tail no longer phantom-quit the chat. The newline key hint was corrected: Ctrl+N has always worked but was invisible, while the advertised Alt+Enter needs iTerm2/Terminal.app configuration that many users don't have. The hint row is now dynamic, dropping lower-priority hints by segment rather than ellipsizing mid-word on narrow terminals. Ctrl+U now clearly indicates what it does and remembers the previous draft for one Ctrl+U press, so you can undo a clear without re-typing. All changes are keyboard ergonomics only \u2014 no new user-facing features.",
