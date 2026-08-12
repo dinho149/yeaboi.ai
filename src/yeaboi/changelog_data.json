@@ -2,6 +2,25 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.8.2",
+      "date": "2026-08-12",
+      "summary": "Fixed a silent data loss bug in the Notion integration where pages with more than 100 top-level blocks were truncated without notification. The tool now paginates through all child blocks until completion or a resource ceiling, and reports every partial read with a truncation marker so the LLM knows the document it read was incomplete.",
+      "highlights": [
+        {
+          "text": "Notion page reads now paginate through all child blocks (was truncating after 100 blocks silently)",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "All partial reads are now reported with a truncation marker so incomplete documents are visible",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.8.1",
       "date": "2026-08-12",
       "summary": "Fixed critical paste handling defects in the chat box that corrupted input and broke keyboard ergonomics. Pasted text larger than 10,000 characters now drains fully and stays within the cap instead of overflowing into the tty as keystrokes; newlines are preserved across platforms (Windows CRLF, Unix LF, old Mac CR); UTF-8 characters no longer decode as replacement characters; and escape sequences in the read-ahead tail no longer phantom-quit the chat. The newline key hint was corrected: Ctrl+N has always worked but was invisible, while the advertised Alt+Enter needs iTerm2/Terminal.app configuration that many users don't have. The hint row is now dynamic, dropping lower-priority hints by segment rather than ellipsizing mid-word on narrow terminals. Ctrl+U now clearly indicates what it does and remembers the previous draft for one Ctrl+U press, so you can undo a clear without re-typing. All changes are keyboard ergonomics only \u2014 no new user-facing features.",
