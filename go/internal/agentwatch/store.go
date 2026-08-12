@@ -25,7 +25,9 @@ import (
 // v28 adds standup_config.github_owners — a Standup code-scope column the
 // sidecar never reads or writes, so the ceiling rises with no Go change.
 // v29 adds standup_config.github_excluded_repositories, same reasoning.
-const currentSchemaVersion = 29
+// v30 adds planning_prior_art_feedback — a Planning-only table the sidecar
+// never reads or writes, same reasoning again.
+const currentSchemaVersion = 30
 
 // ErrSchemaTooNew is the schema-guard sentinel; the RPC layer maps it to 1001.
 var ErrSchemaTooNew = errors.New("sessions.db schema is newer than this yeaboi-core understands")

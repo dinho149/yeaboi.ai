@@ -29,6 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Re-exported: callers (TUI worker, tests) import the error from the engine,
 # but it lives in analysis/cancellation.py so the fetch layers can raise it
 # without importing this module (engine imports them — reverse would cycle).
+from yeaboi.analysis import repo_inventory
 from yeaboi.analysis.cancellation import AnalysisCancelledError
 
 logger = logging.getLogger(__name__)
@@ -879,6 +880,13 @@ def _persist_delivery(delivery: dict, code: dict | None, docs: dict | None, db_p
                 profile = replace(profile, ai_adoption=code_sig)
             if code is not None:
                 examples["ai_adoption"] = code["examples"]
+                # Lift the repo inventory to the top of the examples blob. It
+                # is produced by the code scan but consumed by planning, which
+                # should not have to know that — and a reader that guesses at
+                # a nested path is a reader that silently finds nothing.
+                inventory = code["examples"].get(repo_inventory.INVENTORY_KEY) or []
+                if inventory:
+                    examples[repo_inventory.INVENTORY_KEY] = inventory
             if docs_sig is not None:
                 profile = replace(profile, doc_quality=docs_sig)
                 examples["doc_quality"] = docs["examples"]

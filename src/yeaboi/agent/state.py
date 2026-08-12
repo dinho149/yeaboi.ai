@@ -1263,6 +1263,69 @@ class AgentSecurityReport:
     annotations: tuple[Annotation, ...] = ()
 
 
+@dataclass(frozen=True)
+class PriorArtRef:
+    """An existing team repository accepted as reference material for a plan.
+
+    Produced by the prior-art step in the intake (see ``agent/prior_art.py``),
+    carried into the analyzer and feature prompts, and rendered in the intake
+    summary and the exports. Deliberately thin: the candidate that produced it
+    knows a score and a last-push date, and neither belongs in a plan.
+
+    # See docs: "Project Intake Questionnaire" — prior art
+    """
+
+    key: str = ""
+    name: str = ""
+    url: str = ""
+    platform: str = ""
+    pitch: tuple[str, ...] = ()
+    stack: tuple[str, ...] = ()
+
+
+def prior_art_to_dicts(refs) -> list[dict]:
+    """Serialise accepted prior art for either persistence layer."""
+    out: list[dict] = []
+    for ref in refs or ():
+        if not isinstance(ref, PriorArtRef):
+            continue
+        out.append(
+            {
+                "key": ref.key,
+                "name": ref.name,
+                "url": ref.url,
+                "platform": ref.platform,
+                "pitch": list(ref.pitch),
+                "stack": list(ref.stack),
+            }
+        )
+    return out
+
+
+def prior_art_from_dicts(rows) -> tuple[PriorArtRef, ...]:
+    """Rebuild accepted prior art from JSON.
+
+    Lists become tuples (the dataclass is frozen and declares tuples), and a
+    malformed row is skipped rather than failing the resume — losing one
+    reference is recoverable, losing the session is not.
+    """
+    out: list[PriorArtRef] = []
+    for row in rows or ():
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            PriorArtRef(
+                key=str(row.get("key", "") or ""),
+                name=str(row.get("name", "") or ""),
+                url=str(row.get("url", "") or ""),
+                platform=str(row.get("platform", "") or ""),
+                pitch=tuple(row.get("pitch") or ()),
+                stack=tuple(row.get("stack") or ()),
+            )
+        )
+    return tuple(out)
+
+
 # ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
@@ -1383,6 +1446,31 @@ class QuestionnaireState:
     _leave_input_stage: str = ""
     # Transient: partial entry being built during the leave sub-loop.
     _leave_input_buffer: dict = field(default_factory=dict)
+    # Transient prior-art sub-loop, modelled on the PTO sub-loop above. After
+    # the questionnaire and before the confirmation summary, a greenfield
+    # project is offered the team's own repositories as reference material and
+    # the user accepts or rejects each in turn.
+    # Stages: "" (not started), "ask", "reason", "done".
+    # See docs: "Project Intake Questionnaire" — prior art
+    _prior_art_stage: str = ""
+    # Transient: the shortlist being walked, each a RepoCandidate as a dict.
+    _prior_art_candidates: list[dict] = field(default_factory=list)
+    # Transient: which candidate is currently on screen.
+    _prior_art_index: int = 0
+    # Transient: accepted candidates, promoted to ScrumState.prior_art on confirm.
+    _prior_art_accepted: list[dict] = field(default_factory=list)
+    # Transient: rejections as {"key", "name", "reason"}, written to the global
+    # feedback ledger when the sub-loop ends.
+    _prior_art_rejected: list[dict] = field(default_factory=list)
+    # Transient: why the shortlist was empty, so the card can say which of
+    # "no profile" / "profile too old" / "nothing matched" happened. Going
+    # quiet would leave the user unable to tell a gap from a verdict.
+    _prior_art_empty_reason: str = ""
+    # Transient: the analysis profile the prior-art scan reads its repository
+    # estate from. Stashed by project_intake at first invocation, the same way
+    # _repo_context is, so the summary path can reach it without threading
+    # graph state through eleven call sites.
+    _analysis_profile_id: str = ""
     # Transient: active sprint number from Jira (e.g. 104). Used to compute
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.
@@ -1525,6 +1613,11 @@ class ScrumState(_RequiredState, total=False):
     # When set, intake auto-fills Q6/Q8/Q9 from the profile and nodes
     # use this profile for team calibration. Empty string = no profile selected.
     analysis_profile_id: str
+    # Existing team repositories the user accepted as prior art for this plan.
+    # Only greenfield projects are offered them. Feeds the analyzer and feature
+    # prompts, and renders as a Prior Art section in the summary and exports.
+    # See docs: "Project Intake Questionnaire" — prior art
+    prior_art: tuple[PriorArtRef, ...]
     # Starting sprint number — set by the sprint_selector node after fetching
     # the active Jira sprint and asking the user which sprint to plan for.
     # e.g. if active sprint is "Sprint 104" and user picks next → 105.

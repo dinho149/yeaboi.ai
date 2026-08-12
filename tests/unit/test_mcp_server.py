@@ -31,6 +31,8 @@ EXPECTED_TOOLS = {
     "plan_export",
     "plan_publish",
     "plan_sync",
+    "plan_prior_art",
+    "plan_prior_art_feedback",
     "sessions_list",
     "session_get",
     "session_delete",

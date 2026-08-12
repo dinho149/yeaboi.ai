@@ -71,7 +71,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "planning",
-        "\U0001f5fa️ Tip: Planning starts as a chat — /form gives a classic form, /finish defaults the rest",
+        "\U0001f5fa️ Tip: Planning a greenfield build shows you which of your own repos could help",
         mode_key="project-planning",
         is_new=True,
     ),

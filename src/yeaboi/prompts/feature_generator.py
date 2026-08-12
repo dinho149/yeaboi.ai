@@ -56,6 +56,7 @@ def get_feature_generator_prompt(
     review_feedback: str | None = None,
     review_mode: str | None = None,
     previous_output: str | None = None,
+    prior_art: tuple = (),
 ) -> str:
     """Build the feature generator prompt with injected project analysis fields.
 
@@ -107,6 +108,25 @@ def get_feature_generator_prompt(
         else ""
     )
 
+    # Prior art the user accepted at intake — existing team repositories that
+    # are relevant to this new build. It changes decomposition rather than
+    # scope: "reuse the auth service" is a smaller feature than "build auth".
+    prior_art_rows: list[str] = []
+    for ref in prior_art or ():
+        name = getattr(ref, "name", "") or ""
+        pitch = getattr(ref, "pitch", ()) or ()
+        prior_art_rows.append(f"- **{name}**" + (f" — {'; '.join(pitch)}" if pitch else ""))
+    prior_art_section = (
+        (
+            "\n### Prior Art (the team already owns these)\n\n"
+            "The user confirmed these existing repositories are relevant. Where a "
+            "feature could reuse one, say so in its description and scope the feature "
+            "to the integration work rather than a rebuild.\n\n" + "\n".join(prior_art_rows) + "\n"
+        )
+        if prior_art_rows
+        else ""
+    )
+
     base = (
         "You are a Senior Scrum Master with expertise in project decomposition.\n\n"
         "## Project Context\n\n"
@@ -118,7 +138,8 @@ def get_feature_generator_prompt(
         f"### End Users\n{end_users}\n\n"
         f"### Target State\n{target_state}\n\n"
         f"### Tech Stack\n{tech_stack}\n"
-        f"{repo_section}\n"
+        f"{repo_section}"
+        f"{prior_art_section}\n"
         f"### Constraints\n{constraints}\n\n"
         f"### Out of Scope\n{out_of_scope}\n\n"
         f"### Risks\n{risks}\n\n"

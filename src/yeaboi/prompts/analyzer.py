@@ -63,6 +63,7 @@ def get_analyzer_prompt(
     review_feedback: str | None = None,
     review_mode: str | None = None,
     previous_output: str | None = None,
+    prior_art: tuple = (),
 ) -> str:
     """Build the analyzer prompt with injected Q&A pairs and team metrics.
 
@@ -174,6 +175,33 @@ def get_analyzer_prompt(
         else ""
     )
 
+    # Inject the prior art the user accepted during intake — existing team
+    # repositories they confirmed are relevant to this new build. Distinct from
+    # repo_context, which is *this* project's own repo: these are neighbours to
+    # borrow from, so they belong in tech_stack, integrations and assumptions.
+    prior_art_lines: list[str] = []
+    for ref in prior_art or ():
+        name = getattr(ref, "name", "") or ""
+        pitch = getattr(ref, "pitch", ()) or ()
+        stack = getattr(ref, "stack", ()) or ()
+        prior_art_lines.append(f"- **{name}**" + (f" — {'; '.join(pitch)}" if pitch else ""))
+        if stack:
+            prior_art_lines.append(f"  - built with: {', '.join(stack)}")
+    prior_art_section = (
+        (
+            "\n## Prior Art — the team's own repositories\n\n"
+            "The user confirmed these existing repositories are relevant to this new "
+            "project. Treat them as available building blocks: prefer their stack and "
+            "conventions in `tech_stack`, name the ones being reused in `integrations`, "
+            "and record any dependency on them in `assumptions`. Do not assume code will "
+            "be copied wholesale — the user said they are relevant, not identical.\n\n"
+            + "\n".join(prior_art_lines)
+            + "\n"
+        )
+        if prior_art_lines
+        else ""
+    )
+
     # Inject team profile summary when available — surfaces historical team patterns
     # so the analyzer can flag realistic constraints (e.g. "this team's velocity is
     # 18 pts/sprint, not the assumed 25").
@@ -233,6 +261,7 @@ def get_analyzer_prompt(
         f"{confluence_section}"
         f"{notion_section}"
         f"{user_section}"
+        f"{prior_art_section}"
         f"{team_section}"
         f"{ceremony_section}"
         f"{performance_section}\n"

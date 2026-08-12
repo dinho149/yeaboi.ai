@@ -61,7 +61,9 @@ class TestSchemaVersion:
         # the Azure project picker; v29 adds
         # standup_config.github_excluded_repositories, the narrow opt-out from
         # an owner's expansion.
-        assert CURRENT_SCHEMA_VERSION == 29
+        # v30 adds planning_prior_art_feedback, the global ledger of which
+        # existing repos the user ruled out as prior art.
+        assert CURRENT_SCHEMA_VERSION == 30
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

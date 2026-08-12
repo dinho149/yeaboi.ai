@@ -125,6 +125,16 @@ def _next_auto_input(graph_state: dict) -> str | None:
         return "continue"
 
     if isinstance(qs, QuestionnaireState) and qs.awaiting_confirmation:
+        # Prior-art sub-loop — the intake is asking which existing repositories
+        # are relevant. Headless has nobody to ask, so it bails out of the whole
+        # list ("3") rather than answering for the user: accepting on their
+        # behalf would put repositories into a plan nobody vetted, and rejecting
+        # would write verdicts to a ledger that suppresses them forever. Callers
+        # that DO know pass them in via run_planning_pipeline(prior_art=...).
+        if qs._prior_art_stage in ("ask", "reason"):
+            logger.info("Headless: skipping the prior-art step (no user to ask)")
+            return "3" if qs._prior_art_stage == "ask" else ""
+
         # Intake summary shown — confirm it. Skipped/defaulted questions were
         # already resolved by build_questionnaire_from_answers().
         return "confirm"
@@ -136,6 +146,28 @@ def _next_auto_input(graph_state: dict) -> str | None:
     )
 
 
+def _prior_art_refs(keys: list[str] | None) -> tuple:
+    """Turn caller-supplied repository keys into PriorArtRefs.
+
+    The name falls back to the key's slug half so an export still reads as a
+    repository rather than a bare identifier. No lookup: a headless caller
+    naming a repository is asserting it is relevant, and failing the run
+    because the estate has not been scanned would be worse than taking them
+    at their word.
+    """
+    from yeaboi.agent.state import PriorArtRef
+
+    refs = []
+    for raw in keys or ():
+        key = str(raw or "").strip().lower()
+        if not key:
+            continue
+        name = key.split(":", 1)[1] if ":" in key else key
+        platform = key.split(":", 1)[0] if ":" in key else ""
+        refs.append(PriorArtRef(key=key, name=name, platform=platform))
+    return tuple(refs)
+
+
 def run_planning_pipeline(
     questionnaire: QuestionnaireState,
     *,
@@ -144,6 +176,7 @@ def run_planning_pipeline(
     save_session: bool = True,
     on_progress: Callable[[str, int], None] | None = None,
     max_steps: int = 40,
+    prior_art: list[str] | None = None,
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -162,6 +195,12 @@ def run_planning_pipeline(
             before each graph step — the MCP server forwards this to the
             client as progress notifications.
         max_steps: Safety cap on graph invocations; the happy path needs ~8.
+        prior_art: Repository keys (``"github:acme/auth"``) to treat as
+            accepted prior art — existing repositories the plan should build
+            on. The interactive intake asks about these one at a time; a
+            headless caller states them up front or gets none, because the
+            step will not guess on a user's behalf. Unknown keys are used as
+            given: this is an assertion by the caller, not a lookup.
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -193,6 +232,7 @@ def run_planning_pipeline(
             "questionnaire": questionnaire,
             # Matches _run_headless: quick mode skips smart-intake follow-ups.
             "_intake_mode": "quick",
+            "prior_art": _prior_art_refs(prior_art),
         }
 
         store = SessionStore(db_path or get_db_path()) if save_session else None

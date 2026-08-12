@@ -88,6 +88,50 @@ def _get_github_client() -> github.Github:
     return github.Github(auth=github.Auth.Token(token) if token else None)
 
 
+def _repo_tree_paths(repo) -> tuple[list[str], str]:
+    """Recursive blob paths for one live repo object — ``(paths, error)``.
+
+    Split out of github_analysis_inventory so a caller holding only a URL can
+    fetch one repository's tree without enumerating a whole owner. Never
+    raises: a tree failure is a degraded row, not a dead analysis run.
+    """
+    if bool(getattr(repo, "empty", False)):
+        return [], ""
+    try:
+        tree = repo.get_git_tree(sha=getattr(repo, "default_branch", "") or "HEAD", recursive=True)
+        paths = [str(item.path) for item in tree.tree if getattr(item, "type", "") == "blob"]
+        truncated = "GitHub tree response was truncated" if bool(getattr(tree, "truncated", False)) else ""
+        return paths, truncated
+    except Exception as exc:
+        return [], str(exc)
+
+
+def _repo_languages(repo, limit: int = 5) -> list[str]:
+    """Top languages by bytes, most-used first. Empty when unavailable."""
+    try:
+        languages = repo.get_languages() or {}
+    except Exception:
+        logger.debug("github: language data unavailable for %s", getattr(repo, "full_name", "?"), exc_info=True)
+        return []
+    return [str(name) for name, _ in sorted(languages.items(), key=lambda kv: -kv[1])[:limit]]
+
+
+def github_repo_tree(repo_url: str) -> tuple[list[str], str]:
+    """Recursive blob paths for a single repository — ``(paths, error)``.
+
+    The single-repo entry point behind the same tree walk the analysis
+    inventory does in bulk. Used by planning's prior-art enrichment, which
+    needs a file tree for a handful of shortlisted repos and must never pay
+    for a whole-estate scan to get one.
+    """
+    try:
+        repo = _get_github_client().get_repo(_parse_repo(repo_url))
+    except Exception as exc:
+        logger.warning("github_repo_tree: lookup failed for %r: %s", repo_url, exc)
+        return [], f"repository lookup failed: {exc}"
+    return _repo_tree_paths(repo)
+
+
 def github_analysis_inventory(
     owners: list[str] | tuple[str, ...],
     days: int = 120,
@@ -131,14 +175,14 @@ def github_analysis_inventory(
                 active = not skip_reason and pushed >= cutoff
                 paths: list[str] = []
                 tree_error = ""
-                if include_trees and active and not bool(getattr(repo, "empty", False)):
-                    try:
-                        tree = repo.get_git_tree(sha=getattr(repo, "default_branch", "") or "HEAD", recursive=True)
-                        paths = [str(item.path) for item in tree.tree if getattr(item, "type", "") == "blob"]
-                        if bool(getattr(tree, "truncated", False)):
-                            tree_error = "GitHub tree response was truncated"
-                    except Exception as exc:
-                        tree_error = str(exc)
+                if include_trees and active:
+                    paths, tree_error = _repo_tree_paths(repo)
+                # Description and languages answer "what does this repo do" — the
+                # question a later planning run asks and cannot answer offline
+                # unless we keep them. The description rides on the object we
+                # already hold; languages costs one call, and only for repos that
+                # are actually active.
+                languages = _repo_languages(repo) if active else []
                 out.append(
                     {
                         "provider": "github",
@@ -150,6 +194,8 @@ def github_analysis_inventory(
                         "updated_at": pushed.isoformat() if pushed else "",
                         "active": active,
                         "skip_reason": skip_reason,
+                        "description": (getattr(repo, "description", "") or "").strip(),
+                        "languages": languages,
                         "paths": paths,
                         "error": tree_error,
                     }

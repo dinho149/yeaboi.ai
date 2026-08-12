@@ -61,6 +61,9 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
     if kind == "intake_summary":
         qs = graph_state.get("questionnaire")
         return _render_tui_intake_summary(qs, render_w) if qs is not None else None
+    if kind == "prior_art":
+        qs = graph_state.get("questionnaire")
+        return _render_prior_art(qs, render_w) if qs is not None else None
     if kind == "epic" and graph_state.get("project_analysis"):
         return _render_tui_epic(graph_state["project_analysis"], render_w=render_w)
     if kind == "analysis" and graph_state.get("project_analysis"):
@@ -93,6 +96,50 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
             team_size=team_override if team_override > 0 else None,
         )
     return None
+
+
+def _render_prior_art(qs, render_w: int):
+    """The prior-art candidate currently awaiting a verdict.
+
+    Rendered from the questionnaire's transient sub-loop state, like every
+    other card renders from live graph_state — the card holds no data of its
+    own, so a re-render after an answer always shows the right candidate.
+    """
+    from rich.console import Group
+    from rich.text import Text
+
+    candidates = getattr(qs, "_prior_art_candidates", None) or []
+    index = getattr(qs, "_prior_art_index", 0)
+    if not (0 <= index < len(candidates)):
+        return None
+    candidate = candidates[index]
+
+    rows: list = []
+    header = Text(no_wrap=False)
+    header.append(str(candidate.get("name", "")), style="bold white")
+    platform = str(candidate.get("platform", ""))
+    if platform:
+        header.append(f"  {platform}", style="dim")
+    rows.append(header)
+
+    pitch = candidate.get("pitch") or ()
+    if pitch:
+        rows.append(Text(""))
+        for bullet in pitch:
+            line = Text(overflow="fold")
+            line.append("  • ", style="bold")
+            line.append(str(bullet), style=_ASSISTANT_BODY_STYLE)
+            rows.append(line)
+
+    stack = candidate.get("stack") or candidate.get("languages") or ()
+    if stack:
+        rows.append(Text(""))
+        rows.append(Text("  " + " · ".join(str(s) for s in stack), style="dim"))
+
+    footer = Text("")
+    rows.append(footer)
+    rows.append(Text(f"  {index + 1} of {len(candidates)}", style="dim"))
+    return Group(*rows)
 
 
 def _render_recap(graph_state: dict):
@@ -136,6 +183,7 @@ _ARTIFACT_TITLES = {
     "tasks": "Tasks",
     "sprints": "Sprint plan",
     "recap": "Plan complete",
+    "prior_art": "You already have this",
 }
 
 

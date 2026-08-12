@@ -1273,6 +1273,46 @@ def _make_git_client(org_url: str | None = None, token: str | None = None):
     return client
 
 
+def _azdo_tree_paths(git_client, project: str, repository_id) -> tuple[list[str], str]:
+    """Recursive file paths for one Azure repository — ``(paths, error)``.
+
+    Split out of azdevops_analysis_inventory so a caller holding only a URL can
+    fetch one repository's tree. Never raises; a failure is a degraded row.
+    """
+    try:
+        tree = git_client.get_items(
+            repository_id=repository_id,
+            project=project,
+            scope_path="/",
+            recursion_level="Full",
+            include_content_metadata=True,
+        )
+        paths = [
+            str(getattr(item, "path", "") or "").lstrip("/")
+            for item in tree or []
+            if not bool(getattr(item, "is_folder", False))
+        ]
+        return paths, ""
+    except Exception as exc:
+        return [], str(exc)
+
+
+def azdevops_repo_tree(repo_url: str) -> tuple[list[str], str]:
+    """Recursive file paths for a single Azure repository — ``(paths, error)``.
+
+    The single-repo counterpart of github_repo_tree; planning's prior-art
+    enrichment needs a tree for a few shortlisted repos, never a whole project.
+    """
+    try:
+        org_url, project, repo = _parse_azdo_url(repo_url)
+        conn = _make_connection(org_url, get_azure_devops_token())
+        git_client = _pin_client_base_url(conn.clients.get_git_client(), org_url)
+    except Exception as exc:
+        logger.warning("azdevops_repo_tree: lookup failed for %r: %s", repo_url, exc)
+        return [], f"repository lookup failed: {exc}"
+    return _azdo_tree_paths(git_client, project, repo)
+
+
 def azdevops_analysis_inventory(
     projects: list[str] | tuple[str, ...],
     *,
@@ -1315,21 +1355,7 @@ def azdevops_analysis_inventory(
             paths: list[str] = []
             tree_error = ""
             if include_trees:
-                try:
-                    tree = git_client.get_items(
-                        repository_id=repo.id,
-                        project=project,
-                        scope_path="/",
-                        recursion_level="Full",
-                        include_content_metadata=True,
-                    )
-                    paths = [
-                        str(getattr(item, "path", "") or "").lstrip("/")
-                        for item in tree or []
-                        if not bool(getattr(item, "is_folder", False))
-                    ]
-                except Exception as exc:
-                    tree_error = str(exc)
+                paths, tree_error = _azdo_tree_paths(git_client, project, repo.id)
             out.append(
                 {
                     "provider": "azdo",

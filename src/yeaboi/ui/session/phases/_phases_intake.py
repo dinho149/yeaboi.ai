@@ -286,13 +286,15 @@ def _phase_intake_questions(
     while True:
         qs = graph_state.get("questionnaire")
         if isinstance(qs, QuestionnaireState):
-            # Don't exit the intake loop while PTO sub-loop or editing is active —
+            # Don't exit the intake loop while a sub-loop or editing is active —
             # _awaiting_leave_input means we're still collecting leave entries
-            # within the confirmation gate, and editing_question means the user
-            # is re-answering a question from the review screen.
+            # within the confirmation gate, _prior_art_stage means the user is
+            # still ruling repositories in or out, and editing_question means
+            # they are re-answering a question from the review screen.
             if (
                 (qs.completed or qs.awaiting_confirmation)
                 and not qs._awaiting_leave_input
+                and qs._prior_art_stage not in ("ask", "reason")
                 and qs.editing_question is None
             ):
                 logger.info("Intake questions complete: completed=%s", qs.completed)

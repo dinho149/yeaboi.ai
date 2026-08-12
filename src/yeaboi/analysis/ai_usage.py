@@ -38,6 +38,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from yeaboi.analysis import repo_inventory
 from yeaboi.analysis.cancellation import AnalysisCancelledError
 from yeaboi.team_profile import AiAdoptionSignal
 
@@ -1237,6 +1238,11 @@ def run_ai_adoption(
                 "authored_pr": "medium confidence; the PR may include collaborators' commits",
             },
             "repository_health": repository_health,
+            # The estate itself, kept rather than discarded: planning reads this
+            # back offline to shortlist the team's own repos as prior art for a
+            # greenfield project. Trees are excluded here on purpose — see
+            # analysis.repo_inventory.
+            repo_inventory.INVENTORY_KEY: repo_inventory.normalise(inventory),
             "findings": health_findings,
             "action_plan": action_plan,
             "window_days": window_days,

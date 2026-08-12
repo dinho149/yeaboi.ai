@@ -106,6 +106,8 @@ _CONFIRM_VERDICT_PROMPT = (
     "Here's everything I've got. Pick an option below — or type **accept**, **edit N**, or just tell me what's off."
 )
 
+_PRIOR_ART_VERDICT_PROMPT = "You already own this one. Pick an option below — or type **yes**, **no**, or **skip**."
+
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
@@ -770,8 +772,8 @@ class _ChatDriver:
         (:meth:`_rebuild_transcript`). They must agree, or reopening a session
         parked on the gate resurrects the markdown wall the card replaced.
         The sub-states are excluded because each one re-asks something instead
-        of re-showing the summary — a PTO prompt, a velocity prompt, or the
-        re-ask of the answer being edited.
+        of re-showing the summary — a PTO prompt, a velocity prompt, the
+        prior-art verdict, or the re-ask of the answer being edited.
         """
         qs = self._qs()
         return (
@@ -779,9 +781,15 @@ class _ChatDriver:
             and qs.awaiting_confirmation
             and not qs._awaiting_leave_input
             and not qs._awaiting_velocity_input
+            and getattr(qs, "_prior_art_stage", "") not in ("ask", "reason")
             and qs.editing_question is None
             and qs.current_question > TOTAL_QUESTIONS
         )
+
+    def _at_prior_art(self) -> bool:
+        """True while the prior-art sub-loop owns the turn."""
+        qs = self._qs()
+        return qs is not None and getattr(qs, "_prior_art_stage", "") in ("ask", "reason")
 
     def _append_reply(self, *, streamed: str) -> None:
         """Append the assistant's reply bubble (or a review card + prompt)."""
@@ -796,6 +804,14 @@ class _ChatDriver:
         if self._at_intake_summary():
             self.transcript.add_artifact("intake_summary")
             self._say(_CONFIRM_VERDICT_PROMPT)
+            return
+
+        # Prior-art verdict → card + one line. The node's prompt already
+        # contains the pitch and a [1]/[2]/[3] block; the card renders both
+        # properly and the choice rows carry the keys.
+        if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
+            self.transcript.add_artifact("prior_art")
+            self._say(_PRIOR_ART_VERDICT_PROMPT)
             return
 
         if qs is not None and not qs.completed:
@@ -1751,6 +1767,11 @@ class _ChatDriver:
             if stage == "intake" and qs is not None and not qs.completed:
                 if qs.editing_question is not None:
                     answer = self._resolve_choice(answer, qs.editing_question)
+                elif getattr(qs, "_prior_art_stage", "") in ("ask", "reason"):
+                    # Prior art owns the turn before the confirmation gate does
+                    # — both run with awaiting_confirmation set, and the confirm
+                    # mapper would turn "1" into "accept".
+                    answer = self._prior_art_pick(answer)
                 elif qs.awaiting_confirmation:
                     mapped = self._confirm_pick(answer)
                     if mapped is None:
@@ -1804,6 +1825,21 @@ class _ChatDriver:
             logger.info("Chat: confirm pick -> free text")
             return None
         return submit
+
+    def _prior_art_pick(self, submit: str) -> str:
+        """Map a prior-art verdict pick to the digit the node understands.
+
+        The "reason" stage has no menu, so free text passes straight through —
+        including text that starts with a digit, which is why this maps only
+        exact labels and never parses the reply.
+        """
+        from ._question_view import PRIOR_ART_NO, PRIOR_ART_SKIP, PRIOR_ART_YES
+
+        mapping = {PRIOR_ART_YES: "1", PRIOR_ART_NO: "2", PRIOR_ART_SKIP: "3"}
+        mapped = mapping.get(submit)
+        if mapped is not None:
+            logger.info("Chat: prior-art pick -> %s", submit)
+        return mapped or submit
 
     def _entertain_duck(self, tick: float) -> None:
         """Rotate working quips (plus the odd gag) through a long wait.

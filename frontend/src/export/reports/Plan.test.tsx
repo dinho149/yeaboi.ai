@@ -24,6 +24,7 @@ const EMPTY = {
   sprints: [],
   velocity: 40,
   images: [],
+  priorArt: [],
 };
 
 function story(over: Partial<PlanStory> = {}): PlanStory {
@@ -216,5 +217,43 @@ describe('Plan', () => {
     expect(container.querySelector('.capacity .footnote')?.textContent).toBe(
       'Deductions — bank holidays: 2d, discovery: 5%'
     );
+  });
+});
+
+describe('Plan prior art', () => {
+  const repo = {
+    name: 'acme/platform-auth',
+    url: 'https://github.com/acme/platform-auth',
+    platform: 'github',
+    pitch: ['OIDC login and session refresh', 'Role mapping against the HR directory'],
+    stack: ['Python', 'FastAPI'],
+  };
+
+  it('renders the accepted repositories', () => {
+    const { container } = render(<Plan {...EMPTY} priorArt={[repo]} />);
+    expect(container.textContent).toContain('Prior Art');
+    expect(container.textContent).toContain('acme/platform-auth');
+    expect(container.textContent).toContain('OIDC login and session refresh');
+  });
+
+  it('renders the stack as chips', () => {
+    const { container } = render(<Plan {...EMPTY} priorArt={[repo]} />);
+    expect(container.textContent).toContain('FastAPI');
+  });
+
+  it('is absent when nothing was accepted', () => {
+    const { container } = render(<Plan {...EMPTY} priorArt={[]} />);
+    expect(container.textContent).not.toContain('Prior Art');
+  });
+
+  it('a plan that is only prior art still renders rather than reading as empty', () => {
+    const { container } = render(<Plan {...EMPTY} priorArt={[repo]} />);
+    expect(container.textContent).not.toContain('No artifacts to export yet');
+  });
+
+  it('survives a repo with no pitch and no stack', () => {
+    const bare = { name: 'acme/thin', url: '', platform: '', pitch: [], stack: [] };
+    const { container } = render(<Plan {...EMPTY} priorArt={[bare]} />);
+    expect(container.textContent).toContain('acme/thin');
   });
 });

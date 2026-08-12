@@ -316,6 +316,16 @@ def plan_export_args(graph_state: dict, stage: str = "complete") -> dict[str, ob
             "questionnaire": questionnaire,
             "analysis": analysis,
             "capacity": _capacity_payload(graph_state, graph_state.get("project_analysis")),
+            "priorArt": [
+                {
+                    "name": ref.name,
+                    "url": ref.url,
+                    "platform": ref.platform,
+                    "pitch": list(ref.pitch),
+                    "stack": list(ref.stack),
+                }
+                for ref in (graph_state.get("prior_art") or ())
+            ],
             "epicKey": graph_state.get("jira_epic_key", "") or graph_state.get("azdevops_epic_id", ""),
             "features": features,
             "storyGroups": story_groups,
