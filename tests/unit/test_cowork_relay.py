@@ -45,6 +45,24 @@ def reply(ts: str, text: str, **reactions: list[str]) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def _not_already_approved(monkeypatch):
+    """Default every plan to "this issue is not yet approved".
+
+    `build_plan` asks `is_approved` on the plain-approval path, and that shells
+    out to `gh issue view`. Unstubbed, every test in this file that builds a plan
+    made a live GitHub read against whatever repo the checkout pointed at — which
+    passed quietly until `_no_real_gh_calls` started refusing, and then failed
+    only in a *scoped* CI run, because which modules are loaded decides which
+    transport objects the guard reached.
+
+    False rather than None is what these tests mean: they assert on the `approve`
+    verb, which is the first approval. The handful about re-firing pass
+    `approved_check` explicitly, and an explicit argument wins over this.
+    """
+    monkeypatch.setattr(relay, "is_approved", lambda issue, **kwargs: False)
+
+
 def item(number: int, ts: str = "1", **reactions: list[str]) -> dict:
     return reply(ts, f"#{number} — [bug][platform] something — https://example.invalid/{number}", **reactions)
 

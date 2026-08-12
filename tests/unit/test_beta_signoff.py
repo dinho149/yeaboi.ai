@@ -435,7 +435,7 @@ class TestPromoteWaitsForEveryTrack:
 class TestGhIsNeverFatal:
     def test_a_missing_gh_is_not_an_error(self, monkeypatch):
         """`beta-check` is a reporting command first."""
-        monkeypatch.setattr(signoff.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError()))
+        monkeypatch.setattr(signoff.transport, "_run", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError()))
         assert signoff._gh("issue", "list") is None
         assert signoff.recent_asks() == []
 
@@ -444,7 +444,7 @@ class TestGhIsNeverFatal:
             returncode = 1
             stdout = "[]"
 
-        monkeypatch.setattr(signoff.subprocess, "run", lambda *a, **k: Result())
+        monkeypatch.setattr(signoff.transport, "_run", lambda *a, **k: Result())
         assert signoff._gh("issue", "list") is None
 
     def test_malformed_json_is_no_answer(self, monkeypatch):

@@ -346,6 +346,14 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_tips.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
+    # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and
+    # named `zz_` so it collects last, because the property it checks is *which
+    # modules are loaded* — `scripts/` is not a package and two loaders disagree
+    # about who owns `_gh_transport`, so the guard has more than one object to
+    # patch. Run early it would skip; run last it sees the split. It is in ALWAYS
+    # because it guards the repo rather than a module, and because a scoped run is
+    # the case where the loaded set is smallest and the guard's reach is thinnest.
+    "tests/unit/test_zz_gh_guard.py",
     "tests/unit/test_fixtures.py",
     "tests/unit/test_test_scope.py",
     # The tests for the GLOBAL modules above. Their subjects force a full run

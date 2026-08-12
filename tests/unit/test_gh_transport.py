@@ -180,7 +180,7 @@ class TestGhCalls:
         def boom(*args, **kwargs):
             raise FileNotFoundError(2, "No such file or directory", "gh")
 
-        monkeypatch.setattr(transport.subprocess, "run", boom)
+        monkeypatch.setattr(transport, "_run", boom)
         result = transport.gh("pr", "list")
         assert result.returncode == 127
         assert "gh" in result.stderr
@@ -192,7 +192,7 @@ class TestGhCalls:
     def test_gh_ready_is_false_when_logged_out(self, monkeypatch):
         monkeypatch.setattr(transport.shutil, "which", lambda name: "/usr/bin/gh")
         monkeypatch.setattr(
-            transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "not logged in")
+            transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "not logged in")
         )
         assert transport.gh_ready() is False
 
@@ -281,9 +281,7 @@ class TestSlugResolution:
         `cron/cd-deploy.md` runs `git fetch origin main`, so a remote is there
         even though `gh` is not."""
         monkeypatch.setattr(transport.shutil, "which", lambda name: None)
-        monkeypatch.setattr(
-            transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", "")
-        )
+        monkeypatch.setattr(transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", ""))
         assert transport.resolve_slug() == "owner/name"
 
     @pytest.mark.parametrize(
@@ -304,16 +302,14 @@ class TestSlugResolution:
         test on PR #235 and was right.
         """
         monkeypatch.setattr(transport.shutil, "which", lambda name: None)
-        monkeypatch.setattr(
-            transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", "")
-        )
+        monkeypatch.setattr(transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", ""))
         assert transport.resolve_slug() is None
 
     def test_a_non_github_remote_is_none(self, monkeypatch):
         monkeypatch.setattr(transport.shutil, "which", lambda name: None)
         monkeypatch.setattr(
-            transport.subprocess,
-            "run",
+            transport,
+            "_run",
             lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "git@gitlab.com:o/n.git\n", ""),
         )
         assert transport.resolve_slug() is None
@@ -328,7 +324,7 @@ class TestSlugResolution:
             calls.append(args)
             return subprocess.CompletedProcess(args[0], 1, "", "no remote")
 
-        monkeypatch.setattr(transport.subprocess, "run", counted)
+        monkeypatch.setattr(transport, "_run", counted)
         assert transport.resolve_slug() is None
         assert transport.resolve_slug() is None
         assert len(calls) == 1

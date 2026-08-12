@@ -1613,7 +1613,7 @@ class TestFetch:
         gh.reply("repo view", "", code=1)
         gh.reply("pr view", "", code=1)
         monkeypatch.setattr(
-            prf.transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "no remote")
+            prf.transport, "_run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "no remote")
         )
         assert prf.repo_slug() is None
         assert prf.current_pr() is None

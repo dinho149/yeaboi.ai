@@ -34,13 +34,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _gh_transport as transport  # noqa: E402
 import cowork_relay  # noqa: E402
 import release_channel as channel  # noqa: E402
 import release_surfaces  # noqa: E402
@@ -82,8 +82,15 @@ def _gh(*args: str) -> str | None:
     and only the marker and the label need an answer. Failing the whole command
     because the queue is unreachable would hide the information the human came for.
     """
+    # Through `_gh_transport`'s process seam rather than `subprocess.run` directly.
+    # This function *writes* — `mark_tested` builds `gh issue comment`, and the
+    # promote path adds `release:promote` — so a test that forgets to stub `_gh`,
+    # or a branch added below it, would land both on the real release-ask issue
+    # with `cwd=ROOT` pointing at this repo. `tests/conftest.py`'s
+    # `_no_real_gh_calls` blocks that one name; nothing can block a call that
+    # bypasses it.
     try:
-        result = subprocess.run(["gh", *args], cwd=ROOT, capture_output=True, text=True, check=False)
+        result = transport._run(["gh", *args], cwd=ROOT, capture_output=True, text=True, check=False)
     except FileNotFoundError:
         return None
     return result.stdout if result.returncode == 0 else None

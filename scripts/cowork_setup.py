@@ -1871,12 +1871,12 @@ def merge_gate_armed() -> bool | None:
             'any(.[]; .type=="required_status_checks" and '
             'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
         )
-        result = subprocess.run(  # noqa: S603 - literal argv
-            ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Through `_gh` like every other CLI call in this file, rather than its own
+        # `subprocess.run`. It was the one that had its own, which meant it was the
+        # one call the tests could not stub — `TestStrict` was making a live
+        # `gh api .../rules/branches/main` request on every run, against whatever
+        # repo the checkout pointed at.
+        result = _gh("api", f"repos/{slug}/rules/branches/main", "--jq", query)
         if result.returncode != 0:
             return None
         return result.stdout.strip() == "true"
@@ -2385,6 +2385,29 @@ def _reclassify(number: int, workstream: str, *, repair: bool) -> tuple[bool, st
     first would leave an issue in neither queue, invisible to the digest and to
     every sweep.
     """
+    # Both transports, like every other writer in this file. The read half asks
+    # REST on both paths deliberately (`_issues_labelled` says why at length), but
+    # the write half had only the REST branch — so on a laptop with `gh` logged in
+    # and no `GH_TOKEN` exported, every issue read back fine and every write failed
+    # with "no GH_TOKEN in the environment". That is the ordinary way a human runs
+    # this, and it is the only way it is allowed to be run.
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return False, "gh is not on PATH"
+        if not repair:
+            result = _gh("issue", "edit", str(number), "--add-label", QUEUE_LABEL)
+            if result.returncode != 0:
+                return False, result.stderr.strip() or "unknown gh error"
+            body = MIGRATION_NOTE.format(workstream=workstream)
+            result = _gh("issue", "comment", str(number), "--body", body)
+            if result.returncode != 0:
+                return False, result.stderr.strip() or "unknown gh error"
+        # `--remove-label` removes one; `gh api -X PUT .../labels` would replace the
+        # whole set. Same distinction `cowork_relay.py:_command` is built around,
+        # and the same incident behind it (#172).
+        result = _gh("issue", "edit", str(number), "--remove-label", PROPOSAL_LABEL)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+
     slug = repo_slug()
     if not slug:
         return False, "no owner/name resolved for this checkout"
