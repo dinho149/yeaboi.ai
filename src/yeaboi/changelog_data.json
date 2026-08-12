@@ -2,6 +2,38 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.11.0",
+      "date": "2026-08-12",
+      "summary": "When starting a greenfield project in Planning mode, yeaboi now offers your team's own repositories as prior art — ranked by relevance to the project requirements and presented with a concrete pitch of what each repo does. This leverages the team inventory that Team Analysis already fetches, so no new API calls are needed. Accepted prior-art repositories feed into plan generation and appear in the summary and exports. Rejections are remembered globally with the user's reason, so irrelevant repos are never re-offered. The step sits between the PTO sub-loop and the intake summary, and degrades gracefully to deterministic fallback facts if the LLM fails.",
+      "highlights": [
+        {
+          "text": "Greenfield planning now ranks your team's existing repositories and offers the relevant ones as prior art with concrete pitches",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Accepted prior-art repos feed plan generation and appear in the summary and exports for full context",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Rejections are remembered globally with user reasons — irrelevant repos are never re-offered across sessions",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Prior-art step degrades gracefully to deterministic ranking fallback if the LLM is unavailable",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.10.0",
       "date": "2026-08-12",
       "summary": "GitHub configuration now gets its own dedicated picker flow in Daily Standup's Configure screen, replacing the combined GitHub/Azure DevOps interface. When you pick GitHub organizations, a second screen lists every repository in those organizations with a repo-exclude interface — all repos are pre-checked by default, and you only untick the ones to exclude. This opt-out model means newly created repos are scanned automatically without reconfiguration. The owner picker now correctly pre-selects all discovered organizations when GitHub is added to a standup previously configured for Azure DevOps only. Beyond the UI, the configuration now includes a new `github_excluded_repositories` field (schema v29), threaded through the store, engine, collector, MCP tools, and CLI. Setup and token documentation has been clarified: the GITHUB_TOKEN requires both the 'repo' scope and SSO authorization if your organization mandates it — both requirements are now documented in the setup wizard, Settings, and .env.example.",
