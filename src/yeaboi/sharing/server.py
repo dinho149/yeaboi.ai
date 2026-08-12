@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from yeaboi.artifacts.edits import Edit, EditError
 from yeaboi.artifacts.paths import PathError
+from yeaboi.redaction import log_safe
 from yeaboi.sharing.access import JoinLimiter, invite_payload, make_join_code, make_token
 from yeaboi.sharing.editable import ConflictError, EditableShare
 from yeaboi.sharing.events import ChangeWatcher, EventHub
@@ -98,10 +99,10 @@ class _OutputHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_request(self, code: object = "-", size: object = "-") -> None:  # noqa: N802
-        logger.debug("output-share-http %s %s -> %s", self.command, urlparse(self.path).path, code)
+        logger.debug("output-share-http %s %s -> %s", log_safe(self.command), log_safe(urlparse(self.path).path), code)
 
     def log_message(self, fmt: str, *args: object) -> None:
-        logger.debug("output-share-http %s", fmt % args if args else fmt)
+        logger.debug("output-share-http %s", log_safe(fmt % args if args else fmt))
 
     def _query(self, key: str) -> str:
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
@@ -457,7 +458,7 @@ class _OutputHandler(BaseHTTPRequestHandler):
             return
 
         if applied:
-            logger.info("share: practice %s recorded for %s (%s)", verdict, member, rule)
+            logger.info("share: practice %s recorded for %s (%s)", log_safe(verdict), log_safe(member), log_safe(rule))
             # Rebuild once, here, so every later reader is served the corrected
             # report rather than the snapshot the vote was cast against.
             #

@@ -120,8 +120,7 @@ _PROVIDER_CARDS: list[dict[str, Any]] = [
         "instructions": "Uses IAM credentials from instance role, ~/.aws/credentials, or env vars",
         "color": "rgb(70,100,180)",
         "is_region_input": True,
-        # Bedrock's real model id is usually auto-detected from OpenClaw and
-        # prepended at runtime; the default here keeps parity with _PROVIDER_DEFAULTS.
+        # The default here keeps parity with _PROVIDER_DEFAULTS.
         "models": {
             "default": "us.anthropic.claude-sonnet-4-6-v1:0",
             "presets": [

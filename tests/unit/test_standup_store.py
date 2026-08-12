@@ -287,6 +287,56 @@ class TestRunHistory:
             assert store.get_latest_report("s1") is None
 
 
+class TestProvenanceSelfHeal:
+    """A standup_history table missing the v21 provenance columns heals on open.
+
+    The v21 schema-version collision could leave a shared DB stamped past 21
+    without `origin`/`edited_from_id`, and several entry points (--standup-run,
+    the MCP tools) open this store without ever constructing a SessionStore —
+    whose v26 migration is the other repair path.
+    """
+
+    def test_pre_v21_history_table_heals_on_open(self, db_path):
+        import sqlite3
+
+        from yeaboi.standup.store import _standup_report_to_json
+
+        legacy = _make_report(date="2026-07-09")
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(
+            """CREATE TABLE standup_history (
+                   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                   session_id      TEXT NOT NULL,
+                   run_at          TEXT NOT NULL,
+                   standup_date    TEXT NOT NULL DEFAULT '',
+                   sprint_day      INTEGER NOT NULL DEFAULT 0,
+                   confidence_pct  INTEGER NOT NULL DEFAULT 0,
+                   report_json     TEXT NOT NULL DEFAULT '',
+                   delivery_status TEXT NOT NULL DEFAULT '{}',
+                   status          TEXT NOT NULL DEFAULT 'success',
+                   error           TEXT NOT NULL DEFAULT ''
+               );"""
+        )
+        conn.execute(
+            "INSERT INTO standup_history (session_id, run_at, standup_date, report_json) VALUES (?, ?, ?, ?)",
+            ("s1", "2026-07-09T10:00:00", "2026-07-09", _standup_report_to_json(legacy)),
+        )
+        conn.commit()
+        conn.close()
+
+        with StandupStore(db_path) as store:
+            # The exact origin-reading queries Generate runs, in run order.
+            previous = store.get_previous_run("s1", "2026-07-10")
+            assert previous is not None
+            row_id, origin, edited_from_id, report = previous
+            assert origin == "generated"
+            assert edited_from_id == 0
+            assert report.date == "2026-07-09"
+            assert store.record_run(_make_report()) > row_id
+            base = store.get_base_run(session_id="s1")
+            assert base is not None
+
+
 class TestSavedRunsHub:
     """get_all_history / get_run_by_id / delete_run — power the TUI saved-runs hub."""
 
@@ -403,6 +453,52 @@ class TestSavedRunsHub:
         assert isinstance(child, ActivityEvidence)
         assert (child.kind, child.key, child.children) == ("commit", "aaa1", ())
 
+    def test_hierarchy_fields_round_trip(self, db_path):
+        from yeaboi.agent.state import ActivityEvidence
+
+        report = _make_report(
+            member_updates=(
+                MemberUpdate(
+                    name="Me",
+                    summary="x",
+                    ticketing_evidence=(
+                        ActivityEvidence(
+                            kind="issue",
+                            key="PSOT-3",
+                            title="SSO error states",
+                            url="https://j/browse/PSOT-3",
+                            issue_type="Sub-task",
+                            parent_key="PSOT-1",
+                            subtask=True,
+                        ),
+                    ),
+                    code_evidence=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="PSOT-1 enable SSO",
+                            url="https://g/pr/91",
+                            ticket_keys=("PSOT-1", "#77"),
+                        ),
+                    ),
+                ),
+            )
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        (ticket,) = latest.member_updates[0].ticketing_evidence
+        assert (ticket.issue_type, ticket.parent_key, ticket.subtask) == ("Sub-task", "PSOT-1", True)
+        (pr,) = latest.member_updates[0].code_evidence
+        assert pr.ticket_keys == ("PSOT-1", "#77")
+
+    def test_pre_hierarchy_evidence_dict_defaults(self, db_path):
+        """Evidence stored before the hierarchy fields existed loads with defaults."""
+        from yeaboi.standup.store import _dict_to_evidence
+
+        (row,) = _dict_to_evidence([{"kind": "issue", "key": "PSOT-1", "title": "Old row"}])
+        assert (row.issue_type, row.parent_key, row.subtask, row.ticket_keys) == ("", "", False, ())
+
     def test_old_report_json_without_evidence_deserializes(self, db_path):
         """Reports persisted before the *_evidence fields existed still load."""
         import json
@@ -468,6 +564,33 @@ class TestSkippedSourcesRoundTrip:
             latest = store.get_latest_report("s1")
         assert latest is not None
         assert latest.skipped_sources == ()
+
+    def test_unmet_sources_round_trip(self, db_path):
+        # The broadcast renderers read this long after the run that classified it,
+        # so "asked for and not delivered" has to survive the store.
+        report = _make_report(
+            skipped_sources=(("github", "GITHUB_TOKEN not set"), ("local_git", "no repo path configured")),
+            unmet_sources=("github",),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest.unmet_sources == ("github",)
+
+    def test_old_report_without_unmet_sources_deserializes(self, db_path):
+        # A run stored before the split has skips but no verdict on them; the
+        # broadcast line must stay off rather than replay an old nag.
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(skipped_sources=(("github", "GITHUB_TOKEN not set"),)))
+            (raw,) = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(raw)
+            d.pop("unmet_sources", None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None
+        assert latest.unmet_sources == ()
 
 
 class TestMemberLinksRoundTrip:

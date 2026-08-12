@@ -1,8 +1,10 @@
 # tui-ux
 
 **Owns** — `src/yeaboi/ui/` **except `ui/session/`** (which is **planning**'s), `src/yeaboi/repl/`,
-`src/yeaboi/ui/shared/_tips.py`, `src/yeaboi/usage_export.py`, and the matching render tests.
-Includes the two TUI utility mode cards, **`usage` and `settings`**.
+`src/yeaboi/ui/shared/_tips.py`, `src/yeaboi/usage_export.py`, `formatters.py` (the REPL-side
+formatter layer), and the terminal-affordance helpers the TUI reaches out through — `clipboard.py`,
+`voice.py`, `voice_install.py`, `music.py`, `os_open.py` — plus the matching render tests. Includes the two TUI utility
+mode cards, **`usage` and `settings`**.
 
 **Skills** — `.claude/skills/tui-standards/SKILL.md` (mandatory — read it before any edit)
 
@@ -50,3 +52,8 @@ user sees.
 
 Browser surfaces of any kind (**web-ux**). `ui/session/` — the planning intake, review and editor
 screens belong to **planning**. Every mode's engine logic belongs to that mode's own workstream.
+
+**integrations** may append one wizard step and one `_verify_*` probe under `ui/provider_select/`,
+and one Credentials section in `ui/mode_select/screens/_screens_secondary.py`, from a campaign run
+(`house-rules.md`, **Extends**) — those two sites and that operation only. `ui/mode_select/__init__.py`
+is deliberately outside the grant; nothing may append there.

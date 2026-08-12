@@ -1,7 +1,7 @@
 # analysis
 
 **Owns** — `src/yeaboi/analysis/`, `src/yeaboi/team_profile.py`, `team_profile_exporter.py`
-(3.2k LOC), `src/yeaboi/tools/team_learning.py` (7.1k LOC), `mcp/tools_team.py`,
+(3.2k LOC), `team_roster.py`, `src/yeaboi/tools/team_learning.py` (7.1k LOC), `mcp/tools_team.py`,
 `claude-plugin/yeaboi/skills/team-analysis/`, `tests/unit/test_analysis_*.py`,
 `test_doc_quality.py`, `test_team_profile*.py`
 
@@ -38,3 +38,7 @@ they change numbers people have already seen.
 
 The team-profile export's React components and Block rendering (**web-ux**). Tracker API mechanics
 (**integrations**).
+
+**integrations** may append a provider to `analysis/engine.py`'s `_COMPONENTS` and its
+`_available_*_sources` probes from a campaign run (`house-rules.md`, **Extends**) — registration
+only. Every threshold, marker and metric definition in that file stays yours.

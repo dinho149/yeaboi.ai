@@ -3775,3 +3775,135 @@ class TestMultiChoiceMetadata:
         for q_num, meta in QUESTION_METADATA.items():
             if meta.question_type == "multi_choice":
                 assert meta.default_index is None, f"Q{q_num} multi_choice should have no default_index"
+
+
+# ── Defaults-all command tests (the /finish fast path) ───────────────
+
+
+class TestDefaultsAllCommand:
+    """Tests for _is_defaults_all_intent and the all-phases defaults handler."""
+
+    @pytest.mark.parametrize("text", ["defaults all", "all defaults", "use defaults for everything", "DEFAULTS ALL"])
+    def test_is_defaults_all_intent_positive(self, text):
+        from yeaboi.agent.nodes import _is_defaults_all_intent
+
+        assert _is_defaults_all_intent(text) is True
+
+    @pytest.mark.parametrize("text", ["finish", "defaults", "default", "use defaults", "finish it", ""])
+    def test_is_defaults_all_intent_negative(self, text):
+        """Bare "finish" is a plausible free-text answer and must NOT match."""
+        from yeaboi.agent.nodes import _is_defaults_all_intent
+
+        assert _is_defaults_all_intent(text) is False
+
+    def test_intents_are_disjoint(self):
+        from yeaboi.agent.nodes import _DEFAULTS_ALL_EXACT, _DEFAULTS_EXACT, _is_defaults_all_intent
+
+        assert not (_DEFAULTS_ALL_EXACT & _DEFAULTS_EXACT)
+        for text in _DEFAULTS_EXACT:
+            assert _is_defaults_all_intent(text) is False
+        for text in _DEFAULTS_ALL_EXACT:
+            assert _is_defaults_intent(text) is False
+
+    def test_batch_defaults_with_last_q_spans_phases(self):
+        """last_q=TOTAL_QUESTIONS defaults across every remaining phase in one pass."""
+        qs = QuestionnaireState(current_question=8)
+        qs.answers = {6: "3 engineers", 7: "2 backend"}
+        _summary, count = _batch_defaults_for_phase(qs, last_q=TOTAL_QUESTIONS)
+        # Far past the current phase: Q16-Q26 and Q28-Q30 all have defaults.
+        assert 16 in qs.defaulted_questions
+        assert 30 in qs.defaulted_questions
+        assert count > 10
+        # Essential questions with no default are flagged, not invented.
+        assert 11 in qs.skipped_questions
+        assert 11 not in qs.answers
+
+    def test_defaults_all_in_intake_node_goes_to_summary(self, monkeypatch):
+        """Smart mode: one turn lands at the summary with PTO auto-defaulted."""
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+
+        qs = QuestionnaireState(current_question=8, intake_mode="smart")
+        qs.answers = {i: f"answer {i}" for i in range(1, 8)}
+        state = {"messages": [HumanMessage(content="defaults all")], "questionnaire": qs}
+        result = project_intake(state)
+        out_qs = result["questionnaire"]
+        assert out_qs.awaiting_confirmation is True
+        assert result.get("pending_review") == "project_intake"
+        # PTO skipped, matching quick mode — no "planned leave" prompt.
+        assert out_qs._leave_input_stage == "done"
+        assert out_qs._awaiting_leave_input is False
+        assert "planned leave" not in result["messages"][0].content
+        assert "Fast-forward" in result["messages"][0].content
+        assert "Project Intake Summary" in result["messages"][0].content
+
+    def test_defaults_all_small_project_leaves_pto_state_alone(self, monkeypatch):
+        """small_project never plans capacity — the PTO bypass must not touch it."""
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+
+        qs = QuestionnaireState(current_question=8, intake_mode="small_project")
+        qs.answers = {i: f"answer {i}" for i in range(1, 8)}
+        state = {"messages": [HumanMessage(content="defaults all")], "questionnaire": qs}
+        result = project_intake(state)
+        assert result["questionnaire"]._leave_input_stage == ""
+        assert result["questionnaire"].awaiting_confirmation is True
+
+    def test_defaults_all_reports_gaps(self, monkeypatch):
+        """Unanswered essentials with no default are counted in the ack."""
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+
+        qs = QuestionnaireState(current_question=6, intake_mode="smart")
+        qs.answers = {i: f"answer {i}" for i in range(1, 6)}  # Q6 and Q11 still open
+        state = {"messages": [HumanMessage(content="defaults all")], "questionnaire": qs}
+        result = project_intake(state)
+        assert "essential question(s) had no default" in result["messages"][0].content
+
+
+class TestGapModeSkipDefaults:
+    """Regression: in smart/quick/small_project (gap) mode the skip/defaults
+    literals used to be recorded verbatim as the gap answer — the standard-mode
+    handlers sit below the gap-filling block and never ran."""
+
+    def _qs(self, current_q=8, mode="smart"):
+        qs = QuestionnaireState(current_question=current_q, intake_mode=mode)
+        qs.answers = {i: f"answer {i}" for i in range(1, current_q)}
+        return qs
+
+    def test_skip_stores_default_not_the_literal(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+        qs = self._qs(8)
+        result = project_intake({"messages": [HumanMessage(content="skip")], "questionnaire": qs})
+        out = result["questionnaire"]
+        assert out.answers[8] != "skip"
+        assert 8 in out.defaulted_questions
+        assert "assume" in result["messages"][0].content.lower()
+
+    def test_skip_flags_no_default_essential_and_moves_on(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+        qs = QuestionnaireState(current_question=6, intake_mode="smart")
+        qs.answers = {2: "a", 3: "b", 4: "c"}
+        result = project_intake({"messages": [HumanMessage(content="skip")], "questionnaire": qs})
+        out = result["questionnaire"]
+        assert 6 in out.skipped_questions
+        assert 6 not in out.answers
+        # The next prompt is a different question — a skipped gap is never re-asked.
+        assert out.current_question != 6
+
+    def test_defaults_lands_at_pto_in_smart_mode(self, monkeypatch):
+        """Per-phase "defaults" fills everything but still stops at PTO — only
+        /finish's "defaults all" bypasses it."""
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+        qs = self._qs(8)
+        result = project_intake({"messages": [HumanMessage(content="defaults")], "questionnaire": qs})
+        out = result["questionnaire"]
+        assert out.answers[8] != "defaults"
+        assert out._awaiting_leave_input is True
+        assert "planned leave" in result["messages"][0].content
+
+    def test_skipped_essential_is_not_a_gap(self):
+        from yeaboi.agent.nodes import _find_essential_gaps
+        from yeaboi.prompts.intake import SMART_ESSENTIALS
+
+        qs = QuestionnaireState(current_question=6, intake_mode="smart")
+        qs.answers = {2: "a", 3: "b", 4: "c"}
+        qs.skipped_questions.add(6)
+        assert 6 not in _find_essential_gaps(qs, SMART_ESSENTIALS)

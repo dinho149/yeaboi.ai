@@ -355,7 +355,18 @@ class ActivityEvidence:
     status: str = ""  # "merged", "In Progress", a review state, or ""
     timestamp: str = ""  # ISO-8601 or ""
     # Commits folded under their PR row (one level deep); () everywhere else.
+    # Story→subtask hierarchy deliberately does NOT reuse this — it rides the
+    # flat fields below so gap/transcript iteration never misses a row.
     children: tuple[ActivityEvidence, ...] = ()
+    issue_type: str = ""  # tracker's own word: "Story", "Sub-task", "Task", "Bug"; "" for code/docs
+    parent_key: str = ""  # parent issue in sibling-key spelling: "PROJ-12" (Jira), "#123" (AzDO)
+    # The tracker's authoritative child-of-a-story flag (Jira issuetype.subtask,
+    # AzDO WorkItemType == Task). The ONLY licence to nest under parent_key —
+    # a team-managed Jira Story also carries parent_key (its epic) with subtask False.
+    subtask: bool = False
+    # Code/doc rows only: exact tracker keys this change's own text or first-party
+    # links name ("PROJ-12", "#123"). Never fuzzy-matched (references.display_ticket_keys).
+    ticket_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -441,6 +452,11 @@ class StandupReport:
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
     activity_window: str = ""  # human-readable look-back window, e.g. "Fri 2026-07-17 00:00 → now"
     skipped_sources: tuple[tuple[str, str], ...] = ()  # (source, reason) for sources NOT scanned — visible, not silent
+    # The subset of skipped_sources the user actually ASKED for and did not get.
+    # Diagnostic surfaces (the TUI panel, the HTML details) list every skip; the
+    # broadcast ones (Slack/email plaintext, Markdown) list only these, or a
+    # Jira-only team reads the same five-source apology in every standup forever.
+    unmet_sources: tuple[str, ...] = ()
     category_coverage: tuple[tuple[str, str], ...] = ()  # category -> covered/partial/failed/not_configured
     my_name: str = ""  # the standup user's resolved display name (drives the "My Update" row)
     warnings: tuple[str, ...] = ()  # surfaced problems (missing API key, source 401/403) — shown, never silent
@@ -1080,6 +1096,174 @@ class ProjectAnalysis:
 
 
 # ---------------------------------------------------------------------------
+# agentwatch (Agents family) artifacts — see agentwatch/engine.py
+#
+# Same conventions as every mode artifact above: @dataclass(frozen=True), every
+# field defaulted (older serialized rows keep deserializing), tuples not lists,
+# tuple-of-pairs instead of dicts, trailing `annotations` for reader edits.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ModelUsageRow:
+    """One model's token totals and cost within an AgentUsageReport."""
+
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_write_tokens: int = 0  # 5m + 1h writes combined (display total)
+    cache_read_tokens: int = 0
+    calls: int = 0
+    cost_usd: float = 0.0
+    known_pricing: bool = True  # False = priced at the fallback tier
+
+
+@dataclass(frozen=True)
+class AgentUsageBreakdownRow:
+    """Cost/volume rollup along one dimension (per project, per source)."""
+
+    key: str = ""
+    sessions: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass(frozen=True)
+class DailyUsagePoint:
+    """One day of the usage trend line."""
+
+    date: str = ""  # YYYY-MM-DD
+    cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    sessions: int = 0
+
+
+@dataclass(frozen=True)
+class AgentUsageReport:
+    """Cost/token dashboard over locally monitored agent sessions."""
+
+    period_start: str = ""
+    period_end: str = ""
+    session_count: int = 0
+    total_cost_usd: float = 0.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cache_write_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    # Share of total cost priced at the fallback tier (unknown models) — an
+    # honesty flag the renderers surface next to the total.
+    unknown_model_cost_share: float = 0.0
+    pricing_as_of: str = ""
+    by_model: tuple[ModelUsageRow, ...] = ()
+    by_project: tuple[AgentUsageBreakdownRow, ...] = ()
+    by_source: tuple[AgentUsageBreakdownRow, ...] = ()
+    daily_trend: tuple[DailyUsagePoint, ...] = ()
+    insights: tuple[str, ...] = ()
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
+class AgentSessionSummary:
+    """One monitored agent session, as it appears in a standup digest."""
+
+    session_id: str = ""
+    source: str = ""  # telemetry source label, e.g. claude_code
+    project: str = ""
+    branch: str = ""
+    models: tuple[str, ...] = ()
+    turns: int = 0
+    cost_usd: float = 0.0
+    top_tools: tuple[tuple[str, str], ...] = ()  # (tool name, count as str)
+    started_at: str = ""
+    ended_at: str = ""
+
+
+@dataclass(frozen=True)
+class AgentRepoActivityRow:
+    """One agent-authored item found in a tracker (commit, PR, review)."""
+
+    source: str = ""  # github | azdo
+    repo: str = ""
+    kind: str = ""  # commit | pr | review | comment
+    title: str = ""
+    url: str = ""
+    author: str = ""
+    status: str = ""  # open | merged | closed | ""
+    agent_marker: str = ""  # which detector matched (claude, copilot, …)
+
+
+@dataclass(frozen=True)
+class AgentStandupDigest:
+    """Daily "what did the agents do" digest — local sessions + repo signals."""
+
+    digest_date: str = ""
+    window_start: str = ""
+    window_end: str = ""
+    sessions_worked: int = 0
+    total_cost_usd: float = 0.0
+    agents_seen: tuple[str, ...] = ()  # distinct sources/tools active in window
+    session_summaries: tuple[AgentSessionSummary, ...] = ()
+    repo_activity: tuple[AgentRepoActivityRow, ...] = ()
+    highlights: tuple[str, ...] = ()
+    in_flight: tuple[str, ...] = ()  # open agent PRs / unfinished work
+    attention_items: tuple[str, ...] = ()
+    narrative: str = ""
+    coverage_notes: tuple[str, ...] = ()  # honesty notes (sources not reachable…)
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
+class McpServerRecord:
+    """One MCP server found in an agent's configuration."""
+
+    name: str = ""
+    scope: str = ""  # global | project:<path>
+    transport: str = ""  # stdio | http | sse
+    target: str = ""  # command or URL (never credentials)
+    flags: tuple[str, ...] = ()  # e.g. plain-http, unpinned-package
+
+
+@dataclass(frozen=True)
+class SecurityFinding:
+    """One agent-security finding, deterministic and location-referenced."""
+
+    severity: str = "info"  # critical | high | medium | info
+    category: str = ""  # settings | mcp | secret | risky_tool
+    title: str = ""
+    location: str = ""  # file path (never file content)
+    line_no: int = 0
+    pattern: str = ""  # detector label, e.g. curl-pipe-shell
+    detail: str = ""
+    remediation: str = ""
+
+
+@dataclass(frozen=True)
+class AgentSecurityReport:
+    """Security posture of local agent usage (settings, MCP, secrets, tools)."""
+
+    scan_date: str = ""
+    posture: str = ""  # good | needs-attention | at-risk
+    sessions_scanned: int = 0
+    files_scanned: int = 0
+    secrets_found: int = 0
+    findings: tuple[SecurityFinding, ...] = ()
+    mcp_servers: tuple[McpServerRecord, ...] = ()
+    settings_flags: tuple[str, ...] = ()
+    summary: str = ""
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
 
@@ -1297,6 +1481,21 @@ class ScrumState(_RequiredState, total=False):
     # Stored as a ScrumState field so LangGraph doesn't strip it.
     # See docs: "Project Intake Questionnaire" — smart intake
     _intake_mode: str
+
+    # Chat-planning presentation state (TUI live chat only; never read by
+    # graph nodes). The greeting + size exchange happens BEFORE the first
+    # graph invocation and must stay out of `messages` — project_intake reads
+    # messages[0] as the project description. _chat_preamble records that
+    # exchange for transcript rebuild/export: [{"role": "user"|"ai", "text": str}].
+    _chat_greeting_done: bool
+    _chat_preamble: list[dict]
+    # /finish fast mode. The chat owns intake only, so in production this now
+    # spans a single deterministic turn ("defaults all" → the summary) and the
+    # driver pops it at the hand-off to the card pipeline — whose review gates
+    # never read it, and which stops at every one of them. It stays a state
+    # field, not a driver attribute, because the end-to-end chat path
+    # (stop_after_intake=False) still auto-accepts reviews while it is set.
+    _chat_fast_forward: bool
 
     # Project analysis — structured synthesis of intake answers.
     # Set once by project_analyzer node; no reducer needed (single value).

@@ -76,7 +76,12 @@ from yeaboi.prompts.intake import (
     is_choice_question,
 )
 from yeaboi.prompts.sprint_planner import get_sprint_planner_prompt
-from yeaboi.prompts.story_writer import MAX_STORIES_PER_FEATURE, MIN_STORIES_PER_FEATURE, get_story_writer_prompt
+from yeaboi.prompts.story_writer import (
+    MAX_STORIES_PER_FEATURE,
+    MIN_STORIES_PER_FEATURE,
+    SMALL_PROJECT_MAX_STORIES,
+    get_story_writer_prompt,
+)
 from yeaboi.prompts.system import get_system_prompt  # noqa: E402 — direct submodule imports avoid circular import
 from yeaboi.prompts.task_decomposer import get_task_decomposer_prompt
 from yeaboi.tools import detect_platform
@@ -919,6 +924,20 @@ def _is_skip_intent(message: str) -> bool:
 
 _DEFAULTS_EXACT: frozenset[str] = frozenset({"defaults", "default", "use defaults"})
 
+# The all-phases variant (/finish sends this literal). Deliberately NOT bare
+# "finish" — that is a plausible free-text answer ("finish the migration") and
+# intent matching must never swallow a real answer.
+_DEFAULTS_ALL_EXACT: frozenset[str] = frozenset({"defaults all", "all defaults", "use defaults for everything"})
+
+
+def _is_defaults_all_intent(message: str) -> bool:
+    """Detect an 'apply defaults to every remaining question' signal.
+
+    Uses deterministic keyword matching — no LLM call. Disjoint from
+    _DEFAULTS_EXACT, so the per-phase and all-phases intents can't collide.
+    """
+    return message.strip().lower() in _DEFAULTS_ALL_EXACT
+
 
 def _is_defaults_intent(message: str) -> bool:
     """Detect whether a user message is a 'use defaults' signal.
@@ -934,12 +953,14 @@ def _is_defaults_intent(message: str) -> bool:
     return message.strip().lower() in _DEFAULTS_EXACT
 
 
-def _batch_defaults_for_phase(questionnaire: QuestionnaireState) -> tuple[list[str], int]:
+def _batch_defaults_for_phase(questionnaire: QuestionnaireState, last_q: int | None = None) -> tuple[list[str], int]:
     """Apply defaults to all remaining questions in the current phase.
 
     # See docs: "Project Intake Questionnaire" — batch defaults
     #
-    # Iterates from current_question through the end of the current phase.
+    # Iterates from current_question through the end of the current phase
+    # (or through last_q when given — the "defaults all" intent passes
+    # TOTAL_QUESTIONS to span every remaining phase in one pass).
     # For each question:
     #   - Choice Q with default_index → use option at default_index
     #   - Free-text Q with QUESTION_DEFAULTS entry → use that default
@@ -949,6 +970,7 @@ def _batch_defaults_for_phase(questionnaire: QuestionnaireState) -> tuple[list[s
 
     Args:
         questionnaire: The mutable QuestionnaireState to update.
+        last_q: Inclusive end question; defaults to the current phase's end.
 
     Returns:
         A tuple of (summary_lines, count_defaulted).
@@ -957,6 +979,8 @@ def _batch_defaults_for_phase(questionnaire: QuestionnaireState) -> tuple[list[s
 
     phase = questionnaire.current_phase
     _start, end = PHASE_QUESTION_RANGES[phase]
+    if last_q is not None:
+        end = last_q
     summary_lines: list[str] = []
     count = 0
 
@@ -2953,7 +2977,10 @@ def _find_essential_gaps(questionnaire: QuestionnaireState, essential_set: froze
     Returns:
         Sorted list of question numbers that have no answer recorded.
     """
-    gaps = set(q for q in essential_set if q not in questionnaire.answers)
+    # A question the user explicitly skipped is a flagged hole (shown in the
+    # summary), not a gap to re-ask — without this, "skip" on a no-default
+    # essential would loop forever on the same question.
+    gaps = set(q for q in essential_set if q not in questionnaire.answers and q not in questionnaire.skipped_questions)
 
     # Conditionals: promote to essential when prerequisite is answered (not defaulted).
     # A conditional question becomes a gap when:
@@ -2962,6 +2989,7 @@ def _find_essential_gaps(questionnaire: QuestionnaireState, essential_set: froze
     for q, prereq in CONDITIONAL_ESSENTIALS.items():
         if (
             (q not in questionnaire.answers or q in questionnaire.defaulted_questions)
+            and q not in questionnaire.skipped_questions
             and prereq in questionnaire.answers
             and prereq not in questionnaire.defaulted_questions
         ):
@@ -3668,29 +3696,51 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
     }
 
 
-def apply_epic_switch(graph_state: dict) -> None:
-    """Reset session state to switch from Small project → Large intake.
+def apply_size_switch(graph_state: dict, target_mode: str) -> None:
+    """Reset session state to switch intake mode mid-session, preserving answers.
 
     See README: "Guardrails" — human-in-the-loop (advisory)
 
-    Called when the user accepts the "this looks bigger than a small project"
-    advisory. Preserves the questionnaire ANSWERS and project description (so the
-    user re-types nothing), flips the mode to Epic (smart), and clears the
-    analysis + downstream artifacts so the pipeline regenerates them. The
-    _reopen_for_epic flag tells project_intake to ask only the still-missing Epic
-    essentials on the next pass.
+    Generalizes the original Small → Large switch to both directions
+    ("smart" | "small_project"), driven by the /large and /small chat
+    commands as well as the oversize advisory. Preserves the questionnaire
+    ANSWERS and project description (so the user re-types nothing), flips the
+    mode, and clears the analysis + downstream artifacts so the pipeline
+    regenerates them. The _reopen_for_epic flag (name kept for persistence
+    compatibility — it now means "reopen after a size switch" in either
+    direction) tells project_intake to ask only the still-missing essentials
+    for the new mode on the next pass.
+
+    When switching DOWN to small_project, the smart-only capacity transients
+    (PTO sub-loop, velocity override, detected bank holidays) and the derived
+    capacity_* state are also cleared: small mode skips the capacity
+    questions, and _extract_capacity_deductions returns all-zeros for it at
+    confirmation, so stale smart-mode values must not leak into the leaner
+    plan. Extra answered questions from the wider mode are inert — small-mode
+    artifacts depend only on the small essential set.
     """
+    if target_mode not in ("smart", "small_project"):
+        raise ValueError(f"Unsupported intake mode for size switch: {target_mode!r}")
     qs = graph_state.get("questionnaire")
     if qs is not None:
-        qs.intake_mode = "smart"
+        qs.intake_mode = target_mode
         qs.completed = False
         qs.awaiting_confirmation = False
         qs.editing_question = None
         qs._reopen_for_epic = True
-    graph_state["_intake_mode"] = "smart"
+        if target_mode == "small_project":
+            qs._planned_leave_entries = []
+            qs._awaiting_leave_input = False
+            qs._leave_input_stage = ""
+            qs._leave_input_buffer = {}
+            qs._velocity_override = None
+            qs._awaiting_velocity_input = False
+            qs._detected_bank_holiday_days = 0
+            qs._detected_bank_holidays = []
+    graph_state["_intake_mode"] = target_mode
     # Drop the analysis + all generated artifacts + review bookkeeping so the
-    # pipeline re-runs cleanly under Epic-wide rules. Answers are untouched.
-    for key in (
+    # pipeline re-runs cleanly under the new mode's rules. Answers are untouched.
+    keys_to_clear = [
         "project_analysis",
         "features",
         "stories",
@@ -3701,8 +3751,28 @@ def apply_epic_switch(graph_state: dict) -> None:
         "_epic_reviewed",
         "last_review_decision",
         "last_review_feedback",
-    ):
+    ]
+    if target_mode == "small_project":
+        keys_to_clear += [
+            "capacity_bank_holiday_days",
+            "capacity_planned_leave_days",
+            "capacity_unplanned_leave_pct",
+            "capacity_onboarding_engineer_sprints",
+            "capacity_ktlo_engineers",
+            "capacity_discovery_pct",
+            "net_velocity_per_sprint",
+            "velocity_source",
+            "sprint_start_date",
+            "sprint_capacities",
+            "planned_leave_entries",
+        ]
+    for key in keys_to_clear:
         graph_state.pop(key, None)
+
+
+def apply_epic_switch(graph_state: dict) -> None:
+    """Switch Small project → Large intake (kept as the historical entry point)."""
+    apply_size_switch(graph_state, "smart")
 
 
 def _reopen_intake_for_epic(state: ScrumState, questionnaire: QuestionnaireState) -> dict:
@@ -3714,29 +3784,29 @@ def _reopen_intake_for_epic(state: ScrumState, questionnaire: QuestionnaireState
     """
     questionnaire._reopen_for_epic = False
     questionnaire.awaiting_confirmation = False
+    # The switch works in both directions now (/large and /small): the label
+    # and the gap set both derive from whatever mode we just switched INTO.
+    mode_label = "Small" if _is_small_project_mode(questionnaire.intake_mode) else "Large"
     essential_set = _essentials_for_mode(questionnaire.intake_mode)
     gaps = _find_essential_gaps(questionnaire, essential_set)
     if not gaps:
-        # Every Large-mode essential is already answered — go straight to the summary
-        # (with bank-holiday detection + PTO, which Small mode had skipped).
-        _prepare_bank_holiday_choices(questionnaire)
+        # Every essential for the new mode is already answered — go straight to
+        # the summary (with bank-holiday detection + PTO where the mode uses them).
+        if not _is_small_project_mode(questionnaire.intake_mode):
+            _prepare_bank_holiday_choices(questionnaire)
         return _show_summary_or_pto(
             questionnaire,
-            prefix="Switched to **Large** — using your existing answers.\n\n",
+            prefix=f"Switched to **{mode_label}** — using your existing answers.\n\n",
         )
     prompt_text, q_nums = _build_gap_prompt(gaps, questionnaire)
     questionnaire._pending_merged_questions = q_nums
     questionnaire.current_question = q_nums[0]
-    logger.info("Small→Large switch: asking remaining Large-mode essentials %s", sorted(gaps))
+    logger.info("Size switch to %s: asking remaining essentials %s", questionnaire.intake_mode, sorted(gaps))
+    tail = "Just a few more questions:" if mode_label == "Small" else "Just a few more questions for the fuller plan:"
     return {
         "questionnaire": questionnaire,
         "messages": [
-            AIMessage(
-                content=(
-                    "Switched to **Large** — I kept all your answers. "
-                    "Just a few more questions for the fuller plan:\n\n" + prompt_text
-                )
-            )
+            AIMessage(content=f"Switched to **{mode_label}** — I kept all your answers. {tail}\n\n{prompt_text}")
         ],
     }
 
@@ -4189,11 +4259,63 @@ def project_intake(state: ScrumState) -> dict:
         # and prepended to the next AIMessage so the user sees immediate feedback.
         repo_confirm = ""
 
+        # ── Skip / defaults intents (gap mode) ────────────────────
+        # These literals must be caught BEFORE answer recording, or the word
+        # itself is stored as the gap answer — the standard-mode handlers
+        # further down are unreachable in smart/quick/small_project modes.
+        if _is_defaults_all_intent(last_msg.content) or _is_defaults_intent(last_msg.content):
+            # In gap mode the non-essentials are already auto-defaulted, so
+            # "defaults" and "defaults all" both mean "stop asking": fill
+            # everything defaultable, flag the rest, land at the summary.
+            # Only "defaults all" (the /finish fast path) also bypasses the
+            # PTO sub-loop — /defaults still stops there in smart mode.
+            summary_lines, count = _batch_defaults_for_phase(questionnaire, last_q=TOTAL_QUESTIONS)
+            if _is_defaults_all_intent(last_msg.content) and questionnaire.intake_mode not in (
+                "quick",
+                "small_project",
+            ):
+                # PTO defaults to "no planned leave", matching quick mode. A
+                # truthy _leave_input_stage bypasses the PTO gate in
+                # _show_summary_or_pto; the PTO stage machine only runs while
+                # _awaiting_leave_input is True, so "done" is inert there.
+                questionnaire._leave_input_stage = "done"
+            questionnaire._pending_merged_questions = []
+            gaps_flagged = len(questionnaire.skipped_questions - set(questionnaire.answers))
+            logger.info("Intake defaults-all (gap mode): defaulted=%d gaps=%d", count, gaps_flagged)
+            ack = f"Fast-forward: applied **{count}** default(s) across all remaining questions."
+            if gaps_flagged:
+                ack += f" {gaps_flagged} essential question(s) had no default — check them in the summary."
+            return _show_summary_or_pto(questionnaire, prefix=f"{ack}\n\n")
+
+        if _is_skip_intent(last_msg.content):
+            if current_q in questionnaire.probed_questions:
+                # Skip during a follow-up probe — keep the original answer.
+                questionnaire._follow_up_choices.pop(current_q, None)
+                repo_confirm = f"{_build_skip_acknowledgment(current_q, during_probe=True, default=None)}\n\n"
+            else:
+                # Default-or-flag every question in the current gap prompt
+                # (merged gaps like Q3+Q4 are asked together).
+                targets = questionnaire._pending_merged_questions or [current_q]
+                for q_num in targets:
+                    if q_num in questionnaire.answers:
+                        continue
+                    if q_num in QUESTION_DEFAULTS:
+                        questionnaire.answers[q_num] = QUESTION_DEFAULTS[q_num]
+                        questionnaire.defaulted_questions.add(q_num)
+                        questionnaire.answer_sources[q_num] = AnswerSource.DEFAULTED
+                    else:
+                        questionnaire.skipped_questions.add(q_num)
+                default = QUESTION_DEFAULTS.get(current_q)
+                repo_confirm = f"{_build_skip_acknowledgment(current_q, during_probe=False, default=default)}\n\n"
+            questionnaire._pending_merged_questions = []
+            questionnaire._follow_up_choices.pop(current_q, None)
+            logger.info("Intake skip (gap mode): Q%d", current_q)
+
         # ── Follow-up probe response ──────────────────────────────
         # If this question was already probed for vagueness, the user
         # is responding to the follow-up. Combine original + follow-up
         # answers (same logic as standard mode) then advance.
-        if current_q in questionnaire.probed_questions:
+        elif current_q in questionnaire.probed_questions:
             if current_q == 2 and questionnaire.answers.get(2) in _EXISTING_CODEBASE_ANSWERS:
                 # This is the repo URL follow-up — store in Q17, not combined into Q2.
                 # Q17 is "Can you share the repo URL(s)?" — storing here lets the
@@ -7346,6 +7468,10 @@ def story_writer(state: ScrumState) -> dict:
 
     _dod = resolve_dod_items(state)
 
+    # Same predicate as the analyzer coercion — the two must not disagree on
+    # what "small" means, or the sprint clamp and the story cap would drift.
+    small_mode = _is_small_project_mode(state.get("_intake_mode"))
+
     prompt = get_story_writer_prompt(
         project_name=analysis.project_name,
         project_description=analysis.project_description,
@@ -7363,6 +7489,7 @@ def story_writer(state: ScrumState) -> dict:
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,
+        max_total_stories=SMALL_PROJECT_MAX_STORIES if small_mode else None,
     )
 
     # Screenshots attached to review-edit feedback (Ctrl+V) — review passes only.
@@ -7384,6 +7511,22 @@ def story_writer(state: ScrumState) -> dict:
     # and collect warnings for the user. Deterministic post-processing, no LLM.
     # See docs: "Scrum Standards" — Story Checklist
     stories, warnings = _validate_stories(stories, features)
+
+    # Hard cap for small projects — the prompt asks, this enforces. Keep
+    # document order: the LLM lists stories by importance, so the first
+    # SMALL_PROJECT_MAX_STORIES are the ones to keep.
+    if small_mode and len(stories) > SMALL_PROJECT_MAX_STORIES:
+        dropped = stories[SMALL_PROJECT_MAX_STORIES:]
+        stories = stories[:SMALL_PROJECT_MAX_STORIES]
+        warnings.append(
+            f"Small project cap: kept the first {SMALL_PROJECT_MAX_STORIES} stories and dropped "
+            f"{len(dropped)}: " + "; ".join(f"{s.id} ({s.title or s.goal})" for s in dropped)
+        )
+        logger.info(
+            "story_writer: small-project cap trimmed %d -> %d stories",
+            SMALL_PROJECT_MAX_STORIES + len(dropped),
+            SMALL_PROJECT_MAX_STORIES,
+        )
 
     # Format the stories for display (with warnings if any)
     display = _format_stories(stories, features, analysis.project_name, warnings=warnings)

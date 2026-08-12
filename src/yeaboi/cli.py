@@ -1,4 +1,14 @@
-"""CLI entry point for yeaboi."""
+"""CLI entry point for yeaboi.
+
+Module-level imports here are deliberately limited to the stdlib and yeaboi's
+lightweight config/paths modules: `yeaboi --version`/`--help` (and every
+subcommand's fixed overhead) pay for everything imported at the top of this
+file before argparse even runs. Anything that pulls rich, prompt_toolkit, or
+the langchain/anthropic stack is imported at its call site instead — the same
+convention as beta.py, enforced by tests/unit/test_cli_startup.py.
+"""
+
+from __future__ import annotations
 
 import argparse
 import logging
@@ -6,33 +16,21 @@ import os
 import re
 import sys
 from pathlib import Path
-
-from prompt_toolkit import PromptSession
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+from typing import TYPE_CHECKING
 
 from yeaboi import __version__, fs_policy, paths
-from yeaboi.beta import BETA_TAG, PERFORMANCE_BETA_NOTICE
+from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
     is_langsmith_enabled,
     load_user_config,
 )
-from yeaboi.formatters import build_theme
-from yeaboi.persistence import migrate_history_file
-from yeaboi.questionnaire_io import (
-    build_questionnaire_from_answers,
-    export_questionnaire_md,
-    parse_questionnaire_md,
-)
-from yeaboi.repl import run_repl
-from yeaboi.sessions import SessionStore, make_display_name, make_unique_display_names
-from yeaboi.setup_wizard import is_first_run, run_setup_wizard
-from yeaboi.ui.mode_select import select_mode
-from yeaboi.ui.splash import show_splash
+
+if TYPE_CHECKING:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
 
 # Default filename for exported questionnaire templates
 DEFAULT_QUESTIONNAIRE_FILENAME = "scrum-questionnaire.md"
@@ -70,9 +68,12 @@ def _build_welcome_panel() -> Panel:
     # See docs: "Architecture" — the CLI layer is the outermost layer,
     # responsible for user-facing chrome like the welcome screen.
     """
+    from rich.panel import Panel
+    from rich.text import Text
+
     body = Text.from_markup(
         f"[bold cyan]yeaboi.ai[/bold cyan]  [dim]v{__version__}[/dim]\n"
-        "[white]A team lead's best friend[/white]\n\n"
+        "[white]Best friend to engineers and agents[/white]\n\n"
         "[dim]Describe your project to get started, or type [cyan]help[/cyan] for commands.[/dim]"
     )
     return Panel(body, border_style="cyan", padding=(1, 2))
@@ -94,6 +95,8 @@ def _build_sessions_table(sessions: list[dict], display_names: dict[str, str] | 
             ``make_unique_display_names()``. When provided, the Project column
             shows the collision-free display name instead of the raw project_name.
     """
+    from rich.table import Table
+
     table = Table(title="Saved sessions", show_lines=False, padding=(0, 1))
     table.add_column("#", style="bold", width=3)
     table.add_column("Project", style="cyan")
@@ -118,6 +121,8 @@ def _print_sessions_table(console: Console) -> None:
     Used by --list-sessions. Opens its own SessionStore so it works
     independently from the REPL.
     """
+    from yeaboi.sessions import SessionStore, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -135,6 +140,10 @@ def _clear_sessions(console: Console) -> None:
     Shows a numbered list plus an [A] All option. The user picks a session
     number to delete one, or 'a'/'all' to wipe everything.
     """
+    from prompt_toolkit import PromptSession
+
+    from yeaboi.sessions import SessionStore, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -190,6 +199,10 @@ def _resolve_resume(console: Console, resume_arg: str) -> tuple[dict | None, str
 
     # See docs: "Memory & State" — session persistence, --resume
     """
+    from prompt_toolkit import PromptSession
+
+    from yeaboi.sessions import SessionStore, make_display_name, make_unique_display_names
+
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
     with SessionStore(db_path) as store:
@@ -265,7 +278,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="yeaboi",
-        description="yeaboi.ai — a team lead's best friend. Decomposes projects into epics, stories, and sprints.",
+        description=(
+            "yeaboi.ai — best friend to engineers and agents. Runs your team's scrum, and watches your AI agents work."
+        ),
         epilog=(
             "examples:\n"
             "  yeaboi                        interactive mode (recommended)\n"
@@ -384,13 +399,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--install-skill",
-        metavar="DIR",
-        nargs="?",
-        const="__auto__",
-        default=None,
-        help="Install the bundled OpenClaw scrum-planner skill. "
-        "Optionally specify a target directory (default: ~/.openclaw/skills/).",
+        "--list-audio-devices",
+        action="store_true",
+        default=False,
+        help="List the microphones yeaboi can record from, then exit. "
+        "Set the one you want with VOICE_DEVICE (or Settings → Voice Input).",
+    )
+
+    parser.add_argument(
+        "--install-voice",
+        action="store_true",
+        default=False,
+        help="Install the dictation packages and speech model into this environment, then exit. "
+        "The same thing double-tapping Space offers inside the app — this is the non-TUI path "
+        "for CI, dev containers and terminals the full-screen UI cannot drive.",
     )
 
     parser.add_argument(
@@ -504,7 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
     subparsers = parser.add_subparsers(
-        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze}"
+        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze,agents}"
     )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
@@ -579,10 +601,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override saved code providers for this run",
     )
     standup_p.add_argument(
+        "--github-owners",
+        nargs="+",
+        metavar="OWNER",
+        help="Override saved GitHub owner/organisation scope (covers every active repo inside each)",
+    )
+    standup_p.add_argument(
         "--github-repositories",
         nargs="+",
         metavar="OWNER/REPO",
-        help="Override saved GitHub repository scope",
+        help="Override saved GitHub repository scope (exact repos, unioned with --github-owners)",
     )
     standup_p.add_argument(
         "--azdo-projects",
@@ -764,6 +792,70 @@ def build_parser() -> argparse.ArgumentParser:
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    agents_p = subparsers.add_parser(
+        "agents",
+        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,standup,security}", required=True)
+    # Every child carries the same description — `yeaboi agents cost --help` is
+    # a perfectly normal place to arrive without ever seeing the parent's help.
+    cost_p = agents_sub.add_parser(
+        "cost",
+        help="What your agents cost: per-model/project/source breakdowns + daily trend",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    cost_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    cost_p.add_argument("--project", default="", metavar="NAME", help="Filter by project directory name (substring)")
+    cost_p.add_argument("--source", default="", choices=["", "claude_code"], help="Filter by telemetry source")
+    cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    astandup_p = agents_sub.add_parser(
+        "standup",
+        help="Daily digest of what your agents did (sessions + agent-authored commits/PRs)",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    astandup_p.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Days to look back (default: since the previous working day)",
+    )
+    astandup_p.add_argument(
+        "--tracker-sources",
+        nargs="*",
+        default=None,
+        choices=["github", "azdo"],
+        metavar="SRC",
+        help="Trackers to scan for agent-authored work (default both; pass none for local-only)",
+    )
+    astandup_p.add_argument(
+        "--github-owners",
+        nargs="+",
+        default=None,
+        metavar="OWNER",
+        help="GitHub owners/orgs to scan (default configured)",
+    )
+    astandup_p.add_argument(
+        "--azdo-projects",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help="Azure DevOps projects to scan (default configured)",
+    )
+    astandup_p.add_argument("--deliver", action="store_true", help="Post the digest to the configured Slack webhook")
+    astandup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    astandup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    asec_p = agents_sub.add_parser(
+        "security",
+        help="Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    asec_p.add_argument("--deep", action="store_true", help="Re-scan every transcript, not just new/changed ones")
+    asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
         "--source",
@@ -875,7 +967,11 @@ def _run_headless(args: argparse.Namespace) -> None:
 
     # See docs: "Architecture" — headless mode for CI/CD pipelines
     """
+    from rich.console import Console
+
     from yeaboi.formatters import build_theme
+    from yeaboi.questionnaire_io import build_questionnaire_from_answers
+    from yeaboi.repl import run_repl
 
     output_format = args.output or "markdown"
 
@@ -1035,269 +1131,125 @@ def _run_transcript_reminder(args: argparse.Namespace) -> int:
         return 1
 
 
-def _sync_bedrock_config() -> None:
-    """Detect Bedrock model ID and region from OpenClaw's config and sync to yeaboi's .env.
+def _install_voice() -> int:
+    """Install dictation from the command line, printing plain progress.
 
-    Reads ~/.openclaw/agents/main/agent/models.json to find the Bedrock model ID
-    and region, then writes LLM_PROVIDER, LLM_MODEL, and AWS_REGION to
-    ~/.scrum-agent/.env if not already set.
+    Deliberately not a Rich ``Live``: this runs where the TUI cannot, so the
+    output has to survive a pipe, a CI log and a terminal with no cursor
+    control. Returns a process exit code.
+
+    There is no MCP tool for this on purpose — installing arbitrary packages
+    into the host environment on an LLM's say-so is not a capability worth
+    shipping. Both entry points are human-initiated.
     """
-    import json as json_mod
+    from yeaboi import voice, voice_install
 
-    models_json = Path.home() / ".openclaw" / "agents" / "main" / "agent" / "models.json"
-    env_path = Path.home() / ".scrum-agent" / ".env"
+    log = logging.getLogger(__name__)
+    log.info("Installing voice input from the CLI")
 
-    if not models_json.exists():
-        print("[3/5] OpenClaw models.json not found — skipped Bedrock config sync")
-        return
+    if voice.is_voice_available()[0]:
+        print("Dictation is already installed.")
+    else:
+        # ignore_verdict: typing this command *is* the retry. A stored failure
+        # from a month ago (a wheel that had not landed yet, a mirror that had
+        # not synced) must not be the reason the explicit escape hatch refuses.
+        plan = voice_install.install_plan(ignore_verdict=True)
+        if plan.blocked:
+            print(f"Cannot install dictation here — {plan.blocked}")
+            return 1
+        print(f"Installing dictation: {plan.display_command}")
+        echoed: list[str] = []
+        ok, message = voice_install.install_packages(lambda phrase: _echo_once(echoed, phrase))
+        if not ok:
+            print(message)
+            return 1
+        from yeaboi.config import mark_voice_extra_installed
 
-    try:
-        config = json_mod.loads(models_json.read_text())
-    except (json_mod.JSONDecodeError, OSError):
-        print("[3/5] Could not parse OpenClaw models.json — skipped")
-        return
+        mark_voice_extra_installed()
+        print("Packages installed.")
+        if plan.follow_up:
+            print(f"To keep dictation across upgrades: {plan.follow_up}")
 
-    # Extract Bedrock model ID and region from OpenClaw config.
-    # The provider key may be "bedrock" or "amazon-bedrock" depending on OpenClaw version.
-    providers = config.get("providers", {})
-    bedrock = providers.get("bedrock") or providers.get("amazon-bedrock") or {}
-    models = bedrock.get("models", [])
-    base_url = bedrock.get("baseUrl", "")
+    from yeaboi.config import get_voice_model
 
-    if not models:
-        print("[3/5] No Bedrock models found in OpenClaw config — skipped")
-        return
-
-    model_id = models[0].get("id", "")
-
-    # Extract region from baseUrl: https://bedrock-runtime.{region}.amazonaws.com
-    region = ""
-    if "bedrock-runtime." in base_url:
-        try:
-            region = base_url.split("bedrock-runtime.")[1].split(".amazonaws.com")[0]
-        except IndexError:
-            pass
-
-    if not model_id:
-        # Fallback: scan all providers for any model with "anthropic" or "claude" in the ID
-        for prov in providers.values():
-            if isinstance(prov, dict):
-                for m in prov.get("models", []):
-                    mid = m.get("id", "")
-                    if "anthropic" in mid or "claude" in mid:
-                        model_id = mid
-                        break
-                if model_id:
-                    break
-
-    if not model_id:
-        print("[3/5] No Bedrock model ID found in OpenClaw config — skipped")
-        return
-
-    # Read existing .env to avoid overwriting user settings
-    env_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = env_path.read_text() if env_path.exists() else ""
-
-    additions = []
-    if "LLM_PROVIDER" not in existing:
-        additions.append("LLM_PROVIDER=bedrock")
-
-    # Always ensure LLM_MODEL is set to the OpenClaw model
-    if "LLM_MODEL" not in existing:
-        additions.append(f"LLM_MODEL={model_id}")
-    elif model_id not in existing:
-        # LLM_MODEL exists but with a different value — update it
-        lines = existing.splitlines()
-        lines = [f"LLM_MODEL={model_id}" if line.startswith("LLM_MODEL=") else line for line in lines]
-        existing = "\n".join(lines) + "\n"
-        env_path.write_text(existing)
-
-    if region and "PLACEHOLDER" not in region and "AWS_REGION" not in existing:
-        additions.append(f"AWS_REGION={region}")
-
-    if additions:
-        with open(env_path, "a") as f:
-            f.write("\n".join(additions) + "\n")
-
-    print(f"[3/5] Bedrock config synced: model={model_id}" + (f", region={region}" if region else ""))
-
-
-def _configure_sandbox() -> None:
-    """Disable OpenClaw's Docker sandbox so yeaboi runs on the host.
-
-    The default sandbox image (bookworm-slim) doesn't include Python, so
-    yeaboi can't run inside the container. Setting sandbox mode to "off"
-    lets tools execute directly on the host where yeaboi is installed.
-
-    This is safe for dedicated Lightsail instances running only the
-    scrum-planner skill. For shared or multi-tenant setups, consider building
-    a custom sandbox image with Python instead.
-    """
-    import json as json_mod
-
-    openclaw_json = Path.home() / ".openclaw" / "openclaw.json"
-
-    config: dict = {}
-    if openclaw_json.exists():
-        try:
-            config = json_mod.loads(openclaw_json.read_text())
-        except (json_mod.JSONDecodeError, OSError):
-            pass
-
-    agents = config.setdefault("agents", {})
-    defaults = agents.setdefault("defaults", {})
-    sandbox = defaults.setdefault("sandbox", {})
-
-    current_mode = sandbox.get("mode", "off")
-    if current_mode == "off":
-        print("[4/5] Sandbox already disabled — yeaboi runs on host")
-        return
-
-    sandbox["mode"] = "off"
-
-    openclaw_json.parent.mkdir(parents=True, exist_ok=True)
-    openclaw_json.write_text(json_mod.dumps(config, indent=2) + "\n")
-
-    print(f"[4/5] Sandbox disabled (was '{current_mode}') — yeaboi will run on host")
-    print("       ⚠ Tools now execute directly on the host without Docker isolation.")
-
-
-def _is_dangerous_sudo_target(dest: Path) -> bool:
-    """Return True if ``dest`` must never be handed to ``sudo rm -rf``.
-
-    Blocks obvious catastrophes — the filesystem root and the user's home
-    directory itself — that a mistaken ``--install-skill`` argument could point at.
-    """
-    resolved = dest.expanduser().resolve()
-    return resolved == Path(resolved.anchor) or resolved == Path.home().resolve()
-
-
-def _confirm_sudo_overwrite(dest: Path) -> bool:
-    """Confirm before a privileged ``sudo rm -rf`` / ``cp`` overwrite of ``dest``.
-
-    The destination derives from the user-supplied ``--install-skill <path>``
-    argument, so an escalated, recursive delete must be explicit: dangerous
-    targets are refused outright, and everything else requires a typed ``y``.
-    Declining or a non-interactive stream (no TTY) is treated as "no".
-    """
-    if _is_dangerous_sudo_target(dest):
-        print(f"Refusing to 'sudo rm -rf' a protected path: {dest}", file=sys.stderr)
-        return False
-    print(f"\n⚠  Permission denied writing {dest} without elevation.")
-    print(f"   This will run: sudo rm -rf {dest}  &&  sudo cp -r <skill> {dest}")
-    try:
-        answer = input("   Proceed with sudo? [y/N] ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        print()
-        return False
-    return answer in ("y", "yes")
-
-
-def _install_skill(target_arg: str) -> None:
-    """Install the bundled scrum-planner skill into OpenClaw.
-
-    Full installation flow:
-    1. Copy SKILL.md into the OpenClaw skills registry (for gateway discovery)
-    2. Copy SKILL.md into the sandbox workspace (so the agent can read it at runtime)
-    3. Sync Bedrock model config from OpenClaw's models.json into ~/.scrum-agent/.env
-    4. Disable Docker sandbox so yeaboi runs on the host
-    5. Restart the OpenClaw gateway to load the new skill
-
-    Args:
-        target_arg: "__auto__" to auto-detect, or a custom path.
-    """
-    import importlib.resources
-    import shutil
-    import subprocess
-
-    # OpenClaw paths
-    openclaw_skills_dir = Path("/usr/lib/node_modules/openclaw/skills")
-    openclaw_workspace_dir = Path.home() / ".openclaw" / "workspace"
-
-    if target_arg == "__auto__":
-        if openclaw_skills_dir.is_dir():
-            target_dir = openclaw_skills_dir / "scrum-planner"
+    size = get_voice_model()
+    if voice_install.model_is_cached(size):
+        print(f"Speech model '{size}' is already downloaded.")
+    else:
+        print(f"Downloading the '{size}' speech model to {voice_install.model_cache_dir()}…")
+        ok, message = voice_install.download_model(size, _echo_progress)
+        if not ok:
+            # A missing model is a warning, not a failure: it downloads lazily on
+            # the first dictation exactly as it always did. Fall through to the
+            # probe rather than returning — the exit code still has to report
+            # whether dictation can actually run here.
+            print(message)
         else:
-            target_dir = Path.home() / ".openclaw" / "skills" / "scrum-planner"
-    else:
-        target_dir = Path(target_arg) / "scrum-planner"
+            print("\nSpeech model downloaded.")
 
-    # Locate the bundled skill files inside the installed package.
-    # hatch force-include puts them at yeaboi/skills/scrum-planner/.
-    try:
-        skill_pkg = importlib.resources.files("yeaboi") / "skills" / "scrum-planner"
-    except (TypeError, ModuleNotFoundError):
-        skill_pkg = Path(__file__).resolve().parent.parent.parent / "skills" / "scrum-planner"
+    ready, reason = voice.probe_voice_backend(force=True)
+    print("Dictation is ready — double-tap Space in any text field." if ready else f"Not ready — {reason}")
+    return 0 if ready else 1
 
-    source_path = Path(str(skill_pkg))
-    if not source_path.is_dir():
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        source_path = repo_root / "skills" / "scrum-planner"
-        if not source_path.is_dir():
-            print(f"Error: bundled skill not found at {source_path}", file=sys.stderr)
-            sys.exit(1)
 
-    # ── Step 1: Copy to skills registry (gateway discovery) ──────────────────
-    # /usr/lib/node_modules/openclaw/skills/ is root-owned, so may need sudo.
-    def _copy_to(dest: Path, label: str, step: str) -> int:
-        """Copy all files and subdirectories from source_path to dest."""
-        try:
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(source_path, dest)
-            count = sum(1 for _ in dest.rglob("*") if _.is_file())
-        except PermissionError:
-            if not _confirm_sudo_overwrite(dest):
-                print(f"[{step}] {label}: skipped (declined elevated overwrite of {dest})")
-                return 0
-            subprocess.run(["sudo", "rm", "-rf", str(dest)], check=True)
-            subprocess.run(["sudo", "cp", "-r", str(source_path), str(dest)], check=True)
-            count = sum(1 for _ in source_path.rglob("*") if _.is_file())
-        print(f"[{step}] {label}: {dest} ({count} files)")
-        return count
+def _echo_once(echoed: list[str], phrase: str) -> None:
+    """Print an installer phrase, skipping consecutive repeats.
 
-    _copy_to(target_dir, "Skill registry", "1/5")
+    narrate() keeps emitting the same phrase for every line of a package's
+    download, which on a terminal reads as a stutter rather than progress.
+    """
+    if phrase and (not echoed or echoed[-1] != phrase):
+        echoed.append(phrase)
+        print(f"  {phrase}")
 
-    # ── Step 2: Copy to sandbox workspace (agent runtime access) ─────────────
-    # The OpenClaw sandbox only has access to ~/.openclaw/workspace/.
-    # The agent needs to read SKILL.md at runtime to follow the instructions.
-    workspace_skill_dir = openclaw_workspace_dir / "skills" / "scrum-planner"
-    if openclaw_workspace_dir.is_dir():
-        _copy_to(workspace_skill_dir, "Sandbox workspace", "2/5")
-    else:
-        print("[2/5] Sandbox workspace not found — skipped (not an OpenClaw instance?)")
 
-    # ── Step 3: Sync Bedrock model config from OpenClaw ─────────────────────
-    # OpenClaw's models.json has the exact Bedrock model ID and region.
-    # Detect these and write to ~/.scrum-agent/.env so yeaboi uses the
-    # same model as OpenClaw (e.g. global.anthropic.claude-sonnet-4-6).
-    _sync_bedrock_config()
+def _echo_progress(status: str, fraction: float | None) -> None:
+    """One-line download progress that degrades to nothing on a dumb pipe."""
+    if fraction is None:
+        return
+    print(f"\r  {int(fraction * 100):3d}%  {status}", end="", flush=True)
 
-    # ── Step 4: Disable sandbox so yeaboi runs on the host ─────────────
-    # The default sandbox image (bookworm-slim) doesn't include Python.
-    # Disabling the sandbox lets tools execute directly on the host.
-    _configure_sandbox()
 
-    # ── Step 5: Restart OpenClaw gateway ─────────────────────────────────────
-    gateway_available = shutil.which("openclaw") is not None
-    if not gateway_available:
-        print("[5/5] OpenClaw CLI not found — skip restart (run manually)")
+def _list_audio_devices() -> None:
+    """Print the available microphones — the diagnostic for "it can\'t hear me".
+
+    Rescans first: PortAudio caches its device list at init, so a mic plugged in
+    after this process started would otherwise be missing from the very listing
+    the user ran to check whether it was detected.
+    """
+    from yeaboi import voice
+
+    log = logging.getLogger(__name__)
+    log.info("Listing audio input devices")
+    available, reason = voice.is_voice_available()
+    if not available:
+        log.info("Audio device listing skipped: voice unavailable — %s", reason)
+        print(f"Voice input unavailable — {reason}")
         return
 
-    try:
-        answer = input("\n[5/5] Restart OpenClaw gateway to load the skill? [Y/n] ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        print("\nSkipped. Run 'openclaw gateway restart' manually.")
+    voice.refresh_devices()
+    devices = voice.list_input_devices()
+    if not devices:
+        log.warning("Audio device listing found no input devices")
+        print("No microphones found.")
         return
 
-    if answer in ("", "y", "yes"):
-        try:
-            subprocess.run(["openclaw", "gateway", "restart"], check=True)
-            print("\nDone! The scrum-planner skill is ready to use.")
-        except subprocess.CalledProcessError as e:
-            print(f"\nFailed (exit code {e.returncode}). Try: openclaw gateway restart")
-    else:
-        print("Skipped. Run 'openclaw gateway restart' when ready.")
+    configured = voice.get_voice_device()
+    selected = voice.resolve_device(configured)
+    print("Input devices:")
+    for device in devices:
+        tags = []
+        if device["is_default"]:
+            tags.append("system default")
+        if selected is not None and device["index"] == selected:
+            tags.append(f"selected via VOICE_DEVICE={configured}")
+        suffix = f"  ({', '.join(tags)})" if tags else ""
+        print(
+            f"  {device['index']:>2}  {device['name']:<34} {device['channels']} ch  {device['samplerate']} Hz{suffix}"
+        )
+    if selected is None:
+        print("\nUsing the system default. Choose another with VOICE_DEVICE=<name or index>.")
+    log.info("Listed %d audio input device(s); VOICE_DEVICE=%r resolved to %s", len(devices), configured, selected)
 
 
 def _json_dump(obj: object) -> str:
@@ -1351,6 +1303,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "retro": _cmd_retro,
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
+        "agents": _cmd_agents,
     }
     try:
         return handlers[args.command](args, console)
@@ -1387,7 +1340,7 @@ def _print_beta_notice(notice: str) -> None:
         print(f"⚠ {notice}", file=sys.stderr)
 
 
-def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_report(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.reporting.engine import run_delivery_report
     from yeaboi.reporting.render import format_report_rich
 
@@ -1431,7 +1384,7 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, report.warnings, empty=not report.delivered_items)
 
 
-def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup(args: argparse.Namespace, console: Console) -> int:
     # Route this run's records to ~/.yeaboi/logs/standup/ like every other
     # standup entry point (CLAUDE.md "Observability" — each mode logs to its own
     # directory). Only the --standup-run scheduler path did this before, so a
@@ -1442,7 +1395,7 @@ def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
         return _cmd_standup_inner(args, console)
 
 
-def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.standup.engine import run_standup
     from yeaboi.standup.render import format_standup_rich
 
@@ -1485,6 +1438,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
         tracker_sources=args.tracker_sources,
         team_members=args.team_members,
         code_sources=args.code_sources,
+        github_owners=args.github_owners,
         github_repositories=args.github_repositories,
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,
@@ -1500,7 +1454,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, report.warnings)
 
 
-def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_id: str) -> int:
+def _cmd_standup_schedule(args: argparse.Namespace, console: Console, session_id: str) -> int:
     """`yeaboi standup --schedule install|remove|status` — manage the OS-native daily job.
 
     Uses the session's saved standup config (time/weekdays/lead) — set it via the
@@ -1536,7 +1490,7 @@ def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_
     return 0
 
 
-def _format_review_text(review, console: "Console") -> None:
+def _format_review_text(review, console: Console) -> None:
     """Print a transcript review as scannable text."""
     console.print(f"[bold]Transcript review — {review.standup_date or 'unknown date'}[/bold]")
     if review.sources:
@@ -1598,7 +1552,7 @@ def _resolve_review_inputs(args: argparse.Namespace) -> tuple[list[str] | None, 
     return (paths or None), text
 
 
-def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_review(args: argparse.Namespace, console: Console) -> int:
     """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
     from yeaboi.logging_setup import mode_log
 
@@ -1606,7 +1560,7 @@ def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
         return _cmd_standup_review_inner(args, console)
 
 
-def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_standup_review_inner(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.paths import get_db_path
     from yeaboi.standup.engine import file_transcript_issues, run_transcript_review, transcript_nudge
     from yeaboi.standup.store import StandupStore
@@ -1684,7 +1638,7 @@ def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> i
     return _strict_exit(args.strict, warnings)
 
 
-def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
     logging.getLogger(__name__).info("perf %s (beta)", args.perf_command)
     # One call site ahead of the branch covers all five subcommands.
     _print_beta_notice(PERFORMANCE_BETA_NOTICE)
@@ -1769,7 +1723,71 @@ def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
+    """The Agents family headless: same engines the TUI cards and MCP tools use
+    (CLAUDE.md "REQUIRED: Surface Parity")."""
+    logging.getLogger(__name__).info("agents %s (beta)", args.agents_command)
+    _print_beta_notice(AGENTWATCH_BETA_NOTICE)
+
+    if args.agents_command == "cost":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.engine import run_agent_usage
+        from yeaboi.agentwatch.render import format_usage_rich
+
+        report = run_agent_usage(window_days=args.window_days, project=args.project, source=args.source)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_usage_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
+
+    if args.agents_command == "standup":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.engine import run_agent_standup
+        from yeaboi.agentwatch.render import format_standup_rich
+
+        digest = run_agent_standup(
+            days=args.days,
+            tracker_sources=args.tracker_sources,
+            github_owners=args.github_owners,
+            azdo_projects=args.azdo_projects,
+            deliver=args.deliver,
+        )
+        for warning in digest.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(digest), indent=2))
+        else:
+            console.print(format_standup_rich(digest))
+        empty = digest.sessions_worked == 0 and not digest.repo_activity
+        return _strict_exit(args.strict, digest.warnings, empty=empty)
+
+    if args.agents_command == "security":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.engine import run_agent_security
+        from yeaboi.agentwatch.render import format_security_rich
+
+        report = run_agent_security(deep=args.deep)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_security_rich(report))
+        return _strict_exit(args.strict, report.warnings)
+
+    return 1
+
+
+def _cmd_retro(args: argparse.Namespace, console: Console) -> int:
     """Read-back of past retro boards. The live collaborative board needs a TTY
     host and stays in the TUI (see the surface-parity registry)."""
     import json
@@ -1833,7 +1851,7 @@ def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_poker(args: argparse.Namespace, console: Console) -> int:
     """Read-back of past poker sessions. The live voting board needs a TTY host
     and stays in the TUI (see the surface-parity registry)."""
     import json
@@ -1876,7 +1894,7 @@ def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
     return 0
 
 
-def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
+def _cmd_analyze(args: argparse.Namespace, console: Console) -> int:
     from rich.table import Table
 
     from yeaboi.analysis import run_team_analysis
@@ -1955,7 +1973,7 @@ def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
     return _strict_exit(args.strict, result["warnings"])
 
 
-def _print_profile_summary(console: "Console", sub: dict) -> None:
+def _print_profile_summary(console: Console, sub: dict) -> None:
     """Print one delivery tracker's summary (saved profile + top coaching insights)."""
     profile = sub["profile"]
     console.print(f"[green]Team profile saved for {profile.source}/{profile.project_key}[/green]")
@@ -1969,7 +1987,7 @@ def _print_profile_summary(console: "Console", sub: dict) -> None:
             console.print(f"  [bold]{category.upper()}[/bold]: {item.get('title', '')}")
 
 
-def _print_code_summary(console: "Console", code: dict) -> None:
+def _print_code_summary(console: Console, code: dict) -> None:
     """Print selected-user Code activity, changed-file, and coverage summary."""
     sig = code.get("signal")
     examples = code.get("examples") or {}
@@ -2009,7 +2027,7 @@ def _print_code_summary(console: "Console", code: dict) -> None:
         console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
-def _print_docs_summary(console: "Console", docs: dict) -> None:
+def _print_docs_summary(console: Console, docs: dict) -> None:
     """Print the global Docs (clarity) scan summary."""
     sig = docs.get("signal")
     examples = docs.get("examples") or {}
@@ -2032,7 +2050,7 @@ def _print_docs_summary(console: "Console", docs: dict) -> None:
         console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
-def _run_learn(console: "Console") -> None:
+def _run_learn(console: Console) -> None:
     """Run the full team analysis via the analysis engine and print a summary.
 
     Delegates to analysis/engine.py:run_team_analysis — the same pipeline the
@@ -2085,7 +2103,7 @@ def _run_learn(console: "Console") -> None:
         console.print(table)
 
 
-def _run_team_profile(console: "Console") -> None:
+def _run_team_profile(console: Console) -> None:
     """Display the current stored team calibration profile."""
 
     from yeaboi.paths import get_db_path
@@ -2121,7 +2139,7 @@ def _run_team_profile(console: "Console") -> None:
                     )
 
 
-def _run_retro(console: "Console", session_id: str) -> None:
+def _run_retro(console: Console, session_id: str) -> None:
     """Run compare_plan_to_actuals and display the result."""
     import json
 
@@ -2186,11 +2204,6 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # ── --install-skill: copy bundled skill and exit ─────────────────────────
-    if args.install_skill is not None:
-        _install_skill(args.install_skill)
-        return
-
     # Migrate the config tree from the pre-rebrand ~/.scrum-agent dir BEFORE any
     # read/mkdir of ~/.yeaboi. Must run ahead of load_user_config() (which mkdirs
     # the config dir) and ahead of the headless/standup flows that return early,
@@ -2200,6 +2213,24 @@ def main(argv: list[str] | None = None) -> None:
     # Load ~/.yeaboi/.env before any credential reads.
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
+
+    # ── --list-audio-devices: print the mic table and exit ───────────────────
+    # After load_user_config() so the currently-configured VOICE_DEVICE can be
+    # marked, and before anything interactive so it never triggers the wizard.
+    if args.list_audio_devices:
+        _list_audio_devices()
+        return
+
+    # ── --install-voice: set dictation up headlessly and exit ────────────────
+    # Logging is configured first, unlike the exits above it: this is the CI and
+    # dev-container surface, where the log file is the only diagnostic and the
+    # installer's raw child output (logged at DEBUG) is the whole point of it.
+    # Without this the records go to a handler-less root logger and vanish.
+    if args.install_voice:
+        from yeaboi.logging_setup import configure_logging
+
+        configure_logging()
+        raise SystemExit(_install_voice())
 
     # ── Filesystem sandbox: session-scoped --allow-path grants ───────────────
     # Applied before any flow that might touch user-supplied paths, so every
@@ -2270,6 +2301,15 @@ def main(argv: list[str] | None = None) -> None:
 
     configure_logging()
 
+    # Interactive-path imports — deferred so the headless flows above (and
+    # --version/--help) never pay for rich or the setup/splash machinery.
+    from rich.console import Console
+
+    from yeaboi.formatters import build_theme
+    from yeaboi.persistence import migrate_history_file
+    from yeaboi.setup_wizard import is_first_run, run_setup_wizard
+    from yeaboi.ui.splash import show_splash
+
     # Create the console with the requested theme so semantic style names
     # ([command], [hint], [success], etc.) resolve correctly throughout the
     # REPL. Must be created after arg parsing so args.theme is available.
@@ -2281,7 +2321,14 @@ def main(argv: list[str] | None = None) -> None:
 
     # See docs: "Architecture" — splash replaces the static welcome panel.
     # The animated intro runs before any interactive UI (wizard / mode select).
-    show_splash(console)
+    # Skipped when this process was relaunched by the ctrl+U in-app update: the
+    # user just watched the upgrade land and doesn't need the ~2s intro again.
+    # select_mode's Live(screen=True) enters the alternate screen on its own, so
+    # the only thing lost is the animation.
+    from yeaboi import update_check
+
+    if not update_check.is_fresh_restart():
+        show_splash(console)
 
     # ── First-run setup wizard ────────────────────────────────────────────────
     # Triggers when ~/.scrum-agent/.env is absent (first run) or --setup is passed.
@@ -2351,6 +2398,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # --export-questionnaire: write a blank template and exit (no REPL)
     if args.export_questionnaire is not None:
+        from yeaboi.questionnaire_io import export_questionnaire_md
+
         path = export_questionnaire_md(None, Path(args.export_questionnaire))
         console.print(f"[green]Questionnaire template exported to {path}[/green]")
         return
@@ -2364,6 +2413,8 @@ def main(argv: list[str] | None = None) -> None:
         resume_state, resume_session_id = _resolve_resume(console, args.resume)
         if resume_state is None:
             return  # user cancelled or no sessions
+        from yeaboi.repl import run_repl
+
         run_repl(
             console=console,
             bell=not args.no_bell,
@@ -2381,6 +2432,8 @@ def main(argv: list[str] | None = None) -> None:
             console.print(f"[red]Error: file not found: {qpath}[/red]")
             sys.exit(1)
         try:
+            from yeaboi.questionnaire_io import build_questionnaire_from_answers, parse_questionnaire_md
+
             parsed = parse_questionnaire_md(qpath)
             questionnaire = build_questionnaire_from_answers(parsed)
             console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
@@ -2417,6 +2470,8 @@ def main(argv: list[str] | None = None) -> None:
     #
     # See docs: "Architecture" — mode selection is a CLI-layer concern.
     if use_old_repl:
+        from yeaboi.repl import run_repl
+
         startup_mode = args.mode or "project-planning"
         if startup_mode == "project-planning":
             run_repl(
@@ -2438,6 +2493,7 @@ def main(argv: list[str] | None = None) -> None:
         # the app instead of the terminal's own scrollback buffer.
         import atexit
 
+        from yeaboi.ui.mode_select import select_mode
         from yeaboi.ui.shared._input import (
             disable_mouse_tracking,
             enable_mouse_tracking,
@@ -2503,6 +2559,15 @@ def main(argv: list[str] | None = None) -> None:
                         console.print(f"[dim]{_msg}[/dim]")
             except Exception:
                 pass
+        # The ctrl+U update flow asks for a relaunch onto the version it just
+        # installed. It has to happen HERE: os.execv replaces the process image
+        # without running atexit handlers, so it's only safe now that the finally
+        # above has taken the terminal out of raw mode, stopped mouse tracking and
+        # left the alternate screen. restart_in_place only returns on failure.
+        if update_check.restart_requested():
+            if not update_check.restart_in_place():
+                console.print("[dim]Update installed — restart yeaboi to use the new version.[/dim]")
+            return
         if mode_result is None:
             return
         # mode_result is non-None only for offline import (questionnaire path)
@@ -2512,6 +2577,8 @@ def main(argv: list[str] | None = None) -> None:
         if questionnaire_path and questionnaire is None:
             qpath = Path(questionnaire_path)
             try:
+                from yeaboi.questionnaire_io import build_questionnaire_from_answers, parse_questionnaire_md
+
                 parsed = parse_questionnaire_md(qpath)
                 questionnaire = build_questionnaire_from_answers(parsed)
                 console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
@@ -2520,6 +2587,8 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(1)
         # Import flow falls through to REPL for review
         if startup_mode == "project-planning":
+            from yeaboi.repl import run_repl
+
             run_repl(
                 console=console,
                 questionnaire=questionnaire,

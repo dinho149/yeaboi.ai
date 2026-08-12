@@ -1,6 +1,7 @@
 # standup sweep
 
 **Trigger** — cron `30 6 * * 3` (Wed 06:30 UTC)
+**Summary** — practice-signal precision and the suppress-only relatedness invariant
 **Workstream** — [`workstreams/standup.md`](../../workstreams/standup.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = standup`.

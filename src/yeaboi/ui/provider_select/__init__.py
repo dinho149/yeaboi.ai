@@ -49,9 +49,9 @@ from yeaboi.ui.shared._animations import COLOR_RGB, FADE_IN_LEVELS, FADE_OUT_LEV
 # Ctrl+V response for token/model fields — their content never reaches an LLM,
 # so image paste is rejected with the standard notice (see ui/shared/_attachments.py).
 from yeaboi.ui.shared._attachments import UNSUPPORTED_MESSAGE as _IMG_UNSUPPORTED
-from yeaboi.ui.shared._input import disable_bracketed_paste, enable_bracketed_paste
+from yeaboi.ui.shared._input import disable_bracketed_paste, enable_bracketed_paste, paste_payload
 from yeaboi.ui.shared._input import read_key as _read_key  # noqa: F401 — re-export for compat
-from yeaboi.ui.shared._music_bar import make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 
 logger = logging.getLogger(__name__)
 
@@ -238,20 +238,19 @@ def select_provider(
             # The curated presets above are the recommendations; we MERGE the two
             # (discovered first, then any recommended preset you don't have) so the
             # menu is consistent whether you have zero, some, or many models.
-            # Bedrock is excluded (auto-detects via OpenClaw).
+            # Bedrock is excluded (no per-key model listing; uses curated presets).
             if provider.get("provider_val") != "bedrock" and api_key_val:
                 # Run the (blocking, up-to-8s) HTTP discovery on a daemon thread while
                 # the Live loop keeps animating a "Discovering…" screen — otherwise the
                 # render loop freezes and the user stares at a frozen frame. Same
                 # threaded-pulse pattern as _verify_pulsing and the verify loops.
-                import threading
 
                 discovered_box: list[list[str]] = []
 
                 def _do_discover() -> None:
                     discovered_box.append(fetch_available_models(provider, api_key_val))
 
-                thread = threading.Thread(target=_do_discover, daemon=True)
+                thread = duck_working_thread(_do_discover, name="model-discovery")
                 thread.start()
                 disc_start = time.monotonic()
                 while thread.is_alive():
@@ -266,16 +265,8 @@ def select_provider(
                 # whether you have zero, some, or many models installed/available.
                 presets, unpulled = _merge_model_presets(discovered, curated, cap=_MAX_LIVE_MODELS, is_ollama=is_ollama)
 
-            # A detected Bedrock model (from OpenClaw) or a previously-saved LLM_MODEL
-            # is offered at the top of the list and pre-selected, preserving zero-config.
-            detected = None
-            if provider.get("provider_val") == "bedrock":
-                try:
-                    from yeaboi.setup_wizard import _detect_openclaw_bedrock_model
-
-                    detected = _detect_openclaw_bedrock_model()
-                except Exception:
-                    detected = None
+            # A previously-saved LLM_MODEL is offered at the top of the list and
+            # pre-selected, preserving zero-config.
             existing_model = _existing_model_for(existing_config, provider.get("provider_val", ""))
 
             model_ids: list[str] = []  # actual model id per entry ("" marks Custom…)
@@ -295,26 +286,24 @@ def select_provider(
                         tag = f"{tag} {extra}".strip()
                     labels.append(f"{mid}  {tag}" if tag else mid)
 
-            _add(detected, "(detected)")
             _add(existing_model, "(current)")
             for m in presets:
                 _add(m, extra="· not pulled" if m in unpulled else "")
             model_ids.append("")  # Custom… sentinel
             labels.append("Custom…")
 
-            pre = detected or existing_model or default_model
+            pre = existing_model or default_model
             selected = model_ids.index(pre) if pre in model_ids else 0
 
             def _verify_pulsing(model_id: str, render) -> tuple[bool, str]:
                 """Run _verify_model on a thread while `render(border_style)` pulses."""
-                import threading
 
                 result: list[tuple[bool, str]] = []
 
                 def _do() -> None:
                     result.append(_verify_model(provider, api_key_val, model_id))
 
-                thread = threading.Thread(target=_do, daemon=True)
+                thread = duck_working_thread(_do, name="model-verify")
                 thread.start()
                 pulse_start = time.monotonic()
                 while thread.is_alive():
@@ -357,7 +346,7 @@ def select_provider(
                 from yeaboi.ui.shared._screensaver import suppress_screensaver
 
                 with suppress_screensaver():
-                    thread = threading.Thread(target=_do, daemon=True)
+                    thread = duck_working_thread(_do, name="ollama-pull")
                     thread.start()
                     while thread.is_alive():
                         frac = prog["frac"]
@@ -440,7 +429,7 @@ def select_provider(
                         err = ""
                         verified = None
                     elif key.startswith("paste:"):
-                        val += key[6:]
+                        val += paste_payload(key)
                         err = ""
                         verified = None
                     elif key == "ctrl+v":
@@ -574,15 +563,13 @@ def select_provider(
                             live.update(_build_input_screen(provider, input_value, width=w, height=h, error=error))
                             continue
 
-                        import threading
-
                         verify_result: list[tuple[bool, str]] = []
 
                         def _do_verify():
                             verify_result.append(_verify_api_key(provider, input_value.strip()))
 
                         logger.info("provider_select: verifying %s credentials", provider["full_name"])
-                        thread = threading.Thread(target=_do_verify, daemon=True)
+                        thread = duck_working_thread(_do_verify, name="key-verify")
                         thread.start()
 
                         pulse_start = time.monotonic()
@@ -680,7 +667,7 @@ def select_provider(
                         error = ""
                         verified = None
                     elif key.startswith("paste:"):
-                        input_value += key[6:]
+                        input_value += paste_payload(key)
                         error = ""
                         verified = None
                     elif key == "ctrl+v":
@@ -944,15 +931,13 @@ def select_provider(
                             live.update(_build_vc_input_screen(vc, vc_input, width=w, height=h, error=vc_error))
                             continue
 
-                        import threading
-
                         verify_result: list[tuple[bool, str]] = []
 
                         def _do_vc_verify():
                             verify_result.append(_verify_vc_token(vc, vc_input.strip()))
 
                         logger.info("provider_select: verifying %s token", vc["name"])
-                        thread = threading.Thread(target=_do_vc_verify, daemon=True)
+                        thread = duck_working_thread(_do_vc_verify, name="vc-verify")
                         thread.start()
 
                         pulse_start = time.monotonic()
@@ -1034,7 +1019,7 @@ def select_provider(
                         vc_error = ""
                         vc_verified = None
                     elif key.startswith("paste:"):
-                        vc_input += key[6:]
+                        vc_input += paste_payload(key)
                         vc_error = ""
                         vc_verified = None
                     elif key == "ctrl+v":

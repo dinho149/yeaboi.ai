@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from contextlib import contextmanager
 
 from rich.live import Live
 from rich.panel import Panel
@@ -404,19 +405,22 @@ _SAY_TEXT = (198, 198, 208)  # soft grey-white, as the tip body
 _SAY_BORDER = (110, 110, 124)
 _say_text = ""  # the message currently being shown
 _say_start = 0.0  # when it appeared (monotonic)
+_say_seq = 0  # sequence stamp of the shown message (repeat text + new seq = new fade)
 
 
-def _say_brightness(now_t: float) -> float:
+def _say_brightness(now_t: float, hold: float | None = None) -> float:
     """0..1 brightness for the duck's bubble: fade in, hold, fade out, then 0
-    (which stops it being drawn at all, so the message clears itself)."""
+    (which stops it being drawn at all, so the message clears itself).
+    ``hold`` overrides the default dwell — longer lines (tips) get longer holds."""
     e = now_t - _say_start
+    dwell = _SAY_HOLD if hold is None else hold
     if e < 0:
         return 0.0
     if e < _SAY_FADE_IN:
         return e / _SAY_FADE_IN
-    if e < _SAY_FADE_IN + _SAY_HOLD:
+    if e < _SAY_FADE_IN + dwell:
         return 1.0
-    out = e - _SAY_FADE_IN - _SAY_HOLD
+    out = e - _SAY_FADE_IN - dwell
     return max(0.0, 1.0 - out / _SAY_FADE_OUT)
 
 
@@ -614,6 +618,17 @@ _DUCK_SHADES_STAGE = 0.05  # seconds per lift stage (~0.5s for the full sequence
 _duck_region: tuple[int, int, int, int] | None = None
 _duck_shades_start = 0.0
 
+# Which mascot family the chrome draws this frame. Updated by MusicLive from the
+# page's `_duck_mascot` panel stamp (Agents pages stamp "robo"), and read by the
+# screensaver so idling on an Agents page keeps the robo. Module-global like all
+# per-frame duck state; reset in _reset_duck_state().
+_chrome_mascot = "duck"
+
+
+def current_chrome_mascot() -> str:
+    """The mascot family the chrome is currently drawing ("duck" or "robo")."""
+    return _chrome_mascot
+
 
 def duck_region() -> tuple[int, int, int, int] | None:
     """Clickable rect of the chrome companion duck this frame (1-based inclusive)."""
@@ -621,8 +636,16 @@ def duck_region() -> tuple[int, int, int, int] | None:
 
 
 def poke_duck() -> None:
-    """Start the shades-lift gag on the chrome duck (called when he's clicked)."""
+    """React to the chrome companion being clicked.
+
+    The duck plays the shades-lift gag; the robo has no FACE/GLASSES split (a
+    bolted visor can't lift), so he beeps — a short quack — instead of the
+    click silently doing nothing.
+    """
     global _duck_shades_start
+    if _chrome_mascot != "duck":
+        quack_duck()
+        return
     _duck_shades_start = time.monotonic()
 
 
@@ -638,7 +661,183 @@ def _duck_shades_lift() -> int | None:
     return SHADES_LIFT_SEQUENCE[i]
 
 
-def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky: bool = False) -> None:
+# ── Caller-driven duck animation (quack / working-bob / entrance) ────────────
+# Same clock-stamp pattern as the shades gag: a caller stamps a start time and
+# the draw code derives the frame from it, so there is no animation thread and
+# nothing to clean up. The chat drives these around its long waits and stage
+# completions. NO logging anywhere below — this is all per-frame draw state;
+# the trigger sites log instead (see the logging skill).
+_DUCK_QUACK_HZ = 6.0  # bill open/close cycles per second, as the welcome tip quack
+_duck_quack_start = 0.0
+_duck_quack_seconds = 0.6
+_duck_working = False
+_duck_working_start = 0.0
+
+
+def quack_duck(seconds: float = 0.6) -> None:
+    """Open/close the chrome duck's bill for ``seconds`` (a short quack).
+
+    A quack already in flight is left to finish — back-to-back triggers (e.g.
+    fast-mode stages completing in quick succession) coalesce into one quack
+    instead of a stutter.
+    """
+    global _duck_quack_start, _duck_quack_seconds
+    now = time.monotonic()
+    if now - _duck_quack_start < _duck_quack_seconds:
+        return
+    _duck_quack_start, _duck_quack_seconds = now, seconds
+
+
+def _duck_beak_open() -> bool:
+    """Whether the bill is open this frame (toggling at _DUCK_QUACK_HZ)."""
+    if not _duck_quack_start:
+        return False
+    e = time.monotonic() - _duck_quack_start
+    return 0 <= e < _duck_quack_seconds and int(e * _DUCK_QUACK_HZ) % 2 == 1
+
+
+def set_duck_working(active: bool) -> None:
+    """Toggle the duck's head-bob loop — the liveness cue during long waits."""
+    global _duck_working, _duck_working_start
+    if active and not _duck_working:
+        _duck_working_start = time.monotonic()
+    _duck_working = active
+
+
+_duck_working_depth = 0  # duck_working() nesting — overlapping waits mustn't stomp each other
+_duck_working_lock = None  # created lazily; the CM runs on worker threads
+
+
+def _working_lock():
+    global _duck_working_lock
+    if _duck_working_lock is None:
+        import threading
+
+        _duck_working_lock = threading.Lock()
+    return _duck_working_lock
+
+
+@contextmanager
+def duck_working():
+    """Bob the duck for the duration of a wait (exception-safe, refcounted).
+
+    The mode pages wrap their worker-poll loops in this so the duck is the
+    liveness cue for every long operation. Refcounted (under a lock — the CM
+    runs on worker threads, and two workers finishing together must not lose
+    a decrement) because waits overlap: the bob stops only when the OUTERMOST
+    wait finishes.
+    """
+    global _duck_working_depth
+    with _working_lock():
+        _duck_working_depth += 1
+        set_duck_working(True)
+    try:
+        yield
+    finally:
+        with _working_lock():
+            _duck_working_depth -= 1
+            if _duck_working_depth <= 0:
+                set_duck_working(False)
+
+
+def duck_working_thread(target, *, name: str):
+    """A daemon worker Thread whose lifetime bobs the duck.
+
+    Drop-in for ``threading.Thread(target=..., name=..., daemon=True)`` at the
+    mode pages' worker-poll sites: the duck starts bobbing when the worker
+    starts and settles when it finishes (or dies), however the poll loop ends.
+    """
+    import threading
+
+    def _wrapped():
+        with duck_working():
+            target()
+
+    return threading.Thread(target=_wrapped, name=name, daemon=True)
+
+
+def _duck_frame() -> int:
+    """Sprite frame for this draw: bobbing while working, still otherwise."""
+    from yeaboi.ui.shared._mascot import FRAMES
+
+    if not _duck_working:
+        return 0
+    return int((time.monotonic() - _duck_working_start) * 8) % FRAMES
+
+
+# One-time entrance (the planning chat's greeting): state lives here so the
+# waddle-in survives re-renders; the walk itself is drawn by draw_companion_duck.
+_DUCK_ENTRANCE_SECONDS = 1.5
+_DUCK_MINI_W = 22  # render width of the walking mini duck (see MINI_WIDTH)
+_DUCK_ENTRANCE_DISTANCE = 40  # how far left of the corner the waddle starts
+_duck_entrance_start = 0.0
+_duck_entrance_played = False  # at most once per process — never on resume
+
+
+def start_duck_entrance(*, replay: bool = False) -> None:
+    """Play the waddle-into-the-corner entrance.
+
+    Once per process by default (the chat greeting keeps its original feel).
+    ``replay=True`` plays it again — used when a mode card is entered from the
+    menu, so the duck walks in with every page. A no-op mid-waddle either way.
+    """
+    global _duck_entrance_start, _duck_entrance_played
+    if _duck_entrance_start:
+        return  # already walking in — don't restart mid-stride
+    if _duck_entrance_played and not replay:
+        return
+    _duck_entrance_played = True
+    _duck_entrance_start = time.monotonic()
+
+
+def skip_duck_entrance() -> None:
+    """Jump the entrance straight to the settled corner pose (first keypress)."""
+    global _duck_entrance_start
+    _duck_entrance_start = 0.0
+
+
+def _duck_entrance_progress() -> float | None:
+    """0..1 progress of the waddle-in, or None when no entrance is playing.
+
+    On completion it clears itself and stamps the arrival quack — the same
+    clock-stamp handoff the shades gag uses, so there is nothing to clean up.
+    """
+    global _duck_entrance_start
+    if not _duck_entrance_start:
+        return None
+    p = (time.monotonic() - _duck_entrance_start) / _DUCK_ENTRANCE_SECONDS
+    if p >= 1.0:
+        _duck_entrance_start = 0.0
+        quack_duck()  # he arrives with a hello
+        return None
+    return max(0.0, p)
+
+
+def _reset_duck_state() -> None:
+    """Test helper: restore every module-global duck clock to idle."""
+    global _duck_quack_start, _duck_quack_seconds, _duck_working, _duck_working_start
+    global _duck_shades_start, _duck_slide_start, _duck_last_draw
+    global _say_text, _say_start, _say_seq
+    global _duck_entrance_start, _duck_entrance_played, _duck_working_depth, _chrome_mascot
+    _duck_quack_start, _duck_quack_seconds = 0.0, 0.6
+    _duck_working, _duck_working_start = False, 0.0
+    _duck_working_depth = 0
+    _duck_shades_start = _duck_slide_start = _duck_last_draw = 0.0
+    _say_text, _say_start, _say_seq = "", 0.0, 0
+    _duck_entrance_start, _duck_entrance_played = 0.0, False
+    _chrome_mascot = "duck"
+
+
+def draw_companion_duck(
+    console,
+    options,
+    lines: list,
+    say: str = "",
+    say_sticky: bool = False,
+    say_hold: float | None = None,
+    say_seq: int = 0,
+    mascot: str = "duck",
+) -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
 
     The duck sits just above the music pocket (which owns the bottom three rows),
@@ -655,7 +854,7 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
     from yeaboi.ui.shared._animations import ease_out_cubic
     from yeaboi.ui.shared._mascot import render_head, render_head_shades
 
-    global _duck_region
+    global _duck_region, _duck_slide_start, _duck_last_draw
     _duck_region = None
     if not lines or not lines[-1]:
         return
@@ -665,9 +864,55 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
     # through the tinted page around the duck.
     bstyle = lines[-1][0].style
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
-    # Mid-gag he wears the lifted shades (revealing the pair underneath).
+    # One-time entrance: the mini duck waddles rightward along the pocket roof
+    # into his corner (flip=False faces the direction of travel, exactly as the
+    # screensaver's outbound leg), then the normal head pose takes over — he
+    # "turns around" to face the page. Bubble and click-region wait for arrival.
+    _entrance = _duck_entrance_progress()
+    if _entrance is not None:
+        from yeaboi.ui.shared._mascot import render_mini
+
+        _frame_i = int((time.monotonic() - _duck_entrance_start) * 8)
+        mini_rows = console.render_lines(
+            render_mini(_frame_i, mascot=mascot), options.update_width(_DUCK_MINI_W), pad=True, style=bg_style
+        )
+        mh = len(mini_rows)
+        rest_ml = width - _DUCK_MINI_W - _DUCK_RIGHT_MARGIN
+        if len(lines) < mh + 5 or rest_ml < 2:
+            # No room to walk — end the entrance and settle immediately.
+            skip_duck_entrance()
+        else:
+            now = time.monotonic()
+            # Pin the standard slide fully settled so the handoff is seamless
+            # (a fresh-entry gap would otherwise replay the corner glide).
+            _duck_slide_start, _duck_last_draw = now - _DUCK_SLIDE_SECONDS, now
+            ml = int(
+                max(1, rest_ml - _DUCK_ENTRANCE_DISTANCE)
+                + (rest_ml - max(1, rest_ml - _DUCK_ENTRANCE_DISTANCE)) * _entrance
+            )
+            mr = min(ml + _DUCK_MINI_W, width - 1)
+            bottom = len(lines) - 4
+            top = bottom - mh + 1
+            for i, drow in enumerate(mini_rows):
+                r = top + i
+                if r < 0:
+                    continue
+                visible = drow if (mr - ml) >= _DUCK_MINI_W else list(Segment.divide(drow, [mr - ml]))[0]
+                left, _mid, right = Segment.divide(lines[r], [ml, mr, width])
+                lines[r] = list(left) + list(visible) + list(right)
+            return
+
+    # Mid-gag he wears the lifted shades (revealing the pair underneath);
+    # otherwise the frame comes from the working-bob clock and the bill from the
+    # quack clock (both idle → the familiar still pose, frame 0, bill closed).
+    # The gag is duck-only — the robo has no FACE/GLASSES split (poke_duck
+    # already routes his clicks to a quack instead).
     _lift = _duck_shades_lift()
-    _head = render_head(0, flip=True) if _lift is None else render_head_shades(_lift, flip=True)
+    _head = (
+        render_head_shades(_lift, flip=True)
+        if _lift is not None and mascot == "duck"
+        else render_head(_duck_frame(), flip=True, beak_open=_duck_beak_open(), mascot=mascot)
+    )
     duck_rows = console.render_lines(_head, options.update_width(_DUCK_W), pad=True, style=bg_style)
     dh = len(duck_rows)
     # Need room for the duck + a gap + the 3-row pocket; skip on tiny panels.
@@ -678,7 +923,6 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
     # the duck (the welcome draws its own, so it never calls this) — restart the
     # slide so the mascot glides in from the right edge into its corner. Continuous
     # sub-page re-renders keep the gap tiny, so it settles and stays put.
-    global _duck_slide_start, _duck_last_draw
     now = time.monotonic()
     if now - _duck_last_draw > _DUCK_SLIDE_GAP:
         _duck_slide_start = now
@@ -709,15 +953,17 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
 
     # ── Speech bubble, to the left of his head ────────────────────────────────
     # A fresh message restarts the fade; once it has faded back out the bubble
-    # stops drawing, so the status clears itself after a couple of seconds.
-    global _say_text, _say_start
-    if say and say != _say_text:
-        _say_text, _say_start = say, time.monotonic()
+    # stops drawing, so the status clears itself after a couple of seconds. A
+    # bumped ``say_seq`` restarts the fade even for identical text — without it a
+    # repeated status ("Export finished." twice) would be swallowed silently.
+    global _say_text, _say_start, _say_seq
+    if say and (say != _say_text or say_seq != _say_seq):
+        _say_text, _say_start, _say_seq = say, time.monotonic(), say_seq
     if not say or say != _say_text:
         return
     # Sticky lines (a confirmation awaiting an answer) fade IN but never out — they
     # stay until the page stops asking.
-    bright = 1.0 if say_sticky else _say_brightness(time.monotonic())
+    bright = 1.0 if say_sticky else _say_brightness(time.monotonic(), hold=say_hold)
     if say_sticky:
         bright = min(1.0, max(0.25, (time.monotonic() - _say_start) / _SAY_FADE_IN))
     if bright <= 0.0:
@@ -774,15 +1020,19 @@ class _MusicPocketFrame:
         with_copy: bool = False,
         hint_tab: Text | None = None,
         duck_say: str = "",
+        duck_mascot: str = "duck",
     ) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
+        self.duck_mascot = duck_mascot  # sprite family ("robo" on Agents pages)
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
         self.hint_tab = hint_tab  # a page's control hints, as one more tab
         self.duck_say = duck_say  # transient status the companion speaks
         self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
+        self.duck_say_hold = None  # per-message dwell override (None = default)
+        self.duck_say_seq = 0  # bump to restart the fade for identical text
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -803,7 +1053,16 @@ class _MusicPocketFrame:
         _qualifies = self.hint_tab is not None and bool(self.hint_tab.plain.strip())
         draw_controls_pocket(console, options, lines, page_hint=self.hint_tab, target=1.0 if _qualifies else 0.0)
         if self.with_duck:
-            draw_companion_duck(console, options, lines, say=self.duck_say, say_sticky=self.duck_say_sticky)
+            draw_companion_duck(
+                console,
+                options,
+                lines,
+                say=self.duck_say,
+                say_sticky=self.duck_say_sticky,
+                say_hold=self.duck_say_hold,
+                say_seq=self.duck_say_seq,
+                mascot=self.duck_mascot,
+            )
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -892,6 +1151,11 @@ class MusicLive(Live):
             return _build_too_small_screen(width, height)
 
         renderable = super().get_renderable()
+        # Adopt the page's mascot BEFORE any early return: the Agents menu is a
+        # _WelcomeFrame (not a Panel) and popups keep their own subtitle, but
+        # both must still steer the screensaver's mascot while they're showing.
+        global _chrome_mascot
+        _chrome_mascot = str(getattr(renderable, "_duck_mascot", "duck") or "duck")
         if not isinstance(renderable, Panel):
             return renderable
         # Safety net (main #104): no screen may ever show the terminal's own
@@ -923,6 +1187,48 @@ class MusicLive(Live):
             # A page can also hand the duck a line to speak (transient status).
             duck_say = str(getattr(renderable, "_duck_say", "") or "")
             _sticky = bool(getattr(renderable, "_duck_say_sticky", False))
+            _hold = getattr(renderable, "_duck_say_hold", None)
+            _seq = int(getattr(renderable, "_duck_say_seq", 0) or 0)
+            if not duck_say and with_duck:
+                # A page that didn't stamp a line itself gets the app-wide
+                # shared voice (lazy import — _duck_voice imports our fade
+                # constants). Fenced so a bubble can never overlap content:
+                # truncated to the page's declared free columns (_bubble_room,
+                # or the conservative default) and skipped below the minimum.
+                # No logging here — this runs per frame (mascot spec).
+                from yeaboi.ui.shared._duck_voice import (
+                    _BUBBLE_MIN_COLS,
+                    duck_muted,
+                    duck_voice,
+                )
+
+                voice = duck_voice()
+                # Mute silences the chatter, not confirmations: a sticky line
+                # is a modal prompt (Enter deletes!) and must stay visible.
+                if not duck_muted() or voice.sticky:
+                    line = voice.tick()
+                    if line is not None:
+                        text, _line_hold, seq = line
+                        room = getattr(renderable, "_bubble_room", None)
+                        if voice.sticky:
+                            # A sticky line bypasses the room fence and is never
+                            # truncated — losing "Enter to confirm" (or the whole
+                            # prompt) would make the next Enter delete invisibly.
+                            # Only a terminal too narrow for the bubble itself
+                            # skips it, in the draw path. Hold stays None: a
+                            # sticky hold is inf, which the fade envelope can't
+                            # take, and the sticky branch ignores it anyway.
+                            duck_say, _seq, _sticky, _hold = text, seq, True, None
+                        elif room is not None and int(room) >= _BUBBLE_MIN_COLS:
+                            # Ordinary lines render only where the page opted in
+                            # with a declared _bubble_room — grid pages whose
+                            # content reaches the right edge stay silent rather
+                            # than overlapped (the quack still lands).
+                            room = int(room)
+                            if len(text) > room:
+                                text = text[: max(1, room - 1)].rstrip() + "…"
+                            duck_say, _seq = text, seq
+                            _hold = _line_hold
             _frame = _MusicPocketFrame(
                 renderable,
                 with_duck=with_duck,
@@ -930,8 +1236,11 @@ class MusicLive(Live):
                 with_copy=with_copy,
                 hint_tab=hint_tab,
                 duck_say=duck_say,
+                duck_mascot=_chrome_mascot,
             )
             _frame.duck_say_sticky = _sticky
+            _frame.duck_say_hold = _hold
+            _frame.duck_say_seq = _seq
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()

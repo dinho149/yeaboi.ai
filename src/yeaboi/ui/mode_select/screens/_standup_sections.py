@@ -570,10 +570,12 @@ def _detail_activity(ctx: _StandupCtx, data: dict) -> None:
         for category, status in report.category_coverage:
             ctx.row(category.title(), status.replace("_", " "), theme.dim)
     if getattr(report, "skipped_sources", ()):
+        from yeaboi.standup import collector
+
         ctx.blank()
         ctx.heading("Not scanned")
         for src, reason in report.skipped_sources:
-            ctx.row(src.replace("_", " ").title(), reason, theme.muted)
+            ctx.row(collector.source_label(src), reason, theme.muted)
 
 
 def _detail_schedule(ctx: _StandupCtx, data: dict) -> None:

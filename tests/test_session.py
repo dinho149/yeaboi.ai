@@ -14,7 +14,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from yeaboi.ui.session import (
-    _build_chat_screen,
     _build_description_screen,
     _build_edit_prompt_screen,
     _build_pipeline_screen,
@@ -194,33 +193,6 @@ class TestBuildPipelineScreen:
             width=80,
             height=24,
         )
-        assert isinstance(result, Panel)
-
-
-class TestBuildChatScreen:
-    def test_empty_chat(self):
-        result = _build_chat_screen([], "", 0, width=80, height=24)
-        assert isinstance(result, Panel)
-
-    def test_with_messages(self):
-        messages = [("user", "How many sprints?"), ("ai", "Based on the plan, 4 sprints.")]
-        result = _build_chat_screen(messages, "", 0, width=80, height=24)
-        assert isinstance(result, Panel)
-
-    def test_processing_state(self):
-        result = _build_chat_screen(
-            [("user", "hello")],
-            "",
-            0,
-            width=80,
-            height=24,
-            processing=True,
-            tick=2.0,
-        )
-        assert isinstance(result, Panel)
-
-    def test_with_input(self):
-        result = _build_chat_screen([], "typing something", 0, width=80, height=24)
         assert isinstance(result, Panel)
 
 
@@ -531,15 +503,15 @@ class TestQuestionInputLoop:
 class TestRunSession:
     @patch("yeaboi.ui.session.create_graph")
     def test_esc_on_description_exits_cleanly(self, mock_graph):
-        """Pressing Esc on the description screen should exit without errors."""
+        """Double-Esc in the chat greeting should exit without errors."""
         live = MagicMock()
         console = _make_console()
-        keys = iter(["esc"])
+        keys = iter(["esc", "esc"])
         run_session(
             live,
             console,
             intake_mode="smart",
-            _read_key_fn=lambda: next(keys),
+            _read_key_fn=lambda: next(keys, ""),
         )
         # No graph invocation should happen
         mock_graph.return_value.invoke.assert_not_called()

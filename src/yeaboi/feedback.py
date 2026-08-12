@@ -20,9 +20,10 @@ file paths with a "drag onto the issue in your browser" hint. The AI Polish call
 
 Labels: both the API and the ``issues/new?labels=`` URL silently drop labels for
 users without push/triage rights, so nothing here depends on them. The type is
-in the title prefix (``[Bug] …``) and type+area are the first body line. The
-maintainer should still pre-create ``type:bug|feature|improvement|other`` and
-``area:<the 9 areas>`` on the repo so maintainer-filed feedback auto-labels.
+in the title prefix (``[Bug] …``) and type+area are the first body line.
+``make cowork-setup`` creates the ``type:*`` labels (see ``PROPOSAL_TYPES`` in
+``scripts/cowork_setup.py``, a superset of these types); the maintainer should
+still pre-create ``area:<the 9 areas>`` so maintainer-filed feedback auto-labels.
 
 # See docs: "Prompt Construction" — the AI Polish prompt (ARC framework)
 """
@@ -57,6 +58,7 @@ FEEDBACK_AREAS: tuple[str, ...] = (
     "reporting",
     "usage",
     "settings",
+    "agents",
 )
 
 # GitHub 414s around ~8 KB URLs and some OS browser-open handlers choke earlier;

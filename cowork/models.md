@@ -12,8 +12,8 @@ repository variable — see [Workflows](#workflows)).
 | Tier | Dropdown label | Id | For |
 |---|---|---|---|
 | `heavy` | Fable 5 | `claude-fable-5` | Long-running unattended implementation. **Never security** — see below. |
-| `deep` | Opus 5 | `claude-opus-5` | Work the repo lives with: building, reviewing, diagnosing, marketing prose, scouting security |
-| `standard` | Sonnet 5 | `claude-sonnet-5` | Bounded judgement over a known input: the other 13 scouts, the scribe, digest ranking, the DoD audit, release notes |
+| `deep` | Opus 5 | `claude-opus-5` | Work the repo lives with: building, reviewing, diagnosing, running an integration campaign, scouting security |
+| `standard` | Sonnet 5 | `claude-sonnet-5` | Bounded judgement over a known input: the other 12 scouts, the scribe, digest ranking, the DoD audit, release notes |
 | `fast` | Haiku 4.5 | `claude-haiku-4-5` | Mechanical: read a field, write a field |
 | `inherit` | — | — | Take the caller's model. The default for every agent. |
 
@@ -35,24 +35,30 @@ drops to something cheap and wrong.
 **Security never runs on `heavy`.** Fable 5 automatically reroutes cybersecurity queries to less
 capable models. That is fine for a chat and unacceptable for an unattended survey: you would not know
 which model actually read `fs_policy.py`, `redaction.py`, or the CSP invariants, and the run would
-report as if it had. This applies to `security-sweep`, `security-scan.yml`, and any auto-lane item in
-the `security` workstream.
+report as if it had. This applies to `security-sweep` and to any auto-lane item in the `security`
+workstream.
 
 ## Assignments
 
 ### Routines
 
-The 14 sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which resolves it here.
-The rest do model-worthy work in their own session and carry a `**Model**` line.
+The 13 maintenance sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which
+resolves it here. One of them — `security` — scouts at `deep` instead of the shared `standard`;
+that exception is named in that file, and no sweep carries a `**Model**` line, because a sweep's
+tier belongs in one place. The rest do model-worthy work in their own session and carry one.
 
 | Routine | Tier | Why |
 |---|---|---|
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
-| the other 13 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
-| `cron/marketing-daily.md` | `deep` | Drafts prose inline rather than delegating; the prose is the output |
-| `cron/digest.md` | `standard` | Ranks ~20 issue titles and writes one message |
-| `events/pr-opened-dod-audit.md` | `standard` | A nine-item checklist against a diff |
-| `events/pr-merged-close-loop.md` | `fast` | Linear → Done, one Slack line, a Notion page from a merged PR |
+| `cron/integrations-campaign.md` | `deep` | Not a survey. It reads one provider's API docs, writes a client against them, and appends that provider to six other workstreams' registration sites — the one lane that adds capability, and the one that edits outside its own charter |
+| the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
+| `cron/shipped-standup.md` | `standard` | Reads a day of merged PRs and their checks, and writes the one-line-each trace of what shipped |
+| `cron/digest.md` | `standard` | Buckets ~20 issue titles by type and ranks each bucket into one message |
+| `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
+| `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
+| `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
+| `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
+| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done and write a Notion page from a merged PR; the daily standup carries the Slack line |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |
 
 ### Agents
@@ -61,7 +67,7 @@ Every agent stays `model: inherit`. These are the tiers the **caller** passes on
 
 | Agent | Tier | Why |
 |---|---|---|
-| `cowork-scout` | `standard`, `deep` for security | Highest-frequency step in the system; a weak scout poisons the proposal queue |
+| `cowork-scout` | `standard`, `deep` for security and integrations | Highest-frequency step in the system; a weak scout poisons the proposal queue |
 | `cowork-builder` | `deep` | Writes code that becomes a PR |
 | `cowork-scribe` | `standard` | Formulaic, but it drives connector tools where a mistake files the wrong thing in a real tracker |
 | `code-reviewer` | `deep` | The only thing standing between the builder and a merge |
@@ -84,22 +90,25 @@ are not sensitive, and masking them in logs would only make failures harder to r
 
 | Workflow job | Tier | Why |
 |---|---|---|
-| `claude.yml` `implement` | `heavy` | The one job Fable is actually for: human-selected, unattended, up to 90 turns through implement → DoD gate → review → PR, with CI and your merge as the net |
+| `claude.yml` `implement` | `heavy` | The one job Fable is actually for: human-selected, unattended, up to 110 turns through Linear ticket → implement → DoD gate → code-reviewer → PR, with CI and your merge as the net |
 | `claude.yml` `claude` (assist) | `deep` | Open-ended, and a person is waiting on it |
 | `claude-review.yml` | `deep` | Judgement quality is the whole point; volume is already gated to green PRs |
 | `ci-sentinel.yml` | `deep` | Diagnosing a red `main` from a log is the hard case |
-| `security-scan.yml` | `standard` | Scoped remediation, re-scanned by CI and human-reviewed. **Never `heavy`** |
-| `backlog-groomer.yml` | `standard` | Label normalisation and cross-linking |
 | `dependabot-auto.yml` | `standard` | Reads a diff and a changelog, decides merge or escalate |
 | `feedback-remediation.yml` | `standard` | Classifies and routes issues against a written rubric |
 | `auto-version.yml` | `fast` | Reads a diff, picks patch/minor/major |
-| `flaky-test-hunter.yml` | `fast` | Counts retries and files one issue |
+| `flaky-test-hunter.yml` | `fast` | Counts retries and files one proposal into the cowork queue |
 
 **The `||` fallback encodes prior behaviour, not the tier.** Each job is written as:
 
 ```yaml
-claude_args: '--model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} …'
+claude_args: >-
+  --model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} --max-turns 30
 ```
+
+A `>-` block scalar, not a quoted one: the expression already contains single quotes around the
+fallback, and nesting those inside a single-quoted YAML scalar does not parse. Every workflow uses
+the block form.
 
 An unset variable renders empty and a bare `--model ` breaks the argument, so the fallback is
 mandatory. It is deliberately pinned to **what that job ran on before this table existed** — so

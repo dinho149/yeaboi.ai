@@ -1,7 +1,8 @@
-# yeaboi — AI Scrum Master plugin for Claude Code
+# yeaboi — best friend to engineers and agents, as a Claude Code plugin
 
-Sprint planning, daily standups, stakeholder delivery reports, and engineer
-1:1 prep — without leaving your coding agent.
+Sprint planning, daily standups, stakeholder delivery reports and engineer 1:1
+prep for your team — plus cost, daily digests and security posture for the
+coding agents working alongside it. Without leaving your coding agent.
 
 ## What you get
 

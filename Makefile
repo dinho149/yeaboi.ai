@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve cowork-setup cowork-check cowork-teardown
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -75,6 +75,12 @@ budget-report: ## Show live prompt token counts for trend monitoring (runs token
 graph: ## Generate agent graph visualisation PNG
 	$(UV) run python scripts/generate_graph_png.py
 
+demo: ## Re-record docs/demo.cast.gz + docs/demo.gif deterministically (requires agg: brew install agg)
+	$(UV) run python scripts/record_demo.py
+
+demo-render: ## Re-render docs/demo.gif from the committed cast (theme/size tweaks, no re-record)
+	$(UV) run python scripts/record_demo.py --render-only
+
 bump-patch: ## Bump the patch version in pyproject.toml (X.Y.Z -> X.Y.Z+1)
 	$(UV) run python scripts/bump_version.py patch
 
@@ -83,6 +89,34 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
+
+# --- Beta sign-off (see cowork/release-signoff.md) --------------------------
+#
+# Every release-worthy merge publishes a PyPI pre-release; a human turns the
+# accumulated batch into the official X.Y.Z once a week. These are that human's
+# commands, and there are two test sessions rather than one: the fleet
+# maintains what exists AND builds one provider integration a week, and those are
+# different things to sit down and exercise.
+#
+# `beta-check` only reports. Each `beta-sign-*` records that track's sign-off on
+# the promotion ask, and the LAST one writes the bare `<!-- tested: -->` marker
+# publish.yml greps for — which is what lets it cut the final from the exact
+# commit that was tested, and what stops a half-signed batch being promoted.
+#
+# Two targets rather than `make beta-sign <track>`: Make reads a bare word as a
+# second goal, so that spelling fails with "No rule to make target 'integration'".
+
+beta-check: ## What is installable, what changed, and what to exercise by hand
+	@$(UV) run python scripts/beta_signoff.py check
+
+beta-sign-maintenance: ## Record the maintenance sign-off (security, bugs, chores, docs)
+	@$(UV) run python scripts/beta_signoff.py sign maintenance
+
+beta-sign-integration: ## Record the integration sign-off (this week's provider campaign)
+	@$(UV) run python scripts/beta_signoff.py sign integration
+
+beta-promote: ## Promote the tested pre-release to the official X.Y.Z (prompts)
+	@$(UV) run python scripts/beta_signoff.py promote
 
 # --- Front end — TS sources in frontend/, built output committed ------------
 #
@@ -139,7 +173,7 @@ site-og: ## Re-render the 1200x630 Open Graph card (needs the charts extra for P
 
 site-serve: ## Serve docs/ on :8899 exactly as GitHub Pages would, to preview before merging
 	@echo "→ http://localhost:8899  (Ctrl-C to stop)"
-	$(UV) run python -m http.server 8899 -d docs
+	$(UV) run python scripts/serve_docs.py
 
 dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
 	$(UV) run python scripts/dev_board.py
@@ -178,6 +212,10 @@ wt-headless: ## Create worktree off latest origin/main WITHOUT VS Code auto-laun
 	$(need-name)
 	bash scripts/wt.sh "$(NAME)" headless
 
+wt-issue: ## Create worktree from the branch of GitHub issue N (linked branch / closing PR); HEADLESS=1 to skip VS Code
+	@test -n "$(ISSUE)" || { echo "usage: make wt-issue ISSUE=<number> [HEADLESS=1]"; exit 1; }
+	CODE="$(CODE)" bash scripts/wt-issue.sh "$(ISSUE)" $(if $(filter-out 0,$(HEADLESS)),headless,open)
+
 wt-list: ## List worktrees (branch, clean/dirty, path)
 	@bash scripts/wt-list.sh
 
@@ -189,10 +227,18 @@ wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
 	@read -r -p "Remove ALL .claude/worktrees/* worktrees and their branches? [y/N] " ans; \
 	  if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
 	    for w in $$(git worktree list --porcelain | awk '/^worktree /{print $$2}' | grep "/.claude/worktrees/" || true); do \
-	      name="$$(basename "$$w")"; echo "[wt-rm-all] removing $$name"; bash scripts/wt.sh "$$name" rm || true; \
+	      name="$${w#*/.claude/worktrees/}"; echo "[wt-rm-all] removing $$name"; bash scripts/wt.sh "$$name" rm || true; \
 	    done; \
 	    git worktree prune; echo "[wt-rm-all] done."; \
 	  else echo "[wt-rm-all] aborted"; fi
+
+# --- PR feedback — the merge gate on unanswered review comments ---------------
+
+# Five things comment on a PR here and nothing used to read any of it back. This
+# reports what is still unanswered; the `pr-feedback` commit status posted by
+# .github/workflows/pr-feedback.yml is what actually holds the merge.
+pr-feedback: ## Report unanswered review feedback on a PR (PR=123, or the current branch's)
+	@$(UV) run python scripts/pr_feedback.py $(if $(PR),--pr $(PR),)
 
 # --- Cowork — stand the standing workstreams up (see cowork/README.md) --------
 
@@ -204,8 +250,17 @@ wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
 cowork-setup: ## Create the cowork GitHub labels + model repo variables (idempotent)
 	$(UV) run python scripts/cowork_setup.py
 
+cowork-agenda: ## Show what the cowork fleet runs today, and over the next week
+	@$(UV) run python scripts/cowork_setup.py --agenda --text
+
 cowork-check: ## Verify cowork labels, repo variables, and routine/README agreement
 	@$(UV) run python scripts/cowork_setup.py --check
+
+cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=name for one)
+	@$(UV) run python scripts/cowork_setup.py --proposal-slots $(WORKSTREAM)
+
+cowork-blocked: ## Ask whether a standing fault is already reported (MARKER="cd-deploy: …")
+	@$(UV) run python scripts/cowork_setup.py --blocked-report $(MARKER)
 
 # Deleting a workstream label strips it off every issue carrying it, and nothing
 # puts those back — hence the prompt, and hence the routines staying out of it.
@@ -215,6 +270,24 @@ cowork-teardown: ## Delete the cowork GitHub labels + model repo variables (prom
 	    $(UV) run python scripts/cowork_setup.py --teardown --labels --variables --yes; \
 	  else echo "[cowork] teardown aborted"; fi
 
+# ── Go core (the yeaboi-core sidecar — see contracts/v1/rpc.md) ──────────────
+# The binary is NEVER committed; bin/ is gitignored. `make test` stays
+# pytest-only: the parity suite skips itself when the binary is absent, and CI
+# builds the binary in its own job before running parity unskipped.
+
+go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
+	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
+
+go-test: ## Run the Go unit tests
+	cd go && go test ./...
+
+go-lint: ## Vet + gofmt check for the Go tree
+	cd go && go vet ./...
+	@cd go && files="$$(gofmt -l .)"; if [ -n "$$files" ]; then echo "$$files"; echo "gofmt: files need formatting"; exit 1; fi
+
+parity: go-build ## Build the sidecar and run the Python↔Go parity suite unskipped
+	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core $(UV) run pytest tests/parity -v
+
 clean: ## Remove build artifacts and caches
-	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info
+	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info bin
 	find . -type d -name __pycache__ -exec rm -rf {} +

@@ -97,6 +97,19 @@
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
   --focus: var(--accent2);
 
+  /* ── Jira-style status lozenges ─────────────────────────────────────
+     fg is an audited tone from the palette; bg is the same tint-of-panel
+     formula Chip uses, one step gentler (14% vs 16%), so every theme and
+     the print block inherit a readable pair without per-theme tuning. */
+  --lozenge-todo-fg: var(--low);
+  --lozenge-todo-bg: color-mix(in srgb, var(--low) 14%, var(--panel));
+  --lozenge-progress-fg: var(--info);
+  --lozenge-progress-bg: color-mix(in srgb, var(--info) 14%, var(--panel));
+  --lozenge-done-fg: var(--ok);
+  --lozenge-done-bg: color-mix(in srgb, var(--ok) 14%, var(--panel));
+  --lozenge-blocked-fg: var(--danger);
+  --lozenge-blocked-bg: color-mix(in srgb, var(--danger) 14%, var(--panel));
+
   /* Themed confetti. This was a hardcoded array of six hex literals in *both*
      board files; expressing it as tokens means the celebration matches the
      palette the room is actually looking at, and costs nothing to maintain. */

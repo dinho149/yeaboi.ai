@@ -39,7 +39,9 @@ from yeaboi.ui.shared._input import (  # noqa: F401
     disable_mouse_tracking,
     enable_bracketed_paste,
     enable_mouse_tracking,
+    paste_payload,
     read_key,
+    take_paste_dropped,
 )
 from yeaboi.ui.shared._scroll import (  # noqa: F401
     SCROLL_KEYS,

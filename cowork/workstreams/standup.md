@@ -34,3 +34,7 @@ new detectors, and anything a reader sees always propose.
 
 The export bundle's markup and CSS (**web-ux**). Jira/AzDO fetching itself (**integrations**) —
 standup owns how it is *interpreted*.
+
+**integrations** may append a provider to `standup/collector.py`'s `fetchers` dict from a campaign
+run (`house-rules.md`, **Extends**) — a new entry only. How a source is *interpreted*, and every
+other line in that file, stays yours.

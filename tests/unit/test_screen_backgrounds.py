@@ -199,3 +199,52 @@ class TestNoRawFullScreenPanels:
             "Full-screen Panel(s) bypass build_page_panel — return "
             f"build_page_panel(..., theme=<mode theme>) instead: {offenders}"
         )
+
+
+class TestTruecolorConsoles:
+    """A test asserting an rgb SGR fragment must pin its console's color system.
+
+    Rich picks a color system from ``COLORTERM``/``TERM`` when ``color_system``
+    is left to auto-detection. Dev shells export ``COLORTERM=truecolor``; CI
+    runners do not. So a console built with ``force_terminal=True`` and nothing
+    else renders 24-bit locally and downgrades to 8-colour on CI — a test that
+    asserts ``"34;158;122"`` passes on every machine it was written on and
+    fails only after it is pushed.
+
+    It is worse than one red test, because Rich caches the rendered escape on
+    the ``Style`` object (``Style._ansi``) and ``Style.parse`` memoises Styles
+    globally: the *first* 8-colour render of a shared style poisons every later
+    truecolor render of it in the same process. One unpinned console took nine
+    tests in this file down with it — tests that pin truecolor correctly and
+    have nothing to do with the console that broke them.
+    """
+
+    TESTS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+    # An rgb SGR fragment as it appears in an assertion: "34;158;122" (a colour)
+    # or "48;2;16;16;20" (a background). Two or more semicolon-joined numbers.
+    RGB_FRAGMENT = re.compile(r"\"\d{1,3};\d{1,3};[\d;]*\d{1,3}\"")
+
+    def test_rgb_asserting_files_pin_color_system(self):
+        offenders: list[str] = []
+        for path in sorted(self.TESTS_ROOT.rglob("test_*.py")):
+            source = path.read_text()
+            if not self.RGB_FRAGMENT.search(source):
+                continue  # asserts glyphs or layout, not colour — anything goes
+            for node in ast.walk(ast.parse(source)):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "id", getattr(node.func, "attr", "")) != "Console":
+                    continue
+                kw = {k.arg: k.value for k in node.keywords if k.arg}
+                # force_terminal=False emits no escapes at all, so there is
+                # nothing for a colour system to downgrade — only True matters.
+                forced = isinstance(kw.get("force_terminal"), ast.Constant) and kw["force_terminal"].value is True
+                if forced and "color_system" not in kw:
+                    rel = path.relative_to(self.TESTS_ROOT).as_posix()
+                    offenders.append(f"{rel}:{node.lineno}")
+        assert not offenders, (
+            "Console(force_terminal=True) with no color_system in a file that asserts "
+            'rgb SGR fragments — add color_system="truecolor" so the render does not '
+            f"depend on COLORTERM being set (it is unset on CI): {offenders}"
+        )

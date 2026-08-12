@@ -1,6 +1,7 @@
 # performance sweep
 
 **Trigger** — cron `30 7 10,24 * *` (10th and 24th, 07:30 UTC)
+**Summary** — the 1:1 and review pipeline, and whether it declines to conclude on thin data
 **Workstream** — [`workstreams/performance.md`](../../workstreams/performance.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = performance`.

@@ -28,6 +28,7 @@ from yeaboi.prompts.intake import QUESTION_SHORT_LABELS
 from yeaboi.ui.session._utils import _pad_left, _wrap_text
 from yeaboi.ui.session.screens._screens import _INPUT_BOX_W_MAX, _PAD, _planning_title
 from yeaboi.ui.shared._components import PLANNING_THEME, build_page_panel
+from yeaboi.ui.shared._voice_input import input_box_title
 
 # ---------------------------------------------------------------------------
 # Accordion item renderers
@@ -257,7 +258,7 @@ def _render_active_item(
 
         input_box = Panel(
             input_content,
-            title=" Answer ",
+            title=input_box_title("Answer", box_w),
             title_align="left",
             border_style=border_override or "white",
             box=rich.box.ROUNDED,
@@ -429,6 +430,10 @@ def _build_accordion_question_screen(
         sub.append(f"  {progress}", style="dim")
     if edit_hint:
         sub.append(f"  \u2502  {edit_hint}", style="dim")
+    # header_h below assumes this subtitle is exactly one row; the voice status
+    # line is long enough to wrap it onto a second and crop the viewport.
+    sub.no_wrap = True
+    sub.overflow = "ellipsis"
 
     active_q = questionnaire.current_question
     box_w = min(_INPUT_BOX_W_MAX, int(width * 0.75))

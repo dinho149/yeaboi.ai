@@ -423,3 +423,78 @@ class TestProviderSelect:
         console = _make_console()
         result = select_provider(console, _read_key_fn=_safe_key_fn("left", "esc"))
         assert result is None
+
+
+class TestVoiceTipTruthiness:
+    """is_voice_available returns (available, reason). A bare truthiness test on
+    that tuple is always True, so the wizard used to tell every user dictation
+    was ready — installed or not."""
+
+    def test_the_tip_reflects_a_missing_extra(self, monkeypatch, capsys):
+        """Installable: point at the gesture, not at a shell command. The
+        double-tap does the install, and sending the user to another terminal
+        for it is the friction this whole feature removed."""
+        from rich.console import Console
+
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "installable")
+        monkeypatch.setattr("yeaboi.voice.voice_install_command", lambda: "uv sync --extra voice")
+        console = Console(force_terminal=False, color_system=None)
+        wizard._print_voice_tip(console)
+        out = capsys.readouterr().out
+        assert "double-tap Space" in out
+        assert "uv sync --extra voice" not in out
+        assert "is ready" not in out
+
+    def test_the_tip_falls_back_to_a_command_once_declined(self, monkeypatch, capsys):
+        """ "Never" was the answer to the offer, not to dictation — so this is
+        the one state where naming the manual command is the right move."""
+        from rich.console import Console
+
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "declined")
+        monkeypatch.setattr("yeaboi.voice.voice_install_command", lambda: "uv sync --extra voice")
+        console = Console(force_terminal=False, color_system=None)
+        wizard._print_voice_tip(console)
+        assert "uv sync --extra voice" in capsys.readouterr().out
+
+    def test_the_tip_never_prints_a_doomed_command(self, monkeypatch, capsys):
+        """The wizard is the first surface a user meets, so it is the worst one
+        to print an install command that physically cannot succeed."""
+        from rich.console import Console
+
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "unsupported")
+        monkeypatch.setattr("yeaboi.voice.unsupported_blocker", lambda: "musl libc has no speech-engine wheel")
+        monkeypatch.setattr("yeaboi.voice.voice_install_command", lambda: "uv sync --extra voice")
+        console = Console(force_terminal=False, color_system=None)
+        wizard._print_voice_tip(console)
+        out = capsys.readouterr().out
+        assert "musl libc" in out
+        assert "uv sync --extra voice" not in out
+
+    def test_the_tip_says_ready_only_when_it_is(self, monkeypatch, capsys):
+        from rich.console import Console
+
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+        monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+        console = Console(force_terminal=False, color_system=None)
+        wizard._print_voice_tip(console)
+        assert "ready" in capsys.readouterr().out
+
+    def test_tips_off_prints_nothing(self, monkeypatch, capsys):
+        from rich.console import Console
+
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: False)
+        wizard._print_voice_tip(Console(force_terminal=False, color_system=None))
+        assert capsys.readouterr().out.strip() == ""

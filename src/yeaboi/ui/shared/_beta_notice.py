@@ -29,9 +29,15 @@ from yeaboi.beta import BETA_LABEL
 from yeaboi.config import is_beta_notice_seen, mark_beta_notice_seen
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
+    AGENT_SECURITY_THEME,
+    AGENT_STANDUP_THEME,
+    AGENT_USAGE_THEME,
     PAD,
     PERFORMANCE_THEME,
     Theme,
+    agent_security_title,
+    agent_standup_title,
+    agent_usage_title,
     build_action_buttons,
     build_badge,
     build_page_panel,
@@ -73,6 +79,48 @@ _BETA_MODES: dict[str, _BetaMode] = {
             "",
             "Nothing is sent to anyone automatically. Exports stay on this machine",
             "under ~/.yeaboi/exports/performance.",
+        ),
+    ),
+    "agent-usage": _BetaMode(
+        title_fn=agent_usage_title,
+        theme=AGENT_USAGE_THEME,
+        subtitle="Beta — worth thirty seconds",
+        headline="Agent Usage is in beta.",
+        body=(
+            "Costs are estimates: token counts come from your local agent session logs",
+            "(Claude Code), priced from a dated public rate table — not your",
+            "provider's bill. Unknown models are priced at a mid-tier guess and flagged.",
+            "",
+            "Only aggregates are stored. Session transcripts are read on this machine",
+            "and never copied, uploaded, or persisted.",
+        ),
+    ),
+    "agent-standup": _BetaMode(
+        title_fn=agent_standup_title,
+        theme=AGENT_STANDUP_THEME,
+        subtitle="Beta — worth thirty seconds",
+        headline="Agent Standup is in beta.",
+        body=(
+            "The digest combines local agent sessions with agent-authored commits and",
+            "PRs found in your trackers. Detection is a lower bound — agents that leave",
+            "no marker are invisible, so absence of activity is not proof of idleness.",
+            "",
+            "Nothing is sent to anyone unless you deliver it. Exports stay on this",
+            "machine under ~/.yeaboi/exports/agentwatch.",
+        ),
+    ),
+    "agent-security": _BetaMode(
+        title_fn=agent_security_title,
+        theme=AGENT_SECURITY_THEME,
+        subtitle="Beta — worth thirty seconds",
+        headline="Agent Security is in beta.",
+        body=(
+            "Checks are deterministic pattern scans over your agent configs and session",
+            "logs — an indicator, not a security audit. A clean report means no known",
+            "pattern matched, not that your setup is safe.",
+            "",
+            "Findings reference file and line only; matched secrets are never stored",
+            "or displayed. Everything stays on this machine.",
         ),
     ),
 }
@@ -119,7 +167,12 @@ def _build_beta_notice_screen(
     btn_top, btn_mid, btn_bot = build_action_buttons(_ACTIONS, action_sel)
     lines += [btn_top, btn_mid, btn_bot]
 
-    return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
+    panel = build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
+    if mode_key.startswith("agent-"):
+        # The Agents modes' gate wears the robo chrome companion, like the
+        # pages behind it (see MusicLive.get_renderable's _duck_mascot stamp).
+        panel._duck_mascot = "robo"
+    return panel
 
 
 def show_beta_notice(

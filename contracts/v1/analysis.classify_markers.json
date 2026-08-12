@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yeaboi-core/v1/analysis.classify_markers.json",
+  "title": "analysis.classify_markers params and result",
+  "description": "AI-marker classification over the TEAM ANALYSIS activity items: one pass building the adoption signal (aggregate_ai_markers) and one collecting every AI-marked evidence sample (_collect_samples, no limit). Called BEFORE the change-metadata fetch so the caller's insights thread can consume signal+samples concurrently with that fetch — which is why this is a separate method from analysis.score_code. Pure by contract: no DB, no network, no clock. Reference implementation: src/yeaboi/analysis/aggregate.py::classify_markers (build_classify_inputs builds the params). Result key order is contractual (contract_version, signal, samples; signal's field order as listed below).",
+  "$defs": {
+    "activity_item": {
+      "type": "object",
+      "description": "A normalized activity dict from the collectors, sent VERBATIM. The classifier reads kind ('commit'/'pr'/'review'/'comment'), title, body, author, branch, source, key, url; unknown keys pass through untouched."
+    },
+    "count_pair": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "[name, count] — sorted by (-count, name)."
+    },
+    "params": {
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/$defs/activity_item" }, "description": "The deduped, member-scoped items." }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["contract_version", "signal", "samples"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "signal": {
+          "type": "object",
+          "required": ["scanned_commits", "scanned_prs", "ai_commits", "ai_prs", "footprint_pct", "per_tool", "per_author", "per_activity", "per_source", "sources_scanned", "is_lower_bound"],
+          "description": "aggregate_ai_markers' own fields only, in exactly this key order. footprint_pct is Python round(x, 1) — banker's. per_* are count_pair lists; sources_scanned preserves first-seen order. Provenance labels (repos_scanned, and the overwrite of sources_scanned) are caller-side and never on the wire.",
+          "properties": {
+            "scanned_commits": { "type": "integer" },
+            "scanned_prs": { "type": "integer" },
+            "ai_commits": { "type": "integer" },
+            "ai_prs": { "type": "integer" },
+            "footprint_pct": { "type": "number" },
+            "per_tool": { "type": "array", "items": { "$ref": "#/$defs/count_pair" } },
+            "per_author": { "type": "array", "items": { "$ref": "#/$defs/count_pair" } },
+            "per_activity": { "type": "array", "items": { "$ref": "#/$defs/count_pair" } },
+            "per_source": { "type": "array", "items": { "$ref": "#/$defs/count_pair" } },
+            "sources_scanned": { "type": "array", "items": { "type": "string" } },
+            "is_lower_bound": { "type": "boolean", "const": true }
+          }
+        },
+        "samples": {
+          "type": "array",
+          "description": "Every AI-marked item (never bodies), item key order: author, tool, activity, title, source, key, url. title is truncated to 80 CODE POINTS (Python slicing, not bytes).",
+          "items": {
+            "type": "object",
+            "required": ["author", "tool", "activity", "title", "source", "key", "url"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -15,15 +15,19 @@
 
 import { useState } from 'react';
 
-import { Chip } from '../../design/primitives';
-import { toneVar } from '../../design/tone';
+import { Chip, Lozenge } from '../../design/primitives';
+import type { LozengeCategory } from '../../design/primitives';
 import type { Tone } from '../../design/tone';
+import { cx } from '../../runtime/cx';
 import { safeUrl } from '../../runtime/url';
 import type { EvidenceItem } from '../boot';
 import styles from './reports.module.css';
 
+/** How an evidence list dresses its rows. */
+export type EvidenceVariant = 'default' | 'feed';
+
 /** Rows always visible; the rest fold behind the "+ N more" toggle. */
-const VISIBLE_ROWS = 3;
+export const VISIBLE_ROWS = 3;
 
 /** `kind` is engine-produced, not validated — an unknown one degrades to muted. */
 const KIND_META: Record<string, { label: string; tone: Tone }> = {
@@ -45,25 +49,31 @@ function kindMeta(kind: string): { label: string; tone: Tone } {
 }
 
 /**
- * A glyph for the board status, keyword-matched because statuses are the Jira
- * instance's own vocabulary ("In Test", "Doing", …). The word ALWAYS renders
- * beside it — house rule: never a colour or symbol alone. Unknown statuses
- * degrade to the plain muted word.
+ * Board statuses keyword-matched into Jira's status categories, because
+ * statuses are the tracker instance's own vocabulary ("In Test", "Doing", …).
+ * Jira itself has three categories (to-do, in-progress, done); `blocked` is
+ * the extra one a standup needs. The word ALWAYS renders inside the lozenge —
+ * house rule: never a colour or symbol alone. Unknown statuses degrade to the
+ * grey to-do lozenge with the plain word.
+ *
+ * One table serves both the per-row lozenge and the member-card status
+ * derivation in Standup.tsx, so the two can never disagree.
  */
-const STATUS_GLYPHS: Array<{ match: RegExp; glyph: string; tone: Tone }> = [
-  { match: /done|closed|resolved|complete/, glyph: '✓', tone: 'ok' },
-  { match: /blocked|hold|impeded|stuck|waiting/, glyph: '⛔', tone: 'danger' },
-  { match: /review|test|qa/, glyph: '→', tone: 'info' },
-  { match: /progress|doing|active/, glyph: '◐', tone: 'warn' },
-  { match: /to.?do|new|open|backlog/, glyph: '○', tone: 'low' },
+export const STATUS_RULES: Array<{ match: RegExp; category: LozengeCategory }> = [
+  { match: /done|closed|resolved|complete|merged/, category: 'done' },
+  { match: /blocked|hold|impeded|stuck|waiting/, category: 'blocked' },
+  { match: /review|test|qa/, category: 'inprogress' },
+  { match: /progress|doing|active/, category: 'inprogress' },
+  { match: /to.?do|new|open|backlog/, category: 'todo' },
 ];
 
-function statusGlyph(status: string): { glyph: string; tone: Tone } | null {
+/** Jira category for a tracker's status word; null when nothing matches. */
+export function statusCategory(status: string): LozengeCategory | null {
   const lowered = status.toLowerCase();
-  return STATUS_GLYPHS.find((s) => s.match.test(lowered)) ?? null;
+  return STATUS_RULES.find((s) => s.match.test(lowered))?.category ?? null;
 }
 
-function EvidenceRow({ item, idBase }: { item: EvidenceItem; idBase: string }) {
+export function EvidenceRow({ item, idBase, variant = 'default' }: { item: EvidenceItem; idBase: string; variant?: EvidenceVariant }) {
   const [open, setOpen] = useState(false);
   const meta = kindMeta(item.kind);
   const url = safeUrl(item.url);
@@ -75,14 +85,27 @@ function EvidenceRow({ item, idBase }: { item: EvidenceItem; idBase: string }) {
   const key = isDoc ? item.title || item.key || 'ref' : item.key || item.title || 'ref';
   const title = isDoc || !item.key ? '' : item.title;
   // A wip row's kind chip already says "in progress" — repeating the status
-  // under it is noise, and noise is what this component replaced.
-  const status = item.status.toLowerCase() === meta.label.toLowerCase() ? '' : item.status;
-  const glyph = status ? statusGlyph(status) : null;
+  // under it is noise, and noise is what this component replaced. The feed
+  // variant has no kind chip, so its status always shows.
+  const status = variant === 'default' && item.status.toLowerCase() === meta.label.toLowerCase() ? '' : item.status;
+  const category = status ? statusCategory(status) : null;
   const childrenId = `${idBase}-commits`;
+  // In the ticket-status feed the row IS a ticket — a "ticket" chip on every
+  // line is furniture, and the lozenge moves to the end like a Jira board row.
+  const feed = variant === 'feed';
+  // The tracker's own type word ("Story", "Sub-task") — feed rows only, where
+  // the kind chip that would have carried a word is gone.
+  const typeWord = feed ? (item.type ?? '') : '';
+
+  const lozenge = status ? (
+    <Lozenge small category={category ?? 'todo'} className={styles['evidenceStatus']}>
+      {status}
+    </Lozenge>
+  ) : null;
 
   return (
-    <li className={styles['evidenceRow']}>
-      <Chip tone={meta.tone}>{meta.label}</Chip>
+    <li className={cx(styles['evidenceRow'], feed && styles['evidenceFeedRow'])}>
+      {feed ? null : <Chip tone={meta.tone}>{meta.label}</Chip>}
       {url ? (
         // Same origin rule as Chip: the tracker must not learn the tunnel URL.
         <a className={styles['evidenceRef']} href={url} target="_blank" rel="noopener noreferrer">
@@ -96,16 +119,13 @@ function EvidenceRow({ item, idBase }: { item: EvidenceItem; idBase: string }) {
           {title}
         </span>
       ) : null}
-      {item.repo || status || children.length ? (
+      {typeWord || item.repo || status || children.length ? (
         <span className={styles['evidenceMeta']}>
+          {typeWord}
+          {typeWord && (item.repo || status) ? ' · ' : ''}
           {item.repo}
           {item.repo && status ? ' · ' : ''}
-          {status ? (
-            <span className={styles['evidenceStatus']} style={glyph ? { color: toneVar(glyph.tone) } : undefined}>
-              {glyph ? `${glyph.glyph} ` : ''}
-              {status}
-            </span>
-          ) : null}
+          {lozenge}
           {children.length ? (
             <>
               {item.repo || status ? ' · ' : ''}
@@ -133,7 +153,7 @@ function EvidenceRow({ item, idBase }: { item: EvidenceItem; idBase: string }) {
   );
 }
 
-export function EvidenceList({ items, id }: { items: EvidenceItem[]; id: string }) {
+export function EvidenceList({ items, id, variant = 'default' }: { items: EvidenceItem[]; id: string; variant?: EvidenceVariant }) {
   const [open, setOpen] = useState(false);
   if (!items.length) return null;
   const head = items.slice(0, VISIBLE_ROWS);
@@ -143,14 +163,14 @@ export function EvidenceList({ items, id }: { items: EvidenceItem[]; id: string 
     <div>
       <ul className={styles['evidence']}>
         {head.map((item, index) => (
-          <EvidenceRow key={`${item.kind}-${item.key}-${index}`} item={item} idBase={`${id}-h${index}`} />
+          <EvidenceRow key={`${item.kind}-${item.key}-${index}`} item={item} idBase={`${id}-h${index}`} variant={variant} />
         ))}
       </ul>
       {rest.length ? (
         <>
           <ul id={id} hidden={!open} className={styles['evidence']}>
             {rest.map((item, index) => (
-              <EvidenceRow key={`${item.kind}-${item.key}-${index}`} item={item} idBase={`${id}-r${index}`} />
+              <EvidenceRow key={`${item.kind}-${item.key}-${index}`} item={item} idBase={`${id}-r${index}`} variant={variant} />
             ))}
           </ul>
           <button

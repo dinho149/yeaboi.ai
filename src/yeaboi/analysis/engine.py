@@ -210,6 +210,33 @@ def _available_code_sources() -> list[str]:
     return out
 
 
+def _offerable_code_sources() -> list[str]:
+    """Which code hosts the setup wizard may OFFER, as opposed to scan unattended.
+
+    Deliberately distinct from :func:`_available_code_sources`, which answers
+    "scannable with zero further input" and drives the headless component default
+    (``_default_components``). GitHub needs only a token here because the wizard
+    discovers the owners itself (``_run_code_scope_select``) — whereas a headless
+    run has nobody to ask, so it still requires configured owners. Azure is the
+    same in both: its project list falls back to ``AZURE_DEVOPS_PROJECT``."""
+    out: list[str] = []
+    try:
+        from yeaboi.config import get_github_token
+
+        if get_github_token():
+            out.append("github")
+    except Exception:
+        pass
+    try:
+        from yeaboi.config import get_azure_devops_token, get_team_analysis_azdo_projects
+
+        if get_team_analysis_azdo_projects() and get_azure_devops_token():
+            out.append("azdo")
+    except Exception:
+        pass
+    return out
+
+
 def _available_doc_sources() -> list[str]:
     """Which doc platforms are configured (Confluence, Notion). Used to build the
     picker's Docs row."""

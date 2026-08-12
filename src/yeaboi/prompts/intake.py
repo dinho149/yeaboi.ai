@@ -608,6 +608,88 @@ FOLLOW_UP_TEMPLATES: dict[int, str] = {
 
 
 # ---------------------------------------------------------------------------
+# Chat presentation — conversational lead-ins for the planning live chat.
+#
+# The chat TUI renders the SAME node-built question text as every other
+# surface (REPL, headless), decorated at render time only. This keeps node
+# output byte-identical across surfaces — answers, extraction, and therefore
+# planning results are unaffected by the chat skin.
+# ---------------------------------------------------------------------------
+
+CHAT_QUESTION_PREAMBLES: dict[int, str] = {
+    1: "Right — from the top.",
+    2: "Let's ground the basics first.",
+    3: "Good — now the why.",
+    4: "Almost through the essentials.",
+    5: "While we're on the big picture —",
+    6: "Now, about the people building this —",
+    7: "And a bit more detail on that —",
+    8: "Let's talk timing.",
+    9: "Numbers help a lot here —",
+    10: "A quick delivery question —",
+    11: "On to the technical side.",
+    12: "Still on tech —",
+    13: "One on architecture —",
+    14: "Nearly done with the tech tour —",
+    15: "About the code itself —",
+    16: "A few practical ones now —",
+    17: "This one unlocks a lot —",
+    18: "Getting a feel for the shape of it —",
+    19: "On to the plumbing —",
+    20: "Be honest — every codebase has some.",
+    21: "Time to look at the risks.",
+    22: "Now the things outside your control —",
+    23: "Let's draw the line somewhere.",
+    24: "Nearly there — process next.",
+    25: "A quick quality check —",
+    26: "Almost done — delivery next.",
+    27: "Last stretch: capacity.",
+    28: "The unglamorous but important bits —",
+    29: "Real life happens —",
+    30: "Last one, then the summary.",
+}
+
+
+# Mode-aware overrides: the chat preamble already settled small-vs-large
+# before the graph ran, so Q8/Q10 must read as follow-ups to that answer,
+# not as asking "how big is this?" a second time. Keyed (q_num, intake_mode);
+# falls back to CHAT_QUESTION_PREAMBLES. Wording is mode-anchored, never
+# memory-anchored ("Since we're going Large", not "You mentioned") — the mode
+# can arrive via CLI preset or /large where the size question was never asked.
+CHAT_QUESTION_PREAMBLES_BY_MODE: dict[tuple[int, str], str] = {
+    (10, "smart"): "Since we're going Large here — delivery-wise:",
+    (8, "small_project"): "Since this is a quick one —",
+}
+
+# Chat-only: choice rows hidden from the inline list per intake mode.
+# "1–2 sprints" re-litigates small-vs-large after the user already chose
+# Large. Canonical QUESTION_METADATA options must NOT change — they are
+# served to the MCP intake_questions tool and the REPL/form, and typed-digit
+# resolution against the displayed rows is handled at the chat call sites.
+CHAT_MODE_HIDDEN_CHOICES: dict[tuple[int, str], frozenset[str]] = {
+    (10, "smart"): frozenset({"1–2 sprints"}),
+}
+
+
+def decorate_question_for_chat(q_num: int, text: str, intake_mode: str | None = None) -> str:
+    """Prepend a conversational lead-in to a question for the chat surface.
+
+    Presentation-only: the question text (including any numbered [1]/[2]
+    option lines, which must stay verbatim for choice parsing pre-selection)
+    is never altered — unknown question numbers return the text unchanged.
+    Only the TUI chat calls this; REPL and headless render the raw text.
+    """
+    preamble = None
+    if intake_mode:
+        preamble = CHAT_QUESTION_PREAMBLES_BY_MODE.get((q_num, intake_mode))
+    if preamble is None:
+        preamble = CHAT_QUESTION_PREAMBLES.get(q_num)
+    if not preamble:
+        return text
+    return f"{preamble}\n\n{text}"
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Cross-Question Validation — catch contradictions before analysis
 # See docs: "Project Intake Questionnaire" — cross-question validation
 #

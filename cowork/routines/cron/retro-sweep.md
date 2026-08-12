@@ -1,6 +1,7 @@
 # retro sweep
 
 **Trigger** — cron `30 7 5,19 * *` (5th and 19th, 07:30 UTC)
+**Summary** — the retro tunnel and server lifecycle, and carried action items
 **Workstream** — [`workstreams/retro.md`](../../workstreams/retro.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = retro`.

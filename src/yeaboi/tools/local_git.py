@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,21 @@ def git_subprocess_env() -> dict[str, str]:
 # dedup and to reference/link the commit); the email lets the standup engine match this
 # commit to a tracker member whose display name differs from the git author name.
 _LOG_FORMAT = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e"
+
+# Hosts whose commit-URL shape we know. Matched as whole hosts, never as
+# substrings: "evil-github.com" and "github.com.attacker.tld" both *contain*
+# "github.com", and what this module returns is rendered as a clickable commit
+# link in standup output — so a substring test hands anyone who can set
+# ``remote.origin.url`` a link to a host of their choosing. The subdomain arm
+# is required rather than defensive: legacy Azure DevOps remotes really are
+# ``<org>.visualstudio.com``.
+_KNOWN_GIT_HOSTS = ("github.com", "dev.azure.com", "visualstudio.com")
+
+
+def _known_git_host(host: str) -> bool:
+    """True when `host` is a known forge host, or a subdomain of one."""
+    host = (host or "").lower().rsplit("@", 1)[-1].partition(":")[0]
+    return any(host == known or host.endswith(f".{known}") for known in _KNOWN_GIT_HOSTS)
 
 
 def _origin_commit_url_base(repo_path: str) -> str:
@@ -82,14 +98,22 @@ def _origin_commit_url_base(repo_path: str) -> str:
     m = re.match(r"^git@([^:]+):(.+?)(?:\.git)?/?$", raw)
     if m:
         host, path = m.group(1), m.group(2)
-        if "github.com" in host or "dev.azure.com" in host or "visualstudio.com" in host:
+        if _known_git_host(host):
             return f"https://{host}/{path}"
         return ""
-    # https/http URL → strip trailing .git and credentials in userinfo
+    # https/http URL → strip trailing .git and credentials in userinfo.
+    # Re-parse to isolate the host instead of testing host-and-path together:
+    # "https://evil.tld/x/github.com/y" carries a known host in its *path*, and
+    # a check over the joined string would accept it and hand back the attacker's
+    # URL verbatim.
     m = re.match(r"^https?://(?:[^@/]+@)?(.+?)(?:\.git)?/?$", raw)
     if m:
         rest = m.group(1)
-        if any(h in rest for h in ("github.com", "dev.azure.com", "visualstudio.com")):
+        try:
+            host = urlparse(f"https://{rest}").hostname or ""
+        except ValueError:  # malformed authority (e.g. an unclosed IPv6 bracket)
+            return ""
+        if _known_git_host(host):
             return f"https://{rest}"
     return ""
 

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS standup_config (
     team_members      TEXT NOT NULL DEFAULT '[]',
     roster_configured INTEGER NOT NULL DEFAULT 0,
     code_sources      TEXT NOT NULL DEFAULT '[]',
+    github_owners     TEXT NOT NULL DEFAULT '[]',
     github_repositories TEXT NOT NULL DEFAULT '[]',
     azdo_projects     TEXT NOT NULL DEFAULT '[]',
     azdo_repositories TEXT NOT NULL DEFAULT '[]',
@@ -200,6 +201,10 @@ def _dict_to_evidence(items: object) -> tuple[ActivityEvidence, ...]:
             # One level deep in practice (commits under a PR); recursion keeps
             # the rebuild honest either way.
             children=_dict_to_evidence(e.get("children")),
+            issue_type=str(e.get("issue_type", "")),
+            parent_key=str(e.get("parent_key", "")),
+            subtask=bool(e.get("subtask", False)),
+            ticket_keys=tuple(str(k) for k in (e.get("ticket_keys") or []) if str(k)),
         )
         for e in items
         if isinstance(e, dict)
@@ -284,6 +289,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         activity_counts=counts,
         activity_window=d.get("activity_window", ""),
         skipped_sources=skipped,
+        unmet_sources=tuple(str(s) for s in d.get("unmet_sources", ())),
         category_coverage=category_coverage,
         my_name=d.get("my_name", ""),
         warnings=tuple(d.get("warnings", ())),
@@ -450,6 +456,8 @@ class StandupStore:
             """ALTER TABLE standup_config
                ADD COLUMN code_sources TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
+               ADD COLUMN github_owners TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
                ADD COLUMN github_repositories TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
                ADD COLUMN azdo_projects TEXT NOT NULL DEFAULT '[]'""",
@@ -485,6 +493,16 @@ class StandupStore:
                ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'""",
+            # Edit-provenance columns (sessions.py v21/v26): a v21 version-number
+            # collision could leave a DB stamped past 21 without them, and
+            # several entry points (--standup-run, the MCP tools) open this
+            # store without ever constructing a SessionStore. record_run,
+            # get_previous_run and get_base_run all read `origin`, so heal here
+            # too.
+            """ALTER TABLE standup_history
+               ADD COLUMN origin TEXT NOT NULL DEFAULT 'generated'""",
+            """ALTER TABLE standup_history
+               ADD COLUMN edited_from_id INTEGER NOT NULL DEFAULT 0""",
         ):
             try:
                 self._conn.execute(statement)
@@ -530,6 +548,7 @@ class StandupStore:
         team_members: list[str] | None = None,
         roster_configured: bool = False,
         code_sources: list[str] | None = None,
+        github_owners: list[str] | None = None,
         github_repositories: list[str] | None = None,
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
@@ -573,6 +592,7 @@ class StandupStore:
         tracker_sources_json = json.dumps(tracker_sources or ["jira"])
         team_members_json = json.dumps(team_members or [])
         code_sources_json = json.dumps(code_sources or [])
+        github_owners_json = json.dumps(github_owners or [])
         github_repositories_json = json.dumps(github_repositories or [])
         azdo_projects_json = json.dumps(azdo_projects or [])
         azdo_repositories_json = json.dumps(azdo_repositories or [])
@@ -589,12 +609,13 @@ class StandupStore:
             """INSERT INTO standup_config
                    (session_id, enabled, time, lead_minutes, timezone, weekdays, delivery_channels,
                     repo_path, my_aliases, tracker_sources, team_members, roster_configured,
-                    code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured,
+                    code_sources, github_owners, github_repositories,
+                    azdo_projects, azdo_repositories, code_scope_configured,
                     documentation_sources, documentation_scope_configured,
                     automation_markers, automation_handling,
                     transcript_dir, transcript_review_enabled,
                     habit_detection, habit_rules, habit_ai_match, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -608,6 +629,7 @@ class StandupStore:
                    team_members = excluded.team_members,
                    roster_configured = excluded.roster_configured,
                    code_sources = excluded.code_sources,
+                   github_owners = excluded.github_owners,
                    github_repositories = excluded.github_repositories,
                    azdo_projects = excluded.azdo_projects,
                    azdo_repositories = excluded.azdo_repositories,
@@ -636,6 +658,7 @@ class StandupStore:
                 team_members_json,
                 int(roster_configured),
                 code_sources_json,
+                github_owners_json,
                 github_repositories_json,
                 azdo_projects_json,
                 azdo_repositories_json,
@@ -690,7 +713,7 @@ class StandupStore:
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
             "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
             "transcript_dir, transcript_review_enabled, "
-            "habit_detection, habit_rules, habit_ai_match "
+            "habit_detection, habit_rules, habit_ai_match, github_owners "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -742,6 +765,11 @@ class StandupStore:
             "team_members": team_members,
             "roster_configured": bool(row[11]),
             "code_sources": _json_list(row[12]),
+            # NOT derived from github_repositories when empty (unlike azdo_projects
+            # above): a saved repo list is a deliberately narrow scope, and turning
+            # "acme/api" into the owner "acme" would silently widen a standup to
+            # every repo in the org. The picker offers that upgrade explicitly.
+            "github_owners": _json_list(row[26]),
             "github_repositories": _json_list(row[13]),
             "azdo_projects": azdo_projects,
             "azdo_repositories": legacy_azdo_repositories,

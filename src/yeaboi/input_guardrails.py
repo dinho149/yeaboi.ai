@@ -12,10 +12,15 @@ Four-layer input validation, cheapest first:
    LLM classifier (Haiku/gpt-4o-mini/Flash) for a RELEVANT/OFF_TOPIC check.
    Falls back to allowing the input on classifier failure — the system prompt
    is the safety net.
+
+Layers 1-3 run on every input.  Layer 4 is opt-in per call site
+(``classify_topic=``) and must only judge input that answers no question — see
+``check_off_topic`` for why that is a correctness constraint, not a preference.
 """
 
 import logging
 import re
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,15 @@ MAX_INPUT_CHARS: int = 5_000
 Generous enough for detailed project descriptions and multi-paragraph
 answers, but prevents accidental pastes of entire files or deliberate
 context-window flooding.
+"""
+
+MAX_CHAT_INPUT_CHARS: int = 10_000
+"""Maximum characters accepted per live-chat message (planning chat).
+
+Larger than MAX_INPUT_CHARS because the chat composer supports pasting
+whole documents via /paste. One constant owns the chat: the composer
+truncates paste insertions at this limit and submit-time validation uses
+the same number, so truncation and validation can never disagree.
 """
 
 # ---------------------------------------------------------------------------
@@ -308,6 +322,20 @@ def check_off_topic(text: str) -> str | None:
     Only checks short inputs (≤200 chars). Long inputs are assumed to be
     project descriptions. Returns a redirect message if off-topic, None if
     relevant. On classifier error, returns None (system prompt is fallback).
+
+    **Only ever call this on input that answers no question.** The classifier
+    sees the message alone — never the question that prompted it — so an answer
+    stripped of its question is not classifiable: "one" replying to "how many
+    engineers?" is indistinguishable from "one" shouted at a planning tool, and
+    the classifier scores it OFF_TOPIC. So do "any", "same", "all", "yeah",
+    "nope" and (at the intake review) "correct" and "change q6". The allowlist
+    below hardcodes a handful of replies, which only makes the failure arbitrary
+    — "no" passes, "nope" does not — rather than rare.
+
+    Callers reach this through the ``classify_topic=`` flag on the two
+    validators, which is set for unbounded free text (the project description)
+    and nothing else. Mid-conversation the backstop is the system prompt's
+    decline-and-redirect (prompts/system.py), which does have the question.
     """
     if len(text) > _OFFTOPIC_MAX_LEN:
         return None
@@ -368,9 +396,60 @@ def check_prompt_injection(text: str) -> str | None:
     return None
 
 
-def validate_input(text: str) -> str | None:
-    """Run all input guardrails.  Returns the first error/warning, or None if clean.
+def validate_input(text: str, *, classify_topic: bool = True) -> str | None:
+    """Run the input guardrails.  Returns the first error/warning, or None if clean.
 
     Order: length → injection → profanity (all regex, instant) → allowlist + LLM (last).
+
+    ``classify_topic`` gates that last layer. It defaults to True here and to
+    False on validate_chat_input — each keeps the contract its own callers
+    already had, so this flag is only visible where a call site opts in or out.
+    Pass False for anything that answers a question (see check_off_topic).
     """
-    return check_input_length(text) or check_prompt_injection(text) or check_profanity(text) or check_off_topic(text)
+    return (
+        check_input_length(text)
+        or check_prompt_injection(text)
+        or check_profanity(text)
+        or (check_off_topic(text) if classify_topic else None)
+    )
+
+
+class GuardrailBlock(NamedTuple):
+    """A blocked chat input: which layer fired, and the user-facing message.
+
+    The layer name exists so callers can log "blocked: layer=%s len=%d"
+    without ever logging the input content itself.
+    """
+
+    layer: str
+    message: str
+
+
+def validate_chat_input(text: str, *, classify_topic: bool = False) -> GuardrailBlock | None:
+    """Pre-submit guardrails for the planning live chat. None means clean.
+
+    Always runs the three regex layers (instant, no network): length at the
+    chat cap (MAX_CHAT_INPUT_CHARS, not MAX_INPUT_CHARS — see that constant's
+    docstring), prompt injection, profanity.
+
+    The off-topic layer (allowlist, then a cheap LLM classifier) runs only
+    when ``classify_topic=True``, which in the chat means exactly one turn:
+    the project description, the only message the user volunteers rather than
+    offers as an answer. Every other turn — the size pick, each intake answer,
+    the review verdict, post-plan refinement — replies to something the agent
+    just asked, and check_off_topic cannot judge a reply it sees without the
+    question. It also keeps an LLM call off the per-submit critical path.
+    """
+    if len(text) > MAX_CHAT_INPUT_CHARS:
+        return GuardrailBlock(
+            "length",
+            f"Input too long ({len(text):,} chars). "
+            f"Maximum is {MAX_CHAT_INPUT_CHARS:,} characters — please shorten your message.",
+        )
+    if message := check_prompt_injection(text):
+        return GuardrailBlock("injection", message)
+    if message := check_profanity(text):
+        return GuardrailBlock("profanity", message)
+    if classify_topic and (message := check_off_topic(text)):
+        return GuardrailBlock("off_topic", message)
+    return None

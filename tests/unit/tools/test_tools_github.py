@@ -8,6 +8,7 @@ each tool and the _parse_repo helper.
 from unittest.mock import MagicMock, patch
 
 import github as _gh_import_check  # noqa: F401 — ensures PyGithub is installed
+import pytest
 
 from yeaboi.tools import detect_platform, get_tools
 from yeaboi.tools.github import (
@@ -506,6 +507,65 @@ class TestGithubListIssuesRateLimitAndPagination:
 # ---------------------------------------------------------------------------
 
 
+class TestActivityFailuresAreSurfaced:
+    """A GitHub failure must not render as "this repository had nothing today".
+
+    Only 401 used to reach the user. A 403, a 404 or a rate limit returned ``[]``
+    with a log line, which a standup shows as silence — wrong and quiet, which is
+    worse than missing and loud.
+    """
+
+    @pytest.mark.parametrize(
+        ("status", "fragment"),
+        [
+            (401, "check GITHUB_TOKEN"),
+            (403, "access denied"),
+            (404, "repository not found"),
+        ],
+    )
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_failures_raise_a_standup_source_error(self, mock_client, status, fragment):
+        import github as gh_module
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.github import github_recent_commits
+
+        mock_client.return_value.get_repo.side_effect = gh_module.GithubException(status, {"message": "no"}, {})
+        with pytest.raises(StandupSourceError) as excinfo:
+            github_recent_commits("owner/repo", days=1)
+        assert fragment in excinfo.value.message
+
+    @pytest.mark.parametrize(
+        "fetch",
+        ["github_recent_commits", "github_recent_prs", "github_recent_reviews"],
+    )
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_rate_limit_is_surfaced_from_every_fetcher(self, mock_client, fetch):
+        import github as gh_module
+
+        from yeaboi import tools
+        from yeaboi.standup.errors import StandupSourceError
+
+        mock_client.return_value.get_repo.side_effect = gh_module.RateLimitExceededException(
+            403, {"message": "API rate limit exceeded"}, {}
+        )
+        with pytest.raises(StandupSourceError) as excinfo:
+            getattr(tools.github, fetch)("owner/repo", days=1)
+        assert "rate limit" in excinfo.value.message
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_the_repository_is_named_so_the_user_knows_which_one(self, mock_client):
+        import github as gh_module
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.github import github_recent_commits
+
+        mock_client.return_value.get_repo.side_effect = gh_module.GithubException(404, {"message": "no"}, {})
+        with pytest.raises(StandupSourceError) as excinfo:
+            github_recent_commits("acme/gone", days=1)
+        assert "acme/gone" in excinfo.value.message
+
+
 class TestActivityScanCaps:
     @patch("yeaboi.tools.github._get_github_client")
     def test_commit_iteration_capped(self, mock_client):
@@ -776,3 +836,132 @@ class TestGithubRecentReviews:
         assert _author_type(self._user("acme-scan[bot]")) == "bot"
         assert _author_type(self._user("alice")) == ""
         assert _author_type(None) == ""
+
+
+class TestGithubListOwners:
+    """Owner discovery for the Analysis setup picker.
+
+    Three independent lookups are unioned because no single one covers every
+    token shape — the tests pin that a token which can do only one of them still
+    produces a usable list rather than an empty picker.
+    """
+
+    @staticmethod
+    def _user(login: str, *, orgs=(), repos=(), orgs_fail=False, repos_fail=False):
+        def _get_orgs():
+            if orgs_fail:
+                raise RuntimeError("read:org scope missing")
+            return list(orgs)
+
+        def _get_repos(**_kwargs):
+            if repos_fail:
+                raise RuntimeError("repo listing forbidden")
+            return list(repos)
+
+        user = MagicMock()
+        user.login = login
+        user.get_orgs.side_effect = _get_orgs
+        user.get_repos.side_effect = _get_repos
+        return user
+
+    @staticmethod
+    def _named(login: str):
+        return MagicMock(login=login)
+
+    @staticmethod
+    def _repo(owner_login: str):
+        return MagicMock(owner=MagicMock(login=owner_login))
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_unions_login_orgs_and_repo_owners(self, mock_client):
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user(
+            "dinho",
+            orgs=[self._named("Acme-Corp")],
+            # Acme-Corp repeats via a repo, and a repo can reveal an org the
+            # orgs endpoint never returned — both must collapse to one entry.
+            repos=[self._repo("Acme-Corp"), self._repo("zeta-labs"), self._repo("dinho")],
+        )
+
+        assert github_list_owners() == ["Acme-Corp", "dinho", "zeta-labs"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_org_listing_failure_still_returns_the_login(self, mock_client):
+        # A fine-grained PAT commonly cannot list orgs at all; losing the login
+        # too would leave the picker empty for the most common modern token.
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user("dinho", orgs_fail=True, repos_fail=True)
+
+        assert github_list_owners() == ["dinho"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_repo_listing_recovers_orgs_the_token_cannot_enumerate(self, mock_client):
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user(
+            "dinho", orgs_fail=True, repos=[self._repo("acme-corp")]
+        )
+
+        assert github_list_owners() == ["acme-corp", "dinho"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_a_short_final_page_keeps_the_owners_already_found(self, mock_client):
+        """PyGithub raises IndexError mid-iteration when a page is short.
+
+        Seen live: GitHub advertises a next page and serves nothing behind it, so
+        ``PaginatedList[:limit]`` blows up *after* yielding real items. Wrapping
+        the loop in try/except would discard them — three orgs become zero and
+        the picker comes up empty with only a log line to show for it.
+        """
+        from yeaboi.tools.github import github_list_owners
+
+        class _ShortPage:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def __iter__(self):
+                yield from self._items
+                raise IndexError("list index out of range")
+
+        user = MagicMock()
+        user.login = "dinho"
+        user.get_orgs.side_effect = lambda: _ShortPage([self._named("Acme-Corp"), self._named("zeta-labs")])
+        user.get_repos.side_effect = lambda **_kwargs: _ShortPage([])
+        mock_client.return_value.get_user.return_value = user
+
+        assert github_list_owners() == ["Acme-Corp", "dinho", "zeta-labs"]
+
+    def test_take_stops_at_the_limit(self):
+        from yeaboi.tools.github import _take
+
+        assert list(_take(iter(range(10)), 3)) == [0, 1, 2]
+        assert list(_take(iter([]), 3)) == []
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_auth_failure_propagates_to_the_caller(self, mock_client):
+        # The picker owns the fallback (configured owners + an on-screen warning),
+        # so a dead client must not be flattened into "no owners exist".
+        import pytest
+
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.side_effect = RuntimeError("bad credentials")
+
+        with pytest.raises(RuntimeError, match="bad credentials"):
+            github_list_owners()
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_repo_listing_is_ordered_by_recent_push_not_name(self, mock_client):
+        # The slice is a bound on a possibly huge list; sorting by name would drop
+        # everything past the cut, hiding a "z…" org from the picker — exactly the
+        # invisible-GitHub failure this lookup exists to prevent.
+        from yeaboi.tools.github import github_list_owners
+
+        user = self._user("dinho", orgs_fail=True, repos=[self._repo("zeta-labs")])
+        mock_client.return_value.get_user.return_value = user
+
+        github_list_owners()
+
+        assert user.get_repos.call_args.kwargs == {"sort": "pushed", "direction": "desc"}

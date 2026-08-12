@@ -1,6 +1,7 @@
 # tui-ux sweep
 
 **Trigger** — cron `0 7 * * 3` (Wed 07:00 UTC)
+**Summary** — render-test coverage and shared-primitive reuse across the TUI screens
 **Workstream** — [`workstreams/tui-ux.md`](../../workstreams/tui-ux.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = tui-ux`.

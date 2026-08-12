@@ -64,6 +64,10 @@ class TestJiraRecentActivity:
                 "timestamp": "2026-07-10T09:00:00",
                 "key": "PROJ-12",
                 "url": "https://x.atlassian.net/browse/PROJ-12",
+                # Hierarchy defaults when the instance returns no issuetype/parent.
+                "issue_type": "",
+                "subtask": False,
+                "parent_key": "",
             }
         ]
 
@@ -652,6 +656,98 @@ class TestJiraWip:
         monkeypatch.setattr("yeaboi.tools.jira.get_jira_project_key", lambda: "PROJ")
         assert jira_recent_activity("PROJ", days=1, include_wip=False) == []
         assert client.search_issues.call_count == 1
+
+
+class TestActivityHierarchy:
+    """Story/subtask facts ride every tracker item, from fields already fetched."""
+
+    _NOW = datetime.now(UTC).isoformat()
+
+    def _client(self, monkeypatch, issues, wip=None):
+        client = MagicMock()
+        client.search_issues.side_effect = [issues, wip or []]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: client)
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_project_key", lambda: "PROJ")
+        return client
+
+    def test_jira_subtask_facts_ride_issue_and_update_items(self, monkeypatch):
+        issue = _jira_issue()
+        issue.fields.issuetype = SimpleNamespace(name="Sub-task", subtask=True)
+        issue.fields.parent = SimpleNamespace(key="PROJ-9")
+        issue.changelog = SimpleNamespace(
+            histories=[
+                SimpleNamespace(
+                    author=SimpleNamespace(displayName="Bob", emailAddress=""),
+                    created=self._NOW,
+                    items=[SimpleNamespace(field="status", toString="Done")],
+                )
+            ]
+        )
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        by_kind = {i["kind"]: i for i in items}
+        for kind in ("issue", "update"):
+            assert by_kind[kind]["issue_type"] == "Sub-task"
+            assert by_kind[kind]["subtask"] is True
+            # URL-dedupe can leave the update as the ticket's surviving evidence
+            # row, so the parent must ride it too.
+            assert by_kind[kind]["parent_key"] == "PROJ-9"
+
+    def test_jira_team_managed_story_is_not_a_subtask_of_its_epic(self, monkeypatch):
+        issue = _jira_issue()
+        issue.fields.issuetype = SimpleNamespace(name="Story", subtask=False)
+        # On a team-managed project fields.parent on a Story points at its EPIC.
+        issue.fields.parent = SimpleNamespace(key="PROJ-100")
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        assert items[0]["issue_type"] == "Story"
+        assert items[0]["subtask"] is False
+        assert items[0]["parent_key"] == "PROJ-100"
+
+    def test_jira_requests_hierarchy_fields_on_both_searches(self, monkeypatch):
+        client = self._client(monkeypatch, [_jira_issue()], wip=[])
+        jira_recent_activity("PROJ", days=1)
+        for call in client.search_issues.call_args_list:
+            fields = call.kwargs["fields"]
+            assert "issuetype" in fields
+            assert "parent" in fields
+
+    def _azdo_item(self, work_item_type, parent=None):
+        fields = {
+            "System.Id": 7,
+            "System.Title": "Build API",
+            "System.State": "Active",
+            "System.AssignedTo": {"displayName": "Dana"},
+            "System.ChangedDate": "2026-07-10T06:00:00Z",
+            "System.WorkItemType": work_item_type,
+        }
+        if parent is not None:
+            fields["System.Parent"] = parent
+        return SimpleNamespace(fields=fields)
+
+    def _azdo_activity(self, monkeypatch, item):
+        wit = MagicMock()
+        wit.query_by_wiql.return_value = SimpleNamespace(work_items=[SimpleNamespace(id=7)])
+        wit.get_work_items.return_value = [item]
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_azdo_clients", lambda: (wit, MagicMock()))
+        return wit, azdevops_recent_activity("Proj", days=1)
+
+    def test_azdo_task_is_the_subtask_analogue(self, monkeypatch):
+        wit, items = self._azdo_activity(monkeypatch, self._azdo_item("Task", parent=12))
+        row = items[0]
+        assert row["issue_type"] == "Task"
+        assert row["subtask"] is True
+        # Spelled the way sibling evidence rows spell work-item keys.
+        assert row["parent_key"] == "#12"
+        requested = wit.get_work_items.call_args.kwargs.get("fields") or wit.get_work_items.call_args.args[1]
+        assert "System.WorkItemType" in requested
+        assert "System.Parent" in requested
+
+    def test_azdo_story_level_items_never_nest(self, monkeypatch):
+        _, items = self._azdo_activity(monkeypatch, self._azdo_item("User Story"))
+        assert items[0]["issue_type"] == "User Story"
+        assert items[0]["subtask"] is False
+        assert items[0]["parent_key"] == ""
 
 
 class TestAzdoChangedBy:
@@ -1497,7 +1593,10 @@ class TestTicketTextFetch:
         items = jira_recent_activity("PROJ", days=2, include_wip=False, include_ticket_text=True)
         assert [i["key"] for i in items] == ["PROJ-12"]
         assert items[0]["body"] == ""
-        assert client.search_issues.call_args.kwargs["fields"] == "summary,assignee,status,updated,comment"
+        assert (
+            client.search_issues.call_args.kwargs["fields"]
+            == "summary,assignee,status,updated,comment,issuetype,parent"
+        )
 
     def test_field_discovery_failure_degrades_to_empty_text(self, monkeypatch):
         client = MagicMock()

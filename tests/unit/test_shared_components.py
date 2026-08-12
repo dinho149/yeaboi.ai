@@ -37,6 +37,11 @@ class TestTheme:
         assert t.warn == "blue"
         assert t.muted == "rgb(120,120,140)"  # default
 
+    def test_card_bg_defaults_empty(self):
+        # Only modes with card surfaces set a tint; renderers must skip "".
+        assert Theme().card_bg == ""
+        assert PLANNING_THEME.card_bg == "rgb(20,24,38)"
+
     def test_usage_theme_amber(self):
         from yeaboi.ui.shared._components import USAGE_THEME
 
@@ -262,6 +267,22 @@ class TestBuildProgressDots:
         t = Theme(accent="red", accent_bright="bold red")
         result = build_progress_dots(["A", "B"], 0, theme=t)
         assert isinstance(result, Text)
+
+
+class TestBuildKeyHints:
+    def test_keys_bright_labels_dim(self):
+        from yeaboi.ui.shared._components import build_key_hints
+
+        row = build_key_hints([("Enter", "send"), ("/", "commands")], pad="  ")
+        assert row.plain == "  Enter send   / commands"
+        styles = [str(span.style) for span in row.spans]
+        assert any("bold" in s for s in styles)  # the keycaps
+        assert any("rgb(110,110,125)" in s for s in styles)  # the labels
+
+    def test_empty_pairs(self):
+        from yeaboi.ui.shared._components import build_key_hints
+
+        assert build_key_hints([]).plain == ""
 
 
 class TestBuildMeter:
@@ -568,6 +589,14 @@ class TestSettingsScreen:
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
+    def test_duck_row_on_the_system_tab(self):
+        # The duck-bubble mute is a persisted preference (DUCK_ENABLED) with a
+        # Settings row beside Tips — default on, "false" shows off.
+        on = self._render({}, height=60, active_tab=1)
+        assert "Duck" in on and "on" in on
+        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=1)
+        assert "Duck" in off
+
     def test_system_tab_hint_mentions_log_level(self):
         output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
@@ -830,13 +859,13 @@ class TestSettingsScreen:
         assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
     def test_status_message_spoken_by_the_duck(self):
-        # The transient status no longer takes a body row: it's handed to the
-        # companion duck, who says it in a speech bubble (see _duck_say).
+        # The transient status no longer takes a body row: the settings loop
+        # hands it to the shared duck voice, so the builder stamps nothing.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         msg = "Data directory saved — restart yeaboi to fully apply"
         panel = _build_settings_screen({"_message": msg}, width=100, height=60)
-        assert panel._duck_say == msg
+        assert getattr(panel, "_duck_say", "") == ""
         assert "restart yeaboi" not in self._render({"_message": msg})  # not in the body
 
     def test_notion_token_masked(self):
@@ -854,6 +883,35 @@ class TestSettingsScreen:
         assert "scope:" in out
         assert "github.com/settings/tokens" in out  # GitHub creation link
         assert "Work Items" in out  # Azure scope text
+
+    def test_analysis_owners_row_rendered(self):
+        # The GitHub estate Analysis scans. Without an editable row here the key
+        # was only reachable by hand-editing .env, which is why GitHub never
+        # appeared as a code source. Rendered wide so the value is not ellipsized.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen(
+            {"GITHUB_TOKEN": "ghp_x", "TEAM_ANALYSIS_GITHUB_OWNERS": "acme-corp,zeta-labs"},
+            width=160,
+            height=80,
+            active_tab=0,
+        )
+        output = self._text(panel, width=160, height=80)
+        assert "Analysis Owners" in output
+        assert "acme-corp,zeta-labs" in output
+
+    def test_analysis_owners_empty_points_at_the_wizard(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=0)
+        assert "chosen per run in Analysis setup" in self._text(panel, width=160, height=80)
+
+    def test_analysis_owners_is_an_editable_row(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=0)
+        envs = [f[0] for box in panel._box_fields for f in box]
+        assert "TEAM_ANALYSIS_GITHUB_OWNERS" in envs  # reachable by keyboard and click
 
     def test_token_help_url_is_clickable(self):
         # The creation URL is an OSC-8 hyperlink in the read-only dashboard too.
@@ -901,6 +959,15 @@ class TestCollectSettingsData:
         monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/a,/b")
         data = _collect_settings_data()
         assert data["YEABOI_ALLOWED_PATHS"] == "/a,/b"
+
+    def test_includes_analysis_github_owners(self, monkeypatch):
+        # An unregistered key renders blank however it is set, so the row would
+        # silently never show a saved value.
+        from yeaboi.ui.mode_select import _collect_settings_data
+
+        monkeypatch.setenv("TEAM_ANALYSIS_GITHUB_OWNERS", "acme,beta")
+        data = _collect_settings_data()
+        assert data["TEAM_ANALYSIS_GITHUB_OWNERS"] == "acme,beta"
 
 
 class TestSettingsSaveAllowedPaths:

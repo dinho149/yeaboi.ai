@@ -703,6 +703,34 @@ class TestPastedImagesFields:
             assert key in ScrumState.__optional_keys__
 
 
+class TestChatPlanningFields:
+    """Chat-planning presentation state round-trips through session state."""
+
+    def test_round_trip(self):
+        from yeaboi.sessions import _deserialize_state, _serialize_state
+
+        state = {
+            "messages": [],
+            "_chat_greeting_done": True,
+            "_chat_preamble": [{"role": "ai", "text": "Hey"}, {"role": "user", "text": "a todo app"}],
+            "_chat_fast_forward": True,
+        }
+        restored = _deserialize_state(_serialize_state(state))
+        assert restored["_chat_greeting_done"] is True
+        assert restored["_chat_preamble"] == state["_chat_preamble"]
+        assert restored["_chat_fast_forward"] is True
+
+    def test_legacy_state_without_fields_deserializes(self):
+        from yeaboi.sessions import _deserialize_state, _serialize_state
+
+        restored = _deserialize_state(_serialize_state({"messages": [], "project_name": "old"}))
+        assert "_chat_greeting_done" not in restored
+
+    def test_fields_are_optional_keys(self):
+        for key in ("_chat_greeting_done", "_chat_preamble", "_chat_fast_forward"):
+            assert key in ScrumState.__optional_keys__
+
+
 class TestStateGraphCompatibility:
     def test_stategraph_accepts_scrum_state(self):
         """LangGraph's StateGraph must accept ScrumState without errors."""

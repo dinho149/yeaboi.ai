@@ -146,3 +146,33 @@ class TestSupportingSignalsRoundTrip:
         )
         assert restored.supporting_signals[0].count == 0
         assert restored.supporting_signals[0].samples == ("a",)
+
+
+class TestProvenanceSelfHeal:
+    """A reporting_history missing the v21 provenance columns heals on store open.
+
+    The v21 schema-version collision could leave a shared DB stamped past 21
+    without origin/edited_from_id, and the CLI and MCP tools open this store
+    without ever constructing a SessionStore (whose v26 migration is the other
+    repair path).
+    """
+
+    def test_pre_v21_table_heals_on_open(self, db_path):
+        import sqlite3
+
+        ReportingStore(db_path).close()
+        conn = sqlite3.connect(str(db_path))
+        keep = ", ".join(
+            r[1]
+            for r in conn.execute("PRAGMA table_info(reporting_history)")
+            if r[1] not in ("origin", "edited_from_id")
+        )
+        conn.executescript(
+            f"CREATE TABLE pre AS SELECT {keep} FROM reporting_history;"
+            "DROP TABLE reporting_history;"
+            "ALTER TABLE pre RENAME TO reporting_history;"
+        )
+        conn.close()
+        with ReportingStore(db_path) as store:
+            cols = {r[1] for r in store._conn.execute("PRAGMA table_info(reporting_history)")}
+        assert {"origin", "edited_from_id"} <= cols

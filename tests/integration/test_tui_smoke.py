@@ -37,6 +37,10 @@ pytestmark = pytest.mark.slow
 # tweak to one element can't break the test.
 _MODE_SCREEN_MARKERS = ("changelog", "Tip:", "channel")
 
+# Chrome of the Humans/Agents landing split, which now renders BEFORE the mode
+# menu. Fragments of the heading/hints so a copy tweak can't break the test.
+_CATEGORY_SCREEN_MARKERS = ("working with", "choose", "switch")
+
 _ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[a-zA-Z]"  # CSI sequences (colours, cursor movement, modes)
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences (window title etc.)
@@ -109,7 +113,7 @@ def _read_until(master_fd: int, proc: subprocess.Popen, predicate, timeout: floa
 
 class TestTuiLiveSmoke:
     def test_dry_run_boots_to_mode_select_and_quits_cleanly(self, tmp_path):
-        """The real TUI reaches mode-select in a pty and exits 0 on 'q'."""
+        """The real TUI reaches the landing split, then mode-select, and exits 0 on 'q'."""
         proc, master_fd = _spawn_tui_in_pty(tmp_path)
         try:
             # Strip only a bounded tail: the markers repaint on EVERY frame, and
@@ -117,6 +121,19 @@ class TestTuiLiveSmoke:
             # drain quadratically (the child blocks on a full pty buffer) —
             # since the full-screen background tint landed, that pushed the
             # match past the deadline. 256 KiB spans several full frames.
+            landed = _read_until(
+                master_fd,
+                proc,
+                lambda b: any(m in _strip_ansi(b[-262_144:]) for m in _CATEGORY_SCREEN_MARKERS),
+                timeout=30.0,
+            )
+            text = _strip_ansi(landed[-262_144:])
+            assert any(m in text for m in _CATEGORY_SCREEN_MARKERS), (
+                f"category screen never rendered; exit={proc.poll()}; last output:\n{text[-2000:]}"
+            )
+
+            # Enter picks the preselected category (Humans) → the mode menu.
+            os.write(master_fd, b"\r")
             booted = _read_until(
                 master_fd,
                 proc,
@@ -129,7 +146,7 @@ class TestTuiLiveSmoke:
             )
             # Alt-screen must have been entered — the strongest signal that the
             # live terminal path (not a fallback print) is actually running.
-            assert b"\x1b[?1049h" in booted, "TUI never entered the alternate screen buffer"
+            assert b"\x1b[?1049h" in landed + booted, "TUI never entered the alternate screen buffer"
 
             os.write(master_fd, b"q")
             # Drain until the pty hits EOF or the process exits, so the pty

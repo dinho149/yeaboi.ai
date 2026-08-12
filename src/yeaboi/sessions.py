@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 25  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback  # noqa: E501
+CURRENT_SCHEMA_VERSION = 28  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -175,6 +175,9 @@ _SCALAR_KEYS = {
     "_intake_mode",
     "output_format",
     "context_sources",
+    "_chat_greeting_done",
+    "_chat_preamble",
+    "_chat_fast_forward",
 }
 
 
@@ -460,14 +463,40 @@ class SessionStore:
         # so callers can warn the user (newer DB opened by older code).
         # See docs: "Memory & State" — session persistence
         self._conn.execute(_SCHEMA_INFO)
+        # Concurrent first-opens race the stamp INSERT below (nothing enforces
+        # the single-row assumption), leaving duplicate rows and making the
+        # fetchone() below read an arbitrary one. Keep exactly one row — the
+        # highest version, so a newer build's stamp (and schema_mismatch
+        # detection) survives the dedupe. Count first so the steady-state open
+        # stays read-only (a DELETE takes a write lock even when it matches
+        # nothing, and this DB is shared by the TUI, the MCP server and the
+        # scheduler); the repair itself is one atomic DELETE — the connection
+        # is autocommit, so a delete-all-then-reinsert would open a zero-row
+        # window for another process.
+        (info_rows,) = self._conn.execute("SELECT COUNT(*) FROM schema_info").fetchone()
+        if info_rows > 1:
+            cursor = self._conn.execute(
+                "DELETE FROM schema_info WHERE rowid NOT IN "
+                "(SELECT rowid FROM schema_info ORDER BY schema_version DESC, rowid DESC LIMIT 1)"
+            )
+            logger.warning("schema_info held %d duplicate rows; deduped to the highest version", cursor.rowcount)
         row = self._conn.execute("SELECT schema_version FROM schema_info").fetchone()
         if row is None:
-            # Pre-8C DB or brand-new DB — stamp with current version
-            self._conn.execute("INSERT INTO schema_info (schema_version) VALUES (?)", (CURRENT_SCHEMA_VERSION,))
+            # Pre-8C DB or brand-new DB — stamp with current version. Guarded
+            # so two processes racing this branch leave one row, not two.
+            self._conn.execute(
+                "INSERT INTO schema_info (schema_version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_info)",
+                (CURRENT_SCHEMA_VERSION,),
+            )
             self._run_migrations(0)
             self.schema_mismatch = False
         elif row[0] > CURRENT_SCHEMA_VERSION:
-            # DB was written by a newer version of the code — warn but don't crash
+            # DB was written by a newer version of the code — warn but don't crash.
+            # Still self-heal the v21 collision: a future lineage stamping past
+            # 26 would otherwise skip the repair forever, which is exactly the
+            # failure v26 exists to fix. The body is idempotent and purely
+            # additive, so it is safe on a newer schema.
+            self._apply_edit_provenance()
             self.schema_mismatch = True
         else:
             # row[0] <= CURRENT_SCHEMA_VERSION — up to date (or migrated above)
@@ -704,25 +733,7 @@ class SessionStore:
             # v21: browser-editable shared artifacts. The append-only edit log
             # gets its own table; each history table learns where a row came
             # from, so a corrected report can be told from a generated one.
-            from yeaboi.artifacts.store import _ARTIFACT_EDITS_SCHEMA
-
-            self._conn.executescript(_ARTIFACT_EDITS_SCHEMA)
-            # `origin` and not a new `status` value: get_previous_report filters
-            # status IN ('success','partial'), so a third status would silently
-            # drop every corrected standup out of the next day's comparison.
-            for table in (
-                "standup_history",
-                "retro_history",
-                "reporting_history",
-                "roadmap_history",
-                "performance_one_on_ones",
-                "performance_reviews",
-            ):
-                for column, kind, default in (("origin", "TEXT", "'generated'"), ("edited_from_id", "INTEGER", "0")):
-                    try:
-                        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind} NOT NULL DEFAULT {default}")
-                    except sqlite3.OperationalError:
-                        pass  # column already exists — the block stays idempotent
+            self._apply_edit_provenance()
             logger.info("Migration v21: created artifact_edits and edit-provenance columns")
 
         if from_version < 22:
@@ -778,6 +789,79 @@ class SessionStore:
 
             self._conn.execute(_STANDUP_PRACTICE_FEEDBACK_SCHEMA)
             logger.info("Migration v25: created standup practice feedback ledger")
+
+        if 21 <= from_version < 26:
+            # v26: repair the v21 number collision. A pre-rebase lineage stamped
+            # shared databases at 21 for standup transcript review, so main's
+            # v21 (edit-provenance columns + artifact_edits) was skipped while
+            # the DB went on to v25 — every origin-reading query then fails
+            # with "no such column: origin". The body is idempotent, so
+            # re-running it on a healthy DB is a no-op; the lower bound only
+            # skips the double-run when the v21 branch above just did the same
+            # work. Same idiom as the v19/v20 renumbering above.
+            self._apply_edit_provenance()
+            logger.info("Migration v26: re-applied edit-provenance columns (v21 number collision)")
+
+        if from_version < 27:
+            # v27: the agentwatch (Agents family) tables — monitored-agent
+            # session rollups, ingest cursors, security findings, and the three
+            # report-history tables. Schema lives in agentwatch/store.py.
+            from yeaboi.agentwatch.store import _AGENTWATCH_SCHEMA
+
+            self._conn.executescript(_AGENTWATCH_SCHEMA)
+            logger.info("Migration v27: created agentwatch tables")
+
+        if from_version < 28:
+            # v28: standup GitHub owner scope — GitHub is picked by owner/org, the
+            # way Azure DevOps is picked by project, and the owner is expanded to
+            # its active repositories per run.
+            #
+            # Column only, deliberately no data backfill: deriving "acme" from a
+            # saved "acme/api" would widen an existing standup from one repo to
+            # every repo in that org without anyone asking. Saved repositories keep
+            # working untouched; the picker offers the owner upgrade explicitly.
+            #
+            # The bare except covers both "column already there" and "no
+            # standup_config yet"; neither is a problem, because StandupStore._migrate
+            # adds the same column independently — `--standup-run` and the MCP server
+            # open that store without ever constructing a SessionStore.
+            added = True
+            try:
+                self._conn.execute(
+                    """ALTER TABLE standup_config
+                       ADD COLUMN github_owners TEXT NOT NULL DEFAULT '[]'"""
+                )
+            except sqlite3.OperationalError:
+                added = False
+            if added:
+                logger.info("Migration v28: added standup GitHub owner scope")
+
+    def _apply_edit_provenance(self) -> None:
+        """The v21 migration body — idempotent, so v26 re-runs it verbatim.
+
+        A pre-rebase lineage stamped shared databases at 21 with a different
+        meaning (standup transcript review), so a DB could reach v25 with the
+        provenance columns missing. See migration v26.
+        """
+        from yeaboi.artifacts.store import _ARTIFACT_EDITS_SCHEMA
+
+        self._conn.executescript(_ARTIFACT_EDITS_SCHEMA)
+        # `origin` and not a new `status` value: get_previous_report filters
+        # status IN ('success','partial'), so a third status would silently
+        # drop every corrected standup out of the next day's comparison.
+        for table in (
+            "standup_history",
+            "retro_history",
+            "reporting_history",
+            "roadmap_history",
+            "performance_one_on_ones",
+            "performance_reviews",
+        ):
+            for column, kind, default in (("origin", "TEXT", "'generated'"), ("edited_from_id", "INTEGER", "0")):
+                try:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind} NOT NULL DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists — the block stays idempotent
 
     # ── Token usage persistence ──────────────────────────────────────────
 

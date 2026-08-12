@@ -74,6 +74,22 @@ def test_explicit_empty_messages():
     assert categories.empty_summary("documentation", "failed").startswith("Documentation activity unavailable")
 
 
+def test_is_empty_state_recognises_droppable_sentences_and_nothing_else():
+    for category in categories.CATEGORIES:
+        for coverage in ("covered", "partial", "not_configured"):
+            assert categories.is_empty_state(categories.empty_summary(category, coverage))
+    # FAILED is not droppable: "we could not look" is per-member news, and a
+    # member folded into a "No activity detected" strip on a 401 day would be
+    # a positive claim nobody verified.
+    for category in categories.CATEGORIES:
+        assert not categories.is_empty_state(categories.empty_summary(category, "failed"))
+    # Whitespace tolerated; bespoke prose and near-misses are not droppable.
+    assert categories.is_empty_state("  No code activity detected in the selected repositories. ")
+    assert not categories.is_empty_state("No code activity detected today.")
+    assert not categories.is_empty_state("Nothing merged, two reviews pending.")
+    assert not categories.is_empty_state("")
+
+
 def test_documentation_source_validation_and_saved_resolution():
     assert validate_documentation_sources(["notion", "confluence", "notion"]) == [
         "notion",

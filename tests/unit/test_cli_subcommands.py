@@ -65,6 +65,16 @@ class TestParsing:
         assert args.standup_run is True
         assert args.standup_session == "abc"
 
+    def test_list_audio_devices_parses(self):
+        args = build_parser().parse_args(["--list-audio-devices"])
+        assert args.list_audio_devices is True
+        assert build_parser().parse_args([]).list_audio_devices is False
+
+    def test_install_voice_parses(self):
+        args = build_parser().parse_args(["--install-voice"])
+        assert args.install_voice is True
+        assert build_parser().parse_args([]).install_voice is False
+
     def test_report_parses(self):
         args = build_parser().parse_args(["report", "--period", "quarter", "--format", "json"])
         assert args.command == "report"
@@ -284,6 +294,7 @@ class TestStandupCommand:
             tracker_sources,
             team_members,
             code_sources,
+            github_owners,
             github_repositories,
             azdo_projects,
             azdo_repositories,
@@ -298,6 +309,7 @@ class TestStandupCommand:
                 tracker_sources=tracker_sources,
                 team_members=team_members,
                 code_sources=code_sources,
+                github_owners=github_owners,
                 github_repositories=github_repositories,
                 azdo_projects=azdo_projects,
                 azdo_repositories=azdo_repositories,
@@ -318,6 +330,7 @@ class TestStandupCommand:
             "tracker_sources": None,
             "team_members": None,
             "code_sources": None,
+            "github_owners": None,
             "github_repositories": None,
             "azdo_projects": None,
             "azdo_repositories": None,

@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
 import type { EvidenceItem, StandupMember } from '../boot';
-import { Standup } from './Standup';
+import { groupStories, Standup } from './Standup';
 
 function member(over: Partial<StandupMember> = {}): StandupMember {
   return {
@@ -40,6 +40,31 @@ const BASE = {
   trend: null,
   warnings: [],
 };
+
+describe('Standup source labels', () => {
+  it('names a source the same way in the legend and the details line', () => {
+    // One Details section shows both. `azdo_repos` reading as "Azdo Repos" in
+    // the legend and "Azure DevOps code" three lines below it is the exact drift
+    // the shared label table exists to stop.
+    render(<Standup {...BASE} activityCounts={[['azdo_repos', 12]]} />);
+    expect(screen.getByText(/Activity examined/).textContent).toContain('Azure DevOps code: 12');
+    expect(document.body.textContent).not.toContain('azdo_repos');
+  });
+
+  it('labels a skipped source too', () => {
+    render(<Standup {...BASE} skipped={[['azure_devops', 'not selected in setup']]} />);
+    expect(screen.getByText(/Sources skipped/).textContent).toContain(
+      'Azure DevOps tickets (not selected in setup)'
+    );
+  });
+
+  it('title-cases an unknown source rather than leaking the raw key', () => {
+    // Mirrors Python's `source_label` fallback: a source the server knows about
+    // before the bundle is rebuilt still has to read as a name.
+    render(<Standup {...BASE} activityCounts={[['shiny_new_thing', 3]]} />);
+    expect(screen.getByText(/Activity examined/).textContent).toContain('Shiny New Thing: 3');
+  });
+});
 
 describe('Standup', () => {
   it('pluralises the count chips, and leaves "code" uncountable', () => {
@@ -89,8 +114,11 @@ describe('Standup', () => {
       <Standup {...BASE} members={[member({ blockers: [{ s: 'waiting on review' }] })]} />
     );
     expect(container.querySelector('.blocked')).not.toBeNull();
-    expect(screen.getByText('Blocker').className).toContain('chip');
-    expect(container.querySelector('.note')?.textContent).toBe('Blockerwaiting on review');
+    // Jira's flag idiom: the word beside the glyph, and the status lozenge agrees.
+    const flag = container.querySelector('.impediment');
+    expect(flag?.textContent).toContain('Flagged');
+    expect(flag?.textContent).toContain('waiting on review');
+    expect(container.querySelector('.issueHead .lozenge')?.textContent).toBe('Blocked');
   });
 
   it('renders ticket keys in prose as links and the rest as text', () => {
@@ -127,7 +155,11 @@ describe('Standup', () => {
         ]}
       />
     );
-    expect([...container.querySelectorAll('.categories .eyebrow')].map((e) => e.textContent)).toEqual(['Ticketing']);
+    // The Description section always leads; Ticketing renders in Jira's clothes.
+    expect([...container.querySelectorAll('.issueSection .eyebrow')].map((e) => e.textContent)).toEqual([
+      'Description',
+      'Ticket status changes',
+    ]);
     // The wording survives: "not configured" must stay distinguishable from
     // "no activity detected".
     expect(container.querySelector('.footnote')?.textContent).toBe(
@@ -172,6 +204,32 @@ describe('Standup', () => {
     expect(container.querySelector('.activity')).toBeNull();
   });
 
+  it('renders quiet members as one strip, not cards', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ name: 'Ada', counts: [2, 0, 0] })]} quietMembers={['Bo', 'Cy']} />
+    );
+    const strip = container.querySelector('.quietStrip');
+    expect(strip?.textContent).toContain('No activity detected:');
+    expect(strip?.textContent).toContain('Bo');
+    expect(strip?.textContent).toContain('Cy');
+    expect(container.querySelector('#m-bo')).toBeNull();
+  });
+
+  it('shows the quiet strip alone, without "No individual updates", when everyone is quiet', () => {
+    const { container } = render(<Standup {...BASE} members={[]} quietMembers={['Bo']} />);
+    expect(container.querySelector('.quietStrip')).not.toBeNull();
+    expect(container.querySelector('#updates .empty')).toBeNull();
+  });
+
+  it('shows no Members or Activity-items tiles', () => {
+    // A head-count and a raw API item count are numbers nobody acts on.
+    const { container } = render(
+      <Standup {...BASE} members={[member()]} activityCounts={[['jira', 38]]} />
+    );
+    const labels = [...container.querySelectorAll('.statLabel')].map((l) => l.textContent);
+    expect(labels).toEqual(['Sprint day', 'Confidence']);
+  });
+
   it('names each coverage status beside its dot, never colour alone', () => {
     const { container } = render(
       <Standup {...BASE} coverage={[['ticketing', 'covered'], ['documentation', 'not_configured']]} />
@@ -198,6 +256,10 @@ function evidence(over: Partial<EvidenceItem> = {}): EvidenceItem {
     status: '',
     time: '2026-07-30T09:15:00',
     children: [],
+    type: '',
+    parent: '',
+    subtask: false,
+    tickets: [],
     ...over,
   };
 }
@@ -288,10 +350,11 @@ describe('Standup evidence rows', () => {
     expect(container.querySelector('.chipRow .chip')?.textContent).toBe('78E4201D');
   });
 
-  it('colour-codes the category block and its count chip alike', () => {
+  it('colour-codes the category section and its count chip alike', () => {
     const { container } = render(<Standup {...BASE} members={[memberWithEvidence([evidence()])]} />);
-    const block = container.querySelector('.category') as HTMLElement;
-    expect(block.style.borderLeftColor).toBe('var(--accent2)');
+    // The section's dot carries the tone now; the Description section has none.
+    const dot = container.querySelector('.issueSection .dot') as HTMLElement;
+    expect(dot.getAttribute('style')).toContain('var(--accent2)');
     const chip = container.querySelector('.chips .chip') as HTMLElement;
     expect(chip.getAttribute('style')).toContain('var(--accent2)');
   });
@@ -343,25 +406,82 @@ describe('Standup intro bullets', () => {
     const { container } = render(<Standup {...BASE} members={[member({ summary: [] })]} />);
     expect(container.querySelector('p.memberSummary')?.textContent).toBe('No activity detected.');
   });
+
+  it('splits a clause enumerating titled tickets into one bullet per ticket', () => {
+    // The engine writes "Edited KEY title, KEY title, and KEY title" as one
+    // clause; a wall of comma-joined links is exactly what the card replaced.
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[
+          member({
+            summary: [
+              [
+                { s: 'Edited ' },
+                { s: 'PSOT-1638 Barbican dev env', href: 'https://x/browse/PSOT-1638' },
+                { s: ', ' },
+                { s: 'PSOT-1633 LinearB comments', href: 'https://x/browse/PSOT-1633' },
+                { s: ', and ' },
+                { s: 'PSOT-1634 Pulumi update', href: 'https://x/browse/PSOT-1634' },
+                { s: '.' },
+              ],
+            ],
+          }),
+        ]}
+      />
+    );
+    const items = [...container.querySelectorAll('ul.memberSummary li')].map((li) => li.textContent);
+    // Intro words stay glued to their first ticket; the list glue is trimmed.
+    expect(items).toEqual([
+      'Edited PSOT-1638 Barbican dev env',
+      'PSOT-1633 LinearB comments',
+      'PSOT-1634 Pulumi update.',
+    ]);
+  });
+
+  it('keeps a bare-key enumeration as a single bullet', () => {
+    // "across six tickets: KEY, KEY, KEY" split apart would be bullets of
+    // naked keys — the feed rows below already give each ticket its line.
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[
+          member({
+            summary: [
+              [
+                { s: 'Groomed six tickets: ' },
+                { s: 'PSOT-1638', href: 'https://x/browse/PSOT-1638' },
+                { s: ', ' },
+                { s: 'PSOT-1633', href: 'https://x/browse/PSOT-1633' },
+                { s: '.' },
+              ],
+            ],
+          }),
+        ]}
+      />
+    );
+    const items = [...container.querySelectorAll('ul.memberSummary li')].map((li) => li.textContent);
+    expect(items).toEqual(['Groomed six tickets: PSOT-1638, PSOT-1633.']);
+  });
 });
 
-describe('Standup status glyphs', () => {
-  it('marks a done status with the check glyph and keeps the word', () => {
+describe('Standup status lozenges', () => {
+  it('renders a done status as the green lozenge and keeps the word', () => {
     const { container } = render(
       <Standup {...BASE} members={[memberWithEvidence([evidence({ kind: 'issue', status: 'Done' })])]} />
     );
     const status = container.querySelector('.evidenceStatus') as HTMLElement;
-    expect(status.textContent).toBe('✓ Done');
-    expect(status.getAttribute('style')).toContain('var(--ok)');
+    expect(status.textContent).toBe('Done');
+    expect(status.className).toContain('lozengeDone');
   });
 
-  it('degrades an unknown status to the plain word, no glyph', () => {
+  it('degrades an unknown status to the grey lozenge with the plain word', () => {
     const { container } = render(
       <Standup {...BASE} members={[memberWithEvidence([evidence({ kind: 'issue', status: 'Mystery Lane' })])]} />
     );
     const status = container.querySelector('.evidenceStatus') as HTMLElement;
     expect(status.textContent).toBe('Mystery Lane');
-    expect(status.getAttribute('style')).toBeNull();
+    expect(status.className).toContain('lozengeTodo');
   });
 });
 
@@ -430,14 +550,17 @@ describe('Standup practices', () => {
     evidence: [['#91', 'https://example.invalid/pull/91']] as Array<[string, string]>,
   };
 
-  it('renders a practice with its label and its evidence chip', () => {
+  it('hoists an untracked-work signal into its own card section, evidence intact', () => {
     const { container } = render(
       <Standup {...BASE} members={[member({ practices: [untracked] })]} />
     );
-    const block = container.querySelector('.practices');
-    expect(block?.textContent).toContain('Untracked work');
-    expect(block?.textContent).toContain('carries no ticket reference');
-    expect(block?.querySelector('a')?.getAttribute('href')).toBe('https://example.invalid/pull/91');
+    const section = [...container.querySelectorAll('.issueSection')].find(
+      (s) => s.querySelector('.eyebrow')?.textContent === 'Untracked work'
+    );
+    expect(section?.textContent).toContain('carries no ticket reference');
+    expect(section?.querySelector('a')?.getAttribute('href')).toBe('https://example.invalid/pull/91');
+    // And the generic practices block does not render it twice.
+    expect(container.querySelector('.practices')).toBeNull();
   });
 
   it('renders nothing when the member has no practices', () => {
@@ -469,7 +592,17 @@ describe('Standup practices', () => {
     const { container } = render(
       <Standup {...BASE} members={[member({ practices: [untracked] })]} />
     );
-    expect(container.querySelector('.practices .chip')?.getAttribute('style')).toContain('var(--warn)');
+    expect(container.querySelector('.practiceList .chip')?.getAttribute('style')).toContain('var(--warn)');
+  });
+
+  it('keeps a coached rule in the practices block, not the untracked section', () => {
+    const coached = { ...untracked, rule: 'commit-messages', title: 'Commit messages' };
+    const { container } = render(
+      <Standup {...BASE} members={[member({ practices: [coached] })]} />
+    );
+    expect(container.querySelector('.practices')?.textContent).toContain('Commit messages');
+    const sections = [...container.querySelectorAll('.issueSection .eyebrow')].map((e) => e.textContent);
+    expect(sections).not.toContain('Untracked work');
   });
 
   it('marks a repeat with the word, not colour alone', () => {
@@ -495,6 +628,96 @@ describe('Standup practices', () => {
         {...BASE}
         members={[member({ practices: [untracked] })]}
         practices={[{ rule: 'untracked-work', count: 1, title: 'Untracked work' }]}
+      />
+    );
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe('Standup issue card header', () => {
+  const ticketing = (rows: EvidenceItem[], over: Partial<StandupMember> = {}): StandupMember =>
+    member({
+      counts: [rows.length, 0, 0],
+      categories: [{ label: 'Ticketing', items: [], links: [], evidence: rows }],
+      ...over,
+    });
+
+  it('uses the first tracker-keyed ticket as the issue key, linked', () => {
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[
+          ticketing([
+            // A PR number is not a tracker key — the header must skip it.
+            evidence({ kind: 'pr', key: '#91' }),
+            evidence({ kind: 'issue', key: 'YB-12', url: 'https://x/browse/YB-12', status: 'In Progress' }),
+          ]),
+        ]}
+      />
+    );
+    const key = container.querySelector('.issueKey');
+    expect(key?.textContent).toBe('YB-12');
+    expect(key?.getAttribute('href')).toBe('https://x/browse/YB-12');
+    expect(key?.getAttribute('rel')).toContain('noreferrer');
+  });
+
+  it('renders no issue key when the member touched no tracker ticket, rather than inventing one', () => {
+    const { container } = render(<Standup {...BASE} members={[member()]} />);
+    expect(container.querySelector('.issueKey')).toBeNull();
+    // The lozenge still anchors the header.
+    expect(container.querySelector('.issueHead .lozenge')).not.toBeNull();
+  });
+
+  it('derives the lozenge: all-done reads Done, otherwise In Progress, no activity reads the honest words', () => {
+    const lozenge = (container: Element) => container.querySelector('.issueHead .lozenge')?.textContent;
+
+    const done = ticketing([evidence({ kind: 'issue', key: 'YB-1', status: 'Done' })]);
+    expect(lozenge(render(<Standup {...BASE} members={[done]} />).container)).toBe('Done');
+
+    const doing = ticketing([evidence({ kind: 'issue', key: 'YB-1', status: 'In Progress' })]);
+    expect(lozenge(render(<Standup {...BASE} members={[doing]} />).container)).toBe('In Progress');
+
+    // Activity with no ticketing evidence at all is still in progress.
+    const codeOnly = member({ counts: [0, 2, 0] });
+    expect(lozenge(render(<Standup {...BASE} members={[codeOnly]} />).container)).toBe('In Progress');
+
+    expect(lozenge(render(<Standup {...BASE} members={[member()]} />).container)).toBe('No activity');
+  });
+
+  it('renders ticket rows as a feed: no kind chip, status as a lozenge', () => {
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[ticketing([evidence({ kind: 'issue', key: 'YB-1', status: 'In Progress' })])]}
+      />
+    );
+    const row = container.querySelector('.evidenceFeedRow');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('.chip')).toBeNull();
+    const status = row?.querySelector('.evidenceStatus');
+    expect(status?.textContent).toBe('In Progress');
+    expect(status?.className).toContain('lozengeProgress');
+  });
+
+  it('has no axe violations with the full issue card rendered', async () => {
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[
+          ticketing([evidence({ kind: 'issue', key: 'YB-1', status: 'In Progress' })], {
+            counts: [1, 1, 1],
+            blockers: [{ s: 'waiting on infra' }],
+            outlook: [{ s: 'Likely to wrap up YB-1.' }],
+            practices: [
+              {
+                rule: 'untracked-work',
+                title: 'Untracked work',
+                detail: [{ s: 'PR #91 carries no ticket reference.' }],
+                evidence: [],
+              },
+            ],
+          }),
+        ]}
       />
     );
     expect(await axe(container)).toHaveNoViolations();
@@ -646,6 +869,178 @@ describe('Standup — correcting a practice signal', () => {
 
   it('has no axe violations with the controls rendered', async () => {
     const { container } = withPractice(true);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+/* One member with a story, its subtask, and code that names (or doesn't name)
+ * the story — the fixture every story-view test below starts from. */
+function storiedMember(over: Partial<StandupMember> = {}): StandupMember {
+  const story = evidence({
+    kind: 'issue', key: 'YB-1', title: 'SSO login flow', url: 'https://j/browse/YB-1',
+    status: 'In Progress', type: 'Story', repo: '',
+  });
+  const subtask = evidence({
+    kind: 'issue', key: 'YB-3', title: 'SSO error states', url: 'https://j/browse/YB-3',
+    status: 'Done', type: 'Sub-task', parent: 'YB-1', subtask: true, repo: '',
+  });
+  const referencedPr = evidence({
+    kind: 'pr', key: '#91', title: 'YB-1 enable SSO', url: 'https://g/pr/91', tickets: ['YB-1'],
+  });
+  const looseCommit = evidence();
+  return member({
+    counts: [2, 2, 0],
+    categories: [
+      { label: 'Ticketing', items: [], links: [], evidence: [story, subtask] },
+      { label: 'Code', items: [[{ s: 'Merged the login fix.' }]], links: [], evidence: [referencedPr, looseCommit] },
+    ],
+    ...over,
+  });
+}
+
+describe('Standup story groups', () => {
+  it('nests a subtask under its story, each on its own line', () => {
+    const { container } = render(<Standup {...BASE} members={[storiedMember()]} />);
+    const card = container.querySelector('.storyCard');
+    expect(card?.textContent).toContain('YB-1');
+    const subtaskRows = card?.querySelectorAll('.storySubtasks > .evidenceRow');
+    expect(subtaskRows).toHaveLength(1);
+    // Its own <li>, never text appended to the story's line.
+    expect(subtaskRows?.[0]?.textContent).toContain('SSO error states');
+    expect(card?.querySelector('.storySubtasks')?.getAttribute('aria-label')).toBe('Subtasks of YB-1');
+  });
+
+  it('files code that names the story inside its group, and only that code', () => {
+    const { container } = render(<Standup {...BASE} members={[storiedMember()]} />);
+    const linked = container.querySelector('.storyLinkedWork');
+    expect(linked?.textContent).toContain('#91');
+    // The unreferenced commit stays in the plain Code section below.
+    const codeSection = [...container.querySelectorAll('.issueSection')].find(
+      (s) => s.querySelector('.eyebrow')?.textContent === 'Code',
+    );
+    expect(codeSection?.textContent).toContain('78e4201d');
+    expect(codeSection?.textContent).not.toContain('#91');
+  });
+
+  it('labels the section Stories only when there is hierarchy to draw', () => {
+    const { container } = render(<Standup {...BASE} members={[storiedMember()]} />);
+    const labels = [...container.querySelectorAll('.issueSection .eyebrow')].map((e) => e.textContent);
+    expect(labels).toContain('Stories');
+    expect(labels).not.toContain('Ticket status changes');
+  });
+
+  it('keeps the flat ticket feed for payloads without hierarchy', () => {
+    // All-default fields — exactly what a legacy report or keyless board sends.
+    const flat = member({
+      counts: [1, 0, 0],
+      categories: [{ label: 'Ticketing', items: [], links: [], evidence: [
+        evidence({ kind: 'issue', key: 'YB-9', title: 'Old row', url: 'https://j/browse/YB-9', status: 'Done', repo: '' }),
+      ] }],
+    });
+    const { container } = render(<Standup {...BASE} members={[flat]} />);
+    const labels = [...container.querySelectorAll('.issueSection .eyebrow')].map((e) => e.textContent);
+    expect(labels).toContain('Ticket status changes');
+    expect(container.querySelector('.storyCard')).toBeNull();
+  });
+
+  it('promotes an orphan subtask to its own group and names its parent in words', () => {
+    const orphan = member({
+      counts: [1, 0, 0],
+      categories: [{ label: 'Ticketing', items: [], links: [], evidence: [
+        evidence({
+          kind: 'issue', key: 'YB-3', title: 'SSO error states', url: 'https://j/browse/YB-3',
+          status: 'Done', type: 'Sub-task', parent: 'YB-1', subtask: true, repo: '',
+        }),
+      ] }],
+    });
+    const { container } = render(<Standup {...BASE} members={[orphan]} />);
+    const card = container.querySelector('.storyCard');
+    expect(card?.textContent).toContain('YB-3');
+    const note = card?.querySelector('.storyParentNote');
+    expect(note?.textContent).toBe('under YB-1');
+    // Words, not a minted link — the parent row is not in the evidence.
+    expect(note?.querySelector('a')).toBeNull();
+  });
+
+  it('never nests a story under its epic', () => {
+    const epic = evidence({ kind: 'issue', key: 'YB-100', title: 'Auth epic', url: 'https://j/browse/YB-100', type: 'Epic', repo: '' });
+    // A team-managed Jira Story carries its epic in `parent` with subtask false.
+    const story = evidence({
+      kind: 'issue', key: 'YB-1', title: 'SSO login flow', url: 'https://j/browse/YB-1',
+      type: 'Story', parent: 'YB-100', repo: '',
+    });
+    const { groups } = groupStories([epic, story], [], []);
+    expect(groups.map((g) => g.story.key)).toEqual(['YB-100', 'YB-1']);
+    expect(groups.every((g) => g.subtasks.length === 0)).toBe(true);
+  });
+
+  it('attaches a change naming a subtask to that subtask\'s story group', () => {
+    const story = evidence({ kind: 'issue', key: 'YB-1', title: 'SSO', url: 'https://j/1', type: 'Story', repo: '' });
+    const subtask = evidence({ kind: 'issue', key: 'YB-3', title: 'Errors', url: 'https://j/3', type: 'Sub-task', parent: 'YB-1', subtask: true, repo: '' });
+    const pr = evidence({ kind: 'pr', key: '#7', title: 'YB-3 handle errors', url: 'https://g/7', tickets: ['YB-3'] });
+    const { groups, looseCode } = groupStories([story, subtask], [pr], []);
+    expect(groups[0]?.code.map((c) => c.key)).toEqual(['#7']);
+    expect(looseCode).toEqual([]);
+  });
+
+  it('folds story groups past the first three behind an accessible toggle', () => {
+    const rows = [1, 2, 3, 4, 5].map((n) =>
+      evidence({ kind: 'issue', key: `YB-${n}`, title: `Story ${n}`, url: `https://j/${n}`, type: 'Story', repo: '' }),
+    );
+    // One subtask so the story view engages at all.
+    rows.push(evidence({ kind: 'issue', key: 'YB-9', title: 'Sub', url: 'https://j/9', type: 'Sub-task', parent: 'YB-1', subtask: true, repo: '' }));
+    const m = member({ counts: [6, 0, 0], categories: [{ label: 'Ticketing', items: [], links: [], evidence: rows }] });
+    const { container } = render(<Standup {...BASE} members={[m]} />);
+    expect(container.querySelectorAll('.storyList:not([hidden]) .storyCard')).toHaveLength(3);
+    const toggle = screen.getByRole('button', { name: '+ 2 more' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(container.querySelectorAll('.storyList .storyCard')).toHaveLength(5);
+  });
+
+  it('headlines the story, not a fresher subtask', () => {
+    const { container } = render(<Standup {...BASE} members={[storiedMember()]} />);
+    // Subtask YB-3 sorts fresher, but the header names the unit of work.
+    expect(container.querySelector('.issueKey')?.textContent).toBe('YB-1');
+  });
+
+  it('headlines an Azure DevOps work item — kind decides, not key shape', () => {
+    // An AzDO key is '#123', which is also how a PR number is spelled; the
+    // header filters on kind so AzDO teams get their issue key too.
+    const azdo = member({
+      counts: [1, 0, 0],
+      categories: [
+        {
+          label: 'Ticketing',
+          items: [],
+          links: [],
+          evidence: [
+            evidence({ kind: 'work_item', key: '#7', title: 'Build API', url: 'https://a/wi/7', status: 'Active', repo: '' }),
+          ],
+        },
+      ],
+    });
+    const { container } = render(<Standup {...BASE} members={[azdo]} />);
+    expect(container.querySelector('.issueKey')?.textContent).toBe('#7');
+  });
+
+  it('drops the Code section entirely when the stories claimed every row and there is no prose', () => {
+    const m = storiedMember();
+    const code = m.categories.find((c) => c.label === 'Code');
+    if (code) {
+      code.items = [];
+      code.evidence = code.evidence.filter((row) => row.tickets.length); // only the claimed PR remains
+    }
+    const { container } = render(<Standup {...BASE} members={[m]} />);
+    // Section headings only — the story group's own little "Code" eyebrow
+    // (inside .storyLinkedWork) is exactly where the PR should still render.
+    const labels = [...container.querySelectorAll('.categoryHead .eyebrow')].map((e) => e.textContent);
+    expect(container.querySelector('.storyLinkedWork')?.textContent).toContain('#91');
+    expect(labels).not.toContain('Code');
+  });
+
+  it('has no axe violations with story groups rendered', async () => {
+    const { container } = render(<Standup {...BASE} members={[storiedMember()]} />);
     expect(await axe(container)).toHaveNoViolations();
   });
 });

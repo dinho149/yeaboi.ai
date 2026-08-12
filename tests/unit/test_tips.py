@@ -22,7 +22,7 @@ def _clear_cache():
 
 def test_get_tips_non_empty(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     tips = get_tips()
     assert len(tips) > 1
     assert all(isinstance(t, FeatureTip) and t.text for t in tips)
@@ -31,26 +31,61 @@ def test_get_tips_non_empty(monkeypatch):
 
 def test_voice_tip_when_available(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     voice_tip = get_tips()[0]
     assert voice_tip.key == "voice"
     assert "double-tap Space" in voice_tip.text
     _clear_cache()
 
 
-def test_voice_tip_when_unavailable(monkeypatch):
+def test_voice_tip_when_installable(monkeypatch):
+    """The gesture *is* the install now, so the tip points at it, not at a shell."""
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (False, "reason"))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "installable")
     voice_tip = get_tips()[0]
-    # Tip shows the install-method-aware command (not a hardcoded `uv sync`).
+    assert "double-tap Space" in voice_tip.text
+    assert "one keystroke" in voice_tip.text
+    assert voice_install_command() not in voice_tip.text
+    _clear_cache()
+
+
+def test_voice_tip_when_declined_falls_back_to_the_manual_command(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "declined")
+    voice_tip = get_tips()[0]
+    # The install-method-aware command, not a hardcoded `uv sync`.
     assert "enable dictation" in voice_tip.text
     assert voice_install_command() in voice_tip.text
     _clear_cache()
 
 
+def test_voice_tip_when_unsupported_never_invites_a_doomed_install(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "unsupported")
+    monkeypatch.setattr("yeaboi.voice.unsupported_blocker", lambda: "musl libc has no wheel")
+    voice_tip = get_tips()[0]
+    assert "musl libc has no wheel" in voice_tip.text
+    assert voice_install_command() not in voice_tip.text
+    _clear_cache()
+
+
+def test_voice_tip_when_unsupported_names_the_actual_blocker(monkeypatch):
+    """A Linux host missing libportaudio2 is 'unsupported' too, and the tip has
+    to carry the apt command rather than a sentence about the wheel matrix —
+    restating the platform gate there would be actively misleading."""
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "unsupported")
+    monkeypatch.setattr(
+        "yeaboi.voice.unsupported_blocker",
+        lambda: "Audio backend unavailable — sudo apt install libportaudio2",
+    )
+    assert "libportaudio2" in get_tips()[0].text
+    _clear_cache()
+
+
 def test_music_tip_when_available(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     monkeypatch.setattr("yeaboi.music.is_music_available", lambda: (True, ""))
     assert any("Ctrl+P" in t.text for t in get_tips())
     _clear_cache()
@@ -58,7 +93,7 @@ def test_music_tip_when_available(monkeypatch):
 
 def test_music_tip_when_unavailable(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     monkeypatch.setattr("yeaboi.music.is_music_available", lambda: (False, "no ffplay"))
     assert any("brew install" in t.text and "ffmpeg" in t.text for t in get_tips())
     _clear_cache()
@@ -66,7 +101,7 @@ def test_music_tip_when_unavailable(monkeypatch):
 
 def test_current_tip_advances_with_tick(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     idx0, _ = current_tip(0.0)
     idx1, _ = current_tip(TIP_ROTATE_SECONDS + 0.1)
     assert idx0 == 0
@@ -76,7 +111,7 @@ def test_current_tip_advances_with_tick(monkeypatch):
 
 def test_current_tip_stable_within_window(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     idx_a, tip_a = current_tip(0.0)
     idx_b, tip_b = current_tip(TIP_ROTATE_SECONDS - 0.01)
     assert idx_a == idx_b
@@ -86,7 +121,7 @@ def test_current_tip_stable_within_window(monkeypatch):
 
 def test_current_tip_wraps_around(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     n = len(get_tips())
     # After a full cycle we return to the first tip.
     idx_first, _ = current_tip(0.0)
@@ -97,7 +132,7 @@ def test_current_tip_wraps_around(monkeypatch):
 
 def test_current_tip_handles_negative_tick(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     idx, tip = current_tip(-5.0)
     assert idx == 0
     assert tip.text
@@ -106,7 +141,7 @@ def test_current_tip_handles_negative_tick(monkeypatch):
 
 def test_rotate_seconds_override(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     # With a 1s window, tick=1.5 lands on the second tip.
     idx, _ = current_tip(1.5, rotate_seconds=1.0)
     assert idx == 1
@@ -115,7 +150,7 @@ def test_rotate_seconds_override(monkeypatch):
 
 def test_resolve_index_applies_browse_offset(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     n = tip_count()
     # The offset shifts the auto index; auto-rotation still advances with tick.
     assert resolve_index(0.0, 0) == 0
@@ -130,7 +165,7 @@ def test_resolve_index_applies_browse_offset(monkeypatch):
 
 def test_build_tips_text_lists_every_tip(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     text = build_tips_text()
     assert text.startswith("# yeaboi — Tips")
     # Every tip's text appears as a bullet.
@@ -142,7 +177,7 @@ def test_build_tips_text_lists_every_tip(monkeypatch):
 
 def test_build_tips_text_marks_new_and_opens(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     text = build_tips_text()
     # The flagged feature is marked NEW and notes the mode it opens.
     assert "(NEW)" in text
@@ -156,7 +191,7 @@ def test_build_tips_text_marks_new_and_opens(monkeypatch):
 
 def test_tip_at_wraps(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     assert tip_at(0) == get_tips()[0]
     assert tip_at(tip_count()) == get_tips()[0]  # wraps around
     _clear_cache()
@@ -164,7 +199,7 @@ def test_tip_at_wraps(monkeypatch):
 
 def test_at_least_one_new_feature_tip(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     # The NEW badge only renders when some tip is flagged fresh.
     assert any(t.is_new for t in _tips._FEATURE_TIPS)
     _clear_cache()
@@ -172,7 +207,7 @@ def test_at_least_one_new_feature_tip(monkeypatch):
 
 def test_at_least_one_beta_feature_tip(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     # The BETA badge branch would otherwise go dead without anything noticing.
     assert any(t.is_beta for t in _tips._FEATURE_TIPS)
     _clear_cache()
@@ -180,7 +215,7 @@ def test_at_least_one_beta_feature_tip(monkeypatch):
 
 def test_performance_tip_is_beta_not_new(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     perf = next(t for t in _tips._FEATURE_TIPS if t.key == "performance")
     # Unverified, not recent — the two badges make different promises.
     assert perf.is_beta is True
@@ -190,10 +225,10 @@ def test_performance_tip_is_beta_not_new(monkeypatch):
 
 def test_build_tips_text_marks_beta(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     lines = _tips.build_tips_text().splitlines()
     perf_line = next(line for line in lines if "Performance preps 1:1s" in line)
-    planning_line = next(line for line in lines if "Planning breaks a project" in line)
+    planning_line = next(line for line in lines if "Planning starts as a chat" in line)
     assert "(BETA)" in perf_line
     assert "(BETA)" not in planning_line
     _clear_cache()
@@ -201,7 +236,7 @@ def test_build_tips_text_marks_beta(monkeypatch):
 
 def test_carded_tips_have_mode_keys(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     # A representative feature tip carries a jump target; ambient tips do not.
     planning = next(t for t in _tips._FEATURE_TIPS if t.key == "planning")
     assert planning.mode_key == "project-planning"
@@ -216,7 +251,7 @@ def test_module_constant_present():
 
 def test_tip_count_matches_get_tips(monkeypatch):
     _clear_cache()
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     assert tip_count() == len(get_tips())
     _clear_cache()
 

@@ -73,9 +73,50 @@ jobs:
           number=$(jq -r '.number' <<< "$pr")
           draft=$(jq -r '.draft' <<< "$pr")
           author=$(jq -r '.user.login' <<< "$pr")
-          echo "PR #$number by $author (draft=$draft)"
-          if [ "$draft" = "true" ] || [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; then
-            echo "Draft or bot-authored PR — skipping review."
+          # `.labels[]?` rather than `.labels[]`: a payload without the key makes
+          # jq exit non-zero, and `run:` steps are `bash -e`, so the review job
+          # would die rather than fall through to the skip below.
+          cowork=$(jq -r '[.labels[]?.name] | index("cowork") != null' <<< "$pr")
+          branch=$(jq -r '.head.ref' <<< "$pr")
+          # The branch namespaces an unattended run pushes to, kept in step with
+          # UNATTENDED_BRANCH_PREFIXES in scripts/pr_feedback.py. That gate now
+          # refuses to wave through a machine PR, so if this filter skipped one
+          # the PR would sit red forever waiting for a review nobody was going to
+          # write. Widen both or neither.
+          case "$branch" in
+            cowork/*|feature/issue-*|security/codeql-triage*|ci-sentinel/*) unattended=true ;;
+            *) unattended=false ;;
+          esac
+          echo "PR #$number by $author on $branch (draft=$draft, cowork=$cowork, unattended=$unattended)"
+          # `cowork`-labelled PRs are never skipped for authorship. The claude.yml
+          # `implement` job opens them unattended from an issue a human approved,
+          # and if the action pushes as github-actions[bot] the bot filter below
+          # would silently drop the review on exactly the PRs that most need one.
+          # This is the same failure shape as the AUTO_VERSION_PAT incident above:
+          # no run, no skip notice, no signal. Drafts are still skipped.
+          # Stop after MAX_REVIEW_ROUNDS findings-bearing verdicts. Kept in step
+          # with scripts/pr_feedback.py, which stops *blocking* at the same
+          # number — if this kept reviewing past the cap the findings would be
+          # written and immediately ignored, which is worse than not writing
+          # them. Counted the same way there: only verdicts that found something,
+          # so a clean pass never spends a round.
+          rounds=$(gh api "repos/${{ github.repository }}/issues/$number/comments" --paginate \
+            --jq '[.[] | select(.user.login == "claude[bot]") | .body
+                   | capture("<!-- pr-feedback: claude-review open=(?<n>[0-9]+) -->")
+                   | select(.n != "0")] | length' 2>/dev/null || echo 0)
+          echo "findings-bearing review rounds so far: $rounds (cap 2)"
+          if [ "${rounds:-0}" -ge 2 ]; then
+            echo "Review cap reached — not reviewing again. pr_feedback.py stops blocking at the same count."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$draft" = "true" ]; then
+            echo "Draft PR — skipping review."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$cowork" != "true" ] && [ "$unattended" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
+            echo "Bot-authored PR, no cowork label and not an unattended branch — skipping review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -90,7 +131,7 @@ jobs:
 
       - name: Run Claude review
         if: steps.pr.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -124,12 +165,34 @@ jobs:
                ticket text), secrets or tokens logged or committed, unsafe subprocess/network
                use, missing auth on new server endpoints.
 
+            Before judging anything, read the existing comments on this PR with
+            `gh pr view ${{ steps.pr.outputs.number }} --json comments`. **A finding
+            already answered in a reply there is not a finding** — do not re-report it.
+            Someone took the time to say why they are not changing it, and a reviewer
+            that keeps re-raising an answered point trains everyone to stop reading it.
+
             Post the result as a single PR review comment via
             `gh pr comment ${{ steps.pr.outputs.number }} --body "..."`:
             a short verdict line, then only findings that matter (file:line, what, why).
             If there are no significant findings, post one line saying the review passed.
             Do not comment on style that ruff already enforces. Do not request changes on
             nitpicks. This review is advisory — never attempt to approve, merge, or block.
+
+            **End the comment with this exact line, on its own:**
+
+                <!-- pr-feedback: claude-review open=N -->
+
+            where N is the number of findings you just reported that a reasonable
+            author must act on or answer — the `blocker` and `should-fix` ones, the
+            same bar `/ship` resolves against. Nits, praise, and observations count
+            zero. A clean review is `open=0`.
+
+            That line is not decoration: `scripts/pr_feedback.py` counts it, and the
+            `pr-feedback` commit status blocks the merge while it is above zero and
+            unanswered. Omitting it does not make the PR mergeable — it makes the gate
+            report that the review never ran. Getting N right is the review's most
+            load-bearing output, so if you are unsure whether something is a nit,
+            it is a nit.
 
             Budget your turns: posting the comment is the one non-negotiable step.
             On a large diff, skim breadth-first and go deep only on the riskiest

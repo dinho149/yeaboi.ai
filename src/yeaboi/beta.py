@@ -48,6 +48,16 @@ PERFORMANCE_BETA_NOTICE = (
     "not a verdict."
 )
 
+# The Agents family's load-bearing claim + full caveat, mirroring the
+# performance pair above: costs are local estimates, detection is a lower
+# bound, and none of it has been validated against a real team's bill yet.
+AGENTWATCH_BETA_PHRASE = "estimates from local session logs"
+AGENTWATCH_BETA_NOTICE = (
+    "The Agents modes are in beta — costs and activity are estimates from local "
+    "session logs and public rate tables, not your provider's bill. Treat every "
+    "number as an estimate to verify, not an invoice."
+)
+
 # Amber caution. Deliberately *not* the warm gold (226,186,96) used by the NEW
 # badge: beta is a warning, new is a freshness cue, and the two appear side by
 # side in the tips gallery where they must not read as the same thing. The docs

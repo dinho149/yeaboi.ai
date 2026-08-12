@@ -11,6 +11,7 @@ from __future__ import annotations
 import textwrap
 
 import rich.box
+from rich.cells import cell_len
 from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
@@ -549,7 +550,11 @@ def _build_team_analysis_screen(
 
     # The results page keeps the proven card colour (slightly lighter than the
     # analysis page tint) so its dense card layout reads as one elevated surface.
-    return build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    # Tables and meters run to width-7 — no free margin, so the duck's shared
+    # bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 # Component picker — order + friendly labels. Each component runs over its OWN
@@ -998,41 +1003,59 @@ def _build_member_select_screen(
     return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
-def _build_code_project_select_screen(
-    projects: list[str],
+def _build_code_scope_select_screen(
+    items: list[str],
     checked: set[int],
     cursor: int,
     *,
+    heading: str = "Azure projects",
+    unit: str = "projects",
+    empty_label: str = "No projects found",
+    hint: str = "",
     width: int = 80,
     height: int = 24,
     message: str = "",
 ) -> Panel:
-    """Azure code-project multi-select for one Analysis run."""
+    """Code-scope multi-select for one Analysis run (Azure projects, GitHub owners).
+
+    One screen for both hosts: they differ only in wording, and a second copy
+    would drift the moment either gains a state. ``hint`` states what selecting an
+    entry costs — GitHub owners expand to every active repo underneath them, which
+    the user has no other way to see before pressing Enter."""
     theme = ANALYSIS_THEME
     rows: list[Text] = []
-    for idx, project in enumerate(projects):
+    for idx, item in enumerate(items):
         rows.append(
             _analysis_toggle_row(
-                project,
+                item,
                 "",
                 focused=idx == cursor,
                 selected=idx in checked,
             )
         )
     header = _analysis_setup_header(
-        "Azure projects",
+        heading,
         "Arrows move · Space selects · A selects all · Enter continues",
         message=message,
     )
+    # Empty discovery is a real outcome (a token with no visible orgs, a PAT
+    # scoped to nothing) — say so in the list rather than render a blank viewport.
+    if not items:
+        viewport_renderable = _analysis_toggle_row(empty_label, "", focused=False, enabled=False)
+    else:
+        viewport_renderable = _analysis_toggle_viewport(rows, cursor, height=height, header_h=12)
+    scope_lines = [Text(_PAD + f"{len(checked)} of {len(items)} {unit} selected", style=theme.accent_bright)]
+    if hint:
+        scope_lines.append(Text(_PAD + hint, style=theme.muted))
     return build_page_panel(
         Group(
             Text(""),
             _analysis_setup_title(width, height),
             Text(""),
             *header,
-            Text(_PAD + f"{len(checked)} of {len(projects)} projects selected", style=theme.accent_bright),
+            *scope_lines,
             Text(""),
-            _analysis_toggle_viewport(rows, cursor, height=height, header_h=12),
+            viewport_renderable,
         ),
         theme=ANALYSIS_THEME,
         height=height,
@@ -1079,10 +1102,13 @@ def _build_analysis_setup_review_screen(
         for component in ("delivery", "code", "docs")
         for source in components.get(component, [])
     ]
-    projects = analysis_scope.get("azdo") or []
     source_value = _summarize(source_names)
-    if projects:
-        source_value += f"\nAzure projects: {_summarize(projects)}"
+    # Both code hosts can carry a scope; the compact branch below folds the extra
+    # lines onto one with " · ", so adding a host costs no layout work.
+    for _scope_key, _scope_label in (("github", "GitHub owners"), ("azdo", "Azure projects")):
+        _scope_values = analysis_scope.get(_scope_key) or []
+        if _scope_values:
+            source_value += f"\n{_scope_label}: {_summarize(_scope_values)}"
     people_value = _summarize(members) if members else "All available team members"
     settings = f"{depth.title()} · {window_days} days"
     if model:
@@ -2101,6 +2127,43 @@ def _build_import_screen(
     return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
+def _with_bubble_room(panel, width: int):
+    """Opt this page into the shared duck bubble (ordinary lines are opt-in).
+
+    Only pages whose right side is dependably free declare a room; everywhere
+    else the duck still quacks but never draws a bubble over content.
+    """
+    from yeaboi.ui.shared._duck_voice import default_bubble_room
+
+    panel._bubble_room = default_bubble_room(width)
+    return panel
+
+
+# Braille spinner for the active progress row — the same cadence the planning
+# chat's build checklist uses, so every loading screen animates identically.
+_ACTIVITY_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+# Per-stage first-seen clock, keyed by component id. The progress events carry
+# no timestamps, so the renderer notes when it first saw each stage (in
+# anim_tick time) to show a per-stage elapsed. Cleared whenever anim_tick jumps
+# backwards — that's a new run starting its clock at zero.
+_activity_first_seen: dict[str, float] = {}
+_activity_last_tick = 0.0
+
+
+def _activity_stage_elapsed(component_id: str, anim_tick: float) -> float:
+    global _activity_last_tick
+    if anim_tick < _activity_last_tick - 1.0:
+        _activity_first_seen.clear()
+    _activity_last_tick = anim_tick
+    return anim_tick - _activity_first_seen.setdefault(component_id, anim_tick)
+
+
+def _fmt_mmss(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def _build_activity_progress_rows(
     progress: list,
     *,
@@ -2112,6 +2175,8 @@ def _build_activity_progress_rows(
     Structured component events carry an authoritative lifecycle state. Plain
     string callbacks only announce that work started, so earlier strings remain
     activity history instead of being incorrectly promoted to "completed".
+    Active rows spin (braille, like the chat's build checklist) and carry a
+    per-stage elapsed; structured runs get a ``[n/total] · total m:ss`` footer.
     """
     from yeaboi.analysis.progress import is_component_progress
 
@@ -2128,6 +2193,7 @@ def _build_activity_progress_rows(
             legacy_activity.append(item)
 
     dots = "." * (int(anim_tick * 2) % 4)
+    spin = _ACTIVITY_SPINNER[int(anim_tick * 10) % len(_ACTIVITY_SPINNER)]
     rows: list[Text] = []
     if component_order:
         for component_id in component_order:
@@ -2170,8 +2236,9 @@ def _build_activity_progress_rows(
                     parts.append(f"{secondary_count:,} {secondary_unit}")
                 if detail:
                     parts.append(detail)
+                parts.append(_fmt_mmss(_activity_stage_elapsed(component_id, anim_tick)))
                 suffix = f"{dots} · " + " · ".join(parts) if parts else dots
-                marker, style = "▸", f"bold {theme.accent_bright}"
+                marker, style = spin, f"bold {theme.accent_bright}"
             rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
 
         if any(bool(component_states[item].get("read_only")) for item in component_order):
@@ -2184,6 +2251,15 @@ def _build_activity_progress_rows(
             )
         if legacy_activity:
             rows.append(Text(_PAD + f"      ↳ {legacy_activity[-1]}", style=theme.muted, justify="left"))
+        _terminal = {"completed", "partial", "no_data", "fallback", "failed"}
+        resolved = sum(1 for c in component_order if component_states[c]["status"] in _terminal)
+        rows.append(
+            Text(
+                _PAD + f"  [{resolved}/{len(component_order)}] · total {_fmt_mmss(anim_tick)}",
+                style=theme.muted,
+                justify="left",
+            )
+        )
         return rows
 
     for activity in legacy_activity[:-1]:
@@ -2191,7 +2267,7 @@ def _build_activity_progress_rows(
     if legacy_activity:
         rows.append(
             Text(
-                _PAD + f"  ▸ {legacy_activity[-1]}{dots}",
+                _PAD + f"  {spin} {legacy_activity[-1]}{dots}",
                 style=f"bold {theme.accent_bright}",
                 justify="left",
             )
@@ -2249,7 +2325,9 @@ def _build_analysis_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
 
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # The checklist hugs the left gutter, so the loading screen's right side is
+    # dependably free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_project_export_success_screen(
@@ -2594,8 +2672,11 @@ def _build_usage_screen(
 
     panel = build_page_panel(content, theme=USAGE_THEME, height=height)
     panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
-    panel._duck_say = message  # the companion speaks the transient status
-    return panel
+    # The copy toast is spoken through the shared duck voice by the usage loop.
+    # Deliberate opt-in: the box grid can reach the duck's rows, but the toast
+    # is this page's only feedback and brief — the trade-off this page always
+    # shipped with, now bounded by the fence instead of unfenced.
+    return _with_bubble_room(panel, width)
 
 
 def _build_standup_screen(
@@ -5103,7 +5184,11 @@ def _build_retro_screen(
         *action_lines,
     )
 
-    return build_page_panel(content, theme=RETRO_THEME, height=height)
+    panel = build_page_panel(content, theme=RETRO_THEME, height=height)
+    # The four-column card grid runs to the right edge — no free margin, so
+    # the duck's shared bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 _voice_hint_cache: str | None = None
@@ -5502,8 +5587,9 @@ def _build_standup_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
     # theme, not STANDUP_THEME: this loading screen is shared — poker ticket
-    # fetch and the anonymize pass reuse it with their own mode's theme.
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # fetch and the anonymize pass reuse it with their own mode's theme. Its
+    # left-gutter checklist leaves the right side free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_standup_input_screen(
@@ -5540,6 +5626,7 @@ def _build_standup_input_screen(
     """
     from yeaboi.ui.session.screens._screens_input import _image_hint, _voice_hint
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+    from yeaboi.ui.shared._voice_input import voice_chip
 
     theme = theme or STANDUP_THEME
     title = title if title is not None else standup_title()
@@ -5551,10 +5638,32 @@ def _build_standup_input_screen(
     label.append(prompt, style=f"bold {theme.accent}")
     if default:
         label.append(f"   (default: {default})", style=theme.dim)
+    label.no_wrap = True
+    label.overflow = "ellipsis"
+
+    def _box_top(inner_w: int) -> Text:
+        """Top border with the dictation chip inlaid, Panel-title style.
+
+        This box is hand-drawn, so there is no Panel title to hang the chip on —
+        but the border is the one row that is never cropped, which is the whole
+        reason the chip moved off the hint line. Putting it on the *label* would
+        just have reproduced the original bug: the label is no_wrap/ellipsis, so
+        a trailing chip is the first thing dropped on a narrow terminal. The chip
+        is omitted when the border is too short to hold it and still read as a
+        border.
+        """
+        chip, chip_style = voice_chip()
+        # 6 = the two ─ before the chip, a space either side, and 2 ─ after.
+        if inner_w < cell_len(chip) + 6:
+            return Text(_PAD + "  ╭" + "─" * inner_w + "╮", style=box_style)
+        top = Text(_PAD + "  ╭─ ", style=box_style)
+        top.append(chip, style=chip_style)
+        top.append(" " + "─" * (inner_w - cell_len(chip) - 3) + "╮", style=box_style)
+        return top
 
     if box_rows <= 1:
         field_inner = f" {value}█ "
-        box_top = Text(_PAD + "  ╭" + "─" * max(len(field_inner), 40) + "╮", style=box_style)
+        box_top = _box_top(max(len(field_inner), 40))
         box_mid = Text(_PAD + "  │", style=box_style)
         box_mid.append(field_inner.ljust(max(len(field_inner), 40)), style=f"bold {theme.accent_bright}")
         box_mid.append("│", style=box_style)
@@ -5576,7 +5685,7 @@ def _build_standup_input_screen(
         chunks = chunks[-rows:]  # keep the cursor row visible when the text overflows
         while len(chunks) < rows:
             chunks.append("")
-        box_lines = [Text(_PAD + "  ╭" + "─" * inner_w + "╮", style=box_style)]
+        box_lines = [_box_top(inner_w)]
         for chunk in chunks:
             row = Text(_PAD + "  │", style=box_style)
             row.append(f" {chunk}".ljust(inner_w), style=f"bold {theme.accent_bright}")
@@ -5586,9 +5695,16 @@ def _build_standup_input_screen(
 
     # While recording/transcribing, the voice status replaces the usual hint.
     if status:
-        hint_line = Text(_PAD + "  " + status, style=box_style or theme.accent, justify="left")
+        # One row, always: pad_rows below budgets exactly one for this line.
+        hint_line = Text(
+            _PAD + "  " + status,
+            style=box_style or theme.accent,
+            justify="left",
+            no_wrap=True,
+            overflow="ellipsis",
+        )
     else:
-        newline_hint = "  ·  Alt+Enter (or Ctrl+N) for a new line" if box_rows > 1 else ""
+        newline_hint = "  ·  Ctrl+N (or Alt+Enter) for a new line" if box_rows > 1 else ""
         hints = (
             "Enter to confirm  ·  Esc to cancel"
             + newline_hint
@@ -5809,7 +5925,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 3
+_SETTINGS_MAX_STRETCH = 4  # per-box leveling allowance — grew with the Advanced box (Duck row)
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -6001,10 +6117,8 @@ def _build_settings_screen(
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
 
-    # ── Transient status message (e.g. "Anthropic Key updated") ───
-    # The companion duck speaks it (see _duck_say on the returned panel) rather
-    # than it taking a body row.
-    message = config_data.get("_message", "")
+    # The transient status ("Anthropic Key updated") is spoken through the
+    # shared duck voice by the settings loop — nothing to lay out here.
 
     # ── Box geometry, resolved BEFORE the rows are built ──────────
     # Each section becomes its own bordered box laid out in an adaptive-width grid
@@ -6158,6 +6272,25 @@ def _build_settings_screen(
         _heading("GitHub", wide=True)
         _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
         _token_help("GITHUB_TOKEN")
+        # The repository estate Analysis scans (comma-separated owners/orgs). The
+        # TUI wizard discovers and picks these per run, so this row is the default
+        # that lets CLI/MCP/headless runs reach GitHub without --github-owner.
+        _gh_owners = config_data.get("TEAM_ANALYSIS_GITHUB_OWNERS", "")
+        # Unset does not mean "nothing will be scanned": the getter falls back to
+        # the owner of STANDUP_GITHUB_REPO, so name that owner rather than imply
+        # headless runs have no estate at all.
+        _gh_legacy = (config_data.get("STANDUP_GITHUB_REPO", "") or "").split("/", 1)[0]
+        _gh_placeholder = (
+            f"{_gh_legacy} (from Standup repo) — chosen per run in Analysis setup"
+            if _gh_legacy
+            else "not set — chosen per run in Analysis setup"
+        )
+        _row(
+            "Analysis Owners",
+            _gh_owners or _gh_placeholder,
+            value_style="" if _gh_owners else theme.dim,
+            env="TEAM_ANALYSIS_GITHUB_OWNERS",
+        )
 
     def _sec_notion() -> None:
         # Independent doc tool (its own integration token, unlike Confluence).
@@ -6195,15 +6328,47 @@ def _build_settings_screen(
         # Local, offline dictation (double-tap Space in any text field) — works with every
         # LLM provider, no API key. See docs: "Voice Input".
         _heading("Voice Input")
-        from yeaboi.voice import backend_label, is_voice_available
+        from yeaboi.voice import backend_label, unsupported_blocker, voice_install_command, voice_state
 
-        _voice_ok, _voice_reason = is_voice_available()
-        # Read-only status; the unavailable text carries an install command, so it
-        # wraps onto continuation lines rather than cropping mid-command.
-        if _voice_ok:
+        # Read-only status, worded from the one shared vocabulary so this page
+        # cannot disagree with the chip and the tip about the same machine. Any
+        # text carrying an install command wraps rather than cropping mid-command.
+        _voice_state = voice_state()
+        if _voice_state == "ready":
             _row("Dictation", f"available — {backend_label()}", value_style=theme.good, wrap=True)
+        elif _voice_state == "installable":
+            _row(
+                "Dictation",
+                "not installed — double-tap Space in any text field, then Enter",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        elif _voice_state == "unsupported":
+            _row("Dictation", f"unavailable — {unsupported_blocker()}", value_style=theme.warn, wrap=True)
         else:
-            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn, wrap=True)
+            _row(
+                "Dictation",
+                f"not installed — offer dismissed; {voice_install_command()}",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        # Editable rather than a button: the user ruled out a Settings *action*,
+        # but a permanent "never" needs some way back that is not an env var.
+        _row(
+            "Install Offer",
+            "off"
+            if config_data.get("VOICE_INSTALL_OFFER", "").strip().lower() in {"off", "false", "0", "no"}
+            else "on",
+            env="VOICE_INSTALL_OFFER",
+        )
+        # Enter on this row opens the device picker (see _pick_voice_device) rather
+        # than the free-text editor every other row uses.
+        _row(
+            "Input Device",
+            config_data.get("VOICE_DEVICE", "") or "system default",
+            value_style="" if config_data.get("VOICE_DEVICE", "") else theme.dim,
+            env="VOICE_DEVICE",
+        )
         _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
     def _sec_bedrock() -> None:
@@ -6219,6 +6384,11 @@ def _build_settings_screen(
         _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
         _row(
             "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
+        )
+        # Duck bubble default on; only the literal "false" mutes it (matches is_duck_enabled).
+        _duck_on = config_data.get("DUCK_ENABLED", "").strip().lower() != "false"
+        _row(
+            "Duck", "on" if _duck_on else "off", value_style=theme.good if _duck_on else theme.muted, env="DUCK_ENABLED"
         )
         langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
         _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
@@ -6462,7 +6632,10 @@ def _build_settings_screen(
     # The controls ride in the bottom-left pocket as one more tab beside "back",
     # instead of taking a body row of their own.
     panel._hint_tab = hint
-    panel._duck_say = message  # the companion speaks the transient status
+    # The save toast ("Anthropic Key updated") is spoken through the shared
+    # duck voice by the settings loop. Deliberate opt-in, same trade-off as
+    # the usage page: brief feedback beats silence, bounded by the fence.
+    _with_bubble_room(panel, width)
     # Attach the tab click regions (labels + underline rows, absolute cols) so the
     # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
     panel._tab_regions = [
@@ -6473,3 +6646,135 @@ def _build_settings_screen(
     panel._box_tail = box_tail  # the full-width boxes stacked under the columns
     panel._box_fields = box_fields  # per section, its editable (env, label, masked) in order
     return panel
+
+
+# ---------------------------------------------------------------------------
+# Voice input — microphone picker
+# ---------------------------------------------------------------------------
+
+# How many device rows fit before the list scrolls. Hosts with a virtual audio
+# driver installed can report a dozen inputs.
+_MIC_ROWS = 8
+
+
+def voice_picker_keypress(key: str, state: dict) -> str:
+    """Advance the microphone picker one keypress; returns the action to take.
+
+    Split out as a pure function — the picker itself runs a Rich ``Live`` loop,
+    which is untestable, but the thing worth testing is exactly this: which key
+    moves, which selects, which tests, which backs out. Mutates ``state["sel"]``
+    and returns one of ``"select" | "cancel" | "test" | "system" | "none"``.
+    """
+    count = max(1, len(state.get("devices", [])))
+    if key in ("up", "k"):
+        state["sel"] = (state.get("sel", 0) - 1) % count
+        return "none"
+    if key in ("down", "j"):
+        state["sel"] = (state.get("sel", 0) + 1) % count
+        return "none"
+    if key in ("enter", " "):
+        return "select"
+    if key == "t":
+        return "test"
+    if key == "d":
+        return "system"  # clear the preference — back to the system default
+    if key in ("esc", "q"):
+        return "cancel"
+    return "none"
+
+
+def _build_voice_device_screen(
+    devices: list[dict],
+    selected: int,
+    *,
+    current: str = "",
+    width: int = 80,
+    height: int = 24,
+    testing: bool = False,
+    level: float = 0.0,
+    notice: str = "",
+) -> Panel:
+    """Build the microphone picker page.
+
+    ``devices`` are :func:`yeaboi.voice.list_input_devices` dicts. ``testing``
+    switches the highlighted row\'s meter live — the only way to answer "is this
+    the mic that actually hears me?" without leaving the app.
+
+    # See docs: "TUI system" — Settings sub-page
+    """
+    from yeaboi.ui.shared._components import SETTINGS_THEME, build_key_hints, build_scrollbar, settings_title
+    from yeaboi.ui.shared._voice_input import level_meter
+
+    theme = SETTINGS_THEME
+    lines: list = [Text(""), settings_title(width=width), Text("")]
+    lines.append(Text(PAD + "Microphone", style="bold white", justify="left"))
+    lines.append(
+        Text(
+            PAD + ("Recording from this input. VOICE_DEVICE remembers it." if devices else ""),
+            style=theme.muted,
+            justify="left",
+        )
+    )
+    lines.append(Text(""))
+
+    if not devices:
+        lines.append(
+            Text(
+                PAD + "  No microphones detected. Plug one in and reopen this page — the list is rescanned.",
+                style=theme.warn,
+                justify="left",
+            )
+        )
+    else:
+        # Window the list around the selection so a long device table scrolls —
+        # a host with a virtual audio driver can report a dozen inputs. The
+        # scrollbar is what says the window is a window; without it the rows
+        # beyond it simply look absent.
+        max_start = max(0, len(devices) - _MIC_ROWS)
+        start = max(0, min(selected - _MIC_ROWS // 2, max_start))
+        rows: list[Text] = []
+        for index, device in enumerate(devices[start : start + _MIC_ROWS], start=start):
+            focused = index == selected
+            row = Text(PAD + ("  ▸ " if focused else "    "), style=theme.accent if focused else theme.dim)
+            row.append(device["name"], style="bold white" if focused else theme.muted)
+            tags = []
+            if device["is_default"]:
+                tags.append("system default")
+            if current and current == device["name"]:
+                tags.append("selected")
+            row.append(f"   {device['channels']} ch · {device['samplerate']} Hz", style=theme.dim)
+            if tags:
+                row.append(f"   {', '.join(tags)}", style=theme.good if "selected" in tags else theme.dim)
+            if focused and testing:
+                row.append(f"   {level_meter(level)}", style=theme.good)
+            row.no_wrap = True
+            row.overflow = "ellipsis"
+            rows.append(row)
+        scrollbar = build_scrollbar(_MIC_ROWS, len(devices), start, max_start)
+        if scrollbar is None:
+            lines.extend(rows)
+        else:
+            rows.extend(Text("") for _ in range(max(0, _MIC_ROWS - len(rows))))
+            shell = Table.grid(expand=True, padding=0)
+            shell.add_column(ratio=1)
+            shell.add_column(width=1)
+            shell.add_row(Group(*rows), scrollbar)
+            lines.append(shell)
+
+    lines.append(Text(""))
+    if notice:
+        lines.append(Text(PAD + "  " + notice, style=theme.warn, justify="left", no_wrap=True, overflow="ellipsis"))
+    elif testing:
+        lines.append(
+            Text(PAD + "  Speak now — the bar moves when this mic hears you. Any key stops.", style=theme.good)
+        )
+    else:
+        lines.append(Text(""))
+
+    hint = build_key_hints(
+        [("↑/↓", "choose"), ("t", "test mic"), ("Enter", "use"), ("d", "system default"), ("Esc", "back")], pad=PAD
+    )
+    lines.append(Text(""))
+    lines.append(hint)
+
+    return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)

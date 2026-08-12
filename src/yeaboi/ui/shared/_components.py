@@ -62,10 +62,14 @@ class Theme:
     # their distinct accent hues (titles, separators) but share this backdrop —
     # per-mode background tints were dropped for a uniform look across screens.
     bg: str = NEUTRAL_BG
+    # Elevated-surface tint for in-page cards/bubbles (a dark shade of the mode
+    # accent, channels kept ≤ 40 so foreground styles stay readable). Empty
+    # string = the mode has no card surfaces; renderers must skip the tint.
+    card_bg: str = ""
 
 
 ANALYSIS_THEME = Theme()
-PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)")
+PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", card_bg="rgb(20,24,38)")
 USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
@@ -81,6 +85,17 @@ CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,22
 # Same rationale as CHANGELOG_THEME: the feedback form's area chip carries the
 # selected mode's colour, so the page frame stays neutral silver.
 FEEDBACK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
+# The two sides of the landing split. HUMANS_THEME is the Theme default palette
+# named, so the existing modes are unchanged; AGENTS_THEME opens the family's
+# "machine" palette, distinct per mode like the human modes: steel blue for the
+# category card, cyan/mint/rose per mode below it. The landing split reads its
+# card accents from these two — a card that hardcoded the same rgb() triples
+# would drift the moment either palette moved.
+HUMANS_THEME = Theme()
+AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
+AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
+AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
+AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 
 # Button color scheme: (accent_border, accent_label, grey_border, grey_label)
 _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
@@ -363,6 +378,21 @@ def feedback_title(shimmer_tick: float | None = None, *, width: int | None = Non
     return build_ascii_title("Feedback", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
 
 
+def agent_usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Usage ASCII title (cyan accent). Optionally shimmering."""
+    return build_ascii_title("Usage", "rgb(70,190,230)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_standup_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Standup ASCII title (mint accent). Optionally shimmering."""
+    return build_ascii_title("Standup", "rgb(120,210,170)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_security_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Security ASCII title (rose accent). Optionally shimmering."""
+    return build_ascii_title("Security", "rgb(230,90,120)", shimmer_tick=shimmer_tick, width=width)
+
+
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Tips ASCII title (silver accent). Optionally shimmering."""
     return build_ascii_title("Tips", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
@@ -620,6 +650,23 @@ def build_progress_dots(
             progress.append("\u25cb", style="rgb(60,60,70)")
         progress.append(f" {stage_name}", style="dim" if i != current else "bold white")
     return progress
+
+
+def build_key_hints(pairs: list[tuple[str, str]], *, pad: str = "") -> Text:
+    """Build a keycap hint row: key in bright grey, label in dim grey.
+
+    The welcome screen's hint idiom (`[ prev  ] next  g open`) promoted to a
+    shared primitive so chat and future pages render keyboard guidance the
+    same way. Keys read as caps because they are the only bright tokens on an
+    otherwise quiet row — no boxes, no inverse video.
+    """
+    row = Text(pad, justify="left")
+    for i, (key_label, what) in enumerate(pairs):
+        if i:
+            row.append("   ")
+        row.append(key_label, style="bold rgb(210,210,220)")
+        row.append(f" {what}", style="rgb(110,110,125)")
+    return row
 
 
 def build_meter(

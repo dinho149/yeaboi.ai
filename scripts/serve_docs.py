@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import http.server
 import os
-import socketserver
 
 _DOCS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs")
 
@@ -29,8 +28,12 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 def main() -> None:
     os.chdir(_DOCS)
     port = int(os.environ.get("PORT", "8899"))
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", port), NoCacheHandler) as httpd:
+    # ThreadingHTTPServer, not TCPServer: a browser opens several connections at
+    # once for the page's CSS/JS/images, and a single-threaded server serves the
+    # HTML then wedges on the next keep-alive connection — the page renders
+    # completely unstyled and every asset request hangs.
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    with http.server.ThreadingHTTPServer(("", port), NoCacheHandler) as httpd:
         print(f"serving docs/ (no-cache) on http://localhost:{port}")
         httpd.serve_forever()
 

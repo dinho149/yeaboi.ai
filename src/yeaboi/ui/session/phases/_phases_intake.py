@@ -27,6 +27,7 @@ from yeaboi.ui.session.screens._screens_input import (
     _image_hint,
     _voice_hint,
 )
+from yeaboi.ui.shared._input import paste_payload
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def _phase_description_input(
     live.update(_build_description_screen(input_lines, cursor_row, cursor_col, width=w, height=h))
 
     # Voice input: double-tap Space to dictate (see DoubleTapSpace for why).
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     _dts = DoubleTapSpace()
 
@@ -91,9 +92,9 @@ def _phase_description_input(
         nonlocal paste_notice
         paste_notice = msg
 
-    def _voice_render(status, tick):
+    def _voice_render(_border, _line):
+        # record_voice_input hands us a finished (border, status line) pair.
         _bw, _bh = console.size
-        _border, _line = voice_indicator(status, tick)
         return _build_description_screen(
             input_lines,
             cursor_row,
@@ -215,7 +216,7 @@ def _phase_description_input(
             input_lines[cursor_row] = line[:word_start] + line[cursor_col:]
             cursor_col = word_start
         elif isinstance(key, str) and key.startswith("paste:"):
-            pasted = key[6:]
+            pasted = paste_payload(key, multiline=True)
             paste_lines = pasted.split("\n")
             if paste_lines:
                 # Insert first chunk at cursor
@@ -270,10 +271,16 @@ def _phase_intake_questions(
     graph_state: dict,
     _key,
     export_only: bool,
+    *,
+    return_state_on_esc: bool = False,
 ) -> dict | None:
     """Loop through intake questions in TUI until questionnaire completes or enters review.
 
-    Returns updated graph_state, or None if user cancelled.
+    Returns updated graph_state, or None if user cancelled. The chat driver's
+    /form takeover passes return_state_on_esc=True: the node mutates the shared
+    QuestionnaireState in place, so a None return would leave the caller holding
+    recorded answers with stale `messages` — Esc must hand the loop's rebound
+    graph_state back instead of discarding it.
     """
     logger.info("_phase_intake_questions started")
     while True:
@@ -394,7 +401,8 @@ def _phase_intake_questions(
         )
 
         if answer is None:
-            return None  # Esc
+            logger.info("Intake questions exit: esc (return_state=%s)", return_state_on_esc)
+            return graph_state if return_state_on_esc else None
 
         # Resolve choice/suggestion input
         if isinstance(qs, QuestionnaireState) and not qs.completed:
@@ -426,7 +434,8 @@ def _phase_intake_questions(
                         prefill=sugg,
                     )
                     if answer is None:
-                        return None  # Esc
+                        logger.info("Intake questions exit: esc (return_state=%s)", return_state_on_esc)
+                        return graph_state if return_state_on_esc else None
 
             # Resolve numeric choice
             if qs.editing_question is not None:
@@ -477,7 +486,8 @@ def _phase_intake_questions(
             question_screen_kwargs=screen_kwargs,
         )
         if result is None:
-            return None
+            logger.info("Intake questions exit: invoke cancelled (return_state=%s)", return_state_on_esc)
+            return graph_state if return_state_on_esc else None
 
         graph_state = result
 
@@ -600,13 +610,12 @@ def _question_input_loop(
     live.update(_render())
 
     # Voice input: double-tap Space to dictate (free-text questions only).
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     _dts = DoubleTapSpace()
 
-    def _voice_render(status, tick):
+    def _voice_render(_border, _line):
         _bw, _bh = console.size
-        _border, _line = voice_indicator(status, tick)
         if use_accordion:
             return _build_accordion_question_screen(
                 question_text,
@@ -707,7 +716,7 @@ def _question_input_loop(
             input_value = input_value[:word_start] + input_value[cursor_pos:]
             cursor_pos = word_start
         elif isinstance(key, str) and key.startswith("paste:"):
-            pasted = key[6:]
+            pasted = paste_payload(key)
             input_value = input_value[:cursor_pos] + pasted + input_value[cursor_pos:]
             cursor_pos += len(pasted)
         elif key == "ctrl+v":

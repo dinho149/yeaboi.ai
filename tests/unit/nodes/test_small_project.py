@@ -30,14 +30,14 @@ from yeaboi.prompts.intake import (
 class TestModeConstants:
     """The TUI intake cards and the Small essential set."""
 
-    def test_tui_cards_are_small_epic_roadmap_offline(self):
-        # The full-screen TUI offers four intake modes; "smart" (relabelled
-        # "Large") reuses the existing smart pipeline, "roadmap" analyzes the
-        # quarterly roadmap and hands off to Small/Large, Offline stays last.
+    def test_tui_cards_are_chat_roadmap_offline(self):
+        # The live chat replaced the Small/Large cards: "chat" asks the size
+        # in conversation (small_project/smart remain the state vocabulary);
+        # "roadmap" analyzes the quarterly roadmap and hands off, Offline last.
         from yeaboi.ui.mode_select.screens._screens import _INTAKE_CARDS
 
         keys = [c["key"] for c in _INTAKE_CARDS]
-        assert keys == ["small_project", "smart", "roadmap", "offline"]
+        assert keys == ["chat", "roadmap", "offline"]
 
     def test_small_essentials_include_sprint_length(self):
         # Small essentials = project type, problem, DoD, team size, sprint length, stack.

@@ -10,10 +10,6 @@
         "At risk (68%)"
       ],
       [
-        "MEMBERS",
-        "3"
-      ],
-      [
         "WINDOW",
         "last 24 hours"
       ]
@@ -84,34 +80,46 @@
                 "children": [],
                 "key": "YB-1",
                 "kind": "issue",
+                "parent": "",
                 "repo": "",
                 "status": "Done",
+                "subtask": false,
+                "tickets": [],
                 "time": "2026-07-13T09:00:00",
                 "title": "SSO login flow",
+                "type": "Story",
                 "url": "https://example.invalid/browse/YB-1"
               },
               {
                 "children": [],
                 "key": "YB-2",
                 "kind": "wip",
+                "parent": "",
                 "repo": "",
                 "status": "In Progress",
+                "subtask": false,
+                "tickets": [],
                 "time": "",
                 "title": "MFA enrolment",
+                "type": "",
                 "url": "https://example.invalid/browse/YB-2"
+              },
+              {
+                "children": [],
+                "key": "YB-3",
+                "kind": "issue",
+                "parent": "YB-1",
+                "repo": "",
+                "status": "In Progress",
+                "subtask": true,
+                "tickets": [],
+                "time": "2026-07-13T08:30:00",
+                "title": "SSO error states",
+                "type": "Sub-task",
+                "url": "https://example.invalid/browse/YB-3"
               }
             ],
-            "items": [
-              [
-                {
-                  "href": "https://example.invalid/browse/YB-1",
-                  "s": "YB-1"
-                },
-                {
-                  "s": " moved to Done."
-                }
-              ]
-            ],
+            "items": [],
             "label": "Ticketing",
             "links": [
               [
@@ -128,49 +136,61 @@
                     "children": [],
                     "key": "0a1b2c3d",
                     "kind": "commit",
+                    "parent": "",
                     "repo": "acme/web",
                     "status": "",
+                    "subtask": false,
+                    "tickets": [],
                     "time": "2026-07-13T13:10:00",
                     "title": "Wire the SSO callback",
+                    "type": "",
                     "url": "https://example.invalid/commit/0a1b2c3d"
                   },
                   {
                     "children": [],
                     "key": "4e5f6071",
                     "kind": "commit",
+                    "parent": "",
                     "repo": "acme/web",
                     "status": "",
+                    "subtask": false,
+                    "tickets": [],
                     "time": "2026-07-13T12:40:00",
                     "title": "Add the SAML config",
+                    "type": "",
                     "url": "https://example.invalid/commit/4e5f6071"
                   }
                 ],
                 "key": "#91",
                 "kind": "pr",
+                "parent": "",
                 "repo": "acme/web",
                 "status": "merged",
+                "subtask": false,
+                "tickets": [
+                  "YB-1"
+                ],
                 "time": "2026-07-13T14:32:00",
                 "title": "Enable SSO",
+                "type": "",
                 "url": "https://example.invalid/pull/91"
               },
               {
                 "children": [],
                 "key": "78e4201d",
                 "kind": "commit",
+                "parent": "",
                 "repo": "acme/web",
                 "status": "",
+                "subtask": false,
+                "tickets": [],
                 "time": "2026-07-13T11:05:00",
                 "title": "Fix login redirect",
+                "type": "",
                 "url": "https://example.invalid/commit/78e4201d"
               }
             ],
-            "items": [
-              [
-                {
-                  "s": "Merged three pull requests."
-                }
-              ]
-            ],
+            "items": [],
             "label": "Code",
             "links": [
               [
@@ -342,24 +362,6 @@
             }
           ]
         ]
-      },
-      {
-        "categories": [],
-        "counts": [
-          0,
-          0,
-          0
-        ],
-        "footnotes": [],
-        "links": [],
-        "name": "Quiet",
-        "summary": [
-          [
-            {
-              "s": "No activity detected."
-            }
-          ]
-        ]
       }
     ],
     "practices": [
@@ -378,6 +380,9 @@
         "rule": "commit-messages",
         "title": "Thin commit messages"
       }
+    ],
+    "quietMembers": [
+      "Quiet"
     ],
     "skipped": [
       [

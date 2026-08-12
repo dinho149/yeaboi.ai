@@ -36,6 +36,19 @@ MASCOT_PALETTE: dict[str, tuple[int, int, int]] = {
     "r": (228, 104, 22),
 }
 
+# Extra letters for the robotic duck (the Agents category mascot). A separate
+# dict — MASCOT_PALETTE is pinned byte-for-byte to the sprite generator's
+# PALETTE by tests, and the generator's nearest-colour tracer must never snap
+# duck pixels to robo steel. Letters must not collide with MASCOT_PALETTE.
+ROBO_PALETTE: dict[str, tuple[int, int, int]] = {
+    "C": (140, 160, 178),  # light steel plating
+    "c": (88, 104, 122),  # dark steel shading
+    "V": (90, 200, 230),  # cyan LED (visor eyes, antenna bulb)
+}
+
+# One lookup for _style: duck letters and robo letters share the glyph packer.
+_ALL_COLOURS: dict[str, tuple[int, int, int]] = {**MASCOT_PALETTE, **ROBO_PALETTE}
+
 # Hand-authored, hand-cleaned head companion (glints baked in as constant "W").
 DUCK_HEAD: tuple[str, ...] = (
     "......kkkk......",
@@ -105,6 +118,88 @@ DUCK_HEAD_QUACK: tuple[str, ...] = (
     *DUCK_HEAD[11:],
 )
 
+# ---------------------------------------------------------------------------
+# The robotic duck — DERIVED from the traced duck grids, never re-drawn, head
+# and body alike. A per-layer letter recolor keeps the silhouette (and
+# therefore every animation offset, the walk-cycle foot columns, the head's
+# 16x14 footprint and the body's 18-terminal-row height) pixel-identical to the
+# duck, so every placement fits both mascots with no special cases — and the
+# robo stays in sync if the duck art is ever re-traced. A hand-drawn copy is
+# exactly the drift this exists to prevent.
+#
+# The maps are deliberately separate: on BASE, `W` is the breast/tail chrome
+# shine and must stay white — only the GLASSES layer's `W` glints (and the
+# head's, which carries its own eye band) become cyan LED eyes. The amber bill
+# is left warm, so he still reads as a duck.
+# ---------------------------------------------------------------------------
+
+_ROBO_BASE_MAP = str.maketrans({"G": "C", "g": "c"})
+_ROBO_HEAD_MAP = str.maketrans({"G": "C", "g": "c", "W": "V"})
+_ROBO_GLASSES_MAP = str.maketrans({"W": "V", "g": "c"})
+# The mini glasses trace has no W glint (downscale artifact leaves {S, b, k});
+# S→c keeps the band steel without inventing a one-pixel LED the duck lacks.
+_ROBO_MINI_GLASSES_MAP = str.maketrans({"S": "c"})
+
+
+def _robo_variant(grid: tuple[str, ...], table: dict[int, str]) -> tuple[str, ...]:
+    """Recolor one duck layer into its robo counterpart (same geometry)."""
+    return tuple(row.translate(table) for row in grid)
+
+
+def _with_antenna(grid: tuple[str, ...]) -> tuple[str, ...]:
+    """Swap the middle pixel of row 0's crown outline for a cyan antenna bulb.
+
+    An in-row swap rather than an overlay — no added rows, so the sprite's
+    geometry (and every test pinning it) is untouched. The `k` run is
+    located, not hardcoded, so a re-traced duck can't silently misplace the bulb.
+    """
+    row = grid[0]
+    start = row.find("k")
+    if start == -1:
+        return grid
+    end = start
+    while end < len(row) and row[end] == "k":
+        end += 1
+    mid = (start + end) // 2
+    return (row[:mid] + "V" + row[mid + 1 :], *grid[1:])
+
+
+def _robo_head(grid: tuple[str, ...]) -> tuple[str, ...]:
+    """Recolour one duck head grid into its robo counterpart, antenna included."""
+    return _with_antenna(_robo_variant(grid, _ROBO_HEAD_MAP))
+
+
+ROBO_HEAD = _robo_head(DUCK_HEAD)
+# Open-bill robo variant — the same rows 9–10 split as DUCK_HEAD_QUACK, so the
+# tip-arrival "beep" animation reuses the duck's quack mechanics unchanged.
+ROBO_HEAD_QUACK = _robo_head(DUCK_HEAD_QUACK)
+
+# mascot key -> (resting head, open-beak head). The shades gag stays duck-only:
+# only DUCK_HEAD splits into FACE/GLASSES layers.
+_HEADS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_HEAD, DUCK_HEAD_QUACK),
+    "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
+}
+
+ROBO_BASE = _with_antenna(_robo_variant(DUCK_BASE, _ROBO_BASE_MAP))
+ROBO_WING = DUCK_WING  # {L, W, k} — light plumage + white specular; already reads as metal
+ROBO_GLASSES = _robo_variant(DUCK_GLASSES, _ROBO_GLASSES_MAP)
+ROBO_MINI_BASE = _with_antenna(_robo_variant(DUCK_MINI_BASE, _ROBO_BASE_MAP))
+ROBO_MINI_WING = DUCK_MINI_WING
+ROBO_MINI_GLASSES = _robo_variant(DUCK_MINI_GLASSES, _ROBO_MINI_GLASSES_MAP)
+
+# mascot key -> (base, wing, glasses) per size. Distinct names from
+# tests/unit/test_mascot.py's _LAYERS/_MINI_LAYERS lists, which pin the
+# AUTO-GENERATED duck grids to the duck-only palette.
+_BODY_GRIDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_BASE, DUCK_WING, DUCK_GLASSES),
+    "robo": (ROBO_BASE, ROBO_WING, ROBO_GLASSES),
+}
+_MINI_GRIDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_MINI_BASE, DUCK_MINI_WING, DUCK_MINI_GLASSES),
+    "robo": (ROBO_MINI_BASE, ROBO_MINI_WING, ROBO_MINI_GLASSES),
+}
+
 # Per-frame vertical offsets (pixels). Positive = lift the layer up.
 WING_OFF = (0, 1, 2, 2, 1, 0, 0, 0)  # gentle wing flap
 GLASS_OFF = (0, 0, 0, 1, 1, 1, 0, 0)  # slow glasses bob
@@ -116,7 +211,7 @@ MINI_WING_OFF = (0, 0, 1, 1, 1, 0, 0, 0)
 
 
 def _style(letter: str) -> str | None:
-    rgb = MASCOT_PALETTE.get(letter)
+    rgb = _ALL_COLOURS.get(letter)
     return None if rgb is None else f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
 
 
@@ -191,47 +286,56 @@ def _pack(rows: tuple[str, ...]) -> list[Text]:
     return out
 
 
-def head_cells(*, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+def head_cells(*, flip: bool = False, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:
     """The head sprite as a grid of (glyph, style) cells, for compositing the duck
-    over other content (e.g. running across the splash wordmark). Static frame 0."""
-    grid = DUCK_HEAD
+    over other content (e.g. running across the splash wordmark). Static frame 0.
+    ``mascot`` picks the sprite family: "duck" (default) or "robo" (Agents)."""
+    grid = _HEADS.get(mascot, _HEADS["duck"])[0]
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
 
 
-def mini_cells(frame: int = 0, *, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+def mini_cells(frame: int = 0, *, flip: bool = False, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:
     """The small full-body duck (legs and all) as (glyph, style) cells, for
     compositing him over other content — e.g. waddling across the splash wordmark.
 
     Unlike :func:`head_cells` this includes the body and feet, and takes a
     ``frame`` so his wing flaps as he moves (the glasses stay put — see MINI_WING_OFF
-    and render_mini). ``flip`` mirrors him to face the other way."""
+    and render_mini). ``flip`` mirrors him to face the other way. ``mascot`` picks
+    the sprite family ("duck" default, "robo" for the Agents side)."""
     f = frame % FRAMES
-    grid = _compose(DUCK_MINI_BASE, _shift(DUCK_MINI_WING, MINI_WING_OFF[f]), DUCK_MINI_GLASSES)
+    base, wing, glasses = _MINI_GRIDS.get(mascot, _MINI_GRIDS["duck"])
+    grid = _compose(base, _shift(wing, MINI_WING_OFF[f]), glasses)
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
 
 
-def render_full(frame: int) -> Group:
+def render_full(frame: int, *, mascot: str = "duck") -> Group:
     """Full-body idle duck: wing-flap + glasses-bob for the given frame."""
     f = frame % FRAMES
-    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[f]))
+    base, wing, glasses = _BODY_GRIDS.get(mascot, _BODY_GRIDS["duck"])
+    # The robo's visor is bolted on — no bob (the duck adjusts his sunglasses).
+    glass_off = GLASS_OFF[f] if mascot == "duck" else 0
+    grid = _compose(base, _shift(wing, WING_OFF[f]), _shift(glasses, glass_off))
     return Group(*_pack(grid))
 
 
 def full_cells(
-    frame: int, *, glasses_frame: int | None = None, flip: bool = False
+    frame: int, *, glasses_frame: int | None = None, flip: bool = False, mascot: str = "duck"
 ) -> list[list[tuple[str, str | None]]]:
     """The full-size idle duck (wing-flap + glasses-bob) as (glyph, style) cells, for
     compositing him over other content — e.g. walking along the saver floor.
 
     ``glasses_frame`` drives the glasses bob independently of the wing ``frame`` (so
-    the glasses can hold still while the wings flap); defaults to ``frame``."""
+    the glasses can hold still while the wings flap); defaults to ``frame``. The bob
+    is duck-only — a bolted visor doesn't wiggle, so the robo ignores it."""
     f = frame % FRAMES
     gf = (frame if glasses_frame is None else glasses_frame) % FRAMES
-    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[gf]))
+    base, wing, glasses = _BODY_GRIDS.get(mascot, _BODY_GRIDS["duck"])
+    glass_off = GLASS_OFF[gf] if mascot == "duck" else 0
+    grid = _compose(base, _shift(wing, WING_OFF[f]), _shift(glasses, glass_off))
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
@@ -255,7 +359,7 @@ def _step_foot(cell: tuple[str, str | None]) -> tuple[str, str | None]:
 
 
 def walk_cells(
-    frame: int, *, foot: int | None = None, glasses_frame: int = 0, flip: bool = False
+    frame: int, *, foot: int | None = None, glasses_frame: int = 0, flip: bool = False, mascot: str = "duck"
 ) -> list[list[tuple[str, str | None]]]:
     """The full-size duck mid-walk: wing flap (from ``frame``) plus an alternating
     foot plant, as (glyph, style) cells for compositing him moving along a surface.
@@ -263,8 +367,10 @@ def walk_cells(
     ``foot`` (its own slow phase, so the steps aren't tied to the fast wing frame)
     plants the left/right foot in turn on even/odd — defaults to ``frame``. The
     glasses hold still by default (``glasses_frame=0``) — pass a live frame to bob
-    them (e.g. only while jumping). ``flip`` mirrors him to face his travel direction."""
-    grid = [list(row) for row in full_cells(frame, glasses_frame=glasses_frame, flip=False)]
+    them (e.g. only while jumping). ``flip`` mirrors him to face his travel direction.
+    The foot columns are valid for every mascot: robo grids are letter-recolors of
+    the duck trace, so the feet sit in the same columns by construction."""
+    grid = [list(row) for row in full_cells(frame, glasses_frame=glasses_frame, flip=False, mascot=mascot)]
     last = len(grid) - 1  # feet occupy the bottom row
     step = frame if foot is None else foot
     down = _FULL_LEFT_FOOT if step % 2 == 0 else _FULL_RIGHT_FOOT
@@ -276,7 +382,7 @@ def walk_cells(
     return grid
 
 
-def render_mini(frame: int, *, flip: bool = False) -> Group:
+def render_mini(frame: int, *, flip: bool = False, mascot: str = "duck") -> Group:
     """Smaller full-body idle duck — legs and all (~11 half-block terminal rows).
 
     Same three layers as :func:`render_full` at a smaller trace (see MINI_WIDTH in
@@ -285,7 +391,8 @@ def render_mini(frame: int, *, flip: bool = False) -> Group:
     ``flip=True`` mirrors him to face the other way, like :func:`render_head`.
     """
     f = frame % FRAMES
-    grid = _compose(DUCK_MINI_BASE, _shift(DUCK_MINI_WING, MINI_WING_OFF[f]), DUCK_MINI_GLASSES)
+    base, wing, glasses = _MINI_GRIDS.get(mascot, _MINI_GRIDS["duck"])
+    grid = _compose(base, _shift(wing, MINI_WING_OFF[f]), glasses)
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))
@@ -319,16 +426,43 @@ def render_head_shades(lift: int, *, flip: bool = False) -> Group:
     return Group(*_pack(grid))
 
 
-def render_head(frame: int, *, flip: bool = False, beak_open: bool = False) -> Group:
+def render_head_idle(frame: int, lift: int | None = None, *, flip: bool = False, mascot: str = "duck") -> Group:
+    """Resting head and shades gag at one common height.
+
+    :func:`render_head_shades` pads :data:`_SHADES_TOP_PAD` rows above the crown
+    so the raised pair has somewhere to float; :func:`render_head` does not. Cut
+    between the two mid-animation and the duck drops two terminal rows at the
+    moment the gag ends, which is the one thing a loop cannot hide. So anything
+    that plays the gag *occasionally* has to draw its resting frames at the
+    padded height too — that is all this is.
+
+    ``lift=None`` rests, with the usual breathing bob; anything else plays the
+    gag at that lift. The gag is duck-only (only DUCK_HEAD has FACE/GLASSES
+    layers), so a non-duck ``mascot`` always rests — same padded height, so
+    swapping mascots never changes the sprite's geometry.
+    """
+    if lift is not None and mascot == "duck":
+        return render_head_shades(lift, flip=flip)
+    head = _HEADS.get(mascot, _HEADS["duck"])[0]
+    pad = ("." * len(DUCK_HEAD_FACE[0]),) * _SHADES_TOP_PAD
+    grid = pad + _bob(head, HEAD_BOB[frame % FRAMES])
+    if flip:
+        grid = tuple(row[::-1] for row in grid)
+    return Group(*_pack(grid))
+
+
+def render_head(frame: int, *, flip: bool = False, beak_open: bool = False, mascot: str = "duck") -> Group:
     """Small head companion: a gentle breathing bob (glints are baked in).
 
     ``flip=True`` mirrors the duck horizontally (reverse each pixel row) so he
     can face the other way — e.g. face left toward the menu when perched on the
     right-hand side of a screen. ``beak_open=True`` uses the open-mouth variant
-    (for a quack when a new tip appears).
+    (for a quack when a new tip appears — the robo's bill "beeps" the same way).
+    ``mascot`` picks the sprite family: "duck" (default) or "robo" (Agents).
     """
     f = frame % FRAMES
-    grid = _bob(DUCK_HEAD_QUACK if beak_open else DUCK_HEAD, HEAD_BOB[f])
+    resting, quacking = _HEADS.get(mascot, _HEADS["duck"])
+    grid = _bob(quacking if beak_open else resting, HEAD_BOB[f])
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))

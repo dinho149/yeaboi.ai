@@ -109,6 +109,7 @@ function Body({ report }: { report: ExportReport }) {
           confidence={report.confidence}
           summary={report.summary}
           members={report.members}
+          quietMembers={report.quietMembers}
           activityCounts={report.activityCounts}
           activityWindow={report.activityWindow}
           coverage={report.coverage}

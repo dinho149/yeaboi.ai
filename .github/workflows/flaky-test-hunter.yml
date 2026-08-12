@@ -12,9 +12,16 @@
 # update issues (cheap formatting work → Haiku). It opens ISSUES, not fix PRs —
 # a flake fix needs judgment; a human escalates by adding `claude-implement`.
 #
-# Loop-safe: the issues it files are `github-actions[bot]`-authored and labeled
-# `flaky-test`, which triggers nothing (claude.yml only fires on the
-# `claude-implement` label; the feedback pipeline skips bot authors).
+# This is the ONE detector cowork could not absorb. A broken-or-flaky test is on
+# the auto-lane allowlist in cowork/house-rules.md, but flakiness is a property
+# of CI *run history* and of repeated execution — neither of which a scout
+# reading files can observe. So the detector stays and its output moves: it files
+# `cowork:proposal` + `workstream:<owner>` + `type:bug` issues into the one queue
+# the daily digest ranks, rather than a parallel flaky backlog with its own half-life.
+#
+# Loop-safe: the issues it files are `github-actions[bot]`-authored, which
+# triggers nothing (claude.yml only fires on the `claude-implement` label; the
+# feedback pipeline skips bot authors).
 
 name: Flaky Test Hunter
 
@@ -48,7 +55,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
 
@@ -79,10 +86,14 @@ jobs:
 
           # (b) Active reruns: run the suite N times capturing JUnit XML, then
           #     flag any test that is not consistent across runs.
-          rc=0
+          # `|| true`, and no exit code kept: a failing run is the *expected*
+          # case here — this loop exists to make flaky tests fail — and the
+          # verdict comes from diffing the JUnit XMLs below, never from the
+          # pytest exit status. The `rc` variable this replaces was assigned and
+          # never read, which read as an intent nobody had.
           for i in $(seq 1 "$RERUNS"); do
             uv run pytest tests/unit tests/integration \
-              --junitxml="junit-$i.xml" -p no:cacheprovider -q || rc=1
+              --junitxml="junit-$i.xml" -p no:cacheprovider -q || true
           done
 
           python - <<'PY'
@@ -114,7 +125,7 @@ jobs:
 
       - name: File / update flaky-test issues with Claude
         if: steps.detect.outputs.found == 'true'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
         env:
           GH_TOKEN: ${{ github.token }}
         with:
@@ -137,18 +148,34 @@ jobs:
             - `flapped_shas.json` — commit SHAs whose CI both passed and failed (a
               re-run flipped them); supporting evidence only.
 
+            Everything you file goes into the cowork queue, so the daily digest
+            ranks it beside every other proposal instead of running a second,
+            parallel backlog nobody reads. That means each issue carries
+            `cowork:proposal` + `workstream:<owner>` + `type:bug` + `flaky-test`,
+            and closes with the approval line the cowork scribe uses.
+
             For EACH test id in `flaky.json`'s "flaky" list:
             1. Search existing issues: `gh issue list --label flaky-test --search "<test id>" --state all`.
             2. If an open issue already covers it, add a brief comment noting this
                week's recurrence (how many of N reruns failed) — do NOT open a duplicate.
-            3. If none exists, open one issue titled exactly `[Flaky] <test id>` with
-               label `flaky-test`. Body: the rerun failure ratio, the test's file
-               path (Grep/Read to confirm it), and a one-paragraph hypothesis of the
-               likely cause (timing, ordering, shared state, real clock/random use).
+            3. If none exists, Grep/Read to confirm the test's file path, then find
+               its owning workstream: the `**Owns**` line in exactly one
+               `cowork/workstreams/*.md` names that path or its directory. Use
+               `workstream:platform` only if genuinely none of them do.
+            4. Open one issue titled exactly `[bug][<owner workstream>] flaky: <test id>`
+               with labels `cowork:proposal`, `workstream:<owner>`, `type:bug` and
+               `flaky-test`. Body: the
+               rerun failure ratio, the test's file path, and a one-paragraph
+               hypothesis of the likely cause (timing, ordering, shared state, real
+               clock/random use). End with the line:
+               `Approve by adding the ``claude-implement`` label. Reject by closing this issue.`
                Do NOT propose or apply a fix — this is triage only.
 
             If `flaky.json`'s "flaky" list is empty but `flapped_shas.json` is not,
-            open (or update) a single issue `[Flaky] CI history shows intermittent
-            failures` summarizing the flapped commits so a human can investigate.
+            open (or update) a single issue `[bug][platform] flaky: CI history shows
+            intermittent failures` labelled `cowork:proposal` + `workstream:platform` +
+            `type:bug` + `flaky-test`, summarizing the flapped commits so a human can
+            investigate.
 
             Keep every issue/comment concise. Never edit code, never open a PR.
+            NEVER apply `claude-implement` — that is the human approval gate.

@@ -344,3 +344,27 @@
   white-space: nowrap;
 }
 .frameBody { padding: var(--s5); }
+
+/* ── Lozenge — Jira-style status tag ─────────────────────────────────
+   Category classes only set the two custom properties; the base rule owns
+   the shape. Colours come from the derived lozenge tokens in tokens.css,
+   never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
+.lozenge {
+  display: inline-block;
+  padding: 1px var(--s2);
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--lozenge-fg, var(--muted));
+  background: var(--lozenge-bg, var(--card));
+}
+.lozengeSmall { padding: 0 var(--s1); font-weight: 600; }
+.lozengeTodo { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+.lozengeProgress { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+.lozengeDone { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+.lozengeBlocked { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }

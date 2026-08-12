@@ -26,6 +26,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
+from yeaboi.ui.shared._input import paste_payload
 
 # ---------------------------------------------------------------------------
 # Shared field label pattern for all editors (story, task, sprint, etc.)
@@ -443,7 +444,7 @@ def edit_buffer_loop(
         elif isinstance(key, str) and key.startswith("paste:"):
             min_col = editable_start_fn(buffer[cursor_row])
             if min_col is not None and cursor_col >= min_col:
-                pasted = key[6:].replace("\n", " ")
+                pasted = paste_payload(key)
                 line = buffer[cursor_row]
                 buffer[cursor_row] = line[:cursor_col] + pasted + line[cursor_col:]
                 cursor_col += len(pasted)

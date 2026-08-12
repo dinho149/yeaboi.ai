@@ -45,6 +45,7 @@ from yeaboi.ui.mode_select.screens._project_list_screen import (  # noqa: F401
 
 # Re-exports for backwards compatibility and test imports.
 from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
+    _AGENT_CARDS,
     _INTAKE_CARDS,
     _MIN_HEIGHT,
     _MIN_WIDTH,
@@ -77,13 +78,73 @@ from yeaboi.ui.shared._animations import (
 )
 from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
-from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
-from yeaboi.ui.shared._music_bar import make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
 logger = logging.getLogger(__name__)
+
+
+def _duck_react(quip_key: str, text: str | None = None) -> None:
+    """Quack + speak a completion quip through the shared duck voice.
+
+    The one helper every mode's completion moment calls — strictly reactive
+    (something just finished), never ambient. ``text`` overrides the DUCK_QUIPS
+    entry for dynamic lines ("3 projects recommended."). Logs once per trigger.
+    """
+    from yeaboi.ui.shared._duck_voice import DUCK_QUIPS, duck_voice
+    from yeaboi.ui.shared._music_bar import quack_duck
+
+    line = text or DUCK_QUIPS.get(quip_key, "")
+    if not line:
+        return
+    logger.info("duck react: %s (%s)", quip_key, line)
+    quack_duck()
+    duck_voice().say(line)
+
+
+def _run_on_worker(target, render_frame, frame_time: float, *, drain=None):
+    """Run ``target`` on a worker thread while the page keeps animating.
+
+    For calls that used to block the render thread solid (retro action items,
+    performance 1:1s, publish): ``render_frame(elapsed)`` runs every frame so
+    the page — and the working duck — stays live. Returns target()'s result;
+    re-raises whatever it raised, on this thread.
+
+    ``drain``: pass the page's ``read_key`` (only when the terminal supports
+    timeouts — a blocking read_key would hang here) and any keys typed during
+    the wait are swallowed afterwards — otherwise they'd replay against
+    whatever view the result switched to (an impatient double-Enter must not
+    press a button on a screen the user never saw).
+    """
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+
+    result_box: list = [None, None]
+
+    def _work() -> None:
+        try:
+            result_box[0] = target()
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the UI thread below
+            result_box[1] = exc
+
+    thread = duck_working_thread(_work, name="mode-worker")
+    thread.start()
+    start = time.monotonic()
+    while thread.is_alive():
+        render_frame(time.monotonic() - start)
+        time.sleep(frame_time)
+    thread.join()
+    if drain is not None:
+        # Bounded: a real tty buffer holds a handful of keys; an unbounded
+        # loop would spin forever against a test fake that never runs dry.
+        for _ in range(64):
+            if not drain(timeout=0):
+                break
+    if result_box[1] is not None:
+        raise result_box[1]
+    return result_box[0]
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +197,28 @@ def _run_output_share_flow(
         title_fn=title_fn,
         editable=editable,
         on_edit=on_edit,
+    )
+
+
+def _standup_editable_session(report, run_id: int, history):
+    """A correctable standup share, or None when there is nothing to anchor edits to.
+
+    Shared by the live standup page and the saved-runs hub so both offer the same
+    thing. Edits are appended as a new row that supersedes its parent, so the
+    session needs the run it came from — without ``run_id`` there is no base to
+    replay onto and the share stays read-only.
+    """
+    if not run_id:
+        logger.info("standup share: no run_id on this report — sharing read-only, edits are not possible")
+        return None
+    from yeaboi.artifacts.session import EditableSession
+
+    return EditableSession(
+        report,
+        kind="standup",
+        db_path=_ana_dbp,
+        run_id=run_id,
+        history=tuple(history or ()),
     )
 
 
@@ -549,7 +632,6 @@ def _run_preview_flow(
 
     def _regenerate(fn, label: str):
         """Run an LLM generation function in a background thread with animation."""
-        import threading
 
         logger.info("Regenerating %s via LLM", label)
 
@@ -561,7 +643,7 @@ def _run_preview_flow(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="planning-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1079,7 +1161,6 @@ def _run_sprint_review(
     (Esc). The caller uses this to decide whether to mark the session complete.
     """
     logger.info("Sprint review: generating sample sprint via LLM")
-    import threading as _threading
 
     from yeaboi.tools.team_learning import generate_sample_sprint
     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -1113,7 +1194,7 @@ def _run_sprint_review(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = _threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="sprint-sample-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1275,16 +1356,19 @@ def _collect_usage_data() -> dict:
     except Exception:
         data["profiles"] = []
 
-    # Token usage — session (in-memory) + lifetime (from DB)
-    def _cloud_cost(inp: int, out: int) -> float:
-        # Claude Sonnet 4: $3/MTok input, $15/MTok output
-        return (inp * 3.0 + out * 15.0) / 1_000_000
+    # Token usage — session (in-memory) + lifetime (from DB). All rates come
+    # from the shared pricing table; an unknown model prices at the Sonnet
+    # tier, which matches the old hardcoded $3/$15 estimate.
+    from yeaboi.pricing import estimate_cost
+
+    def _cloud_cost(inp: int, out: int, model_id: str = "") -> float:
+        return estimate_cost(model_id, inp, out).usd
 
     def _calc_cost(inp: int, out: int) -> float:
         # Ollama runs on the user's own hardware — there is no per-token bill.
         if provider == "ollama":
             return 0.0
-        return round(_cloud_cost(inp, out), 4)
+        return round(_cloud_cost(inp, out, model), 4)
 
     try:
         from yeaboi.agent.llm import get_usage_stats
@@ -1377,13 +1461,18 @@ def _collect_settings_data() -> dict:
         "AZURE_DEVOPS_TOKEN",
         "AZURE_DEVOPS_TEAM",
         "GITHUB_TOKEN",
+        # Analysis' GitHub repository estate (comma-separated owners/orgs) — the
+        # default that lets CLI/MCP/headless runs scan GitHub without --github-owner.
+        "TEAM_ANALYSIS_GITHUB_OWNERS",
         "VOICE_MODEL",
+        "VOICE_DEVICE",
         "AWS_REGION",
         "AWS_PROFILE",
         "LOG_LEVEL",
         "SESSION_PRUNE_DAYS",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
+        "DUCK_ENABLED",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
         "SLACK_WEBHOOK_URL",
@@ -1437,7 +1526,7 @@ def _settings_edit_keypress(sk: str, edit: dict) -> None:
     elif sk == "end":
         edit["cur"] = len(buf)
     elif isinstance(sk, str) and sk.startswith("paste:"):
-        txt = sk[len("paste:") :]
+        txt = paste_payload(sk)
         edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
     elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
         edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
@@ -1571,7 +1660,7 @@ def _feedback_compose_key(
         from yeaboi.ui.shared._voice_input import record_voice_input
 
         spoken = record_voice_input(
-            live, console, read_key, lambda status, tick: _compose_voice_frame(compose, status, tick, render)
+            live, console, read_key, lambda border, line: _compose_voice_frame(compose, line, render)
         )
         compose["status"] = ""
         if spoken:
@@ -1583,15 +1672,13 @@ def _feedback_compose_key(
     return compose
 
 
-def _compose_voice_frame(compose: dict, status: str, tick: float, render):
+def _compose_voice_frame(compose: dict, line: str, render):
     """Renderable for the recording/transcribing indicator, shown IN the bubble.
 
     record_voice_input owns the screen while it runs, so it paints through this —
-    keeping the duck and his bubble on screen instead of a centred popup.
+    keeping the duck and his bubble on screen instead of a centred popup. The
+    bubble has no border of its own to tint, so only the status line is used.
     """
-    from yeaboi.ui.shared._voice_input import voice_indicator
-
-    _border, line = voice_indicator(status, tick)
     compose["status"] = line.strip()
     return render(update=False)
 
@@ -1706,6 +1793,125 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
             return sel == 0
         elif k in ("esc", "q"):
             return False
+
+
+def _test_microphone(console: Console, live, read_key, frame_time, supports_timeout, device: dict, render) -> str:
+    """Open the highlighted mic and animate its level until a key is pressed.
+
+    This is the answer to "is this the input that actually hears me?" — the one
+    question a device *name* cannot settle, since a laptop lid, a muted USB
+    interface and a disconnected Bluetooth headset all still enumerate.
+    Returns a notice for the picker ("" when the test ran fine).
+    """
+    from yeaboi import music, voice
+
+    music.pause_for_voice()
+    try:
+        # monitor=True: this runs for as long as the user leaves the page open,
+        # and a retained take grows ~11 MB a minute at 48 kHz stereo for a WAV
+        # that is discarded the moment the test ends. Only level() is wanted.
+        recorder = voice.Recorder(device=device["index"], monitor=True)
+    except Exception as exc:  # noqa: BLE001 - shown to the user, not raised
+        logger.warning("Settings: mic test failed for %s", device["name"], exc_info=True)
+        music.resume_after_voice()
+        return f"{device['name']} would not open — {exc}"
+    logger.info("Settings: testing microphone %s (index %s)", device["name"], device["index"])
+    try:
+        while True:
+            live.update(render(testing=True, level=recorder.level()))
+            try:
+                k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            except TypeError:
+                k = read_key()
+            if not k:
+                continue
+            if parse_click(k) is not None:
+                continue  # a stray mouse event must not end the test
+            if k == "esc":
+                # Same reason as the picker's own cancel below: the Esc
+                # chokepoint armed the app-wide back tab's retract before we saw
+                # the key, and this Esc only ends the test.
+                from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                cancel_back_retract()
+            logger.info("Settings: mic test finished for %s", device["name"])
+            return ""
+    finally:
+        recorder.stop()
+        music.resume_after_voice()
+
+
+def _pick_voice_device(console: Console, live, read_key, frame_time, supports_timeout) -> str | None:
+    """Microphone picker for Settings → Voice Input.
+
+    Returns the chosen device name, ``""`` for "use the system default", or None
+    when the user backs out. A modal sub-loop (like _confirm_move_data) rather
+    than another state in the settings loop: the settings loop already routes
+    arrows, scroll, Tab and Esc, and a picker layered into it would have to be
+    intercepted ahead of every one of them.
+    """
+    from yeaboi import voice
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen, voice_picker_keypress
+
+    # Rescan first: PortAudio caches its device list at startup, so the mic the
+    # user just plugged in is exactly the one that would otherwise be missing.
+    voice.refresh_devices()
+    devices = voice.list_input_devices()
+    pref = voice.get_voice_device()
+    current = voice.device_name(voice.resolve_device(pref)) if pref else ""
+    state = {"devices": devices, "sel": 0}
+    for _i, _d in enumerate(devices):
+        if _d["name"] == current:
+            state["sel"] = _i
+    notice = ""
+    logger.info("Settings: microphone picker opened — %d input(s)", len(devices))
+
+    def _render(testing: bool = False, level: float = 0.0):
+        w, h = console.size
+        return _build_voice_device_screen(
+            devices,
+            state["sel"],
+            current=current,
+            width=w,
+            height=h,
+            testing=testing,
+            level=level,
+            notice=notice,
+        )
+
+    while True:
+        live.update(_render())
+        try:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        except TypeError:
+            k = read_key()
+        if not k:  # idle tick
+            continue
+        if parse_click(k) is not None:
+            continue  # the picker is keyboard-driven; clicks would need regions
+        notice = ""
+        action = voice_picker_keypress(k, state)
+        if action == "cancel":
+            # The Esc chokepoint armed the app-wide back tab's retract before we
+            # saw the key; this Esc only closes the picker, so put it back.
+            from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+            cancel_back_retract()
+            return None
+        if action == "system":
+            return ""
+        if action == "select":
+            if not devices:
+                # Nothing to choose. Returning "" here would quietly save
+                # "system default" from a page that just said there is no
+                # microphone at all — a confirmation for a choice never made.
+                notice = "No microphone to select. Esc goes back."
+                continue
+            return devices[state["sel"]]["name"]
+        if action == "test" and devices:
+            notice = _test_microphone(
+                console, live, read_key, frame_time, supports_timeout, devices[state["sel"]], _render
+            )
 
 
 def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_timeout) -> bool:
@@ -1901,7 +2107,13 @@ def _export_via_picker(
     if dest is None:
         return None
     if dest == "files":
-        return files_export()
+        msg = files_export()
+        # Some exporters report failure/no-op as a message rather than raising
+        # ("Nothing to export yet…", "Export failed: …") — only a real export
+        # ("Exported to …") earns the quack.
+        if msg and "Exported" in msg:
+            _duck_react("export_done")
+        return msg
     if extra_handlers and dest in extra_handlers:
         return extra_handlers[dest]()
 
@@ -1914,8 +2126,34 @@ def _export_via_picker(
 
         return copy_markdown_status(markdown)
     from yeaboi.export_targets import publish_markdown
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
-    return publish_markdown(dest, title=title, markdown=markdown).message
+    _dest_label = {"notion": "Notion", "confluence": "Confluence"}.get(dest, dest)
+
+    def _publish_frame(elapsed: float) -> None:
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                [f"Publishing to {_dest_label}"],
+                width=w,
+                height=max(10, h - 1),
+                elapsed=elapsed,
+                anim_tick=elapsed,
+                label=f"Publishing to {_dest_label}",
+            )
+        )
+
+    # On a worker: publishing is a network call that used to freeze the frame
+    # loop (and the duck) until the page landed.
+    published = _run_on_worker(
+        lambda: publish_markdown(dest, title=title, markdown=markdown),
+        _publish_frame,
+        frame_time,
+        drain=read_key if supports_timeout else None,
+    )
+    if published.ok:
+        _duck_react("export_done")
+    return published.message
 
 
 _ANON_PICKER_MODES = {"planning", "analysis", "standup", "retro", "performance", "reporting"}
@@ -1964,7 +2202,6 @@ def _run_anonymize_pass(
 
     # See docs: "Guardrails" — output masking for public sharing
     """
-    import threading
 
     from yeaboi.anonymize.engine import run_anonymize
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
@@ -1987,7 +2224,7 @@ def _run_anonymize_pass(
             logger.error("anonymize worker failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="anonymize", daemon=True)
+    thread = duck_working_thread(_worker, name="anonymize")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2008,7 +2245,10 @@ def _run_anonymize_pass(
         time.sleep(1 / 30)
     thread.join()
     res = result_box[0]
-    return None if (res is None or isinstance(res, Exception)) else res
+    if res is not None and not isinstance(res, Exception):
+        _duck_react("anonymize_done")
+        return res
+    return None
 
 
 def _anon_export(
@@ -2254,7 +2494,7 @@ def _project_tracker_sync(
         finally:
             _sync_done.set()
 
-    _sync_thread = threading.Thread(target=_run_sync, daemon=True)
+    _sync_thread = duck_working_thread(_run_sync, name="tracker-sync")
     _sync_thread.start()
 
     # Show live scrolling log while the thread runs
@@ -2306,6 +2546,8 @@ def _project_tracker_sync(
     epic = getattr(sr, "epic_key", None) or getattr(sr, "epic_id", None) or ""
     prefix = f"Epic: {epic} — " if epic else ""
     summary = ", ".join(parts) or "Nothing to sync"
+    if created and not sr.errors:
+        _duck_react("sync_done")
     # Show first error for diagnosis
     if sr.errors:
         first_err = sr.errors[0][:80]
@@ -2464,7 +2706,6 @@ def _standup_generate_flow(
     # Run the pipeline on a worker thread while the frame loop shows live
     # progress — collection + the LLM call can take many seconds, and without
     # this the input box just sat frozen (same pattern as the analysis pages).
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2474,7 +2715,7 @@ def _standup_generate_flow(
     def _worker() -> None:
         result_box[0] = _standup_generate(session_id, on_progress=progress.append)
 
-    thread = threading.Thread(target=_worker, name="standup-generate", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-generate")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2491,7 +2732,10 @@ def _standup_generate_flow(
         )
         time.sleep(1 / 30)
     thread.join()
-    return result_box[0]
+    msg = result_box[0]
+    if msg and not str(msg).startswith("Generate failed"):
+        _duck_react("standup_done")
+    return msg
 
 
 _REVIEW_STEP_NAMES = ["Source", "Review", "File"]
@@ -2622,7 +2866,6 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
     a public GitHub repo needs a separate confirmation that shows what will be
     published. Returns a status message, or None when the user backs out.
     """
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2680,7 +2923,7 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
             logger.error("standup review failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="standup-review", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-review")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2839,7 +3082,7 @@ def _standup_read_line(
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
     from yeaboi.ui.shared._attachments import handle_ctrl_v, unsupported_notice
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     value = initial
     notice = ""
@@ -2871,9 +3114,8 @@ def _standup_read_line(
     # Voice overlay re-renders THIS screen (not a popup) with the pulsing
     # indicator. record_voice_input() calls this and does the live.update itself,
     # so we only return the renderable.
-    def _render_status(status_name: str, tick: float):
+    def _render_status(border: str, line: str):
         w, h = console.size
-        border, line = voice_indicator(status_name, tick)
         return _build_standup_input_screen(
             prompt,
             value,
@@ -2909,7 +3151,7 @@ def _standup_read_line(
         elif k == "word_backspace":  # Ctrl+W
             value = value.rstrip().rsplit(" ", 1)[0] if " " in value.strip() else ""
         elif isinstance(k, str) and k.startswith("paste:"):
-            value += k[len("paste:") :]
+            value += paste_payload(k, multiline=box_rows > 1)
         elif k == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)
@@ -3181,9 +3423,12 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
             return None
         if not set(config.get("code_sources", ())) <= code_available:
             return None
+        owners = list(config.get("github_owners", ()))
         github = list(config.get("github_repositories", ()))
         projects = list(config.get("azdo_projects", ()))
         parts = []
+        if owners:
+            parts.append(f"{len(owners)} GitHub org(s)")
         if github:
             parts.append(f"{len(github)} GitHub repo(s)")
         if projects:
@@ -3192,7 +3437,7 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
         # Second line names them. A count alone can't tell you whether the saved
         # scope is the one you want back. The newline is the builder's cue to
         # give this a second row — the value is still plain text.
-        names = _standup_name_summary(github + projects, shown=4)
+        names = _standup_name_summary(owners + github + projects, shown=4)
         rows.append(("Code", f"{counts}\n{names}" if counts else "none"))
 
     # Documentation. An empty selection is a real answer here (the picker allows
@@ -3224,6 +3469,7 @@ _STANDUP_SETUP_FIELDS = (
     "team_members",
     "roster_configured",
     "code_sources",
+    "github_owners",
     "github_repositories",
     "azdo_projects",
     "azdo_repositories",
@@ -3485,7 +3731,7 @@ def _standup_team_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-roster").start()
+    duck_working_thread(_discover, name="standup-roster").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -3556,6 +3802,7 @@ def _standup_team_configure(
             team_members=selected_members,
             roster_configured=True,
             code_sources=merged.get("code_sources", []),
+            github_owners=merged.get("github_owners", []),
             github_repositories=merged.get("github_repositories", []),
             azdo_projects=merged.get("azdo_projects", []),
             azdo_repositories=merged.get("azdo_repositories", []),
@@ -3587,7 +3834,13 @@ def _standup_code_configure(
     supports_timeout,
     session_id: str,
 ) -> tuple[bool, str]:
-    """Choose GitHub repositories/Azure projects and persist the code scope."""
+    """Choose GitHub organisations/Azure projects and persist the code scope.
+
+    Both sides of this picker are *containers*: an Azure project has always meant
+    "every repo in it", and a GitHub owner now means the same. That is the whole
+    difference from the old screen, which asked for repositories one at a time and
+    so went stale the moment someone created a new one.
+    """
     import threading
 
     from yeaboi.config import (
@@ -3637,7 +3890,7 @@ def _standup_code_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-code-repositories").start()
+    duck_working_thread(_discover, name="standup-code-repositories").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -3657,22 +3910,32 @@ def _standup_code_configure(
     discovered = result_box[0] or {}
     github_choices = list(discovered.get("github", ()))
     azdo_project_choices = list(discovered.get("azure_devops", ()))
-    github_labels = {f"GitHub · {repo}": repo for repo in github_choices}
+    github_labels = {f"GitHub · {owner}": owner for owner in github_choices}
     azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
     choices = [*github_labels, *azdo_labels]
-    saved_github = list(existing.get("github_repositories", ()))
+    # Only owners the user actually chose. Deriving them from a saved repository
+    # list would pre-tick "GitHub · acme" for someone whose scope is one repo, and
+    # accepting the default — while here to add an Azure project, say — would widen
+    # their standup to the whole org off a row that says nothing about it. Their
+    # repositories are preserved instead (see prior_repositories below), so nothing
+    # is lost by leaving these unticked; widening is a tick they have to make.
+    saved_owners = {owner.lower() for owner in existing.get("github_owners", ())}
     saved_azdo_projects = list(existing.get("azdo_projects", ()))
     if existing.get("code_scope_configured"):
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in saved_github),
+            *(label for label, owner in github_labels.items() if owner.lower() in saved_owners),
             *(label for label, project in azdo_labels.items() if project in saved_azdo_projects),
         ]
     else:
         from yeaboi.config import get_azure_devops_project
 
         legacy_project = (get_azure_devops_project() or "").lower()
+        # Nothing configured: everything the token can see is in scope, matching
+        # what an unconfigured run already does (engine._resolve_code_scope) — but
+        # a pinned STANDUP_GITHUB_REPO is an explicit narrow scope, so it pre-ticks
+        # nothing and survives as a repository entry, exactly as the engine treats it.
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in default_github),
+            *([] if default_github else github_labels),
             *(label for label, project in azdo_labels.items() if project.lower() == legacy_project),
         ]
     selected_repositories = _run_standup_member_select(
@@ -3683,17 +3946,30 @@ def _standup_code_configure(
         supports_timeout,
         choices,
         initial_repositories,
-        heading="Choose GitHub repositories and Azure projects",
-        empty_message="No accessible repositories or projects found for the selected code source(s).",
+        heading="Choose GitHub organisations and Azure projects",
+        empty_message="No accessible organisations or projects found for the selected code source(s).",
     )
     if selected_repositories == "cancel":
         return False, "Code scope selection cancelled."
     if not selected_repositories:
-        return False, "No accessible repositories or projects found — check integration permissions."
+        return False, "No accessible organisations or projects found — check integration permissions."
 
     selected_set = set(selected_repositories)
-    selected_github = [repo for label, repo in github_labels.items() if label in selected_set]
+    selected_github_owners = [owner for label, owner in github_labels.items() if label in selected_set]
     selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
+    # Repositories survive unless a chosen owner already covers them. Clearing the
+    # list outright lost three things: a pinned STANDUP_GITHUB_REPO on the first
+    # walk, a deliberately narrow saved scope, and — worst, because it is invisible
+    # — any repo whose owner never surfaced in discovery (github_list_owners caps
+    # at 100 and either of its lookups can fail and be skipped).
+    prior_repositories = list(existing.get("github_repositories", ())) or list(default_github)
+    covered_owners = {owner.lower() for owner in selected_github_owners}
+    preserved_repositories = [
+        repository
+        for repository in prior_repositories
+        for owner, separator, _name in [str(repository).partition("/")]
+        if not (separator and owner.lower() in covered_owners)
+    ]
     defaults = {
         "enabled": False,
         "time": "10:00",
@@ -3723,7 +3999,8 @@ def _standup_code_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=selected_sources,
-            github_repositories=selected_github,
+            github_owners=selected_github_owners,
+            github_repositories=preserved_repositories,
             azdo_projects=selected_azdo_projects,
             azdo_repositories=[],
             code_scope_configured=True,
@@ -3737,8 +4014,18 @@ def _standup_code_configure(
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
         )
+    logger.info(
+        "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d azdo_projects=%d",
+        session_id,
+        selected_sources,
+        len(selected_github_owners),
+        len(preserved_repositories),
+        len(selected_azdo_projects),
+    )
+    kept = f" + {len(preserved_repositories)} pinned repo(s)" if preserved_repositories else ""
     return True, (
-        f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
+        f"Code scope saved — {len(selected_github_owners)} GitHub org(s){kept}, "
+        f"{len(selected_azdo_projects)} Azure project(s)."
     )
 
 
@@ -3803,6 +4090,7 @@ def _standup_documentation_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -3824,6 +4112,7 @@ def _standup_documentation_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -3979,6 +4268,7 @@ def _standup_transcripts_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -4002,6 +4292,7 @@ def _standup_transcripts_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -4378,6 +4669,7 @@ def _run_standup_schedule_wizard(
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -4487,6 +4779,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -4622,7 +4915,6 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
     screenshot paste work for free; the optional AI Polish step previews an
     LLM rewrite the user can accept or discard.
     """
-    import threading
     import webbrowser
 
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, polish_feedback, submit_feedback
@@ -4680,7 +4972,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             prev_view, prev_status = view, status
             view, status = "busy", busy_label
             out: list = []
-            thread = threading.Thread(target=lambda: out.append(target()), daemon=True)
+            thread = duck_working_thread(lambda: out.append(target()), name="busy")
             thread.start()
             pulse_start = time.monotonic()
             while thread.is_alive():
@@ -4974,7 +5266,9 @@ def _run_mode_hub(
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
     from yeaboi.ui.shared._click import parse_click
+    from yeaboi.ui.shared._duck_voice import duck_voice
 
+    voice = duck_voice()  # toasts + the delete confirmation speak through the duck
     runs = load_runs()
     extra_text = extra_label() if extra_label is not None else ""
     selected = 0
@@ -4995,7 +5289,11 @@ def _run_mode_hub(
         selected = min(selected, _n_items() - 1)  # keep within the item range
         focus = 0
         confirm = False
+        voice.clear_sticky()  # any pending delete confirmation is moot now
         message = msg
+        if msg:
+            logger.info("%s hub: %s", mode, msg)
+            voice.say(msg)
 
     def _render_list() -> None:
         nonlocal _last_panel
@@ -5212,6 +5510,7 @@ def _run_mode_hub(
                 _reload("Run deleted.")
             elif k in ("esc", "q"):
                 confirm = False
+                voice.clear_sticky()
             _render_list()
             continue
         if k in SCROLL_KEYS or k in ("up", "down"):
@@ -5246,6 +5545,11 @@ def _run_mode_hub(
                 _open_snapshot(run)
             elif focus == 1:
                 confirm = True
+                # Cap the title so the prompt (with its load-bearing "Enter to
+                # confirm") fits the bubble even on an 84-col terminal — sticky
+                # lines are never truncated by the chrome.
+                _t = run.title if len(run.title) <= 18 else run.title[:17].rstrip() + "…"
+                voice.say_sticky(f'Delete "{_t}"?  Enter to confirm')
             elif focus == 2:
                 msg = _export_via_picker(
                     console,
@@ -5259,9 +5563,12 @@ def _run_mode_hub(
                 )
                 if msg is not None:
                     message = msg
+                    logger.info("%s hub: %s", mode, msg)
+                    voice.say(msg)
         elif k in ("esc", "q"):
             break
         _render_list()
+    voice.clear_sticky()  # never carry a modal prompt onto the next page
     logger.info("%s hub: closed", mode)
 
 
@@ -5415,11 +5722,17 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
     def get_share_document(run):
         """A past run, shared read-only.
 
-        Deliberately NOT correctable, unlike the live page's Share Online. This
-        path already offers ``get_editable_session`` below, and a document cannot
-        be both: the editable share re-renders from its own edit log, so a
-        practice vote written straight to the run underneath it would be
-        overwritten by the next edit. One writer per shared document.
+        Deliberately NOT correctable. This path already offers
+        ``get_editable_session`` below, and a document cannot be both: the
+        editable share re-renders from its own edit log, so a practice vote
+        written straight to the run underneath it would be overwritten by the
+        next edit. One writer per shared document.
+
+        Since the live page's Share Online became editable too, no surface builds
+        a practice-correctable document any more — signals are answered from the
+        TUI's "Practices" action. The share path stays because carrying a verdict
+        THROUGH the edit log (a third op beside OP_NOTE/OP_FIELD) is what would
+        let both exist on one document; see YEA-80.
         """
         report = _report(run.run_id)
         if report is None:
@@ -5433,15 +5746,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         report = _report(run.run_id)
         if report is None:
             return None
-        from yeaboi.artifacts.session import EditableSession
-
-        return EditableSession(
-            report,
-            kind="standup",
-            db_path=_ana_dbp,
-            run_id=run.run_id,
-            history=tuple(_history_for(report)),
-        )
+        return _standup_editable_session(report, run.run_id, _history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
@@ -6005,7 +6310,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
             if _votable_practices():
@@ -6215,33 +6520,37 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                         with _SStore(_ana_dbp) as _sstore:
                             share_history = _sstore.get_history(session_id, limit=30)
                             share_run_id = _sstore.get_latest_run_id(session_id)
-                    _run_output_share_flow(
+                    # The same correctable share the saved-runs hub offers: a
+                    # reader can fix a wrong line and add a note, attributed and
+                    # versioned. Never while anonymized — an edit made against a
+                    # mask cannot be matched back to a member.
+                    #
+                    # This share is deliberately NOT practice-votable. One writer
+                    # per document: the editable share re-renders from its own
+                    # edit log, so a verdict written straight to the run beneath
+                    # it would be overwritten by the next edit. Practice signals
+                    # are answered from the "Practices" action instead.
+                    editing = (
+                        _standup_editable_session(report, share_run_id or 0, share_history) if anon is None else None
+                    )
+                    recorded = _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        # session_id + run_id make the share correctable: a reader
-                        # who knows a practice signal is wrong can say so, and it
-                        # is written back here. Withheld while anonymized — the
-                        # names on that page are masks.
-                        document=standup_document(
-                            report,
-                            anon=anon,
-                            history=share_history,
-                            session_id="" if anon is not None else session_id,
-                            run_id=share_run_id or 0,
-                            db_path=_ana_dbp,
-                        ),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
+                        editable=editing.share if editing is not None else None,
+                        on_edit=editing.persist if editing is not None else None,
                     )
-                    # A reader may have answered a practice signal while the
-                    # share was up, which rewrites the stored run. Re-read it, or
-                    # the screen keeps offering "Practices" on a signal that is
-                    # no longer there and pressing it does nothing.
-                    if anon is None and share_run_id:
-                        data = _collect_standup_data()
+                    if recorded and editing is not None:
+                        # Appended, so the generated original is still there and
+                        # every trend chart picks the corrected row up on its own.
+                        editing.commit()
+                        noun = "correction" if recorded == 1 else "corrections"
+                        data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)
@@ -6320,6 +6629,25 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 except Exception as e:
                     logger.error("standup team selection failed: %s", e, exc_info=True)
                     msg = f"Team selection failed: {e}"
+                data = _collect_standup_data(message=msg)
+                _reset_to_overview()
+            elif act == "Sources":
+                # The only way back into the code-source picker after first setup.
+                # Without it, a standup that has never been told about GitHub can
+                # only be corrected by declining the saved setup mid-Generate.
+                try:
+                    logger.info("standup: Sources pressed (session=%s)", session_id)
+                    _saved, msg = _standup_code_configure(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        session_id,
+                    )
+                except Exception as e:
+                    logger.error("standup code-source selection failed: %s", e, exc_info=True)
+                    msg = f"Source selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
             elif act == "Identity":  # in-TUI themed input (stays inside Live)
@@ -6830,25 +7158,86 @@ def _run_member_select(
             return "cancel"
 
 
-def _run_code_project_select(
+# Everything that differs between the two code hosts' scope pickers. The screen,
+# the discovery thread and the key loop are identical, so they live once in
+# _run_code_scope_select and read their wording from here; a second copy of that
+# 70-line body would drift the moment either host gains a state.
+_CODE_SCOPE_PROVIDERS: dict[str, dict] = {
+    "github": {
+        "heading": "GitHub owners",
+        "unit": "owners",
+        "spinner": "Discovering GitHub owners and organisations…",
+        "thread": "analysis-github-owners",
+        # Owner granularity is what the engine takes (github_analysis_inventory
+        # walks an owner's repos), so the cost of one checkbox needs stating.
+        "hint": "Every non-archived repo with activity in the window is scanned.",
+        "empty": "No GitHub owners were visible to the configured token",
+        "require": "Select at least one GitHub owner.",
+        # Nothing pre-checked when config names no owners: discovery here is
+        # UNBOUNDED (personal login + every org, each fanning out to a whole repo
+        # estate), so an all-checked default would scan everything visible after
+        # three Enters. The user says which owners are theirs.
+        "select_all_default": False,
+    },
+    "azdo": {
+        "heading": "Azure projects",
+        "unit": "projects",
+        "spinner": "Discovering accessible Azure projects…",
+        "thread": "analysis-azdo-projects",
+        "hint": "",
+        "empty": "No Azure projects were accessible with the configured PAT",
+        "require": "Select at least one Azure project.",
+        # Azure is only ever offered when a project is already configured, so the
+        # config default always matches; all-checked is its pre-existing fallback.
+        "select_all_default": True,
+    },
+}
+
+
+def _code_scope_discovery(provider: str):
+    """(discover, configured_default) callables for one code host.
+
+    Imported lazily and separately from the driver so tests can monkeypatch the
+    underlying tool functions, and so a missing provider SDK never costs the
+    other host its picker."""
+    if provider == "github":
+        from yeaboi.config import get_team_analysis_github_owners
+        from yeaboi.tools.github import github_list_owners
+
+        return github_list_owners, get_team_analysis_github_owners
+    if provider == "azdo":
+        from yeaboi.config import get_team_analysis_azdo_projects
+        from yeaboi.tools.azure_devops import azdevops_list_projects
+
+        return azdevops_list_projects, get_team_analysis_azdo_projects
+    # Fail loudly: silently falling through to Azure would discover the wrong
+    # host's scope under a third host's heading.
+    raise ValueError(f"unknown code-scope provider: {provider}")
+
+
+def _run_code_scope_select(
     live,
     console: Console,
     read_key,
     frame_time: float,
     supports_timeout: bool,
-    initial_projects: list[str] | None = None,
+    *,
+    provider: str,
+    initial: list[str] | None = None,
 ) -> list[str] | str:
-    """Discover accessible Azure projects and choose the code scope for this run.
+    """Discover a code host's scope (GitHub owners, Azure projects) and pick it.
 
-    ``initial_projects`` restores a previous selection on wizard re-entry (discovery
-    itself re-runs; only the checked state carries over)."""
+    ``initial`` restores a previous selection on wizard re-entry (discovery itself
+    re-runs; only the checked state carries over). Discovery failure is a warning
+    on the screen, not an exit — the configured default still lets the run go
+    ahead."""
     import threading
 
-    from yeaboi.config import get_team_analysis_azdo_projects
-    from yeaboi.tools.azure_devops import azdevops_list_projects
+    cfg = _CODE_SCOPE_PROVIDERS[provider]
+    discover, configured_default = _code_scope_discovery(provider)
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _build_analysis_progress_screen,
-        _build_code_project_select_screen,
+        _build_code_scope_select_screen,
     )
 
     result: list = [None]
@@ -6857,54 +7246,67 @@ def _run_code_project_select(
 
     def _discover() -> None:
         try:
-            result[0] = azdevops_list_projects()
+            result[0] = discover()
         except Exception as exc:
+            # The screen shows this, but a run that quietly fell back to config
+            # would otherwise leave no trace of WHY its scope was narrow.
+            logger.warning("Analysis %s scope discovery failed: %s", provider, exc)
             error[0] = str(exc)
-            result[0] = list(get_team_analysis_azdo_projects())
+            result[0] = list(configured_default())
         finally:
             done.set()
 
+    logger.info("Analysis %s scope: discovering", provider)
     started = time.monotonic()
-    threading.Thread(target=_discover, name="analysis-azdo-projects", daemon=True).start()
+    duck_working_thread(_discover, name=cfg["thread"]).start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
         w, h = console.size
         live.update(
             _build_analysis_progress_screen(
-                ["Discovering accessible Azure projects…"],
+                [cfg["spinner"]],
                 width=w,
                 height=h,
                 elapsed=time.monotonic() - started,
                 anim_tick=tick,
-                source="azdo",
+                source=provider,
                 mode="analysis",
             )
         )
         time.sleep(frame_time)
 
-    projects = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
-    if not projects:
-        return "cancel"
-    if initial_projects is not None:
-        wanted = {name.lower() for name in initial_projects}
-        checked = {idx for idx, name in enumerate(projects) if name.lower() in wanted}
+    items = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
+    if initial is not None:
+        wanted = {name.lower() for name in initial}
+        checked = {idx for idx, name in enumerate(items) if name.lower() in wanted}
     else:
         checked = set()
     if not checked:
-        defaults = {name.lower() for name in get_team_analysis_azdo_projects()}
-        checked = {idx for idx, name in enumerate(projects) if name.lower() in defaults}
-    if not checked:
-        checked = set(range(len(projects)))
+        defaults = {name.lower() for name in configured_default()}
+        checked = {idx for idx, name in enumerate(items) if name.lower() in defaults}
+    if not checked and cfg["select_all_default"]:
+        checked = set(range(len(items)))
     cursor = 0
-    message = f"Discovery warning: {error[0]}" if error[0] else ""
+    # An empty estate is a real outcome, not a crash: stay on the screen and say
+    # why, so Esc back to the sources step is an informed choice.
+    if error[0]:
+        message = f"Discovery warning: {error[0]}"
+    elif not items:
+        message = cfg["empty"] + " — press Esc to go back."
+    else:
+        message = ""
     while True:
         w, h = console.size
         live.update(
-            _build_code_project_select_screen(
-                projects,
+            _build_code_scope_select_screen(
+                items,
                 checked,
                 cursor,
+                heading=cfg["heading"],
+                unit=cfg["unit"],
+                empty_label=cfg["empty"],
+                hint=cfg["hint"],
                 width=w,
                 height=h,
                 message=message,
@@ -6912,18 +7314,27 @@ def _run_code_project_select(
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
-            cursor = _move_analysis_list_cursor(cursor, key, len(projects))
-        elif key == " ":
+            cursor = _move_analysis_list_cursor(cursor, key, len(items))
+        elif key == " " and items:
             checked.symmetric_difference_update({cursor})
             message = ""
-        elif key in ("a", "A"):
-            checked = set() if len(checked) == len(projects) else set(range(len(projects)))
+        elif key in ("a", "A") and items:
+            checked = set() if len(checked) == len(items) else set(range(len(items)))
             message = ""
         elif key == "enter":
             if not checked:
-                message = "Select at least one Azure project."
+                # "Select at least one…" is impossible advice with nothing to
+                # select, so an empty estate names the way out instead.
+                message = cfg["require"] if items else cfg["empty"] + " — press Esc to go back."
                 continue
-            return [projects[idx] for idx in sorted(checked)]
+            selected = [items[idx] for idx in sorted(checked)]
+            logger.info(
+                "Analysis %s scope: %d discovered, %d selected",
+                provider,
+                len(items),
+                len(selected),
+            )
+            return selected
         elif key in ("esc", "q"):
             return "cancel"
 
@@ -7028,7 +7439,7 @@ def _prefetch_roster(live, console: Console, sources: list, project_key: str, db
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7107,7 +7518,7 @@ def _prefetch_roster_result(live, console: Console, sources: list, project_key: 
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7177,7 +7588,20 @@ def _run_analysis_roster_lookup(
 # loops (and exited the app). Esc/"cancel" moves the index backward; steps whose
 # predicate no longer holds are transparent in BOTH directions, so backing over
 # e.g. the model offer after switching to Quick depth skips it cleanly.
-_WIZARD_STEPS = ("features", "sources", "code_projects", "depth", "model", "window", "members", "review")
+# One entry per SCREEN — the walker below expresses "back" only as index -= 1, so
+# a step that ran two pickers could not offer Esc between them. Hence one scope
+# step per code host, ordered github-then-azdo to match the Code row's order.
+_WIZARD_STEPS = (
+    "features",
+    "sources",
+    "github_owners",
+    "azdo_projects",
+    "depth",
+    "model",
+    "window",
+    "members",
+    "review",
+)
 
 
 def _run_analysis_setup_wizard(
@@ -7206,6 +7630,7 @@ def _run_analysis_setup_wizard(
     state: dict = {
         "features": None,
         "components": None,
+        "github_owners": None,
         "azdo_projects": None,
         "depth": "deep",
         "model": None,
@@ -7245,8 +7670,9 @@ def _run_analysis_setup_wizard(
         comps = state["components"] or {}
         if step in ("features", "sources", "review"):
             return True
-        if step == "code_projects":
-            return bool(fs & {"ai_footprint", "code_health"}) and "azdo" in (comps.get("code") or [])
+        if step in ("github_owners", "azdo_projects"):
+            host = "github" if step == "github_owners" else "azdo"
+            return bool(fs & {"ai_footprint", "code_health"}) and host in (comps.get("code") or [])
         if step == "depth":
             return _depth_applicable()
         if step == "model":
@@ -7261,12 +7687,17 @@ def _run_analysis_setup_wizard(
         comps = state["components"] or {}
         members = state["members"] if _applicable("members") else None
         trackers = comps.get("delivery") or roster_fallback
+        # Each host's scope is gated on its OWN applicability, so de-selecting a
+        # code host at the sources step coerces its stale picks out of the payload
+        # (the same discipline that keeps a stale Deep depth out of a docs-only run).
+        scope: dict[str, list[str]] = {}
+        for _step, _host in (("github_owners", "github"), ("azdo_projects", "azdo")):
+            if _applicable(_step) and state[_step]:
+                scope[_host] = state[_step]
         return {
             "features": state["features"],
             "components": comps,
-            "analysis_scope": (
-                {"azdo": state["azdo_projects"]} if _applicable("code_projects") and state["azdo_projects"] else {}
-            ),
+            "analysis_scope": scope,
             "depth": _effective_depth(),
             "model": state["model"] if _applicable("model") else None,
             "window_days": state["window_days"] if _applicable("window") else 120,
@@ -7346,18 +7777,19 @@ def _run_analysis_setup_wizard(
                 return "back"
             state["components"] = chosen
             return "next"
-        if step == "code_projects":
-            chosen = _run_code_project_select(
+        if step in ("github_owners", "azdo_projects"):
+            chosen = _run_code_scope_select(
                 live,
                 console,
                 read_key,
                 frame_time,
                 supports_timeout,
-                initial_projects=state["azdo_projects"],
+                provider="github" if step == "github_owners" else "azdo",
+                initial=state[step],
             )
             if chosen == "cancel":
                 return "back"
-            state["azdo_projects"] = chosen
+            state[step] = chosen
             return "next"
         if step == "depth":
             chosen = _run_analysis_depth_select(
@@ -7687,7 +8119,7 @@ def _run_team_analysis_results(
                     finally:
                         retry_done.set()
 
-                threading.Thread(target=_retry, daemon=True).start()
+                duck_working_thread(_retry, name="analysis-retry").start()
                 retry_started = time.monotonic()
                 while not retry_done.is_set():
                     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -7971,7 +8403,7 @@ def _ensure_insights(
             done.set()
 
     t0 = time.monotonic()
-    threading.Thread(target=_work, daemon=True).start()
+    duck_working_thread(_work, name="performance-insights").start()
     anim = 0.0
     while not done.is_set():
         anim += frame_time
@@ -8114,8 +8546,15 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
-                prep = run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp)
+                state["message"] = f"Generating 1:1 prep for {engineer}…"
+                prep = _run_on_worker(
+                    lambda: run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
+                )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_prep_lines(prep), f"1:1 Prep — {engineer}", "Prep generated.")
             elif label == "1:1 Complete":
                 transcript_result = _performance_get_transcript(console, live, read_key, frame_time, supports_timeout)
@@ -8126,17 +8565,31 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 transcript, transcript_images = transcript_result
                 from yeaboi.performance.engine import complete_one_on_one
 
-                record = complete_one_on_one(
-                    engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                state["message"] = f"Completing the 1:1 for {engineer}…"
+                record = _run_on_worker(
+                    lambda: complete_one_on_one(
+                        engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                    ),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
+                _duck_react("artifact_done")
                 _show_detail(format_completion_lines(record), f"1:1 Summary — {engineer}", f"Completed — {sent}.")
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
-                review = run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp)
+                state["message"] = f"Generating the 6-month review for {engineer}…"
+                review = _run_on_worker(
+                    lambda: run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
+                )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_review_lines(review), f"6-Month Review — {engineer}", "Review generated.")
             elif label == "Notes":
                 note = _standup_read_line(
@@ -8678,7 +9131,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             except BaseException as e:  # noqa: BLE001 — re-surfaced on the UI thread below
                 result_box[1] = e
 
-        thread = threading.Thread(target=_worker, name="reporting-generate", daemon=True)
+        thread = duck_working_thread(_worker, name="reporting-generate")
         thread.start()
         start = time.monotonic()
         cancelling = False
@@ -8714,6 +9167,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         if err is None and result_box[0] is not None:
             report = result_box[0]
             logger.info("reporting: report generated — %d item(s)", len(report.delivered_items))
+            _duck_react("report_done")
             _show_report(report, _delivered_msg(report))
         elif isinstance(err, ReportCancelledError):
             logger.info("reporting: generate cancelled")
@@ -9589,7 +10043,6 @@ def _run_roadmap_page(
         the standup-generate and retro-tunnel workers). The worker only writes
         into result_box/progress; all state/render updates stay on this thread.
         """
-        import threading
 
         progress: list[str] = ["Starting…"]
         result_box: list = [None]
@@ -9602,19 +10055,34 @@ def _run_roadmap_page(
             except Exception as e:  # never let an action crash the TUI
                 result_box[0] = e
 
-        thread = threading.Thread(target=_worker, name="roadmap-analyze", daemon=True)
+        thread = duck_working_thread(_worker, name="roadmap-analyze")
         thread.start()
-        _spinners = "◐◓◑◒"
         started = time.monotonic()
-        state["busy"] = True  # spinner-only screen — hide the source options underneath
+        state["busy"] = True  # loading screen replaces the source options underneath
+        # The consistent loading screen (spinner + activity rows + elapsed) the
+        # other modes use, in the roadmap accent — not a hand-rolled status line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import PLANNING_THEME, planning_title
+
         while thread.is_alive():
             elapsed = time.monotonic() - started
-            spin = _spinners[int(elapsed * 8) % len(_spinners)]
-            state["message"] = f"{spin} {progress[-1]}  ({int(elapsed)}s — usually ~30s)"
-            _render()
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=PLANNING_THEME,  # roadmap is a Planning sub-page (same accent)
+                    title=planning_title(elapsed),
+                    label="Analyzing roadmap",
+                )
+            )
             time.sleep(1 / 30)
         thread.join()
         state["busy"] = False
+        state["message"] = ""
 
         outcome = result_box[0]
         if isinstance(outcome, Exception) or outcome is None:
@@ -9639,6 +10107,8 @@ def _run_roadmap_page(
         plural = "s" if n != 1 else ""
         state["message"] = f"{n} project{plural} recommended." if n else ""
         logger.info("roadmap analyze: %d project(s)", n)
+        if n:
+            _duck_react("roadmap_done", state["message"])
 
     def _enter_locator() -> None:
         """Ask for the selected source's locator, then analyze."""
@@ -10073,7 +10543,6 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
     # a worker thread; the frame-timed loop shows its progress and fills in the
     # participant link the moment it lands.
-    import threading as _threading
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -10091,9 +10560,11 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
                 tunnel = CloudflareTunnel(server.port, binary=binary)
-                # Published BEFORE start(), which blocks for up to 45 s on the
-                # handshake and the DNS-propagation gate. The page's finally
-                # stops whatever is in this slot; assigning after start() (as
+                # Published BEFORE start(), which blocks for up to the 45 s
+                # handshake budget (URL + edge registration + a possible
+                # --region retry) plus the ~30 s DNS-propagation gate. The
+                # page's finally stops whatever is in this slot — stop() also
+                # cancels an in-flight start(); assigning after start() (as
                 # this did) meant closing a board during setup — now a routine
                 # path, since setup is no longer a deliberate button press —
                 # orphaned a cloudflared child still forwarding to that port.
@@ -10115,6 +10586,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 # own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:  # never let the worker crash anything
                 logger.error("retro: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -10137,7 +10609,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _threading.Thread(target=_worker, name="retro-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="retro-tunnel-setup").start()
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
@@ -10259,8 +10731,20 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     try:
                         from yeaboi.retro.engine import generate_action_items
 
-                        message = generate_action_items(board)
+                        # On a worker: the LLM call used to freeze the board
+                        # (and the duck) solid — now the frame loop keeps going.
+                        message = "Drafting action items…"
+                        message = _run_on_worker(
+                            lambda: generate_action_items(board),
+                            lambda _e: _render(_data(), scroll, sel),
+                            frame_time,
+                            drain=read_key if supports_timeout else None,
+                        )
                         logger.info("retro: generate action items result: %s", message)
+                        # "never raises" means an empty board comes back as a
+                        # message — no cards, no drafts, no celebratory quack.
+                        if not message.startswith("Add some cards first"):
+                            _duck_react("actions_done")
                     except Exception as e:  # defensive — never let it crash the TUI
                         logger.error("retro: generate action items failed: %s", e, exc_info=True)
                         message = f"Generate failed: {e}"
@@ -10444,16 +10928,29 @@ def _play_duck_shades(console, live, selected, *, tip_offset, start_time, select
         time.sleep(_FRAME_TIME * 3)  # ~20fps — a readable lift/drop over ~0.5s
 
 
-def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> None:
+# How long the success screen counts down before relaunching. Long enough to read
+# "updated to vX" and hit esc, short enough that the restart still feels automatic.
+_UPDATE_RESTART_SECONDS = 3.0
+
+# Upper bound on the keystrokes drained after the upgrade finishes. Bounded so a
+# held-down key (auto-repeat keeps refilling the buffer) can't spin here forever;
+# 64 is far more than an impatient user types during a 30s upgrade.
+_UPDATE_DRAIN_LIMIT = 64
+
+
+def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> bool:
     """Run the in-app upgrade (the ctrl+U shortcut): show a spinner while the
-    detected ``uv/pipx upgrade`` command runs on a worker thread, then a success or
-    failure result the user dismisses with any key.
+    detected ``uv/pipx upgrade`` command runs on a worker thread, then the result.
 
     Only invoked when an update is available (the caller gates on it). The upgrade
-    runs in a subprocess; the freshly-installed code takes effect on the next
-    launch, so the success screen tells the user to restart.
+    runs in a subprocess, so the freshly-installed code only takes effect in a NEW
+    process: on success this counts down :data:`_UPDATE_RESTART_SECONDS` and then
+    returns True, meaning "unwind the TUI so cli.main can relaunch us". Esc (or q)
+    during the countdown declines, and a failure — or an install we can't work out
+    how to relaunch — falls back to the old dismiss-with-any-key result.
+
+    Returns True when the caller should unwind for a restart, False to stay put.
     """
-    import threading
 
     from yeaboi import update_check
     from yeaboi.ui.shared._screensaver import suppress_screensaver
@@ -10469,7 +10966,7 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
         result["ok"], result["detail"] = update_check.run_upgrade()
 
     spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = duck_working_thread(_worker, name="app-update")
     # Exclude the (potentially slow) network upgrade from idle tracking so the
     # screensaver doesn't take over mid-update.
     with suppress_screensaver():
@@ -10485,12 +10982,52 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
     ok = bool(result.get("ok"))
     detail = result.get("detail", "") or ""
     logger.info("update: upgrade %s", "succeeded" if ok else "failed")
+    # The spinner loop above never reads keys, so anything typed during the (often
+    # 5-30s) upgrade is still queued on the tty. Left there, the first read below
+    # would return a stale keystroke and fire the restart instantly — the user would
+    # never see which version landed, nor get the esc window this screen is for.
+    if supports_timeout:
+        for _ in range(_UPDATE_DRAIN_LIMIT):
+            if not read_key(timeout=0):
+                break
+    # Only offer the restart when we can actually perform one — an install whose
+    # console script we can't resolve gets the honest "restart it yourself" screen.
+    can_restart = ok and update_check.resolve_relaunch_command() is not None
+    deadline = time.monotonic() + _UPDATE_RESTART_SECONDS
     while True:
         w, h = console.size
-        live.update(_build_update_screen(w, h, latest=latest, command=command, done=True, ok=ok, detail=detail))
+        # Clamp to 1: the loop exits the moment the deadline passes, so a rendered
+        # "restarting in 0…" would only ever be a stray final frame.
+        remaining = max(1, math.ceil(deadline - time.monotonic())) if can_restart else None
+        live.update(
+            _build_update_screen(
+                w,
+                h,
+                latest=latest,
+                command=command,
+                done=True,
+                ok=ok,
+                detail=detail,
+                restart_in=remaining,
+                can_restart=can_restart,
+            )
+        )
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if k:
-            return
+        if not can_restart:
+            if k:
+                return False
+            continue
+        if k in ("esc", "q"):
+            logger.info("update: restart declined, staying on the running version")
+            return False
+        # Mouse traffic isn't an answer to this screen — a stray wheel nudge must
+        # not cut the window the user has to read the version and hit esc.
+        if k in ("scroll_up", "scroll_down") or (isinstance(k, str) and k.startswith("click:")):
+            k = ""
+        # Any other key restarts immediately — no need to sit through the countdown.
+        if k or time.monotonic() >= deadline:
+            update_check.request_restart(latest)
+            return True
 
 
 def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
@@ -10707,7 +11244,6 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         logger.info("poker setup: include_types=%s", ",".join(include_types))
 
     # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
-    import threading as _thr
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
     from yeaboi.ui.shared._components import POKER_THEME, poker_title
@@ -10718,7 +11254,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     def _fetch() -> None:
         result["tickets"] = poker_tickets.fetch_tickets(source, sprint=sprint, include_types=include_types)
 
-    worker = _thr.Thread(target=_fetch, name="poker-fetch", daemon=True)
+    worker = duck_working_thread(_fetch, name="poker-fetch")
     started = time.monotonic()
     worker.start()
     while worker.is_alive():
@@ -10846,7 +11382,6 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     # Tunnel state — see the retro loop for the full note. The short version: the
     # server binds loopback, so this tunnel is the only way a teammate reaches the
     # board, and it therefore starts by itself rather than on a button.
-    import threading as _thr
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -10881,6 +11416,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 # loopback address the host's own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:
                 logger.error("poker: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -10903,7 +11439,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
     # Start it now — the board is open and the join code is already valid.
     _start_remote()
@@ -11039,6 +11575,8 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             report = board_to_report(board)
             with PokerStore(_ana_dbp) as store:
                 store.record_run(report)
+            if any(t.estimated for t in report.tickets):
+                _duck_react("poker_done")  # lands on the hub the page returns to
         except Exception as e:
             logger.warning("poker: flush to store failed: %s", e)
         if remote.get("tunnel") is not None:
@@ -11154,7 +11692,15 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
 
 def _sweep_menu_in(
-    console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None, companion_from: float | None = None
+    console: Console,
+    live,
+    selected: int,
+    n: int,
+    *,
+    sweep_skip: int | None = None,
+    companion_from: float | None = None,
+    cards: list[dict] | None = None,
+    mascot: str = "duck",
 ) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
@@ -11163,10 +11709,11 @@ def _sweep_menu_in(
     leaves that one title fully shown throughout (used after the return slide, when
     the mode you came from is already home and only the rest scroll in). A no-op
     wipe (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
-        _widths = mode_title_widths()
+        _widths = mode_title_widths(cards)
         # Front value at which the last-revealed cell of each title is covered;
         # the sweep runs until the largest of these.
         _front_max = 0.0
@@ -11196,6 +11743,8 @@ def _sweep_menu_in(
                     sweep_front=_front,
                     sweep_skip=sweep_skip,
                     companion_intro=_ci,
+                    cards=cards,
+                    mascot=mascot,
                 )
             )
             if _front >= _front_max:
@@ -11206,11 +11755,22 @@ def _sweep_menu_in(
     w, h = console.size
     _ci_final = 1.0 if companion_from is not None else 0.0
     live.update(
-        _build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=_ci_final)
+        _build_mode_screen(
+            selected,
+            width=w,
+            height=h,
+            shimmer_tick=0.0,
+            desc_reveal=0,
+            companion_intro=_ci_final,
+            cards=cards,
+            mascot=mascot,
+        )
     )
 
 
-def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
+def _slide_menu_in(
+    console: Console, live, selected: int, n: int, *, cards: list[dict] | None = None, mascot: str = "duck"
+) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
     rest scroll in around it exactly like the fresh-load intro.
 
@@ -11219,14 +11779,16 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
     so every OTHER title reveals top-left → bottom-right while the one you picked
     stays put. A no-op (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
+    _card_list = _MODE_CARDS if cards is None else cards
     w, h = console.size
     if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
-        chosen = _MODE_CARDS[selected]
+        chosen = _card_list[selected]
         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
         base_style = f"bold rgb({base_r},{base_g},{base_b})"
         start_offset = 1  # the top row the select→page lift left the title on
-        target_offset = selected_title_offset(selected, width=w, height=h)
+        target_offset = selected_title_offset(selected, width=w, height=h, cards=cards)
         # Phase 1: the selected title slides home, on its own.
         slide_frames = 14
         for frame in range(slide_frames + 1):
@@ -11239,7 +11801,83 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
     # the selected title (already home) is held fully shown. The companion slides
     # back in during the wipe (from its sub-page corner) so it never clears.
-    _sweep_menu_in(console, live, selected, n, sweep_skip=selected, companion_from=_COMPANION_RETURN_START)
+    _sweep_menu_in(
+        console,
+        live,
+        selected,
+        n,
+        sweep_skip=selected,
+        companion_from=_COMPANION_RETURN_START,
+        cards=cards,
+        mascot=mascot,
+    )
+
+
+def _run_category_screen(
+    console: Console,
+    live,
+    read_key,
+    supports_timeout: bool,
+    *,
+    preselected: str = "humans",
+) -> str | None:
+    """Phase 0 — the Humans/Agents landing split. Returns a category key or
+    None to quit.
+
+    Always shown on a fresh load (the last-used category is *preselected*,
+    never auto-skipped — auto-skip would make the other family invisible).
+    Esc and q both quit here: there is nothing further back to go to.
+    """
+    from yeaboi.ui.mode_select.screens._screens_category import (
+        _CATEGORY_CARDS,
+        _build_category_screen,
+        category_at_pos,
+    )
+
+    selected = next((i for i, c in enumerate(_CATEGORY_CARDS) if c["key"] == preselected), 0)
+    start = time.monotonic()
+    logger.info("category screen shown (preselected: %s)", preselected)
+    while True:
+        w, h = console.size
+        if w < _MIN_WIDTH or h < _MIN_HEIGHT:
+            live.update(_build_too_small_screen(w, h))
+            k = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+            if k in ("q", "esc"):
+                return None
+            continue
+        elapsed = time.monotonic() - start
+        live.update(
+            _build_category_screen(
+                selected,
+                width=w,
+                height=h,
+                shimmer_tick=elapsed,
+                intro=min(1.0, elapsed / 0.4),
+            )
+        )
+        key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+        if key in ("left", "right", "up", "down", "tab"):
+            selected = 1 - selected
+        elif key == "enter":
+            chosen = _CATEGORY_CARDS[selected]["key"]
+            logger.info("category chosen: %s", chosen)
+            return chosen
+        elif key in ("q", "esc"):
+            logger.info("quit from category screen")
+            return None
+        elif isinstance(key, str) and key.startswith("click:"):
+            try:
+                cx, cy = (int(p) for p in key.split(":")[1:3])
+            except ValueError:
+                continue
+            hit = category_at_pos(w, h, row=cy, col=cx)
+            if hit is None:
+                continue
+            if hit == selected:
+                chosen = _CATEGORY_CARDS[selected]["key"]
+                logger.info("category click-chosen: %s", chosen)
+                return chosen
+            selected = hit
 
 
 def select_mode(
@@ -11258,6 +11896,17 @@ def select_mode(
     read_key = _read_key_fn or _read_key
     selected = 0
     n = len(_MODE_CARDS)
+
+    # The landing split (Phase 0). `category` picks which card list Phase 1
+    # shows; the last choice is persisted and *preselected* on the next launch
+    # (never auto-skipped). Esc from a menu returns here; q quits.
+    from yeaboi.config import get_last_category, set_last_category
+
+    category = get_last_category()
+    cards: list[dict] = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+    mascot = "duck" if category == "humans" else "robo"
+    _category_pending = True  # show the split on the first pass through the loop
+    _back_to_category = False
 
     # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
     # consent mode: denials still raise, but ALSO queue a ConsentRequest that
@@ -11330,17 +11979,38 @@ def select_mode(
             # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
             _returning = _skip_fade_in
             _skip_fade_in = False
+
+            # ── Phase 0: the Humans/Agents landing split ─────────────────────
+            # Shown on a fresh load and whenever Esc backs out of a menu; a
+            # return from a sub-page keeps its category and skips straight to
+            # the menu transition below.
+            if _category_pending:
+                _category_pending = False
+                _pick = _run_category_screen(console, live, read_key, _supports_timeout, preselected=category)
+                if _pick is None:
+                    return None
+                if _pick != category:
+                    set_last_category(_pick)
+                category = _pick
+                cards = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+                mascot = "duck" if category == "humans" else "robo"
+                n = len(cards)
+                selected = 0
+                # A category pick always sweeps its menu in fresh.
+                _returning = False
+                _reverse_animated = False
+
             if _reverse_animated:
                 # The reverse transition already revealed every item — don't re-run.
                 _reverse_animated = False
             elif _returning:
                 # Cold return from a sub-page: the mode you came from slides home,
                 # then the rest load in around it (the inverse of the select lift).
-                _slide_menu_in(console, live, selected, n)
+                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             else:
                 # Fresh load: one diagonal wipe reveals every title top-left →
                 # bottom-right (the inverse of the splash crumble).
-                _sweep_menu_in(console, live, selected, n)
+                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right,
             # starting once the wipe has landed. On a RETURN the duck already slid
@@ -11381,6 +12051,8 @@ def select_mode(
                                 desc_reveal=999,
                                 tip_offset=tip_offset,
                                 compose=_compose,
+                                cards=cards,
+                                mascot=mascot,
                             )
                             if update:
                                 live.update(_panel)
@@ -11413,11 +12085,18 @@ def select_mode(
                     else:
                         continue  # net-zero burst — nothing moved, skip the repaint
                 elif key == "enter":
-                    mode = _MODE_CARDS[selected]
+                    mode = cards[selected]
                     if mode["available"]:
                         break
                     continue
-                elif key in ("q", "esc"):
+                elif key == "esc":
+                    # Esc backs out to the landing split (the screen this menu
+                    # came from). Quitting stays on q, mirroring every sub-page's
+                    # esc-goes-back convention.
+                    logger.info("esc from %s menu — back to category screen", category)
+                    _back_to_category = True
+                    break
+                elif key == "q":
                     # Courtesy on quit: offer to stop a running local Ollama
                     # server (gated on provider/localhost/reachable — cloud
                     # exits stay instant). Never let this block quitting.
@@ -11445,14 +12124,27 @@ def select_mode(
                     tip_offset += 1 if key == "]" else -1
                 elif key == "g":
                     # Jump into the feature the current tip describes (if it maps
-                    # to a selectable home card). Reuses the enter/activate path.
+                    # to a selectable card). Reuses the enter/activate path. Tips
+                    # rotate on both menus, so a tip may point at the OTHER
+                    # category's card — then the jump switches category too.
                     from yeaboi.ui.shared._tips import resolve_index, tip_at
 
                     _tip = tip_at(resolve_index(time.monotonic() - start_time, tip_offset))
                     if _tip.mode_key is not None:
-                        _j = next((i for i, m in enumerate(_MODE_CARDS) if m["key"] == _tip.mode_key), None)
-                        if _j is not None and _MODE_CARDS[_j]["available"]:
+                        _j = next((i for i, m in enumerate(cards) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and cards[_j]["available"]:
                             logger.info("tip jump to mode: %s", _tip.mode_key)
+                            selected = _j
+                            break
+                        _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
+                        _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and _other[_j]["available"]:
+                            category = "agents" if _other is _AGENT_CARDS else "humans"
+                            logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
+                            set_last_category(category)
+                            cards = _other
+                            mascot = "duck" if category == "humans" else "robo"
+                            n = len(cards)
                             selected = _j
                             break
                 elif key == "c":
@@ -11464,7 +12156,7 @@ def select_mode(
                     # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
@@ -11477,7 +12169,7 @@ def select_mode(
                     if not welcome_shows_companion(_fw, _fh):
                         logger.info("feedback: terminal too small for the bubble, opening the form")
                         _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _slide_menu_in(console, live, selected, n)
+                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                         select_time = time.monotonic()
                         continue
                     logger.info("feedback bubble opened from mode select")
@@ -11503,7 +12195,7 @@ def select_mode(
                     # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
@@ -11511,7 +12203,7 @@ def select_mode(
                     # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -11520,7 +12212,14 @@ def select_mode(
                     from yeaboi.update_check import get_update_status
 
                     if get_update_status()["update_available"]:
-                        _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout):
+                            # Unwind the whole TUI: cli.main relaunches us onto the
+                            # new version once its finally has restored the terminal
+                            # (os.execv skips atexit, so it can't be done from here).
+                            # Deliberately not the q/esc quit path — this isn't a
+                            # quit, so a local Ollama server should stay up for the
+                            # process that's about to take over.
+                            return None
                         select_time = time.monotonic()
                 elif isinstance(key, str) and key.startswith("click:"):
                     # Click-to-select: a click on a mode's block highlights it
@@ -11532,8 +12231,9 @@ def select_mode(
                     except ValueError:
                         _cx = _cy = -1
                     _w, _h = console.size
-                    if duck_hit(_w, _h, row=_cy, col=_cx):
-                        # Click the duck → his shades lift to reveal a second pair.
+                    if mascot == "duck" and duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the duck → his shades lift to reveal a second
+                        # pair. Duck-only: the robo companion wears a visor.
                         logger.info("duck clicked — double-shades gag")
                         _play_duck_shades(
                             console,
@@ -11544,14 +12244,14 @@ def select_mode(
                             select_time=select_time,
                         )
                         continue
-                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx)
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards)
                     if _hit is not None:
                         if _hit == selected:
-                            if _MODE_CARDS[selected]["available"]:
-                                logger.info("mode click-activate: %s", _MODE_CARDS[selected]["key"])
+                            if cards[selected]["available"]:
+                                logger.info("mode click-activate: %s", cards[selected]["key"])
                                 break
                         else:
-                            logger.info("mode click-select: %s", _MODE_CARDS[_hit]["key"])
+                            logger.info("mode click-select: %s", cards[_hit]["key"])
                             selected = _hit
                             select_time = time.monotonic()
 
@@ -11571,11 +12271,21 @@ def select_mode(
                         tip_offset=tip_offset,
                         companion_intro=companion_intro,
                         compose=_compose,
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
 
+            # Esc backed out of the menu — return to the landing split rather
+            # than running the select transition below.
+            if _back_to_category:
+                _back_to_category = False
+                _category_pending = True
+                _restart_mode_select = True
+                continue
+
             # ── Phase 2: Transition ───────────────────────────────────────────
-            chosen = _MODE_CARDS[selected]
+            chosen = cards[selected]
             all_indices = list(range(n))
             others = [i for i in all_indices if i != selected]
             base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
@@ -11598,6 +12308,8 @@ def select_mode(
                         visible=all_indices,
                         fade_style=pulse_style,
                         fade_indices=[selected],
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -11618,6 +12330,8 @@ def select_mode(
                         fade_indices=others,
                         selected_style=base_style,
                         extras_reveal=1.0 - (_i / _nfade),
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -11645,6 +12359,31 @@ def select_mode(
                     )
                 )
                 time.sleep(_FRAME_TIME)
+
+            # The duck walks into the corner of whichever page the card opens —
+            # the chat-greeting entrance, replayed per card entry. Any keypress
+            # skips it (read_key calls skip_duck_entrance app-wide).
+            from yeaboi.ui.shared._music_bar import start_duck_entrance
+
+            start_duck_entrance(replay=True)
+
+            # ── Route: the Agents family → one prefix dispatch, not three more
+            # chain branches. route_agent_mode wraps each mode in mode_log() and
+            # its beta gate; returning lands back on the Agents menu.
+            if chosen["key"].startswith("agent-"):
+                from yeaboi.ui.mode_select._agents import route_agent_mode
+
+                route_agent_mode(
+                    chosen["key"],
+                    console=console,
+                    live=live,
+                    read_key=read_key,
+                    frame_time=_FRAME_TIME,
+                    supports_timeout=_supports_timeout,
+                )
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
 
             # ── Route: Team Analysis mode → dedicated analysis flow ──────
             if chosen["key"] == "team-analysis":
@@ -12113,15 +12852,18 @@ def select_mode(
                         from yeaboi.analysis import run_team_analysis
                         from yeaboi.analysis.engine import (
                             AnalysisCancelledError,
-                            _available_code_sources,
                             _available_doc_sources,
                             _available_sources,
+                            _offerable_code_sources,
                         )
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
-                        # \u2190 confluence/notion). The wizard owns Esc-back navigation;
-                        # backing out of its first step returns to the analysis screen.
+                        # \u2190 confluence/notion). The Code row lists hosts the wizard can
+                        # SCOPE, not only ones already scoped in config \u2014 GitHub owners are
+                        # discovered in-wizard, so a bare token is enough to offer it. The
+                        # wizard owns Esc-back navigation; backing out of its first step
+                        # returns to the analysis screen.
                         _ta_setup = _run_analysis_setup_wizard(
                             live,
                             console,
@@ -12130,7 +12872,7 @@ def select_mode(
                             _supports_timeout,
                             grid={
                                 "delivery": _available_sources(),
-                                "code": _available_code_sources(),
+                                "code": _offerable_code_sources(),
                                 "docs": _available_doc_sources(),
                             },
                             roster_fallback=_available_sources(),
@@ -12197,10 +12939,7 @@ def select_mode(
                                 _ta_done.set()
 
                         _ta_thread_start = time.monotonic()
-                        _ta_thread = threading.Thread(
-                            target=_run_team_analysis_mode,
-                            daemon=True,
-                        )
+                        _ta_thread = duck_working_thread(_run_team_analysis_mode, name="team-analysis")
                         logger.info("Analysis: starting analysis (components=%s)", _ta_components)
                         _ta_thread.start()
 
@@ -12292,6 +13031,7 @@ def select_mode(
                         if _ta_result_box[0] and not _ta_error_box[0]:
                             # Persist + analysis log already handled inside
                             # run_team_analysis (one code path with CLI/MCP).
+                            _duck_react("analysis_done")
 
                             # Show results (overview + section cards). In 'both'
                             # mode the loop toggles between the two trackers and
@@ -12619,6 +13359,9 @@ def select_mode(
 
                         logger.info("Usage: Copy pressed")
                         _u_message = copy_markdown_status(build_usage_text(_usage_data))
+                        from yeaboi.ui.shared._duck_voice import duck_voice
+
+                        duck_voice().say(_u_message)  # the duck speaks the copy status
                     elif k in ("esc", "q"):
                         break
                     w, h = console.size
@@ -12651,6 +13394,7 @@ def select_mode(
                     settings_focus_move,
                     settings_tab_action,
                 )
+                from yeaboi.ui.shared._duck_voice import duck_voice as _settings_voice
 
                 _settings_data = _collect_settings_data()
                 _s_scroll, _s_tab = 0, 0
@@ -12701,7 +13445,23 @@ def select_mode(
                     included — its move-or-leave decision happens on save (see
                     _settings_save_data_dir), not on a screen of its own.
                     """
-                    nonlocal _s_edit
+                    nonlocal _s_edit, _settings_data
+                    if env == "VOICE_DEVICE":
+                        # A device list is a choice, not free text — you cannot type a
+                        # name you have not seen. Returns before set_text_entry(True),
+                        # so the picker keeps the app-wide bare-key bindings.
+                        _picked = _pick_voice_device(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _picked is None:
+                            return
+                        from yeaboi.config import apply_config_value
+
+                        apply_config_value(env, _picked)
+                        _settings_data = _collect_settings_data()
+                        _msg = f"Microphone set to {_picked}" if _picked else "Microphone: using the system default"
+                        _settings_data["_message"] = _msg
+                        _settings_voice().say(_msg)
+                        logger.info("Settings: VOICE_DEVICE set to %r", _picked)
+                        return
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.
                     _start = "" if masked else (_settings_data.get(env, "") or "")
@@ -12733,6 +13493,7 @@ def select_mode(
                         _ap_msg = _settings_save_allowed_paths(_val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _ap_msg
+                        _settings_voice().say(_ap_msg)  # the duck speaks the save status
                     elif _save and _env == "YEABOI_HOME":
                         # Relocating the tree needs a move-or-leave answer and a write
                         # to the pinned bootstrap .env, so it saves through its own
@@ -12740,6 +13501,7 @@ def select_mode(
                         _dd_msg = _settings_save_data_dir(console, live, read_key, _FRAME_TIME, _supports_timeout, _val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _dd_msg
+                        _settings_voice().say(_dd_msg)
                     elif _save:
                         from yeaboi.config import apply_config_value
 
@@ -12747,6 +13509,12 @@ def select_mode(
                         # page re-reads the environment, so a file-only write wouldn't
                         # show until a restart.
                         apply_config_value(_env, _val)
+                        if _env == "DUCK_ENABLED":
+                            # Apply the mute now — duck_muted() caches the flag,
+                            # so a file-only write wouldn't show until restart.
+                            from yeaboi.ui.shared._duck_voice import set_duck_muted
+
+                            set_duck_muted(_val.strip().lower() == "false")
                         if _env == "LOG_LEVEL" and _val:
                             from yeaboi.logging_setup import apply_level
 
@@ -12756,6 +13524,7 @@ def select_mode(
                                 logger.debug("apply_level failed for %r", _val, exc_info=True)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                        _settings_voice().say(_settings_data["_message"])
                         logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
 
                 _s_panel = _render_settings(0.0)
@@ -13689,8 +14458,8 @@ def select_mode(
 
                     from yeaboi.analysis.engine import (
                         AnalysisCancelledError,
-                        _available_code_sources,
                         _available_doc_sources,
+                        _offerable_code_sources,
                     )
 
                     # The wizard owns the whole setup sequence (Esc steps back one
@@ -13704,7 +14473,8 @@ def select_mode(
                         _supports_timeout,
                         grid={
                             "delivery": _delivery_grid,
-                            "code": _available_code_sources(),
+                            # Offerable, not merely configured — see the sibling call site.
+                            "code": _offerable_code_sources(),
                             "docs": _available_doc_sources(),
                         },
                         roster_fallback=_delivery_grid,
@@ -13774,7 +14544,7 @@ def select_mode(
                         _ta_project_key,
                     )
                     _ta_thread_start = time.monotonic()
-                    _ta_thread = threading.Thread(target=_run_team_analysis, daemon=True)
+                    _ta_thread = duck_working_thread(_run_team_analysis, name="team-analysis")
                     _ta_thread.start()
 
                     # Processing animation while waiting
@@ -13867,6 +14637,7 @@ def select_mode(
                         # Continue shows the coaching insights first (Back
                         # returns to the results overview); Continue on the
                         # insights and Esc both fall through to intake below.
+                        _duck_react("analysis_done")
                         _ta_examples = _ta_examples_box[0] or {}
                         _ta_sprint_names = _ta_sprint_names_box[0]
                         _ta_full = _ta_result_box[0] or {}
@@ -14236,7 +15007,7 @@ def select_mode(
                             import_value = ""
                             import_error = ""
                         elif key.startswith("paste:") if isinstance(key, str) else False:
-                            import_value += key[6:]
+                            import_value += paste_payload(key)
                             import_error = ""
                         elif key == "ctrl+v":
                             # A file-path field never reaches an LLM — reject image paste.

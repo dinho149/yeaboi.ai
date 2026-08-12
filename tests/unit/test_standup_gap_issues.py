@@ -335,10 +335,13 @@ class TestFileGap:
         def _boom():
             raise RuntimeError("network down")
 
+        opened = []
         monkeypatch.setattr(gap_issues, "_repo", _boom)
+        monkeypatch.setattr(gap_issues.webbrowser, "open", lambda url: opened.append(url) or True)
         link = gap_issues.file_gap(_gap(), _review())
         # Falls through to the browser path rather than blowing up.
         assert link.state == "browser"
+        assert opened and "issues/new" in opened[0]
 
     def test_no_token_opens_a_prefilled_browser_url(self, monkeypatch, no_token):
         opened = []
