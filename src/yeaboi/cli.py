@@ -364,7 +364,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="REPO_KEY",
         help="Existing repository to build this plan on, as a key like 'github:acme/auth' "
-        "(repeatable). Non-interactive runs never guess these — state them or get none.",
+        "(repeatable). Requires --non-interactive; an interactive run asks about prior art "
+        "in the intake instead, so the flag is ignored there.",
     )
 
     parser.add_argument(

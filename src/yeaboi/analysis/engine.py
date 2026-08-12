@@ -879,12 +879,16 @@ def _persist_delivery(delivery: dict, code: dict | None, docs: dict | None, db_p
             if code_sig is not None:
                 profile = replace(profile, ai_adoption=code_sig)
             if code is not None:
-                examples["ai_adoption"] = code["examples"]
-                # Lift the repo inventory to the top of the examples blob. It
-                # is produced by the code scan but consumed by planning, which
-                # should not have to know that — and a reader that guesses at
-                # a nested path is a reader that silently finds nothing.
-                inventory = code["examples"].get(repo_inventory.INVENTORY_KEY) or []
+                # Move (not copy) the repo inventory to the top of the examples
+                # blob. It is produced by the code scan but consumed by
+                # planning, which should not have to know that — and a reader
+                # that guesses at a nested path is a reader that silently finds
+                # nothing. Popping it first matters: up to 300 rows carrying
+                # descriptions would otherwise be serialised twice into the
+                # same examples_json.
+                ai_adoption = dict(code["examples"])
+                inventory = ai_adoption.pop(repo_inventory.INVENTORY_KEY, None) or []
+                examples["ai_adoption"] = ai_adoption
                 if inventory:
                     examples[repo_inventory.INVENTORY_KEY] = inventory
             if docs_sig is not None:

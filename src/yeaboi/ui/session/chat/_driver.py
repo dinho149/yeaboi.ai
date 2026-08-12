@@ -781,15 +781,19 @@ class _ChatDriver:
             and qs.awaiting_confirmation
             and not qs._awaiting_leave_input
             and not qs._awaiting_velocity_input
-            and getattr(qs, "_prior_art_stage", "") not in ("ask", "reason")
+            and not self._at_prior_art()
             and qs.editing_question is None
             and qs.current_question > TOTAL_QUESTIONS
         )
 
     def _at_prior_art(self) -> bool:
-        """True while the prior-art sub-loop owns the turn."""
+        """True while the prior-art sub-loop owns the turn.
+
+        The summary card's condition is defined as "not this", so the two can
+        never drift into both claiming the same turn.
+        """
         qs = self._qs()
-        return qs is not None and getattr(qs, "_prior_art_stage", "") in ("ask", "reason")
+        return qs is not None and getattr(qs, "_prior_art_stage", "") in ("ask", "reason", "empty")
 
     def _append_reply(self, *, streamed: str) -> None:
         """Append the assistant's reply bubble (or a review card + prompt)."""
@@ -812,6 +816,14 @@ class _ChatDriver:
         if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
             self.transcript.add_artifact("prior_art")
             self._say(_PRIOR_ART_VERDICT_PROMPT)
+            return
+
+        # Nothing found — the node's message is already the whole statement, so
+        # it goes out as prose. Explicit branch rather than falling through:
+        # the tail of this method decorates replies as intake questions, and
+        # this one is not a question.
+        if qs is not None and getattr(qs, "_prior_art_stage", "") == "empty":
+            self._say(reply)
             return
 
         if qs is not None and not qs.completed:
@@ -1767,7 +1779,7 @@ class _ChatDriver:
             if stage == "intake" and qs is not None and not qs.completed:
                 if qs.editing_question is not None:
                     answer = self._resolve_choice(answer, qs.editing_question)
-                elif getattr(qs, "_prior_art_stage", "") in ("ask", "reason"):
+                elif getattr(qs, "_prior_art_stage", "") in ("ask", "reason", "empty"):
                     # Prior art owns the turn before the confirmation gate does
                     # — both run with awaiting_confirmation set, and the confirm
                     # mapper would turn "1" into "accept".
@@ -1833,9 +1845,12 @@ class _ChatDriver:
         including text that starts with a digit, which is why this maps only
         exact labels and never parses the reply.
         """
-        from ._question_view import PRIOR_ART_NO, PRIOR_ART_SKIP, PRIOR_ART_YES
+        from ._question_view import PRIOR_ART_CONTINUE, PRIOR_ART_NO, PRIOR_ART_SKIP, PRIOR_ART_YES
 
-        mapping = {PRIOR_ART_YES: "1", PRIOR_ART_NO: "2", PRIOR_ART_SKIP: "3"}
+        # "Continue" is an acknowledgement of the empty card, not a verdict —
+        # the node takes any input there, so it only needs to not be mistaken
+        # for a confirmation-gate pick on the way through.
+        mapping = {PRIOR_ART_YES: "1", PRIOR_ART_NO: "2", PRIOR_ART_SKIP: "3", PRIOR_ART_CONTINUE: "ok"}
         mapped = mapping.get(submit)
         if mapped is not None:
             logger.info("Chat: prior-art pick -> %s", submit)

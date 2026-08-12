@@ -294,13 +294,19 @@ def register(app) -> None:
         )
 
     @app.tool()
-    async def plan_prior_art(description: str, answers: dict | None = None, profile_id: str = "") -> dict:
+    async def plan_prior_art(ctx: Context, description: str, answers: dict | None = None, profile_id: str = "") -> dict:
         """Shortlist the team's OWN existing repositories that could help a new greenfield
-        project, each with why it might be relevant. Read from the saved team-analysis profile,
-        so it needs no credentials. Show the user the list and ask which are actually relevant
-        before passing the approved keys to plan_generate's `prior_art`. When `empty_reason` is
-        set, relay `message` — it tells the user what to do about it."""
-        return await run_readonly(_plan_prior_art, description, answers, profile_id)
+        project, each with why it might be relevant. Candidates come from the saved
+        team-analysis profile; the shortlist is then enriched from GitHub (needs a token to go
+        beyond the stored row) and pitched by the LLM. Show the user the list and ask which are
+        actually relevant before passing the approved keys to plan_generate's `prior_art`. When
+        `empty_reason` is set, relay `message` — it tells the user what to do about it."""
+        # Not `run_readonly`: that path is for deterministic work — it reports
+        # `llm_mode: "n/a"`, skips the engine lock and never injects the
+        # sampling model. The pitch step calls the LLM, so a sampling-only host
+        # would silently fall back to deterministic bullets while the envelope
+        # still claimed no model was involved.
+        return await run_engine(ctx, _plan_prior_art, description, answers, profile_id)
 
     @app.tool()
     async def plan_prior_art_feedback(repo_key: str, verdict: str, reason: str = "", repo_name: str = "") -> dict:

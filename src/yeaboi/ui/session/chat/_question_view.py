@@ -61,6 +61,7 @@ CONFIRM_FREETEXT = "Tell me what's off…"
 PRIOR_ART_YES = "Yes, relevant"
 PRIOR_ART_NO = "Not relevant…"
 PRIOR_ART_SKIP = "Skip the rest"
+PRIOR_ART_CONTINUE = "Continue"
 
 
 def planned_question_sets(qs: QuestionnaireState) -> tuple[list[int], set[int]] | None:
@@ -174,6 +175,14 @@ def derive_question_view(graph_state: dict) -> QuestionView:
             (PRIOR_ART_NO, False),
             (PRIOR_ART_SKIP, False),
         ]
+        view.multi_select = False
+        view.auto_submit = True
+        return view
+    # Nothing was found, and the card says why. There is no verdict to give,
+    # so the only affordance is an acknowledgement — but it still has to be a
+    # row, or the card renders with no way forward and reads as a hang.
+    if qs.awaiting_confirmation and getattr(qs, "_prior_art_stage", "") == "empty":
+        view.choices = [(PRIOR_ART_CONTINUE, True)]
         view.multi_select = False
         view.auto_submit = True
         return view

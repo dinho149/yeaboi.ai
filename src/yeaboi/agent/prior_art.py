@@ -15,6 +15,13 @@ row when a call fails, and ``pitch`` calls one LLM and falls back to a
 deterministic sentence built from the same facts. So the step degrades from
 "good pitch" to "plain pitch" to "no candidates", and never to an error.
 
+**Enrichment is GitHub-only, and that shapes the results.** Azure DevOps
+exposes neither a repository description nor a language breakdown, and its
+inventory rows carry no push date, so an AzDO candidate can only score on
+name-token overlap and never earns the recency term. It is still offered — a
+repository the team owns is worth asking about either way — but in practice the
+shortlist skews GitHub. Not an oversight; the API has nothing more to give.
+
 **The model may never nominate a repository.** ``pitch`` is handed the
 candidates ranking already chose and may only write bullets for them or mark
 them dropped. That keeps the accusation surface deterministic — the same
@@ -32,7 +39,6 @@ import logging
 import re
 
 from yeaboi.agent.prior_art_feedback import Ledger
-from yeaboi.agent.state import PriorArtRef
 from yeaboi.analysis import repo_inventory
 
 logger = logging.getLogger(__name__)
@@ -185,6 +191,24 @@ def _tokens(text: str) -> set[str]:
     return {tok for tok in _TOKEN_RE.findall((text or "").lower()) if len(tok) > 2 and tok not in _STOPWORDS}
 
 
+# Languages whose names are shorter than the prose threshold. Without these,
+# a team that answered "Go" at Q11 could never match a repo whose language is
+# Go — and stack overlap is the heaviest term in the score, so the dominant
+# signal would be silently unavailable to whole ecosystems.
+_SHORT_STACK_TOKENS = frozenset({"go", "c", "r", "c#", "f#", "js", "ts", "ml", "qt", "vb", "sh"})
+
+
+def _stack_tokens(text: str) -> set[str]:
+    """Like ``_tokens``, but keeps short language names.
+
+    Deliberately not used for prose: "go" is a common verb, and letting it
+    through the description path would score every repository written in Go
+    against a project that merely wants to "go to market".
+    """
+    found = {tok for tok in _TOKEN_RE.findall((text or "").lower()) if tok not in _STOPWORDS}
+    return {tok for tok in found if len(tok) > 2 or tok in _SHORT_STACK_TOKENS}
+
+
 def structure_signals(paths: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
     """Positive capability signals visible in a repository's file tree.
 
@@ -237,7 +261,7 @@ def score(row: dict, requirements: Requirements) -> tuple[float, list[str]]:
     why: list[str] = []
     total = 0.0
 
-    stated = _tokens(requirements.stated_stack)
+    stated = _stack_tokens(requirements.stated_stack)
     languages = [str(lang) for lang in (row.get("languages") or [])]
     shared_stack = sorted({lang for lang in languages if lang.lower() in stated})
     if shared_stack:
@@ -300,18 +324,6 @@ def rank(
     return [candidate for _, candidate in scored[:limit]]
 
 
-def to_ref(candidate: RepoCandidate) -> PriorArtRef:
-    """Reduce an accepted candidate to what the plan carries."""
-    return PriorArtRef(
-        key=candidate.key,
-        name=candidate.name,
-        url=candidate.url,
-        platform=candidate.platform,
-        pitch=candidate.pitch,
-        stack=candidate.stack,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Impure edges — each one fails soft
 # ---------------------------------------------------------------------------
@@ -330,7 +342,7 @@ def load_candidates(profile_id: str = "", db_path=None) -> tuple[list[dict], str
     try:
         from yeaboi.agent.nodes import _load_team_examples
 
-        examples = _load_team_examples(profile_id)
+        examples = _load_team_examples(profile_id, db_path=db_path)
     except Exception:  # pragma: no cover — a loader that never raises, wrapped anyway
         logger.warning("prior_art: team examples unavailable", exc_info=True)
         examples = None

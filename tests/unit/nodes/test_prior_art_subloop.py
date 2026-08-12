@@ -75,16 +75,20 @@ class TestGuard:
         result = _show_summary_or_pto(_qs(greenfield=False))
         assert result["pending_review"] == "project_intake"
 
-    def test_empty_shortlist_does_not_block_the_summary(self, monkeypatch):
+    def test_empty_shortlist_says_why_then_reaches_the_summary(self, monkeypatch):
+        """An empty shortlist costs the user one keypress, not a mystery: the
+        card names the gap, and the very next input reaches the summary."""
         monkeypatch.setattr(
             prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason=prior_art.EMPTY_NO_PROFILE)
         )
         qs = _qs()
-        result = _show_summary_or_pto(qs)
-        assert result["pending_review"] == "project_intake"
-        assert qs._prior_art_stage == "done"
-        # The reason is recorded so the card can say which gap this was.
+        first = _show_summary_or_pto(qs)
+        assert qs._prior_art_stage == "empty"
         assert qs._prior_art_empty_reason == prior_art.EMPTY_NO_PROFILE
+        assert "pending_review" not in first
+        after = project_intake({"messages": [HumanMessage(content="ok")], "questionnaire": qs})
+        assert after["pending_review"] == "project_intake"
+        assert qs._prior_art_stage == "done"
 
     def test_a_scan_failure_skips_the_step_rather_than_failing_intake(self, monkeypatch):
         def _boom(*a, **k):
@@ -137,7 +141,9 @@ class TestPtoExitsReachTheGuard:
         assert seen == [1], "the PTO 'no' exit must route through the funnel, not build the summary inline"
 
     def test_pto_guard_does_not_refire_after_the_reroute(self, monkeypatch):
-        monkeypatch.setattr(prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason="no_match"))
+        # An unrecognised reason has no card copy, so this exits straight to
+        # the summary — which is what makes it a clean test of the PTO guard.
+        monkeypatch.setattr(prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason="unknown"))
         qs = _qs()
         qs.intake_mode = "smart"
         qs._leave_input_stage = "ask"
@@ -251,6 +257,36 @@ class TestSummaryAndPromotion:
         result = project_intake({"messages": [HumanMessage(content="confirm")], "questionnaire": _qs(stage="done")})
         assert result["prior_art"] == ()
 
+    def test_confirm_keeps_references_seeded_by_a_headless_caller(self):
+        """`prior_art` is a LastValue channel, so returning the empty
+        questionnaire tuple would *replace* what `run_planning_pipeline(
+        prior_art=…)` seeded — a headless run never walks the sub-loop, so
+        the CLI and MCP flags would reach the analyzer as nothing at all."""
+        from yeaboi.agent.state import PriorArtRef
+
+        seeded = PriorArtRef(key="github:acme/auth", name="acme/auth", url="", platform="github")
+        result = project_intake(
+            {
+                "messages": [HumanMessage(content="confirm")],
+                "questionnaire": _qs(stage="done"),
+                "prior_art": (seeded,),
+            }
+        )
+        assert result["prior_art"] == (seeded,)
+
+    def test_an_answered_subloop_wins_over_seeded_references(self):
+        """The seed is a fallback, not an override: if the user actually
+        answered the sub-loop, their verdicts are the durable ones."""
+        from yeaboi.agent.state import PriorArtRef
+
+        qs = _qs(stage="done")
+        qs._prior_art_accepted = [_candidate()]
+        stale = PriorArtRef(key="github:acme/stale", name="acme/stale", url="", platform="github")
+        result = project_intake(
+            {"messages": [HumanMessage(content="confirm")], "questionnaire": qs, "prior_art": (stale,)}
+        )
+        assert [r.key for r in result["prior_art"]] == ["github:acme/auth"]
+
 
 class TestPrompt:
     def test_shows_position_pitch_and_stack(self):
@@ -269,3 +305,90 @@ class TestPrompt:
         result = _prior_art_advance(qs)
         assert qs._prior_art_stage == "done"
         assert result["pending_review"] == "project_intake"
+
+
+class TestEmptyCard:
+    """Nothing found is a result, not a reason to go quiet.
+
+    All three empty reasons mean something different to the user — never ran
+    Team Analysis, ran it before this feature existed, ran it and nothing
+    matched — and only two of them are the user's to act on. Falling silently
+    through to the summary reads as "your repositories were considered and
+    rejected" in every one of them.
+    """
+
+    def _empty(self, monkeypatch, reason):
+        monkeypatch.setattr(prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason=reason))
+        qs = _qs()
+        result = _show_summary_or_pto(qs)
+        return qs, result["messages"][0].content
+
+    @pytest.mark.parametrize(
+        "reason,needle",
+        [
+            (prior_art.EMPTY_NO_PROFILE, "run Team Analysis"),
+            (prior_art.EMPTY_NO_INVENTORY, "re-run Team Analysis"),
+            (prior_art.EMPTY_NO_MATCH, "looks close to this project"),
+        ],
+    )
+    def test_each_reason_is_said_out_loud(self, monkeypatch, reason, needle):
+        qs, body = self._empty(monkeypatch, reason)
+        assert qs._prior_art_stage == "empty"
+        assert needle in body
+        # The summary must not have been posted underneath it.
+        assert "Ready to build the plan" not in body
+
+    def test_the_card_is_not_the_summary(self, monkeypatch):
+        """The empty card owns the turn, so pending_review must stay unset —
+        emitting it here would mark the intake reviewed before the user has
+        seen the summary at all."""
+        _, _ = self._empty(monkeypatch, prior_art.EMPTY_NO_PROFILE)
+        monkeypatch.setattr(
+            prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason=prior_art.EMPTY_NO_PROFILE)
+        )
+        assert "pending_review" not in _show_summary_or_pto(_qs())
+
+    def test_any_input_acknowledges_it_and_reaches_the_summary(self, monkeypatch):
+        monkeypatch.setattr(prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason="no_match"))
+        qs = _qs(stage="empty")
+        result = project_intake({"messages": [HumanMessage(content="ok")], "questionnaire": qs})
+        assert qs._prior_art_stage == "done"
+        assert result["pending_review"] == "project_intake"
+
+    def test_an_unrecognised_reason_falls_straight_through(self, monkeypatch):
+        """A reason with no copy behind it must not render a blank card — the
+        step is optional, and silence beats an empty box with a button."""
+        monkeypatch.setattr(prior_art, "shortlist", lambda *a, **k: prior_art.Shortlist(empty_reason="something_new"))
+        qs = _qs()
+        result = _show_summary_or_pto(qs)
+        assert qs._prior_art_stage == "done"
+        assert result["pending_review"] == "project_intake"
+
+    def test_a_failed_scan_stays_silent(self, monkeypatch):
+        """A crash is ours, not the user's — there is nothing for them to do
+        about it, so it is logged and the intake carries on."""
+
+        def _boom(*a, **k):
+            raise RuntimeError("github exploded")
+
+        monkeypatch.setattr(prior_art, "shortlist", _boom)
+        qs = _qs()
+        result = _show_summary_or_pto(qs)
+        assert qs._prior_art_stage == "done"
+        assert result["pending_review"] == "project_intake"
+
+
+class TestEmptyCardChoices:
+    def test_continue_row_is_offered_and_the_confirm_menu_is_not(self):
+        """Both stages run with awaiting_confirmation set past the last
+        question, so without the guard the Accept/Edit menu renders over it."""
+        from yeaboi.ui.session.chat._question_view import (
+            CONFIRM_ACCEPT,
+            PRIOR_ART_CONTINUE,
+            derive_question_view,
+        )
+
+        view = derive_question_view({"questionnaire": _qs(stage="empty")})
+        labels = [label for label, _ in view.choices]
+        assert labels == [PRIOR_ART_CONTINUE]
+        assert CONFIRM_ACCEPT not in labels

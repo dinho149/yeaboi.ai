@@ -2062,17 +2062,21 @@ def _load_team_profile(profile_id: str = "") -> object | None:
         return None
 
 
-def _load_team_examples(profile_id: str = "") -> dict | None:
+def _load_team_examples(profile_id: str = "", db_path=None) -> dict | None:
     """Load the examples dict for the team profile from SQLite.
 
     If profile_id is given, loads examples for that specific profile.
     Otherwise auto-detects from configured Jira/AzDO project keys.
+
+    `db_path` is the injection seam callers test against — without it a test
+    that passes a temporary database would still read the developer's real
+    `~/.yeaboi/sessions.db` and quietly depend on whatever is in it.
     """
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.team_profile import TeamProfileStore
 
-        db_path = get_db_path()
+        db_path = db_path or get_db_path()
         if not db_path.exists():
             return None
 
@@ -3734,7 +3738,6 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
 _PRIOR_ART_ACCEPT = "Yes, relevant"
 _PRIOR_ART_REJECT = "Not relevant"
 _PRIOR_ART_SKIP = "Skip the rest"
-_PRIOR_ART_CHOICES = (_PRIOR_ART_ACCEPT, _PRIOR_ART_REJECT, _PRIOR_ART_SKIP)
 
 
 def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
@@ -3766,9 +3769,17 @@ def _start_prior_art(questionnaire: QuestionnaireState) -> str | None:
         questionnaire._prior_art_stage = "done"
         return None
     if not result.candidates:
-        questionnaire._prior_art_stage = "done"
         questionnaire._prior_art_empty_reason = result.empty_reason
         logger.info("prior_art: no candidates (%s)", result.empty_reason)
+        # Say so rather than going quiet: a user who has never run Team
+        # Analysis, one whose profile predates this feature, and one whose
+        # repositories genuinely do not match are three different situations
+        # with three different things to do about them, and silence reads as
+        # "your repos were considered and rejected" in all three.
+        if result.message:
+            questionnaire._prior_art_stage = "empty"
+            return result.message
+        questionnaire._prior_art_stage = "done"
         return None
     # `stack` is a property, so asdict() drops it — add it explicitly or the
     # prompt and the promoted reference silently fall back to languages alone.
@@ -4997,6 +5008,12 @@ def project_intake(state: ScrumState) -> dict:
         # Sits after PTO and before the velocity menu, mirroring the PTO
         # handler's shape: a transient stage flag drives a small state machine
         # and every exit routes back through _show_summary_or_pto.
+        if questionnaire._prior_art_stage == "empty":
+            # Nothing to decide — the card only had to be read. Any input
+            # acknowledges it and moves on to the summary.
+            questionnaire._prior_art_stage = "done"
+            return _show_summary_or_pto(questionnaire)
+
         if questionnaire._prior_art_stage in ("ask", "reason"):
             user_text = last_msg.content.strip()
             candidate = _prior_art_current(questionnaire)
@@ -5248,7 +5265,15 @@ def project_intake(state: ScrumState) -> dict:
             # Promote the accepted references off the transient questionnaire
             # onto durable state — the analyzer, the summary and the exports
             # all read them from here, and a resumed session must keep them.
-            "prior_art": _accepted_prior_art(questionnaire),
+            #
+            # `prior_art` is a plain LastValue channel, so whatever this node
+            # returns *replaces* the channel. A headless run seeds the state
+            # directly (`run_planning_pipeline(prior_art=…)`, and the MCP and
+            # CLI surfaces behind it) and never walks the sub-loop, so
+            # returning the empty questionnaire tuple here would silently
+            # discard the caller's references before the analyzer ever sees
+            # them. Fall back to what is already on the state instead.
+            "prior_art": _accepted_prior_art(questionnaire) or tuple(state.get("prior_art") or ()),
             "messages": [AIMessage(content=msg)],
         }
 

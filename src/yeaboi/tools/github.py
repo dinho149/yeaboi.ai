@@ -180,9 +180,16 @@ def github_analysis_inventory(
                 # Description and languages answer "what does this repo do" — the
                 # question a later planning run asks and cannot answer offline
                 # unless we keep them. The description rides on the object we
-                # already hold; languages costs one call, and only for repos that
-                # are actually active.
-                languages = _repo_languages(repo) if active else []
+                # already hold, so it is always free.
+                #
+                # Languages cost one API call each, so they follow `include_trees`
+                # rather than `active`: that flag is how a caller says "cheap
+                # discovery only", and both callers that set it (the analysis
+                # cold path for large estates, and standup's code-scope owner
+                # listing) would otherwise pay a few hundred extra calls on a hot
+                # path to serve a different mode. The shortlist enrichment fills
+                # languages back in live for the five repos that actually matter.
+                languages = _repo_languages(repo) if (include_trees and active) else []
                 out.append(
                     {
                         "provider": "github",

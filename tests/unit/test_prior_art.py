@@ -7,7 +7,6 @@ one, and every impure edge degrades instead of raising.
 
 from __future__ import annotations
 
-import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -317,9 +316,16 @@ class TestEnrich:
         assert prior_art.enrich([c]) == [c]
 
 
+def _stub_examples(monkeypatch, examples):
+    """Stand in for the analysis-profile read. Mirrors the real signature —
+    including `db_path`, whose absence used to surface as "no profile" rather
+    than as the TypeError it was."""
+    monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid, db_path=None: examples)
+
+
 class TestShortlist:
     def test_no_profile_reports_the_reason(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: None)
+        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid, db_path=None: None)
         result = prior_art.shortlist({1: "x"}, profile_id="p")
         assert result.candidates == ()
         assert result.empty_reason == prior_art.EMPTY_NO_PROFILE
@@ -328,7 +334,7 @@ class TestShortlist:
     def test_old_profile_reports_a_different_reason(self, monkeypatch):
         # Every profile captured before the inventory landed reaches here, so
         # the copy has to tell the user something they can act on.
-        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"sprint_details": []})
+        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid, db_path=None: {"sprint_details": []})
         result = prior_art.shortlist({1: "x"}, profile_id="p")
         assert result.empty_reason == prior_art.EMPTY_NO_INVENTORY
         assert "re-run Team Analysis" in result.message
@@ -336,14 +342,14 @@ class TestShortlist:
     def test_no_match_reports_the_third_reason(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.agent.nodes._load_team_examples",
-            lambda pid: {"repository_inventory": [_row(description="", languages=["COBOL"])]},
+            lambda pid, db_path=None: {"repository_inventory": [_row(description="", languages=["COBOL"])]},
         )
         monkeypatch.setattr("yeaboi.agent.prior_art_feedback.load", lambda db_path=None: Ledger())
         result = prior_art.shortlist({1: "booking", 11: "Python"}, profile_id="p")
         assert result.empty_reason == prior_art.EMPTY_NO_MATCH
 
     def test_happy_path(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"repository_inventory": [_row()]})
+        _stub_examples(monkeypatch, {"repository_inventory": [_row()]})
         monkeypatch.setattr("yeaboi.agent.prior_art_feedback.load", lambda db_path=None: Ledger())
         monkeypatch.setattr(prior_art, "enrich", lambda cs: cs)
         monkeypatch.setattr(prior_art, "pitch", lambda cs, r, ledger=None: cs)
@@ -353,14 +359,14 @@ class TestShortlist:
         assert result.message == ""
 
     def test_model_dropping_everything_reads_as_no_match(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"repository_inventory": [_row()]})
+        _stub_examples(monkeypatch, {"repository_inventory": [_row()]})
         monkeypatch.setattr("yeaboi.agent.prior_art_feedback.load", lambda db_path=None: Ledger())
         monkeypatch.setattr(prior_art, "enrich", lambda cs: cs)
         monkeypatch.setattr(prior_art, "pitch", lambda cs, r, ledger=None: [])
         assert prior_art.shortlist({1: "booking", 11: "Python"}).empty_reason == prior_art.EMPTY_NO_MATCH
 
     def test_ledger_feeds_ranking(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"repository_inventory": [_row()]})
+        _stub_examples(monkeypatch, {"repository_inventory": [_row()]})
         monkeypatch.setattr(
             "yeaboi.agent.prior_art_feedback.load",
             lambda db_path=None: Ledger(
@@ -371,17 +377,30 @@ class TestShortlist:
         assert prior_art.shortlist({1: "booking", 11: "Python"}).empty_reason == prior_art.EMPTY_NO_MATCH
 
 
-class TestToRef:
-    def test_reduces_to_what_the_plan_carries(self):
-        c = prior_art.RepoCandidate(
-            key="k", name="n", url="u", platform="github", pitch=("a",), languages=("Python",), score=9.0
-        )
-        ref = prior_art.to_ref(c)
-        assert dataclasses.asdict(ref) == {
-            "key": "k",
-            "name": "n",
-            "url": "u",
-            "platform": "github",
-            "pitch": ("a",),
-            "stack": ("Python",),
-        }
+class TestDbPathSeam:
+    """`load_candidates(db_path=…)` must actually reach the profile read.
+
+    It used to be accepted and dropped, so a test passing a temporary database
+    still read the developer's real `~/.yeaboi/sessions.db` — and because the
+    loader is wrapped in a broad `except`, a signature mismatch surfaced as
+    "you have no analysis profile" rather than as an error.
+    """
+
+    def test_db_path_is_threaded_to_the_profile_read(self, monkeypatch, tmp_path):
+        seen: dict = {}
+
+        def _loader(pid, db_path=None):
+            seen["pid"] = pid
+            seen["db_path"] = db_path
+            return {"repository_inventory": []}
+
+        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", _loader)
+        prior_art.load_candidates("p", db_path=tmp_path / "x.db")
+        assert seen == {"pid": "p", "db_path": tmp_path / "x.db"}
+
+    def test_a_loader_that_rejects_the_kwarg_is_not_silently_an_empty_estate(self, monkeypatch):
+        """The failure mode this guards: the reason must not read as a verdict
+        about the user's repositories when it was our own call that broke."""
+        monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"repository_inventory": [_row()]})
+        rows, reason = prior_art.load_candidates("p")
+        assert rows == [] and reason == prior_art.EMPTY_NO_PROFILE

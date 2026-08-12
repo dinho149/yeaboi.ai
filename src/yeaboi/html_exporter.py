@@ -272,9 +272,23 @@ def plan_export_args(graph_state: dict, stage: str = "complete") -> dict[str, ob
     task_groups = _tasks_payload(graph_state)
     sprints = _sprints_payload(graph_state)
     images = _images_payload(graph_state)
+    prior_art = [
+        {
+            "name": ref.name,
+            "url": ref.url,
+            "platform": ref.platform,
+            "pitch": list(ref.pitch),
+            "stack": list(ref.stack),
+        }
+        for ref in (graph_state.get("prior_art") or ())
+    ]
 
     nav: list[tuple[str, str]] = []
     for section_id, label, present in (
+        # Order matches the sections Plan.tsx renders — prior art leads, so a
+        # section with no jump link is the one section the reader cannot reach
+        # from the top of the page.
+        ("prior-art", "Prior Art", bool(prior_art)),
         ("questionnaire", "Questionnaire", bool(questionnaire)),
         ("analysis", "Analysis", bool(analysis)),
         ("features", "Features", bool(features)),
@@ -316,16 +330,7 @@ def plan_export_args(graph_state: dict, stage: str = "complete") -> dict[str, ob
             "questionnaire": questionnaire,
             "analysis": analysis,
             "capacity": _capacity_payload(graph_state, graph_state.get("project_analysis")),
-            "priorArt": [
-                {
-                    "name": ref.name,
-                    "url": ref.url,
-                    "platform": ref.platform,
-                    "pitch": list(ref.pitch),
-                    "stack": list(ref.stack),
-                }
-                for ref in (graph_state.get("prior_art") or ())
-            ],
+            "priorArt": prior_art,
             "epicKey": graph_state.get("jira_epic_key", "") or graph_state.get("azdevops_epic_id", ""),
             "features": features,
             "storyGroups": story_groups,

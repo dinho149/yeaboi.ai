@@ -294,7 +294,7 @@ def _phase_intake_questions(
             if (
                 (qs.completed or qs.awaiting_confirmation)
                 and not qs._awaiting_leave_input
-                and qs._prior_art_stage not in ("ask", "reason")
+                and qs._prior_art_stage not in ("ask", "reason", "empty")
                 and qs.editing_question is None
             ):
                 logger.info("Intake questions complete: completed=%s", qs.completed)
