@@ -10533,9 +10533,11 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("retro: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    # Empty on purpose: the status slot renders `message or remote["status"]`, so
-    # an empty message lets the tunnel narrate its own progress, and the first
-    # thing the host does takes the slot back.
+    # Empty on purpose: the status slot renders `_link_status_text() or message or
+    # remote["status"]`, so an empty message lets the tunnel narrate its own
+    # progress, and the first thing the host does takes the slot back — except for
+    # a time-critical tunnel event (an expiry warning, or the expiry itself), which
+    # always wins over whatever `message` last held (see `_link_status_text`).
     message = ""
 
     # Tunnel state. The server binds loopback, so the Cloudflare tunnel is the
@@ -10545,7 +10547,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # a worker thread; the frame-timed loop shows its progress and fills in the
     # participant link the moment it lands.
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
@@ -10573,6 +10575,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                         "Secure link expired after the configured timeout — click Retry Link to reconnect."
                     )
                     remote["failed"] = True
+                    remote["expired"] = True
                     logger.info("retro: secure link expired (session=%s)", session_id)
 
                 tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
@@ -10624,6 +10627,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         logger.info("retro: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
         remote["failed"] = False
+        remote["expired"] = False
         remote["status"] = "Setting up the secure link…"
         duck_working_thread(_worker, name="retro-tunnel-setup").start()
 
@@ -10659,18 +10663,28 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         return base
 
     def _link_status_text() -> str:
-        # A retro can easily run 60-90 minutes, and a quick tunnel gets a fresh
-        # random hostname on every launch — once this one auto-expires, Retry
-        # Link hands out a *different* URL, so the invite already sent to
-        # everyone is permanently dead. Warn the host with time left to wrap
-        # up or re-share, rather than the link just vanishing mid-ceremony.
-        status = remote["status"]
+        """Time-critical tunnel-health text, or "" when there is none.
+
+        A retro can easily run 60-90 minutes, and a quick tunnel gets a fresh
+        random hostname on every launch — once this one auto-expires, Retry
+        Link hands out a *different* URL, so the invite already sent to
+        everyone is permanently dead. Warn the host with time left to wrap
+        up or re-share, rather than the link just vanishing mid-ceremony.
+
+        Returned text must win over `message` in `_data()`, not just
+        `remote["status"]` — `message` is a sticky action-result string (set
+        by Copy Invite etc. and never cleared per frame) that would otherwise
+        swallow this for the rest of the session the moment the host presses
+        the one button they need to press to share the link at all.
+        """
+        if remote["expired"]:
+            return remote["status"]
         tunnel = remote.get("tunnel")
         remaining = tunnel.time_until_expiry() if tunnel is not None else None
         if remaining is not None and remaining <= 300:
             mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            status = f"{status} Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return status
+            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
+        return ""
 
     def _data() -> dict:
         grids = board.cards_by_grid()
@@ -10706,11 +10720,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             "host_url": server.url,
             "public_url": server.share_url,
             "link_failed": remote["failed"],
-            # `message` wins. It is only ever set by something the host just did,
-            # and the tunnel status is ambient — it goes non-empty on frame 1 and
-            # stays set for the whole session, so reading it first (as this did)
-            # silently swallowed every action result and error on the page.
-            "message": message or _link_status_text(),
+            # `_link_status_text()` wins first: it is only non-"" for a time-critical
+            # tunnel event (the expiry warning, or the expiry itself), and both must
+            # reach the host even mid-frame after a sticky `message`. Otherwise
+            # `message` wins over the ambient `remote["status"]` — `message` is only
+            # ever set by something the host just did, and reading status first (as
+            # this did) silently swallowed every action result and error on the page.
+            "message": _link_status_text() or message or remote["status"],
             "grids": grids,
             "carried": carried,
             "actions": _actions(),
@@ -11406,14 +11422,15 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
     # Empty on purpose — see the retro loop: the status slot renders
-    # `message or remote["status"]`, so the tunnel narrates until the host acts.
+    # `_link_status_text() or message or remote["status"]`, so the tunnel narrates
+    # until the host acts, except a time-critical tunnel event which always wins.
     message = ""
 
     # Tunnel state — see the retro loop for the full note. The short version: the
     # server binds loopback, so this tunnel is the only way a teammate reaches the
     # board, and it therefore starts by itself rather than on a button.
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
@@ -11439,6 +11456,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                         "Secure link expired after the configured timeout — click Retry Link to reconnect."
                     )
                     remote["failed"] = True
+                    remote["expired"] = True
                     logger.info("poker: secure link expired (session=%s)", session_id)
 
                 tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
@@ -11481,6 +11499,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         logger.info("poker: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
         remote["failed"] = False
+        remote["expired"] = False
         remote["status"] = "Setting up the secure link…"
         duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
@@ -11497,17 +11516,19 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         return base
 
     def _link_status_text() -> str:
-        # See the retro loop's _link_status_text for the why: a quick tunnel
-        # gets a fresh random hostname on every launch, so once this one
-        # auto-expires the invite already sent to the table is permanently
-        # dead. Warn the host with time left to wrap up or re-share.
-        status = remote["status"]
+        # See the retro loop's _link_status_text for the full note: a quick
+        # tunnel gets a fresh random hostname on every launch, so once this
+        # one auto-expires the invite already sent to the table is
+        # permanently dead. Returns "" when there's nothing urgent — must win
+        # over the sticky `message` in `_data()`, not just `remote["status"]`.
+        if remote["expired"]:
+            return remote["status"]
         tunnel = remote.get("tunnel")
         remaining = tunnel.time_until_expiry() if tunnel is not None else None
         if remaining is not None and remaining <= 300:
             mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            status = f"{status} Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return status
+            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
+        return ""
 
     def _data() -> dict:
         return {
@@ -11516,8 +11537,8 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             "host_url": server.url,
             "public_url": server.share_url,
             "link_failed": remote["failed"],
-            # `message` wins — see the retro loop for why the order matters.
-            "message": message or _link_status_text(),
+            # `_link_status_text()` wins first — see the retro loop for why.
+            "message": _link_status_text() or message or remote["status"],
             "state": board.state_snapshot(),
             "actions": _actions(),
         }
