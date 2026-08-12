@@ -65,6 +65,33 @@ logger = logging.getLogger(__name__)
 # into every ?v= on every page, so this is the only place it is ever edited.
 ASSET_VERSION = 136
 
+# The one third-party script the site loads, pinned to an exact version and
+# tamper-checked with Subresource Integrity. Without the hash, an unpkg or lenis
+# compromise runs arbitrary JS on the production domain with nothing on the page
+# to notice; with it the browser refuses to execute bytes that changed.
+#
+# `crossorigin="anonymous"` is not optional decoration — SRI on a cross-origin
+# script requires a CORS-enabled fetch, so the attribute must be present for the
+# check to run at all. unpkg answers with `Access-Control-Allow-Origin: *`.
+#
+# Failing closed is safe here: site.js gates every use behind `window.Lenis` and
+# `window.__lenis`, so a refused script degrades to native scrolling.
+#
+# Regenerate after bumping the version (no network in this script or its tests —
+# `--check` must produce identical bytes in CI):
+#
+#     uv run python -c "import base64,hashlib,urllib.request as u; \
+#     b=u.urlopen('https://unpkg.com/lenis@1.3.4/dist/lenis.min.js').read(); \
+#     print('sha384-'+base64.b64encode(hashlib.sha384(b).digest()).decode())"
+LENIS_VERSION = "1.3.4"
+LENIS_SRI = "sha384-FKTX0CNJ8ngN1oGMBReVu7mvjTJyjFiD5etb1NKnYxc+8eFI2O0KWnksTN+oTFcu"
+
+# Third-party scripts that legitimately carry no integrity hash. gtag.js is a
+# loader Google rewrites continuously and publishes no hash for — pinning one
+# would break analytics on their next deploy. It is emitted by _ga_lines() above,
+# so it cannot be a stray addition; anything else external must be hashed.
+SRI_EXEMPT_HOSTS = ("www.googletagmanager.com",)
+
 # A GA4 measurement ID is a public identifier — it ships in the page source of
 # every GA site on the web — so it belongs in the repo, not in a secret. While
 # it is the placeholder the GA block is omitted entirely rather than emitted
@@ -606,6 +633,26 @@ _STRAY_RE = re.compile(
 )
 _ASSET_V_RE = re.compile(r'((?:href|src)="/(?:docs/)?assets/[^"?]+\?v=)\d+(")')
 
+# Matches the tag in either state — the bare one every page shipped before SRI,
+# and the canonical one this script writes — so the rewrite is idempotent and a
+# page pasted in with a hand-typed version or a stale hash is corrected rather
+# than merely reported. Deliberately does not *insert* a tag: a page that loads
+# no lenis is a fine page, and the same rule as _ASSET_V_RE applies — rewrite
+# what is there, never invent markup an author did not ask for.
+_LENIS_RE = re.compile(r'<script src="https://unpkg\.com/lenis@[^"]*"[^>]*></script>')
+
+
+def lenis_tag() -> str:
+    """The canonical, integrity-checked <script> tag for lenis.
+
+    Ordinary attribute order matters only for the diff, but keeping it fixed is
+    what lets the rewrite below be a plain string comparison across 23 pages.
+    """
+    return (
+        f'<script src="https://unpkg.com/lenis@{LENIS_VERSION}/dist/lenis.min.js" '
+        f'integrity="{LENIS_SRI}" crossorigin="anonymous"></script>'
+    )
+
 
 def _splice(text: str, begin: str, end: str, block: str, anchor: str, *, after: bool) -> str:
     """Replace a sentinel block, or insert it next to ``anchor`` on first run."""
@@ -643,6 +690,9 @@ def render(path: Path, groups: list[dict]) -> str:
         text = _splice(text, FOOT_BEGIN, FOOT_END, footer_block(url, groups), "</article>", after=True)
 
     text = _ASSET_V_RE.sub(rf"\g<1>{ASSET_VERSION}\g<2>", text)
+    # A lambda, not a replacement string: the base64 hash is opaque and a `\g`
+    # or backslash in it would be interpreted as a group reference.
+    text = _LENIS_RE.sub(lambda _: lenis_tag(), text)
 
     # LF, no trailing whitespace, exactly one final newline — or pre-commit's
     # hooks and this script rewrite each other forever.

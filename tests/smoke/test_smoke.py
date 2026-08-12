@@ -237,3 +237,61 @@ class TestGeminiSmoke:
         assert response.content is not None
         assert len(response.content.strip()) > 0
         assert "SMOKE_OK" in response.content
+
+
+# ---------------------------------------------------------------------------
+# Subresource Integrity — the pinned lenis hash vs. what unpkg actually serves
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.smoke
+class TestSiteSubresourceIntegrity:
+    """The one half of SRI that no offline test can check.
+
+    `tests/unit/test_site_seo.py` proves all 23 pages carry the same well-formed
+    hash and that the generator owns it. What it cannot prove is that the hash
+    matches the bytes on the CDN — and a wrong hash fails *closed*: every browser
+    silently refuses the script, on every page, until someone notices. That is
+    the exact shape of a version bump where someone edits `LENIS_VERSION` and
+    forgets to regenerate `LENIS_SRI`, and it is invisible in CI because the
+    generator is deliberately hermetic (`--check` must produce identical bytes
+    offline, at fetch-depth 1, with no clock or network input).
+
+    So it lives here instead: no credentials, one GET, and it skips rather than
+    fails when the network or unpkg is unavailable — an outage upstream is not a
+    defect in this repo.
+    """
+
+    def test_pinned_hash_matches_the_cdn(self):
+        """Fetch the pinned lenis build and recompute its SHA-384."""
+        import base64
+        import hashlib
+        import importlib.util
+        import urllib.error
+        import urllib.request
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location("gen_site_seo", root / "scripts" / "gen_site_seo.py")
+        seo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(seo)
+
+        url = f"https://unpkg.com/lenis@{seo.LENIS_VERSION}/dist/lenis.min.js"
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - literal https URL
+                body = response.read()
+                cors = response.headers.get("Access-Control-Allow-Origin")
+        except (urllib.error.URLError, TimeoutError) as exc:
+            pytest.skip(f"unpkg unreachable — network issue, not a code defect: {exc}")
+
+        digest = "sha384-" + base64.b64encode(hashlib.sha384(body).digest()).decode()
+        assert digest == seo.LENIS_SRI, (
+            f"LENIS_SRI does not match {url}.\n"
+            f"  pinned: {seo.LENIS_SRI}\n"
+            f"  served: {digest}\n"
+            "Every browser is refusing this script. Regenerate the hash (see the comment on "
+            "LENIS_SRI in scripts/gen_site_seo.py) and re-run `make site-seo`."
+        )
+        # crossorigin="anonymous" is only satisfiable if the CDN answers CORS;
+        # without this header the browser blocks the script outright.
+        assert cors == "*", f"unpkg no longer sends a permissive CORS header (got {cors!r})"

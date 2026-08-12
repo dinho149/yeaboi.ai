@@ -8,6 +8,7 @@ in every lane, so asserting staleness here puts the guard into ``make test-fast`
 the pre-commit hook and both CI jobs at once.
 """
 
+import base64
 import importlib.util
 import json
 import re
@@ -340,6 +341,129 @@ class TestAssetVersioning:
     def test_one_pinned_third_party_script_version(self) -> None:
         found = {v for p in PAGES for v in re.findall(r"unpkg\.com/lenis@([\d.]+)", _read(p))}
         assert len(found) <= 1, f"mixed lenis versions across docs/: {sorted(found)}"
+        assert found <= {seo.LENIS_VERSION}, f"docs/ disagrees with LENIS_VERSION: {sorted(found)}"
+
+
+# Every <script> element with an external src, as (whole tag, url) pairs.
+_EXTERNAL_SCRIPT_RE = re.compile(r'<script\b[^>]*\bsrc="(https?://[^"]+)"[^>]*>')
+
+
+def _external_scripts(text: str) -> list[tuple[str, str]]:
+    return [(m.group(0), m.group(1)) for m in _EXTERNAL_SCRIPT_RE.finditer(text)]
+
+
+class TestSubresourceIntegrity:
+    """The site loads third-party JS; SRI is what stops a CDN from owning it.
+
+    ``docs/`` is served straight off ``main`` by GitHub Pages, so a script fetched
+    from unpkg executes on the production domain with the same privileges as our
+    own code. Without an ``integrity`` hash, an unpkg outage-turned-compromise or
+    a hijacked lenis release publishes arbitrary JS to every visitor and nothing
+    on the page notices. The hash is one string that has to agree across 23 pages
+    — exactly the drift class this generator already exists to kill — so it is a
+    constant that gets rewritten in, never typed twice.
+    """
+
+    @pytest.mark.parametrize("path", PAGES, ids=IDS)
+    def test_third_party_script_is_hashed_and_cors_enabled(self, path: Path) -> None:
+        """Both attributes, together: SRI on a cross-origin script is only
+        enforced when the fetch is CORS-enabled, so ``integrity`` without
+        ``crossorigin`` is a hash the browser never checks.
+        """
+        for tag, url in _external_scripts(_read(path)):
+            if "unpkg.com" not in url:
+                continue
+            assert f'integrity="{seo.LENIS_SRI}"' in tag, (
+                f"{path.name}: unpkg script has a missing or wrong integrity hash"
+            )
+            assert 'crossorigin="anonymous"' in tag, (
+                f"{path.name}: integrity without crossorigin is never enforced on a cross-origin script"
+            )
+
+    def test_one_hash_across_every_page(self) -> None:
+        found = {h for p in PAGES for h in re.findall(r'integrity="([^"]+)"', _read(p))}
+        assert found == {seo.LENIS_SRI}, f"mixed or missing integrity hashes across docs/: {sorted(found)}"
+
+    @pytest.mark.parametrize("path", PAGES, ids=IDS)
+    def test_no_unhashed_external_script(self, path: Path) -> None:
+        """The guard that outlives this one script.
+
+        A future page adding a second CDN tag is the whole failure mode here, and
+        it is silent — the page works perfectly right up until the CDN is
+        compromised. Anything external must be hashed or explicitly exempt.
+        """
+        for tag, url in _external_scripts(_read(path)):
+            host = url.split("/")[2]
+            if host in seo.SRI_EXEMPT_HOSTS:
+                continue
+            assert "integrity=" in tag, (
+                f"{path.name}: external script with no integrity hash: {url}\n"
+                f"Add an SRI hash, or add its host to SRI_EXEMPT_HOSTS with a reason."
+            )
+
+    def test_only_the_known_third_parties_are_loaded(self) -> None:
+        """Two-way, so removing lenis fails here rather than rotting the constants."""
+        hosts = {url.split("/")[2] for p in PAGES for _tag, url in _external_scripts(_read(p))}
+        assert hosts == {"unpkg.com", *seo.SRI_EXEMPT_HOSTS}, f"unexpected third-party script hosts: {sorted(hosts)}"
+
+    def test_exempt_host_is_the_generated_analytics_loader(self) -> None:
+        """gtag.js is exempt because Google publishes no hash for it and rewrites
+        it continuously — not because hashing was inconvenient. It is emitted by
+        _ga_lines(), so it cannot be a hand-added stray.
+        """
+        assert seo.SRI_EXEMPT_HOSTS == ("www.googletagmanager.com",)
+        assert "www.googletagmanager.com" in "\n".join(seo._ga_lines())
+
+    def test_sri_constant_is_a_wellformed_sha384(self) -> None:
+        algo, _, digest = seo.LENIS_SRI.partition("-")
+        assert algo == "sha384", "SRI must be sha384 — sha256 is the weakest browsers accept"
+        assert len(base64.b64decode(digest, validate=True)) == 48, "not a 48-byte SHA-384 digest"
+
+    def test_version_is_pinned_exactly(self) -> None:
+        """A range or `latest` in the URL would serve bytes the hash cannot match,
+        which fails closed on every page the moment lenis publishes.
+        """
+        assert re.fullmatch(r"\d+\.\d+\.\d+", seo.LENIS_VERSION), f"not an exact version: {seo.LENIS_VERSION!r}"
+
+
+class TestLenisTagRewrite:
+    """Pure unit tests of the rewrite — no filesystem."""
+
+    def test_tag_carries_version_hash_and_crossorigin(self) -> None:
+        tag = seo.lenis_tag()
+        assert f"lenis@{seo.LENIS_VERSION}/dist/lenis.min.js" in tag
+        assert f'integrity="{seo.LENIS_SRI}"' in tag
+        assert 'crossorigin="anonymous"' in tag
+        assert tag.endswith("></script>")
+
+    def test_rewrite_upgrades_a_bare_tag(self) -> None:
+        bare = '<script src="https://unpkg.com/lenis@1.3.4/dist/lenis.min.js"></script>'
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), bare) == seo.lenis_tag()
+
+    def test_rewrite_corrects_a_stale_version_or_hash(self) -> None:
+        stale = (
+            '<script src="https://unpkg.com/lenis@1.0.0/dist/lenis.min.js" '
+            'integrity="sha384-old" crossorigin="anonymous"></script>'
+        )
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), stale) == seo.lenis_tag()
+
+    def test_rewrite_is_idempotent(self) -> None:
+        once = seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), seo.lenis_tag())
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), once) == seo.lenis_tag()
+
+    def test_rewrite_leaves_other_scripts_alone(self) -> None:
+        others = (
+            '<script src="/assets/site.js?v=136"></script>\n'
+            '<script async src="https://www.googletagmanager.com/gtag/js?id=G-K9HLPT5ZMP"></script>'
+        )
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), others) == others
+
+    def test_rewrite_does_not_invent_a_tag(self) -> None:
+        """A page that loads no lenis must stay that way — the rewrite corrects
+        what an author wrote, it does not add markup nobody asked for.
+        """
+        page = '<html><body><script src="/assets/site.js?v=136"></script></body></html>'
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), page) == page
 
 
 class TestCrawlability:
