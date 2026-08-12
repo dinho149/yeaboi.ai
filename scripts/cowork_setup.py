@@ -3941,7 +3941,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--teardown", action="store_true", help="remove what this script created (needs --yes)")
     parser.add_argument("--labels", action="store_true", help="with --teardown, delete the GitHub labels")
     parser.add_argument("--variables", action="store_true", help="with --teardown, unset the model variables")
-    parser.add_argument("--yes", action="store_true", help="with --teardown, skip the confirmation")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="with --teardown, skip the confirmation; with --migrate-proposals, apply the plan",
+    )
     parser.add_argument(
         "--created",
         action="append",
