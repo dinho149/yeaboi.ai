@@ -16,6 +16,8 @@ from yeaboi.ui.mode_select import (
     _compute_viewport,
 )
 from yeaboi.ui.mode_select.screens._screens import (
+    _COMPANION_MIN_HEIGHT,
+    _COMPANION_MIN_WIDTH,
     _MODE_CARDS,
     _build_mode_screen,
     duck_hit,
@@ -353,19 +355,34 @@ def _text_of(panel, width, height):
 
 
 class TestModeScreenCompanion:
-    """Test the head-companion mascot rendered beside the welcome-screen menu."""
+    """Test the head-companion mascot rendered beside the welcome-screen menu.
+
+    Both sizes are derived from `_COMPANION_MIN_WIDTH`, not written out. The
+    narrow case used to be a hardcoded 80x34, which stopped testing anything the
+    day the *screen's* own minimum rose to 84x40: below that the menu is not
+    drawn at all, so the control row this asserts on simply was not there and the
+    test raised `StopIteration`. Nothing noticed, because no CI lane ran this
+    file. Pinning the fixture to the constant means the threshold can move again
+    and the test moves with it.
+    """
+
+    def _control_line(self, width, height):
+        panel = _build_mode_screen(0, width=width, height=height, shimmer_tick=0.0, desc_reveal=999)
+        lines = _text_of(panel, width, height).splitlines()
+        line = next((ln for ln in lines if "prev" in ln and "next" in ln), None)
+        assert line is not None, f"no control row rendered at {width}x{height} — the fixture is below a minimum"
+        return line
 
     def test_companion_present_when_wide(self):
         # Companion layout: the tip controls sit ON the speech-bubble border, so the
         # "prev/next" line carries the bubble's rounded corners.
-        panel = _build_mode_screen(0, width=110, height=39, shimmer_tick=0.0, desc_reveal=999)
-        line = next(ln for ln in _text_of(panel, 110, 39).splitlines() if "prev" in ln and "next" in ln)
+        line = self._control_line(_COMPANION_MIN_WIDTH, _COMPANION_MIN_HEIGHT)
         assert "╰" in line and "╯" in line
 
     def test_companion_absent_when_narrow(self):
-        # Narrow: the controls are a plain centred bottom row — no bubble border.
-        panel = _build_mode_screen(0, width=80, height=34, shimmer_tick=0.0, desc_reveal=999)
-        line = next(ln for ln in _text_of(panel, 80, 34).splitlines() if "prev" in ln and "next" in ln)
+        # One column under the threshold: the controls are a plain centred bottom
+        # row with no bubble border.
+        line = self._control_line(_COMPANION_MIN_WIDTH - 1, _COMPANION_MIN_HEIGHT)
         assert "╰" not in line and "╯" not in line
 
     def test_mode_screen_exact_height_with_companion(self):

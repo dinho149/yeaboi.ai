@@ -97,6 +97,10 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-recording",
+    # `-n auto --dist loadfile` on the unit lane. The suite was fully serial and
+    # the two test jobs were the whole pipeline; this is the cheapest minute to
+    # get back. loadfile keeps a file's tests on one worker — see the Makefile.
+    "pytest-xdist",
     "ruff",
     "pre-commit",
     # so CI exercises the chart-generation tests

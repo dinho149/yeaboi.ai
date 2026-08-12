@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-queue cowork-migrate cowork-blocked cowork-teardown go-build go-test go-lint parity
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -17,16 +17,45 @@ install: ## Install uv (if missing) and project dependencies
 env: ## Copy .env.example to .env (won't overwrite existing)
 	@if [ -f .env ]; then echo ".env already exists — skipping"; else cp .env.example .env && echo "Created .env from .env.example — fill in your keys"; fi
 
-test-fast: ## Unit tests only — < 3s, no graph compilation (tight edit-test loop)
-	$(UV) run pytest tests/unit/ --tb=short -q
+# Every unit lane runs through these three variables so the paths and the
+# parallel flags cannot drift apart between the Makefile, CI and the hooks.
+#
+# UNIT_PATHS carries `tests/*.py` as well as `tests/unit/`. Those five files
+# (215 tests) were run by no CI job at all for months — `test-fast` and `test`
+# both name subdirectories, and only `test-all`, which nothing calls, picked
+# them up. One of them had been failing that whole time.
+UNIT_PATHS ?= tests/unit/ $(wildcard tests/test_*.py)
+SLOW_PATHS ?= tests/integration/ tests/contract/
+# `--dist loadfile`, not the default `load`: it keeps every test in a file on one
+# worker, so module-scoped fixtures, the shared `tmp_path` conventions and the
+# handful of tests that bind a socket behave exactly as they do serially. The
+# integration lane stays serial — `tests/integration/test_repl.py` monkeypatches
+# ten-plus names and CLAUDE.md forbids editing it.
+PYTEST_PARALLEL ?= -n auto --dist loadfile
+
+test-fast: ## Unit tests only — the tight edit-test loop
+	$(UV) run pytest $(UNIT_PATHS) $(PYTEST_PARALLEL) --tb=short -q
 	@echo "✓ Unit tests passed"
 
+test-slow: ## Integration + contract only — the half `test-fast` does not cover
+	$(UV) run pytest $(SLOW_PATHS) --tb=short
+	@echo "✓ Integration & contract tests passed"
+
 test: ## Unit + integration + contract tests — full suite, no API keys needed
-	$(UV) run pytest tests/unit/ tests/integration/ tests/contract/ --tb=short
+	$(UV) run pytest $(UNIT_PATHS) $(SLOW_PATHS) --tb=short
 	@echo "✓ All tests passed"
 
+# `python3`, not `$(UV) run`: scripts/test_scope.py imports the standard library
+# only, and putting a dependency resolve in front of the hook that runs on every
+# commit is how a fast gate becomes one people disable.
+test-scoped: ## Only the areas the working tree touches, plus the always-run guards
+	@python3 scripts/test_scope.py --working-tree --explain
+	@$(UV) run pytest $$(python3 scripts/test_scope.py --working-tree --unit-paths) \
+		$(PYTEST_PARALLEL) --tb=short -q
+	@echo "✓ Scoped unit tests passed"
+
 test-v: ## Unit + integration + contract tests (verbose)
-	$(UV) run pytest tests/unit/ tests/integration/ tests/contract/ -v
+	$(UV) run pytest $(UNIT_PATHS) $(SLOW_PATHS) -v
 
 test-all: ## Everything including golden evaluators (requires make eval separately for golden)
 	$(UV) run pytest --ignore=tests/smoke --tb=short

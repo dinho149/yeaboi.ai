@@ -122,3 +122,73 @@ class TestTheGateSurvives:
         triggers = self._gate()[True]
         for event in ("pull_request_target", "issue_comment", "pull_request_review", "workflow_run"):
             assert event in triggers, f"{event} is how the gate learns the answer changed"
+
+
+# The check names the `main-branch` ruleset makes required. Verified against the
+# live ruleset rather than against the docs, which described them under short
+# names (`Lint`, `Format check`) that match no posted check.
+#
+# Nothing in this repo can edit that ruleset, so this list is a copy — and a copy
+# is exactly what needs a test. `make cowork-check` probes the live one.
+REQUIRED_CONTEXTS = frozenset(
+    {
+        "Unit tests",
+        "Integration & contract tests",
+        "Lint (ruff)",
+        "Format check (ruff)",
+        "Security scan",
+    }
+)
+
+
+class TestRequiredChecksAlwaysReport:
+    """A required context must come from a job that cannot be skipped.
+
+    This is the same shape as the outage in this module's header, approached
+    from the other side. There, a required context existed and nothing posted
+    it; here, the risk is a job that posts one *sometimes* — scoping `ci.yml` by
+    changed paths makes that a one-line mistake. GitHub does report a skipped job
+    as a passing required check, but only when the workflow ran and evaluated the
+    `if:`; a job skipped because its `needs:` was skipped, or a workflow filtered
+    out by `paths:`, produces no check at all and blocks the PR forever.
+
+    So the rule is blunt on purpose: the five required jobs run every time, and
+    scoping may change what they *do*, never whether they report.
+    """
+
+    def _ci_jobs(self) -> dict:
+        data = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        return data["jobs"]
+
+    def test_every_required_context_is_produced_by_ci(self):
+        names = {job.get("name") for job in self._ci_jobs().values()}
+        missing = REQUIRED_CONTEXTS - names
+        assert not missing, f"no ci.yml job posts {sorted(missing)} — the ruleset would wait forever"
+
+    @pytest.mark.parametrize("context", sorted(REQUIRED_CONTEXTS))
+    def test_a_required_job_is_never_conditional(self, context: str):
+        job = next(j for j in self._ci_jobs().values() if j.get("name") == context)
+        assert "if" not in job, (
+            f"{context!r} is a required status check, so its job must not carry an `if:` — "
+            "scope it by changing what it runs, not whether it runs"
+        )
+
+    @pytest.mark.parametrize("context", sorted(REQUIRED_CONTEXTS))
+    def test_a_required_job_never_depends_on_a_skippable_one(self, context: str):
+        """`needs:` on a job that can skip makes this job skip too, and a job
+        that never ran posts no check at all."""
+        jobs = self._ci_jobs()
+        job = next(j for j in jobs.values() if j.get("name") == context)
+        needs = job.get("needs") or []
+        for dependency in [needs] if isinstance(needs, str) else needs:
+            assert "if" not in jobs[dependency], (
+                f"{context!r} needs {dependency!r}, which is conditional — if {dependency!r} skips, "
+                f"{context!r} never runs and the required check never appears"
+            )
+
+    def test_the_workflow_linter_is_never_conditional_either(self):
+        """Not a required context, but gating it on `.github/**` would recreate
+        the blind spot it exists to close: an unparseable workflow is invisible
+        to every tool that reads workflows, including the one that would say so."""
+        job = next(j for j in self._ci_jobs().values() if j.get("name", "").startswith("Workflow lint"))
+        assert "if" not in job
