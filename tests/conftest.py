@@ -262,28 +262,46 @@ def _no_real_gh_calls(monkeypatch):
     over is precisely the case with no stub at all, which is the one that reaches
     the network.
 
-    ``scripts/`` is not a package, so the module is found by the name it registers
-    in ``sys.modules``; if it was never imported there is nothing to block and this
-    is a no-op.
+    **There can be more than one ``_gh_transport``, and patching the wrong one is
+    silent.** ``scripts/`` is not a package, and the two loaders disagree about who
+    owns the name: ``cowork_setup`` and ``cowork_relay`` do a plain ``import
+    _gh_transport``, binding whatever object exists at their load time, while
+    ``test_gh_transport.py`` builds a *fresh* module off the file path and assigns
+    it over ``sys.modules["_gh_transport"]``. Collection is alphabetical, so in a
+    full-suite run the registry entry is the fresh object and ``cowork_setup``
+    still holds the original — patching only the registry leaves the module that
+    caused the incident unguarded, and the guard's own proof passes when run on one
+    file because there the two happen to coincide.
+
+    So every distinct transport object reachable from the loaded scripts modules is
+    patched, deduped by identity. If none was imported there is nothing to block
+    and this is a no-op.
     """
     import sys as _sys
 
-    transport = _sys.modules.get("_gh_transport")
-    if transport is None:
-        return
-    real = transport._run
+    reachable = []
+    for name in ("_gh_transport", "cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff"):
+        module = _sys.modules.get(name)
+        if module is None:
+            continue
+        candidate = module if name == "_gh_transport" else getattr(module, "transport", None)
+        if candidate is not None and not any(candidate is seen for seen in reachable):
+            reachable.append(candidate)
 
-    def _blocked(argv, *args, **kwargs):
-        # `gh` only. Everything else through this seam is `git remote get-url
-        # origin` — a local, read-only lookup that cannot reach GitHub and that
-        # several tests legitimately let run. Blocking it too would fail seven
-        # tests that never did anything wrong, and a guard with collateral like
-        # that gets loosened rather than kept.
-        if argv and argv[0] == "gh":
-            raise RealGitHubWriteBlocked(f"test tried to spawn the real gh CLI: {argv}")
-        return real(argv, *args, **kwargs)
+    for transport in reachable:
+        real = transport._run
 
-    monkeypatch.setattr(transport, "_run", _blocked, raising=False)
+        def _blocked(argv, *args, _real=real, **kwargs):
+            # `gh` only. Everything else through this seam is `git remote get-url
+            # origin` — a local, read-only lookup that cannot reach GitHub and that
+            # several tests legitimately let run. Blocking it too would fail seven
+            # tests that never did anything wrong, and a guard with collateral like
+            # that gets loosened rather than kept.
+            if argv and argv[0] == "gh":
+                raise RealGitHubWriteBlocked(f"test tried to spawn the real gh CLI: {argv}")
+            return _real(argv, *args, **kwargs)
+
+        monkeypatch.setattr(transport, "_run", _blocked)
 
 
 @pytest.fixture(autouse=True)

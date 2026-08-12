@@ -1269,14 +1269,14 @@ class TestMergeGateCheck:
     def test_the_probe_reports_none_when_the_query_fails(self, monkeypatch):
         monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/gh")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
-        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"))
+        monkeypatch.setattr(setup, "_gh", lambda *a: subprocess.CompletedProcess(a, 1, "", "boom"))
         assert setup.merge_gate_armed() is None
 
     @pytest.mark.parametrize(("stdout", "expected"), [("true", True), ("false", False), ("", False)])
     def test_the_probe_reads_the_jq_answer(self, monkeypatch, stdout, expected):
         monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/gh")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
-        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout, ""))
+        monkeypatch.setattr(setup, "_gh", lambda *a: subprocess.CompletedProcess(a, 0, stdout, ""))
         assert setup.merge_gate_armed() is expected
 
 
@@ -2424,6 +2424,11 @@ class TestApiTransport:
         monkeypatch.setattr(setup, "TRANSPORT", "api")
         monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
         monkeypatch.setenv("GH_TOKEN", "t")
+        # This fixture *is* "the REST transport is the one that answered", and
+        # `github_ready()` re-resolves that by shelling out to `gh auth status`.
+        # Unstubbed it made a live call on every teardown test — invisible until
+        # `_no_real_gh_calls` started refusing.
+        monkeypatch.setattr(setup, "github_ready", lambda: True)
         return type("Api", (), {"calls": calls, "replies": replies})()
 
     # --- token resolution ----------------------------------------------------

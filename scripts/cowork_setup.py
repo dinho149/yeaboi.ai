@@ -1871,12 +1871,12 @@ def merge_gate_armed() -> bool | None:
             'any(.[]; .type=="required_status_checks" and '
             'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
         )
-        result = subprocess.run(  # noqa: S603 - literal argv
-            ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Through `_gh` like every other CLI call in this file, rather than its own
+        # `subprocess.run`. It was the one that had its own, which meant it was the
+        # one call the tests could not stub — `TestStrict` was making a live
+        # `gh api .../rules/branches/main` request on every run, against whatever
+        # repo the checkout pointed at.
+        result = _gh("api", f"repos/{slug}/rules/branches/main", "--jq", query)
         if result.returncode != 0:
             return None
         return result.stdout.strip() == "true"

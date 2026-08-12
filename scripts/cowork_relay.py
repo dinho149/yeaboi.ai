@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -279,7 +278,7 @@ def _gh_labels(argv: list[str]) -> str | None:
     the caller a second shape.
     """
     if transport.gh_available():
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+        result = transport._run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
         return result.stdout if result.returncode == 0 else None
     slug = transport.resolve_slug(ROOT)
     if not slug:
