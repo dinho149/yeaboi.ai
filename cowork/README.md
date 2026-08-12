@@ -9,9 +9,14 @@ yeaboi run as standing engineering teams. Each workstream scouts its own area on
 ```
 scout routine (per workstream, own cron)
       │
-      ├─ auto lane ─── builder ─── PR ─── you merge ──┐
-      │  (narrow allowlist — see house-rules.md)      │
-      │                                               │
+      ├─ auto lane ─── builder ─── PR ─── ruleset merges it ──┐
+      │  (narrow allowlist — see house-rules.md)              │
+      │        ▲                                              │
+      │        └── the `cowork:queued` queue: an issue a rule │
+      │            already covered, so nobody is asked. Built │
+      │            one per run, oldest first; a merge closes  │
+      │            it. Drain-only — nothing files into it.    │
+      │                                               ┌───────┘
       └─ propose lane ─ scribe files a GitHub issue   │
                         `cowork:proposal` + `workstream:X`
                         (no Linear ticket yet)        │
@@ -37,6 +42,13 @@ Unapproved proposals are closed by the digest routine after 14 days, and closing
 you say no sooner. GitHub issues *are* the queue — there is no other shared state between routine
 runs.
 
+**A proposal is a question; a `cowork:queued` issue is not.** The two labels are mutually exclusive,
+and which one an issue carries decides who answers it — a human, or the next sweep. Only a sweep
+moves an issue between them, one at a time, having read it; the one-time backfill of an existing
+backlog is `scripts/cowork_setup.py --migrate-proposals`, which no routine can run. Being queued
+grants nothing: the sweep re-checks the allowlist before building, and bounces what fails.
+See [house-rules.md](house-rules.md), **The queue**.
+
 **The queue is depth-bounded: two open proposals per workstream.** A sweep fills whatever slots are
 free with its best finds and drops the rest — silently, and losslessly, because the next sweep
 surveys the same surface and re-ranks. Answering one reopens a slot, which is the only thing that
@@ -57,7 +69,7 @@ before it is opened.
 | When | What arrives | Stays silent when |
 |---|---|---|
 | Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
-| Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, and ⏸️ **Held** — the workstreams at their proposal cap | nothing is waiting |
+| Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, plus ⏸️ **Held** and 🛠️ **Queued** — what the fleet owes you, which asks nothing | nothing is waiting, and neither fault fired |
 | Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release | nothing shipped, building or stuck |
 | Mondays 09:00 UTC | 🏷️ **Promote X.Y.Z?** — the weekly release ask | nothing is promotable |
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
@@ -299,8 +311,9 @@ The labels half, by contrast, is genuinely repaired by the REST path: `gh label 
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the thirty-one GitHub labels (`cowork`,
-`cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
+**What each command covers.** `make cowork-setup` does the thirty-two GitHub labels (`cowork`,
+`cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
+`release:promotion`/`release:promote`
 pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
 campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
@@ -337,6 +350,8 @@ rest of the verbs on it:
 | `/cowork today` | what runs today and over the next week, in one message shape. Read-only. |
 | `make cowork-check` | the repo half of `status`, with no session needed. |
 | `make cowork-slots` | how full each workstream's proposal queue is, and which issues are holding it. Read-only. |
+| `make cowork-queue` | what each workstream's sweep should build next, in build order. The counterpart of `cowork-slots`: that one answers "may I file?", this one answers "what do I owe?". Read-only. |
+| `make cowork-migrate` | one-off, human-only: reclassify auto-lane-eligible `cowork:proposal` issues as `cowork:queued`. Prints the plan and changes nothing without `YES=1`; refuses under `--strict`, so no routine can run it. |
 | `make cowork-blocked` | whether a standing fault has already been reported, so a routine says it once. Read-only. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 

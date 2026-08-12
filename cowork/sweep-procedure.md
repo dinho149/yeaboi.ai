@@ -37,26 +37,107 @@ workstream and any per-run focus; everything else is here.
    (`integration-campaign.md`), approved by provider rather than by find. Nothing found is a
    normal outcome: exit silently.
 
-4. **Deduplicate** — `gh issue list --label "workstream:<name>" --state open` and
-   `gh issue list --label "workstream:<name>" --state closed --limit 50`. Drop any find that
-   restates an open proposal or one that was closed unapproved. Do not re-file rejected ideas.
+4. **Deduplicate — four outcomes, not one.** `gh issue list --label "workstream:<name>" --state
+   open` and `gh issue list --label "workstream:<name>" --state closed --limit 50`. For a find that
+   restates an issue you already have, what happens depends on that issue's label *and* on the lane
+   you put the find in:
 
-   `--proposal-slots <name>` (step 6) returns the open half of that list as `blocking`, over REST
-   rather than GraphQL — which is the half that answers in a routine session, where `gh issue list
-   --json` is refused by the egress proxy. Use it when the `gh` reads above come back empty; an
-   empty result there means "could not ask", not "nothing open", and a dedupe run against nothing
-   re-files everything.
+   - restates an issue **closed** unapproved → **drop it.** A closing is a rejection and a
+     rejection is durable. Do not re-file rejected ideas.
+   - restates an open **`cowork:queued`** issue → **it already is your work item.** Do not file it
+     and do not drop it: carry that issue's number into step 5.
+   - restates an open **`cowork:proposal`** issue and your find is **`propose`** → **drop it.** The
+     question is already in front of a human; asking it twice does not answer it.
+   - restates an open **`cowork:proposal`** issue and your find is **`auto`** → **reclassify that
+     issue in place**, and carry it into step 5:
 
-5. **Auto lane** — take **one** `auto` find per run, never more: the one with the highest
-   `impact`, breaking ties toward the lower `risk`. Impact over risk, in that order — a low-risk
-   nothing is still nothing, and the reason risk is the tie-break rather than the sort key is that
-   the allowlist has already excluded everything genuinely risky. Put the find's
-   `impact`/`effort`/`risk` and the number of `auto` finds you passed over in the PR body, so a
-   wrong pick is legible afterwards instead of being an unrecorded judgement.
+     ```bash
+     gh issue edit <n> --add-label cowork:queued --remove-label cowork:proposal
+     gh issue comment <n> --body "…"
+     ```
+
+     Add before you remove, so a run that dies between the two leaves an issue carrying both —
+     which `--proposal-slots` reads as queued and the digest reads as still listed, the harmless
+     direction on each side. **Never `gh api` with `PUT .../labels`**: that verb replaces the whole
+     set, which is how #172 lost its workstream and type labels in one call and ran without a
+     charter.
+
+     The write-up on the issue does not change. **What changes is who answers it.** An issue is a
+     question waiting on a human, and a find on the auto-lane allowlist is by definition not one.
+     Dropping such a find because a question about the same thing is open is how a fleet with an
+     unattended lane came to have forty-two open proposals, none of them ever answered, and nothing
+     shipped.
+
+     **Never reclassify a `codeql:` issue.** `codeql-triage.yml` opens one only for a rule whose
+     `propose` entry in `.github/codeql/triage-policy.yml` records why a human has to decide it,
+     so queuing it hands a recorded human decision back to a machine to re-make. It also breaks
+     that workflow's own dedupe, which searches `--label cowork:proposal` for the rule id: once
+     the issue carries `cowork:queued` instead, next week's run does not find it and opens a
+     second **public** issue re-asking the same question. Leave it a proposal.
+
+     **Only for an issue whose find you classified `auto` yourself, this run, having read the
+     issue.** Never in bulk, never on the strength of a matching title. The one-time backfill of an
+     existing backlog is `scripts/cowork_setup.py --migrate-proposals`, which a human runs and no
+     routine can.
+
+   `--proposal-slots <name>` (step 6) returns the open proposal half of that list as `blocking`,
+   and `uv run python scripts/cowork_setup.py --queued <name>` returns the other half — both over
+   REST rather than GraphQL, which is the half that answers in a routine session, where `gh issue
+   list --json` is refused by the egress proxy. Use them when the `gh` reads above come back empty;
+   an empty result there means "could not ask", not "nothing open", and a dedupe run against
+   nothing re-files everything.
+
+5. **Auto lane — build one item per run, and prefer the one that already has an issue.**
+
+   Read the queue first:
+
+   ```bash
+   uv run python scripts/cowork_setup.py --queued <name>
+   ```
+
+   It returns the open `cowork:queued` issues for this workstream with their `impact`, `risk` and
+   age, already sorted. Merge them with today's `auto` finds — a find carrying a number from step 4
+   is the *same item* as the queued issue it names, and is listed once, not twice — into one list,
+   and take the top of it:
+
+   1. **`critical: true` first.** A critical find pre-empts the queue exactly as it pre-empts the
+      cap ([house-rules.md](house-rules.md), **Critical**).
+   2. then **highest `impact`** — the same key this step has always sorted on;
+   3. ties to **lower `risk`** — the same tie-break;
+   4. ties to **the queued item**, and among queued items to the **oldest**.
+
+   One comparator over one list, because the queue is not a different kind of work — it is the same
+   finds, already written down. Impact still outranks age, so a genuinely more important thing
+   found this morning still ships this morning; the queue wins every tie, which is what drains it.
+   And the queue is finite and shrinking by construction: **nothing files into it** (step 4 only
+   moves an issue that already exists, and a passed-over `auto` find is still dropped), so it
+   terminates.
+
+   Take the top item and no more. Put in the PR body which it was, its `impact`/`effort`/`risk`,
+   whether it came from the queue (with the issue number) or from today's scout, and how many
+   `auto` items you passed over — so a wrong pick is legible afterwards instead of being an
+   unrecorded judgement.
+
+   **A queued issue is a hypothesis, not a permission.** Before you spawn anything, check it
+   against the auto-lane allowlist yourself, exactly as you would a fresh find. It may have been
+   written when the item was still a proposal, and the backfill that queued it applied a mechanical
+   rule rather than a judgement. Three outcomes:
+
+   - **it clears the allowlist** → build it. Everything below this line is unchanged.
+   - **it does not clear it** — no reproducible test, the fix would change user-facing wording, the
+     paths fall outside your charter's `Owns` → **bounce it**:
+     `gh issue edit <n> --add-label cowork:proposal --remove-label cowork:queued`, comment one line
+     naming the condition that failed, and move to the next item on the list. A wrongly-queued item
+     costs one comment; it never costs a merge.
+   - **the evidence no longer reproduces** — the `**Evidence**` line points at code that has
+     changed or a command that now passes → **close it** with `no longer reproduces at <sha>`, and
+     move on. That is the correct terminal state for a stale find, and closing is what stops it
+     coming back.
 
    A `type: bug` find carries one extra obligation, and it is the admission ticket rather than a
    nicety: **a regression test that fails before the fix and passes after.** Run it both ways and
    paste both results into the PR body. No reproduction, no auto lane — re-file it as a proposal.
+   **The queue does not waive this**, for a queued item any more than for a fresh find.
 
    Tiers come from [models.md](models.md); pass each one explicitly on spawn:
    - spawn `cowork-scribe` (`standard`) to open the Linear ticket (DoD item 1)
@@ -70,7 +151,9 @@ workstream and any per-run focus; everything else is here.
      and stop. Nothing here may overrule a reviewer
    - once the PR exists, spawn `cowork-scribe` (`standard`) again to attach it to the Linear ticket
      and move the ticket to **In Review** — the `Closes YEA-NN` line in the PR body then carries it
-     to Done on merge
+     to Done on merge. **When you built a queued item, the PR body also carries `Closes #<n>`** for
+     its GitHub issue. The merge is the only thing that closes a queue entry; without that line the
+     queue only grows
    - **arm auto-merge, but only if the gate is actually armed.** Check the ruleset first, exactly
      as `.github/workflows/codeql-triage.yml` does — this is a fact to read, not a judgement to
      make:
@@ -96,7 +179,12 @@ workstream and any per-run focus; everything else is here.
    uv run python scripts/cowork_setup.py --proposal-slots <name>
    ```
 
-   It answers `{"cap": 2, "open": …, "slots": …, "blocking": [ … ]}`. Then, in this order:
+   It answers `{"cap": 2, "open": …, "slots": …, "queued": …, "blocking": [ … ]}`. **`queued` is
+   reported, never counted**: a `cowork:queued` issue is work in flight and occupies no slot, so a
+   workstream with six queued items and no open proposals has its full two. That is the whole
+   arithmetic of the split — a work item must not hold a slot that only a human verb can release.
+
+   Then, in this order:
 
    - **Every `critical: true` find is filed, whatever `slots` says.** The four cases are in
      [house-rules.md](house-rules.md), **Critical**; the scout has already scored them and you do
@@ -133,3 +221,7 @@ is wrong with the charter's scope, and filing 10 issues would bury the digest).
 lane in step 5 still runs, and a run that ships a PR and files no proposal is a good run. Exit
 quietly, the way step 2 does when a PR is already open — no issue, no Slack, no explanation posted
 anywhere. The digest is where the fleet's held workstreams are reported, once, in one place.
+
+**And a queue with work in it is not one either.** `cowork:queued` items change what step 5 builds
+and nothing else: step 6 still files, and a run that ships a queued item *and* files a proposal is a
+normal run. The queue is reported by the digest, once, in one place — a sweep says nothing about it.
