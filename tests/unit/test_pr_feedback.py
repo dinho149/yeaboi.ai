@@ -426,15 +426,23 @@ class TestTheLocalLane:
         """
         assert prf.classify(local(ci=ci), NOW).state == "success", label
 
-    def test_an_unresolved_human_thread_does_not_block_either(self):
-        """It is still listed. GitHub's own review UI is where the author sees it."""
+    def test_an_unresolved_human_thread_still_blocks(self):
+        """The lane withdraws the machine reviewer, not the human one.
+
+        This asserted `success` when the lane first landed, on the reasoning that
+        GitHub's own review UI is where a human PR's author already looks. The
+        argument for going advisory is "nobody on the other end to weigh a
+        finding", and that is false by construction here — so this is the one
+        part of item 10 the local lane can still meaningfully enforce, and
+        `definition-of-done.md` promises it in as many words.
+        """
         verdict = prf.classify(local(comments=(review(0),), threads=(thread(authors=("a-reviewer",)),)), NOW)
-        assert verdict.state == "success"
+        assert verdict.state == "failure"
         assert any(item.kind == "thread" for item in verdict.items)
 
-    def test_changes_requested_does_not_block_either(self):
+    def test_changes_requested_still_blocks(self):
         verdict = prf.classify(local(comments=(review(0),), review_decision="CHANGES_REQUESTED"), NOW)
-        assert verdict.state == "success"
+        assert verdict.state == "failure"
 
     def test_the_comment_says_advisory_and_not_clear(self):
         body = prf.sticky_body(local(comments=(review(2),)), prf.classify(local(comments=(review(2),)), NOW))
@@ -1811,3 +1819,71 @@ class TestAnUnreadablePRIsNotACleanOne:
         err = capsys.readouterr().err
         assert "could not read PR #7" in err
         assert "Do not read this as a clean PR" in err
+
+
+class TestTheLocalLaneStillCarriesAPerson:
+    """The advisory lane withdraws the *machine* reviewer, and only it.
+
+    "Nobody on the other end to weigh a finding" is the whole argument for going
+    advisory, and it is false by construction when the finding is a human's. The
+    first cut of the lane short-circuited on the whole item list, which took an
+    unresolved review thread and a `CHANGES_REQUESTED` review with it — on the
+    one lane where the reviewer is a real person waiting for an answer, and
+    against `definition-of-done.md`'s promise in as many words that those are
+    never capped.
+    """
+
+    def test_an_unresolved_human_thread_blocks_a_local_branch(self):
+        snap = snapshot(head_ref="feature/some-work", threads=(thread(),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert verdict.reason != "advisory"
+
+    def test_a_changes_requested_review_blocks_a_local_branch(self):
+        snap = snapshot(head_ref="feature/some-work", review_decision="CHANGES_REQUESTED")
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_review_findings_alone_stay_advisory(self):
+        snap = snapshot(head_ref="feature/some-work", comments=(review(3),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "success"
+        assert verdict.reason == "advisory"
+
+    def test_a_human_thread_wins_over_advisory_findings(self):
+        """Both present: the blocking half decides, and only it is listed."""
+        snap = snapshot(head_ref="feature/some-work", comments=(review(3),), threads=(thread(),))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "failure"
+        assert all(item.kind != "producer" for item in verdict.items)
+
+    def test_it_still_cannot_be_pending_on_a_local_branch(self):
+        """The load-bearing property survives the change: a local branch may be
+        red for a person, never `pending` for a machine that did not speak."""
+        snap = snapshot(head_ref="feature/some-work", comments=(), threads=(thread(),))
+        assert prf.classify(snap, NOW).state != "pending"
+
+
+class TestADismissalIsNeverAnAccount:
+    """`answered=N` from the PR's own author is a bare marker with a number.
+
+    The bare shape was refused and the counted one was not, though both claim no
+    work at all — nothing for the reviewer's next read of the diff to check. On
+    the unattended lane, with the review capped at two rounds, that let an agent
+    close out every superseded round without ever claiming a fix.
+    """
+
+    def _superseded(self):
+        return (review(3, minutes_ago=90, ident=1), review(0, minutes_ago=10, ident=2))
+
+    def test_answered_only_from_the_author_does_not_account(self):
+        reply = account(fixed=0, answered=3, author=AUTHOR)
+        assert prf.classify(snapshot(comments=(*self._superseded(), reply)), NOW).state == "failure"
+
+    def test_one_claimed_fix_makes_the_whole_reply_admissible(self):
+        reply = account(fixed=1, answered=2, author=AUTHOR)
+        assert prf.classify(snapshot(comments=(*self._superseded(), reply)), NOW).state == "success"
+
+    def test_a_maintainer_may_still_answer_the_whole_round(self):
+        """The refusal is about the applicant holding the key, not about the shape."""
+        reply = account(fixed=0, answered=3, author=MAINTAINER)
+        assert prf.classify(snapshot(comments=(*self._superseded(), reply)), NOW).state == "success"

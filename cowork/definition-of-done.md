@@ -61,9 +61,13 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   the fix. It is also **never capped** — unlike the findings, which have no natural terminator, this
   is one comment.
 
-  **This item binds the unattended lane only.** A PR from a branch a person is sitting at the
-  keyboard for gets the review — once — and the `pr-feedback` status reports its findings as
-  *advisory* and stays green. The gate exists because an unattended PR has nobody on the other end
+  **The machine reviewer binds the unattended lane only.** A PR from a branch a person is sitting
+  at the keyboard for gets the review — once — and the `pr-feedback` status reports its findings as
+  *advisory* and stays green. **A human's unresolved thread, and a `Request changes` review, still
+  block on both lanes**: the argument for going advisory is that an unattended PR has nobody on the
+  other end to weigh a finding against the cost of not merging, and that is false by construction
+  when the reviewer is a person. Going advisory on those too would have printed "nothing here has
+  to be answered before you merge" above an open thread on the one lane where the thread is real. The gate exists because an unattended PR has nobody on the other end
   to weigh a finding against the cost of not merging; a human's own branch has exactly that person,
   already reading the review, and holding their merge to make them type a marker at themselves is
   ceremony rather than review. `scripts/pr_feedback.py` decides the lane with `is_unattended()`,

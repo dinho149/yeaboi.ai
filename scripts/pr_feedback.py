@@ -667,7 +667,7 @@ def account_for(
     after: datetime,
     after_id: int,
     count: int,
-    deny_bare_from: str = "",
+    deny_dismissal_from: str = "",
 ) -> Comment | None:
     """The reply that says what was done about ``count`` findings, or None.
 
@@ -677,13 +677,18 @@ def account_for(
     not there and the finding comes straight back. A dismissal has no such check
     behind it, which is why only that one is refused from the applicant.
 
-    ``deny_bare_from`` is the one place that asymmetry has to be spelled out. A
-    *bare* marker means "all of them, answered" — it is pure dismissal, carrying
-    no claim of work for the next review pass to check. Accepting one from the
-    PR's own author would have let an unattended PR clear its account with a
-    contentless comment, which is precisely the silence this check exists to
-    stop. A counted marker from that same author is still fine: ``fixed=`` is
-    the half that gets verified.
+    ``deny_dismissal_from`` is the one place that asymmetry has to be spelled
+    out. An account that claims **no fix at all** — a bare marker, which means
+    "all of them, answered", or an explicit ``answered=N fixed=0`` — is pure
+    dismissal: it leaves nothing for the next review pass to check. Accepting one
+    from the PR's own author would let an unattended PR close out every
+    superseded round without ever claiming a fix, which is precisely the silence
+    this check exists to end. Claim one fix and the whole reply is admissible,
+    because the reviewer's re-read of the diff is then a real check on it.
+
+    Testing ``fixed == 0`` rather than ``bare`` is deliberate and was a real gap:
+    the bare shape was refused while ``answered=3`` from that same author sailed
+    through, which is the identical dismissal with a number typed after it.
 
     Earliest match wins, so the ledger names the reply that answered the round
     rather than whichever later comment happened to repeat the marker.
@@ -697,7 +702,7 @@ def account_for(
         response = responses(comment.body).get(producer_key)
         if response is None or not response.covers(count):
             continue
-        if response.bare and deny_bare_from and comment.author == deny_bare_from:
+        if response.fixed == 0 and deny_dismissal_from and comment.author == deny_dismissal_from:
             continue
         if best is None or (comment.created_at, comment.id) < (best.created_at, best.id):
             best = comment
@@ -786,7 +791,7 @@ def unaccounted_rounds(snapshot: Snapshot) -> list[OpenItem]:
                 comment.written_at,
                 comment.id,
                 required,
-                deny_bare_from=snapshot.author,
+                deny_dismissal_from=snapshot.author,
             )
             is not None
         ):
@@ -986,7 +991,19 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     # That is the precondition that made adding `pr-feedback` to the branch
     # ruleset safe: the gate can only ever refuse an unattended PR, and an
     # unattended PR has a machine on the other end that can fix what it is told.
+    #
+    # What goes advisory here is the *machine reviewer*, and only it. A second
+    # person's unresolved thread and a `CHANGES_REQUESTED` review still block,
+    # because the argument above does not reach them: "nobody on the other end to
+    # weigh a finding" is false by construction when the finding is a human's,
+    # and `definition-of-done.md` promises in as many words that a person waiting
+    # for an answer is never capped. Letting those ride as advisory would have
+    # printed "nothing here has to be answered before you merge" directly above a
+    # reviewer's open thread — on the one lane where the reviewer is real.
     if not is_unattended(snapshot):
+        human = [item for item in items if item.kind != "producer"]
+        if human:
+            return Verdict("failure", describe(human), tuple(human))
         if not items:
             return Verdict("success", "no open review feedback")
         noun = "finding" if len(items) == 1 else "findings"
@@ -1453,7 +1470,7 @@ def review_ledger(snapshot: Snapshot) -> list[str]:
                 comment.written_at,
                 comment.id,
                 required,
-                deny_bare_from=snapshot.author if is_unattended(snapshot) else "",
+                deny_dismissal_from=snapshot.author if is_unattended(snapshot) else "",
             )
             missing = "**nothing written back yet**"
         else:
@@ -1512,6 +1529,9 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
             f"`security/codeql-triage…`, `ci-sentinel/…`, and anything labelled `{COWORK_LABEL}` — "
             "where there is nobody on the other end to weigh a finding. You are the person this "
             "would otherwise be arguing with, so it does not argue.",
+            "",
+            "A *person's* unresolved thread, or a `Request changes` review, still holds this check "
+            "even here — that one has somebody on the other end by construction.",
         ]
         return "\n".join(lines)
     if verdict.state == "success" and verdict.items:

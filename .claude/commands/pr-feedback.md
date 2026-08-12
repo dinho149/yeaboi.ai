@@ -57,7 +57,9 @@ all point here rather than restating it.
    way through is one comment. It is never capped and never expires.
 
    **On a local branch none of it is required**, for the same reason nothing else
-   on that lane is: you did the fixing and you are the one merging.
+   on that lane is: you did the fixing and you are the one merging. That covers
+   the *machine* reviewer only — a human's unresolved thread and a `Request
+   changes` review hold the check on every lane.
 
    The marker only counts if the comment is **newer than the verdict it answers**, so
    post it after the review, not before. If you push again afterwards, the next review

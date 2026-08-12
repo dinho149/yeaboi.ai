@@ -29,7 +29,7 @@ The contract this branch must satisfy is `cowork/definition-of-done.md` — the 
 
    Name the follow-up: `/pr-feedback <n>` once CI is green, or `/babysit-prs` across every open PR. Do not wait for it here; a `/ship` that blocks for ten minutes gets run less often.
 
-   **On a branch you are shipping by hand, that review is advisory and the `pr-feedback` status stays green.** It runs once, it posts what it found, and it does not hold the merge — you are the person it would otherwise be arguing with. Read it anyway; that is the whole point of it existing. The gate enforces on the unattended lane (`cowork/…`, `feature/issue-…`, triage and sentinel branches, or anything labelled `cowork`), where nobody is on the other end.
+   **On a branch you are shipping by hand, that review is advisory and the `pr-feedback` status stays green.** It runs once, it posts what it found, and it does not hold the merge — you are the person it would otherwise be arguing with. Read it anyway; that is the whole point of it existing. The gate enforces on the unattended lane (`cowork/…`, `feature/issue-…`, triage and sentinel branches, or anything labelled `cowork`), where nobody is on the other end. **A human reviewer's unresolved thread, or a `Request changes` review, still holds the check here** — that one has somebody waiting by construction.
 
    So step 6 does need the judgement it asks for: `gh pr merge --auto` waits on the required checks, and on a hand-shipped branch `pr-feedback` will be green whatever the review says. An auto-merge can outrun the review here — which is why step 6 is limited to changes that are genuinely low-risk.
 
