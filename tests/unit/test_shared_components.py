@@ -923,7 +923,7 @@ class TestSettingsScreen:
 
         result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80, active_tab=0)
         buf = StringIO()
-        Console(file=buf, width=120, force_terminal=True).print(result)
+        Console(file=buf, width=120, force_terminal=True, color_system="truecolor").print(result)
         assert "https://github.com/settings/tokens" in buf.getvalue()
         assert "\x1b]8;" in buf.getvalue()  # OSC-8 hyperlink escape
 

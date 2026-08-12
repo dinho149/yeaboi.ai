@@ -29,9 +29,20 @@ from yeaboi.ui.mode_select.screens._screens import (
 
 
 def _render(renderable, width: int = 80) -> str:
-    """Render a Rich renderable to a plain string for testing."""
+    """Render a Rich renderable to a plain string for testing.
+
+    ``color_system`` is pinned even though ``no_color=True`` makes this file's own
+    assertions colour-blind, because the damage is not to this file. Rich memoises
+    ``Style`` objects globally and caches the rendered escape on them, so the first
+    render at a given colour system fixes what every later render in the process
+    gets. Left to auto-detection this console is truecolor on a dev machine and
+    8-colour on CI (which sets no ``COLORTERM``), and the 8-colour pass poisons the
+    styles `test_screen_backgrounds.py` then asserts truecolor SGR fragments on —
+    nine failures in a file that pins its own console correctly and never imports
+    this one. `TestTruecolorConsoles` there enforces this repo-wide.
+    """
     buf = StringIO()
-    console = Console(file=buf, width=width, force_terminal=True, no_color=True)
+    console = Console(file=buf, width=width, force_terminal=True, color_system="truecolor", no_color=True)
     console.print(renderable)
     return buf.getvalue()
 

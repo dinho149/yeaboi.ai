@@ -225,6 +225,51 @@ class TestTruecolorConsoles:
     # or "48;2;16;16;20" (a background). Two or more semicolon-joined numbers.
     RGB_FRAGMENT = re.compile(r"\"\d{1,3};\d{1,3};[\d;]*\d{1,3}\"")
 
+    # `tests/integration/` is exempt, and deliberately: it is a separate CI job in
+    # its own process, so it cannot poison the unit lane, and CLAUDE.md forbids
+    # editing `test_repl.py` at all.
+    EXEMPT_DIRS = ("integration",)
+
+    def _lane_files(self):
+        """Every file the unit lane runs — `tests/unit/**` plus `tests/*.py`."""
+        for path in sorted(self.TESTS_ROOT.rglob("test_*.py")):
+            rel = path.relative_to(self.TESTS_ROOT)
+            if rel.parts[0] in self.EXEMPT_DIRS:
+                continue
+            yield path, rel.as_posix()
+
+    def test_no_unit_lane_console_leaves_its_color_system_to_the_environment(self):
+        """The carve-out below is not safe for the *poisoning*, only for the assert.
+
+        A file that asserts no rgb fragment can still render one of the shared
+        styles through an 8-colour console and fix `Style._ansi` for the whole
+        worker — which is exactly how nine tests here went red from a change to
+        the music bar in `tests/test_mode_select.py`, a file that asserts no
+        colour at all and imports nothing from this one. Under `--dist loadfile`
+        which files share a worker depends on the runner's CPU count, so the
+        failure is not even reproducible on the machine that caused it.
+
+        So the rule for the unit lane is unconditional: force the terminal and you
+        pin the colour system, whatever you assert.
+        """
+        offenders: list[str] = []
+        for path, rel in self._lane_files():
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "id", getattr(node.func, "attr", "")) != "Console":
+                    continue
+                kw = {k.arg: k.value for k in node.keywords if k.arg}
+                forced = isinstance(kw.get("force_terminal"), ast.Constant) and kw["force_terminal"].value is True
+                if forced and "color_system" not in kw:
+                    offenders.append(f"{rel}:{node.lineno}")
+        assert not offenders, (
+            "Console(force_terminal=True) with no color_system in the unit lane. Rich memoises "
+            "Styles globally and caches the rendered escape on them, so an 8-colour render here "
+            'poisons every truecolor assertion in the same worker: add color_system="truecolor". '
+            f"{offenders}"
+        )
+
     def test_rgb_asserting_files_pin_color_system(self):
         offenders: list[str] = []
         for path in sorted(self.TESTS_ROOT.rglob("test_*.py")):
