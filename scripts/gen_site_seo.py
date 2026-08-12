@@ -77,12 +77,19 @@ ASSET_VERSION = 136
 # Failing closed is safe here: site.js gates every use behind `window.Lenis` and
 # `window.__lenis`, so a refused script degrades to native scrolling.
 #
-# Regenerate after bumping the version (no network in this script or its tests —
-# `--check` must produce identical bytes in CI):
+# BUMPING THE VERSION? Regenerate this hash and verify it, in that order:
 #
 #     uv run python -c "import base64,hashlib,urllib.request as u; \
-#     b=u.urlopen('https://unpkg.com/lenis@1.3.4/dist/lenis.min.js').read(); \
+#     b=u.urlopen('https://unpkg.com/lenis@<new>/dist/lenis.min.js').read(); \
 #     print('sha384-'+base64.b64encode(hashlib.sha384(b).digest()).decode())"
+#     make site-seo && make site-check-cdn
+#
+# `make site-check-cdn` is the only thing that compares this string against the
+# bytes unpkg actually serves, and **nothing runs it for you** — it needs the
+# network, which this script and its unit tests must not touch (`--check` has to
+# produce identical bytes in CI, at fetch-depth 1, offline). A stale hash is
+# silent: no error anywhere, just every browser refusing the script on every
+# page. Run it by hand whenever LENIS_VERSION changes.
 LENIS_VERSION = "1.3.4"
 LENIS_SRI = "sha384-FKTX0CNJ8ngN1oGMBReVu7mvjTJyjFiD5etb1NKnYxc+8eFI2O0KWnksTN+oTFcu"
 
@@ -639,7 +646,12 @@ _ASSET_V_RE = re.compile(r'((?:href|src)="/(?:docs/)?assets/[^"?]+\?v=)\d+(")')
 # than merely reported. Deliberately does not *insert* a tag: a page that loads
 # no lenis is a fine page, and the same rule as _ASSET_V_RE applies — rewrite
 # what is there, never invent markup an author did not ask for.
-_LENIS_RE = re.compile(r'<script src="https://unpkg\.com/lenis@[^"]*"[^>]*></script>')
+#
+# `src` is not assumed to be the first attribute: a tag pasted as
+# `<script defer src="…unpkg…">` would otherwise be silently left un-hashed
+# while the test told the author to run `make site-seo`, which would not have
+# fixed it. `[^>]*` cannot cross a `>`, so this stays within one element.
+_LENIS_RE = re.compile(r'<script\b[^>]*\bsrc="https://unpkg\.com/lenis@[^"]*"[^>]*></script>')
 
 
 def lenis_tag() -> str:

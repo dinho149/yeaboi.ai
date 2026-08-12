@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-check-cdn site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -207,6 +207,14 @@ site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and ro
 
 site-check: ## Fail if any generated part of docs/ is stale (also asserted by make test-fast)
 	$(UV) run python scripts/gen_site_seo.py --check
+
+# Needs the network, so it is deliberately NOT in `make test`: gen_site_seo.py
+# and its unit tests must stay hermetic (--check has to produce identical bytes
+# offline at fetch-depth 1). Run this by hand after bumping LENIS_VERSION —
+# nothing else compares the pinned SRI hash against the bytes unpkg serves, and
+# a stale hash is silent until every browser has refused the script.
+site-check-cdn: ## Verify the pinned SRI hash still matches what the CDN serves (needs network)
+	$(UV) run pytest tests/smoke/test_smoke.py -m smoke -k pinned_hash -v
 
 site-og: ## Re-render the 1200x630 Open Graph card (needs the charts extra for Pillow)
 	$(UV) run --extra charts python scripts/gen_og_card.py

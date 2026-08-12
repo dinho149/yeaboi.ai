@@ -345,11 +345,19 @@ class TestAssetVersioning:
 
 
 # Every <script> element with an external src, as (whole tag, url) pairs.
-_EXTERNAL_SCRIPT_RE = re.compile(r'<script\b[^>]*\bsrc="(https?://[^"]+)"[^>]*>')
+# Deliberately wide: single quotes and a protocol-relative `//cdn…/x.js` are both
+# valid HTML and both load third-party code, so a pattern that only understood
+# double-quoted `https://` would wave through the exact tag it exists to catch.
+_EXTERNAL_SCRIPT_RE = re.compile(r"""<script\b[^>]*\bsrc=["']((?:https?:)?//[^"']+)["'][^>]*>""")
 
 
 def _external_scripts(text: str) -> list[tuple[str, str]]:
     return [(m.group(0), m.group(1)) for m in _EXTERNAL_SCRIPT_RE.finditer(text)]
+
+
+def _host_of(url: str) -> str:
+    """Host of an absolute or protocol-relative URL — index 2 either way."""
+    return url.split("/")[2]
 
 
 class TestSubresourceIntegrity:
@@ -381,7 +389,15 @@ class TestSubresourceIntegrity:
             )
 
     def test_one_hash_across_every_page(self) -> None:
-        found = {h for p in PAGES for h in re.findall(r'integrity="([^"]+)"', _read(p))}
+        """Scoped to script tags, not the whole document: an SRI'd stylesheet is
+        a correct thing to add later and must not fail this test.
+        """
+        found = {
+            h
+            for p in PAGES
+            for tag, _url in _external_scripts(_read(p))
+            for h in re.findall(r'integrity="([^"]+)"', tag)
+        }
         assert found == {seo.LENIS_SRI}, f"mixed or missing integrity hashes across docs/: {sorted(found)}"
 
     @pytest.mark.parametrize("path", PAGES, ids=IDS)
@@ -393,7 +409,7 @@ class TestSubresourceIntegrity:
         compromised. Anything external must be hashed or explicitly exempt.
         """
         for tag, url in _external_scripts(_read(path)):
-            host = url.split("/")[2]
+            host = _host_of(url)
             if host in seo.SRI_EXEMPT_HOSTS:
                 continue
             assert "integrity=" in tag, (
@@ -403,7 +419,7 @@ class TestSubresourceIntegrity:
 
     def test_only_the_known_third_parties_are_loaded(self) -> None:
         """Two-way, so removing lenis fails here rather than rotting the constants."""
-        hosts = {url.split("/")[2] for p in PAGES for _tag, url in _external_scripts(_read(p))}
+        hosts = {_host_of(url) for p in PAGES for _tag, url in _external_scripts(_read(p))}
         assert hosts == {"unpkg.com", *seo.SRI_EXEMPT_HOSTS}, f"unexpected third-party script hosts: {sorted(hosts)}"
 
     def test_exempt_host_is_the_generated_analytics_loader(self) -> None:
@@ -418,6 +434,31 @@ class TestSubresourceIntegrity:
         algo, _, digest = seo.LENIS_SRI.partition("-")
         assert algo == "sha384", "SRI must be sha384 — sha256 is the weakest browsers accept"
         assert len(base64.b64decode(digest, validate=True)) == 48, "not a 48-byte SHA-384 digest"
+
+    @pytest.mark.parametrize(
+        ("tag", "host"),
+        [
+            ('<script src="https://cdn.example.com/x.js"></script>', "cdn.example.com"),
+            ('<script src="http://cdn.example.com/x.js"></script>', "cdn.example.com"),
+            # Protocol-relative and single-quoted are both valid HTML and both
+            # load third-party code — the detector must not have a blind spot
+            # that the exact tag it guards against could be pasted through.
+            ('<script src="//cdn.example.com/x.js"></script>', "cdn.example.com"),
+            ("<script src='https://cdn.example.com/x.js'></script>", "cdn.example.com"),
+            ('<script defer src="https://cdn.example.com/x.js"></script>', "cdn.example.com"),
+        ],
+    )
+    def test_external_script_detector_has_no_blind_spot(self, tag: str, host: str) -> None:
+        found = _external_scripts(tag)
+        assert len(found) == 1, f"external script not detected: {tag}"
+        assert _host_of(found[0][1]) == host
+
+    def test_external_script_detector_ignores_local_scripts(self) -> None:
+        for local in (
+            '<script src="/assets/site.js?v=136"></script>',
+            '<script type="application/ld+json">{}</script>',
+        ):
+            assert _external_scripts(local) == []
 
     def test_version_is_pinned_exactly(self) -> None:
         """A range or `latest` in the URL would serve bytes the hash cannot match,
@@ -446,6 +487,19 @@ class TestLenisTagRewrite:
             'integrity="sha384-old" crossorigin="anonymous"></script>'
         )
         assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), stale) == seo.lenis_tag()
+
+    def test_rewrite_handles_attributes_before_src(self) -> None:
+        """`<script defer src="…">` must be rewritten too.
+
+        If it were not, the page would keep an un-hashed tag while the failing
+        test told the author to run `make site-seo` — advice that would not have
+        fixed it. Extra attributes are preserved by replacement, not by capture:
+        the canonical tag is what gets written, so a `defer` is dropped rather
+        than silently kept. That is deliberate — the loading semantics of this
+        one script are load-bearing (site.js reads `window.Lenis` right after).
+        """
+        deferred = '<script defer src="https://unpkg.com/lenis@1.3.4/dist/lenis.min.js"></script>'
+        assert seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), deferred) == seo.lenis_tag()
 
     def test_rewrite_is_idempotent(self) -> None:
         once = seo._LENIS_RE.sub(lambda _: seo.lenis_tag(), seo.lenis_tag())

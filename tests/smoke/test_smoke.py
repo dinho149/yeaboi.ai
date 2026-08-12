@@ -253,13 +253,15 @@ class TestSiteSubresourceIntegrity:
     matches the bytes on the CDN — and a wrong hash fails *closed*: every browser
     silently refuses the script, on every page, until someone notices. That is
     the exact shape of a version bump where someone edits `LENIS_VERSION` and
-    forgets to regenerate `LENIS_SRI`, and it is invisible in CI because the
-    generator is deliberately hermetic (`--check` must produce identical bytes
-    offline, at fetch-depth 1, with no clock or network input).
+    forgets to regenerate `LENIS_SRI`. It cannot be checked in the unit lane,
+    because the generator is deliberately hermetic (`--check` must produce
+    identical bytes offline, at fetch-depth 1, with no clock or network input).
 
-    So it lives here instead: no credentials, one GET, and it skips rather than
-    fails when the network or unpkg is unavailable — an outage upstream is not a
-    defect in this repo.
+    **Nothing runs this automatically.** `smoke.yml` is `if: false` with its cron
+    removed, so this executes only when a human runs `make site-check-cdn` (or
+    `make smoke-test`). That is the honest state, and it is why the comment on
+    `LENIS_SRI` names the command as part of the bump procedure rather than
+    relying on CI to catch it. Needs no credentials — one GET.
     """
 
     def test_pinned_hash_matches_the_cdn(self):
@@ -281,6 +283,12 @@ class TestSiteSubresourceIntegrity:
             with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - literal https URL
                 body = response.read()
                 cors = response.headers.get("Access-Control-Allow-Origin")
+        except urllib.error.HTTPError as exc:
+            # Not a skip: HTTPError subclasses URLError, so catching only the
+            # parent would turn "the pinned version was yanked and every page
+            # now 404s" — the second-most-likely thing this test exists to
+            # catch — into a green run.
+            pytest.fail(f"{url} returned HTTP {exc.code} — the pinned lenis build is gone from unpkg")
         except (urllib.error.URLError, TimeoutError) as exc:
             pytest.skip(f"unpkg unreachable — network issue, not a code defect: {exc}")
 
