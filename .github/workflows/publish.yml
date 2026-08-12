@@ -57,6 +57,7 @@ jobs:
       tag: ${{ steps.pin.outputs.tag }}
       go: ${{ steps.v.outputs.go }}
       left_behind: ${{ steps.v.outputs.left_behind }}
+      left_count: ${{ steps.v.outputs.left_count }}
       asked: ${{ steps.v.outputs.asked }}
     steps:
       - uses: actions/checkout@v7
@@ -99,7 +100,22 @@ jobs:
             # own `|| true` covers its greps, and a rate-limited or transient `gh`
             # would still abort the step under `set -e` — turning "no marker" into
             # "no release", which is the opposite of what this block promises.
-            TAG=$(gh issue view "$N" --json comments --jq '.comments[].body' 2>/dev/null | marker tested || true)
+            #
+            # **Maintainers only, and that filter is the whole authorization.**
+            # This marker names the tree the job below checks out, tests, builds
+            # and tags as the official release, and the ask is an open issue on a
+            # public repo. The regex validates the marker's shape and the lookup
+            # validates that the tag exists; neither asks who wrote it. Without
+            # the `select`, a stranger commenting a real older `beta/…` tag lands
+            # after the maintainer's genuine sign-off, `tail -1` prefers it, and
+            # the release is cut from a tree nobody signed for — with only the
+            # `::notice::promoting the tree behind …` line to show for it.
+            TAG=$(gh issue view "$N" --json comments \
+              --jq '.comments[]
+                    | select(.authorAssociation == "OWNER"
+                          or .authorAssociation == "MEMBER"
+                          or .authorAssociation == "COLLABORATOR")
+                    | .body' 2>/dev/null | marker tested || true)
           fi
           if [ -z "$TAG" ]; then
             TAG=$(printf '%s' "${ISSUE_BODY:-}" | marker beta)
@@ -218,8 +234,12 @@ jobs:
           # That is the same trap the comment above describes, and it bites in the
           # one case this line exists for — more than fifty commits left behind.
           LEFT=$(git log --oneline --no-merges -n 50 "${{ steps.pin.outputs.sha }}..origin/main")
+          # Counted separately, not from `$LEFT`: the list is capped at 50, so
+          # deriving the number from it reports exactly "50 commits" in the one
+          # case the cap exists for — understating a gap at the moment it is
+          # largest. `rev-list --count` needs no pipe and no cap.
+          COUNT=$(git rev-list --count --no-merges "${{ steps.pin.outputs.sha }}..origin/main")
           if [ -n "$LEFT" ]; then
-            COUNT=$(printf '%s\n' "$LEFT" | wc -l | tr -d ' ')
             echo "::warning::$COUNT commits on main are not in this release; they ride the next one."
             printf '%s\n' "$LEFT"
           fi
@@ -229,6 +249,9 @@ jobs:
             echo "left_behind<<GHEOF"
             printf '%s\n' "$LEFT"
             echo "GHEOF"
+            # The true number, beside the capped list — the close-out comment
+            # quotes it rather than counting the fifty lines it was given.
+            echo "left_count=${COUNT:-0}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Close out a duplicate approval
@@ -340,7 +363,9 @@ jobs:
             MSG="${MSG}"$'\n\n'"_cut from \`main\` at \`${SHA:0:8}\` — no signed-off pre-release was named on this ask._"
           fi
           if [ -n "${LEFT:-}" ]; then
-            COUNT=$(printf '%s\n' "$LEFT" | wc -l | tr -d ' ')
+            # `left_count` for the same reason the warning uses it: `$LEFT` is
+            # capped at 50 and would report 50 however many there really are.
+            COUNT="${{ needs.check.outputs.left_count }}"
             MSG="${MSG}"$'\n\n'"_${COUNT} commits on \`main\` are **not** in this release and ride the next one:_"$'\n'"$(printf '%s\n' "$LEFT" | sed 's/^/- /')"
           fi
           gh issue comment "$N" --body "$MSG"

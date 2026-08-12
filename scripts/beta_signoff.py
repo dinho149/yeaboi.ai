@@ -125,10 +125,34 @@ def open_ask(asks: list[dict]) -> dict | None:
     return next((ask for ask in asks if str(ask.get("state", "")).upper() == "OPEN"), None)
 
 
+# Who may sign a build off. `authorAssociation` as GitHub reports it on a comment:
+# the three that mean write access to this repository, and nothing else.
+SIGNERS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+
+
 def _comment_bodies(issue: int) -> list[str]:
+    """Every comment on the ask that a maintainer wrote.
+
+    **The filter is the authorization, and there is no other one.** A sign-off
+    marker names the tree `publish.yml` checks out, tests, builds and tags as the
+    official release — and the ask is an open issue on a public repository, so
+    anybody at all can comment on it. The regex that reads the marker validates
+    its *shape*, and the tag lookup validates that the ref *exists*; neither asks
+    who said it. Without this, a stranger's `<!-- tested: beta/1.2.3rc4 -->`
+    naming any real older pre-release outranks the maintainer's genuine sign-off
+    on the newest one, and the release is cut from a tree nobody signed for.
+
+    An unrecognised association reads as an outsider. That is the safe direction:
+    the cost is a sign-off that has to be repeated by someone the API does
+    recognise, and the other way round is a release nobody chose.
+    """
     data = _json("issue", "view", str(issue), "--json", "comments")
     comments = data.get("comments") if isinstance(data, dict) else None
-    return [str(entry.get("body", "")) for entry in comments] if isinstance(comments, list) else []
+    if not isinstance(comments, list):
+        return []
+    return [
+        str(entry.get("body", "")) for entry in comments if str(entry.get("authorAssociation", "")).upper() in SIGNERS
+    ]
 
 
 def newest_tested(asks: list[dict]) -> str | None:

@@ -520,3 +520,47 @@ class TestMarkerRoundTrip:
         rendered = "<!-- beta: beta/3.10.0rc14 -->"
         assert re.compile(r"<!-- beta: beta/[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+ -->").search(rendered)
         assert json.dumps(rendered)  # no stray control characters
+
+
+class TestOnlyAMaintainerCanSignABuildOff:
+    """The ask is an open issue on a public repo, so anybody can comment on it.
+
+    A `<!-- tested: … -->` marker names the tree `publish.yml` checks out, tests,
+    builds and tags as the official release. The regex validates its shape and
+    the tag lookup validates that the ref exists — neither asks who wrote it. So
+    the author filter is the only authorization there is, and without it a
+    stranger naming any real older pre-release outranks the maintainer's genuine
+    sign-off on the newest one.
+    """
+
+    def _comments(self, monkeypatch, comments: list[dict]) -> None:
+        monkeypatch.setattr(signoff, "_json", lambda *a: {"comments": comments})
+
+    def test_an_outsiders_marker_is_not_read(self, monkeypatch):
+        self._comments(
+            monkeypatch,
+            [
+                {"body": "<!-- tested: beta/1.1.0rc9 -->", "authorAssociation": "OWNER"},
+                {"body": "<!-- tested: beta/1.1.0rc1 -->", "authorAssociation": "NONE"},
+            ],
+        )
+        assert signoff._comment_bodies(1) == ["<!-- tested: beta/1.1.0rc9 -->"]
+
+    def test_every_association_that_means_write_access_is_read(self, monkeypatch):
+        for association in ("OWNER", "MEMBER", "COLLABORATOR"):
+            self._comments(monkeypatch, [{"body": "signed", "authorAssociation": association}])
+            assert signoff._comment_bodies(1) == ["signed"], association
+
+    def test_an_unrecognised_association_reads_as_an_outsider(self, monkeypatch):
+        """The safe direction: a sign-off repeated, rather than a release nobody chose."""
+        for association in ("CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "", "MANNEQUIN"):
+            self._comments(monkeypatch, [{"body": "signed", "authorAssociation": association}])
+            assert signoff._comment_bodies(1) == [], association
+
+    def test_the_workflow_applies_the_same_filter_to_the_same_marker(self):
+        """Two readers of one input; a filter on only one of them is no filter."""
+        text = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        pin = text.split("- id: pin", 1)[1].split("- id: notes", 1)[0]
+        assert "--json comments" in pin
+        for association in sorted(signoff.SIGNERS):
+            assert f'.authorAssociation == "{association}"' in pin, association
