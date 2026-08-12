@@ -3437,8 +3437,13 @@ class TestProposalSlots:
         assert setup.proposal_slots("platform", now=self.NOW)["open"] == 1
         assert calls, "the gh branch made no call"
         assert calls[0][0] == "api", f"the gh branch must ask REST, not {calls[0]}"
-        assert "issue" not in calls[0][1].split("?")[0].split("/")[0]
-        assert "labels=cowork:proposal,workstream:platform" in calls[0][1]
+        asked = " ".join(calls[0])
+        assert "issue" not in asked.split("?")[0].split("/")[0]
+        assert "labels=cowork:proposal,workstream:platform" in asked
+        # Paged, not a bare `gh api`. Without this the call stops at 30 and reads
+        # back as a short list rather than as an error — which left fifteen of
+        # forty-five issues unclassified while the plan looked clean over them.
+        assert "--paginate" in calls[0], calls[0]
 
     def test_a_gh_html_error_page_is_unreadable(self, monkeypatch):
         """`gh api` exiting 0 with something that will not parse is the same
@@ -3605,7 +3610,8 @@ class TestTheQueueSplitsTheBacklog:
         monkeypatch.setattr(setup.transport, "gh", fake_gh)
         assert setup.queue_report("platform", now=self.NOW)["queued"] == 1
         assert calls[0][0] == "api", f"the gh branch must ask REST, not {calls[0]}"
-        assert f"labels={setup.QUEUE_LABEL},workstream:platform" in calls[0][1]
+        assert f"labels={setup.QUEUE_LABEL},workstream:platform" in " ".join(calls[0])
+        assert "--paginate" in calls[0], calls[0]
 
     def test_a_pull_request_is_not_a_queued_item(self, monkeypatch):
         """GitHub models a PR as an issue and `/issues` returns both. A cowork PR
@@ -3793,6 +3799,193 @@ class TestTheQueueContract:
         cap on it at all, since the cap counts proposals."""
         rules = self._read(setup.COWORK / "house-rules.md")
         assert "drain-only" in rules
+
+
+class TestMigrateProposals:
+    """The one-time backfill of a proposal backlog into the build queue.
+
+    It exists because the split in `TestTheQueueSplitsTheBacklog` is forward-only:
+    a sweep reclassifies one issue at a time as it re-finds it, which would leave
+    forty-five already-filed issues sitting in the digest for the fourteen days it
+    takes the age-out timer to destroy them.
+
+    **The classification is allowed to be wrong**, and every test here is written
+    on that premise. `cowork:queued` grants nothing — `sweep-procedure.md` step 5
+    re-checks the full allowlist and bounces what fails, at a cost of one comment.
+    What is *not* allowed to be wrong is the set of verbs it uses, because those
+    are the ones that can destroy a write-up.
+    """
+
+    WORKSTREAMS = ("platform", "web-ux")
+
+    @staticmethod
+    def _issue(number: int, *, labels=("cowork:proposal", "workstream:platform", "type:bug"), body=None, title="t"):
+        return {
+            "number": number,
+            "title": title,
+            "body": "**Evidence** src/x.py:1" if body is None else body,
+            "labels": [{"name": name} for name in labels],
+        }
+
+    def _plan(self, *issues):
+        return setup.migration_plan(issues, workstreams=self.WORKSTREAMS)
+
+    def _actions(self, *issues):
+        return [row["action"] for row in self._plan(*issues)["planned"]]
+
+    def test_a_clean_proposal_is_queued(self):
+        assert self._actions(self._issue(1)) == ["queue"]
+
+    def test_an_approved_issue_is_never_touched(self):
+        """`claude.yml` already owns it. Stripping its proposal label would be
+        harmless; queuing it would race a 110-turn implement job against a sweep."""
+        labels = ("cowork:proposal", "workstream:platform", "type:bug", "claude-implement")
+        assert self._actions(self._issue(1, labels=labels)) == ["skip"]
+
+    def test_a_campaign_candidate_is_never_touched(self):
+        """The campaign lane is approved by provider, not by find, and describes a
+        week of work across six workstreams' files."""
+        labels = ("cowork:proposal", "workstream:platform", "integration:candidate")
+        assert self._actions(self._issue(1, labels=labels)) == ["skip"]
+
+    def test_an_issue_with_both_labels_is_repaired_not_added_to(self):
+        """The crash-recovery case, and the only state a second run can re-plan:
+        an earlier run stopped between its two calls."""
+        labels = ("cowork:proposal", "cowork:queued", "workstream:platform", "type:bug")
+        assert self._actions(self._issue(1, labels=labels)) == ["repair"]
+
+    def test_an_issue_with_no_charter_is_held(self):
+        """No `workstream:` label means no charter, which means no `Owns` paths —
+        there is nothing to tell a builder where it may edit."""
+        assert self._actions(self._issue(1, labels=("cowork:proposal", "type:bug"))) == ["hold"]
+        unknown = ("cowork:proposal", "workstream:retired", "type:bug")
+        assert self._actions(self._issue(1, labels=unknown)) == ["hold"]
+
+    def test_a_feature_or_improvement_is_held(self):
+        """No sweep can produce these at all, so one on an issue means a human
+        wrote it or it predates the four-word vocabulary. Either way it is a
+        question."""
+        for kind in ("feature", "improvement", "other"):
+            labels = ("cowork:proposal", "workstream:platform", f"type:{kind}")
+            assert self._actions(self._issue(1, labels=labels)) == ["hold"], kind
+
+    def test_a_codeql_proposal_is_held(self):
+        """`codeql-triage.yml` opens one only for a rule whose `propose` entry in
+        `triage-policy.yml` records why a human must decide it. Queuing one hands a
+        recorded human decision back to a machine to re-make. Identified by title
+        because its three labels are the same ones any security find carries."""
+        labels = ("cowork:proposal", "workstream:security", "type:security")
+        issue = self._issue(1, labels=labels, title="[security][security] codeql: actions/untrusted-checkout")
+        assert setup.migration_plan([issue], workstreams=("security",))["planned"][0]["action"] == "hold"
+
+    def test_an_issue_with_no_evidence_at_all_is_held(self):
+        assert self._actions(self._issue(1, body="I think this feels slow.")) == ["hold"]
+
+    def test_evidence_is_recognised_in_every_spelling_it_is_written_in(self):
+        """The scribe writes `**Evidence**`; older issues and the CodeQL job write
+        `## Evidence`. Matching only the first held #140 — which carries two
+        `file:line` references under an H2 — as though it had none. A format check
+        standing in for a substance check may at least not be wrong about
+        punctuation."""
+        for body in ("**Evidence** src/x.py:1", "## Evidence\n- src/x.py:1", "### What\nthe thing breaks"):
+            assert self._actions(self._issue(1, body=body)) == ["queue"], body
+
+    def test_a_pull_request_is_not_a_backlog_item(self):
+        """`/issues` returns PRs too, and a cowork PR carries `workstream:<name>`."""
+        pr = self._issue(1)
+        pr["pull_request"] = {"url": "…"}
+        assert self._plan(pr)["planned"] == []
+
+    def test_a_bug_is_flagged_as_still_owing_a_reproduction(self):
+        """A flag on the row, not a different action. `house-rules.md` admits a bug
+        on a failing test rather than on an argument, and the sweep makes that
+        judgement at build time — the backfill only records that it is owed."""
+        docs = ("cowork:proposal", "workstream:platform", "type:docs")
+        rows = self._plan(self._issue(1), self._issue(2, labels=docs))
+        assert [row["needs_repro"] for row in rows["planned"]] == [True, False]
+
+    def test_the_action_vocabulary_is_closed(self):
+        """Four verbs, and none of them closes an issue or edits a body. A closing
+        would be read by both dedupe passes as a human's rejection."""
+        rows = self._plan(self._issue(1), self._issue(2, labels=("cowork:proposal", "type:bug")))
+        assert {row["action"] for row in rows["planned"]} <= {"queue", "hold", "skip", "repair"}
+
+    def test_a_second_run_plans_nothing(self):
+        """Idempotent by construction: the read only returns `cowork:proposal`
+        issues, and a reclassified one no longer carries that label."""
+        assert self._plan()["planned"] == []
+
+    def test_the_counts_add_up_to_the_backlog(self):
+        rows = self._plan(
+            self._issue(1),
+            self._issue(2, labels=("cowork:proposal", "workstream:platform", "type:feature")),
+            self._issue(3, labels=("cowork:proposal", "workstream:platform", "type:bug", "claude-implement")),
+        )
+        assert rows["counts"] == {"queue": 1, "hold": 1, "skip": 1, "repair": 0}
+        assert sum(rows["counts"].values()) == len(rows["planned"])
+
+
+class TestMigrateProposalsApply:
+    """The verbs. This is the half that is not allowed to be wrong."""
+
+    def _record(self, monkeypatch):
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        calls: list[tuple[str, str]] = []
+
+        def fake_api(method, path, body=None):
+            calls.append((method, path))
+            return setup.ApiResult(True, {}, "")
+
+        monkeypatch.setattr(setup, "_api", fake_api)
+        return calls
+
+    def test_it_never_replaces_a_label_set(self, monkeypatch):
+        """`PUT /issues/{n}/labels` replaces the whole set. That is how #172 lost
+        `cowork:proposal`, `workstream:web-ux` and `type:security` in one call and
+        then ran an implement job with no charter. "Keep every write-up" is
+        enforced by the absence of the verb, not by intent."""
+        calls = self._record(monkeypatch)
+        setup._reclassify(7, "platform", repair=False)
+        assert not any(method == "PUT" for method, _ in calls), calls
+
+    def test_it_adds_before_it_removes(self, monkeypatch):
+        """A run that dies in between leaves both labels on, which every reader
+        resolves as queued — the harmless direction. Removing first would leave the
+        issue in neither queue: invisible to the digest and to every sweep."""
+        calls = self._record(monkeypatch)
+        setup._reclassify(7, "platform", repair=False)
+        verbs = [method for method, path in calls if "/labels" in path]
+        assert verbs == ["POST", "DELETE"], calls
+
+    def test_it_never_closes_an_issue_or_edits_a_body(self, monkeypatch):
+        """Closing is a rejection to both dedupe passes; a PATCH would rewrite the
+        write-up the reclassification exists to preserve."""
+        calls = self._record(monkeypatch)
+        setup._reclassify(7, "platform", repair=False)
+        assert {method for method, _ in calls} <= {"POST", "DELETE"}
+        assert all("/comments" in path or "/labels" in path for _, path in calls), calls
+
+    def test_it_leaves_a_comment_naming_what_happened(self, monkeypatch):
+        """Fixed wording so it is greppable, and so a bounced item's history reads
+        straight afterwards."""
+        calls = self._record(monkeypatch)
+        setup._reclassify(7, "platform", repair=False)
+        assert any(path.endswith("/comments") for _, path in calls)
+        assert "Reclassified in place" in setup.MIGRATION_NOTE
+        assert "Nothing above has changed" in setup.MIGRATION_NOTE
+
+    def test_a_repair_only_removes(self, monkeypatch):
+        """The issue already carries the queue label and already has its comment.
+        Adding both again would be a duplicate comment on every retry."""
+        calls = self._record(monkeypatch)
+        setup._reclassify(7, "platform", repair=True)
+        assert [method for method, _ in calls] == ["DELETE"], calls
+
+    def test_a_strict_run_refuses_to_apply(self):
+        """Reclassifying forty issues on a mechanical rule is a judgement about a
+        backlog. The fleet reclassifies one at a time, having read it. `--strict`
+        is the flag no human passes and every unattended caller does."""
+        assert setup.main(["--migrate-proposals", "--yes", "--strict"]) == 2
 
 
 class TestBlockedReport:

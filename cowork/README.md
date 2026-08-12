@@ -351,6 +351,7 @@ rest of the verbs on it:
 | `make cowork-check` | the repo half of `status`, with no session needed. |
 | `make cowork-slots` | how full each workstream's proposal queue is, and which issues are holding it. Read-only. |
 | `make cowork-queue` | what each workstream's sweep should build next, in build order. The counterpart of `cowork-slots`: that one answers "may I file?", this one answers "what do I owe?". Read-only. |
+| `make cowork-migrate` | one-off, human-only: reclassify auto-lane-eligible `cowork:proposal` issues as `cowork:queued`. Prints the plan and changes nothing without `YES=1`; refuses under `--strict`, so no routine can run it. |
 | `make cowork-blocked` | whether a standing fault has already been reported, so a routine says it once. Read-only. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 
