@@ -9,6 +9,18 @@ on:
     types: [opened, assigned, labeled]
   pull_request_review:
     types: [submitted]
+  # The level-triggered door into `implement`, below. `claude-implement` is a
+  # *level* — "this is approved and unbuilt" — but `issues: labeled` only observes
+  # its *edge*, so an approval that arrives twice, or whose run produced nothing,
+  # had no way to fire again. Issue #172 was ✅'d in Slack five times between
+  # 2026-08-09 and 08-11; only the first became a `labeled` event, and this
+  # workflow concluded `skipped` on 100 of its next 100 runs.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "issue number to (re-)implement — must already carry claude-implement"
+        required: true
+        type: string
 
 jobs:
   claude:
@@ -55,10 +67,21 @@ jobs:
   # claude-review.yml, and auto-version.yml like any human-authored branch.
   implement:
     if: |
-      github.event_name == 'issues' &&
-      github.event.action == 'labeled' &&
-      github.event.label.name == 'claude-implement'
+      (github.event_name == 'issues' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'claude-implement') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       !github.event.issue.pull_request &&
+       contains(github.event.comment.body, '<!-- implement-retry -->') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
+    # Five ✅s on one issue could otherwise have started five 110-turn agents on
+    # it. There was no concurrency key on this job at all; the only thing that
+    # stopped it was the edge trigger being broken.
+    concurrency:
+      group: implement-${{ github.event.issue.number || inputs.issue }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -66,6 +89,48 @@ jobs:
       id-token: write
       actions: read
     steps:
+      # The security boundary for every door above, and the reason none of them
+      # needs to be trusted: the trigger says which issue, and this step decides
+      # whether that issue may be built — by re-reading its live state and labels,
+      # not by believing the event payload. A forged `<!-- implement-retry -->`
+      # marker from a write-capable account can therefore only re-run something a
+      # human already approved.
+      #
+      # It is also strictly better than the label path for #172's own failure:
+      # that run read its labels from an event payload captured in the same second
+      # the relay stripped three of them, and built with no charter at all.
+      - name: Resolve the target issue
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          set -euo pipefail
+          case "$N" in ''|*[!0-9]*) echo "::error::not an issue number: $N"; exit 1 ;; esac
+          data=$(gh issue view "$N" --repo "$GITHUB_REPOSITORY" --json number,title,state,labels)
+          labels=$(jq -c '[.labels[].name]' <<< "$data")
+          if [ "$(jq -r .state <<< "$data")" != "OPEN" ] || ! jq -e 'index("claude-implement")' <<< "$labels" >/dev/null; then
+            echo "::error::#$N is not an open issue carrying claude-implement — refusing."
+            exit 1
+          fi
+          {
+            echo "number=$N"
+            echo "labels=$labels"
+            # Delimiter varied per run: it wraps an issue title, which is
+            # attacker-influenced text on a public repo. The human-approval gate in
+            # front of this is the real defence; this is the cheap half.
+            delim="CLAUDE_EOF_${GITHUB_RUN_ID}_${RANDOM}"
+            echo "title<<${delim}"
+            jq -r .title <<< "$data"
+            echo "${delim}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Captured before the action runs, so the ambiguous-exit check below can ask
+      # "did THIS run comment?" rather than "has any bot commented in two hours?".
+      - name: Stamp the run start
+        id: started
+        run: echo "at=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -97,8 +162,12 @@ jobs:
       - name: Pick the model tier
         id: model
         env:
-          LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
-          TITLE: ${{ github.event.issue.title }}
+          # From the live read, not the event payload — see "Resolve the target
+          # issue" above. #172's run took its labels from a payload captured in
+          # the same second three of them were stripped, so it routed on a label
+          # set that no longer existed.
+          LABELS: ${{ steps.target.outputs.labels }}
+          TITLE: ${{ steps.target.outputs.title }}
         run: |
           if jq -e 'index("type:security") or index("workstream:security")' <<< "$LABELS" >/dev/null \
             || [[ "$TITLE" == *"[security]"* ]]; then
@@ -138,9 +207,9 @@ jobs:
             --model ${{ steps.model.outputs.id }} --max-turns 110
             --allowedTools "Read,Grep,Glob,Edit,Write,Task,Bash(make:*),Bash(uv run:*),Bash(git:*),Bash(gh issue:*),Bash(gh pr:*),Bash(gh api:*)"
           prompt: |
-            Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}.
+            Implement GitHub issue #${{ steps.target.outputs.number }} in ${{ github.repository }}.
 
-            1. Read the issue with `gh issue view ${{ github.event.issue.number }}` (including comments).
+            1. Read the issue with `gh issue view ${{ steps.target.outputs.number }}` (including comments).
             2. Read `cowork/definition-of-done.md` — it is the contract this change must satisfy.
                If the issue carries a `workstream:<name>` label, also Read
                `cowork/workstreams/<name>.md` and stay inside the paths it declares.
@@ -156,7 +225,7 @@ jobs:
                write one line in the PR body saying DoD item 1 is deferred to merge, and carry on.
                `pr-merged-close-loop` runs as a Claude routine with the connectors attached, and
                already creates a missing ticket in Done rather than skipping it.
-            4. Create a branch named `feature/issue-${{ github.event.issue.number }}-<short-slug>` off main.
+            4. Create a branch named `feature/issue-${{ steps.target.outputs.number }}-<short-slug>` off main.
             5. Implement the change following CLAUDE.md conventions (observability pillars,
                TUI component standards, frozen-dataclass defaults, tests for every new function).
                Conventions are split across CLAUDE.md and `.claude/skills/*/SKILL.md` — Read
@@ -177,7 +246,7 @@ jobs:
                (the magic word is what makes the Linear GitHub integration attach the PR and move
                the ticket to Done on merge — a bare Linear URL does neither), notes any DoD item
                that genuinely does not apply, and closes the issue
-               (`Closes #${{ github.event.issue.number }}`). If step 3 could not create a ticket,
+               (`Closes #${{ steps.target.outputs.number }}`). If step 3 could not create a ticket,
                write the item-1-deferred-to-merge line instead of the `Closes YEA-NN` line.
             9. Pass the labels to `gh pr create` itself — `--label cowork` plus the issue's
                `workstream:<name>` and `type:<kind>` labels if it had them (the daily standup
@@ -194,7 +263,10 @@ jobs:
             items 8 and 9, and it runs on merge.
 
             If the issue is too ambiguous to implement safely, do NOT guess: comment on the
-            issue with the specific questions that need answering, and stop.
+            issue with the specific questions that need answering, and stop. **End that
+            comment with the literal line `<!-- implement: ambiguous -->`.** The guard below
+            treats it as the difference between this deliberate exit and a run that produced
+            nothing; without the marker your exit is reported as a broken run.
 
       # The failure this job is most prone to, and least able to report, is
       # succeeding at nothing: the run above can deny every write it needs and
@@ -204,31 +276,61 @@ jobs:
       # no-op leaves the issue invisible to every routine. Assert the outcome
       # rather than the exit status.
       - name: Assert the run produced something
+        id: guard
         # Only when the action actually ran. `!= 'skipped'` also matches the empty
         # conclusion a step has when an earlier one failed, which would stack a
         # misleading "produced nothing" on top of a genuine `uv sync` failure.
         if: always() && (steps.implement.conclusion == 'success' || steps.implement.conclusion == 'failure')
         env:
-          ISSUE: ${{ github.event.issue.number }}
+          ISSUE: ${{ steps.target.outputs.number }}
+          STARTED_AT: ${{ steps.started.outputs.at }}
+          EXEC_FILE: ${{ steps.implement.outputs.execution_file }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # `permission_denials_count` is the field the action really writes — read
           # off run 31312744716, the 2026-08-09 no-op on #172, which reported
           # `"permission_denials_count": 17` beside `"num_turns": 31`.
-          log="${RUNNER_TEMP}/claude-execution-output.json"
+          log="${EXEC_FILE:-}"
+          [ -n "$log" ] && [ -f "$log" ] || log="${RUNNER_TEMP}/claude-execution-output.json"
           if [ ! -f "$log" ]; then
-            # A diagnostic that silently stops diagnosing is the failure class this
-            # step exists to remove, so say so rather than reading it as "no denials".
-            echo "::warning::no execution log at $log — denials were not checked"
-            denials=0
-          else
-            denials=$(jq '[.. | .permission_denials_count? // empty] | last // 0' "$log")
+            # This used to `::warning::` and set denials=0 — a guard that cannot
+            # check, passing. The path is hardcoded against one observed run of one
+            # pinned action version, so any change to the action's temp filename
+            # would silently disable the denial check and leave a green tick over
+            # exactly the 2026-08-09 failure it was written for.
+            echo "::error::no execution log at $log — denials could not be checked, so this run is not vouched for."
+            exit 1
           fi
+          denials=$(jq '[.. | .permission_denials_count? // empty] | last // 0' "$log")
           if [ "${denials:-0}" -gt 0 ]; then
             echo "::error::$denials tool call(s) denied — the --allowedTools grant above is wrong."
             exit 1
           fi
-          branch=$(git ls-remote --heads origin "refs/heads/feature/issue-$ISSUE-*" | head -1 | sed 's|.*refs/heads/||')
+          # A run that hit --max-turns left its work half-done by definition. Today
+          # that is only inferable from the branch-without-PR path below, which
+          # misses the case where it was truncated before pushing anything.
+          if [ "$(jq -r '[.. | .subtype? // empty] | last // ""' "$log")" = "error_max_turns" ]; then
+            echo "::error::the run hit --max-turns — whatever it did is half-finished."
+            exit 1
+          fi
+          # Ask the authoritative question first — the same one `digest.md`'s
+          # approved-with-no-PR section asks. A PR is the deliverable, and looking
+          # for it directly does not care what the branch was called.
+          # Open or merged only. `--state all` would let attempt 1's PR — including
+          # one CLOSED UNMERGED, which is among the likeliest reasons a re-fire is
+          # happening — answer for attempt 2, printing "PR open" without ever having
+          # checked that and bypassing this entire guard on precisely the path this
+          # workflow now makes normal.
+          if [ -n "$(gh pr list --search "$ISSUE in:body" --state all --json number,state,mergedAt \
+               --jq '[.[] | select(.state == "OPEN" or .mergedAt != null)][0].number')" ]; then
+            echo "An open or merged PR exists for #$ISSUE."
+            exit 0
+          fi
+          # Both conventions: `claude-code-action` names branches `claude/issue-N-…`
+          # when it creates one itself, and a run that pushed under its own name
+          # used to read as "no branch" and fall through to the comment check.
+          branch=$(git ls-remote --heads origin "refs/heads/feature/issue-$ISSUE-*" "refs/heads/claude/issue-$ISSUE-*" \
+            | head -1 | sed 's|.*refs/heads/||')
           if [ -n "$branch" ]; then
             # A branch is not the deliverable; the PR is. A run truncated between
             # step 8's push and its `gh pr create` — the state the --max-turns note
@@ -255,12 +357,48 @@ jobs:
           # `.author.login? // ""` — a deleted account renders `author: null`, and a
           # raised jq under `bash -e` would abort the step with a traceback instead
           # of the message below.
+          # Two tightenings on what used to be "any [bot] comment in the last two
+          # hours". That counted `codeql-triage`, `flaky-test-hunter`,
+          # `feedback-remediation` and `pr-merged-close-loop` — all of which comment
+          # on issues as bots — and would count a reconciler's own attempt marker
+          # too. It now has to be a marker the prompt is told to write, posted after
+          # this job started.
           asked=$(gh issue view "$ISSUE" --json comments --jq \
             '[.comments[] | select((.author.login? // "") | endswith("[bot]"))
-              | select(.createdAt > "'"$(date -u -d '2 hours ago' +%FT%TZ)"'")] | length')
+              | select(.body | contains("<!-- implement: ambiguous -->"))
+              | select(.createdAt > "'"$STARTED_AT"'")] | length')
           if [ "${asked:-0}" -gt 0 ]; then
             echo "No branch, but the run commented on #$ISSUE — the documented ambiguous-issue exit."
             exit 0
           fi
           echo "::error::No branch and no comment on #$ISSUE — the run produced nothing."
           exit 1
+
+      # A red job used to be the end of it: the issue kept `claude-implement`,
+      # `digest.md` refuses to age out anything carrying that label, and nothing
+      # re-fired. So a broken implement run left an issue that no routine would
+      # ever touch again and no message anywhere. Record it on the issue, and give
+      # the reconciler a terminal state to stop at.
+      #
+      # `claude-implement` deliberately stays on: it is the key `digest.md`'s
+      # approved-with-no-PR section queries, and removing it would hide the failure
+      # rather than report it.
+      - name: Report a run that produced nothing
+        # Gated on the guard specifically, never on bare `failure()`. `failure()` is
+        # true if ANY earlier step failed, so a flaky checkout or a `uv sync` that
+        # 503s would land the terminal label: the reconciler then skips the issue,
+        # the age-out still refuses to touch it because it keeps `claude-implement`,
+        # and it needs a human. A transient infra blip becoming an unrecoverable
+        # state is the exact loss class this workflow exists to close — and the
+        # guard above already scopes itself for the same reason.
+        if: always() && steps.guard.conclusion == 'failure' && steps.target.outputs.number != ''
+        env:
+          ISSUE: ${{ steps.target.outputs.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue edit "$ISSUE" --add-label implement-blocked || true
+          gh issue comment "$ISSUE" --body "The implement job did not produce a PR — [run]($RUN_URL).
+
+          \`implement-blocked\` is on this issue now, so the reconciler will stop retrying it and the
+          daily digest reports it under **Approved, no PR yet**. Remove the label to let it retry." || true

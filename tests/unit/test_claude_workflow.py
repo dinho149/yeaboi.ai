@@ -153,6 +153,16 @@ class TestTheToolchain:
 
 
 class TestTheOutcomeGuard:
+    @staticmethod
+    def _guard(implement):
+        """The guard step, selected by name rather than by position.
+
+        It used to be `steps[-1]`, which was true only for as long as nothing ran
+        after it — and the fix for a guard that dies silently is precisely to add a
+        reporting step after it.
+        """
+        return next(step for step in implement["steps"] if step.get("name") == "Assert the run produced something")
+
     def test_the_job_asserts_it_produced_something(self, implement):
         """A green run that wrote no code is what hid all of the above.
 
@@ -160,7 +170,7 @@ class TestTheOutcomeGuard:
         refuses to age out an issue carrying `claude-implement`, so #172 became
         invisible to every routine in the fleet the moment it was approved.
         """
-        guard = implement["steps"][-1]
+        guard = self._guard(implement)
         assert "permission_denials_count" in guard["run"], "a denial in this job is always a misconfiguration"
         assert "feature/issue-" in guard["run"], "the branch prompt step 4 promises is the evidence of work"
         assert guard.get("if", "").startswith("always()")
@@ -174,5 +184,5 @@ class TestTheOutcomeGuard:
         comment as "the run asked a question and stopped" would therefore wave
         through a silent no-op on the single most common path into the job.
         """
-        guard = implement["steps"][-1]
+        guard = self._guard(implement)
         assert 'endswith("[bot]")' in guard["run"]
