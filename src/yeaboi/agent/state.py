@@ -1302,6 +1302,26 @@ def prior_art_to_dicts(refs) -> list[dict]:
     return out
 
 
+def prior_art_refs(keys: list[str] | None) -> tuple:
+    """Turn caller-supplied repository keys into PriorArtRefs.
+
+    The name falls back to the key's slug half so an export still reads as a
+    repository rather than a bare identifier. No lookup: a headless caller
+    naming a repository is asserting it is relevant, and failing the run
+    because the estate has not been scanned would be worse than taking them
+    at their word.
+    """
+    refs = []
+    for raw in keys or ():
+        key = str(raw or "").strip().lower()
+        if not key:
+            continue
+        name = key.split(":", 1)[1] if ":" in key else key
+        platform = key.split(":", 1)[0] if ":" in key else ""
+        refs.append(PriorArtRef(key=key, name=name, platform=platform))
+    return tuple(refs)
+
+
 def prior_art_from_dicts(rows) -> tuple[PriorArtRef, ...]:
     """Rebuild accepted prior art from JSON.
 

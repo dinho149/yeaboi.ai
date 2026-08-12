@@ -101,9 +101,24 @@ class TestCard:
         out = console.export_text()
         assert "acme/pay" in out and "2 of 2" in out
 
-    def test_exhausted_index_renders_nothing_rather_than_crashing(self):
+    def test_exhausted_index_shows_the_verdicts_rather_than_vanishing(self):
+        """A renderer that returns None prints "(<title> unavailable)" in the
+        card's place, so the card the user just worked through would decay into
+        an error string. It becomes the record of what was decided instead."""
+        from rich.console import Console
+
         qs = _qs("ask")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
         qs._prior_art_index = 99
+        console = Console(width=70, record=True)
+        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, 68))
+        out = console.export_text()
+        assert "Reviewed 2" in out
+        assert "kept" in out
+
+    def test_a_card_with_no_candidates_still_renders_nothing(self):
+        qs = _qs("ask")
+        qs._prior_art_candidates = []
         assert _artifact_renderable("prior_art", {"questionnaire": qs}, 68) is None
 
     def test_no_questionnaire_renders_nothing(self):
@@ -152,6 +167,87 @@ class TestRoster:
         out = self._out(qs)
         assert "1 of 1" in out
         assert "deciding now" not in out
+
+
+class TestClosedCard:
+    """What the card becomes after the loop — it stays as the record, because a
+    renderer that returns None is drawn as "(You already have this
+    unavailable)" for the rest of the session."""
+
+    def _out(self, qs, width=70):
+        from rich.console import Console
+
+        console = Console(width=width, record=True)
+        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, width - 2))
+        return console.export_text()
+
+    def test_a_done_stage_shows_the_verdicts(self):
+        qs = _qs("done")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
+        qs._prior_art_rejected = [{"key": "github:acme/pay", "name": "acme/pay", "reason": "retiring it"}]
+        out = self._out(qs)
+        assert "Reviewed 2" in out
+        assert "kept" in out
+        assert "not relevant" in out
+        assert "deciding now" not in out
+
+    def test_skip_the_rest_leaves_the_untouched_ones_marked_not_reviewed(self):
+        """ "Skip the rest" ends the loop without moving the index, so keying off
+        the index alone would freeze the card on the skipped candidate, still
+        marked as the one being decided."""
+        qs = _qs("done")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
+        out = self._out(qs)
+        assert "not reviewed" in out
+        assert "deciding now" not in out
+
+
+class TestSizeSwitchDropsTheCard:
+    def test_transcript_can_drop_a_card_whose_data_is_gone(self):
+        from yeaboi.ui.session.chat._transcript import ChatTranscript
+
+        transcript = ChatTranscript()
+        transcript.add_artifact("prior_art")
+        transcript.add_artifact("intake_summary")
+        transcript.drop_artifact("prior_art")
+        kinds = [m.artifact_kind for m in transcript.messages if m.role == "artifact"]
+        assert kinds == ["intake_summary"]
+
+    def test_the_driver_drops_it_when_the_size_switch_clears_the_state(self):
+        import inspect
+
+        from yeaboi.ui.session.chat._driver import _ChatDriver
+
+        source = inspect.getsource(_ChatDriver._switch_size)
+        assert 'drop_artifact("prior_art")' in source, (
+            "apply_size_switch clears the prior-art transients, so the card has "
+            "nothing left to render from and would show as '(… unavailable)'"
+        )
+
+
+class TestSummaryCard:
+    """The chat replaces the node's markdown summary with this card, so anything
+    the markdown carries and the card does not is invisible on the default
+    planning surface."""
+
+    def _out(self, qs, width=100):
+        from rich.console import Console
+
+        from yeaboi.ui.session._utils import _render_tui_intake_summary
+
+        console = Console(width=width, record=True)
+        console.print(_render_tui_intake_summary(qs, width - 4))
+        return console.export_text()
+
+    def test_accepted_prior_art_appears(self):
+        qs = _qs("done")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
+        out = self._out(qs)
+        assert "Prior art" in out
+        assert "acme/auth" in out
+
+    def test_no_section_when_nothing_was_accepted(self):
+        assert "Prior art" not in self._out(_qs("done"))
 
 
 class TestVerdictPrompt:

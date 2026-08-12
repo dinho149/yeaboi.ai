@@ -35,7 +35,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
-from yeaboi.agent.state import QuestionnaireState
+from yeaboi.agent.state import QuestionnaireState, prior_art_refs
 
 logger = logging.getLogger(__name__)
 
@@ -146,28 +146,6 @@ def _next_auto_input(graph_state: dict) -> str | None:
     )
 
 
-def _prior_art_refs(keys: list[str] | None) -> tuple:
-    """Turn caller-supplied repository keys into PriorArtRefs.
-
-    The name falls back to the key's slug half so an export still reads as a
-    repository rather than a bare identifier. No lookup: a headless caller
-    naming a repository is asserting it is relevant, and failing the run
-    because the estate has not been scanned would be worse than taking them
-    at their word.
-    """
-    from yeaboi.agent.state import PriorArtRef
-
-    refs = []
-    for raw in keys or ():
-        key = str(raw or "").strip().lower()
-        if not key:
-            continue
-        name = key.split(":", 1)[1] if ":" in key else key
-        platform = key.split(":", 1)[0] if ":" in key else ""
-        refs.append(PriorArtRef(key=key, name=name, platform=platform))
-    return tuple(refs)
-
-
 def run_planning_pipeline(
     questionnaire: QuestionnaireState,
     *,
@@ -227,12 +205,21 @@ def run_planning_pipeline(
         # tool belt; recompiling per step would waste ~seconds.
         graph = create_graph()
 
+        # Close the prior-art step before the graph starts. `_next_auto_input`
+        # answers "3" when the sub-loop opens, but by then the node has already
+        # paid for it — five repository reads, five recursive tree walks and an
+        # LLM call, all discarded, and any auth error from that call raised at
+        # a caller who never asked for the step. Nobody to ask means nobody
+        # pays for the asking; a caller who knows passes `prior_art=`.
+        if isinstance(questionnaire, QuestionnaireState) and not questionnaire._prior_art_stage:
+            questionnaire._prior_art_stage = "done"
+
         graph_state: dict = {
             "messages": [],
             "questionnaire": questionnaire,
             # Matches _run_headless: quick mode skips smart-intake follow-ups.
             "_intake_mode": "quick",
-            "prior_art": _prior_art_refs(prior_art),
+            "prior_art": prior_art_refs(prior_art),
         }
 
         store = SessionStore(db_path or get_db_path()) if save_session else None

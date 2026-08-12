@@ -174,6 +174,20 @@ class TestRunPlanningPipeline:
         assert fake_graph.invocations[2:] == ["accept"] * 4
         assert len(fake_graph.invocations) == 6
 
+    def test_the_prior_art_step_is_closed_before_the_graph_starts(self, fake_graph):
+        """Answering "3" once the sub-loop opens is too late — by then the node
+        has already paid for five repository reads, five tree walks and an LLM
+        call whose output is thrown away."""
+        qs = build_questionnaire_from_answers({1: "A test project", 2: "Greenfield"})
+        run_planning_pipeline(qs, save_session=False)
+        assert qs._prior_art_stage == "done"
+
+    def test_a_caller_who_already_answered_it_is_left_alone(self, fake_graph):
+        qs = build_questionnaire_from_answers({1: "A test project", 2: "Greenfield"})
+        qs._prior_art_stage = "ask"
+        run_planning_pipeline(qs, save_session=False)
+        assert qs._prior_art_stage == "ask"
+
     def test_capacity_warning_auto_accepted(self, monkeypatch, no_session_logs):
         graph = FakeGraph(capacity_warning=True)
         monkeypatch.setattr("yeaboi.agent.graph.create_graph", lambda tools=(): graph)

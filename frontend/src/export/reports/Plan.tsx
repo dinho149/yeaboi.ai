@@ -210,7 +210,18 @@ export function Plan({
           {priorArt.map((repo) => (
             <Card
               key={repo.name}
-              title={repo.name}
+              title={
+                // The payload has always carried `url`; not rendering it left
+                // the HTML export showing a bare name where the markdown
+                // export links the repository.
+                repo.url ? (
+                  <a href={repo.url} target="_blank" rel="noopener noreferrer">
+                    {repo.name}
+                  </a>
+                ) : (
+                  repo.name
+                )
+              }
               actions={
                 repo.stack.length ? (
                   <div className={styles['chips']}>

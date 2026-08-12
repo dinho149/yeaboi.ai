@@ -164,6 +164,17 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
         <li>Quick mode skips PTO (defaults to 0)</li>
       </ul>
 
+      <h3 id="prior-art">Prior Art (greenfield only)</h3>
+      <p>A greenfield project is rarely built from nothing — the team usually already owns the auth service, the deployment pattern, the design system. When Q2 is answered <strong>greenfield</strong>, the agent inserts one more step between the PTO questions and the intake summary: it ranks the team's own repositories against everything gathered so far and asks about each shortlisted one, with a concrete pitch rather than a bare name.</p>
+      <ul>
+        <li><strong>The repositories come from Team Analysis</strong>, which walks GitHub and Azure DevOps each run and now persists that inventory. Planning reads it offline; a profile captured before this existed says so rather than going quiet.</li>
+        <li><strong>Ranking is deterministic</strong> — stack overlap, keyword overlap against Q1/Q3/Q4, recency — and only the top five are enriched with live API calls, so an estate of hundreds costs five reads rather than hundreds.</li>
+        <li><strong>The model may only subtract.</strong> It writes the pitch bullets and may drop a candidate it judges irrelevant; it is never given a shape in which to nominate a repository that did not rank.</li>
+        <li><strong>Accepted repositories</strong> feed plan generation and appear in the intake summary and every export.</li>
+        <li><strong>Rejections are remembered globally, with the reason</strong>, and that repository is never offered again on any project. The memory is suppress-only: it can remove a candidate, never add one.</li>
+        <li>Candidates are asked about one at a time, and answering is what brings up the next. "Skip the rest" ends the step without recording a verdict on what is left.</li>
+      </ul>
+
       <h3 id="adaptive-behavior">Adaptive Behavior</h3>
       <p>The questionnaire is not rigid — the agent adapts:</p>
       <ul>

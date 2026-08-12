@@ -98,20 +98,71 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
     return None
 
 
+def _prior_art_verdicts(qs) -> tuple[set[str], set[str]]:
+    """The keys settled so far, as (accepted, rejected)."""
+    accepted = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_accepted", None) or [])}
+    rejected = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_rejected", None) or [])}
+    return accepted, rejected
+
+
+def _render_prior_art_closed(qs, candidates: list) -> object:
+    """What the card becomes once the sub-loop is over: the verdicts, kept.
+
+    The card cannot simply stop rendering. Artifact cards re-render from live
+    state after every graph turn, and a renderer that returns None prints
+    "(You already have this unavailable)" in its place — so the card the user
+    just worked through would decay into an error string for the rest of the
+    session. It stays as the record of what was decided.
+    """
+    from rich.console import Group
+    from rich.text import Text
+
+    accepted, rejected = _prior_art_verdicts(qs)
+    rows: list = [Text(f"  Reviewed {len(candidates)}", style="dim"), Text("")]
+    for candidate in candidates:
+        name = str(candidate.get("name", ""))
+        key = str(candidate.get("key", ""))
+        line = Text(overflow="ellipsis", no_wrap=True)
+        if key and key in accepted:
+            line.append("  ✓ ", style="bold")
+            line.append(name, style="bold white")
+            line.append("   kept", style="dim")
+        elif key and key in rejected:
+            line.append("  ✗ ", style="dim")
+            line.append(name, style="dim")
+            line.append("   not relevant", style="dim")
+        else:
+            # Reached by "Skip the rest", which ends the loop without a verdict
+            # on what is left. Saying "not reviewed" rather than nothing keeps
+            # a skip distinguishable from a rejection.
+            line.append("  · ", style="dim")
+            line.append(name, style="dim")
+            line.append("   not reviewed", style="dim")
+        rows.append(line)
+    return Group(*rows)
+
+
 def _render_prior_art(qs, render_w: int):
     """The prior-art candidate currently awaiting a verdict.
 
     Rendered from the questionnaire's transient sub-loop state, like every
     other card renders from live graph_state — the card holds no data of its
     own, so a re-render after an answer always shows the right candidate.
+    Once the loop closes it becomes the record of the verdicts given.
     """
     from rich.console import Group
     from rich.text import Text
 
     candidates = getattr(qs, "_prior_art_candidates", None) or []
     index = getattr(qs, "_prior_art_index", 0)
-    if not (0 <= index < len(candidates)):
+    if not candidates:
         return None
+    # "Skip the rest" ends the loop without moving the index, so the stage is
+    # the authority on whether anything is still being asked — keying off the
+    # index alone would leave the card frozen on the skipped candidate,
+    # still marked as the one being decided.
+    if getattr(qs, "_prior_art_stage", "") == "done" or not (0 <= index < len(candidates)):
+        return _render_prior_art_closed(qs, candidates)
     candidate = candidates[index]
 
     rows: list = []
@@ -144,8 +195,7 @@ def _render_prior_art(qs, render_w: int):
     # every one, with what was already decided, makes the sequence visible
     # without adding navigation the rest of intake does not have.
     if len(candidates) > 1:
-        accepted = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_accepted", None) or [])}
-        rejected = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_rejected", None) or [])}
+        accepted, rejected = _prior_art_verdicts(qs)
         for position, other in enumerate(candidates):
             name = str(other.get("name", ""))
             key = str(other.get("key", ""))
@@ -155,7 +205,7 @@ def _render_prior_art(qs, render_w: int):
                 line.append(name, style="bold white")
                 line.append("   deciding now", style="dim")
             elif key and key in accepted:
-                line.append("  ✓ ", style="green")
+                line.append("  ✓ ", style="bold")
                 line.append(name, style="dim")
                 line.append("   kept", style="dim")
             elif key and key in rejected:
@@ -245,6 +295,16 @@ class ChatTranscript:
 
     def add_system(self, text: str) -> None:
         self.messages.append(ChatMessage("system", text))
+
+    def drop_artifact(self, kind: str) -> None:
+        """Remove a card whose data no longer exists.
+
+        A card renders from live state, so one whose data was cleared renders
+        as "(<title> unavailable)" — an error string standing in for something
+        that was deliberately discarded. The caller that discards the data
+        drops the card.
+        """
+        self.messages = [m for m in self.messages if not (m.role == "artifact" and m.artifact_kind == kind)]
 
     def add_artifact(self, kind: str) -> None:
         # One card per kind: a regenerated artifact (edit round) replaces its

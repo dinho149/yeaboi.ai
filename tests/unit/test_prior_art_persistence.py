@@ -113,32 +113,32 @@ class TestExports:
 
 class TestHeadlessRefs:
     def test_keys_become_refs_with_a_readable_name(self):
-        from yeaboi.agent.headless import _prior_art_refs
+        from yeaboi.agent.state import prior_art_refs
 
-        (ref,) = _prior_art_refs(["github:acme/auth"])
+        (ref,) = prior_art_refs(["github:acme/auth"])
         assert ref.key == "github:acme/auth"
         assert ref.name == "acme/auth"
         assert ref.platform == "github"
 
     def test_blanks_and_none_are_dropped(self):
-        from yeaboi.agent.headless import _prior_art_refs
+        from yeaboi.agent.state import prior_art_refs
 
-        assert _prior_art_refs(None) == ()
-        assert _prior_art_refs(["", "   "]) == ()
+        assert prior_art_refs(None) == ()
+        assert prior_art_refs(["", "   "]) == ()
 
     def test_a_bare_slug_still_yields_a_ref(self):
         """A caller who types `acme/auth` without the provider still means a
         repository; refusing it would be a worse answer than taking it."""
-        from yeaboi.agent.headless import _prior_art_refs
+        from yeaboi.agent.state import prior_art_refs
 
-        (ref,) = _prior_art_refs(["acme/auth"])
+        (ref,) = prior_art_refs(["acme/auth"])
         assert ref.name == "acme/auth"
         assert ref.platform == ""
 
     def test_keys_are_lowercased_so_they_match_the_ledger(self):
-        from yeaboi.agent.headless import _prior_art_refs
+        from yeaboi.agent.state import prior_art_refs
 
-        (ref,) = _prior_art_refs(["GitHub:Acme/Auth"])
+        (ref,) = prior_art_refs(["GitHub:Acme/Auth"])
         assert ref.key == "github:acme/auth"
 
 

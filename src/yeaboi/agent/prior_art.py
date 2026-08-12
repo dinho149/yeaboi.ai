@@ -166,9 +166,15 @@ class Shortlist:
 
 
 def applies(answers: dict[int, str] | None) -> bool:
-    """Whether the prior-art step runs for these answers (greenfield only)."""
+    """Whether the prior-art step runs for these answers (greenfield only).
+
+    Word-boundary rather than substring: Q2 accepts free text, and
+    "not greenfield, existing codebase" contains the marker while meaning its
+    opposite. Matching whole words costs nothing and gets that case right.
+    """
     answer = str((answers or {}).get(2, "") or "").strip().lower()
-    return any(marker in answer for marker in PRIOR_ART_Q2_ANSWERS)
+    words = set(re.findall(r"[a-z]+", answer))
+    return bool(words & PRIOR_ART_Q2_ANSWERS) and "not" not in words
 
 
 def requirements_from_answers(answers: dict[int, str] | None) -> Requirements:

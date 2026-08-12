@@ -559,6 +559,10 @@ class _ChatDriver:
             self._note("Size switching is not available in dry-run.")
             return
         apply_size_switch(self.state, target_mode)
+        # The switch resets the prior-art sub-loop, so its card has no data to
+        # render from any more and would show as "(… unavailable)". The step
+        # re-runs under the new mode and posts a fresh one.
+        self.transcript.drop_artifact("prior_art")
         self._note(f"Switched to {label} — I kept all your answers.")
         # One no-LLM invoke so project_intake produces the first gap question
         # (mirrors the old _switch_to_epic_pending re-entry).

@@ -49,6 +49,14 @@ class TestApplies:
     def test_missing_or_empty_answer(self):
         assert not prior_art.applies({})
         assert not prior_art.applies(None)
+
+    def test_free_text_that_means_the_opposite_does_not_match(self):
+        """Q2 takes free text, and a substring test reads "not greenfield" as a
+        greenfield project."""
+        assert not prior_art.applies({2: "not greenfield, existing codebase"})
+
+    def test_free_text_that_does_mean_greenfield_still_matches(self):
+        assert prior_art.applies({2: "a greenfield build, brand new"})
         assert not prior_art.applies({2: ""})
 
     def test_case_and_surrounding_prose_tolerated(self):

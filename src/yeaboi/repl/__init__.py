@@ -293,9 +293,9 @@ def run_repl(
     # the next user message into it before the next invocation.
     graph_state: dict = {"messages": []}
     if prior_art:
-        from yeaboi.agent.headless import _prior_art_refs
+        from yeaboi.agent.state import prior_art_refs
 
-        graph_state["prior_art"] = _prior_art_refs(prior_art)
+        graph_state["prior_art"] = prior_art_refs(prior_art)
 
     # Output detail level — toggled by /compact and /verbose commands.
     # Compact mode hides secondary columns (descriptions, ACs, disciplines).

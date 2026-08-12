@@ -3926,6 +3926,17 @@ def apply_size_switch(graph_state: dict, target_mode: str) -> None:
         qs.awaiting_confirmation = False
         qs.editing_question = None
         qs._reopen_for_epic = True
+        # Prior art resets in both directions, unlike the PTO block below: the
+        # guard skips a stage that is already open, but the confirmation-gate
+        # handler still claims the turn — so a switch made mid-loop would eat
+        # the user's first reply at the new summary and answer a card about a
+        # repository they can no longer see. Accepted refs are already on
+        # graph_state["prior_art"], which the confirm path falls back to.
+        qs._prior_art_stage = ""
+        qs._prior_art_candidates = []
+        qs._prior_art_index = 0
+        qs._prior_art_accepted = []
+        qs._prior_art_rejected = []
         if target_mode == "small_project":
             qs._planned_leave_entries = []
             qs._awaiting_leave_input = False
