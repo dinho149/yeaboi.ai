@@ -1,6 +1,6 @@
 name: Cowork repo setup
 
-# Apply the cowork GitHub half — the twenty-nine labels and the four
+# Apply the cowork GitHub half — the thirty-one labels and the four
 # `YEABOI_MODEL_*` repository variables — on every merge that changes what they
 # are derived from.
 #
@@ -68,10 +68,24 @@ jobs:
       # `--strict` so a rejected write is a failed job rather than a note on a
       # log nobody reads. That is the whole lesson of the cd-deploy no-op: it
       # exited 0 for weeks while doing nothing.
+      #
+      # But only when the variable half can actually run. Without the PAT,
+      # `GITHUB_TOKEN` has no admin scope, the variables read 403s, and `--strict`
+      # turns a *known and already warned-about* prerequisite into a red job on
+      # every `cowork/` merge — which teaches the same lesson backwards: a check
+      # that is always red is a check nobody reads either. The step above says
+      # this half is "reported, loudly, rather than silently skipped"; this keeps
+      # that true.
       - name: Apply
         env:
           GH_TOKEN: ${{ secrets.AUTO_VERSION_PAT || github.token }}
-        run: uv run python scripts/cowork_setup.py --strict
+          HAS_PAT: ${{ secrets.AUTO_VERSION_PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" = "true" ]; then
+            uv run python scripts/cowork_setup.py --strict
+          else
+            uv run python scripts/cowork_setup.py
+          fi
 
       # Reports the account half as unchecked (no --triggers snapshot here — the
       # routines API is not reachable from an Actions runner). Repo half only,

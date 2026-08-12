@@ -51,3 +51,7 @@ New flags, new MCP tools, workflow *behaviour* changes, and anything touching re
 
 Individual `mcp/tools_*.py` files and individual plugin skills — each belongs to its mode.
 `cowork/` itself — propose changes to it like anything else; it is reviewed by a human by design.
+
+**integrations** may append a provider's credential getters to `config.py` from a campaign run
+(`house-rules.md`, **Extends**) — that site and that operation only; everything else in the file is
+yours.

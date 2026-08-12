@@ -33,3 +33,7 @@ yeaboi produces.
 ## Out of scope
 
 The `deck` bundle's React components and CSS (**web-ux**). Tracker fetching (**integrations**).
+
+**integrations** may append a provider to `reporting/activity.py`'s `SOURCE_COMPONENTS` and
+`_canonical_source()` from a campaign run (`house-rules.md`, **Extends**) — a new source and its
+spelling only.

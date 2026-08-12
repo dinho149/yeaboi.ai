@@ -40,15 +40,6 @@ routines could have collided on a file. A header or CSP change is a security pro
 Stale committed bundles, a broken frontend test, dead components, `gen_site_seo.py --check` drift.
 Visual design, copy, layout, and anything on the public site always propose.
 
-## Opportunity space
-
-Where a `[feature]`/`[improvement]` find is most likely to be real here: parity gaps with the TUI
-surface (something the terminal shows that the shared page silently lacks), share and export flows
-that dead-end (a reader who cannot get from a board to the thing it references), and static exports
-a user has to hand-edit after the fact. The evidence bar in `cowork-scout.md` applies — name the
-friction, the gap, or the repeated step.
-
 ## Out of scope
 
-CSP *policy* and header construction (**security**) — you own the markup it protects. Marketing copy
-(**marketing**, which drafts to Notion and never edits `docs/index.html`).
+CSP *policy* and header construction (**security**) — you own the markup it protects.

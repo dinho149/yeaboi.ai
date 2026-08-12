@@ -1,6 +1,6 @@
 # Sweep procedure
 
-The shared run shape for all fourteen workstream sweep routines. Your routine file names the
+The shared run shape for all thirteen maintenance sweep routines. Your routine file names the
 workstream and any per-run focus; everything else is here.
 
 1. **Read** [house-rules.md](house-rules.md), [models.md](models.md), your charter in
@@ -28,17 +28,24 @@ workstream and any per-run focus; everything else is here.
    workstream plus a weekly cadence means an unmerged PR stops this workstream indefinitely, and
    without that comment the digest would report the silence as if the scout had found nothing.
 
-3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` and `integrations` use
-   `deep`) with your charter's paths. If your charter declares a `**Reads**` paragraph, pass
-   those paths too — the scout may look there, and no builder may ever edit there. It returns
-   ranked finds, each classified `auto` or `propose` against the allowlist in house-rules. The finds include up to 3
-   user-facing opportunities (`type: feature|improvement`) alongside defects — see the opportunity
-   pass in `.claude/agents/cowork-scout.md`; they ride the same ranking and the same propose lane.
-   Nothing found is a normal outcome: exit silently.
+3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
+   charter's paths. If your charter declares a `**Reads**` paragraph, pass those paths too — the
+   scout may look there, and no builder may ever edit there. It returns ranked finds, each
+   classified `auto` or `propose` against the allowlist in house-rules, and each typed from a
+   closed vocabulary of four: `bug`, `chore`, `docs`, `security`. **A sweep never returns a
+   `feature` or an `improvement`** — capability work exists only inside an integration campaign
+   (`integration-campaign.md`), approved by provider rather than by find. Nothing found is a
+   normal outcome: exit silently.
 
 4. **Deduplicate** — `gh issue list --label "workstream:<name>" --state open` and
    `gh issue list --label "workstream:<name>" --state closed --limit 50`. Drop any find that
    restates an open proposal or one that was closed unapproved. Do not re-file rejected ideas.
+
+   `--proposal-slots <name>` (step 6) returns the open half of that list as `blocking`, over REST
+   rather than GraphQL — which is the half that answers in a routine session, where `gh issue list
+   --json` is refused by the egress proxy. Use it when the `gh` reads above come back empty; an
+   empty result there means "could not ask", not "nothing open", and a dedupe run against nothing
+   re-files everything.
 
 5. **Auto lane** — take **one** `auto` find per run, never more: the one with the highest
    `impact`, breaking ties toward the lower `risk`. Impact over risk, in that order — a low-risk
@@ -82,11 +89,36 @@ workstream and any per-run focus; everything else is here.
      merge. The automation is real either way; the unattended *merge* is not, until that context is
      added ([house-rules.md](house-rules.md), **The gate**).
 
-6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which
-   files one GitHub issue each (`cowork:proposal` + `workstream:<name>` + `type:<type>`). **No
-   Linear ticket, and no Slack post.** The issue is the queue; the digest is the only thing that
-   talks to Slack about proposals; and Linear is opened at approval, not at proposal — see
-   [definition-of-done.md](definition-of-done.md).
+6. **Propose lane — file into the slots you have, and no further.** Ask how many there are; do not
+   count the queue by eye:
+
+   ```bash
+   uv run python scripts/cowork_setup.py --proposal-slots <name>
+   ```
+
+   It answers `{"cap": 2, "open": …, "slots": …, "blocking": [ … ]}`. Then, in this order:
+
+   - **Every `critical: true` find is filed, whatever `slots` says.** The four cases are in
+     [house-rules.md](house-rules.md), **Critical**; the scout has already scored them and you do
+     not re-score. One exception, and it points the other way: a critical *security* find that
+     would require disclosure takes the carve-out in
+     [`cron/security-sweep.md`](routines/cron/security-sweep.md) and never becomes a public issue.
+   - **Fill the remaining slots** with the highest-ranked non-critical `propose` finds — the same
+     impact-over-effort order the scout returned them in.
+   - **Drop the rest. Silently.** No issue, no comment on the blocking issues, no Slack. A held
+     find is not lost: you will survey the same surface next run and re-rank it, so one that still
+     matters comes back and one that stopped mattering does not.
+   - **`slots: null` means the query failed, and that is zero slots** — file the criticals and
+     nothing else. A read you could not make is never spoken as a clean answer.
+
+   Say in your run log how many you filed and how many you held. Nothing persists between runs, so
+   that line is the only place a single run is legible; `cron/digest.md` reports the standing
+   picture from the same command.
+
+   Each filed find goes to `cowork-scribe` (`standard`), one GitHub issue each (`cowork:proposal` +
+   `workstream:<name>` + `type:<type>`). **No Linear ticket, and no Slack post.** The issue is the
+   queue; the digest is the only thing that talks to Slack about proposals; and Linear is opened at
+   approval, not at proposal — see [definition-of-done.md](definition-of-done.md).
 
 7. **Stop.** Do not follow interesting threads outside your charter. File them as proposals for the
    owning workstream and move on.
@@ -96,3 +128,8 @@ workstream and any per-run focus; everything else is here.
 Abort the run and report if: `main` cannot be fetched; `make test` fails on a clean checkout (that is
 a `platform` problem, not yours — file an issue); or the scout returns more than 10 finds (something
 is wrong with the charter's scope, and filing 10 issues would bury the digest).
+
+**A full proposal queue is not one of these.** `slots: 0` ends step 6 and nothing else: the auto
+lane in step 5 still runs, and a run that ships a PR and files no proposal is a good run. Exit
+quietly, the way step 2 does when a PR is already open — no issue, no Slack, no explanation posted
+anywhere. The digest is where the fleet's held workstreams are reported, once, in one place.

@@ -25,12 +25,34 @@ entry, and the entry it drops is the one nobody then knows shipped.
    version to release and promoting would only re-tag one already out. A weekly message that says
    "nothing to promote" every week trains everyone to ignore the channel.
 
-2. **Render the body** — `uv run python scripts/release_channel.py --manifest --markdown`. Use it
-   verbatim. It already carries the changelog entries, the commit list, the install line and the
-   `<!-- promote: X.Y.Z -->` marker that `publish.yml` reads to tell whether `main` moved between
-   this ask and the approval. **Never edit the marker, and never write one by hand.**
+   **If an ask is already open and its `<!-- beta: … -->` marker names the same tag as
+   `installable_tag`, stop too.** Nothing has been published since it was written, so the open
+   issue already describes this batch exactly. Re-asking would close a live issue, open an
+   identical one, and put a second unanswered ✅ prompt in Slack — two things to react to for one
+   decision, which is the shape that lets a stale reply get approved a week later.
 
-3. **Open the issue, and never reuse a stale one** —
+2. **Find what was already signed off on** — `installable` is what is on PyPI; the newest
+   `<!-- tested: beta/X.Y.ZrcN -->` comment across
+   `gh issue list --label release:promotion --state all --limit 5` is what a human has actually
+   run. `make beta-check` writes those. If one exists and it is not the newest published
+   pre-release, pass it as `--since <tag>`.
+
+   That is what keeps a skipped week bounded. An unanswered batch grows every merge, and the
+   fourth Monday of re-reading the same twelve entries to find the two new ones is the Monday it
+   gets skimmed. The delta is the part with new risk in it; the rest was reviewed already.
+
+   When the signed-off tag *is* the newest published one, `nothing_new` is true and the rendered
+   body says so instead of printing a checklist — everything since is on `main` and in nothing
+   installable, so there is a promotion to make and nothing new to test. Post it as rendered.
+
+3. **Render the body** — `uv run python scripts/release_channel.py --manifest --markdown`
+   (with `--since <tag>` when step 2 found one). Use it verbatim. It carries the changelog
+   entries, the commit list, the install line for the pre-release that **really exists**, the
+   hand-test checklist for the surfaces this batch touched, and two markers `publish.yml` reads:
+   `<!-- promote: X.Y.Z -->` for what was asked, and `<!-- beta: beta/X.Y.ZrcN -->` for the commit
+   to cut it from. **Never edit a marker, and never write one by hand.**
+
+4. **Open the issue, and never reuse a stale one** —
    `gh issue list --label release:promotion --state open --limit 1`.
    - None open: `gh issue create --label release:promotion --label type:chore` titled
      `[chore] promote X.Y.Z — N pre-releases pending`, with the rendered body.
@@ -48,11 +70,37 @@ entry, and the entry it drops is the one nobody then knows shipped.
 
    Never leave two open. A ✅ on a stale ask promotes against a manifest nobody read.
 
-4. **Ask, through `cowork-scribe`** — one message to `#yeaboi-claude` naming the version, the number
-   of changes, how long the batch has been accumulating, and the install line. Then **one thread
-   reply in the parsed contract**, plain text, no emoji and no bold:
+5. **Ask, through `cowork-scribe`** — one message to `#yeaboi-claude`:
 
+   ```slack
+   🏷️ **Promote 3.7.0?** — 8 changes over 6 days · tested build `3.7.0rc8`
+
+   Everything merged since `v3.6.0` is already installable as a pre-release. Promoting cuts the
+   official `3.7.0` to PyPI from that exact build and opens a GitHub release.
+
+   [The batch, and what to check](https://github.com/dinho149/yeaboi.ai/issues/244)
+
+   Try it first: `pip install --pre yeaboi==3.7.0rc8`  ·  or run `make beta-check`
+   ✅ on the reply below to release · ❌ to wait another week
    ```
+
+   The rc named here is `installable`, never `latest_prerelease`. The second is what the *next*
+   merge would be numbered — every docs and chore commit raises it past anything on PyPI — so
+   quoting it hands out an install command that 404s, and the person it fails for is the one
+   person who did what was asked.
+
+   **Every number here is copied from the manifest you just read, never restated from memory** —
+   the version, the count, the span, the rc. This message is *composed*, unlike the issue body,
+   which `scripts/release_channel.py --manifest --markdown` renders and which you post byte for
+   byte; `cowork-scribe.md` draws that line explicitly because it is the one place a composed
+   sentence could name a version the issue does not.
+
+   The ✅/❌ pair is a footer that instructs, which is the one context those two glyphs are
+   allowed in — never in the title line, never in a heading.
+
+   Then **one thread reply in the parsed contract**, plain text, no emoji and no bold:
+
+   ```slack-reply
    #<issue> — promote X.Y.Z — <issue link>
    ```
 
@@ -62,7 +110,11 @@ entry, and the entry it drops is the one nobody then knows shipped.
 
 ## Stop conditions
 
-- **Nothing pending → nothing posted.** Step 1 is the whole gate.
+- **Nothing pending, or nothing new since the open ask → nothing posted.** Step 1 is the whole
+  gate, and its second half is what stops a skipped week producing a fresh ask every Monday for a
+  batch that has not changed.
+- **Never quote `latest_prerelease` as something to install.** `installable` is the only field
+  backed by a `beta/*` tag, and a tag is only pushed after the upload succeeds.
 - **Never apply `release:promote` yourself**, and never hold a grant that could. The routine that
   asks the question must not be able to answer it — this is the same rule that keeps a sweep from
   applying `claude-implement` to its own proposal.

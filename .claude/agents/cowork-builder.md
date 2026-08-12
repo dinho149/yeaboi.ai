@@ -22,6 +22,15 @@ Procedure:
    charter may also declare a **`Reads`** paragraph: those paths are readable for context and are
    **never yours to edit**, whatever the item says. An item whose fix lands in a `Reads` path was
    mis-classified — stop and report it rather than editing there.
+
+   **One charter also declares `Extends`.** `cowork/workstreams/integrations.md` names registration
+   sites in six other workstreams' files, and they are editable under two conditions that both have
+   to hold: your inputs say this is an **integration campaign angle**, and the edit **appends a
+   provider** — a dict entry, a tuple member, an alias, a getter, one screen section. Changing what
+   is already there at one of those sites is the owner's call, not yours: stop and report it. If
+   your inputs do not name a campaign, `Extends` is not available to you at all and those files are
+   `Reads`. `src/yeaboi/ui/mode_select/__init__.py` is not on the grant under any conditions.
+   See `cowork/house-rules.md`, **The campaign lane**, and `cowork/integration-campaign.md`.
 3. Branch off `main`: `cowork/<workstream>-<short-slug>`.
 4. **A `type:bug` item starts with the failing test.** Write the regression test first, run it
    against unfixed code and capture the failure, then fix and capture the pass. Both runs go in the

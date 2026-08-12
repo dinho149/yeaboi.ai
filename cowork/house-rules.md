@@ -43,12 +43,14 @@ category 2, and it is what makes "is this really a bug?" a mechanical question i
 judgement.
 
 **Everything else proposes.** If you are arguing with yourself about whether something qualifies,
-it does not. Marketing always proposes.
+it does not.
 
-**`feature` and `improvement` finds always propose.** The opportunity pass in `cowork-scout.md`
-widens what scouts *look for*, not what builders may *ship unasked* — a user-facing opportunity is
-exactly the judgement call the proposal queue exists to put in front of a human. No opportunity ever
-qualifies for the auto lane.
+**A sweep cannot propose a `feature` or an `improvement` either — it cannot produce one at all.**
+`cowork-scout.md`'s type vocabulary is four words wide (`bug`, `chore`, `docs`, `security`) and
+those two are not in it. Capability work has exactly one home, **the campaign lane** below, where a
+human approves a *provider* rather than a find. The `type:feature` and `type:improvement` labels
+still exist on the repo, because `src/yeaboi/feedback.py` files in-app user feedback under the same
+vocabulary; no routine may apply them. A surface that plainly lacks something is not a find.
 
 **Routine dependency bumps are not on this list**, though they look like they belong. Dependabot
 opens those PRs and `dependabot-auto.yml` verifies and merges them; a builder bumping the same
@@ -83,6 +85,66 @@ None of that removes a gate: the triage PR goes through **The gate** below like 
 and merges via `gh pr merge --auto` so the ruleset is what decides. A wrong fix does not merge; it
 sits red.
 
+## The campaign lane
+
+One workstream builds rather than maintains, and it needs its own lane because the auto lane above
+forbids everything it does. **integrations** runs a *campaign*: one provider — a tracker, a
+documentation tool, a code host, or an ops system the agent can scan — built across every angle in
+one week, and wired into every mode that has a question it answers. The procedure is
+[`integration-campaign.md`](integration-campaign.md).
+
+**What approves it is the provider, not the change.** Monday's shortlist reaches you through the
+digest as three `integration:candidate` issues; a ✅ on one applies `integration:approved`, and the
+week's work then ships unattended. That is the whole human step, and it is deliberately upstream:
+approving each PR of a week-long build is three approvals a week for decisions you already made when
+you picked the provider.
+
+**It is exempt from exactly four auto-lane conditions**, each because the provider approval already
+covered it:
+
+1. **no new capability** — a provider *is* the capability; the campaign registers it in
+   `test_surface_parity.py` like any other feature;
+2. **no user-facing wording** — a wizard step and a settings section are wording, and there is no
+   way to connect a provider without them;
+3. **no public API or config surface** — a credential getter in `config.py` is one;
+4. **stay in your paths** — see **Extends** below.
+
+**Everything else holds, unchanged.** An independent `code-reviewer` reads the diff before the PR
+opens. `claude-review.yml` reviews it once CI is green. `scripts/pr_feedback.py` still refuses an
+`<!-- addressed: … -->` marker from the PR's own author, so a campaign may fix a finding and never
+dismiss one. One open PR at a time. The ruleset decides the merge. And nothing reaches a user on
+merge: a campaign publishes a pre-release you hand-test against its own checklist before it is
+promoted (`release-signoff.md`).
+
+### Extends — appending a provider to another workstream's file
+
+Wiring a provider into every mode means editing six other workstreams' files. A blanket grant would
+be wrong, so the grant is by **site** and by **operation**: the campaign may *append a provider* at
+the registration sites named in
+[`workstreams/integrations.md`](workstreams/integrations.md)'s `**Extends**` paragraph, and may do
+nothing else in those files, ever. Changing existing behaviour there is a proposal for the owner,
+exactly as `**Reads**` always was.
+
+Three things make that safe rather than a hole:
+
+- **It is declared on both sides.** Each owning charter names integrations as an appender to that
+  site. `tests/unit/test_cowork_setup.py` asserts the reciprocity, because a one-sided grant is one
+  somebody deleted half of.
+- **There is a collision guard.** Before opening a PR that touches an `Extends` path, run
+  `gh pr list --label "workstream:<owner>" --state open` and `gh pr diff <n> --name-only`. If the
+  owner has an open PR touching that file, take a different angle this run.
+- **`src/yeaboi/ui/mode_select/__init__.py` is not on the list and never is.** That file — 14k LOC,
+  the repo's worst merge surface — is the reason *Stay in your paths* exists, and the campaign never
+  touches it. The grant is narrow enough to leave the rule's actual purpose intact.
+
+**Two rules the campaign carries that no other lane needs.** Every provider today is a vendor SDK,
+so a campaign adds a dependency to a published package, unattended: it may only add under
+`[project.optional-dependencies]` behind a lazy import, never to `dependencies`, and the shortlist
+issue names the package, its licence and its maintainer so the ✅ is an informed one. And a cassette
+for a provider nobody has an account with tests the author's *belief* about the API — a closed loop
+that goes green and means nothing — so a campaign's contract test cites the doc URL it was written
+from and the map records it as never recorded live.
+
 ## The gate
 
 The lane is wide; what keeps it safe is the merge path, and none of it is discretionary.
@@ -112,12 +174,72 @@ The lane is wide; what keeps it safe is the merge path, and none of it is discre
   This is the last backstop: a wrong fix that survives everything above still has to get past a
   person who has been running it.
 
-## Throughput is already bounded — do not add a throttle
+## Merges are already bounded — do not throttle the auto lane
 
 One `auto` find per run and one open PR per workstream (see Guardrails) together cap a heavy
 weekday at roughly eight merges and a typical one at two to four. That is the intended volume, and
 it is bounded by structure rather than by a counter someone has to tune. A new limit on top would
 mostly express nervousness, and the honest answer to nervousness here is the gate above.
+
+**That sentence was about merges, and it was read as being about everything.** The propose lane had
+no bound at all: a scout returns up to ten finds, the auto lane consumes at most one, so a single
+sweep could open nine issues, and fifteen workstreams run on overlapping crons. Nothing looked at
+how many were already open — only whether *this* find restated one. The queue drained on a
+fortnightly clock instead of on anybody deciding anything, and the digest, whose whole job is to put
+a short list in front of a human, had forty-one items behind it. Nine issues filed in one morning is
+not throughput. It is a queue nobody can clear, and the section below is the bound it never had.
+
+## The proposal cap
+
+**Two open `cowork:proposal` issues per workstream** (`PROPOSAL_CAP = 2` in
+`scripts/cowork_setup.py`, which is where the number actually lives). A run may fill whatever slots remain with its
+highest-ranked `propose` finds and files nothing beyond that. Answer one — approve it with
+`claude-implement`, or close it — and the slot reopens on the next sweep.
+
+Do not count them by eye. `uv run python scripts/cowork_setup.py --proposal-slots <workstream>`
+returns the number, the same way `--triggers` returns the reconcile plan: a model asked to count
+fifteen queues will eventually miscount one, and nothing downstream would notice.
+
+Three consequences, all deliberate:
+
+- **A held find is dropped, not deferred.** No issue, no comment, no Slack, no note anywhere. It is
+  not lost — the next sweep surveys the same surface and re-ranks, so a find that still matters
+  comes back, and one that stopped mattering does not. There is no shared state between runs and
+  this does not invent any.
+- **A full queue is a quiet outcome, not an abort.** It reads exactly like the one-open-PR guard:
+  the run did its work, there was nowhere to put it, and it exits saying nothing. `cron/digest.md`
+  reports which workstreams are held and which issues are holding them, so the silence is legible
+  in one place rather than fifteen.
+- **An unreadable count is zero slots, never two.** `--proposal-slots` answers `slots: null` when
+  the query failed rather than guessing, and a failed query is never spoken as a clean answer —
+  the same rule `cron/digest.md` applies to a PR it could not read.
+
+## Critical
+
+One find in a hundred cannot wait for a slot. `critical: true` on a scout's find bypasses the cap.
+It is permitted **only** when the find is one of these four, and this list is closed:
+
+1. an exploitable vulnerability, or a secret exposed in the repo or in a published artifact
+2. data loss or database corruption
+3. `main` crashing, or the published package failing to install
+4. a safety gate that has silently stopped working — CI not running, `pr-feedback` no longer
+   required, a guard that no longer guards
+
+Everything else is `critical: false`, including every find whose worst outcome is that a user is
+annoyed. This is a new axis and not a louder `impact`: `impact` is a 1–5 score the scout gives
+itself, and the moment a self-assigned score became the key to a gate it would start climbing. The
+four cases above are questions of fact, in the same way "name the regression test" is a question of
+fact rather than a matter of conviction.
+
+**It bypasses the cap and nothing else.** A critical find still dedupes against the open queue,
+still respects `Owns` versus `Reads`, still proposes if it is not on the auto-lane allowlist, and
+still goes through the gate. It is a reason to jump a queue, never a reason to skip a check.
+
+One collision, because it is the case where the two rules point opposite ways: a critical
+**security** find that would require disclosure — an exploitable path in a shipped release — takes
+the carve-out in [`routines/cron/security-sweep.md`](routines/cron/security-sweep.md) and goes to
+the Linear ticket and `#yeaboi-claude`, **never** to a public GitHub issue. The cap bypass must not
+become the route by which an exploit gets published.
 
 ## Guardrails
 
@@ -126,7 +248,9 @@ mostly express nervousness, and the honest answer to nervousness here is the gat
   and stop. Do not open a second.
 - **Stay in your paths.** A find outside your charter's paths becomes a proposal issue labelled for
   the owning workstream. Never edit another workstream's files — this is what keeps two routines off
-  `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface).
+  `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface). The single
+  exception is a campaign run appending a provider at an `**Extends**` site — bounded by site and by
+  operation, declared on both sides, and never on that file. See **The campaign lane**.
 - **Never apply `feedback-override`.** It is the escape hatch for a gate that has genuinely gone
   wrong — a review that errored, a producer that changed format — and it is a human's call, recorded
   on the PR. A routine applying it to its own PR is the applicant clearing its own review with the

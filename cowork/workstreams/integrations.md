@@ -5,7 +5,9 @@ local_git, codebase, risk, llm_tools), `src/yeaboi/jira_sync.py`, `azdevops_sync
 `export_targets.py`, `ticket_text.py`, `markdown_convert.py` (Markdown → Notion blocks / Confluence
 XHTML), `tests/contract/` and its cassettes
 
-**Reads** — the consumer side of every integration, to find and never to edit:
+**Reads** — the consumer side of every integration, to find and never to edit. Some of these files
+also appear under `**Extends**` below; there the two paragraphs divide by *operation*, not by file —
+a campaign may append a provider, and a sweep may only look:
 `analysis/engine.py`, `analysis/ai_usage.py`, `analysis/doc_quality.py` (the component/source model
 and the four hand-written credential probes); `standup/collector.py`, `code_scope.py`,
 `documentation_scope.py` (the `fetchers` dict and the retry/classify closure inside
@@ -16,6 +18,22 @@ and the four hand-written credential probes); `standup/collector.py`, `code_scop
 `ui/mode_select/screens/_screens_secondary.py` (the Credentials settings sections); and
 `config.py`'s credential getters and `TEAM_ANALYSIS_*` scope variables.
 
+**Extends** — registration sites in other workstreams' files, editable **only** from a campaign run
+([`../integration-campaign.md`](../integration-campaign.md)) and **only to append a provider**:
+`config.py` (credential getters — **platform**); `standup/collector.py` (the `fetchers` dict —
+**standup**); `analysis/engine.py` (`_COMPONENTS` and the `_available_*_sources` probes —
+**analysis**); `reporting/activity.py` (`SOURCE_COMPONENTS`, `_canonical_source()` —
+**reporting**); `roadmap/ingest.py` (`RoadmapSource`, `ingest_source()` — **roadmap**);
+`ui/provider_select/` (one wizard step and one `_verify_*` probe — **tui-ux**);
+`ui/mode_select/screens/_screens_secondary.py` (one Credentials section — **tui-ux**). Nothing else
+in those files, ever, and nothing at all outside a campaign. Altering existing behaviour at one of
+those sites is a proposal for the owner, exactly as `**Reads**` always was.
+
+Each of those six charters names this grant in its own **Out of scope** section. That reciprocity is
+asserted by `tests/unit/test_cowork_setup.py`, because a grant written down on one side only is a
+grant somebody deleted half of. `src/yeaboi/ui/mode_select/__init__.py` is deliberately **not** on
+the list: it is the file *Stay in your paths* was written for, and no angle needs it.
+
 **A find in a `Reads` path is always `lane: propose`, with `owner:` set to the workstream that owns
 the file.** `**Owns**` is where a builder may edit; `**Reads**` is only where a scout may look.
 Four charters already delegate here — standup's *"Jira/AzDO fetching itself (**integrations**)"*,
@@ -25,20 +43,39 @@ read by no routine at all.
 
 **Skills** — `.claude/skills/agent-and-state/SKILL.md` (tool conventions)
 
-**Cadence** — Tue 06:30 UTC. Three axes on a three-week rotation — see
-[`routines/cron/integrations-sweep.md`](../routines/cron/integrations-sweep.md).
+**Cadence** — weekdays 07:20 UTC, five runs a week, one campaign at a time. This is the fleet's only
+building workstream and the only one that runs daily; see
+[`routines/cron/integrations-campaign.md`](../routines/cron/integrations-campaign.md) for the run and
+[`../integration-campaign.md`](../integration-campaign.md) for the procedure.
 
-## The three axes
+## What an integration is
 
 An integration is not a credential field. It is a chain: **credential → verification → scope
 discovery → per-mode consumption → what the user finally sees**, and it is only worth as much as its
-weakest link. The charter covers all of it.
+weakest link. A campaign builds the whole chain for one provider, and a provider is not done because
+it has a client.
+
+The four families, all of them in scope for a campaign:
+
+| Family | Examples | What it is |
+|---|---|---|
+| `ticketing` | Linear, Trello, Shortcut, YouTrack, Asana | where the work is tracked |
+| `docs` | Google Docs, Slite, Coda, GitBook | where the team writes things down |
+| `code` | GitLab, Bitbucket, Gitea | where the code and its reviews live |
+| `ops` | AWS, GCP, Datadog, Sentry, PagerDuty, Teleport | what the team **runs** — see the admission test below |
+
+The first three extend surfaces yeaboi already has (`_COMPONENTS` in `analysis/engine.py` is
+`("delivery", "code", "docs")`). The fourth adds one, which is why it alone has an admission test.
+
+Three axes run through every campaign, and none of them is optional:
 
 1. **Edge** — the provider API itself. Cassettes, pagination, auth, rate limits, write-back symmetry.
-2. **Reach** — whether a connected provider actually arrives in analysis, planning, roadmap, standup,
-   reporting and performance. A provider that reaches no mode is a dead setting.
+2. **Reach** — whether the provider actually arrives in planning, analysis, standup, reporting,
+   roadmap, poker and performance. A provider that reaches no mode is a dead setting, and a campaign
+   is not finished until every mode either consumes it or carries a recorded gap saying why not.
 3. **Surface** — whether a user can tell what is connected, whether it still works, and what it
-   powers. [`integrations-map.md`](../integrations-map.md) is the record the reach axis maintains.
+   powers. [`integrations-map.md`](../integrations-map.md) is the record, and its completeness for
+   the provider is the campaign's definition of done.
 
 ## Standing concerns
 
@@ -127,29 +164,22 @@ Opsgenie (on-call load), Teleport (access grants as an onboarding and offboardin
 that fail: anything needing a write credential; anything reporting only at org level with no member
 or service attribution; anything whose answer no mode has a place to put.
 
-A specific provider is always a proposal, filed against this test, naming which of the three
-conditions it satisfies and which mode consumes it first.
+An ops provider is **shortlist-eligible like any other**, not a special case — but a candidate
+issue for one must name which of the three conditions it satisfies and which mode consumes it
+first, and one that fails any condition is a dashboard rather than an integration and is never
+shortlisted. Everything else about it is ordinary campaign work.
 
-## Auto lane, in practice
+## The two lanes, in practice
 
-A broken or flaky contract test, a missing pagination guard with a cassette to prove it, dead code in
-a retired provider path, doc drift between a tool's docstring and its behaviour. New provider
-capabilities always propose, every ops provider proposes, and nothing in a `**Reads**` path is ever
-auto — by construction, since a builder may not edit there.
+The campaign lane, five runs a week when a provider is approved: everything in
+[`../integration-campaign.md`](../integration-campaign.md) — the client, the cassette, the
+credential, the wizard step, the settings section, the per-mode wiring, the map row.
 
-## Opportunity space
-
-Where a `[feature]`/`[improvement]` find is most likely to be real here, one per axis:
-
-- **Edge** — third-party edges a user hits silently: truncated lists, rate limits swallowed, auth
-  that expires without a message, capabilities one provider has that its sibling lacks for no
-  recorded reason.
-- **Reach** — a credential a user has configured that changes nothing they can see, and a question a
-  mode plainly wants answered that no connected provider can answer.
-- **Surface** — setup steps that could self-verify instead of failing on first use, and connection
-  state a user has to infer from a failure.
-
-The evidence bar in `cowork-scout.md` applies — name the friction, the gap, or the repeated step.
+The **auto lane**, which is what the fallback branch runs when no campaign is approved, and which is
+unchanged: a broken or flaky contract test, a missing pagination guard with a cassette to prove it,
+dead code in a retired provider path, doc drift between a tool's docstring and its behaviour — over
+the providers that already exist. Nothing in a `**Reads**` path is ever auto, by construction, since
+no builder may edit there; and an `**Extends**` path is campaign-only, so it is never auto either.
 
 ## Out of scope
 

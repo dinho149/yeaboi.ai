@@ -97,6 +97,96 @@ class TestTheOfficialChannelIsPromotionOnly:
         assert "--check-promotable" in check_steps
 
 
+class TestTheOfficialReleaseIsTheTreeThatWasTested:
+    """Promotion is pinned to a commit, not to whatever `main` is at the ✅.
+
+    The failure this replaces was silent by construction: drift was compared at
+    *version* granularity, so a `main` that grew by commits which never moved the
+    version line matched the ask exactly and shipped untested code with no warning
+    at all. Each test below holds one half of the pin — resolve the commit, then
+    use it everywhere.
+    """
+
+    def test_every_job_builds_the_pinned_commit(self):
+        """Testing one tree and shipping another defeats the whole mechanism."""
+        jobs = load(PUBLISH)["jobs"]
+        for name in ("test", "publish", "release"):
+            checkouts = [step for step in jobs[name]["steps"] if "actions/checkout" in str(step.get("uses", ""))]
+            assert checkouts, f"{name} has no checkout"
+            for step in checkouts:
+                ref = str((step.get("with") or {}).get("ref", ""))
+                assert "needs.check.outputs.sha" in ref, f"{name} checks out main, not the tested commit"
+
+    def test_the_commit_is_resolved_before_anything_reads_the_tree(self):
+        """`notes` and the version grep must see the pinned pyproject.toml."""
+        steps = load(PUBLISH)["jobs"]["check"]["steps"]
+        ids = [step.get("id") for step in steps if step.get("id")]
+        assert ids.index("pin") < ids.index("notes") < ids.index("v")
+
+    def test_it_prefers_what_was_tested_over_what_was_asked(self):
+        pin = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "pin")
+        run = pin["run"]
+        assert run.index("marker tested") < run.index("marker beta"), "the sign-off wins over the ask"
+        assert "git rev-parse -q --verify" in run, "a marker from a public issue is verified, never trusted"
+
+    def test_a_missing_marker_falls_back_rather_than_failing(self):
+        """Refusing here strands a promotion the human already approved."""
+        run = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "pin")["run"]
+        assert "git rev-parse HEAD" in run
+        assert "exit 1" not in run
+
+    def test_drift_is_measured_in_commits_not_versions(self):
+        run = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "v")["run"]
+        assert "git log --oneline --no-merges" in run
+        assert "origin/main" in run, "the checkout is detached at the pinned commit by then"
+        assert "left_behind" in run
+
+    def test_a_duplicate_approval_closes_out_green(self):
+        """Two ✅s in the relay's window is a race, not a broken release."""
+        job = load(PUBLISH)["jobs"]["check"]
+        run = next(step for step in job["steps"] if step.get("id") == "v")["run"]
+        assert "is already released" in run
+        assert "go=false" in run and "go=true" in run
+        assert job["permissions"]["issues"] == "write"
+        for name in ("test", "publish", "release"):
+            assert "needs.check.outputs.go" in str(load(PUBLISH)["jobs"][name].get("if", ""))
+
+
+class TestTheBetaChannelTagsWhatItPublished:
+    """`beta/X.Y.ZrcN` is the only durable record that a pre-release exists.
+
+    Without it "the latest pre-release" can only be computed as a commit count,
+    which every docs merge raises past anything on PyPI — and that number was
+    being handed to a human as a `pip install --pre` line.
+    """
+
+    def test_the_tag_is_pushed_after_the_upload_and_not_before(self):
+        """A tag created first promises a file a failed upload never produced."""
+        steps = load(PUBLISH_BETA)["jobs"]["publish"]["steps"]
+        names = [str(step.get("name") or step.get("uses") or step.get("run", ""))[:40] for step in steps]
+        upload = next(i for i, step in enumerate(steps) if "gh-action-pypi-publish" in str(step.get("uses", "")))
+        tag = next(i for i, name in enumerate(names) if "Tag the published pre-release" in name)
+        assert upload < tag, names
+
+    def test_it_holds_the_write_permission_the_tag_needs(self):
+        assert load(PUBLISH_BETA)["jobs"]["publish"]["permissions"]["contents"] == "write"
+
+    def test_the_tag_is_idempotent(self):
+        """A re-run recomputes the same rc; it must not fail on the existing tag."""
+        step = next(
+            s for s in load(PUBLISH_BETA)["jobs"]["publish"]["steps"] if "Tag the published" in str(s.get("name", ""))
+        )
+        assert "rev-parse -q --verify" in step["run"] and "exit 0" in step["run"]
+
+    def test_the_tag_stays_out_of_the_finals_namespace(self):
+        """`last_final_tag` globs `v*`; a `v…rc…` tag would poison every count."""
+        step = next(
+            s for s in load(PUBLISH_BETA)["jobs"]["publish"]["steps"] if "Tag the published" in str(s.get("name", ""))
+        )
+        assert "beta/" in str(step.get("env", {}).get("TAG", ""))
+        assert not re.search(r"TAG:\s*v\$", str(step.get("env", {})))
+
+
 class TestTheBetaChannelStaysABeta:
     def test_beta_fires_on_push_to_main(self):
         triggers = load(PUBLISH_BETA)[True]
@@ -146,3 +236,58 @@ class TestUnattendedBranchPrefixesAgree:
     def test_every_machine_branch_is_covered_by_both(self, branch):
         assert branch.startswith(prf.UNATTENDED_BRANCH_PREFIXES)
         assert any(branch.startswith(prefix) for prefix in self._workflow_prefixes())
+
+
+class TestTheReleaseStepsCannotDieOnTheirOwnPlumbing:
+    """Two shell traps that fail a promotion for a reason nobody would guess.
+
+    Both are the same shape: a step that is *reporting* something optional takes
+    down the release it was reporting on. And both bite only in the case the line
+    exists for — more than fifty commits left behind, or a `gh` call that did not
+    answer — so a green run proves nothing about either.
+    """
+
+    def _step(self, needle: str) -> str:
+        text = PUBLISH.read_text(encoding="utf-8")
+        assert needle in text, f"the line under test moved: {needle}"
+        return text
+
+    def test_the_leftover_commit_list_does_not_pipe_into_head(self):
+        """`git log | head -50` under `set -o pipefail`: SIGPIPE → 141 → dead step.
+
+        The same file explains this trap fifteen lines above, for two other
+        commands. `-n 50` asks git for fifty and never closes a pipe early.
+        """
+        text = self._step("origin/main")
+        for line in text.splitlines():
+            if "git log" in line and "origin/main" in line:
+                assert "| head" not in line, "git log piped into head can take SIGPIPE and fail the promotion"
+
+    def test_reading_the_tested_marker_cannot_hard_fail(self):
+        """`marker`'s own `|| true` covers its greps, not the `gh` process.
+
+        The block's stated contract is that a missing marker means less pinning,
+        not no release — and a rate-limited `gh` must land in the same place as
+        an absent comment.
+        """
+        text = self._step("--json comments")
+        line = next(line for line in text.splitlines() if "--json comments" in line)
+        assert line.rstrip().endswith("|| true)"), "a failed `gh issue view` would abort the promotion"
+
+
+class TestTheRepoSetupJobIsRedOnlyForRealProblems:
+    """`--strict` is right where the write can be attempted, and wrong where it cannot.
+
+    Without `AUTO_VERSION_PAT` the variable half 403s by design — the job warns
+    about exactly that two steps earlier. Failing on it puts a permanent red on a
+    repo that is behaving as documented, and a check that is always red is read
+    no more often than one that is always green.
+    """
+
+    SETUP = WORKFLOWS / "cowork-repo-setup.yml"
+
+    def test_strict_is_gated_on_the_token_that_makes_it_meaningful(self):
+        text = self.SETUP.read_text(encoding="utf-8")
+        apply_step = text.split("name: Apply", 1)[1].split("name: Verify", 1)[0]
+        assert "--strict" in apply_step
+        assert "HAS_PAT" in apply_step, "--strict runs unconditionally, so a missing PAT is a red job"

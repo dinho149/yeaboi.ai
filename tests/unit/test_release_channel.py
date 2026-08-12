@@ -127,6 +127,192 @@ class TestPrereleaseNumbering:
             rc.next_prerelease()
 
 
+class TestPublishedPreReleases:
+    """The `beta/*` tags — the only evidence a pre-release actually exists.
+
+    Every test here is really the same test: `installable` is a fact and
+    `latest_prerelease` is a forecast, and the two diverge in the ordinary case,
+    not a rare one. The forecast was what the promotion ask and the daily standup
+    were printing as `pip install --pre`.
+    """
+
+    def test_only_beta_tags_count_and_they_sort_numerically(self, repo, monkeypatch):
+        set_version(monkeypatch, "3.10.0")
+        git(repo, "tag", "beta/3.10.0rc9")
+        commit(repo, "second")
+        git(repo, "tag", "beta/3.10.0rc10")
+        git(repo, "tag", "v1.0.0")  # a final, in the other namespace
+        git(repo, "tag", "beta/nonsense")
+        published = rc.published_prereleases()
+        assert [entry["version"] for entry in published] == ["3.10.0rc10", "3.10.0rc9"]
+        assert published[0]["sha"] == git(repo, "rev-parse", "HEAD")
+
+    def test_a_beta_tag_does_not_disturb_the_last_final(self, repo, monkeypatch):
+        """`last_final_tag` globs `v*`; `beta/` must stay invisible to it."""
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "second")
+        git(repo, "tag", "beta/1.1.0rc1")
+        assert rc.last_final_tag() == ("v1.0.0", (1, 0, 0))
+        assert rc.next_prerelease() == "1.1.0rc1"
+
+    def test_installable_is_what_shipped_and_latest_prerelease_is_what_would(self, repo, monkeypatch):
+        """The bug this whole namespace exists to fix, in one assertion.
+
+        Two chore commits after the last upload push `next_prerelease` past
+        anything on PyPI. Printing it as an install command 404s.
+        """
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "the release-worthy one")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "docs")
+        commit(repo, "ci")
+        batch = rc.pending()
+        assert batch["installable"] == "1.1.0rc1"
+        assert batch["latest_prerelease"] == "1.1.0rc3"
+        assert batch["installable_tag"] == "beta/1.1.0rc1"
+
+    def test_untested_commits_are_the_ones_no_prerelease_carries(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "the release-worthy one")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "docs")
+        commit(repo, "ci")
+        untested = rc.pending()["untested_commits"]
+        assert len(untested) == 2
+        assert untested[0].endswith("ci")
+        assert untested[1].endswith("docs")
+
+    def test_with_nothing_published_the_whole_batch_is_untested(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "second")
+        batch = rc.pending()
+        assert batch["installable"] is None
+        assert batch["untested_commits"] == batch["commits"]
+
+    def test_beta_tags_below_the_last_final_are_history(self, repo, monkeypatch):
+        """A promoted batch's pre-releases must not resurface in the next one."""
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "second")
+        git(repo, "tag", "v1.1.0")
+        set_version(monkeypatch, "1.2.0")
+        commit(repo, "third")
+        assert rc.pending()["installable"] is None
+
+    def test_prerelease_key_orders_rc10_above_rc9(self):
+        assert rc.prerelease_key("3.9.0rc10") > rc.prerelease_key("3.9.0rc9")
+        assert rc.prerelease_key("beta/3.9.0rc2") == (3, 9, 0, 2)
+        with pytest.raises(rc.ReleaseChannelError, match="expected an X.Y.ZrcN"):
+            rc.prerelease_key("3.9.0")
+
+    def test_resolve_beta_never_guesses(self, repo, monkeypatch):
+        set_version(monkeypatch, "1.1.0")
+        git(repo, "tag", "beta/1.1.0rc1")
+        assert rc.resolve_beta("beta/1.1.0rc1")["tag"] == "beta/1.1.0rc1"
+        assert rc.resolve_beta("1.1.0rc1")["tag"] == "beta/1.1.0rc1"
+        assert rc.resolve_beta("beta/9.9.9rc9") is None
+
+
+class TestDeltaBatch:
+    """`--since` — what a skipped week has to ask about, and no more."""
+
+    def _grown_batch(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "week one")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "week two a")
+        commit(repo, "week two b")
+        git(repo, "tag", "beta/1.1.0rc3")
+
+    def test_since_narrows_the_commits_to_what_is_new(self, repo, monkeypatch):
+        self._grown_batch(repo, monkeypatch)
+        full = rc.pending()
+        delta = rc.pending(since="beta/1.1.0rc1")
+        assert len(full["commits"]) == 3
+        assert [line.split(" ", 1)[1] for line in delta["commits"]] == ["week two b", "week two a"]
+        assert delta["delta"] is True and delta["since"] == "beta/1.1.0rc1"
+        assert full["delta"] is False and full["since"] is None
+
+    def test_since_narrows_the_changelog_entries_too(self, repo, monkeypatch):
+        (repo / "changelog_data.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "entries": [
+                        {"version": "1.1.0", "summary": "the new one"},
+                        {"version": "1.0.5", "summary": "already signed off"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "bump to 1.0.5")
+        git(repo, "tag", "beta/1.0.5rc1")
+        commit(repo, "bump to 1.1.0")
+        assert [e["version"] for e in rc.pending()["entries"]] == ["1.1.0", "1.0.5"]
+        assert [e["version"] for e in rc.pending(since="beta/1.0.5rc1")["entries"]] == ["1.1.0"]
+
+    def test_signing_off_on_the_newest_published_rc_leaves_nothing_to_recheck(self, repo, monkeypatch):
+        """Distinct from "nothing pending" — the promotion is still worth making.
+
+        Everything after the tested tag is on `main` and in nothing installable,
+        so a delta here would render an empty checklist beside an install line
+        naming the build they already ran. Saying so is the honest output.
+        """
+        self._grown_batch(repo, monkeypatch)
+        batch = rc.pending(since="beta/1.1.0rc3")
+        assert batch["nothing_new"] is True
+        assert batch["promotable"] is True
+        body = rc.markdown(batch)
+        assert "Nothing new has been published" in body
+        assert "- [ ] " not in body, "no checklist when there is nothing new to check"
+        assert "<!-- promote: 1.1.0 -->" in body, "still promotable, just not re-testable"
+
+    def test_a_delta_with_new_uploads_still_asks_for_the_checks(self, repo, monkeypatch):
+        self._grown_batch(repo, monkeypatch)
+        batch = rc.pending(since="beta/1.1.0rc1")
+        assert batch["nothing_new"] is False
+        assert "- [ ] " in rc.markdown(batch)
+
+    def test_the_full_batch_is_never_nothing_new(self, repo, monkeypatch):
+        self._grown_batch(repo, monkeypatch)
+        assert rc.pending()["nothing_new"] is False
+
+    def test_an_unknown_since_widens_rather_than_narrows(self, repo, monkeypatch):
+        """A marker naming a deleted tag must never silently shrink the review."""
+        self._grown_batch(repo, monkeypatch)
+        assert rc.pending(since="beta/9.9.9rc9")["commits"] == rc.pending()["commits"]
+        assert rc.pending(since="beta/9.9.9rc9")["delta"] is False
+
+
+class TestChangedPaths:
+    def test_the_diff_ends_at_the_prerelease_not_at_head(self, repo, monkeypatch):
+        """Promotion is pinned, so the checklist must describe the pinned tree.
+
+        A path changed after the last upload is not in the release, and putting it
+        on the checklist spends the reviewer's attention on something they cannot
+        affect.
+        """
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        (repo / "shipped.py").write_text("x\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-m", "in the release")
+        git(repo, "tag", "beta/1.1.0rc1")
+        (repo / "later.py").write_text("y\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-m", "after the release")
+        paths = rc.pending()["changed_paths"]
+        assert "shipped.py" in paths
+        assert "later.py" not in paths
+
+
 class TestTagSelection:
     def test_tags_sort_numerically_not_lexically(self, repo, monkeypatch):
         """`v3.9.0` outranks `v3.10.0` as a string, and that would misdate the batch."""
@@ -200,15 +386,128 @@ class TestPendingBatch:
             rc.pending(ref="no-such-ref")
 
 
+class TestTrackSplit:
+    """Which of the two hand-test sessions a batch's work belongs to.
+
+    Paths are the primary signal and the commit subject is corroborating, so a
+    missed attribution costs one extra test session and never a missed one. That
+    asymmetry is the whole design: the alternative — a commit trailer — is
+    unreadable on this repo's squash merges, because git's trailer parser reads
+    only the last paragraph and GitHub appends its own block below a separator.
+    """
+
+    def test_a_campaign_subject_names_its_provider(self):
+        assert rc.providers_from_subjects(["abc1234 integration(gitlab): wire activity into standup"]) == ("gitlab",)
+
+    def test_an_ordinary_subject_names_nothing(self):
+        assert rc.providers_from_subjects(["abc1234 fix the thing (#231)", "def5678 integration tests are flaky"]) == ()
+
+    def test_the_same_provider_twice_is_named_once(self):
+        assert rc.providers_from_subjects(["a1 integration(gitlab): client", "b2 integration(gitlab): reach"]) == (
+            "gitlab",
+        )
+
+    def test_an_untrailed_commit_is_maintenance(self):
+        """Maintenance is also where an attribution FAILURE lands, which is why the
+        split may only ever add a checklist row and never remove one."""
+        tracks = rc._tracks(["abc1234 fix a crash (#231)"], ["src/yeaboi/ui/x.py"])
+        assert tracks["maintenance"]["commits"] == ["abc1234 fix a crash (#231)"]
+        assert tracks["integration"]["commits"] == []
+        assert tracks["integration"]["required"] is False
+
+    def test_a_reach_angle_is_found_by_its_subject_alone(self):
+        """No provider module in the diff at all — the only signal is the title."""
+        tracks = rc._tracks(
+            ["abc1234 integration(gitlab): wire into standup"],
+            ["src/yeaboi/standup/collector.py"],
+        )
+        assert tracks["integration"]["required"] is True
+        assert tracks["integration"]["providers"] == ["gitlab"]
+
+    def test_a_provider_module_is_found_by_its_path_alone(self):
+        """A maintenance fix in `tools/jira.py` still needs somebody to drive Jira."""
+        tracks = rc._tracks(["abc1234 fix jira pagination (#231)"], ["src/yeaboi/tools/jira.py"])
+        assert tracks["integration"]["required"] is True
+        assert tracks["integration"]["providers"] == ["jira"]
+
+    def test_a_zero_work_track_is_never_required(self):
+        tracks = rc._tracks([], [])
+        assert tracks["maintenance"]["required"] is False
+        assert tracks["integration"]["required"] is False
+
+
+class TestPendingCarriesTracks:
+    def test_the_key_is_there_and_names_both(self):
+        batch = rc.pending()
+        assert set(batch["tracks"]) == set(rc.release_surfaces.TRACKS)
+
+    def test_every_other_key_survived(self):
+        """Additive only — a caller that never heard of tracks still works."""
+        batch = rc.pending()
+        for key in ("target", "commits", "changed_paths", "installable", "untested_commits", "promotable"):
+            assert key in batch
+
+
 class TestMarkdown:
-    def test_it_carries_the_marker_publish_reads(self, repo, monkeypatch):
+    def test_it_carries_both_markers_publish_reads(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "second")
+        git(repo, "tag", "beta/1.1.0rc1")
+        body = rc.markdown(rc.pending())
+        assert "<!-- promote: 1.1.0 -->" in body, "which version was asked about"
+        assert "<!-- beta: beta/1.1.0rc1 -->" in body, "which commit to cut it from"
+        assert "pip install --pre yeaboi==1.1.0rc1" in body
+        assert "✅" in body and "❌" in body
+
+    def test_it_never_hands_out_an_install_command_for_an_unpublished_rc(self, repo, monkeypatch):
+        """The install line comes from a tag or it does not appear.
+
+        `next_prerelease` answers "what would the next upload be called", which is
+        the right question for the workflow deciding what to upload and the wrong
+        one entirely for a human being told to go and try it. With no `beta/*` tag
+        there is nothing on PyPI, and saying so is the only honest output.
+        """
         git(repo, "tag", "v1.0.0")
         set_version(monkeypatch, "1.1.0")
         commit(repo, "second")
         body = rc.markdown(rc.pending())
-        assert "<!-- promote: 1.1.0 -->" in body
-        assert "pip install --pre yeaboi==1.1.0rc1" in body
-        assert "✅" in body and "❌" in body
+        assert "pip install" not in body
+        assert "Nothing has been published" in body
+
+    def test_it_carries_the_hand_test_checklist_for_what_changed(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        (repo / "frontend").mkdir()
+        (repo / "frontend" / "app.tsx").write_text("x\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-m", "front end")
+        git(repo, "tag", "beta/1.1.0rc1")
+        body = rc.markdown(rc.pending())
+        assert "Before you ✅" in body
+        assert "**browser**" in body, "frontend/ changed, so the CSP row must fire"
+        assert "**install**" in body and "**boot**" in body, "the baseline always fires"
+
+    def test_it_names_what_a_pinned_promotion_leaves_behind(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "in the release")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "landed after")
+        body = rc.markdown(rc.pending())
+        assert "in no pre-release" in body
+        assert "landed after" in body
+
+    def test_a_delta_ask_says_what_it_is_measured_from(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "week one")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "week two")
+        git(repo, "tag", "beta/1.1.0rc2")
+        body = rc.markdown(rc.pending(since="beta/1.1.0rc1"))
+        assert "since `beta/1.1.0rc1`, the pre-release you last signed off on" in body
+        assert "week one" not in body
 
 
 class TestReleaseNotes:
@@ -236,6 +535,9 @@ class TestReleaseNotes:
         assert "Promote" not in body
         assert "✅" not in body and "❌" not in body
         assert "promote:" not in body, "the marker the promotion path trusts must not be scattered publicly"
+        assert "beta:" not in body, "nor the one that decides which commit gets released"
+        assert "Before you" not in body, "a checklist of things to test before shipping — it already shipped"
+        assert "pip install --pre" not in body, "a released version is not installed with --pre"
 
     def test_both_describe_the_same_batch(self, repo, monkeypatch):
         """Only the question and the call to action differ; the changelog is one renderer."""
@@ -357,3 +659,41 @@ class TestCommittedVersionShape:
             if entry.startswith("version = ")
         )
         assert rc.SEMVER_RE.match(line.split('"')[1]), f"pyproject.toml holds {line!r} — must be X.Y.Z"
+
+
+class TestBothTrackSignalsMeasureTheSameRelease:
+    """Promotion is pinned to a published rc, so both signals must stop there.
+
+    The path signal already does. If the subject signal ran to HEAD instead, a
+    campaign PR merged after the newest rc would mark the integration track
+    `required` for a provider the pinned promotion does not contain — and
+    `beta_signoff.promote` refuses an unsigned required track, so the batch
+    becomes unpromotable with no way to sign the track off short of cutting
+    another rc for work nobody asked to release.
+    """
+
+    def test_a_campaign_merged_after_the_newest_rc_does_not_gate_it(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "fix a crash (#231)")
+        git(repo, "tag", "beta/1.1.0rc1")
+        commit(repo, "integration(gitlab): client, cassette and credential (#232)")
+
+        batch = rc.pending()
+        assert batch["installable"] == "1.1.0rc1"
+        assert batch["tracks"]["integration"]["required"] is False, (
+            "the gitlab work is not in the tree this promotion would ship"
+        )
+        assert any("integration(gitlab)" in line for line in batch["untested_commits"]), (
+            "and it must still be reported as left behind"
+        )
+
+    def test_a_campaign_inside_the_pinned_tree_still_gates_it(self, repo, monkeypatch):
+        git(repo, "tag", "v1.0.0")
+        set_version(monkeypatch, "1.1.0")
+        commit(repo, "integration(gitlab): client, cassette and credential (#232)")
+        git(repo, "tag", "beta/1.1.0rc1")
+
+        batch = rc.pending()
+        assert batch["tracks"]["integration"]["required"] is True
+        assert batch["tracks"]["integration"]["providers"] == ["gitlab"]

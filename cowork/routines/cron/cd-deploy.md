@@ -114,6 +114,15 @@ test has ever seen.
 4. **Reconcile the routines.** `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
    scratch file, then
    `uv run python scripts/cowork_setup.py --plan --strict --no-create --triggers <file>`.
+   - **If the response says `"has_more": true`, that page is not the fleet.** The API returns twenty
+     per page and `RemoteTrigger` cannot send the cursor back, so the rest is read one routine at a
+     time: `action: "get"` for every `trig_…` id in `cowork/README.md`'s URL column that the page did
+     not carry, saved as a JSON array in a second file, passed as a second `--triggers`. Skipping
+     this does not degrade the run — it hides most of the sweeps, whose ids are the oldest and so the
+     furthest down the list, and reports the fleet as needing nothing.
+   - A partial read is fine here and changes nothing about what this run does: it applies updates,
+     and `--no-create` already blocks every create. The plan says `partial` when it happened; put
+     that line in the Slack post so a quiet run is not mistaken for a clean one.
    - **If the plan is empty, exit silently.** This is the common outcome and the reason step 1 does
      not try to guess: most firings reach here, find a fleet that already matches, and stop.
    - Exit 1 means a step degraded — a GitHub call was rejected. Report it and stop; nothing was applied.
@@ -153,17 +162,55 @@ test has ever seen.
      step 4. Converging on the second pass is expected, not a loop.
 
 7. **Report.** Spawn `cowork-scribe` for the Linear `workstream:*` label mirroring and one
-   `#yeaboi-claude` post: what was updated (field by field), anything in `creates_blocked` that needs
-   `/cowork deploy`, any orphans, any blocked webhooks, the README PR link, and **any labels or
-   variables step 3 could not apply** — named, with the reason.
+   `#yeaboi-claude` post. **Which of two shapes depends on the run, not on the routine** — this is
+   the routine `cowork-scribe.md` names when it says intent is a property of the run.
 
-   That last one is the price of no longer stopping on it: a scope gap nobody ever reads about is a
-   scope gap that never gets fixed, and unlike the fleet reconciliation there is nothing else in the
-   day that would mention it.
+   **A run that reconciled something** is a TELL. Every field that changed, named:
+
+   ```slack
+   🚀 **cd-deploy** — fleet reconciled · `4576bcb`
+
+   **Updated**
+   1. `cowork: digest` — `prompt`, `model` → `standard`
+   2. `cowork: security-sweep` — `allowed_tools`
+
+   **Needs `/cowork deploy`** `cowork: retro-sweep` — a create, which this routine never applies
+
+   [README PR #241](https://github.com/dinho149/yeaboi.ai/pull/241) records the new ids.
+   ```
+
+   **A run that could not** is an ALERT. What was blocked, what state the fleet is in, and the one
+   thing a human can do:
+
+   ```slack
+   🚨 **cd-deploy** — blocked at step 3 · `4576bcb`
+
+   **Blocked** repo variables — the proxy refused `POST /actions/variables`
+   **Applied** nothing · the fleet is unchanged, not half-applied
+   **Next** [#220](https://github.com/dinho149/yeaboi.ai/issues/220) tracks it, or run `/cowork deploy` locally
+   ```
+
+   Both carry the commit, because "which tree was this?" is the first question either one raises.
+   Report `creates_blocked` as `/cowork deploy`, orphans by name, blocked webhooks by name, and
+   **any labels or variables step 3 could not apply** — named, with the reason. That last one is
+   the price of no longer stopping on it: a scope gap nobody ever reads about is a scope gap that
+   never gets fixed, and unlike the fleet reconciliation there is nothing else in the day that
+   would mention it.
 
    **If `self_update` in the plan is not null, say so explicitly with both the live and the wanted
    value** — that is this routine changing itself, and it is the one change that must never land
-   quietly.
+   quietly. It takes the 🚨 shape whatever else the run did, and it is the reason a normal deploy
+   must *not* wear 🚨: an alarm that fires on every reconcile is an alarm this message cannot use
+   on the one day it needs it.
+
+   **Say it once.** Before posting an ALERT, read the last 24 hours of `#yeaboi-claude`. If the
+   most recent `cd-deploy` post names the same blocked cause *and* the same commit, **post
+   nothing** — the run log still records the firing, and that is where "how often" is answered.
+   The webhook fires on every push to every branch, so a standing environment fault posts once
+   per push otherwise: this rule was written after one such fault produced thirty-six near
+   identical essays in a single day, which is how a channel gets muted. A new commit, or a new
+   cause on the same commit, is new information and posts. Nothing suppresses a TELL, because a
+   TELL only exists when something actually changed.
 
 ## Stop conditions
 
@@ -172,7 +219,9 @@ test has ever seen.
   matches. An empty plan posts nothing to Slack at all. A routine that reports every morning is a
   routine nobody reads by Thursday. The one thing that breaks the silence without a plan is a step 3
   degradation: a label or variable that could not be applied is posted even when the fleet needed no
-  change, because nothing else in the day would mention it.
+  change, because nothing else in the day would mention it — **once**, per step 7's say-it-once
+  rule, and then not again until the commit or the cause changes. "Nothing else would mention it"
+  is an argument for saying it, not for saying it on every push.
 - **Never compose a request body.** Only bodies that came out of `--plan` are ever POSTed. In
   particular never send `{"enabled": …}`: the plan never carries it, because `pause` is a supported
   verb and a deploy that silently un-paused the fleet would undo a human's decision with nothing

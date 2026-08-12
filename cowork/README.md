@@ -37,6 +37,49 @@ Unapproved proposals are closed by the digest routine after 14 days, and closing
 you say no sooner. GitHub issues *are* the queue — there is no other shared state between routine
 runs.
 
+**The queue is depth-bounded: two open proposals per workstream.** A sweep fills whatever slots are
+free with its best finds and drops the rest — silently, and losslessly, because the next sweep
+surveys the same surface and re-ranks. Answering one reopens a slot, which is the only thing that
+does. The exception is a `critical` find — an exploitable vulnerability, data loss, a broken `main`,
+or a safety gate that stopped working — which is filed whatever the count says. Before this, one
+sweep could file nine issues in a morning and the fleet's queue ran to forty-one; the digest that
+exists to put a short list in front of a human had a backlog behind it that nobody could clear. The
+rule is in [house-rules.md](house-rules.md); the arithmetic is
+`scripts/cowork_setup.py --proposal-slots`, never a routine counting by eye.
+
+## What arrives in Slack, and what does not
+
+Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is one to three
+channel messages a day**, worst case about five, plus thread replies. Every message opens with a
+title line carrying a fixed emoji, so a message is identifiable from its notification preview
+before it is opened.
+
+| When | What arrives | Stays silent when |
+|---|---|---|
+| Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
+| Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, and ⏸️ **Held** — the workstreams at their proposal cap | nothing is waiting |
+| Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release | nothing shipped, building or stuck |
+| Mondays 09:00 UTC | 🏷️ **Promote X.Y.Z?** — the weekly release ask | nothing is promotable |
+| A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
+| A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
+| A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
+| A disclosure-class security find | 🔐 **Security** — that one exists, and its ticket | rare by construction |
+| Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
+| The 13 maintenance sweeps | **nothing, ever** | always — a sweep files a GitHub issue and exits |
+
+Three things follow from that table, and they are the whole design:
+
+- **Silence is the default and it is load-bearing.** Every routine but the agents standup is
+  allowed to say nothing, and most of them say nothing most days. A routine that reports every
+  morning is a routine nobody reads by Thursday, and a muted channel is worse than no channel —
+  the one day it matters, nobody looks.
+- **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and it
+  is the only one with a thread. ✅ and ❌ mean approve and reject, they are never decoration, and
+  they only work **on a thread reply** — a reaction on a parent message resolves to nothing.
+- **🤖 is not decoration either.** The relay reacts 🤖 onto a message to record that it is handled,
+  and reads it back the same way. Reacting 🤖 to a digest item yourself hides that item from every
+  future run.
+
 ## Where things live
 
 | File | What it is |
@@ -45,9 +88,10 @@ runs.
 | [house-rules.md](house-rules.md) | Guardrails + the closed auto-lane allowlist. |
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
+| [release-signoff.md](release-signoff.md) | The weekly human ritual: test a pre-release, promote it. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
-| `workstreams/*.md` | Sixteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
+| `workstreams/*.md` | Fifteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
 
@@ -131,7 +175,6 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 |---|---|---|---|---|
 | `cron/security-sweep.md` | `0 6 * * 1,4` Mon + Thu | security | `deep` | https://claude.ai/code/routines/trig_015JVLHWzF8urG7nDq9J4wsN |
 | `cron/planning-sweep.md` | `0 7 * * 1` Mon | planning | `standard` | https://claude.ai/code/routines/trig_01UR5H8AL5CzSydGMHCzD4aw |
-| `cron/integrations-sweep.md` | `30 6 * * 2` Tue | integrations | `deep` | https://claude.ai/code/routines/trig_01YKiiD5aUn4AtoCyUjZaFLR |
 | `cron/standup-sweep.md` | `30 6 * * 3` Wed | standup | `standard` | https://claude.ai/code/routines/trig_01BcyJ4pNnPVPcDok47L2f9N |
 | `cron/tui-ux-sweep.md` | `0 7 * * 3` Wed | tui-ux | `standard` | https://claude.ai/code/routines/trig_01AxZUGZPkv86sbdxCuX2tep |
 | `cron/analysis-sweep.md` | `30 6 * * 4` Thu | analysis | `standard` | https://claude.ai/code/routines/trig_01YPy18KkR5qApYcGBSzr2ZA |
@@ -153,7 +196,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
+| `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | — |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
 | `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` | https://claude.ai/code/routines/trig_0118jEhPuaKrCaUWCYQtVgEv |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
@@ -256,12 +299,13 @@ The labels half, by contrast, is genuinely repaired by the REST path: `gh label 
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the twenty-nine GitHub labels (`cowork`,
+**What each command covers.** `make cowork-setup` does the thirty-one GitHub labels (`cowork`,
 `cowork:proposal`, `claude-implement`, `feedback-override`, the `release:promotion`/`release:promote`
-pair the promotion path fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*`
-labels shared with the feedback system) and the four
+pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
+campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
+shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-three routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 
@@ -292,6 +336,7 @@ rest of the verbs on it:
 | `/cowork teardown` | take it down (see below). |
 | `/cowork today` | what runs today and over the next week, in one message shape. Read-only. |
 | `make cowork-check` | the repo half of `status`, with no session needed. |
+| `make cowork-slots` | how full each workstream's proposal queue is, and which issues are holding it. Read-only. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 
 Two things are worth knowing before you rely on any of it.
