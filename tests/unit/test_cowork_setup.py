@@ -27,6 +27,7 @@ import calendar
 import dataclasses
 import importlib.util
 import json
+import pathlib
 import re
 import shutil
 import subprocess
@@ -3681,6 +3682,117 @@ class TestTheQueueSplitsTheBacklog:
         self._serve_split(monkeypatch, proposals=[], queued=[])
         assert setup.report_queued("platform", now=self.NOW) == 0
         assert json.loads(capsys.readouterr().out)["queued"] == 0
+
+
+class TestTheQueueContract:
+    """The half of `cowork:queued` that lives in markdown, pinned.
+
+    Every rule below fails **silently** at run time, and each one individually
+    restores the failure the queue exists to end:
+
+    - a digest that ages a queued issue out destroys the write-up *and*, because
+      both dedupe passes read a closing as a human's rejection, suppresses the
+      find permanently;
+    - a sweep that adds the queue label without removing the proposal label
+      leaves the issue counted, listed and aged out exactly as before;
+    - a scout that still drops an `auto` find restating an open issue leaves the
+      whole mechanism dead with nothing in any log to say so;
+    - a builder that omits `Closes #<n>` makes a queue that only grows.
+
+    None of it is observable from a run log, which is why it is asserted here.
+    """
+
+    def _read(self, path: pathlib.Path) -> str:
+        return path.read_text(encoding="utf-8")
+
+    @property
+    def sweep(self) -> str:
+        return self._read(setup.COWORK / "sweep-procedure.md")
+
+    @property
+    def digest(self) -> str:
+        return self._read(setup.ROUTINES_DIR / "cron" / "digest.md")
+
+    def test_the_house_rules_name_the_label(self):
+        """The rule is written in two places — prose a routine reads and the
+        constant it obeys — so they are pinned together, exactly as the cap is."""
+        rules = self._read(setup.COWORK / "house-rules.md")
+        assert f"`{setup.QUEUE_LABEL}`" in rules
+        assert "## The queue" in rules
+
+    def test_the_sweep_swaps_the_label_rather_than_adding_it(self):
+        """The two labels are mutually exclusive because every consumer queries
+        `cowork:proposal` through GitHub's AND-only `labels=` filter, which cannot
+        express "and not queued". A sweep that only adds leaves the issue counted,
+        listed and aged out exactly as before — and nothing would report it."""
+        assert f"--add-label {setup.QUEUE_LABEL}" in self.sweep
+        assert f"--remove-label {setup.PROPOSAL_LABEL}" in self.sweep
+
+    def test_the_sweep_never_replaces_a_label_set(self):
+        """`gh api ... PUT /issues/{n}/labels` replaces the whole set. That is how
+        #172 lost `cowork:proposal`, `workstream:web-ux` and `type:security` in one
+        call and then ran an implement job with no charter at all.
+
+        Asserted over the fenced commands rather than the whole file, because the
+        prose has to be free to *name* the verb in order to forbid it."""
+        blocks = re.findall(r"```(?:bash|sh)?\n(.*?)```", self.sweep, re.DOTALL)
+        assert blocks, "the sweep has no fenced commands left to check"
+        for block in blocks:
+            assert not re.search(r"(?i)\bPUT\b.*/labels", block), (
+                f"a PUT on labels replaces the whole set — see issue #172:\n{block}"
+            )
+        assert "PUT" in self.sweep, "the prohibition itself must stay written down"
+
+    def test_the_sweep_can_bounce_a_queued_item_back(self):
+        """`cowork:queued` grants nothing — it is a hypothesis step 5 confirms.
+        Without a written bounce path, an item the backfill queued wrongly has only
+        two outcomes and both are wrong: built anyway, or skipped forever."""
+        assert f"--remove-label {setup.QUEUE_LABEL}" in self.sweep
+        assert f"--add-label {setup.PROPOSAL_LABEL}" in self.sweep
+
+    def test_the_sweep_reads_the_queue_before_it_picks(self):
+        """A sweep that never asks builds only what it found this morning, and the
+        backlog it was seeded to drain sits there looking like a clean codebase."""
+        assert "--queued" in self.sweep
+
+    def test_the_digest_never_ages_out_a_queued_issue(self):
+        """The single most destructive thing in this design if it goes wrong: the
+        age-out closes the issue, both dedupe passes read that as a rejection, and
+        the find is suppressed permanently with its write-up gone."""
+        step = self.digest.partition("4. **Age out**")[2].split("\n5.")[0]
+        assert step, "the age-out step is no longer findable by its heading"
+        assert setup.QUEUE_LABEL in step
+        assert "claude-implement" in step
+
+    def test_the_digest_reports_the_queue_it_no_longer_lists(self):
+        """The risk this design creates. Four structurally-empty type sections mean
+        "nothing today" becomes the normal morning; without a Queued section a
+        fleet with thirty-nine unbuilt items is indistinguishable from a clean one."""
+        assert "🛠️" in self.digest
+        assert "**Queued**" in self.digest
+
+    def test_the_scout_returns_an_auto_find_that_restates_an_open_issue(self):
+        """The original bug, pinned. The scout dropped these, so the sweep never
+        saw them, so a stale proposal filed before the unattended lane existed
+        suppressed the very work that would have cleared it."""
+        scout = self._read(setup.SCOUT_AGENT)
+        assert '"restates"' in scout, "the scout's schema carries no way to report a match"
+        deduped = scout.partition("Deduplicate")[2]
+        assert "restates" in deduped[:1500], "the dedupe step never mentions the field it must set"
+
+    def test_a_queued_item_closes_on_merge(self):
+        """Nothing else closes one. Without this the queue only grows, and the
+        drain that is the whole point of the split never terminates."""
+        builder = self._read(setup.REPO_ROOT / ".claude" / "agents" / "cowork-builder.md")
+        assert "Closes #" in builder
+        assert "Closes #" in self.sweep
+
+    def test_the_queue_is_drain_only(self):
+        """It is seeded once and only shrinks. If a sweep could *file* into it, it
+        would become a second unbounded backlog hidden behind the first — with no
+        cap on it at all, since the cap counts proposals."""
+        rules = self._read(setup.COWORK / "house-rules.md")
+        assert "drain-only" in rules
 
 
 class TestBlockedReport:

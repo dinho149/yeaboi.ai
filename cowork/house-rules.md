@@ -196,6 +196,11 @@ not throughput. It is a queue nobody can clear, and the section below is the bou
 highest-ranked `propose` finds and files nothing beyond that. Answer one — approve it with
 `claude-implement`, or close it — and the slot reopens on the next sweep.
 
+**A `cowork:queued` issue holds no slot.** It is work waiting on the fleet, not a question waiting
+on a human, so counting it would mean a work item occupying a slot that only a human verb could
+release — on an issue no human is ever going to be shown. `--proposal-slots` filters it out and
+reports the depth separately as `queued`. See **The queue** below.
+
 Do not count them by eye. `uv run python scripts/cowork_setup.py --proposal-slots <workstream>`
 returns the number, the same way `--triggers` returns the reconcile plan: a model asked to count
 fifteen queues will eventually miscount one, and nothing downstream would notice.
@@ -213,6 +218,51 @@ Three consequences, all deliberate:
 - **An unreadable count is zero slots, never two.** `--proposal-slots` answers `slots: null` when
   the query failed rather than guessing, and a failed query is never spoken as a clean answer —
   the same rule `cron/digest.md` applies to a PR it could not read.
+
+## The queue
+
+`cowork:proposal` is a **question waiting on a human**. `cowork:queued` is a **work item waiting on
+the fleet** — a find already covered by the auto-lane allowlist above, so there is nobody to ask.
+Same write-up, same everything else; what differs is who answers it.
+
+The two are **mutually exclusive**, and that is load-bearing rather than tidy. Every consumer in the
+repo asks GitHub for `labels=cowork:proposal,…`, and that parameter is AND-only — there is no way
+to spell "and not queued". Exclusivity is what keeps `cron/digest.md`'s three queries,
+`codeql-triage.yml` and `flaky-test-hunter.yml` all correct without a single edit.
+
+Four rules, and they are the whole contract:
+
+- **Only a sweep's step 4 puts an issue in the queue**, one at a time, having read it, and only for
+  a find it classified `auto` itself that run. Not a scout (read-only), not the scribe at filing
+  time, not the relay, not `claude.yml`. The one-time backfill of an existing backlog is
+  `scripts/cowork_setup.py --migrate-proposals`, which a human runs and which refuses to run
+  unattended.
+- **The queue is drain-only.** Nothing *files* into it — a passed-over `auto` find is still dropped
+  (**A held find is dropped, not deferred**, above), so the queue is seeded from issues that
+  already exist and thereafter only shrinks. That is what stops it becoming a second unbounded
+  backlog behind the first one.
+- **Being queued grants nothing.** It records that a rule already covered this find; it is not an
+  approval and not a review. Step 5 re-checks the full allowlist before building, bounces what
+  fails back to `cowork:proposal` with the failing condition named, and closes what no longer
+  reproduces. A wrongly-queued item costs one comment. Nothing downstream trusts the label, which
+  is exactly why a mechanical backfill is safe.
+- **A merge closes a queue entry, and nothing else does.** `Closes #<n>` in the PR body. In
+  particular `cron/digest.md` must never age one out: both dedupe passes read a closing as a
+  human's rejection, so closing a queued item would destroy the write-up *and* suppress the find
+  permanently.
+
+**One bounded batch, on the precedent already set.** CodeQL triage is exempted from *One coherent
+change per run* on the reasoning that a batch of same-rule mechanical fixes **is** one coherent
+change. The same grant applies here, tightly: a sweep may put **at most three queued items in one
+PR** when all three carry the same `type:`, that type is `docs` or `chore`, and every path is inside
+the charter's `Owns`. Never `bug`, never `security`, and never a mix of types — those two carry a
+regression test and a disclosure judgement respectively, and neither survives being read as part of
+a batch. The PR body lists every issue number with its own `Closes #<n>`.
+
+A routine may apply `cowork:queued`. It may never apply `claude-implement` — which is why this had
+to be its own label rather than a reuse of that one. `claude.yml` fires an unattended 110-turn
+implement job on anything receiving `claude-implement`, and the closed list of labels a machine may
+apply must not widen just so a sweep can pick up its own backlog.
 
 ## Critical
 
