@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 28  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope  # noqa: E501
+CURRENT_SCHEMA_VERSION = 29  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope, v29=standup GitHub repo exclusions  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -835,6 +835,25 @@ class SessionStore:
                 added = False
             if added:
                 logger.info("Migration v28: added standup GitHub owner scope")
+
+        if from_version < 29:
+            # v29: standup GitHub repo exclusions — an owner still means "every
+            # active repo inside it"; this column is the narrow opt-out, letting
+            # someone drop one noisy repo without losing the "stays fresh
+            # automatically" property an inclusion list would give up.
+            #
+            # Same bare-except reasoning as v28: StandupStore._migrate adds this
+            # column independently for callers that never construct a SessionStore.
+            added = True
+            try:
+                self._conn.execute(
+                    """ALTER TABLE standup_config
+                       ADD COLUMN github_excluded_repositories TEXT NOT NULL DEFAULT '[]'"""
+                )
+            except sqlite3.OperationalError:
+                added = False
+            if added:
+                logger.info("Migration v29: added standup GitHub repo exclusions")
 
     def _apply_edit_provenance(self) -> None:
         """The v21 migration body — idempotent, so v26 re-runs it verbatim.

@@ -613,6 +613,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override saved GitHub repository scope (exact repos, unioned with --github-owners)",
     )
     standup_p.add_argument(
+        "--github-excluded-repositories",
+        nargs="+",
+        metavar="OWNER/REPO",
+        help="Override saved GitHub repos to drop from an included owner's expansion",
+    )
+    standup_p.add_argument(
         "--azdo-projects",
         nargs="+",
         metavar="PROJECT",
@@ -1440,6 +1446,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
         code_sources=args.code_sources,
         github_owners=args.github_owners,
         github_repositories=args.github_repositories,
+        github_excluded_repositories=args.github_excluded_repositories,
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,
         documentation_sources=args.documentation_sources,
