@@ -238,7 +238,9 @@ class TestSkippedSources:
         bundle = collect_recent_activity(jira_project="PROJ")
         skipped = dict(bundle.skipped)
         assert "jira" not in skipped
-        assert skipped["github"] == "STANDUP_GITHUB_REPO not set"
+        # Credential-shaped, not repo-shaped: a bare token is now scope enough,
+        # so "no repo" is no longer the reason GitHub sits out.
+        assert skipped["github"] == "GITHUB_TOKEN not set"
         assert skipped["azure_devops"] == "AZURE_DEVOPS_PROJECT not set"
         assert skipped["confluence"] == "CONFLUENCE_SPACE_KEY not set"
         assert skipped["notion"] == "NOTION_ROOT_PAGE_ID not set"

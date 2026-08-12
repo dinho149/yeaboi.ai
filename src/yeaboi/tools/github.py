@@ -169,6 +169,31 @@ def github_analysis_inventory(
     return out
 
 
+def _take(paginated, limit: int):
+    """Yield up to ``limit`` items from a PaginatedList, tolerating a short page.
+
+    ``PaginatedList[:limit]`` raises IndexError when GitHub advertises a next
+    page and then serves nothing behind it — seen live on an enterprise account
+    whose org list is empty. The slice fails *mid-iteration*, so a caller that
+    wraps the whole loop in try/except throws away every item it had already
+    collected: three orgs become zero, and a picker that should list them comes
+    up empty with only a warning in the log.
+    """
+    count = 0
+    iterator = iter(paginated)
+    while count < limit:
+        try:
+            item = next(iterator)
+        except StopIteration:
+            return
+        except IndexError:
+            # The pagination bug above — everything yielded so far is still good.
+            logger.debug("github: pagination ended early (short page)", exc_info=True)
+            return
+        yield item
+        count += 1
+
+
 def github_list_owners(limit: int = 100) -> list[str]:
     """List the GitHub owners/orgs visible to the configured token.
 
@@ -183,6 +208,9 @@ def github_list_owners(limit: int = 100) -> list[str]:
     A failure in either optional lookup is logged and skipped rather than raised,
     so a narrow token still yields the login. A client/auth failure propagates —
     the caller owns the fallback (mirrors ``azdevops_list_projects``).
+
+    Both lookups page through :func:`_take` rather than a slice, so a short final
+    page keeps the owners already found instead of discarding the whole lookup.
     """
     client = _get_github_client()
     user = client.get_user()
@@ -191,7 +219,7 @@ def github_list_owners(limit: int = 100) -> list[str]:
     if login:
         owners.add(login)
     try:
-        for org in user.get_orgs()[:limit]:
+        for org in _take(user.get_orgs(), limit):
             name = str(getattr(org, "login", "") or "").strip()
             if name:
                 owners.add(name)
@@ -203,7 +231,7 @@ def github_list_owners(limit: int = 100) -> list[str]:
         # past the cut — silently hiding a "z…" org from the picker, which is the
         # very failure this lookup exists to prevent. Recency also matches what
         # the scan itself considers (repos active within the window).
-        for repo in user.get_repos(sort="pushed", direction="desc")[:limit]:
+        for repo in _take(user.get_repos(sort="pushed", direction="desc"), limit):
             name = str(getattr(getattr(repo, "owner", None), "login", "") or "").strip()
             if name:
                 owners.add(name)

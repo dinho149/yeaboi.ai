@@ -120,7 +120,7 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       <ul>
         <li><strong>Slack</strong> — <code>SLACK_WEBHOOK_URL</code> (an <a href="https://api.slack.com/messaging/webhooks">incoming webhook</a>)</li>
         <li><strong>Email</strong> — <code>STANDUP_SMTP_HOST/PORT/USER/PASSWORD</code>, <code>STANDUP_SMTP_SENDER</code>, <code>STANDUP_EMAIL_RECIPIENTS</code></li>
-        <li><strong>GitHub activity</strong> — <code>STANDUP_GITHUB_REPO</code> (owner/repo)</li>
+        <li><strong>GitHub activity</strong> — <code>GITHUB_TOKEN</code> only; the organisations to cover are picked in <em>Configure &rarr; code sources</em> (each covers every active repo inside it). <code>STANDUP_GITHUB_REPO</code> remains as a legacy single-repo pin.</li>
         <li><strong>Desktop / Terminal</strong> — no configuration required</li>
       </ul>
       <p>Everything uses the Python standard library (Slack via <code>urllib</code>, email via <code>smtplib</code>, desktop via <code>osascript</code>/<code>notify-send</code>) — no new dependencies.</p>

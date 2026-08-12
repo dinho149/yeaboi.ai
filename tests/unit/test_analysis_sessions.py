@@ -56,8 +56,10 @@ class TestSchemaVersion:
         # lineage stamped shared DBs at 21 with a different meaning, so the
         # provenance columns could be missing from a DB already at v25;
         # v27 adds the agentwatch tables (agent_sessions, agent_ingest_files,
-        # agent_security_findings, and the three report-history tables).
-        assert CURRENT_SCHEMA_VERSION == 27
+        # agent_security_findings, and the three report-history tables); v28
+        # adds standup_config.github_owners, the GitHub org scope that mirrors
+        # the Azure project picker.
+        assert CURRENT_SCHEMA_VERSION == 28
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""
@@ -150,6 +152,39 @@ class TestSchemaVersion:
             version = migrated._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
 
         assert projects == '["Core", "Platform"]'
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_v27_db_gains_github_owner_scope_without_widening_saved_repos(self, tmp_path: Path):
+        """Column only: deriving owners from saved repos would silently widen scope."""
+        import sqlite3
+
+        db_path = tmp_path / "v27.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_info (schema_version INT NOT NULL)")
+        conn.execute("INSERT INTO schema_info (schema_version) VALUES (27)")
+        conn.execute(
+            """CREATE TABLE standup_config (
+                   session_id TEXT PRIMARY KEY,
+                   github_repositories TEXT NOT NULL DEFAULT '[]'
+               )"""
+        )
+        conn.execute(
+            "INSERT INTO standup_config (session_id, github_repositories) VALUES (?, ?)",
+            ("s1", '["acme/api", "acme/web"]'),
+        )
+        conn.commit()
+        conn.close()
+
+        with SessionStore(db_path) as migrated:
+            columns = {row[1] for row in migrated._conn.execute("PRAGMA table_info(standup_config)").fetchall()}
+            owners, repositories = migrated._conn.execute(
+                "SELECT github_owners, github_repositories FROM standup_config WHERE session_id = 's1'"
+            ).fetchone()
+            version = migrated._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
+
+        assert "github_owners" in columns
+        assert owners == "[]"
+        assert repositories == '["acme/api", "acme/web"]'
         assert version == CURRENT_SCHEMA_VERSION
 
 
