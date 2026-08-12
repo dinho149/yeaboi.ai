@@ -11,6 +11,7 @@ from __future__ import annotations
 import textwrap
 
 import rich.box
+from rich.cells import cell_len
 from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
@@ -5625,6 +5626,7 @@ def _build_standup_input_screen(
     """
     from yeaboi.ui.session.screens._screens_input import _image_hint, _voice_hint
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+    from yeaboi.ui.shared._voice_input import voice_chip
 
     theme = theme or STANDUP_THEME
     title = title if title is not None else standup_title()
@@ -5636,10 +5638,32 @@ def _build_standup_input_screen(
     label.append(prompt, style=f"bold {theme.accent}")
     if default:
         label.append(f"   (default: {default})", style=theme.dim)
+    label.no_wrap = True
+    label.overflow = "ellipsis"
+
+    def _box_top(inner_w: int) -> Text:
+        """Top border with the dictation chip inlaid, Panel-title style.
+
+        This box is hand-drawn, so there is no Panel title to hang the chip on —
+        but the border is the one row that is never cropped, which is the whole
+        reason the chip moved off the hint line. Putting it on the *label* would
+        just have reproduced the original bug: the label is no_wrap/ellipsis, so
+        a trailing chip is the first thing dropped on a narrow terminal. The chip
+        is omitted when the border is too short to hold it and still read as a
+        border.
+        """
+        chip, chip_style = voice_chip()
+        # 6 = the two ─ before the chip, a space either side, and 2 ─ after.
+        if inner_w < cell_len(chip) + 6:
+            return Text(_PAD + "  ╭" + "─" * inner_w + "╮", style=box_style)
+        top = Text(_PAD + "  ╭─ ", style=box_style)
+        top.append(chip, style=chip_style)
+        top.append(" " + "─" * (inner_w - cell_len(chip) - 3) + "╮", style=box_style)
+        return top
 
     if box_rows <= 1:
         field_inner = f" {value}█ "
-        box_top = Text(_PAD + "  ╭" + "─" * max(len(field_inner), 40) + "╮", style=box_style)
+        box_top = _box_top(max(len(field_inner), 40))
         box_mid = Text(_PAD + "  │", style=box_style)
         box_mid.append(field_inner.ljust(max(len(field_inner), 40)), style=f"bold {theme.accent_bright}")
         box_mid.append("│", style=box_style)
@@ -5661,7 +5685,7 @@ def _build_standup_input_screen(
         chunks = chunks[-rows:]  # keep the cursor row visible when the text overflows
         while len(chunks) < rows:
             chunks.append("")
-        box_lines = [Text(_PAD + "  ╭" + "─" * inner_w + "╮", style=box_style)]
+        box_lines = [_box_top(inner_w)]
         for chunk in chunks:
             row = Text(_PAD + "  │", style=box_style)
             row.append(f" {chunk}".ljust(inner_w), style=f"bold {theme.accent_bright}")
@@ -5671,9 +5695,16 @@ def _build_standup_input_screen(
 
     # While recording/transcribing, the voice status replaces the usual hint.
     if status:
-        hint_line = Text(_PAD + "  " + status, style=box_style or theme.accent, justify="left")
+        # One row, always: pad_rows below budgets exactly one for this line.
+        hint_line = Text(
+            _PAD + "  " + status,
+            style=box_style or theme.accent,
+            justify="left",
+            no_wrap=True,
+            overflow="ellipsis",
+        )
     else:
-        newline_hint = "  ·  Alt+Enter (or Ctrl+N) for a new line" if box_rows > 1 else ""
+        newline_hint = "  ·  Ctrl+N (or Alt+Enter) for a new line" if box_rows > 1 else ""
         hints = (
             "Enter to confirm  ·  Esc to cancel"
             + newline_hint
@@ -6297,15 +6328,47 @@ def _build_settings_screen(
         # Local, offline dictation (double-tap Space in any text field) — works with every
         # LLM provider, no API key. See docs: "Voice Input".
         _heading("Voice Input")
-        from yeaboi.voice import backend_label, is_voice_available
+        from yeaboi.voice import backend_label, unsupported_blocker, voice_install_command, voice_state
 
-        _voice_ok, _voice_reason = is_voice_available()
-        # Read-only status; the unavailable text carries an install command, so it
-        # wraps onto continuation lines rather than cropping mid-command.
-        if _voice_ok:
+        # Read-only status, worded from the one shared vocabulary so this page
+        # cannot disagree with the chip and the tip about the same machine. Any
+        # text carrying an install command wraps rather than cropping mid-command.
+        _voice_state = voice_state()
+        if _voice_state == "ready":
             _row("Dictation", f"available — {backend_label()}", value_style=theme.good, wrap=True)
+        elif _voice_state == "installable":
+            _row(
+                "Dictation",
+                "not installed — double-tap Space in any text field, then Enter",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        elif _voice_state == "unsupported":
+            _row("Dictation", f"unavailable — {unsupported_blocker()}", value_style=theme.warn, wrap=True)
         else:
-            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn, wrap=True)
+            _row(
+                "Dictation",
+                f"not installed — offer dismissed; {voice_install_command()}",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        # Editable rather than a button: the user ruled out a Settings *action*,
+        # but a permanent "never" needs some way back that is not an env var.
+        _row(
+            "Install Offer",
+            "off"
+            if config_data.get("VOICE_INSTALL_OFFER", "").strip().lower() in {"off", "false", "0", "no"}
+            else "on",
+            env="VOICE_INSTALL_OFFER",
+        )
+        # Enter on this row opens the device picker (see _pick_voice_device) rather
+        # than the free-text editor every other row uses.
+        _row(
+            "Input Device",
+            config_data.get("VOICE_DEVICE", "") or "system default",
+            value_style="" if config_data.get("VOICE_DEVICE", "") else theme.dim,
+            env="VOICE_DEVICE",
+        )
         _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
     def _sec_bedrock() -> None:
@@ -6583,3 +6646,135 @@ def _build_settings_screen(
     panel._box_tail = box_tail  # the full-width boxes stacked under the columns
     panel._box_fields = box_fields  # per section, its editable (env, label, masked) in order
     return panel
+
+
+# ---------------------------------------------------------------------------
+# Voice input — microphone picker
+# ---------------------------------------------------------------------------
+
+# How many device rows fit before the list scrolls. Hosts with a virtual audio
+# driver installed can report a dozen inputs.
+_MIC_ROWS = 8
+
+
+def voice_picker_keypress(key: str, state: dict) -> str:
+    """Advance the microphone picker one keypress; returns the action to take.
+
+    Split out as a pure function — the picker itself runs a Rich ``Live`` loop,
+    which is untestable, but the thing worth testing is exactly this: which key
+    moves, which selects, which tests, which backs out. Mutates ``state["sel"]``
+    and returns one of ``"select" | "cancel" | "test" | "system" | "none"``.
+    """
+    count = max(1, len(state.get("devices", [])))
+    if key in ("up", "k"):
+        state["sel"] = (state.get("sel", 0) - 1) % count
+        return "none"
+    if key in ("down", "j"):
+        state["sel"] = (state.get("sel", 0) + 1) % count
+        return "none"
+    if key in ("enter", " "):
+        return "select"
+    if key == "t":
+        return "test"
+    if key == "d":
+        return "system"  # clear the preference — back to the system default
+    if key in ("esc", "q"):
+        return "cancel"
+    return "none"
+
+
+def _build_voice_device_screen(
+    devices: list[dict],
+    selected: int,
+    *,
+    current: str = "",
+    width: int = 80,
+    height: int = 24,
+    testing: bool = False,
+    level: float = 0.0,
+    notice: str = "",
+) -> Panel:
+    """Build the microphone picker page.
+
+    ``devices`` are :func:`yeaboi.voice.list_input_devices` dicts. ``testing``
+    switches the highlighted row\'s meter live — the only way to answer "is this
+    the mic that actually hears me?" without leaving the app.
+
+    # See docs: "TUI system" — Settings sub-page
+    """
+    from yeaboi.ui.shared._components import SETTINGS_THEME, build_key_hints, build_scrollbar, settings_title
+    from yeaboi.ui.shared._voice_input import level_meter
+
+    theme = SETTINGS_THEME
+    lines: list = [Text(""), settings_title(width=width), Text("")]
+    lines.append(Text(PAD + "Microphone", style="bold white", justify="left"))
+    lines.append(
+        Text(
+            PAD + ("Recording from this input. VOICE_DEVICE remembers it." if devices else ""),
+            style=theme.muted,
+            justify="left",
+        )
+    )
+    lines.append(Text(""))
+
+    if not devices:
+        lines.append(
+            Text(
+                PAD + "  No microphones detected. Plug one in and reopen this page — the list is rescanned.",
+                style=theme.warn,
+                justify="left",
+            )
+        )
+    else:
+        # Window the list around the selection so a long device table scrolls —
+        # a host with a virtual audio driver can report a dozen inputs. The
+        # scrollbar is what says the window is a window; without it the rows
+        # beyond it simply look absent.
+        max_start = max(0, len(devices) - _MIC_ROWS)
+        start = max(0, min(selected - _MIC_ROWS // 2, max_start))
+        rows: list[Text] = []
+        for index, device in enumerate(devices[start : start + _MIC_ROWS], start=start):
+            focused = index == selected
+            row = Text(PAD + ("  ▸ " if focused else "    "), style=theme.accent if focused else theme.dim)
+            row.append(device["name"], style="bold white" if focused else theme.muted)
+            tags = []
+            if device["is_default"]:
+                tags.append("system default")
+            if current and current == device["name"]:
+                tags.append("selected")
+            row.append(f"   {device['channels']} ch · {device['samplerate']} Hz", style=theme.dim)
+            if tags:
+                row.append(f"   {', '.join(tags)}", style=theme.good if "selected" in tags else theme.dim)
+            if focused and testing:
+                row.append(f"   {level_meter(level)}", style=theme.good)
+            row.no_wrap = True
+            row.overflow = "ellipsis"
+            rows.append(row)
+        scrollbar = build_scrollbar(_MIC_ROWS, len(devices), start, max_start)
+        if scrollbar is None:
+            lines.extend(rows)
+        else:
+            rows.extend(Text("") for _ in range(max(0, _MIC_ROWS - len(rows))))
+            shell = Table.grid(expand=True, padding=0)
+            shell.add_column(ratio=1)
+            shell.add_column(width=1)
+            shell.add_row(Group(*rows), scrollbar)
+            lines.append(shell)
+
+    lines.append(Text(""))
+    if notice:
+        lines.append(Text(PAD + "  " + notice, style=theme.warn, justify="left", no_wrap=True, overflow="ellipsis"))
+    elif testing:
+        lines.append(
+            Text(PAD + "  Speak now — the bar moves when this mic hears you. Any key stops.", style=theme.good)
+        )
+    else:
+        lines.append(Text(""))
+
+    hint = build_key_hints(
+        [("↑/↓", "choose"), ("t", "test mic"), ("Enter", "use"), ("d", "system default"), ("Esc", "back")], pad=PAD
+    )
+    lines.append(Text(""))
+    lines.append(hint)
+
+    return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)

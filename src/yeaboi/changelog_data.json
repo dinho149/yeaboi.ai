@@ -2,9 +2,590 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.8.1",
+      "date": "2026-08-12",
+      "summary": "Fixed critical paste handling defects in the chat box that corrupted input and broke keyboard ergonomics. Pasted text larger than 10,000 characters now drains fully and stays within the cap instead of overflowing into the tty as keystrokes; newlines are preserved across platforms (Windows CRLF, Unix LF, old Mac CR); UTF-8 characters no longer decode as replacement characters; and escape sequences in the read-ahead tail no longer phantom-quit the chat. The newline key hint was corrected: Ctrl+N has always worked but was invisible, while the advertised Alt+Enter needs iTerm2/Terminal.app configuration that many users don't have. The hint row is now dynamic, dropping lower-priority hints by segment rather than ellipsizing mid-word on narrow terminals. Ctrl+U now clearly indicates what it does and remembers the previous draft for one Ctrl+U press, so you can undo a clear without re-typing. All changes are keyboard ergonomics only \u2014 no new user-facing features.",
+      "highlights": [
+        {
+          "text": "Paste handling fixed: oversized pastes drain to 10,000 characters (not spilling as keystrokes), newlines preserved across platforms, UTF-8 decodes correctly, no character corruption",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Newline key now clearly advertises Ctrl+N (always worked, now visible) over Alt+Enter (which needs terminal config)",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Hint row now drops lower-priority segments instead of ellipsizing mid-word on narrow terminals, keeping the essential hints visible",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Ctrl+U shows what it does and restores the previous draft on the next Ctrl+U, so you can undo a clear without re-typing",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Fixed: escape sequences in the read-ahead buffer no longer phantom-quit the chat and type literal characters",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.8.0",
+      "date": "2026-08-12",
+      "summary": "Daily Standup now offers GitHub organization-level scoping, bringing it to feature parity with Azure DevOps project selection. Instead of manually ticking individual repositories, you can now pick GitHub organisations in Configure \u2192 Code Sources, and the standup automatically discovers and tracks all repositories within those organisations. The picker intelligently expands owners per run (not at configure time), so newly created repositories are immediately available without any reconfiguration. Repository discovery is capped at the 10 most recently pushed per owner to keep the collector efficient, and GitHub API errors are handled gracefully as warnings rather than blocking the entire source.",
+      "highlights": [
+        {
+          "text": "GitHub organizations now appear in the code sources picker alongside Azure DevOps projects",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "Organizations expand per run to discover repositories automatically, including newly created repos without reconfiguration",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Repository discovery is capped at 10 per owner and 30 total to prevent bottlenecking the standup's 10-minute run window",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "New github_owners CLI flag and MCP tool parameter brings feature parity across all surfaces",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.7.0",
+      "date": "2026-08-11",
+      "summary": "Daily Standup fixes two critical reachability defects: the browser-editable share now appears on live pages (not just saved runs), and skipped sources are now named with reasons in the progress steps, TUI panels, and broadcast surfaces. A new Sources action lets you reconfigure code sources on any standup page after initial setup. GitHub API errors (403/404/rate-limit) are now safely caught per-source, and one vocabulary bridges source labels across four surfaces \u2014 no more mismatches between \"GitHub\" and \"GitHub code\" between the report and progress steps.",
+      "highlights": [
+        {
+          "text": "Live standup pages now have an editable share like saved runs, with the same edit-log replay and attribution tracking",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Skipped sources now appear everywhere: progress steps name each skipped source and its reason (not selected, no credentials, empty scope)",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "New Sources action allows post-setup reconfiguration of code sources (GitHub, Azure Repos, Local Git, Confluence, Notion)",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "GitHub API errors are now safely caught per-source with verbose logging, preventing one unreachable repo from blocking the rest",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "Unified source vocabulary: source_label bridges progress steps, TUI, web exports, and broadcast surfaces \u2014 consistent naming across all surfaces",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.6.0",
+      "date": "2026-08-10",
+      "summary": "Wave 5 of the Go migration brings the team-analysis scoring core (code health evaluation, coverage assessment, and code practice classification) behind the yeaboi-core sidecar. Two new deterministic RPC methods enable the analysis module to classify code markers and score repository health in the background Go service with Python fallback. The seam carefully orchestrates concurrent LLM work and file-fetch operations for optimal performance. Parity tests enforce byte-level equivalence across Python and Go implementations, and contract definitions lock the RPC interface across versions.",
+      "highlights": [
+        {
+          "text": "Analysis scoring core now runs in the Go sidecar with two new RPC methods: classify_markers and score_code",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "New aggregate module coordinates concurrent analysis work (LLM classification + network file fetches) with optimal parallelism",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Byte-level parity enforcement for analysis module ensures Python and Go implementations stay perfectly synchronized",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Silent Python fallback preserves compatibility when the sidecar is unavailable or encounters errors",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.5.0",
+      "date": "2026-08-10",
+      "summary": "The Go migration begins with the yeaboi-core sidecar now serving the deterministic agentwatch and standup engines. Platform wheels ship automatically with the `yeaboi[core]` extra, and the binary is auto-detected at runtime with silent Python fallback. Agentwatch scans are now ~30\u00d7 faster (15\u201330s \u2192 ~1.1s), CLI startup is ~16\u00d7 faster (0.65s \u2192 0.04s), and the standup.aggregate RPC delivers deterministic report composition with byte-level contract enforcement. The migration is transparent \u2014 no breaking changes, no new CLI flags, no TUI changes. Python remains the reference implementation; Go and Python stay synchronized via parity tests covering every output byte.",
+      "highlights": [
+        {
+          "text": "Go sidecar binary (yeaboi-core) now serves agentwatch and standup deterministic engines with ~30\u00d7 faster scans and ~16\u00d7 faster CLI startup",
+          "areas": [
+            "general",
+            "usage",
+            "standup"
+          ]
+        },
+        {
+          "text": "Platform wheels for yeaboi-core (macOS Intel/Apple, Linux x86_64/ARM64, Windows) ship via `yeaboi[core]` extra with auto-detection at runtime",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Transparent sidecar migration with silent Python fallback \u2014 no user-facing changes, full backward compatibility",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Byte-level parity tests ensure Python and Go remain synchronized on every engine output",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.4.0",
+      "date": "2026-08-09",
+      "summary": "The Agents family (Usage, Standup, Security) now ships with full website and documentation coverage. All three agent modes appear in the new docs structure with pages explaining what each tracks and how to use them. The demo now tours the split landing screen, both the Humans and Agents menus, and the complete agent mode interface \u2014 deterministic, fully verified, and working. Across the entire project, the tagline evolved from \"A team lead's best friend\" to \"Best friend to engineers and agents,\" appearing consistently in the README, CLI banner, package metadata, MCP instructions, website, all 23 documentation pages, and the plugin marketplace manifest, while keeping \"AI Scrum Master\" as the core SEO term in the title and badge.",
+      "highlights": [
+        {
+          "text": "Complete Agents family documentation: three new pages (index, usage, standup, security) in the docs site",
+          "areas": [
+            "agents",
+            "general"
+          ]
+        },
+        {
+          "text": "Demo fixed and rebuilt: tours Humans/Agents split, both mode menus, and the complete agent interface in 19 seconds, synced on screen markers",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Tagline updated across all surfaces: README, CLI, package metadata, website, MCP, docs, and plugin marketplace manifest",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Website hero rebuilt with all three landing screens (split, Humans menu, Agents menu) and scrolly-rail navigation",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Fixed latent race in screen marker detection and mobile split sizing with button font inheritance",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.3.2",
+      "date": "2026-08-09",
+      "summary": "Standup output is now significantly cleaner across all surfaces \u2014 web page, markdown exports, Slack, and email. Facts are shown once instead of being repeated 3\u20134 times, quiet team members collapse into a single summary line, and vanity stats are removed from view. The engine dedupes by category and by ticket key, while presentation layers strip redundant explanations. Sync commits and PR merge pairs are consolidated into single evidence rows. Automation notices are now grouped compactly instead of scattered. On average, a 6-member standup report shrinks from 99 dense lines to 75 clean ones.",
+      "highlights": [
+        {
+          "text": "Each fact now appears once \u2014 category prose suppressed when structured evidence rows exist, member summaries dedupe per ticket key",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Zero-activity members collapse into a single \"No activity detected\" row across web, markdown, Slack, and email",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Vanity footnotes and stat tiles removed; coverage is stated once in the Details section",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Merge commit pairs and sync commits deduplicated; PR-bypassing and thin commits excluded from evidence",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Automation exclusion notices grouped compactly per cluster; cleaner, more readable reports overall",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.3.1",
+      "date": "2026-08-09",
+      "summary": "The agent pages (Usage, Standup, Security) now load with clear progress feedback instead of a firehose of transcript lines. Phase-based checklist loading screens show what's happening (scan/price/insights) with a percentage meter and elapsed time, while the last saved report opens instantly and updates in the background. A refresh banner shows the running phase and progress so you always know the page is working, and background progress is streamed and folded into one compact meter instead of spamming the display. Stale reports stay visible if a background refresh fails, and re-running keeps the page populated.",
+      "highlights": [
+        {
+          "text": "Phase-based loading checklist with structured progress (scan/price/insights) and percent meter instead of per-file spam",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Instant open shows the last saved report while a fresh run loads in the background with a banner showing phase and progress",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Failed refresh keeps the stale report visible with an error notice; re-running refreshes the report without losing your place",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Progress events are throttled and folded per phase \u2014 a 737-file scan now shows one meter instead of 737 lines",
+          "areas": [
+            "usage"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.3.0",
+      "date": "2026-08-09",
+      "summary": "The standup page now renders each team member's work as a Jira-style story-centered member card with issue hierarchy. Your main user story becomes the visible unit of each card, with subtasks nested underneath and a status lozenge showing progress. The redesign supports both Jira and Azure DevOps hierarchy, automatically detecting issue types and parent-child relationships without extra API calls. Code and documentation changes are now filed under their referencing story, and legacy reports render unchanged for backward compatibility.",
+      "highlights": [
+        {
+          "text": "Story-centered member cards with Jira-style issue hierarchy \u2014 main story is the visible unit with subtasks nested underneath",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Status lozenges show progress (TO DO / IN PROGRESS / DONE / BLOCKED) with audited palette colors across all themes",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Automatic hierarchy detection for Jira and Azure DevOps \u2014 no extra API calls, works with team-managed stories and all process templates",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Code and documentation changes filed under their referencing story, with exact-reference attachment \u2014 orphaned work stays visible",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.2.0",
+      "date": "2026-08-09",
+      "summary": "yeaboi now covers agents, not just humans. After the splash you pick who we're working with today: Humans (the duck, and every existing mode) or Agents (a new robotic duck, and a new family of modes that watch the AI agents working across your SDLC). The first three agent modes ship in beta: Usage prices your local Claude Code sessions per model, project and day; Standup digests what your agents did \u2014 sessions worked plus agent-authored commits and PRs found in your trackers; Security audits your agent setup \u2014 permission bypasses, wildcard allows, risky hooks, MCP servers, and secret exposure in transcripts, reported as pattern+file+line only. Everything is computed locally from your own session logs; transcripts are never copied, uploaded or stored. Full parity from day one: every agent mode has a CLI subcommand (yeaboi agents ...), MCP tools, and a plugin skill. The existing Usage page's cost estimate now uses a real per-model pricing table instead of a flat Sonnet rate, so displayed costs may shift.",
+      "highlights": [
+        {
+          "text": "Humans/Agents landing split with a robotic duck for the new family",
+          "areas": [
+            "agents",
+            "general"
+          ]
+        },
+        {
+          "text": "Agents \u2192 Usage: per-model/project/day cost of your local agent sessions, cache-aware pricing",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Agents \u2192 Standup: daily digest of agent sessions + agent-authored commits/PRs, Slack-deliverable",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Agents \u2192 Security: settings/MCP/secret audit of your agent setup (indicator, not an audit)",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "yeaboi agents cost|standup|security CLI + six new MCP tools + three plugin skills",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Usage page cost estimates now use per-model rates (numbers may shift from the old flat estimate)",
+          "areas": [
+            "usage"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.1.0",
+      "date": "2026-08-08",
+      "summary": "Demo GIF recording is now deterministic, repeatable, and verified \u2014 glyph corruption from multibyte characters is structurally impossible, and terminal size, keystroke timing, and environment are hermetic. A new YEABOI_UPDATE_CHECK environment variable lets you disable the background PyPI update check, which is essential for air-gapped systems and prevents the version row from repainting during captures. The recording script includes built-in verification that fails loudly on blank frames, missing artifacts, or oversize GIFs.",
+      "highlights": [
+        {
+          "text": "YEABOI_UPDATE_CHECK environment variable: disable the background PyPI update check for air-gapped installs",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Deterministic demo GIF recording: make demo re-records and verifies in ~13 seconds with no variation between runs",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Built-in verification gates: recording fails loudly on blank frames, missing artifacts, or oversize output",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "make demo-render re-renders from the committed cast without re-recording, for theme or size tweaks",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.0.0",
+      "date": "2026-08-08",
+      "summary": "Major version: the OpenClaw integration (the shipped `skills/` package and `--install-skill` CLI flag) is removed entirely. This surfaces the true nature of yeaboi as a standalone terminal agent, not an OpenClaw plugin. The app focuses now on six surfaces: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the live-board REST API \u2014 OpenClaw itself lives only in historical changelog entries. Unused tree bloat (700+ accidentally-committed node_modules files, orphaned docs, and design packages) is also removed.",
+      "highlights": [
+        {
+          "text": "OpenClaw integration removed: no `--install-skill` flag, no `src/yeaboi/skills/` shipped plugin, no Bedrock auto-detect sandbox",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Surface parity updated: five surfaces now (down from six) \u2014 TUI, CLI, Python engines, MCP server, Claude Code plugin",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Tree cleanup: removed ~700 node_modules files from desktop-pet/, orphaned screenshots, design packages, and legacy docs",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "2.59.0",
+      "date": "2026-08-08",
+      "summary": "Double-tapping Space now installs dictation automatically if the voice packages are missing \u2014 no need to reinstall yeaboi with the `voice` extra or restart. The in-app offer lets you Enter to install and download the Whisper model with a real progress bar, Esc to skip for this session, or `n` to never ask again. The install happens instantly in the running app, ready to record right away. A headless `--install-voice` command brings the same feature to CI containers and headless terminals with plain output that survives piping. Every surface now renders voice readiness from one shared vocabulary \u2014 `ready`, `installable`, `declined`, or `unsupported` \u2014 so the input chip, welcome tip, settings row, and setup wizard always agree about the same machine.",
+      "highlights": [
+        {
+          "text": "In-app voice installation: double-tap Space opens an offer to install and download Whisper model with progress bar",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Choose Enter to install, Esc to skip this session, or n to never ask again \u2014 sticky per-machine verdicts",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Installs directly into the running interpreter, downloads the Whisper model with real byte-percentage progress, ready to record",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "`yeaboi --install-voice` headless command for CI, containers, and terminals where full-screen UI can't run",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "One shared voice_state() vocabulary: ready/installable/declined/unsupported renders consistently across all surfaces",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "2.58.0",
+      "date": "2026-08-08",
+      "summary": "The in-app `ctrl+U` upgrade now seamlessly restarts the app onto the newly installed version, preserving CLI flags like `--dry-run` and `--theme` so you stay where you were. The upgrade screen counts down 3 seconds and relaunches automatically, or press Esc/Q to decline and stay on the current version. The restarted app skips the splash animation and shows a `\u2713 updated` confirmation on the version row. Honest fallbacks appear if the upgrade fails, the restart can't be resolved, or you're on a non-POSIX system.",
+      "highlights": [
+        {
+          "text": "Seamless self-restart after upgrade: auto-relaunch in 3s onto the new version with Esc to decline",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Preserved context: CLI flags like --dry-run, --theme stay active through the restart",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Confirmation chip: \u2713 updated appears on the version row after a successful restart",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Honest fallbacks: upgrade failures and restart impossibilities show the old \"restart manually\" screen",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "2.57.0",
+      "date": "2026-08-07",
+      "summary": "Planning mode got eight quality-of-life improvements that speed up intake and make the chat feel more responsive. Type a digit (1/2/3) to instantly pick and submit on size and review choices, no Enter needed \u2014 the feature even works on multi-choice rows. The progress subtitle now reads \"Question X of Y\" over the set this run actually asks (not the full question bank), and a new `/questions` command lists planned topics with status markers. Large responses (intake summaries, review walls) skip the fake typewriter effect and land directly as artifact cards. The review verdict is now a selectable row \u2014 Accept / Edit an answer / Override velocity / Tell me what's off \u2014 mapped to node literals so digits and raw text never reach the graph. A clock-derived duck quip rotates every 5 seconds of a long wait, with a quack every fourth slot and one shades gag on really long ones. Small projects are hard-capped at 2 stories total and trimmed post-validate with a warning. Fast mode gained a visible subtitle and an `/finish` toggle to auto-accept remaining questions and exit the chat.",
+      "highlights": [
+        {
+          "text": "Bare digit auto-submit: 1/2/3 picks and submits on size/review rows, no Enter needed",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Honest question count: subtitle shows \"Question X of Y\" over only the questions this run asks",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "/questions command lists planned topics with \u2713/\u25cf/\u25cb markers",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "No wall-of-text streaming: large deterministic replies (intake summary, review walls) land directly as artifact cards",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Selectable review verdict: Accept / Edit an answer / Override velocity / Tell me what's off choice rows",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Duck entertainment: clock-derived quip rotator every 5s of a wait, with a quack every fourth slot and one shades gag on long waits",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Small projects hard-capped at 2 stories total, with post-validate trim and warning",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Fast mode visible exit: \"Fast mode (Esc stops)\" subtitle, /finish toggle to auto-accept and exit the chat",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "2.56.0",
+      "date": "2026-08-07",
+      "summary": "Voice input now lets you pick which microphone to use, making it work on hardware that wasn't detected before. Most USB and Bluetooth mics refuse to open at Whisper's default 16 kHz mono format \u2014 voice input now negotiates whatever format your mic actually supports, records natively, and converts afterward, so audio gets captured even on finicky hardware. A new Settings page lets you test each microphone, and Tab during recording switches between them on the fly. The feature is now discoverable in the TUI with an input-level meter and \"no sound detected\" warning, plus a new `--list-audio-devices` CLI diagnostic.",
+      "highlights": [
+        {
+          "text": "VOICE_DEVICE config option: pick a microphone by PortAudio index or name substring",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Settings \u2192 Voice Input \u2192 Input Device: new picker with live microphone test",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Tab to switch microphones mid-recording, with device name and input-level meter",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Format negotiation: records at the microphone's native sample rate and channels, then resamples to Whisper format",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "`--list-audio-devices` CLI subcommand to discover available microphones and test the audio input",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "\"No sound reaching the mic\" warning and better affordance positioning for voice hints",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.55.2",
       "date": "2026-08-06",
-      "summary": "Fixed standup mode's Generate command failing with \"no such column: origin\" error. The issue was caused by a schema version collision in the session database — a migration that added edit-provenance tracking (`origin` column) was skipped due to version numbering conflicts, but code continued to query for those columns. The fix re-applies the missing migration idempotently, hardens the schema version tracking to prevent duplicates, and adds self-healing to all standalone mode stores so they can repair their own tables on opening.",
+      "summary": "Fixed standup mode's Generate command failing with \"no such column: origin\" error. The issue was caused by a schema version collision in the session database \u2014 a migration that added edit-provenance tracking (`origin` column) was skipped due to version numbering conflicts, but code continued to query for those columns. The fix re-applies the missing migration idempotently, hardens the schema version tracking to prevent duplicates, and adds self-healing to all standalone mode stores so they can repair their own tables on opening.",
       "highlights": [
         {
           "text": "Fixed standup Generate command crashing with \"no such column: origin\" error",
@@ -38,7 +619,7 @@
           ]
         },
         {
-          "text": "Redundant option filtering: smart mode hides the 1–2 sprints row that only applies to large projects",
+          "text": "Redundant option filtering: smart mode hides the 1\u20132 sprints row that only applies to large projects",
           "areas": [
             "planning"
           ]
@@ -48,7 +629,7 @@
     {
       "version": "2.55.0",
       "date": "2026-08-05",
-      "summary": "The idle screensaver expanded from a single duck to a yard of them — ten-odd heads adrift in zero gravity, spinning and ricocheting off each other and an anchored duck in the middle. The screensaver activates with Ctrl+Y as before, and still reads as a single resting duck on terminals smaller than 60x24, so the existing single-duck graphics cover those smaller screens.",
+      "summary": "The idle screensaver expanded from a single duck to a yard of them \u2014 ten-odd heads adrift in zero gravity, spinning and ricocheting off each other and an anchored duck in the middle. The screensaver activates with Ctrl+Y as before, and still reads as a single resting duck on terminals smaller than 60x24, so the existing single-duck graphics cover those smaller screens.",
       "highlights": [
         {
           "text": "Idle screensaver now shows a yard of ricocheting ducks with pixel-perfect collisions and real rotation",
@@ -73,7 +654,7 @@
     {
       "version": "2.54.0",
       "date": "2026-08-05",
-      "summary": "The planning duck is now the TUI's living mascot across every mode. He waddles into the corner whenever you enter a mode, head-bobs through every long wait (standups, 1:1s, reports, syncs, shares), and quacks a short quip when those operations complete. A sticky rubber-duck tier serves hidden confirmations — delete prompts are now unmissable even on narrow terminals, and the bubble lane stays off the right edge so your composer never overlaps with encouragement. The shared loading screens gained live progress: a braille spinner, per-stage elapsed timing, and a [n/total] footer. Retro action drafting, performance 1:1 generation, and Notion/Confluence publishing no longer freeze the screen — they run on background workers with a live busy affordance. The duck is mutable per-session via /duck in the chat, and globally via the new Duck row in Settings → System.",
+      "summary": "The planning duck is now the TUI's living mascot across every mode. He waddles into the corner whenever you enter a mode, head-bobs through every long wait (standups, 1:1s, reports, syncs, shares), and quacks a short quip when those operations complete. A sticky rubber-duck tier serves hidden confirmations \u2014 delete prompts are now unmissable even on narrow terminals, and the bubble lane stays off the right edge so your composer never overlaps with encouragement. The shared loading screens gained live progress: a braille spinner, per-stage elapsed timing, and a [n/total] footer. Retro action drafting, performance 1:1 generation, and Notion/Confluence publishing no longer freeze the screen \u2014 they run on background workers with a live busy affordance. The duck is mutable per-session via /duck in the chat, and globally via the new Duck row in Settings \u2192 System.",
       "highlights": [
         {
           "text": "Living mascot: the duck waddles in when you open a mode and head-bobs through every long wait",
@@ -109,7 +690,7 @@
           ]
         },
         {
-          "text": "Duck mute control: /duck in planning chat or Settings → System → Duck row; persisted per-user via DUCK_ENABLED",
+          "text": "Duck mute control: /duck in planning chat or Settings \u2192 System \u2192 Duck row; persisted per-user via DUCK_ENABLED",
           "areas": [
             "settings",
             "general"
@@ -149,7 +730,7 @@
     {
       "version": "2.53.0",
       "date": "2026-08-05",
-      "summary": "Planning mode is now a continuous live chat instead of a card-based questionnaire. Type naturally, and the agent streams its thoughts while it gathers your project goals, team shape, and delivery timeline. Slash commands (type `/help` mid-draft) let you skip questions, reset to defaults, switch to the classic form, or wrap up fast with `/finish`. Watch artifact cards — epics, features, stories, tasks, sprints — render in the transcript as they're drafted. New projects can pick Small or Large at the start, or just describe your project and let the classifier decide. The chat stays in sync with the headless engine, so exports and platform partners see the same project shape.",
+      "summary": "Planning mode is now a continuous live chat instead of a card-based questionnaire. Type naturally, and the agent streams its thoughts while it gathers your project goals, team shape, and delivery timeline. Slash commands (type `/help` mid-draft) let you skip questions, reset to defaults, switch to the classic form, or wrap up fast with `/finish`. Watch artifact cards \u2014 epics, features, stories, tasks, sprints \u2014 render in the transcript as they're drafted. New projects can pick Small or Large at the start, or just describe your project and let the classifier decide. The chat stays in sync with the headless engine, so exports and platform partners see the same project shape.",
       "highlights": [
         {
           "text": "Planning mode is now a continuous live chat that streams agent thoughts as it gathers project details",
@@ -188,19 +769,19 @@
           ]
         },
         {
-          "text": "Loading screens gained a live checklist — braille spinner, per-stage elapsed and a [n/total] progress footer — and the planning chat shows a full build checklist with a completion recap card",
+          "text": "Loading screens gained a live checklist \u2014 braille spinner, per-stage elapsed and a [n/total] progress footer \u2014 and the planning chat shows a full build checklist with a completion recap card",
           "areas": [
             "tui"
           ]
         },
         {
-          "text": "Duck bubble mute: /duck in the planning chat or the new Duck row in Settings → System (persisted as DUCK_ENABLED); delete confirmations stay visible regardless",
+          "text": "Duck bubble mute: /duck in the planning chat or the new Duck row in Settings \u2192 System (persisted as DUCK_ENABLED); delete confirmations stay visible regardless",
           "areas": [
             "tui"
           ]
         },
         {
-          "text": "Retro action-item drafting, performance 1:1 generation and Notion/Confluence publishing no longer freeze the screen — they run on workers with live progress",
+          "text": "Retro action-item drafting, performance 1:1 generation and Notion/Confluence publishing no longer freeze the screen \u2014 they run on workers with live progress",
           "areas": [
             "retro",
             "performance"
@@ -211,7 +792,7 @@
     {
       "version": "2.52.0",
       "date": "2026-08-05",
-      "summary": "Analysis mode now discovers and offers GitHub as a code source in the setup wizard — owners, organizations, and repositories are discovered automatically, and the choice is saved to Settings for future runs. GitHub was technically supported all along but gated behind a configuration key that had no UI surface; now it reaches parity with Azure DevOps, which was always offered once connected.",
+      "summary": "Analysis mode now discovers and offers GitHub as a code source in the setup wizard \u2014 owners, organizations, and repositories are discovered automatically, and the choice is saved to Settings for future runs. GitHub was technically supported all along but gated behind a configuration key that had no UI surface; now it reaches parity with Azure DevOps, which was always offered once connected.",
       "highlights": [
         {
           "text": "GitHub is now discoverable and selectable in the Analysis setup wizard, on equal footing with Azure DevOps",
@@ -226,14 +807,14 @@
           ]
         },
         {
-          "text": "Chosen GitHub owners persist in Settings → GitHub → Analysis Owners for future runs and CLI commands",
+          "text": "Chosen GitHub owners persist in Settings \u2192 GitHub \u2192 Analysis Owners for future runs and CLI commands",
           "areas": [
             "analysis",
             "settings"
           ]
         },
         {
-          "text": "Fine-grained GitHub PATs now work with Analysis — even if they cannot list organizations, the picker will find them via visible repositories",
+          "text": "Fine-grained GitHub PATs now work with Analysis \u2014 even if they cannot list organizations, the picker will find them via visible repositories",
           "areas": [
             "analysis"
           ]
@@ -243,7 +824,7 @@
     {
       "version": "2.51.0",
       "date": "2026-08-02",
-      "summary": "Daily Standup now flags engineering practices that might cost your team later — work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed — no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",
+      "summary": "Daily Standup now flags engineering practices that might cost your team later \u2014 work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed \u2014 no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",
       "highlights": [
         {
           "text": "Standup now detects engineering bad habits: untracked work, stale boards, too many open changes, and commits too big to review",
@@ -281,10 +862,10 @@
     {
       "version": "2.50.0",
       "date": "2026-08-02",
-      "summary": "Daily Standup now asks for the meeting transcript instead of waiting for one. Paste it from your clipboard, pipe it in, drag the file across, or point Standup at the folder your recordings already land in — Zoom, Google Meet and Downloads are detected and offered by name. When a standup runs and no transcript is ever checked against it, Standup says so: quietly at first, in the terminal only, and after several in a row it offers to turn the feature off rather than keep asking. An optional reminder can arrive shortly after your standup, and only when something is actually unchecked.",
+      "summary": "Daily Standup now asks for the meeting transcript instead of waiting for one. Paste it from your clipboard, pipe it in, drag the file across, or point Standup at the folder your recordings already land in \u2014 Zoom, Google Meet and Downloads are detected and offered by name. When a standup runs and no transcript is ever checked against it, Standup says so: quietly at first, in the terminal only, and after several in a row it offers to turn the feature off rather than keep asking. An optional reminder can arrive shortly after your standup, and only when something is actually unchecked.",
       "highlights": [
         {
-          "text": "Paste, pipe or drag a standup transcript in — no more finding the right folder first",
+          "text": "Paste, pipe or drag a standup transcript in \u2014 no more finding the right folder first",
           "areas": [
             "standup"
           ]
@@ -321,7 +902,7 @@
     {
       "version": "2.49.0",
       "date": "2026-08-02",
-      "summary": "Every shared artifact — your standup, retrospective, or report — is now editable by teammates who have the link. When the standup gets your work wrong, the person reading it can fix the text right there: correct a misspelled blocker, append something the scan missed, or add a note nobody thought to include. Every change is attributed to a self-declared name and can be reverted, and the corrected text becomes the version that exports, feeds into history, and reaches the next day's standup so the team doesn't repeat the same mistakes. Editing works through the browser; nothing needs to be re-run.",
+      "summary": "Every shared artifact \u2014 your standup, retrospective, or report \u2014 is now editable by teammates who have the link. When the standup gets your work wrong, the person reading it can fix the text right there: correct a misspelled blocker, append something the scan missed, or add a note nobody thought to include. Every change is attributed to a self-declared name and can be reverted, and the corrected text becomes the version that exports, feeds into history, and reaches the next day's standup so the team doesn't repeat the same mistakes. Editing works through the browser; nothing needs to be re-run.",
       "highlights": [
         {
           "text": "Teammates can now correct and edit shared standups, reports and retrospectives directly from the shared link",
@@ -356,7 +937,7 @@
           ]
         },
         {
-          "text": "All edits are made through the browser — standups and reports are never re-run",
+          "text": "All edits are made through the browser \u2014 standups and reports are never re-run",
           "areas": [
             "general"
           ]
@@ -366,7 +947,7 @@
     {
       "version": "2.48.0",
       "date": "2026-08-01",
-      "summary": "Daily Standup no longer walks you through five pickers on every run — tracker sources, team members, code sources, repositories, and documentation sources — when you've already told it once. Generate now opens with a summary of your saved setup and three buttons: Use Saved goes straight to \"Your update for today\", Change lets you adjust any settings (still pre-selected from last time), and Back cancels. The gate only appears when there's something to reuse; first runs and incomplete setups are unchanged.",
+      "summary": "Daily Standup no longer walks you through five pickers on every run \u2014 tracker sources, team members, code sources, repositories, and documentation sources \u2014 when you've already told it once. Generate now opens with a summary of your saved setup and three buttons: Use Saved goes straight to \"Your update for today\", Change lets you adjust any settings (still pre-selected from last time), and Back cancels. The gate only appears when there's something to reuse; first runs and incomplete setups are unchanged.",
       "highlights": [
         {
           "text": "Standup Generate offers your saved setup on every run: Use Saved, Change, or Back",
@@ -430,7 +1011,7 @@
     {
       "version": "2.46.0",
       "date": "2026-07-31",
-      "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look — different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it — “a standup”, “a retro” — so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading “Sprint Retro” on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
+      "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look \u2014 different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it \u2014 \u201ca standup\u201d, \u201ca retro\u201d \u2014 so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading \u201cSprint Retro\u201d on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
       "highlights": [
         {
           "text": "Boards, share pages, exported reports and the slide deck all wear the same header, footer and colours",
@@ -456,7 +1037,7 @@
           ]
         },
         {
-          "text": "A share page names what is behind it — except Performance, which stays anonymous on purpose",
+          "text": "A share page names what is behind it \u2014 except Performance, which stays anonymous on purpose",
           "areas": [
             "performance",
             "general"
@@ -489,10 +1070,10 @@
     {
       "version": "2.45.0",
       "date": "2026-07-31",
-      "summary": "Performance mode is now clearly marked as beta wherever you meet it. The mode works exactly as before and nothing has been taken away — but its 1:1 preps, completion summaries and six-month reviews have not yet been checked against a real team's delivery data, and until now nothing on screen said so. That matters more here than elsewhere, because these drafts are about named people. The Performance card on the welcome screen and the page header both carry a BETA tag, and the first time you open the mode you get a short one-time note explaining what is and isn't reliable: the drafts are a starting point rather than an assessment, a board with little on it produces thin and sometimes misleading signals, and nothing is emailed to anyone unless you ask for it. You will only see that note once. The same caveat now appears when you use Performance from the command line or through an AI assistant.",
+      "summary": "Performance mode is now clearly marked as beta wherever you meet it. The mode works exactly as before and nothing has been taken away \u2014 but its 1:1 preps, completion summaries and six-month reviews have not yet been checked against a real team's delivery data, and until now nothing on screen said so. That matters more here than elsewhere, because these drafts are about named people. The Performance card on the welcome screen and the page header both carry a BETA tag, and the first time you open the mode you get a short one-time note explaining what is and isn't reliable: the drafts are a starting point rather than an assessment, a board with little on it produces thin and sometimes misleading signals, and nothing is emailed to anyone unless you ask for it. You will only see that note once. The same caveat now appears when you use Performance from the command line or through an AI assistant.",
       "highlights": [
         {
-          "text": "Performance is labelled BETA on the mode card and page header — the mode stays fully usable",
+          "text": "Performance is labelled BETA on the mode card and page header \u2014 the mode stays fully usable",
           "areas": [
             "performance"
           ]
@@ -521,10 +1102,10 @@
     {
       "version": "2.44.0",
       "date": "2026-07-31",
-      "summary": "Inviting people to a live retro or planning poker board is now one link that works for everyone, wherever they are. Boards used to offer a link that only worked for teammates on the same Wi-Fi, with a separate “Share Remotely” button to add an internet-reachable one on top — and it was easy to send the wrong one to someone at home. Every board now sets up a single secure link by itself the moment it opens, and that is the link Copy Invite gives you. The board is also no longer reachable from your local network at all, so it is not exposed to everyone else on an office or café connection, and your own host link travels encrypted. Two things to know: hosting a board now needs an internet connection, and the invite link takes a few seconds to appear while it is being prepared — the access code works straight away.",
+      "summary": "Inviting people to a live retro or planning poker board is now one link that works for everyone, wherever they are. Boards used to offer a link that only worked for teammates on the same Wi-Fi, with a separate \u201cShare Remotely\u201d button to add an internet-reachable one on top \u2014 and it was easy to send the wrong one to someone at home. Every board now sets up a single secure link by itself the moment it opens, and that is the link Copy Invite gives you. The board is also no longer reachable from your local network at all, so it is not exposed to everyone else on an office or caf\u00e9 connection, and your own host link travels encrypted. Two things to know: hosting a board now needs an internet connection, and the invite link takes a few seconds to appear while it is being prepared \u2014 the access code works straight away.",
       "highlights": [
         {
-          "text": "One secure link per board, set up automatically — the separate “Share Remotely” step is gone",
+          "text": "One secure link per board, set up automatically \u2014 the separate \u201cShare Remotely\u201d step is gone",
           "areas": [
             "retro",
             "planning"
@@ -557,7 +1138,7 @@
     {
       "version": "2.43.0",
       "date": "2026-07-31",
-      "summary": "Every page yeaboi opens in a browser — the retro board, planning poker, the join screen and the reporting slide deck — has been rebuilt on one shared design, so they now read as parts of the same app rather than three pages that had quietly drifted apart. Inviting people got easier: both live boards hand you a copyable invite link, and you can copy it from the terminal too instead of only holding up a QR code. The retro board gains a composer at the top of every column and sixteen reactions to vote with, and dragging a card on a phone finally works — touch dragging never fired at all before. Planning poker's reveal is a moment now rather than a flicker, and the timer ends on a bell instead of an alarm. Boards also stay current without the constant one-second refresh, which is gentler on a phone battery and on a shared tunnel. Every exported HTML report is drawn by the same pieces as the live boards, so an export matches what you saw. One fix worth naming: a ticket link in an export could previously carry a script that ran when you clicked it, and can't any more.",
+      "summary": "Every page yeaboi opens in a browser \u2014 the retro board, planning poker, the join screen and the reporting slide deck \u2014 has been rebuilt on one shared design, so they now read as parts of the same app rather than three pages that had quietly drifted apart. Inviting people got easier: both live boards hand you a copyable invite link, and you can copy it from the terminal too instead of only holding up a QR code. The retro board gains a composer at the top of every column and sixteen reactions to vote with, and dragging a card on a phone finally works \u2014 touch dragging never fired at all before. Planning poker's reveal is a moment now rather than a flicker, and the timer ends on a bell instead of an alarm. Boards also stay current without the constant one-second refresh, which is gentler on a phone battery and on a shared tunnel. Every exported HTML report is drawn by the same pieces as the live boards, so an export matches what you saw. One fix worth naming: a ticket link in an export could previously carry a script that ran when you clicked it, and can't any more.",
       "highlights": [
         {
           "text": "The retro board, planning poker, the join screen and the slide deck rebuilt on one shared design",
@@ -581,7 +1162,7 @@
           ]
         },
         {
-          "text": "Cards can be dragged on a phone — touch dragging did not work before",
+          "text": "Cards can be dragged on a phone \u2014 touch dragging did not work before",
           "areas": [
             "retro"
           ]
@@ -598,7 +1179,7 @@
     {
       "version": "2.42.0",
       "date": "2026-07-31",
-      "summary": "The welcome screen gains a duck companion who now does more than sit there: press f and a speech bubble opens from him that you write your feedback straight into, pick a type and area for, paste screenshots into, or dictate out loud. Settings gets a full rebuild around boxed sections you can drive entirely from the keyboard — arrow between boxes, Enter to focus one, then arrow between the values inside it — with storage settings moved under System and long status lines that wrap instead of getting cut off. Clicking now works across the whole app rather than just the main menu, and a handful of small annoyances are gone: the Back button leaves in one click, the controls drawer opens with c, and the wordmark intro no longer replays every time you open Changelog, Feedback, or All Tips.",
+      "summary": "The welcome screen gains a duck companion who now does more than sit there: press f and a speech bubble opens from him that you write your feedback straight into, pick a type and area for, paste screenshots into, or dictate out loud. Settings gets a full rebuild around boxed sections you can drive entirely from the keyboard \u2014 arrow between boxes, Enter to focus one, then arrow between the values inside it \u2014 with storage settings moved under System and long status lines that wrap instead of getting cut off. Clicking now works across the whole app rather than just the main menu, and a handful of small annoyances are gone: the Back button leaves in one click, the controls drawer opens with c, and the wordmark intro no longer replays every time you open Changelog, Feedback, or All Tips.",
       "highlights": [
         {
           "text": "Write and send feedback in a speech bubble from the duck, with image paste and voice dictation",
@@ -756,7 +1337,7 @@
     {
       "version": "2.38.0",
       "date": "2026-07-27",
-      "summary": "Every TUI screen now displays with its mode's signature background color — a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",
+      "summary": "Every TUI screen now displays with its mode's signature background color \u2014 a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",
       "highlights": [
         {
           "text": "Every mode-specific TUI screen now displays with its mode's background tint for a polished, consistent look",
@@ -787,7 +1368,7 @@
     {
       "version": "2.37.0",
       "date": "2026-07-27",
-      "summary": "Team analysis evolved into a comprehensive, member-scoped investigation of how your team works. The AI Usage card now leads with an engineering-practices table scoring tests-with-changes, documentation clarity, ticket references, and PR description quality across all attributed work — honest denominators, small-sample transparency, and a recomputed team row. The same table appears in markdown and HTML exports. Performance overhaul adds pooled tracker fetching, a schema v19 model-keyed analysis cache, cold-run lookup caps with disclosed truncation, activity-targeted repo scanning, and fan-out dedup. Scope controls let you pick sources per component (delivery reads Jira/Azure DevOps, code scans GitHub/Azure Repos, docs reads Confluence/Notion), pick specific members, run dual-source analyses, and persist analysis features per run. Doc quality now reads page content for clarity and AI usage estimates with evidence links. Default analysis depth is now `deep` on all surfaces. UX gains include wizard Esc back-stepping, Ctrl-C cooperative cancel, AzDO SDK clients pinned to the configured org URL, and render-side caps preventing oversized tables from rendering blank.",
+      "summary": "Team analysis evolved into a comprehensive, member-scoped investigation of how your team works. The AI Usage card now leads with an engineering-practices table scoring tests-with-changes, documentation clarity, ticket references, and PR description quality across all attributed work \u2014 honest denominators, small-sample transparency, and a recomputed team row. The same table appears in markdown and HTML exports. Performance overhaul adds pooled tracker fetching, a schema v19 model-keyed analysis cache, cold-run lookup caps with disclosed truncation, activity-targeted repo scanning, and fan-out dedup. Scope controls let you pick sources per component (delivery reads Jira/Azure DevOps, code scans GitHub/Azure Repos, docs reads Confluence/Notion), pick specific members, run dual-source analyses, and persist analysis features per run. Doc quality now reads page content for clarity and AI usage estimates with evidence links. Default analysis depth is now `deep` on all surfaces. UX gains include wizard Esc back-stepping, Ctrl-C cooperative cancel, AzDO SDK clients pinned to the configured org URL, and render-side caps preventing oversized tables from rendering blank.",
       "highlights": [
         {
           "text": "AI Usage card redesigned: per-member practices table (tests, docs, tickets, PR quality) replacing simple footprint",
@@ -824,7 +1405,7 @@
     {
       "version": "2.36.0",
       "date": "2026-07-25",
-      "summary": "All shareable HTML exports now share a cohesive, polished design system. Every mode's export page — planning, standup, retro, performance, reporting, roadmap, team profile, and anonymize — uses unified five-theme palettes (midnight, light, solarized, synthwave, forest) with a persistent theme switcher. A self-contained header button cycles themes and remembers your choice in localStorage; printing always forces light tokens. New semantic color tokens (`--ok`, `--warn`, `--danger`, priority ramps, text variants) replace scattered hardcoded hex values across eight exporters, and shared page chrome primitives (`html_page()`, `chip()`, `section()`, `stat_tile()`, `stat_bar()`, `notice_block()`) unify markup and reduce duplication. The design is self-contained with no external CDN or requests. Incidentally fixes an unstyled container in the anonymize export and corrects four double-escaped ampersands in team-profile titles.",
+      "summary": "All shareable HTML exports now share a cohesive, polished design system. Every mode's export page \u2014 planning, standup, retro, performance, reporting, roadmap, team profile, and anonymize \u2014 uses unified five-theme palettes (midnight, light, solarized, synthwave, forest) with a persistent theme switcher. A self-contained header button cycles themes and remembers your choice in localStorage; printing always forces light tokens. New semantic color tokens (`--ok`, `--warn`, `--danger`, priority ramps, text variants) replace scattered hardcoded hex values across eight exporters, and shared page chrome primitives (`html_page()`, `chip()`, `section()`, `stat_tile()`, `stat_bar()`, `notice_block()`) unify markup and reduce duplication. The design is self-contained with no external CDN or requests. Incidentally fixes an unstyled container in the anonymize export and corrects four double-escaped ampersands in team-profile titles.",
       "highlights": [
         {
           "text": "Five unified theme palettes (midnight default, light, solarized, synthwave, forest) across all eight export pages",
@@ -868,10 +1449,10 @@
     {
       "version": "2.35.0",
       "date": "2026-07-24",
-      "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan — letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",
+      "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan \u2014 letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",
       "highlights": [
         {
-          "text": "Explicit source selection grid before standup generation — pick trackers, repos, and docs to scan",
+          "text": "Explicit source selection grid before standup generation \u2014 pick trackers, repos, and docs to scan",
           "areas": [
             "standup"
           ]
@@ -905,7 +1486,7 @@
     {
       "version": "2.34.0",
       "date": "2026-07-24",
-      "summary": "Team analysis now offers two speed tiers. Quick mode runs instantly with deterministic summaries and no LLM calls—perfect for fast iterations during planning sessions. Deep mode activates AI-enriched analysis with larger ticket batches and parallel processing of all three analysis components (delivery, code, and documentation) for comprehensive insights. The Quick/Deep choice appears right before analysis starts in both the TUI workflow and CLI, with mode details and stage timings visible throughout the run. All three components now run concurrently instead of serially, cutting analysis wall-clock time significantly. The choice is exposed through CLI flags and MCP tools so teammates and AI agents can pick the right depth for their workflow.",
+      "summary": "Team analysis now offers two speed tiers. Quick mode runs instantly with deterministic summaries and no LLM calls\u2014perfect for fast iterations during planning sessions. Deep mode activates AI-enriched analysis with larger ticket batches and parallel processing of all three analysis components (delivery, code, and documentation) for comprehensive insights. The Quick/Deep choice appears right before analysis starts in both the TUI workflow and CLI, with mode details and stage timings visible throughout the run. All three components now run concurrently instead of serially, cutting analysis wall-clock time significantly. The choice is exposed through CLI flags and MCP tools so teammates and AI agents can pick the right depth for their workflow.",
       "highlights": [
         {
           "text": "Quick mode: instant, deterministic analysis with no LLM calls; perfect for fast iterations",
@@ -942,7 +1523,7 @@
     {
       "version": "2.33.0",
       "date": "2026-07-24",
-      "summary": "Analysis mode gained significantly improved insights dashboards. AI Adoption and Documentation sections now display as evidence-led dashboards with metric tiles, meters, ranked member breakdowns, evidence tables, and actionable cards — replacing a flat text layout with data-forward visualization. Team Insights was reorganized into consistent Focus Now, Keep Working, and Experiments sections, each with category badges for quick scanning. Member selection was redesigned: every team member starts pre-selected in the analysis scope picker, you can toggle one at a time or press A to select or deselect all, and the app prevents running with nobody selected. Overall scrolling and navigation improved for better usability with rich content.",
+      "summary": "Analysis mode gained significantly improved insights dashboards. AI Adoption and Documentation sections now display as evidence-led dashboards with metric tiles, meters, ranked member breakdowns, evidence tables, and actionable cards \u2014 replacing a flat text layout with data-forward visualization. Team Insights was reorganized into consistent Focus Now, Keep Working, and Experiments sections, each with category badges for quick scanning. Member selection was redesigned: every team member starts pre-selected in the analysis scope picker, you can toggle one at a time or press A to select or deselect all, and the app prevents running with nobody selected. Overall scrolling and navigation improved for better usability with rich content.",
       "highlights": [
         {
           "text": "Redesigned AI Adoption and Documentation as data-driven dashboards with metrics, breakdowns, evidence tables, and actions",
@@ -973,10 +1554,10 @@
     {
       "version": "2.32.0",
       "date": "2026-07-24",
-      "summary": "Share your yeaboi output publicly without exposing anything private. Every mode's result screen — planning, analysis, standups, retros, performance, reporting, and roadmaps — now has a Share Online button: press it and a local artifact server starts up, exchanges a short access code for a strong token with rate limiting, and opens a public Cloudflare tunnel URL you can send to teammates or stakeholders. The browser displays your rich output in full fidelity (cards, tables, meters, grids, all styled exactly as you see it in the app), and the link stays active only while the sharing screen is open. Security is baked in: the local server binds to loopback only, tokens carry no-store headers, and logs never expose URLs, codes, or artifact content.",
+      "summary": "Share your yeaboi output publicly without exposing anything private. Every mode's result screen \u2014 planning, analysis, standups, retros, performance, reporting, and roadmaps \u2014 now has a Share Online button: press it and a local artifact server starts up, exchanges a short access code for a strong token with rate limiting, and opens a public Cloudflare tunnel URL you can send to teammates or stakeholders. The browser displays your rich output in full fidelity (cards, tables, meters, grids, all styled exactly as you see it in the app), and the link stays active only while the sharing screen is open. Security is baked in: the local server binds to loopback only, tokens carry no-store headers, and logs never expose URLs, codes, or artifact content.",
       "highlights": [
         {
-          "text": "Share Online button on every mode's result screen — planning, analysis, standup, retro, performance, reporting, roadmap",
+          "text": "Share Online button on every mode's result screen \u2014 planning, analysis, standup, retro, performance, reporting, roadmap",
           "areas": [
             "planning",
             "analysis",
@@ -987,7 +1568,7 @@
           ]
         },
         {
-          "text": "Cloudflare tunnel with rate-limited token exchange and secure access codes — no long-lived URLs",
+          "text": "Cloudflare tunnel with rate-limited token exchange and secure access codes \u2014 no long-lived URLs",
           "areas": [
             "general"
           ]
@@ -1041,7 +1622,7 @@
     {
       "version": "2.31.0",
       "date": "2026-07-23",
-      "summary": "Standup, Retro, Reporting, and Performance modes now surface a browsable saved-runs hub showing the history of past runs alongside the current working session. Instead of jumping straight into a single run, you land on a unified hub with Open, Delete, and Export options for each run — the same experience Planning and Analysis already offer. Saved runs render with rich mode-specific formatting: Standup shows the full meter strip and section drill-in, Reporting displays its indigo card layout, Performance shows the coral metrics grid, and Retro renders the full grid view with a snapshot flag that suppresses the live-only join block. Each mode's own screen builder handles rendering, not flat text, so historical runs read as complete, real snapshots of past work.",
+      "summary": "Standup, Retro, Reporting, and Performance modes now surface a browsable saved-runs hub showing the history of past runs alongside the current working session. Instead of jumping straight into a single run, you land on a unified hub with Open, Delete, and Export options for each run \u2014 the same experience Planning and Analysis already offer. Saved runs render with rich mode-specific formatting: Standup shows the full meter strip and section drill-in, Reporting displays its indigo card layout, Performance shows the coral metrics grid, and Retro renders the full grid view with a snapshot flag that suppresses the live-only join block. Each mode's own screen builder handles rendering, not flat text, so historical runs read as complete, real snapshots of past work.",
       "highlights": [
         {
           "text": "Saved-runs hub surfaces historical runs with Open / Delete / Export across Standup, Retro, Reporting, and Performance",
@@ -1105,16 +1686,16 @@
     {
       "version": "2.29.0",
       "date": "2026-07-22",
-      "summary": "Team analysis got a major rework. It can now run across Jira and Azure DevOps together, and — more importantly — each part of the analysis scans its OWN sources: Delivery (velocity, calibration, contributors) reads your Jira/Azure DevOps boards, Code scans GitHub and Azure Repos, and Docs reads Confluence and Notion. A single grid lets you pick exactly what to analyse — e.g. just Confluence docs, or just one code host — and scope the run to a subset of team members. Delivery is analysed per tracker (never blended, with a side-by-side comparison), while code and docs run once as global scans. Local code scanning was dropped in favour of remote-only.",
+      "summary": "Team analysis got a major rework. It can now run across Jira and Azure DevOps together, and \u2014 more importantly \u2014 each part of the analysis scans its OWN sources: Delivery (velocity, calibration, contributors) reads your Jira/Azure DevOps boards, Code scans GitHub and Azure Repos, and Docs reads Confluence and Notion. A single grid lets you pick exactly what to analyse \u2014 e.g. just Confluence docs, or just one code host \u2014 and scope the run to a subset of team members. Delivery is analysed per tracker (never blended, with a side-by-side comparison), while code and docs run once as global scans. Local code scanning was dropped in favour of remote-only.",
       "highlights": [
         {
-          "text": "Analyse Jira and Azure DevOps together — Delivery runs per tracker with a side-by-side comparison, never blended",
+          "text": "Analyse Jira and Azure DevOps together \u2014 Delivery runs per tracker with a side-by-side comparison, never blended",
           "areas": [
             "analysis"
           ]
         },
         {
-          "text": "Decoupled components: Delivery ← boards, Code ← GitHub/Azure Repos, Docs ← Confluence/Notion — each scans its own sources",
+          "text": "Decoupled components: Delivery \u2190 boards, Code \u2190 GitHub/Azure Repos, Docs \u2190 Confluence/Notion \u2014 each scans its own sources",
           "areas": [
             "analysis"
           ]
@@ -1136,7 +1717,7 @@
     {
       "version": "2.28.0",
       "date": "2026-07-22",
-      "summary": "The welcome screen tips just got a lot more useful. Instead of generic CLI hints, each tip now spotlights a real feature — Analysis, Standups, Retros, and more — with a gold NEW badge marking freshly-shipped ones. Press [ or ] to browse through tips at your own pace (pausing auto-rotation), press g to jump straight into the mode the current tip describes, or press t to hide tips entirely. Every tip is keyed to a capability and automatically stays in sync — a new mode can't merge without a tip, enforced by the same surface-parity check that guards the TUI and CLI.",
+      "summary": "The welcome screen tips just got a lot more useful. Instead of generic CLI hints, each tip now spotlights a real feature \u2014 Analysis, Standups, Retros, and more \u2014 with a gold NEW badge marking freshly-shipped ones. Press [ or ] to browse through tips at your own pace (pausing auto-rotation), press g to jump straight into the mode the current tip describes, or press t to hide tips entirely. Every tip is keyed to a capability and automatically stays in sync \u2014 a new mode can't merge without a tip, enforced by the same surface-parity check that guards the TUI and CLI.",
       "highlights": [
         {
           "text": "Feature-focused tips replace generic CLI hints, one per capability like Analysis and Standups",
@@ -1157,7 +1738,7 @@
           ]
         },
         {
-          "text": "Tips stay automatically in sync via surface-parity enforcement — new modes require a tip",
+          "text": "Tips stay automatically in sync via surface-parity enforcement \u2014 new modes require a tip",
           "areas": [
             "general"
           ]
@@ -1167,7 +1748,7 @@
     {
       "version": "2.27.0",
       "date": "2026-07-22",
-      "summary": "Team analysis now includes two new sub-analyses that deepen your understanding of how your team works. AI adoption scanning finds markers of Claude, Copilot, Cursor, aider, Devin, Codeium, and other AI tools in your recent commits and pull requests across GitHub, Azure DevOps, and your local git clone — showing you the AI footprint as a lower bound with source-aware reporting and real evidence links. Documentation quality analysis scores the clarity and AI-likelihood of your team's Notion and Confluence pages, again with cited examples and improvement suggestions. Both ride on the existing team profile machinery, gracefully skip when nothing is configured, and frame their findings honestly as footprints and heuristics rather than definitive counts.",
+      "summary": "Team analysis now includes two new sub-analyses that deepen your understanding of how your team works. AI adoption scanning finds markers of Claude, Copilot, Cursor, aider, Devin, Codeium, and other AI tools in your recent commits and pull requests across GitHub, Azure DevOps, and your local git clone \u2014 showing you the AI footprint as a lower bound with source-aware reporting and real evidence links. Documentation quality analysis scores the clarity and AI-likelihood of your team's Notion and Confluence pages, again with cited examples and improvement suggestions. Both ride on the existing team profile machinery, gracefully skip when nothing is configured, and frame their findings honestly as footprints and heuristics rather than definitive counts.",
       "highlights": [
         {
           "text": "New AI adoption sub-analysis: detect Claude, Copilot, Cursor, aider, Devin, Codeium markers in commits and PRs",
@@ -1198,7 +1779,7 @@
     {
       "version": "2.26.0",
       "date": "2026-07-21",
-      "summary": "Retro now carries action items forward from the previous retro to this one, showing them in a dedicated \"Last sprint's actions\" review column on the browser board and TUI host view. Your team sets a status for each carried item — Done, Pending, In Progress, Carried Over, or Not Relevant — and these statuses persist in the report. Items marked as Carried Over re-enter the current sprint's action grid and keep the team focused on the context that still matters; Done and Not Relevant items drop out. Carry-forward works whether an item was AI-generated or typed in by hand, and now also survives closing and reopening a retro under the same session. The \"Share Remotely\" button also hardened: it now waits until the Cloudflare tunnel hostname is externally resolvable before advertising the URL, so opening the link doesn't hit an NXDOMAIN that resolvers will cache for 30 minutes.",
+      "summary": "Retro now carries action items forward from the previous retro to this one, showing them in a dedicated \"Last sprint's actions\" review column on the browser board and TUI host view. Your team sets a status for each carried item \u2014 Done, Pending, In Progress, Carried Over, or Not Relevant \u2014 and these statuses persist in the report. Items marked as Carried Over re-enter the current sprint's action grid and keep the team focused on the context that still matters; Done and Not Relevant items drop out. Carry-forward works whether an item was AI-generated or typed in by hand, and now also survives closing and reopening a retro under the same session. The \"Share Remotely\" button also hardened: it now waits until the Cloudflare tunnel hostname is externally resolvable before advertising the URL, so opening the link doesn't hit an NXDOMAIN that resolvers will cache for 30 minutes.",
       "highlights": [
         {
           "text": "Carried-forward action items from the previous retro with status tracking (Done/Pending/In Progress/Carried Over/Not Relevant)",
@@ -1223,7 +1804,7 @@
     {
       "version": "2.25.0",
       "date": "2026-07-21",
-      "summary": "The token setup wizard now shows you exactly where to create each credential and what access to grant it. GitHub PAT, Azure DevOps PAT, and Jira/Notion/Confluence token fields display a clickable creation URL as an OSC-8 terminal hyperlink and show the required scopes underneath — the same scopes that power all your integrations. The Settings page's credential dashboard now shows these links and scopes too, so you can review them any time and quickly re-create or upgrade a token without searching the documentation.",
+      "summary": "The token setup wizard now shows you exactly where to create each credential and what access to grant it. GitHub PAT, Azure DevOps PAT, and Jira/Notion/Confluence token fields display a clickable creation URL as an OSC-8 terminal hyperlink and show the required scopes underneath \u2014 the same scopes that power all your integrations. The Settings page's credential dashboard now shows these links and scopes too, so you can review them any time and quickly re-create or upgrade a token without searching the documentation.",
       "highlights": [
         {
           "text": "Setup wizard shows clickable token creation URLs and required scopes under each credential field",
@@ -1238,7 +1819,7 @@
           ]
         },
         {
-          "text": "Scopes accurately reflect what each integration actually uses — GitHub repo access, Azure work-item creation, Jira ticket reads, etc.",
+          "text": "Scopes accurately reflect what each integration actually uses \u2014 GitHub repo access, Azure work-item creation, Jira ticket reads, etc.",
           "areas": [
             "settings"
           ]
@@ -1248,10 +1829,10 @@
     {
       "version": "2.24.0",
       "date": "2026-07-21",
-      "summary": "You can now share real yeaboi output publicly without leaking anything private. Every mode's result screen — planning, analysis, standups, retros, performance, reporting, and roadmaps — has a new Anonymize button: press it and the sensitive words (people's names, team and project names, your company name, internal tools, and links) get masked right there in the same cards and tables — the layout never changes, only the words do, so it still reads as a realistic example. It uses AI for the smart cases and always masks the obvious company terms it already knows about, even offline. Refine it in plain language with Adjust (\"also hide this\", \"leave that — it's public\"), flip back to the real names with Revert, then copy the clean version to your clipboard or export it to Files, Notion, or Confluence. Great for READMEs, your website, and posts.",
+      "summary": "You can now share real yeaboi output publicly without leaking anything private. Every mode's result screen \u2014 planning, analysis, standups, retros, performance, reporting, and roadmaps \u2014 has a new Anonymize button: press it and the sensitive words (people's names, team and project names, your company name, internal tools, and links) get masked right there in the same cards and tables \u2014 the layout never changes, only the words do, so it still reads as a realistic example. It uses AI for the smart cases and always masks the obvious company terms it already knows about, even offline. Refine it in plain language with Adjust (\"also hide this\", \"leave that \u2014 it's public\"), flip back to the real names with Revert, then copy the clean version to your clipboard or export it to Files, Notion, or Confluence. Great for READMEs, your website, and posts.",
       "highlights": [
         {
-          "text": "New Anonymize button on every mode's result screen masks names, teams, projects, tools, and links in place — same cards and tables, only the words change",
+          "text": "New Anonymize button on every mode's result screen masks names, teams, projects, tools, and links in place \u2014 same cards and tables, only the words change",
           "areas": [
             "planning",
             "standup",
@@ -1273,7 +1854,7 @@
           ]
         },
         {
-          "text": "New 'Copy to clipboard' option in every Export menu — plus a Copy button on the Usage and Changelog pages — for a quick, zero-setup way to pull data out of the terminal",
+          "text": "New 'Copy to clipboard' option in every Export menu \u2014 plus a Copy button on the Usage and Changelog pages \u2014 for a quick, zero-setup way to pull data out of the terminal",
           "areas": [
             "general",
             "usage"
@@ -1340,7 +1921,7 @@
     {
       "version": "2.21.0",
       "date": "2026-07-20",
-      "summary": "Planning now has a fourth way to start a project: point it at your quarterly roadmap — a Confluence or Notion page, or a local document — and it reads through it to pull out the concrete candidate projects, ranks them by suggested start order, and sizes each as small or large. Pick one and its description is pre-filled into the normal planning flow, so you skip re-typing what's already written down. Saved roadmap analyses show up right alongside your other projects, tagged so you can tell them apart, and can be exported the same way as everything else.",
+      "summary": "Planning now has a fourth way to start a project: point it at your quarterly roadmap \u2014 a Confluence or Notion page, or a local document \u2014 and it reads through it to pull out the concrete candidate projects, ranks them by suggested start order, and sizes each as small or large. Pick one and its description is pre-filled into the normal planning flow, so you skip re-typing what's already written down. Saved roadmap analyses show up right alongside your other projects, tagged so you can tell them apart, and can be exported the same way as everything else.",
       "highlights": [
         {
           "text": "New Roadmap intake: analyze a quarterly roadmap document into ranked, sized candidate projects",
@@ -1375,7 +1956,7 @@
     {
       "version": "2.20.0",
       "date": "2026-07-20",
-      "summary": "You can now run yeaboi completely for free with no API key by using a local Ollama model instead of a cloud AI provider — planning, standups, retros, performance reviews, reporting, and chat all work fully offline with nothing leaving your machine. The setup wizard walks you through picking a downloaded model (or downloading one right from the app, with live progress) and explains the size/speed/RAM trade-offs of each. Extra work under the hood keeps local models just as reliable as cloud ones, with clear on-screen guidance if the local server isn't running or a model needs to be downloaded first.",
+      "summary": "You can now run yeaboi completely for free with no API key by using a local Ollama model instead of a cloud AI provider \u2014 planning, standups, retros, performance reviews, reporting, and chat all work fully offline with nothing leaving your machine. The setup wizard walks you through picking a downloaded model (or downloading one right from the app, with live progress) and explains the size/speed/RAM trade-offs of each. Extra work under the hood keeps local models just as reliable as cloud ones, with clear on-screen guidance if the local server isn't running or a model needs to be downloaded first.",
       "highlights": [
         {
           "text": "New free local mode: run yeaboi entirely offline with Ollama, no API key required",
@@ -1417,7 +1998,7 @@
     {
       "version": "2.19.1",
       "date": "2026-07-20",
-      "summary": "Fixed a bug where keys you pressed while the terminal UI was busy rendering a frame could be silently dropped instead of registering — now every keypress is reliably picked up, even ones sent while the app is mid-render.",
+      "summary": "Fixed a bug where keys you pressed while the terminal UI was busy rendering a frame could be silently dropped instead of registering \u2014 now every keypress is reliably picked up, even ones sent while the app is mid-render.",
       "highlights": [
         {
           "text": "Fixed dropped keypresses in the terminal UI when input arrived while a frame was rendering",
@@ -1486,7 +2067,7 @@
     {
       "version": "2.17.0",
       "date": "2026-07-19",
-      "summary": "Every Export button across the app now opens a single destination picker so you can send your work straight to Files, Notion, or Confluence, with only the destinations you've actually set up shown. Notion and Confluence pages are no longer plain pasted markdown — they come out as properly formatted native pages with tables, task lists, callouts, and embedded charts, all branded with a yeaboi icon and footer, and grouped together under an auto-created yeaboi page if you haven't picked a specific spot for them. Team analysis and delivery reports can now include sprint velocity and delivered-work charts as images. There's also a single setting to change where yeaboi stores everything on your computer.",
+      "summary": "Every Export button across the app now opens a single destination picker so you can send your work straight to Files, Notion, or Confluence, with only the destinations you've actually set up shown. Notion and Confluence pages are no longer plain pasted markdown \u2014 they come out as properly formatted native pages with tables, task lists, callouts, and embedded charts, all branded with a yeaboi icon and footer, and grouped together under an auto-created yeaboi page if you haven't picked a specific spot for them. Team analysis and delivery reports can now include sprint velocity and delivered-work charts as images. There's also a single setting to change where yeaboi stores everything on your computer.",
       "highlights": [
         {
           "text": "Every Export button now opens one picker for Files, Notion, or Confluence, showing only configured destinations",
@@ -1524,10 +2105,10 @@
     {
       "version": "2.16.0",
       "date": "2026-07-19",
-      "summary": "The standup roster is cleaner and the standup page itself is redesigned into a compact dashboard. Bot accounts and people who only commented on or edited a ticket no longer show up as team members — only people actually assigned work do. The standup view now leads with a pinned status strip showing sprint day, progress, and confidence at a glance, team member rows are easier to scan with clear active/quiet/self-reported markers, and duplicated information has been cleared out so more fits on screen at once.",
+      "summary": "The standup roster is cleaner and the standup page itself is redesigned into a compact dashboard. Bot accounts and people who only commented on or edited a ticket no longer show up as team members \u2014 only people actually assigned work do. The standup view now leads with a pinned status strip showing sprint day, progress, and confidence at a glance, team member rows are easier to scan with clear active/quiet/self-reported markers, and duplicated information has been cleared out so more fits on screen at once.",
       "highlights": [
         {
-          "text": "Bot accounts and drive-by commenters are filtered out of the standup team roster — only assignees count",
+          "text": "Bot accounts and drive-by commenters are filtered out of the standup team roster \u2014 only assignees count",
           "areas": [
             "standup"
           ]
@@ -1555,7 +2136,7 @@
     {
       "version": "2.15.0",
       "date": "2026-07-19",
-      "summary": "Daily Standup now sees a lot more of what your team actually did — status changes, comments, and in-progress tickets all count, not just who was assigned a task, so quiet team members get a real update instead of \"No activity detected.\" When a source like GitHub or Confluence isn't connected, the report now tells you plainly instead of just going quiet. The standup overview is also decluttered: your own update gets its own row, and the rest of the team collapses into a single expandable row.",
+      "summary": "Daily Standup now sees a lot more of what your team actually did \u2014 status changes, comments, and in-progress tickets all count, not just who was assigned a task, so quiet team members get a real update instead of \"No activity detected.\" When a source like GitHub or Confluence isn't connected, the report now tells you plainly instead of just going quiet. The standup overview is also decluttered: your own update gets its own row, and the rest of the team collapses into a single expandable row.",
       "highlights": [
         {
           "text": "Standup now credits status changes, comments, and in-progress tickets across Jira, Azure DevOps, Confluence, and GitHub, not just assignments",
@@ -1580,7 +2161,7 @@
     {
       "version": "2.14.0",
       "date": "2026-07-18",
-      "summary": "You can now paste a screenshot straight from your clipboard into any text box with Ctrl+V, just like Claude Code. A small chip shows where the image landed in your text, and it travels with your message so the AI can see and reason about what you pasted — in project descriptions, feedback when regenerating, chat, standup updates, and 1:1 transcripts.",
+      "summary": "You can now paste a screenshot straight from your clipboard into any text box with Ctrl+V, just like Claude Code. A small chip shows where the image landed in your text, and it travels with your message so the AI can see and reason about what you pasted \u2014 in project descriptions, feedback when regenerating, chat, standup updates, and 1:1 transcripts.",
       "highlights": [
         {
           "text": "Paste screenshots into text fields with Ctrl+V; a chip marks where the image is attached",
@@ -1607,7 +2188,7 @@
     {
       "version": "2.13.0",
       "date": "2026-07-18",
-      "summary": "yeaboi now keeps you up to date and tells you what's new. The welcome screen shows the version you're running in the bottom-left corner and quietly checks PyPI in the background — when a newer release exists, it shows the exact upgrade command for how you installed. Press c to open the new Changelog page: an AI-written summary of every release, with each change tagged by the feature it touches in that feature's colour.",
+      "summary": "yeaboi now keeps you up to date and tells you what's new. The welcome screen shows the version you're running in the bottom-left corner and quietly checks PyPI in the background \u2014 when a newer release exists, it shows the exact upgrade command for how you installed. Press c to open the new Changelog page: an AI-written summary of every release, with each change tagged by the feature it touches in that feature's colour.",
       "highlights": [
         {
           "text": "Version indicator with automatic update check and installer-aware upgrade hint",
@@ -1787,7 +2368,7 @@
     {
       "version": "2.8.2",
       "date": "2026-07-17",
-      "summary": "Scrolling across the app is now smooth — fast wheel bursts no longer stutter or tear the view.",
+      "summary": "Scrolling across the app is now smooth \u2014 fast wheel bursts no longer stutter or tear the view.",
       "highlights": [
         {
           "text": "Smooth scrolling with no view tearing across all pages",
@@ -1816,7 +2397,7 @@
       "summary": "The big rebrand: scrum-agent is now yeaboi. The package renamed on PyPI (existing installs migrate via a shim), the repo moved to yeaboi.ai, and the project got its own landing page.",
       "highlights": [
         {
-          "text": "Package renamed scrum-agent → yeaboi on PyPI with a migration shim",
+          "text": "Package renamed scrum-agent \u2192 yeaboi on PyPI with a migration shim",
           "areas": [
             "general"
           ]
@@ -1832,10 +2413,10 @@
     {
       "version": "2.7.0",
       "date": "2026-07-16",
-      "summary": "Setup wizard navigation upgrades: jump between sections with ←/→, press F to finish, and every connection field now shows a hint telling you where to get that token or URL.",
+      "summary": "Setup wizard navigation upgrades: jump between sections with \u2190/\u2192, press F to finish, and every connection field now shows a hint telling you where to get that token or URL.",
       "highlights": [
         {
-          "text": "←/→ jump between wizard sections; F finishes setup",
+          "text": "\u2190/\u2192 jump between wizard sections; F finishes setup",
           "areas": [
             "settings"
           ]
@@ -1958,7 +2539,7 @@
       "summary": "Reporting mode arrived: generate a business-friendly delivery report of what shipped last sprint or last month, ready to send to stakeholders. The app also rebranded to yeaboi.ai with cinematic ANSI-shadow intros and a glinting splash wordmark.",
       "highlights": [
         {
-          "text": "New Reporting mode — stakeholder-ready delivery summaries",
+          "text": "New Reporting mode \u2014 stakeholder-ready delivery summaries",
           "areas": [
             "reporting"
           ]
@@ -1974,10 +2555,10 @@
     {
       "version": "2.1.0",
       "date": "2026-07-13",
-      "summary": "Performance mode arrived: per-engineer 1:1 prep, 1:1 completion with tracked action items, and a 6-month review builder — all fed by real Jira/Azure DevOps activity. You can also pick the exact LLM model in the setup wizard and settings.",
+      "summary": "Performance mode arrived: per-engineer 1:1 prep, 1:1 completion with tracked action items, and a 6-month review builder \u2014 all fed by real Jira/Azure DevOps activity. You can also pick the exact LLM model in the setup wizard and settings.",
       "highlights": [
         {
-          "text": "New Performance mode — 1:1 prep, 1:1 completion, 6-month reviews",
+          "text": "New Performance mode \u2014 1:1 prep, 1:1 completion, 6-month reviews",
           "areas": [
             "performance"
           ]
@@ -2021,7 +2602,7 @@
       "summary": "Retro mode arrived: host a collaborative sprint retrospective where teammates join from their browser on the LAN, add sticky cards to four grids, and let the AI propose action items from the feedback.",
       "highlights": [
         {
-          "text": "New Retro mode — collaborative LAN browser board with AI action items",
+          "text": "New Retro mode \u2014 collaborative LAN browser board with AI action items",
           "areas": [
             "retro"
           ]
@@ -2031,7 +2612,7 @@
     {
       "version": "1.6.0",
       "date": "2026-07-10",
-      "summary": "Daily Standup mode arrived: yeaboi collects recent activity from your trackers and repos, scores sprint confidence, writes a summary, and delivers it to terminal, desktop, Slack, or email — with Markdown and HTML exports.",
+      "summary": "Daily Standup mode arrived: yeaboi collects recent activity from your trackers and repos, scores sprint confidence, writes a summary, and delivers it to terminal, desktop, Slack, or email \u2014 with Markdown and HTML exports.",
       "highlights": [
         {
           "text": "New Daily Standup mode with multi-channel delivery",
@@ -2069,7 +2650,7 @@
     {
       "version": "1.4.0",
       "date": "2026-07-10",
-      "summary": "Offline voice input landed — dictate answers instead of typing — plus graceful handling of API auth and billing errors, and fully automated PyPI releases on every version bump.",
+      "summary": "Offline voice input landed \u2014 dictate answers instead of typing \u2014 plus graceful handling of API auth and billing errors, and fully automated PyPI releases on every version bump.",
       "highlights": [
         {
           "text": "Offline voice input for answering questions",
@@ -2092,7 +2673,7 @@
       "summary": "Analysis mode arrived: yeaboi studies your team's delivery history to build a team profile, then uses it to calibrate sprint plans to how your team actually works. The TUI also picked up assorted improvements.",
       "highlights": [
         {
-          "text": "New Analysis mode — team learning from delivery history",
+          "text": "New Analysis mode \u2014 team learning from delivery history",
           "areas": [
             "analysis"
           ]
@@ -2108,7 +2689,7 @@
     {
       "version": "1.2.0",
       "date": "2026-03-25",
-      "summary": "Azure DevOps reached full parity with Jira — boards, velocity, and batch work-item creation — and the app gained opt-in anonymous telemetry.",
+      "summary": "Azure DevOps reached full parity with Jira \u2014 boards, velocity, and batch work-item creation \u2014 and the app gained opt-in anonymous telemetry.",
       "highlights": [
         {
           "text": "Azure DevOps board parity with Jira",
@@ -2127,7 +2708,7 @@
     {
       "version": "1.1.0",
       "date": "2026-03-22",
-      "summary": "AWS Bedrock joined the provider list — run yeaboi on IAM credentials with no API key — alongside a full guide for deploying on AWS Lightsail.",
+      "summary": "AWS Bedrock joined the provider list \u2014 run yeaboi on IAM credentials with no API key \u2014 alongside a full guide for deploying on AWS Lightsail.",
       "highlights": [
         {
           "text": "AWS Bedrock provider (IAM credentials, no API key)",
@@ -2147,7 +2728,7 @@
     {
       "version": "1.0.0",
       "date": "2026-03-20",
-      "summary": "The first release of the AI Scrum Master: describe your project, answer a smart adaptive intake, and get epics, user stories, tasks, and sprint plans — reviewable step by step, exportable, and syncable to Jira in one batch. Includes a full-screen TUI and a headless CLI mode.",
+      "summary": "The first release of the AI Scrum Master: describe your project, answer a smart adaptive intake, and get epics, user stories, tasks, and sprint plans \u2014 reviewable step by step, exportable, and syncable to Jira in one batch. Includes a full-screen TUI and a headless CLI mode.",
       "highlights": [
         {
           "text": "Smart adaptive intake with keyword extraction and follow-ups",

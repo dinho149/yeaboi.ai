@@ -394,9 +394,8 @@ def get_llm(
 
     if provider == "bedrock":
         # langchain-aws is an optional dependency (install with: uv sync --extra bedrock)
-        # # See docs: "Deploy on AWS Lightsail (OpenClaw)" — Bedrock uses IAM credentials
-        # from the instance role, ~/.aws/credentials, or AWS_ACCESS_KEY_ID env vars.
-        # No API key needed on Lightsail — the IAM role is attached automatically.
+        # Bedrock uses IAM credentials from the instance role, ~/.aws/credentials,
+        # or AWS_ACCESS_KEY_ID env vars — no API key needed.
         try:
             from langchain_aws import ChatBedrockConverse
         except ImportError as e:

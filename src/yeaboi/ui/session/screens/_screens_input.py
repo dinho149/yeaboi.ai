@@ -16,6 +16,7 @@ from rich.text import Text
 
 from yeaboi.ui.session._utils import _pad_left, _wrap_text
 from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
+from yeaboi.ui.shared._voice_input import input_box_title
 
 _PAD = PAD
 
@@ -24,23 +25,33 @@ _INPUT_BOX_W_MAX = 74
 
 
 def _voice_hint() -> str:
-    """Return a discoverability suffix for voice input on text-entry screens.
+    """Return the *install* hint for voice input on text-entry screens.
 
-    Advertises the feature so users know it exists. When the voice extra is
-    installed it prompts to speak; otherwise it shows how to enable it — hiding
-    it entirely meant the feature was invisible to anyone who hadn't set it up.
-    Returns "" when tips are switched off, so disabling tips hides this inline
-    hint too (the double-tap Space shortcut still works regardless).
+    When voice is installed this is empty: the input box's title chip (see
+    :func:`~yeaboi.ui.shared._voice_input.input_box_title`) advertises the
+    gesture now, and it does so where nothing can crop it — this hint sat at the
+    tail of a no_wrap/ellipsis line and was the first thing cut on an 80-column
+    terminal. It is also empty when voice is merely *installable*, because the
+    double-tap now offers the install in place — there is nothing to copy. What
+    remains here are the two cases the chip cannot express: a user who declined
+    permanently (who still needs the command) and a machine that cannot run
+    dictation at all. Returns "" when tips are switched off (the double-tap
+    Space shortcut still works regardless).
     """
     from yeaboi.config import is_tips_enabled
-    from yeaboi.voice import is_voice_available, voice_install_command
+    from yeaboi.voice import voice_install_command, voice_state
 
     if not is_tips_enabled():
         return ""
 
-    available, _reason = is_voice_available()
-    if available:
-        return " · \U0001f3a4 double-tap Space to speak"
+    state = voice_state()
+    if state in {"ready", "installable"}:
+        # "installable" is silent for the same reason "ready" is: the chip on the
+        # input box already carries the gesture, and double-tapping Space now
+        # offers the install itself. There is no command for the user to copy.
+        return ""
+    if state == "unsupported":
+        return " · \U0001f3a4 dictation needs 64-bit macOS, Windows or glibc Linux"
     return f" · \U0001f3a4 dictate: {voice_install_command()}"
 
 
@@ -157,7 +168,7 @@ def _build_description_screen(
 
     input_box = Panel(
         text_content,
-        title=" Project Description ",
+        title=input_box_title("Project Description", box_w),
         title_align="left",
         border_style=border_override or "white",
         box=rich.box.ROUNDED,
@@ -166,7 +177,9 @@ def _build_description_screen(
     )
 
     if status_line:
-        submit_hint = Text(_PAD + status_line, style="bold white", justify="left")
+        # no_wrap: the voice status line is long, and the height maths below
+        # counts it as exactly one row.
+        submit_hint = Text(_PAD + status_line, style="bold white", justify="left", no_wrap=True, overflow="ellipsis")
     else:
         submit_hint = Text(
             _PAD + "Enter submit \u00b7 \u2303N new line \u00b7 Esc go back" + _voice_hint() + _image_hint(),
@@ -340,7 +353,7 @@ def _build_question_screen(
 
     # Inline voice-recording indicator replaces the hint so the user stays here.
     if status_line:
-        hint = Text(_PAD + status_line, style="bold white", justify="left")
+        hint = Text(_PAD + status_line, style="bold white", justify="left", no_wrap=True, overflow="ellipsis")
 
     if input_value:
         display = input_value + "\u2588"
@@ -363,7 +376,7 @@ def _build_question_screen(
 
     input_box = Panel(
         input_content,
-        title=" Answer ",
+        title=input_box_title("Answer", box_w),
         title_align="left",
         border_style=border_override or "white",
         box=rich.box.ROUNDED,

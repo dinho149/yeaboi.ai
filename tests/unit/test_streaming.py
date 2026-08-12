@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from yeaboi.agent.state import QuestionnaireState
 from yeaboi.agent.streaming import (
+    _TYPEWRITER_MAX_CHARS,
     ChatStreamCancelledError,
     _text_of,
     predict_next_node,
@@ -188,6 +189,45 @@ class TestTypewriter:
         graph = FakeStreamGraph(invoke_result={"messages": [HumanMessage(content="x")]})
         tokens: list[str] = []
         stream_chat_turn(graph, _intake_state(), tokens.append, typewriter_cps=0)
+        assert tokens == []
+
+
+class TestTypewriterCap:
+    """Replies over typewriter_max_chars skip the replay: nothing is emitted
+    and the finished state returns at once — the driver appends the reply from
+    the returned state (usually as a card), so a wall of text never scrolls
+    the chat first."""
+
+    def _result(self, text: str) -> dict:
+        return {"messages": [HumanMessage(content="desc"), AIMessage(content=text)]}
+
+    def test_long_reply_emits_no_tokens_but_returns_state(self):
+        text = "S" * (_TYPEWRITER_MAX_CHARS + 1)
+        graph = FakeStreamGraph(invoke_result=self._result(text))
+        tokens: list[str] = []
+        result = stream_chat_turn(graph, _intake_state(), tokens.append, typewriter_cps=0)
+        assert tokens == []
+        assert result is graph.invoke_result
+
+    def test_reply_at_cap_still_typewrites(self):
+        text = "S" * _TYPEWRITER_MAX_CHARS
+        graph = FakeStreamGraph(invoke_result=self._result(text))
+        tokens: list[str] = []
+        stream_chat_turn(graph, _intake_state(), tokens.append, typewriter_cps=0)
+        assert "".join(tokens) == text
+
+    def test_zero_cap_disables_the_limit(self):
+        text = "S" * (_TYPEWRITER_MAX_CHARS + 1)
+        graph = FakeStreamGraph(invoke_result=self._result(text))
+        tokens: list[str] = []
+        stream_chat_turn(graph, _intake_state(), tokens.append, typewriter_cps=0, typewriter_max_chars=0)
+        assert "".join(tokens) == text
+
+    def test_explicit_cap_overrides_default(self):
+        text = "S" * 50
+        graph = FakeStreamGraph(invoke_result=self._result(text))
+        tokens: list[str] = []
+        stream_chat_turn(graph, _intake_state(), tokens.append, typewriter_cps=0, typewriter_max_chars=10)
         assert tokens == []
 
 

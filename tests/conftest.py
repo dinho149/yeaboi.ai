@@ -156,3 +156,56 @@ def vcr_config():
         # the response shape, not the exact query params sent.
         "match_on": ["method", "scheme", "host", "port", "path"],
     }
+
+
+class RealPackageInstallBlocked(BaseException):
+    """Raised when a test reaches a real dictation-install or model-download spawn.
+
+    A ``BaseException`` for the same reason as :class:`RealBrowserBlocked`:
+    ``install_packages`` and ``download_model`` both wrap their spawn in
+    ``except OSError`` and degrade to a "could not start" message, and the
+    ``_run_install`` worker now catches ``Exception`` — so a plain exception here
+    would be swallowed and the guard would quietly report a failed install
+    instead of failing the test.
+    """
+
+
+@pytest.fixture(autouse=True)
+def _no_real_package_install(monkeypatch):
+    """No test may spawn a real package manager or model download.
+
+    This is not hypothetical. ``TestDoubleTapInDescriptionLoop`` patched
+    ``is_voice_available`` but not the strict ``probe_voice_backend``, so on a
+    machine *without* the voice extra — which is every CI runner — the double-tap
+    fell through to the install offer, its leftover ``"enter"`` keystroke accepted
+    it, and the job ran a real ``uv pip install`` plus a 145 MB model fetch until
+    the runner was killed. It passed locally, where the extra is installed and the
+    offer never appears.
+
+    Blocks ``voice_install._popen``, the module's single spawn seam, rather than
+    ``subprocess.Popen`` — patching the latter would patch the shared module for
+    every other test in the suite. Tests that legitimately drive the installer
+    patch the same name and share this MonkeyPatch instance, so their setattr
+    lands after ours and wins.
+    """
+
+    def _blocked(argv, *args, **kwargs):
+        raise RealPackageInstallBlocked(f"test tried to spawn a real installer: {argv}")
+
+    monkeypatch.setattr("yeaboi.voice_install._popen", _blocked)
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_sidecar(monkeypatch):
+    """Unit and integration tests always exercise the pure-Python path.
+
+    YEABOI_GO unset means *auto* since the yeaboi[core] wheel shipped: a dev
+    with the wheel installed (or yeaboi-core on PATH) would otherwise have the
+    whole agentwatch suite silently served by the Go sidecar — passing locally
+    against Go and failing CI against Python, or vice versa. Tests that
+    exercise the dispatch itself set their own YEABOI_GO / fake binary; they
+    share this MonkeyPatch instance, so their setenv lands after ours and wins.
+    The parity suite is unaffected — it constructs CoreClient directly from
+    YEABOI_CORE_BIN and never consults the flag.
+    """
+    monkeypatch.setenv("YEABOI_GO", "0")

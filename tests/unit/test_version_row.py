@@ -24,10 +24,24 @@ def _status(**overrides) -> dict:
     return base
 
 
+@pytest.fixture(autouse=True)
+def _not_restarted(monkeypatch):
+    """Default every test to a normal launch — the ✓ updated chip is opt-in."""
+    monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: False)
+
+
 @pytest.fixture
 def _patch_status(monkeypatch):
     def _apply(**overrides):
         monkeypatch.setattr("yeaboi.update_check.get_update_status", lambda: _status(**overrides))
+
+    return _apply
+
+
+@pytest.fixture
+def _patch_restarted(monkeypatch):
+    def _apply(fresh: bool):
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: fresh)
 
     return _apply
 
@@ -152,10 +166,25 @@ class TestUpdateScreen:
         assert "updating to v2.13.0" in out
         assert "*" in out
 
-    def test_success_tells_user_to_restart(self):
-        out = _render(_screens._build_update_screen(80, 24, latest="2.13.0", command="x", done=True, ok=True), width=80)
+    def test_success_counts_down_to_the_restart(self):
+        out = _render(
+            _screens._build_update_screen(
+                80, 24, latest="2.13.0", command="x", done=True, ok=True, restart_in=2, can_restart=True
+            ),
+            width=80,
+        )
         assert "v2.13.0" in out
-        assert "restart" in out
+        assert "restarting in 2" in out
+        assert "esc to stay" in out
+
+    def test_success_without_a_relaunch_command_asks_for_a_manual_restart(self):
+        out = _render(
+            _screens._build_update_screen(80, 24, latest="2.13.0", command="x", done=True, ok=True, can_restart=False),
+            width=80,
+        )
+        assert "restart yeaboi" in out
+        assert "press any key" in out
+        assert "restarting in" not in out
 
     def test_failure_shows_manual_command(self):
         out = _render(
@@ -166,3 +195,43 @@ class TestUpdateScreen:
         )
         assert "failed" in out
         assert "uv tool upgrade yeaboi" in out
+
+
+class TestRestartedConfirmation:
+    """After a ctrl+U restart the row confirms the version that actually took."""
+
+    def test_confirms_the_new_version(self, _patch_status, _patch_restarted):
+        _patch_status(current="2.13.0")
+        _patch_restarted(True)
+        out = _render(_screens._build_version_row(100))
+        assert "✓ updated" in out
+        assert "v2.13.0" in out
+
+    def test_silent_on_a_normal_launch(self, _patch_status):
+        _patch_status(current="2.13.0")
+        out = _render(_screens._build_version_row(100))
+        assert "✓ updated" not in out
+
+    def test_silent_when_an_upgrade_is_still_pending(self, _patch_status, _patch_restarted):
+        # Mid-restart the check can already know about a NEWER release; the pending
+        # upgrade is the more useful thing to show, so it wins the slot.
+        _patch_status(current="2.13.0", latest="2.14.0", update_available=True)
+        _patch_restarted(True)
+        out = _render(_screens._build_version_row(100))
+        assert "✓ updated" not in out
+        assert "v2.14.0" in out
+
+    def test_silent_when_an_upgrade_is_pending_in_the_companion_layout(self, _patch_status, _patch_restarted):
+        # suppress_upgrade means _build_update_box is carrying the pending upgrade;
+        # the row must not answer it with "you're up to date" two columns away.
+        _patch_status(current="2.13.0", latest="2.14.0", update_available=True)
+        _patch_restarted(True)
+        out = _render(_screens._build_version_row(100, suppress_upgrade=True))
+        assert "✓ updated" not in out
+
+    def test_dropped_on_a_narrow_terminal(self, _patch_status, _patch_restarted):
+        _patch_status(current="2.13.0")
+        _patch_restarted(True)
+        out = _render(_screens._build_version_row(60), width=60)
+        assert "✓ updated" not in out
+        assert "c changelog" in out

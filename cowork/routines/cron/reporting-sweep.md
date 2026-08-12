@@ -1,6 +1,7 @@
 # reporting sweep
 
 **Trigger** — cron `30 7 3,17 * *` (3rd and 17th, 07:30 UTC)
+**Summary** — the .pptx and HTML decks agreeing, and every payload field reaching a fixture
 **Workstream** — [`workstreams/reporting.md`](../../workstreams/reporting.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = reporting`.

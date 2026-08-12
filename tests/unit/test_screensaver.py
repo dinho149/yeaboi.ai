@@ -186,3 +186,56 @@ def test_screensaver_has_no_caption_or_hint():
         text = con.export_text()
         assert "chilling" not in text and "press any key" not in text
         assert any(ch in text for ch in "▀▄█")  # the duck art still renders
+
+
+class TestSaverMascot:
+    """Idling on an Agents page keeps the robo — the saver reads the chrome mascot."""
+
+    def _styled(self, width, height, monkeypatch, mascot):
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.shared import _music_bar, _screensaver
+
+        monkeypatch.setattr(_music_bar, "_chrome_mascot", mascot)
+        # Pinned truecolor: auto-detection reads COLORTERM (set in dev shells,
+        # unset on CI), which would downgrade these rgb assertions to 8-colour.
+        console = Console(width=width, height=height, file=StringIO(), force_terminal=True, color_system="truecolor")
+        with console.capture() as cap:
+            console.print(_screensaver.build_screensaver(width=width, height=height, elapsed=1.0))
+        return cap.get()
+
+    def test_standing_tier_robo(self, monkeypatch):
+        out = self._styled(50, 23, monkeypatch, "robo")
+        assert "140;160;178" in out
+        assert "34;158;122" not in out
+
+    def test_compact_tier_robo(self, monkeypatch):
+        out = self._styled(30, 15, monkeypatch, "robo")
+        assert "140;160;178" in out
+        assert "34;158;122" not in out
+
+    def test_walking_tier_robo(self, monkeypatch):
+        out = self._styled(50, 27, monkeypatch, "robo")
+        assert "140;160;178" in out
+        assert "34;158;122" not in out
+
+    def test_mayhem_tier_robo(self, monkeypatch):
+        out = self._styled(80, 30, monkeypatch, "robo")
+        assert "140;160;178" in out
+        assert "34;158;122" not in out
+
+    def test_duck_tiers_unchanged(self, monkeypatch):
+        assert "34;158;122" in self._styled(50, 23, monkeypatch, "duck")
+        assert "34;158;122" in self._styled(80, 30, monkeypatch, "duck")
+
+    def test_mayhem_yard_rebuilds_on_mascot_flip(self, monkeypatch):
+        # Same size/seed/scale — only the mascot changes; the yard key must
+        # rebuild so squashed's cleared cache never serves duck frames.
+        from yeaboi.ui.shared import _mayhem
+
+        _mayhem.render(80, 30, 0.5, mascot="robo")
+        assert _mayhem.MASCOT == "robo"
+        _mayhem.render(80, 30, 0.5, mascot="duck")
+        assert _mayhem.MASCOT == "duck"

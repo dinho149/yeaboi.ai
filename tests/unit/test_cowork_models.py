@@ -82,7 +82,7 @@ class TestModelsDocIsTheOnlySource:
     def test_no_slash_command_hardcodes_a_model(self, path: Path):
         """The commands spawn agents and register routines, so they pick tiers too.
 
-        ``/cowork`` is the sharp case: it writes the model onto seventeen
+        ``/cowork`` is the sharp case: it writes the model onto eighteen
         account-side routines, where a wrong id is invisible from the repo — the
         routine still fires and nothing anywhere reports which model read the
         code.
@@ -155,6 +155,37 @@ class TestWorkflowsReadTheRepoVariables:
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
     MODEL_FLAG = re.compile(r"--model\s+(\S+)")
 
+    # `--model ${{ steps.<id>.outputs.<name> }}` — a job that picks its tier in an
+    # earlier step instead of naming one inline. `claude.yml` does this because a
+    # `type:security` issue must not reach `heavy` (models.md), and a conditional
+    # cannot be spelled in the flag without an unreadable nested ternary. The
+    # indirection is followed rather than allowed: the assertions below move to
+    # whatever that step assigns, so a model hardcoded inside the picker fails
+    # here exactly as it would in the flag.
+    STEP_OUTPUT = re.compile(r"^\s*steps\.(\w+)\.outputs\.(\w+)\s*$")
+
+    def _expressions(self, text: str, expr: str, path: Path) -> list[str]:
+        indirect = self.STEP_OUTPUT.match(expr)
+        if not indirect:
+            return [expr]
+        _, output = indirect.groups()
+        # Every branch that writes the output, not merely the ones already shaped
+        # like an expression: a picker with one interpolated branch and one
+        # hardcoded id would otherwise pass on the strength of the good half.
+        assigned = re.findall(rf"{re.escape(output)}=(.*?)\"\s*>>", text)
+        assert assigned, (
+            f"{path.name} takes its model from `{expr.strip()}`, but nothing in the file "
+            f"assigns `{output}=` — the tier cannot be checked."
+        )
+        exprs = []
+        for value in assigned:
+            assert value.startswith("${{") and value.endswith("}}"), (
+                f"{path.name} assigns `{output}={value}` literally. Every branch of a model "
+                "picker must interpolate a YEABOI_MODEL_* repo variable — see cowork/models.md."
+            )
+            exprs.append(value[3:-2])
+        return exprs
+
     @pytest.mark.parametrize(
         "path",
         sorted(p for p in (REPO_ROOT / ".github" / "workflows").glob("*.yml")),
@@ -163,15 +194,15 @@ class TestWorkflowsReadTheRepoVariables:
     def test_every_model_flag_is_a_variable_with_a_fallback(self, path: Path):
         text = path.read_text()
         for match in re.finditer(r"--model\s+\$\{\{([^}]*)\}\}", text):
-            expr = match.group(1)
-            assert "vars.YEABOI_MODEL_" in expr, (
-                f"{path.name} interpolates a model from `{expr.strip()}` rather than a "
-                "YEABOI_MODEL_* repo variable — see cowork/models.md."
-            )
-            assert "||" in expr, (
-                f"{path.name} has no `||` fallback on its --model expression. An unset "
-                "variable renders empty and `--model ` breaks the argument."
-            )
+            for expr in self._expressions(text, match.group(1), path):
+                assert "vars.YEABOI_MODEL_" in expr, (
+                    f"{path.name} interpolates a model from `{expr.strip()}` rather than a "
+                    "YEABOI_MODEL_* repo variable — see cowork/models.md."
+                )
+                assert "||" in expr, (
+                    f"{path.name} has no `||` fallback on its --model expression. An unset "
+                    "variable renders empty and `--model ` breaks the argument."
+                )
 
     @pytest.mark.parametrize(
         "path",

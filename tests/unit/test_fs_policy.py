@@ -96,9 +96,8 @@ class TestBuiltinAllowlist:
         # And only the config file, not the credentials next to it.
         assert not is_allowed(tmp_path / "home" / ".aws" / "credentials", mode="read")
 
-    def test_openclaw_and_launchagents_writable(self, tmp_path):
+    def test_launchagents_and_legacy_root_writable(self, tmp_path):
         home = tmp_path / "home"
-        assert is_allowed(home / ".openclaw" / "openclaw.json", mode="write")
         assert is_allowed(home / "Library" / "LaunchAgents" / "ai.yeaboi.standup.plist", mode="write")
         assert is_allowed(home / ".scrum-agent" / "sessions.db", mode="write")
 

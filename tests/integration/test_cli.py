@@ -27,7 +27,7 @@ def _no_wizard_by_default(monkeypatch):
     All test classes that need to test the wizard explicitly override
     is_first_run or run_setup_wizard as needed.
     """
-    monkeypatch.setattr("yeaboi.cli.is_first_run", lambda: False)
+    monkeypatch.setattr("yeaboi.setup_wizard.is_first_run", lambda: False)
     monkeypatch.setattr("yeaboi.cli.load_user_config", lambda: None)
 
 
@@ -177,7 +177,7 @@ class TestNonInteractiveFlags:
             main(argv=["--output", "json", "--mode", "project-planning"])
         assert exc_info.value.code == 1
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_non_interactive_calls_repl_with_params(self, mock_repl, tmp_path, monkeypatch):
         """--non-interactive passes correct params to run_repl."""
         main(argv=["--non-interactive", "--description", "Build a todo app", "--team-size", "5"])
@@ -192,14 +192,14 @@ class TestNonInteractiveFlags:
         assert qs.answers[1] == "Build a todo app"
         assert qs.answers[6] == "5"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_non_interactive_json_output(self, mock_repl):
         """--non-interactive --output json passes output_format='json'."""
         main(argv=["--non-interactive", "--description", "Test", "--output", "json"])
         call_kwargs = mock_repl.call_args[1]
         assert call_kwargs["output_format"] == "json"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_non_interactive_loads_scrum_md(self, mock_repl, tmp_path, monkeypatch):
         """--non-interactive picks up SCRUM.md from CWD for keyword extraction."""
         monkeypatch.chdir(tmp_path)
@@ -212,7 +212,7 @@ class TestNonInteractiveFlags:
         assert 2 in qs.answers
         assert "greenfield" in qs.answers[2].lower()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_non_interactive_cli_args_win_over_scrum_md(self, mock_repl, tmp_path, monkeypatch):
         """CLI args take priority over SCRUM.md extracted answers."""
         monkeypatch.chdir(tmp_path)
@@ -223,7 +223,7 @@ class TestNonInteractiveFlags:
         # CLI --team-size=3 should win over SCRUM.md's "10 engineers"
         assert qs.answers[6] == "3"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_description_file_resolved(self, mock_repl, tmp_path):
         """--description @file.txt resolves to file contents."""
         desc_file = tmp_path / "desc.txt"
@@ -276,15 +276,15 @@ class TestWelcomePanel:
         panel = _build_welcome_panel()
         plain = panel.renderable.plain
         assert "yeaboi.ai" in plain
-        assert "A team lead's best friend" in plain
+        assert "Best friend to engineers and agents" in plain
 
     def test_panel_contains_quick_start_hint(self):
         panel = _build_welcome_panel()
         plain = panel.renderable.plain
         assert "help" in plain
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.show_splash")
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.ui.splash.show_splash")
     def test_welcome_panel_shown_on_startup(self, mock_splash, mock_repl, capsys):
         main(argv=["--mode", "project-planning"])
         # Splash animation replaced the static welcome panel — verify it was called
@@ -297,7 +297,7 @@ class TestWelcomePanel:
 class TestScrumMdBanner:
     """Tests for the SCRUM.md startup hint."""
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_tip_shown_when_no_scrum_md(self, mock_repl, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)
         main(argv=["--mode", "project-planning"])
@@ -305,7 +305,7 @@ class TestScrumMdBanner:
         assert "SCRUM.md" in output
         assert "Tip:" in output
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_detected_shown_when_scrum_md_present(self, mock_repl, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "SCRUM.md").write_text("# My project notes")
@@ -316,12 +316,12 @@ class TestScrumMdBanner:
 
 
 class TestMain:
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_main_calls_repl(self, mock_repl):
         main(argv=["--mode", "project-planning"])
         mock_repl.assert_called_once()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     @patch("yeaboi.cli._resolve_resume")
     def test_resume_with_id_calls_repl(self, mock_resolve, mock_repl):
         """--resume <id> resolves the session and calls run_repl with resume_state."""
@@ -333,14 +333,14 @@ class TestMain:
         assert call_kwargs["resume_state"] == {"messages": []}
         assert call_kwargs["resume_session_id"] == "test-session"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     @patch("yeaboi.cli._resolve_resume", return_value=(None, None))
     def test_resume_returns_early_when_no_session(self, mock_resolve, mock_repl):
         """--resume exits early when resolve returns None (cancelled or no sessions)."""
         main(argv=["--resume", "latest"])
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     @patch("yeaboi.cli._resolve_resume")
     def test_resume_skips_mode_menu(self, mock_resolve, mock_repl, capsys):
         """--resume should skip the startup mode selection entirely."""
@@ -351,20 +351,20 @@ class TestMain:
         assert "Project Planning" not in output
         mock_repl.assert_called_once()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_quick_flag_passes_intake_mode(self, mock_repl):
         main(argv=["--quick", "--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
         assert call_kwargs["intake_mode"] == "quick"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_default_intake_mode_is_none(self, mock_repl):
         """Default intake mode is None — triggers the interactive intake menu in the REPL."""
         main(argv=["--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
         assert call_kwargs["intake_mode"] is None
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_proxy_warning_disables_langsmith(self, mock_repl, monkeypatch, capsys):
         # Enable LangSmith
         monkeypatch.setenv("LANGSMITH_TRACING", "true")
@@ -384,7 +384,7 @@ class TestMain:
 class TestExportQuestionnaireFlag:
     """Tests for --export-questionnaire CLI flag."""
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_creates_file(self, mock_repl, tmp_path, monkeypatch):
         """--export-questionnaire should create a .md file."""
         out = tmp_path / "test-export.md"
@@ -396,7 +396,7 @@ class TestExportQuestionnaireFlag:
         # Should NOT start the REPL
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_default_filename(self, mock_repl, tmp_path, monkeypatch):
         """--export-questionnaire without a path should use the default filename."""
         monkeypatch.chdir(tmp_path)
@@ -404,7 +404,7 @@ class TestExportQuestionnaireFlag:
         # File should exist at the resolved default filename path
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_exits_without_repl(self, mock_repl, tmp_path, monkeypatch):
         """--export-questionnaire should exit without starting the REPL."""
         monkeypatch.chdir(tmp_path)
@@ -415,7 +415,7 @@ class TestExportQuestionnaireFlag:
 class TestQuestionnaireFlag:
     """Tests for --questionnaire CLI flag."""
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_valid_file_passes_questionnaire(self, mock_repl, tmp_path):
         """--questionnaire with a valid file should parse and pass to run_repl."""
         qfile = tmp_path / "intake.md"
@@ -435,7 +435,7 @@ class TestQuestionnaireFlag:
         output = capsys.readouterr().out
         assert "file not found" in output
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_malformed_file_error(self, mock_repl, tmp_path, capsys):
         """--questionnaire with a malformed file should print error and exit."""
         bad = tmp_path / "bad.md"
@@ -447,7 +447,7 @@ class TestQuestionnaireFlag:
         assert "Error" in output
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_loaded_answer_count_shown(self, mock_repl, tmp_path, capsys):
         """--questionnaire should print how many answers were loaded."""
         qfile = tmp_path / "intake.md"
@@ -479,7 +479,7 @@ class TestExportOnlyFlag:
         output = capsys.readouterr().out
         assert "--export-only requires" in output
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_export_only_with_quick_passes_to_repl(self, mock_repl):
         main(argv=["--export-only", "--quick", "--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
@@ -499,13 +499,13 @@ class TestNoBellFlag:
         args = parser.parse_args([])
         assert args.no_bell is False
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_no_bell_passes_bell_false(self, mock_repl):
         main(argv=["--no-bell", "--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
         assert call_kwargs["bell"] is False
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_default_passes_bell_true(self, mock_repl):
         main(argv=["--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
@@ -535,13 +535,13 @@ class TestThemeFlag:
         with pytest.raises(SystemExit):
             parser.parse_args(["--theme", "neon"])
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_theme_passed_to_repl(self, mock_repl):
         main(argv=["--theme", "light", "--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
         assert call_kwargs["theme"] == "light"
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_default_theme_passed(self, mock_repl):
         main(argv=["--mode", "project-planning"])
         call_kwargs = mock_repl.call_args[1]
@@ -552,7 +552,7 @@ class TestStartupModeMenu:
     """Tests for the top-level mode selection screen."""
 
     def test_mode_flag_project_planning_calls_repl(self):
-        with patch("yeaboi.cli.run_repl") as mock_repl:
+        with patch("yeaboi.repl.run_repl") as mock_repl:
             main(argv=["--mode", "project-planning"])
         mock_repl.assert_called_once()
 
@@ -566,16 +566,16 @@ class TestStartupModeMenu:
         args = parser.parse_args([])
         assert args.mode is None
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.select_mode", return_value=("project-planning", "smart", None))
-    @patch("yeaboi.cli.show_splash")
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=("project-planning", "smart", None))
+    @patch("yeaboi.ui.splash.show_splash")
     def test_interactive_menu_shown_when_no_mode_flag(self, mock_splash, mock_select, mock_repl):
         """Without --mode, the TUI mode selection screen is displayed."""
         main(argv=[])
         mock_select.assert_called_once()
 
-    @patch("yeaboi.cli.select_mode", return_value=None)
-    @patch("yeaboi.cli.show_splash")
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
     def test_select_mode_returns_none_exits_gracefully(self, mock_splash, mock_select):
         """When select_mode returns None (Esc/Ctrl+C), main exits cleanly."""
         main(argv=[])
@@ -591,36 +591,36 @@ class TestStartupModeMenu:
 class TestSetupWizardIntegration:
     """Tests for setup wizard triggering in main()."""
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.run_setup_wizard", return_value=True)
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.setup_wizard.run_setup_wizard", return_value=True)
     def test_setup_flag_triggers_wizard(self, mock_wizard, mock_repl, monkeypatch):
         """--setup flag always triggers the wizard regardless of config file state."""
-        monkeypatch.setattr("yeaboi.cli.is_first_run", lambda: False)
+        monkeypatch.setattr("yeaboi.setup_wizard.is_first_run", lambda: False)
         main(argv=["--setup", "--mode", "project-planning"])
         mock_wizard.assert_called_once()
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.run_setup_wizard", return_value=True)
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.setup_wizard.run_setup_wizard", return_value=True)
     def test_first_run_triggers_wizard(self, mock_wizard, mock_repl, monkeypatch):
         """No config file (first run) triggers the wizard automatically."""
-        monkeypatch.setattr("yeaboi.cli.is_first_run", lambda: True)
+        monkeypatch.setattr("yeaboi.setup_wizard.is_first_run", lambda: True)
         main(argv=["--mode", "project-planning"])
         mock_wizard.assert_called_once()
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.run_setup_wizard", return_value=False)
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.setup_wizard.run_setup_wizard", return_value=False)
     def test_wizard_cancelled_exits_before_repl(self, mock_wizard, mock_repl, monkeypatch):
         """If wizard returns False (user cancelled), main() exits without starting REPL."""
-        monkeypatch.setattr("yeaboi.cli.is_first_run", lambda: True)
+        monkeypatch.setattr("yeaboi.setup_wizard.is_first_run", lambda: True)
         main(argv=["--mode", "project-planning"])
         mock_wizard.assert_called_once()
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
-    @patch("yeaboi.cli.run_setup_wizard")
+    @patch("yeaboi.repl.run_repl")
+    @patch("yeaboi.setup_wizard.run_setup_wizard")
     def test_normal_run_skips_wizard(self, mock_wizard, mock_repl, monkeypatch):
         """If config file exists and --setup not passed, wizard is skipped."""
-        monkeypatch.setattr("yeaboi.cli.is_first_run", lambda: False)
+        monkeypatch.setattr("yeaboi.setup_wizard.is_first_run", lambda: False)
         main(argv=["--mode", "project-planning"])
         mock_wizard.assert_not_called()
         mock_repl.assert_called_once()
@@ -644,7 +644,7 @@ class TestSetupWizardIntegration:
 class TestListSessionsFlag:
     """Tests for --list-sessions CLI flag."""
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_list_sessions_shows_table(self, mock_repl, tmp_path, monkeypatch, capsys):
         """--list-sessions prints a table and exits without starting REPL."""
         db_path = tmp_path / "sessions.db"
@@ -659,7 +659,7 @@ class TestListSessionsFlag:
         assert "feature_generator" in output
         mock_repl.assert_not_called()
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_list_sessions_empty(self, mock_repl, tmp_path, monkeypatch, capsys):
         """--list-sessions with no sessions prints a helpful message."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -766,7 +766,7 @@ class TestResolveResume:
         state, sid = _resolve_resume(console, "latest")
         assert state is None
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_picker_cancel(self, mock_session_cls, tmp_path, monkeypatch):
         """--resume (picker mode) returns (None, None) when user cancels."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -781,7 +781,7 @@ class TestResolveResume:
         state, sid = _resolve_resume(console, "__pick__")
         assert state is None
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_picker_selects_session(self, mock_session_cls, tmp_path, monkeypatch):
         """--resume (picker mode) loads the selected session."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -797,7 +797,7 @@ class TestResolveResume:
         assert sid == "new-dddd4444-2026-03-06"
         assert state["team_size"] == 8
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_picker_no_sessions(self, mock_session_cls, tmp_path, monkeypatch):
         """--resume (picker mode) with no sessions returns (None, None)."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -966,13 +966,13 @@ class TestStaleCorruptSessionFallback:
 class TestClearSessions:
     """Tests for --clear-sessions CLI flag and _clear_sessions()."""
 
-    @patch("yeaboi.cli.run_repl")
+    @patch("yeaboi.repl.run_repl")
     def test_clear_sessions_flag_parsed(self, mock_repl):
         parser = build_parser()
         args = parser.parse_args(["--clear-sessions"])
         assert args.clear_sessions is True
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_clear_single_session(self, mock_session_cls, tmp_path, monkeypatch):
         """Pick a session number → deletes that session."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -990,7 +990,7 @@ class TestClearSessions:
             sessions = store.list_sessions()
         assert len(sessions) == 1
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_clear_all_sessions(self, mock_session_cls, tmp_path, monkeypatch):
         """Type 'all' → deletes everything."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -1006,7 +1006,7 @@ class TestClearSessions:
         with SessionStore(db_path) as store:
             assert store.list_sessions() == []
 
-    @patch("yeaboi.cli.PromptSession")
+    @patch("prompt_toolkit.PromptSession")
     def test_clear_cancel(self, mock_session_cls, tmp_path, monkeypatch):
         """Type 'q' → nothing deleted."""
         monkeypatch.setattr("yeaboi.cli._SESSIONS_DB_DIR", tmp_path)
@@ -1086,3 +1086,63 @@ class TestStandupCLI:
         assert calls["session_id"] == "s1"
         # "all" expands to every channel
         assert set(calls["channels"]) == {"terminal", "desktop", "slack", "email"}
+
+
+class TestUpdateRestartWiring:
+    """main()'s half of the ctrl+U relaunch: skip the splash, exec after cleanup.
+
+    The flow itself can't call ``os.execv`` — it runs deep inside select_mode's Live
+    context, where exec (which skips ``atexit``) would hand the new process a
+    terminal still in raw mode. It leaves a request on ``update_check``; these pin
+    that main acts on it, and only once the terminal has been restored.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_restart_by_default(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: False)
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "")
+
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
+    def test_splash_plays_on_a_normal_launch(self, mock_splash, mock_select):
+        main(argv=[])
+        mock_splash.assert_called_once()
+
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
+    def test_splash_skipped_when_this_process_is_the_relaunch(self, mock_splash, mock_select, monkeypatch):
+        # The user just watched the upgrade land; select_mode's Live(screen=True)
+        # enters the alt-screen itself, so only the animation is lost.
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: True)
+        main(argv=[])
+        mock_splash.assert_not_called()
+
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
+    def test_no_restart_requested_never_execs(self, mock_splash, mock_select, monkeypatch):
+        called = []
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: called.append(True) or False)
+        main(argv=[])
+        assert called == []
+
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
+    def test_restart_happens_only_after_the_terminal_is_restored(self, mock_splash, mock_select, monkeypatch):
+        order: list[str] = []
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "2.13.0")
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: order.append("exec") or True)
+        monkeypatch.setattr("yeaboi.ui.shared._input.exit_raw_mode", lambda: order.append("raw-off"))
+        monkeypatch.setattr("yeaboi.ui.shared._input.disable_mouse_tracking", lambda: order.append("mouse-off"))
+        main(argv=[])
+        assert "exec" in order
+        assert order.index("exec") > order.index("raw-off")
+        assert order.index("exec") > order.index("mouse-off")
+
+    @patch("yeaboi.ui.mode_select.select_mode", return_value=None)
+    @patch("yeaboi.ui.splash.show_splash")
+    def test_failed_exec_falls_back_to_telling_the_user(self, mock_splash, mock_select, monkeypatch, capsys):
+        # restart_in_place only returns when it could not replace the process.
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "2.13.0")
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: False)
+        main(argv=[])
+        assert "restart yeaboi" in capsys.readouterr().out.lower()

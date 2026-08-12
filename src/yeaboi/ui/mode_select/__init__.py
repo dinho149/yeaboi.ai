@@ -45,6 +45,7 @@ from yeaboi.ui.mode_select.screens._project_list_screen import (  # noqa: F401
 
 # Re-exports for backwards compatibility and test imports.
 from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
+    _AGENT_CARDS,
     _INTAKE_CARDS,
     _MIN_HEIGHT,
     _MIN_WIDTH,
@@ -77,7 +78,7 @@ from yeaboi.ui.shared._animations import (
 )
 from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
-from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
@@ -196,6 +197,28 @@ def _run_output_share_flow(
         title_fn=title_fn,
         editable=editable,
         on_edit=on_edit,
+    )
+
+
+def _standup_editable_session(report, run_id: int, history):
+    """A correctable standup share, or None when there is nothing to anchor edits to.
+
+    Shared by the live standup page and the saved-runs hub so both offer the same
+    thing. Edits are appended as a new row that supersedes its parent, so the
+    session needs the run it came from — without ``run_id`` there is no base to
+    replay onto and the share stays read-only.
+    """
+    if not run_id:
+        logger.info("standup share: no run_id on this report — sharing read-only, edits are not possible")
+        return None
+    from yeaboi.artifacts.session import EditableSession
+
+    return EditableSession(
+        report,
+        kind="standup",
+        db_path=_ana_dbp,
+        run_id=run_id,
+        history=tuple(history or ()),
     )
 
 
@@ -1333,16 +1356,19 @@ def _collect_usage_data() -> dict:
     except Exception:
         data["profiles"] = []
 
-    # Token usage — session (in-memory) + lifetime (from DB)
-    def _cloud_cost(inp: int, out: int) -> float:
-        # Claude Sonnet 4: $3/MTok input, $15/MTok output
-        return (inp * 3.0 + out * 15.0) / 1_000_000
+    # Token usage — session (in-memory) + lifetime (from DB). All rates come
+    # from the shared pricing table; an unknown model prices at the Sonnet
+    # tier, which matches the old hardcoded $3/$15 estimate.
+    from yeaboi.pricing import estimate_cost
+
+    def _cloud_cost(inp: int, out: int, model_id: str = "") -> float:
+        return estimate_cost(model_id, inp, out).usd
 
     def _calc_cost(inp: int, out: int) -> float:
         # Ollama runs on the user's own hardware — there is no per-token bill.
         if provider == "ollama":
             return 0.0
-        return round(_cloud_cost(inp, out), 4)
+        return round(_cloud_cost(inp, out, model), 4)
 
     try:
         from yeaboi.agent.llm import get_usage_stats
@@ -1439,6 +1465,7 @@ def _collect_settings_data() -> dict:
         # default that lets CLI/MCP/headless runs scan GitHub without --github-owner.
         "TEAM_ANALYSIS_GITHUB_OWNERS",
         "VOICE_MODEL",
+        "VOICE_DEVICE",
         "AWS_REGION",
         "AWS_PROFILE",
         "LOG_LEVEL",
@@ -1499,7 +1526,7 @@ def _settings_edit_keypress(sk: str, edit: dict) -> None:
     elif sk == "end":
         edit["cur"] = len(buf)
     elif isinstance(sk, str) and sk.startswith("paste:"):
-        txt = sk[len("paste:") :]
+        txt = paste_payload(sk)
         edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
     elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
         edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
@@ -1633,7 +1660,7 @@ def _feedback_compose_key(
         from yeaboi.ui.shared._voice_input import record_voice_input
 
         spoken = record_voice_input(
-            live, console, read_key, lambda status, tick: _compose_voice_frame(compose, status, tick, render)
+            live, console, read_key, lambda border, line: _compose_voice_frame(compose, line, render)
         )
         compose["status"] = ""
         if spoken:
@@ -1645,15 +1672,13 @@ def _feedback_compose_key(
     return compose
 
 
-def _compose_voice_frame(compose: dict, status: str, tick: float, render):
+def _compose_voice_frame(compose: dict, line: str, render):
     """Renderable for the recording/transcribing indicator, shown IN the bubble.
 
     record_voice_input owns the screen while it runs, so it paints through this —
-    keeping the duck and his bubble on screen instead of a centred popup.
+    keeping the duck and his bubble on screen instead of a centred popup. The
+    bubble has no border of its own to tint, so only the status line is used.
     """
-    from yeaboi.ui.shared._voice_input import voice_indicator
-
-    _border, line = voice_indicator(status, tick)
     compose["status"] = line.strip()
     return render(update=False)
 
@@ -1768,6 +1793,125 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
             return sel == 0
         elif k in ("esc", "q"):
             return False
+
+
+def _test_microphone(console: Console, live, read_key, frame_time, supports_timeout, device: dict, render) -> str:
+    """Open the highlighted mic and animate its level until a key is pressed.
+
+    This is the answer to "is this the input that actually hears me?" — the one
+    question a device *name* cannot settle, since a laptop lid, a muted USB
+    interface and a disconnected Bluetooth headset all still enumerate.
+    Returns a notice for the picker ("" when the test ran fine).
+    """
+    from yeaboi import music, voice
+
+    music.pause_for_voice()
+    try:
+        # monitor=True: this runs for as long as the user leaves the page open,
+        # and a retained take grows ~11 MB a minute at 48 kHz stereo for a WAV
+        # that is discarded the moment the test ends. Only level() is wanted.
+        recorder = voice.Recorder(device=device["index"], monitor=True)
+    except Exception as exc:  # noqa: BLE001 - shown to the user, not raised
+        logger.warning("Settings: mic test failed for %s", device["name"], exc_info=True)
+        music.resume_after_voice()
+        return f"{device['name']} would not open — {exc}"
+    logger.info("Settings: testing microphone %s (index %s)", device["name"], device["index"])
+    try:
+        while True:
+            live.update(render(testing=True, level=recorder.level()))
+            try:
+                k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            except TypeError:
+                k = read_key()
+            if not k:
+                continue
+            if parse_click(k) is not None:
+                continue  # a stray mouse event must not end the test
+            if k == "esc":
+                # Same reason as the picker's own cancel below: the Esc
+                # chokepoint armed the app-wide back tab's retract before we saw
+                # the key, and this Esc only ends the test.
+                from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                cancel_back_retract()
+            logger.info("Settings: mic test finished for %s", device["name"])
+            return ""
+    finally:
+        recorder.stop()
+        music.resume_after_voice()
+
+
+def _pick_voice_device(console: Console, live, read_key, frame_time, supports_timeout) -> str | None:
+    """Microphone picker for Settings → Voice Input.
+
+    Returns the chosen device name, ``""`` for "use the system default", or None
+    when the user backs out. A modal sub-loop (like _confirm_move_data) rather
+    than another state in the settings loop: the settings loop already routes
+    arrows, scroll, Tab and Esc, and a picker layered into it would have to be
+    intercepted ahead of every one of them.
+    """
+    from yeaboi import voice
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen, voice_picker_keypress
+
+    # Rescan first: PortAudio caches its device list at startup, so the mic the
+    # user just plugged in is exactly the one that would otherwise be missing.
+    voice.refresh_devices()
+    devices = voice.list_input_devices()
+    pref = voice.get_voice_device()
+    current = voice.device_name(voice.resolve_device(pref)) if pref else ""
+    state = {"devices": devices, "sel": 0}
+    for _i, _d in enumerate(devices):
+        if _d["name"] == current:
+            state["sel"] = _i
+    notice = ""
+    logger.info("Settings: microphone picker opened — %d input(s)", len(devices))
+
+    def _render(testing: bool = False, level: float = 0.0):
+        w, h = console.size
+        return _build_voice_device_screen(
+            devices,
+            state["sel"],
+            current=current,
+            width=w,
+            height=h,
+            testing=testing,
+            level=level,
+            notice=notice,
+        )
+
+    while True:
+        live.update(_render())
+        try:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        except TypeError:
+            k = read_key()
+        if not k:  # idle tick
+            continue
+        if parse_click(k) is not None:
+            continue  # the picker is keyboard-driven; clicks would need regions
+        notice = ""
+        action = voice_picker_keypress(k, state)
+        if action == "cancel":
+            # The Esc chokepoint armed the app-wide back tab's retract before we
+            # saw the key; this Esc only closes the picker, so put it back.
+            from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+            cancel_back_retract()
+            return None
+        if action == "system":
+            return ""
+        if action == "select":
+            if not devices:
+                # Nothing to choose. Returning "" here would quietly save
+                # "system default" from a page that just said there is no
+                # microphone at all — a confirmation for a choice never made.
+                notice = "No microphone to select. Esc goes back."
+                continue
+            return devices[state["sel"]]["name"]
+        if action == "test" and devices:
+            notice = _test_microphone(
+                console, live, read_key, frame_time, supports_timeout, devices[state["sel"]], _render
+            )
 
 
 def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_timeout) -> bool:
@@ -2938,7 +3082,7 @@ def _standup_read_line(
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
     from yeaboi.ui.shared._attachments import handle_ctrl_v, unsupported_notice
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     value = initial
     notice = ""
@@ -2970,9 +3114,8 @@ def _standup_read_line(
     # Voice overlay re-renders THIS screen (not a popup) with the pulsing
     # indicator. record_voice_input() calls this and does the live.update itself,
     # so we only return the renderable.
-    def _render_status(status_name: str, tick: float):
+    def _render_status(border: str, line: str):
         w, h = console.size
-        border, line = voice_indicator(status_name, tick)
         return _build_standup_input_screen(
             prompt,
             value,
@@ -3008,7 +3151,7 @@ def _standup_read_line(
         elif k == "word_backspace":  # Ctrl+W
             value = value.rstrip().rsplit(" ", 1)[0] if " " in value.strip() else ""
         elif isinstance(k, str) and k.startswith("paste:"):
-            value += k[len("paste:") :]
+            value += paste_payload(k, multiline=box_rows > 1)
         elif k == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)
@@ -3280,9 +3423,12 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
             return None
         if not set(config.get("code_sources", ())) <= code_available:
             return None
+        owners = list(config.get("github_owners", ()))
         github = list(config.get("github_repositories", ()))
         projects = list(config.get("azdo_projects", ()))
         parts = []
+        if owners:
+            parts.append(f"{len(owners)} GitHub org(s)")
         if github:
             parts.append(f"{len(github)} GitHub repo(s)")
         if projects:
@@ -3291,7 +3437,7 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
         # Second line names them. A count alone can't tell you whether the saved
         # scope is the one you want back. The newline is the builder's cue to
         # give this a second row — the value is still plain text.
-        names = _standup_name_summary(github + projects, shown=4)
+        names = _standup_name_summary(owners + github + projects, shown=4)
         rows.append(("Code", f"{counts}\n{names}" if counts else "none"))
 
     # Documentation. An empty selection is a real answer here (the picker allows
@@ -3323,6 +3469,7 @@ _STANDUP_SETUP_FIELDS = (
     "team_members",
     "roster_configured",
     "code_sources",
+    "github_owners",
     "github_repositories",
     "azdo_projects",
     "azdo_repositories",
@@ -3655,6 +3802,7 @@ def _standup_team_configure(
             team_members=selected_members,
             roster_configured=True,
             code_sources=merged.get("code_sources", []),
+            github_owners=merged.get("github_owners", []),
             github_repositories=merged.get("github_repositories", []),
             azdo_projects=merged.get("azdo_projects", []),
             azdo_repositories=merged.get("azdo_repositories", []),
@@ -3686,7 +3834,13 @@ def _standup_code_configure(
     supports_timeout,
     session_id: str,
 ) -> tuple[bool, str]:
-    """Choose GitHub repositories/Azure projects and persist the code scope."""
+    """Choose GitHub organisations/Azure projects and persist the code scope.
+
+    Both sides of this picker are *containers*: an Azure project has always meant
+    "every repo in it", and a GitHub owner now means the same. That is the whole
+    difference from the old screen, which asked for repositories one at a time and
+    so went stale the moment someone created a new one.
+    """
     import threading
 
     from yeaboi.config import (
@@ -3756,22 +3910,32 @@ def _standup_code_configure(
     discovered = result_box[0] or {}
     github_choices = list(discovered.get("github", ()))
     azdo_project_choices = list(discovered.get("azure_devops", ()))
-    github_labels = {f"GitHub · {repo}": repo for repo in github_choices}
+    github_labels = {f"GitHub · {owner}": owner for owner in github_choices}
     azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
     choices = [*github_labels, *azdo_labels]
-    saved_github = list(existing.get("github_repositories", ()))
+    # Only owners the user actually chose. Deriving them from a saved repository
+    # list would pre-tick "GitHub · acme" for someone whose scope is one repo, and
+    # accepting the default — while here to add an Azure project, say — would widen
+    # their standup to the whole org off a row that says nothing about it. Their
+    # repositories are preserved instead (see prior_repositories below), so nothing
+    # is lost by leaving these unticked; widening is a tick they have to make.
+    saved_owners = {owner.lower() for owner in existing.get("github_owners", ())}
     saved_azdo_projects = list(existing.get("azdo_projects", ()))
     if existing.get("code_scope_configured"):
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in saved_github),
+            *(label for label, owner in github_labels.items() if owner.lower() in saved_owners),
             *(label for label, project in azdo_labels.items() if project in saved_azdo_projects),
         ]
     else:
         from yeaboi.config import get_azure_devops_project
 
         legacy_project = (get_azure_devops_project() or "").lower()
+        # Nothing configured: everything the token can see is in scope, matching
+        # what an unconfigured run already does (engine._resolve_code_scope) — but
+        # a pinned STANDUP_GITHUB_REPO is an explicit narrow scope, so it pre-ticks
+        # nothing and survives as a repository entry, exactly as the engine treats it.
         initial_repositories = [
-            *(label for label, repo in github_labels.items() if repo in default_github),
+            *([] if default_github else github_labels),
             *(label for label, project in azdo_labels.items() if project.lower() == legacy_project),
         ]
     selected_repositories = _run_standup_member_select(
@@ -3782,17 +3946,30 @@ def _standup_code_configure(
         supports_timeout,
         choices,
         initial_repositories,
-        heading="Choose GitHub repositories and Azure projects",
-        empty_message="No accessible repositories or projects found for the selected code source(s).",
+        heading="Choose GitHub organisations and Azure projects",
+        empty_message="No accessible organisations or projects found for the selected code source(s).",
     )
     if selected_repositories == "cancel":
         return False, "Code scope selection cancelled."
     if not selected_repositories:
-        return False, "No accessible repositories or projects found — check integration permissions."
+        return False, "No accessible organisations or projects found — check integration permissions."
 
     selected_set = set(selected_repositories)
-    selected_github = [repo for label, repo in github_labels.items() if label in selected_set]
+    selected_github_owners = [owner for label, owner in github_labels.items() if label in selected_set]
     selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
+    # Repositories survive unless a chosen owner already covers them. Clearing the
+    # list outright lost three things: a pinned STANDUP_GITHUB_REPO on the first
+    # walk, a deliberately narrow saved scope, and — worst, because it is invisible
+    # — any repo whose owner never surfaced in discovery (github_list_owners caps
+    # at 100 and either of its lookups can fail and be skipped).
+    prior_repositories = list(existing.get("github_repositories", ())) or list(default_github)
+    covered_owners = {owner.lower() for owner in selected_github_owners}
+    preserved_repositories = [
+        repository
+        for repository in prior_repositories
+        for owner, separator, _name in [str(repository).partition("/")]
+        if not (separator and owner.lower() in covered_owners)
+    ]
     defaults = {
         "enabled": False,
         "time": "10:00",
@@ -3822,7 +3999,8 @@ def _standup_code_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=selected_sources,
-            github_repositories=selected_github,
+            github_owners=selected_github_owners,
+            github_repositories=preserved_repositories,
             azdo_projects=selected_azdo_projects,
             azdo_repositories=[],
             code_scope_configured=True,
@@ -3836,8 +4014,18 @@ def _standup_code_configure(
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
         )
+    logger.info(
+        "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d azdo_projects=%d",
+        session_id,
+        selected_sources,
+        len(selected_github_owners),
+        len(preserved_repositories),
+        len(selected_azdo_projects),
+    )
+    kept = f" + {len(preserved_repositories)} pinned repo(s)" if preserved_repositories else ""
     return True, (
-        f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
+        f"Code scope saved — {len(selected_github_owners)} GitHub org(s){kept}, "
+        f"{len(selected_azdo_projects)} Azure project(s)."
     )
 
 
@@ -3902,6 +4090,7 @@ def _standup_documentation_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -3923,6 +4112,7 @@ def _standup_documentation_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -4078,6 +4268,7 @@ def _standup_transcripts_configure(
         "team_members": [],
         "roster_configured": False,
         "code_sources": [],
+        "github_owners": [],
         "github_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
@@ -4101,6 +4292,7 @@ def _standup_transcripts_configure(
             team_members=merged["team_members"],
             roster_configured=merged["roster_configured"],
             code_sources=merged["code_sources"],
+            github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
@@ -4477,6 +4669,7 @@ def _run_standup_schedule_wizard(
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -4586,6 +4779,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             team_members=existing.get("team_members", []),
             roster_configured=existing.get("roster_configured", False),
             code_sources=existing.get("code_sources", []),
+            github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
@@ -5528,11 +5722,17 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
     def get_share_document(run):
         """A past run, shared read-only.
 
-        Deliberately NOT correctable, unlike the live page's Share Online. This
-        path already offers ``get_editable_session`` below, and a document cannot
-        be both: the editable share re-renders from its own edit log, so a
-        practice vote written straight to the run underneath it would be
-        overwritten by the next edit. One writer per shared document.
+        Deliberately NOT correctable. This path already offers
+        ``get_editable_session`` below, and a document cannot be both: the
+        editable share re-renders from its own edit log, so a practice vote
+        written straight to the run underneath it would be overwritten by the
+        next edit. One writer per shared document.
+
+        Since the live page's Share Online became editable too, no surface builds
+        a practice-correctable document any more — signals are answered from the
+        TUI's "Practices" action. The share path stays because carrying a verdict
+        THROUGH the edit log (a third op beside OP_NOTE/OP_FIELD) is what would
+        let both exist on one document; see YEA-80.
         """
         report = _report(run.run_id)
         if report is None:
@@ -5546,15 +5746,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         report = _report(run.run_id)
         if report is None:
             return None
-        from yeaboi.artifacts.session import EditableSession
-
-        return EditableSession(
-            report,
-            kind="standup",
-            db_path=_ana_dbp,
-            run_id=run.run_id,
-            history=tuple(_history_for(report)),
-        )
+        return _standup_editable_session(report, run.run_id, _history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
@@ -6118,7 +6310,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
             if _votable_practices():
@@ -6328,33 +6520,37 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                         with _SStore(_ana_dbp) as _sstore:
                             share_history = _sstore.get_history(session_id, limit=30)
                             share_run_id = _sstore.get_latest_run_id(session_id)
-                    _run_output_share_flow(
+                    # The same correctable share the saved-runs hub offers: a
+                    # reader can fix a wrong line and add a note, attributed and
+                    # versioned. Never while anonymized — an edit made against a
+                    # mask cannot be matched back to a member.
+                    #
+                    # This share is deliberately NOT practice-votable. One writer
+                    # per document: the editable share re-renders from its own
+                    # edit log, so a verdict written straight to the run beneath
+                    # it would be overwritten by the next edit. Practice signals
+                    # are answered from the "Practices" action instead.
+                    editing = (
+                        _standup_editable_session(report, share_run_id or 0, share_history) if anon is None else None
+                    )
+                    recorded = _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        # session_id + run_id make the share correctable: a reader
-                        # who knows a practice signal is wrong can say so, and it
-                        # is written back here. Withheld while anonymized — the
-                        # names on that page are masks.
-                        document=standup_document(
-                            report,
-                            anon=anon,
-                            history=share_history,
-                            session_id="" if anon is not None else session_id,
-                            run_id=share_run_id or 0,
-                            db_path=_ana_dbp,
-                        ),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
+                        editable=editing.share if editing is not None else None,
+                        on_edit=editing.persist if editing is not None else None,
                     )
-                    # A reader may have answered a practice signal while the
-                    # share was up, which rewrites the stored run. Re-read it, or
-                    # the screen keeps offering "Practices" on a signal that is
-                    # no longer there and pressing it does nothing.
-                    if anon is None and share_run_id:
-                        data = _collect_standup_data()
+                    if recorded and editing is not None:
+                        # Appended, so the generated original is still there and
+                        # every trend chart picks the corrected row up on its own.
+                        editing.commit()
+                        noun = "correction" if recorded == 1 else "corrections"
+                        data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)
@@ -6433,6 +6629,25 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 except Exception as e:
                     logger.error("standup team selection failed: %s", e, exc_info=True)
                     msg = f"Team selection failed: {e}"
+                data = _collect_standup_data(message=msg)
+                _reset_to_overview()
+            elif act == "Sources":
+                # The only way back into the code-source picker after first setup.
+                # Without it, a standup that has never been told about GitHub can
+                # only be corrected by declining the saved setup mid-Generate.
+                try:
+                    logger.info("standup: Sources pressed (session=%s)", session_id)
+                    _saved, msg = _standup_code_configure(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        session_id,
+                    )
+                except Exception as e:
+                    logger.error("standup code-source selection failed: %s", e, exc_info=True)
+                    msg = f"Source selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
             elif act == "Identity":  # in-TUI themed input (stays inside Live)
@@ -10713,14 +10928,28 @@ def _play_duck_shades(console, live, selected, *, tip_offset, start_time, select
         time.sleep(_FRAME_TIME * 3)  # ~20fps — a readable lift/drop over ~0.5s
 
 
-def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> None:
+# How long the success screen counts down before relaunching. Long enough to read
+# "updated to vX" and hit esc, short enough that the restart still feels automatic.
+_UPDATE_RESTART_SECONDS = 3.0
+
+# Upper bound on the keystrokes drained after the upgrade finishes. Bounded so a
+# held-down key (auto-repeat keeps refilling the buffer) can't spin here forever;
+# 64 is far more than an impatient user types during a 30s upgrade.
+_UPDATE_DRAIN_LIMIT = 64
+
+
+def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> bool:
     """Run the in-app upgrade (the ctrl+U shortcut): show a spinner while the
-    detected ``uv/pipx upgrade`` command runs on a worker thread, then a success or
-    failure result the user dismisses with any key.
+    detected ``uv/pipx upgrade`` command runs on a worker thread, then the result.
 
     Only invoked when an update is available (the caller gates on it). The upgrade
-    runs in a subprocess; the freshly-installed code takes effect on the next
-    launch, so the success screen tells the user to restart.
+    runs in a subprocess, so the freshly-installed code only takes effect in a NEW
+    process: on success this counts down :data:`_UPDATE_RESTART_SECONDS` and then
+    returns True, meaning "unwind the TUI so cli.main can relaunch us". Esc (or q)
+    during the countdown declines, and a failure — or an install we can't work out
+    how to relaunch — falls back to the old dismiss-with-any-key result.
+
+    Returns True when the caller should unwind for a restart, False to stay put.
     """
 
     from yeaboi import update_check
@@ -10753,12 +10982,52 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
     ok = bool(result.get("ok"))
     detail = result.get("detail", "") or ""
     logger.info("update: upgrade %s", "succeeded" if ok else "failed")
+    # The spinner loop above never reads keys, so anything typed during the (often
+    # 5-30s) upgrade is still queued on the tty. Left there, the first read below
+    # would return a stale keystroke and fire the restart instantly — the user would
+    # never see which version landed, nor get the esc window this screen is for.
+    if supports_timeout:
+        for _ in range(_UPDATE_DRAIN_LIMIT):
+            if not read_key(timeout=0):
+                break
+    # Only offer the restart when we can actually perform one — an install whose
+    # console script we can't resolve gets the honest "restart it yourself" screen.
+    can_restart = ok and update_check.resolve_relaunch_command() is not None
+    deadline = time.monotonic() + _UPDATE_RESTART_SECONDS
     while True:
         w, h = console.size
-        live.update(_build_update_screen(w, h, latest=latest, command=command, done=True, ok=ok, detail=detail))
+        # Clamp to 1: the loop exits the moment the deadline passes, so a rendered
+        # "restarting in 0…" would only ever be a stray final frame.
+        remaining = max(1, math.ceil(deadline - time.monotonic())) if can_restart else None
+        live.update(
+            _build_update_screen(
+                w,
+                h,
+                latest=latest,
+                command=command,
+                done=True,
+                ok=ok,
+                detail=detail,
+                restart_in=remaining,
+                can_restart=can_restart,
+            )
+        )
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if k:
-            return
+        if not can_restart:
+            if k:
+                return False
+            continue
+        if k in ("esc", "q"):
+            logger.info("update: restart declined, staying on the running version")
+            return False
+        # Mouse traffic isn't an answer to this screen — a stray wheel nudge must
+        # not cut the window the user has to read the version and hit esc.
+        if k in ("scroll_up", "scroll_down") or (isinstance(k, str) and k.startswith("click:")):
+            k = ""
+        # Any other key restarts immediately — no need to sit through the countdown.
+        if k or time.monotonic() >= deadline:
+            update_check.request_restart(latest)
+            return True
 
 
 def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
@@ -11423,7 +11692,15 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
 
 def _sweep_menu_in(
-    console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None, companion_from: float | None = None
+    console: Console,
+    live,
+    selected: int,
+    n: int,
+    *,
+    sweep_skip: int | None = None,
+    companion_from: float | None = None,
+    cards: list[dict] | None = None,
+    mascot: str = "duck",
 ) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
@@ -11432,10 +11709,11 @@ def _sweep_menu_in(
     leaves that one title fully shown throughout (used after the return slide, when
     the mode you came from is already home and only the rest scroll in). A no-op
     wipe (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
-        _widths = mode_title_widths()
+        _widths = mode_title_widths(cards)
         # Front value at which the last-revealed cell of each title is covered;
         # the sweep runs until the largest of these.
         _front_max = 0.0
@@ -11465,6 +11743,8 @@ def _sweep_menu_in(
                     sweep_front=_front,
                     sweep_skip=sweep_skip,
                     companion_intro=_ci,
+                    cards=cards,
+                    mascot=mascot,
                 )
             )
             if _front >= _front_max:
@@ -11475,11 +11755,22 @@ def _sweep_menu_in(
     w, h = console.size
     _ci_final = 1.0 if companion_from is not None else 0.0
     live.update(
-        _build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=_ci_final)
+        _build_mode_screen(
+            selected,
+            width=w,
+            height=h,
+            shimmer_tick=0.0,
+            desc_reveal=0,
+            companion_intro=_ci_final,
+            cards=cards,
+            mascot=mascot,
+        )
     )
 
 
-def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
+def _slide_menu_in(
+    console: Console, live, selected: int, n: int, *, cards: list[dict] | None = None, mascot: str = "duck"
+) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
     rest scroll in around it exactly like the fresh-load intro.
 
@@ -11488,14 +11779,16 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
     so every OTHER title reveals top-left → bottom-right while the one you picked
     stays put. A no-op (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
+    _card_list = _MODE_CARDS if cards is None else cards
     w, h = console.size
     if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
-        chosen = _MODE_CARDS[selected]
+        chosen = _card_list[selected]
         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
         base_style = f"bold rgb({base_r},{base_g},{base_b})"
         start_offset = 1  # the top row the select→page lift left the title on
-        target_offset = selected_title_offset(selected, width=w, height=h)
+        target_offset = selected_title_offset(selected, width=w, height=h, cards=cards)
         # Phase 1: the selected title slides home, on its own.
         slide_frames = 14
         for frame in range(slide_frames + 1):
@@ -11508,7 +11801,83 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
     # the selected title (already home) is held fully shown. The companion slides
     # back in during the wipe (from its sub-page corner) so it never clears.
-    _sweep_menu_in(console, live, selected, n, sweep_skip=selected, companion_from=_COMPANION_RETURN_START)
+    _sweep_menu_in(
+        console,
+        live,
+        selected,
+        n,
+        sweep_skip=selected,
+        companion_from=_COMPANION_RETURN_START,
+        cards=cards,
+        mascot=mascot,
+    )
+
+
+def _run_category_screen(
+    console: Console,
+    live,
+    read_key,
+    supports_timeout: bool,
+    *,
+    preselected: str = "humans",
+) -> str | None:
+    """Phase 0 — the Humans/Agents landing split. Returns a category key or
+    None to quit.
+
+    Always shown on a fresh load (the last-used category is *preselected*,
+    never auto-skipped — auto-skip would make the other family invisible).
+    Esc and q both quit here: there is nothing further back to go to.
+    """
+    from yeaboi.ui.mode_select.screens._screens_category import (
+        _CATEGORY_CARDS,
+        _build_category_screen,
+        category_at_pos,
+    )
+
+    selected = next((i for i, c in enumerate(_CATEGORY_CARDS) if c["key"] == preselected), 0)
+    start = time.monotonic()
+    logger.info("category screen shown (preselected: %s)", preselected)
+    while True:
+        w, h = console.size
+        if w < _MIN_WIDTH or h < _MIN_HEIGHT:
+            live.update(_build_too_small_screen(w, h))
+            k = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+            if k in ("q", "esc"):
+                return None
+            continue
+        elapsed = time.monotonic() - start
+        live.update(
+            _build_category_screen(
+                selected,
+                width=w,
+                height=h,
+                shimmer_tick=elapsed,
+                intro=min(1.0, elapsed / 0.4),
+            )
+        )
+        key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+        if key in ("left", "right", "up", "down", "tab"):
+            selected = 1 - selected
+        elif key == "enter":
+            chosen = _CATEGORY_CARDS[selected]["key"]
+            logger.info("category chosen: %s", chosen)
+            return chosen
+        elif key in ("q", "esc"):
+            logger.info("quit from category screen")
+            return None
+        elif isinstance(key, str) and key.startswith("click:"):
+            try:
+                cx, cy = (int(p) for p in key.split(":")[1:3])
+            except ValueError:
+                continue
+            hit = category_at_pos(w, h, row=cy, col=cx)
+            if hit is None:
+                continue
+            if hit == selected:
+                chosen = _CATEGORY_CARDS[selected]["key"]
+                logger.info("category click-chosen: %s", chosen)
+                return chosen
+            selected = hit
 
 
 def select_mode(
@@ -11527,6 +11896,17 @@ def select_mode(
     read_key = _read_key_fn or _read_key
     selected = 0
     n = len(_MODE_CARDS)
+
+    # The landing split (Phase 0). `category` picks which card list Phase 1
+    # shows; the last choice is persisted and *preselected* on the next launch
+    # (never auto-skipped). Esc from a menu returns here; q quits.
+    from yeaboi.config import get_last_category, set_last_category
+
+    category = get_last_category()
+    cards: list[dict] = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+    mascot = "duck" if category == "humans" else "robo"
+    _category_pending = True  # show the split on the first pass through the loop
+    _back_to_category = False
 
     # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
     # consent mode: denials still raise, but ALSO queue a ConsentRequest that
@@ -11599,17 +11979,38 @@ def select_mode(
             # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
             _returning = _skip_fade_in
             _skip_fade_in = False
+
+            # ── Phase 0: the Humans/Agents landing split ─────────────────────
+            # Shown on a fresh load and whenever Esc backs out of a menu; a
+            # return from a sub-page keeps its category and skips straight to
+            # the menu transition below.
+            if _category_pending:
+                _category_pending = False
+                _pick = _run_category_screen(console, live, read_key, _supports_timeout, preselected=category)
+                if _pick is None:
+                    return None
+                if _pick != category:
+                    set_last_category(_pick)
+                category = _pick
+                cards = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+                mascot = "duck" if category == "humans" else "robo"
+                n = len(cards)
+                selected = 0
+                # A category pick always sweeps its menu in fresh.
+                _returning = False
+                _reverse_animated = False
+
             if _reverse_animated:
                 # The reverse transition already revealed every item — don't re-run.
                 _reverse_animated = False
             elif _returning:
                 # Cold return from a sub-page: the mode you came from slides home,
                 # then the rest load in around it (the inverse of the select lift).
-                _slide_menu_in(console, live, selected, n)
+                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             else:
                 # Fresh load: one diagonal wipe reveals every title top-left →
                 # bottom-right (the inverse of the splash crumble).
-                _sweep_menu_in(console, live, selected, n)
+                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right,
             # starting once the wipe has landed. On a RETURN the duck already slid
@@ -11650,6 +12051,8 @@ def select_mode(
                                 desc_reveal=999,
                                 tip_offset=tip_offset,
                                 compose=_compose,
+                                cards=cards,
+                                mascot=mascot,
                             )
                             if update:
                                 live.update(_panel)
@@ -11682,11 +12085,18 @@ def select_mode(
                     else:
                         continue  # net-zero burst — nothing moved, skip the repaint
                 elif key == "enter":
-                    mode = _MODE_CARDS[selected]
+                    mode = cards[selected]
                     if mode["available"]:
                         break
                     continue
-                elif key in ("q", "esc"):
+                elif key == "esc":
+                    # Esc backs out to the landing split (the screen this menu
+                    # came from). Quitting stays on q, mirroring every sub-page's
+                    # esc-goes-back convention.
+                    logger.info("esc from %s menu — back to category screen", category)
+                    _back_to_category = True
+                    break
+                elif key == "q":
                     # Courtesy on quit: offer to stop a running local Ollama
                     # server (gated on provider/localhost/reachable — cloud
                     # exits stay instant). Never let this block quitting.
@@ -11714,14 +12124,27 @@ def select_mode(
                     tip_offset += 1 if key == "]" else -1
                 elif key == "g":
                     # Jump into the feature the current tip describes (if it maps
-                    # to a selectable home card). Reuses the enter/activate path.
+                    # to a selectable card). Reuses the enter/activate path. Tips
+                    # rotate on both menus, so a tip may point at the OTHER
+                    # category's card — then the jump switches category too.
                     from yeaboi.ui.shared._tips import resolve_index, tip_at
 
                     _tip = tip_at(resolve_index(time.monotonic() - start_time, tip_offset))
                     if _tip.mode_key is not None:
-                        _j = next((i for i, m in enumerate(_MODE_CARDS) if m["key"] == _tip.mode_key), None)
-                        if _j is not None and _MODE_CARDS[_j]["available"]:
+                        _j = next((i for i, m in enumerate(cards) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and cards[_j]["available"]:
                             logger.info("tip jump to mode: %s", _tip.mode_key)
+                            selected = _j
+                            break
+                        _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
+                        _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and _other[_j]["available"]:
+                            category = "agents" if _other is _AGENT_CARDS else "humans"
+                            logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
+                            set_last_category(category)
+                            cards = _other
+                            mascot = "duck" if category == "humans" else "robo"
+                            n = len(cards)
                             selected = _j
                             break
                 elif key == "c":
@@ -11733,7 +12156,7 @@ def select_mode(
                     # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
@@ -11746,7 +12169,7 @@ def select_mode(
                     if not welcome_shows_companion(_fw, _fh):
                         logger.info("feedback: terminal too small for the bubble, opening the form")
                         _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _slide_menu_in(console, live, selected, n)
+                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                         select_time = time.monotonic()
                         continue
                     logger.info("feedback bubble opened from mode select")
@@ -11772,7 +12195,7 @@ def select_mode(
                     # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
@@ -11780,7 +12203,7 @@ def select_mode(
                     # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -11789,7 +12212,14 @@ def select_mode(
                     from yeaboi.update_check import get_update_status
 
                     if get_update_status()["update_available"]:
-                        _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout):
+                            # Unwind the whole TUI: cli.main relaunches us onto the
+                            # new version once its finally has restored the terminal
+                            # (os.execv skips atexit, so it can't be done from here).
+                            # Deliberately not the q/esc quit path — this isn't a
+                            # quit, so a local Ollama server should stay up for the
+                            # process that's about to take over.
+                            return None
                         select_time = time.monotonic()
                 elif isinstance(key, str) and key.startswith("click:"):
                     # Click-to-select: a click on a mode's block highlights it
@@ -11801,8 +12231,9 @@ def select_mode(
                     except ValueError:
                         _cx = _cy = -1
                     _w, _h = console.size
-                    if duck_hit(_w, _h, row=_cy, col=_cx):
-                        # Click the duck → his shades lift to reveal a second pair.
+                    if mascot == "duck" and duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the duck → his shades lift to reveal a second
+                        # pair. Duck-only: the robo companion wears a visor.
                         logger.info("duck clicked — double-shades gag")
                         _play_duck_shades(
                             console,
@@ -11813,14 +12244,14 @@ def select_mode(
                             select_time=select_time,
                         )
                         continue
-                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx)
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards)
                     if _hit is not None:
                         if _hit == selected:
-                            if _MODE_CARDS[selected]["available"]:
-                                logger.info("mode click-activate: %s", _MODE_CARDS[selected]["key"])
+                            if cards[selected]["available"]:
+                                logger.info("mode click-activate: %s", cards[selected]["key"])
                                 break
                         else:
-                            logger.info("mode click-select: %s", _MODE_CARDS[_hit]["key"])
+                            logger.info("mode click-select: %s", cards[_hit]["key"])
                             selected = _hit
                             select_time = time.monotonic()
 
@@ -11840,11 +12271,21 @@ def select_mode(
                         tip_offset=tip_offset,
                         companion_intro=companion_intro,
                         compose=_compose,
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
 
+            # Esc backed out of the menu — return to the landing split rather
+            # than running the select transition below.
+            if _back_to_category:
+                _back_to_category = False
+                _category_pending = True
+                _restart_mode_select = True
+                continue
+
             # ── Phase 2: Transition ───────────────────────────────────────────
-            chosen = _MODE_CARDS[selected]
+            chosen = cards[selected]
             all_indices = list(range(n))
             others = [i for i in all_indices if i != selected]
             base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
@@ -11867,6 +12308,8 @@ def select_mode(
                         visible=all_indices,
                         fade_style=pulse_style,
                         fade_indices=[selected],
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -11887,6 +12330,8 @@ def select_mode(
                         fade_indices=others,
                         selected_style=base_style,
                         extras_reveal=1.0 - (_i / _nfade),
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -11921,6 +12366,24 @@ def select_mode(
             from yeaboi.ui.shared._music_bar import start_duck_entrance
 
             start_duck_entrance(replay=True)
+
+            # ── Route: the Agents family → one prefix dispatch, not three more
+            # chain branches. route_agent_mode wraps each mode in mode_log() and
+            # its beta gate; returning lands back on the Agents menu.
+            if chosen["key"].startswith("agent-"):
+                from yeaboi.ui.mode_select._agents import route_agent_mode
+
+                route_agent_mode(
+                    chosen["key"],
+                    console=console,
+                    live=live,
+                    read_key=read_key,
+                    frame_time=_FRAME_TIME,
+                    supports_timeout=_supports_timeout,
+                )
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
 
             # ── Route: Team Analysis mode → dedicated analysis flow ──────
             if chosen["key"] == "team-analysis":
@@ -12982,7 +13445,23 @@ def select_mode(
                     included — its move-or-leave decision happens on save (see
                     _settings_save_data_dir), not on a screen of its own.
                     """
-                    nonlocal _s_edit
+                    nonlocal _s_edit, _settings_data
+                    if env == "VOICE_DEVICE":
+                        # A device list is a choice, not free text — you cannot type a
+                        # name you have not seen. Returns before set_text_entry(True),
+                        # so the picker keeps the app-wide bare-key bindings.
+                        _picked = _pick_voice_device(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _picked is None:
+                            return
+                        from yeaboi.config import apply_config_value
+
+                        apply_config_value(env, _picked)
+                        _settings_data = _collect_settings_data()
+                        _msg = f"Microphone set to {_picked}" if _picked else "Microphone: using the system default"
+                        _settings_data["_message"] = _msg
+                        _settings_voice().say(_msg)
+                        logger.info("Settings: VOICE_DEVICE set to %r", _picked)
+                        return
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.
                     _start = "" if masked else (_settings_data.get(env, "") or "")
@@ -14528,7 +15007,7 @@ def select_mode(
                             import_value = ""
                             import_error = ""
                         elif key.startswith("paste:") if isinstance(key, str) else False:
-                            import_value += key[6:]
+                            import_value += paste_payload(key)
                             import_error = ""
                         elif key == "ctrl+v":
                             # A file-path field never reaches an LLM — reject image paste.

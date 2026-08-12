@@ -71,7 +71,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "planning",
-        "\U0001f5fa️ Tip: Planning is one continuous chat — /form gives a classic form, /finish builds it in one go",
+        "\U0001f5fa️ Tip: Planning starts as a chat — /form gives a classic form, /finish defaults the rest",
         mode_key="project-planning",
         is_new=True,
     ),
@@ -146,6 +146,26 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "✏️ Tip: teammates can correct a shared report in the browser — every change is attributed",
         is_new=True,
     ),
+    # The Agents family — cards live on the Agents menu (_AGENT_CARDS); the `g`
+    # jump switches category when the tip fires from the Humans menu.
+    FeatureTip(
+        "agent-usage",
+        "\U0001f916 Tip: Agents → Usage shows what your AI agents cost — per model, project and day",
+        mode_key="agent-usage",
+        is_beta=True,
+    ),
+    FeatureTip(
+        "agent-standup",
+        "\U0001f916 Tip: Agents → Standup digests what your AI agents did yesterday — sessions, commits, PRs",
+        mode_key="agent-standup",
+        is_beta=True,
+    ),
+    FeatureTip(
+        "agent-security",
+        "\U0001f916 Tip: Agents → Security audits agent permissions, MCP servers and secrets exposure",
+        mode_key="agent-security",
+        is_beta=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic
@@ -164,19 +184,28 @@ def get_tips() -> tuple[FeatureTip, ...]:
     The first entry is the voice tip and the last is the music tip; both adapt to
     whether their optional dependency is installed (dictation extra / the ffplay
     binary), showing an install hint otherwise. Between them come the feature tips
-    (one per capability) and the generic meta tips. Memoised because availability
-    is fixed for the life of the process.
+    (one per capability) and the generic meta tips. Memoised because the tips are
+    rebuilt on every welcome-screen frame; the memo is dropped by
+    :func:`yeaboi.voice_install.refresh_imports` when an in-app install changes
+    the answer part-way through a run.
     """
     from yeaboi.music import is_music_available
-    from yeaboi.voice import is_voice_available, voice_install_command
+    from yeaboi.voice import unsupported_blocker, voice_install_command, voice_state
 
-    available, _reason = is_voice_available()
-    voice_tip = FeatureTip(
-        "voice",
-        "\U0001f3a4 Tip: double-tap Space in any text field to dictate"
-        if available
-        else f"\U0001f3a4 Tip: enable dictation with — {voice_install_command()}",
-    )
+    state = voice_state()
+    if state == "unsupported":
+        # The actual blocker, not a fixed platform sentence: on Linux this is
+        # usually a missing libportaudio2 and carries the command that fixes it,
+        # which is worth more than restating the wheel matrix.
+        voice_text = f"\U0001f3a4 Tip: dictation can't run here — {unsupported_blocker()}"
+    else:
+        voice_text = {
+            "ready": "\U0001f3a4 Tip: double-tap Space in any text field to dictate",
+            # The gesture is the install: naming a shell command here would send
+            # the user to a second terminal for something one keystroke does.
+            "installable": "\U0001f3a4 Tip: double-tap Space in any text field — one keystroke sets dictation up",
+        }.get(state, f"\U0001f3a4 Tip: enable dictation with — {voice_install_command()}")
+    voice_tip = FeatureTip("voice", voice_text)
     music_available, _music_reason = is_music_available()
     music_tip = FeatureTip(
         "music",

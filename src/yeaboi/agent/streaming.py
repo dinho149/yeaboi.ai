@@ -21,6 +21,10 @@ callback:
   text is template-built by the node, not LLM prose, so there is nothing to
   stream. We run a plain ``graph.invoke()`` and then replay the finished text
   through the same on_token callback at a fixed characters-per-second pace.
+  Replies longer than ``typewriter_max_chars`` skip the replay entirely and
+  emit nothing: a wall of text (the intake summary, a pipeline review) would
+  cramp the chat for many seconds only to be replaced by its artifact card,
+  so the caller's loading state covers the invoke and the card lands at once.
 
 Pipeline JSON nodes (analyzer/features/stories/tasks/sprints) never take the
 real-streaming path: forcing provider streaming onto JSON-mode calls is
@@ -56,6 +60,12 @@ predict_next_node = _predict_next_node
 _TYPEWRITER_CHUNK = 8
 """Characters per on_token call on the typewriter path — small enough to look
 smooth at 30fps, large enough to keep callback overhead negligible."""
+
+_TYPEWRITER_MAX_CHARS = 1200
+"""Longest reply the typewriter will replay. Intake questions run a few
+hundred characters and keep the conversational feel; the intake summary and
+pipeline reviews (2-4k) blow past this and land as their card instead of
+scrolling the chat for ten seconds first."""
 
 
 class ChatStreamCancelledError(Exception):
@@ -104,6 +114,7 @@ def stream_chat_turn(
     *,
     cancel: threading.Event | None = None,
     typewriter_cps: int = 400,
+    typewriter_max_chars: int = _TYPEWRITER_MAX_CHARS,
 ) -> dict:
     """Run one chat turn, emitting display text through on_token as it forms.
 
@@ -120,6 +131,10 @@ def stream_chat_turn(
             answer is already recorded, discarding it would lose the turn.
         typewriter_cps: Pace for replaying deterministic text. 0 disables
             pacing (tests).
+        typewriter_max_chars: Replies longer than this skip the typewriter —
+            no tokens are emitted and the finished state returns immediately,
+            so big documents land as their card instead of scrolling the
+            chat. 0 disables the cap.
 
     Returns:
         The final graph state for this turn.
@@ -132,7 +147,7 @@ def stream_chat_turn(
     node = predict_next_node(invoke_state)
     if node == "agent":
         return _stream_agent_turn(graph, invoke_state, on_token, cancel)
-    return _typewriter_turn(graph, invoke_state, on_token, cancel, typewriter_cps)
+    return _typewriter_turn(graph, invoke_state, on_token, cancel, typewriter_cps, typewriter_max_chars)
 
 
 def _stream_agent_turn(
@@ -192,10 +207,19 @@ def _typewriter_turn(
     on_token: Callable[[str], None],
     cancel: threading.Event | None,
     typewriter_cps: int,
+    typewriter_max_chars: int,
 ) -> dict:
     """Deterministic-text path: invoke normally, then replay the reply paced."""
     result = graph.invoke(invoke_state)
     text = _last_ai_text(result)
+
+    if typewriter_max_chars and len(text) > typewriter_max_chars:
+        # A document, not a chat line. Emitting it (even in one piece) would
+        # paint a giant stream tail for a frame and scroll the transcript;
+        # the caller appends the reply from the returned state either way,
+        # usually as an artifact card.
+        logger.info("Typewriter skipped: reply %d chars > cap %d", len(text), typewriter_max_chars)
+        return result
 
     for start in range(0, len(text), _TYPEWRITER_CHUNK):
         piece = text[start : start + _TYPEWRITER_CHUNK]

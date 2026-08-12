@@ -67,20 +67,35 @@ def test_standup_input_screen_image_hint_gated(monkeypatch):
     assert "Ctrl+V" not in _rendered(show_image_hint=False)
 
 
-def test_voice_hint_present_when_available_and_enabled(monkeypatch):
+def test_voice_hint_is_empty_when_voice_is_installed(monkeypatch):
+    """The box-title chip carries the gesture; this line only carries installs."""
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
-    hint = _voice_hint()
-    assert "double-tap Space" in hint
+    assert _voice_hint() == ""
 
 
-def test_voice_hint_shows_install_when_unavailable(monkeypatch):
+def test_voice_hint_is_silent_when_installable(monkeypatch):
+    """The input-box chip carries the gesture, and the gesture installs — there
+    is no command left for the user to copy out of this line."""
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
-    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (False, "x"))
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "installable")
+    assert _voice_hint() == ""
+
+
+def test_voice_hint_shows_the_command_after_a_permanent_decline(monkeypatch):
+    monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "declined")
     hint = _voice_hint()
-    # Hint shows the install-method-aware command (not a hardcoded `uv sync`).
-    assert "dictate:" in hint
+    assert "dictate" in hint
     assert voice_install_command() in hint
+
+
+def test_voice_hint_names_the_platform_when_dictation_cannot_run(monkeypatch):
+    monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "unsupported")
+    hint = _voice_hint()
+    assert "64-bit" in hint
+    assert voice_install_command() not in hint
 
 
 def test_mode_screen_renders_with_tips_on(monkeypatch):

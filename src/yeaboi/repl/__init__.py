@@ -480,7 +480,7 @@ def run_repl(
         if export_only:
             qs = graph_state.get("questionnaire")
             # Auto-accept capacity override warnings — pick "1" (recommended sprints).
-            # Print the warning so it's visible in stderr (e.g. OpenClaw's exec logs).
+            # Print the warning so it's visible in stderr (e.g. headless exec logs).
             _cap_sel = graph_state.get("capacity_override_target", 0)
             if _cap_sel < -1:
                 _recommended = abs(_cap_sel)
@@ -560,21 +560,15 @@ def run_repl(
         # See docs: "Guardrails" — three lines of defence (Input layer)
         # Skip validation for short commands (exit, help, slash commands)
         # which can't trigger guardrails anyway.
-        # Also skip when the user is answering a follow-up probe with
-        # dynamic choices — inputs like "all" or "1,3" are valid selections
-        # but the off-topic classifier may reject them.
+        # The topical layer runs only while no question is pending — i.e. on
+        # the opening description. Once the questionnaire is live every input
+        # is an answer, and check_off_topic sees it without the question that
+        # prompted it, so it rejects ordinary replies ("any", "one", "all",
+        # "1,3"). The regex layers still run on every input.
         _qs_for_guard = graph_state.get("questionnaire")
-        _in_followup_probe = (
-            isinstance(_qs_for_guard, QuestionnaireState)
-            and not _qs_for_guard.completed
-            and _qs_for_guard.current_question in _qs_for_guard.probed_questions
-        )
-        if (
-            not stripped.startswith("/")
-            and stripped.lower() not in EXIT_COMMANDS | HELP_COMMANDS
-            and not _in_followup_probe
-        ):
-            _guardrail_msg = validate_input(stripped)
+        _answering = isinstance(_qs_for_guard, QuestionnaireState) and not _qs_for_guard.completed
+        if not stripped.startswith("/") and stripped.lower() not in EXIT_COMMANDS | HELP_COMMANDS:
+            _guardrail_msg = validate_input(stripped, classify_topic=not _answering)
             if _guardrail_msg:
                 console.print(f"[warning]{_guardrail_msg}[/warning]")
                 continue

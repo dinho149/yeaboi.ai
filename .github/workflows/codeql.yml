@@ -1,11 +1,14 @@
 name: CodeQL
 
 # Deep static analysis (taint/dataflow) on top of the CI security job's
-# ruff-bandit + pip-audit + gitleaks. Two languages: `python` scans src/ and
-# tests/; `actions` scans the workflow files themselves for injection and
-# misconfiguration. Non-blocking by design — this check is NOT part of the
-# main-branch ruleset; findings land in the Security tab and as PR annotations,
-# and get triaged before we consider making it required.
+# ruff-bandit + pip-audit + gitleaks. Two languages: `python` scans src/ (see
+# .github/codeql/config.yml for why not tests/); `actions` scans the workflow
+# files themselves for injection and misconfiguration. Non-blocking by design —
+# this check is NOT part of the main-branch ruleset; findings land in the
+# Security tab and as PR annotations.
+#
+# Triage is no longer a manual chore: `codeql-triage.yml` surveys the open
+# alerts weekly and batch-fixes the rules on `.github/codeql/triage-policy.yml`.
 #
 # NOTE: CodeQL is free because this repo is public. A private fork would need
 # GitHub Code Security licensing for this workflow to run.
@@ -65,13 +68,14 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.3
+        uses: github/codeql-action/init@v4.37.6
         with:
           languages: ${{ matrix.language }}
           build-mode: none
           queries: security-extended
+          config-file: ./.github/codeql/config.yml
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v4.37.3
+        uses: github/codeql-action/analyze@v4.37.6
         with:
           category: "/language:${{ matrix.language }}"

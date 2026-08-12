@@ -1,0 +1,16 @@
+# actionlint configuration.
+#
+# Ignores are per-file and per-message on purpose. A blanket ignore would have
+# hidden the defect this linter was added for: `pr-feedback.yml` carried an
+# unparseable trigger from its first commit, GitHub rejected the whole file, and
+# the merge gate everything else described as mandatory never ran once in four
+# days. Nothing here may grow into a way to not look.
+paths:
+  .github/workflows/smoke.yml:
+    ignore:
+      # `if: false` is how this job stays disabled. actionlint is right that a
+      # constant condition is usually a mistake; here removing it would silently
+      # re-enable a job whose credentials are not configured, which is the
+      # opposite of what the line is for. The comment beside it, and the removed
+      # `schedule:` above it, say the same thing.
+      - 'constant expression "false" in condition'

@@ -1,6 +1,7 @@
 # poker sweep
 
 **Trigger** — cron `30 7 4,18 * *` (4th and 18th, 07:30 UTC)
+**Summary** — planning-poker point write-back, board concurrency, and the live surface
 **Workstream** — [`workstreams/poker.md`](../../workstreams/poker.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = poker`.

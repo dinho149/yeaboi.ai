@@ -87,6 +87,7 @@ STATES_DIR = DATA_DIR / "states"
 PROJECTS_FILE = DATA_DIR / "projects.json"
 REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Reporting palettes
 REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
+VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -107,6 +108,7 @@ PERFORMANCE_EXPORTS_DIR = EXPORTS_DIR / "performance"
 REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
 ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable copies of any mode's output
+AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / standup / security reports
 
 # ---------------------------------------------------------------------------
 # Logs
@@ -123,6 +125,7 @@ ROADMAP_LOGS_DIR = LOGS_DIR / "roadmap"
 ANALYSIS_LOGS_DIR = LOGS_DIR / "analysis"
 PLANNING_LOGS_DIR = LOGS_DIR / "planning"
 MCP_LOGS_DIR = LOGS_DIR / "mcp"
+AGENTWATCH_LOGS_DIR = LOGS_DIR / "agentwatch"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -223,6 +226,17 @@ def get_reporting_prefs_path() -> Path:
     return REPORTING_PREFS_FILE
 
 
+def get_voice_install_path() -> Path:
+    """Return the path of the sticky voice-install verdict file (may not exist yet).
+
+    Only *permanent* failures are recorded here (no wheel for this platform, a
+    PEP 668 system Python) so the in-app install offer stops inviting a doomed
+    install. Retryable failures — offline, disk full — are never persisted.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return VOICE_INSTALL_FILE
+
+
 def _safe_key(key: str, fallback: str) -> str:
     """Normalize a project/engineer key into a single safe directory name.
 
@@ -304,6 +318,17 @@ def get_anonymize_export_dir(project_key: str) -> Path:
     separate from the un-masked exports so the two can't be confused.
     """
     d = ANONYMIZE_EXPORTS_DIR / _safe_key(project_key, "output")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_agentwatch_export_dir(kind_key: str) -> Path:
+    """Return the agentwatch export directory for a report kind, creating it if needed.
+
+    ``kind_key`` is the report kind ("usage", "standup", "security"), so the
+    three agent modes' exports stay separated the way per-project modes are.
+    """
+    d = AGENTWATCH_EXPORTS_DIR / _safe_key(kind_key, "report")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -414,6 +439,12 @@ def get_mcp_log_dir() -> Path:
     """Return the MCP server logs directory, creating it if needed."""
     MCP_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return MCP_LOGS_DIR
+
+
+def get_agentwatch_log_dir() -> Path:
+    """Return the agentwatch (Agents family) logs directory, creating it if needed."""
+    AGENTWATCH_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return AGENTWATCH_LOGS_DIR
 
 
 def get_bin_dir() -> Path:

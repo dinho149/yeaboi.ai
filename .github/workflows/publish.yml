@@ -1,51 +1,283 @@
 name: Publish to PyPI
 
-# Auto-release on version bump. On every push to main, publish to PyPI *iff* the
-# version in pyproject.toml has no matching git tag yet. So releasing is just:
-# bump `version` in pyproject.toml and merge to main — CI publishes, tags, and
-# cuts a GitHub Release. Normal merges (version unchanged) are a cheap no-op.
+# The OFFICIAL release, and the only thing in this repo that can produce one.
+# Merging to main no longer publishes: publish-beta.yml ships X.Y.ZrcN on every
+# release-worthy merge, and those accumulate until a human promotes the batch.
+# Promotion is ✅ in Slack -> cron/slack-relay.md -> `gh issue edit <n> --add-label
+# release:promote` on the weekly promotion issue -> this workflow. Applying a
+# label needs repo write, which is the load-bearing half of the authorisation.
 #
 # The workflow filename MUST stay "publish.yml" to keep PyPI's OIDC trusted-
 # publisher configuration valid.
+#
+# IT DOES NOT BUILD `main`. It builds the exact commit of the pre-release that was
+# signed off on, resolved from the promotion issue and checked out in `check`. The
+# tested rc and the published final are then the same tree, byte for byte. Cutting
+# from HEAD instead was drift-checked only at *version* granularity, so the common
+# case — main gained commits that did not move the version line — shipped untested
+# code and said nothing at all. Whatever is left behind is reported instead, and
+# rides the next release.
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: {} # allow a manual re-run from the Actions tab
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "the X.Y.Z to promote — must equal pyproject.toml on main"
+        required: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: publish-final
+  cancel-in-progress: false
+
 jobs:
   check:
-    name: Check for version bump
+    name: Check the promotion is real
+    # Two labels, not one. `release:promote` is what the relay applies on a ✅;
+    # the issue must ALSO already carry `release:promotion`, which only
+    # cron/release-promote-ask.md applies, as the maintainer, at creation time.
+    # Anyone can file an issue on a public repo, and the relay matches a thread
+    # reply that quotes an issue title — so a crafted title could at worst route
+    # an allowlisted ✅ to the wrong issue. It cannot put `release:promotion`
+    # there.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'release:promote' &&
+       contains(github.event.issue.labels.*.name, 'release:promotion'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # a second ✅ is closed out here rather than left open and red
     outputs:
-      should_release: ${{ steps.v.outputs.should_release }}
       version: ${{ steps.v.outputs.version }}
+      sha: ${{ steps.pin.outputs.sha }}
+      tag: ${{ steps.pin.outputs.tag }}
+      go: ${{ steps.v.outputs.go }}
+      left_behind: ${{ steps.v.outputs.left_behind }}
+      left_count: ${{ steps.v.outputs.left_count }}
+      asked: ${{ steps.v.outputs.asked }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # need full history + tags to check for an existing release
-      - id: v
+          fetch-depth: 0 # tags, and the manifest's commit range
+      - id: pin
+        # Resolve WHICH TREE to release, and check it out, before anything reads
+        # pyproject.toml or builds the notes. Three sources, most-trusted first:
+        #
+        #   1. `<!-- tested: beta/X.Y.ZrcN -->` in a comment — the pre-release a
+        #      human actually installed and ran. Since the sign-off split into two
+        #      sessions it means "EVERY required track is signed", and the last
+        #      `make beta-sign-<track>` is what writes it. The per-track markers
+        #      (`<!-- tested: … track=integration -->`) are deliberately shaped so
+        #      the grep below cannot match them — that inertness is what stops a
+        #      half-signed batch being pinned, and is why this file needs no edit.
+        #   2. `<!-- beta: beta/X.Y.ZrcN -->` in the body — the one the ask was
+        #      about, for a ✅ straight from Slack with no local sign-off.
+        #   3. main's HEAD — for a batch whose betas predate the tag, or a tag
+        #      that never got pushed.
+        #
+        # Never a hard failure. A missing marker means less pinning, not no
+        # release: refusing here would strand a promotion the human already
+        # approved, with the only remedy being a workflow_dispatch nobody knows
+        # to run.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          N: ${{ github.event.issue.number }}
         run: |
+          set -euo pipefail
+          marker() { grep -oE "<!-- $1: beta/[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+ -->" \
+            | grep -oE 'beta/[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+' | tail -1 || true; }
+
+          TAG=""
+          if [ "${{ github.event_name }}" = "issues" ]; then
+            # Comments first. `--jq` over the whole list, newest last, so the most
+            # recent sign-off wins if somebody re-tested against a newer rc.
+            # `|| true` on the assignment, not just inside `marker`: that helper's
+            # own `|| true` covers its greps, and a rate-limited or transient `gh`
+            # would still abort the step under `set -e` — turning "no marker" into
+            # "no release", which is the opposite of what this block promises.
+            #
+            # **Maintainers only, and that filter is the whole authorization.**
+            # This marker names the tree the job below checks out, tests, builds
+            # and tags as the official release, and the ask is an open issue on a
+            # public repo. The regex validates the marker's shape and the lookup
+            # validates that the tag exists; neither asks who wrote it. Without
+            # the `select`, a stranger commenting a real older `beta/…` tag lands
+            # after the maintainer's genuine sign-off, `tail -1` prefers it, and
+            # the release is cut from a tree nobody signed for — with only the
+            # `::notice::promoting the tree behind …` line to show for it.
+            TAG=$(gh issue view "$N" --json comments \
+              --jq '.comments[]
+                    | select(.authorAssociation == "OWNER"
+                          or .authorAssociation == "MEMBER"
+                          or .authorAssociation == "COLLABORATOR")
+                    | .body' 2>/dev/null | marker tested || true)
+          fi
+          if [ -z "$TAG" ]; then
+            TAG=$(printf '%s' "${ISSUE_BODY:-}" | marker beta)
+          fi
+
+          SHA=""
+          if [ -n "$TAG" ]; then
+            # Verified against refs that exist, never interpolated blindly: the
+            # marker comes out of an issue body on a public repo.
+            if SHA=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}"); then
+              echo "::notice::promoting the tree behind $TAG ($SHA)"
+            else
+              echo "::warning::$TAG is named on the issue but no such tag exists — falling back to main."
+              TAG=""
+              SHA=""
+            fi
+          fi
+          if [ -z "$SHA" ]; then
+            SHA=$(git rev-parse HEAD)
+            echo "::warning::no pre-release tag to pin to — promoting main at ${SHA:0:8} untested."
+          fi
+          git checkout --detach "$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - id: notes
+        # Built here, in `check`, and carried to the release job as an artifact.
+        # It used to run after the PyPI upload, under `bash -e`, and this script
+        # exits non-zero on a git failure — which would have left a final
+        # published with no tag, no GitHub Release, and therefore no
+        # release-published-announce.md, the only announcement path there is.
+        run: |
+          set -euo pipefail
+          # --release-notes, not --markdown: the ask's "Promote X?" header and its
+          # ✅/❌ footer must not become the public release page.
+          python3 scripts/release_channel.py --manifest --release-notes > notes.md
+          cat notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          retention-days: 1
+      - id: v
+        env:
+          # The version the human actually saw, carried in the issue body as
+          # `<!-- promote: X.Y.Z -->` by the ask routine. Data, never a command:
+          # it is compared against pyproject.toml and reported, never built from.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
           VERSION=$(grep -m1 -E '^version = ' pyproject.toml | sed -E 's/^version = "([^"]+)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$VERSION is already released — nothing to publish."
-          else
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::New version v$VERSION detected — building and publishing."
+
+          case "$VERSION" in
+            *[!0-9.]*)
+              echo "::error::pyproject.toml holds $VERSION, which is not an X.Y.Z — an rc string must never be committed"
+              exit 1
+              ;;
+          esac
+
+          if [ -n "${DISPATCH_VERSION:-}" ] && [ "$DISPATCH_VERSION" != "$VERSION" ]; then
+            echo "::error::asked to promote $DISPATCH_VERSION but main is at $VERSION"
+            exit 1
           fi
+
+          # Delegate the ordering question to the script that owns it. A bare
+          # "does refs/tags/v$VERSION exist" check passes the dual-PR race — main
+          # at 1.9.0 with v2.0.0 already out has no v1.9.0 tag — and PyPI has no
+          # delete, so a final that sorts backwards is unrecoverable.
+          #
+          # One of its two refusals is not an error: "already released" is what a
+          # SECOND ✅ produces, and there is nothing wrong with the repository when
+          # it happens. Two promote replies can sit in the relay's read window at
+          # once, so this is an ordinary race, not a fault — failing red left the
+          # duplicate ask open and looked like a broken release. Close it out and
+          # stop.
+          set +e
+          REFUSAL=$(python3 scripts/release_channel.py --check-promotable 2>&1 >/dev/null)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            case "$REFUSAL" in
+              *"is already released"*)
+                echo "go=false" >> "$GITHUB_OUTPUT"
+                echo "::notice::$VERSION is already released — this ✅ is a duplicate, nothing to do."
+                exit 0
+                ;;
+            esac
+            echo "::error::refusing to promote $VERSION — $REFUSAL"
+            exit 1
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+          # `sed … | head -1` under `set -o pipefail`: head closes the pipe on the
+          # second match and sed can exit 141, failing the step. `q` on first hit
+          # keeps it a single process. Read from the end so a commit subject
+          # interpolated into the manifest above cannot spoof the marker.
+          # grep -o | tail -1: tail drains its input, so nothing is left holding a
+          # closed pipe under `set -o pipefail`. `sed …{q;}` and `head -1` both
+          # quit early, which is exactly the shape that can strand the writer.
+          ASKED=$(printf '%s' "${ISSUE_BODY:-}" \
+            | grep -oE '<!-- promote: [0-9]+\.[0-9]+\.[0-9]+ -->' \
+            | tail -1 \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+          echo "asked=$ASKED" >> "$GITHUB_OUTPUT"
+
+          # What main has that this release does not. Measured in COMMITS, against
+          # the pinned tree — the old check compared the ask's version to main's
+          # and so was silent in exactly the case that matters, where main grew by
+          # commits that never moved the version line. Disclosed, never refused: a
+          # pinned promotion leaving work behind is the design, and the honest
+          # thing is to name it. `origin/main` explicitly, because the checkout is
+          # detached at the pinned commit by now.
+          # `-n 50` rather than `| head -50`: head closes the pipe once it has its
+          # fifty and git log takes SIGPIPE → 141 → pipefail → the promotion dies.
+          # That is the same trap the comment above describes, and it bites in the
+          # one case this line exists for — more than fifty commits left behind.
+          LEFT=$(git log --oneline --no-merges -n 50 "${{ steps.pin.outputs.sha }}..origin/main")
+          # Counted separately, not from `$LEFT`: the list is capped at 50, so
+          # deriving the number from it reports exactly "50 commits" in the one
+          # case the cap exists for — understating a gap at the moment it is
+          # largest. `rev-list --count` needs no pipe and no cap.
+          COUNT=$(git rev-list --count --no-merges "${{ steps.pin.outputs.sha }}..origin/main")
+          if [ -n "$LEFT" ]; then
+            echo "::warning::$COUNT commits on main are not in this release; they ride the next one."
+            printf '%s\n' "$LEFT"
+          fi
+          # Multi-line through the environment file, delimiter-quoted: a commit
+          # subject can contain anything, including a line that looks like a key.
+          {
+            echo "left_behind<<GHEOF"
+            printf '%s\n' "$LEFT"
+            echo "GHEOF"
+            # The true number, beside the capped list — the close-out comment
+            # quotes it rather than counting the fifty lines it was given.
+            echo "left_count=${COUNT:-0}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Close out a duplicate approval
+        if: steps.v.outputs.go == 'false' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$N" --body \
+            "already released as **v${VERSION}** — https://pypi.org/project/yeaboi/${VERSION}/ · nothing to do."
+          gh issue close "$N"
 
   test:
     name: Lint & Test
     needs: check
-    if: needs.check.outputs.should_release == 'true'
+    if: needs.check.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+        with:
+          # The tested tree, not main. Testing one commit and shipping another is
+          # the whole failure this pinning exists to stop.
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.12
       - run: uv sync --extra dev
       - run: make lint
@@ -54,33 +286,87 @@ jobs:
   publish:
     name: Build & Publish to PyPI
     needs: [check, test]
-    if: needs.check.outputs.should_release == 'true'
+    if: needs.check.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write # PyPI trusted publishing (OIDC)
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.12
+      # No stamping step: the final IS the version in pyproject.toml. That is the
+      # whole reason the rc suffix never gets committed.
       - run: uv build
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           skip-existing: true # idempotent: re-runs won't fail if already published
 
   release:
     name: Tag & GitHub Release
     needs: [check, publish]
-    if: needs.check.outputs.should_release == 'true'
+    if: needs.check.outputs.go == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the tag + GitHub Release
+      issues: write # close the promotion loop
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `v<version>` is tagged HERE, so it must land on the tree that was
+          # built and uploaded. Tagging main instead would leave the released
+          # wheel and the tag describing different code, and every later
+          # `git log <tag>..` — the next batch, the announcement — would be wrong.
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: /tmp/notes
+      - name: Fall back to a minimal body rather than skipping the release
+        run: |
+          # Publishing without tagging is the one unrecoverable ordering here:
+          # PyPI has the final, and nothing announces it. A thin body is fine.
+          if [ ! -s /tmp/notes/notes.md ]; then
+            echo "::warning::batch manifest missing — releasing with a minimal body."
+            echo "Release v${{ needs.check.outputs.version }}." > /tmp/notes/notes.md
+          fi
       - name: Create tag and GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: v${{ needs.check.outputs.version }}
           name: v${{ needs.check.outputs.version }}
-          generate_release_notes: true
+          body_path: /tmp/notes/notes.md
+          generate_release_notes: true # appended under the batch manifest
+      - name: Close the promotion issue
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number }}
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+          SHA: ${{ needs.check.outputs.sha }}
+          LEFT: ${{ needs.check.outputs.left_behind }}
+        run: |
+          set -euo pipefail
+          MSG="promoted **v${VERSION}** — https://pypi.org/project/yeaboi/${VERSION}/"
+          # `$'\n\n'` rather than a literal blank line: a continuation at column 1
+          # inside a `run: |` block ends the YAML scalar and becomes a top-level
+          # key. That is what `_note` was — the whole file stopped parsing, GitHub
+          # refused it, and every run became a zero-job failure.
+          if [ -n "${TAG:-}" ]; then
+            MSG="${MSG}"$'\n\n'"_cut from \`${TAG}\` (\`${SHA:0:8}\`) — the pre-release that was signed off on._"
+          else
+            MSG="${MSG}"$'\n\n'"_cut from \`main\` at \`${SHA:0:8}\` — no signed-off pre-release was named on this ask._"
+          fi
+          if [ -n "${LEFT:-}" ]; then
+            # `left_count` for the same reason the warning uses it: `$LEFT` is
+            # capped at 50 and would report 50 however many there really are.
+            COUNT="${{ needs.check.outputs.left_count }}"
+            MSG="${MSG}"$'\n\n'"_${COUNT} commits on \`main\` are **not** in this release and ride the next one:_"$'\n'"$(printf '%s\n' "$LEFT" | sed 's/^/- /')"
+          fi
+          gh issue comment "$N" --body "$MSG"
+          gh issue close "$N"

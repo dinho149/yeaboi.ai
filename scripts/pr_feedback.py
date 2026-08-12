@@ -50,12 +50,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+# scripts/ is not a package, so the sibling transport is imported by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+
+ROOT = Path(__file__).resolve().parent.parent
 
 # The status context a branch ruleset makes required. Changing this string
 # silently un-blocks every PR, because the ruleset keeps waiting on a context
@@ -79,6 +85,22 @@ OVERRIDE_LABEL = "feedback-override"
 BOT_AUTHORS = frozenset({"dependabot[bot]", "github-actions[bot]"})
 COWORK_LABEL = "cowork"
 
+# Branch namespaces an unattended run pushes to: `cowork/…` (cowork-builder),
+# `feature/issue-N-…` (claude.yml's implement job), plus the two workflows that
+# open their own fix PRs. A PR from one of these was written by a machine, which
+# has two consequences below — it is never waved through as "bot-authored, review
+# not applicable", and its author cannot answer its own review.
+#
+# Kept in step with the author filter in `claude-review.yml`: this gate must
+# never expect a review that the reviewer was never going to write, or the PR
+# sits red with nothing to fix. Widen both or neither.
+UNATTENDED_BRANCH_PREFIXES = (
+    "cowork/",
+    "feature/issue-",
+    "security/codeql-triage",
+    "ci-sentinel/",
+)
+
 # How long after CI goes green a review may take before its absence is treated as
 # a fault rather than as latency.
 REVIEW_GRACE = timedelta(minutes=20)
@@ -88,6 +110,28 @@ CI_WORKFLOW_NAME = "CI"
 
 # GitHub truncates a status description past 140 characters.
 DESCRIPTION_LIMIT = 140
+
+# How many times Claude Review may speak on one PR before its findings stop
+# blocking the merge.
+#
+# Two, because the loop has no natural terminator otherwise. An adversarial
+# reviewer reading a large diff will always find *something* — four consecutive
+# rounds on PR #222 each produced real should-fix findings, and there was no
+# reason to expect a fifth to be empty. "Merge when the reviewer reports zero" is
+# therefore not a condition that reliably arrives, and a gate whose exit
+# condition may never occur is a gate that gets deleted.
+#
+# At the cap the findings do not vanish: they are still listed in the sticky
+# comment, the PR is labelled `review-capped`, and the daily standup names it.
+# What changes is that they stop holding the merge. That is a real loosening, and
+# what makes it defensible is that a merge no longer reaches users — it publishes
+# a pre-release, and the weekly promotion is a human checkpoint. If that ever
+# stops being true, revisit this number with it.
+MAX_REVIEW_ROUNDS = 2
+
+# Applied when the cap is reached with findings still open, so the state is
+# visible on the PR list and queryable afterwards rather than buried in a comment.
+CAPPED_LABEL = "review-capped"
 
 # One page of review threads. Cheap to raise, and never silently exceeded — a
 # truncated page becomes an open item of its own rather than a quiet undercount.
@@ -108,6 +152,13 @@ class Producer:
     label: str
     required: bool
     pattern: re.Pattern[str]
+    # The exact login this producer speaks under, when there is one. Without it a
+    # verdict has no author check at all — weaker than the acknowledgement rule
+    # below, despite being the stronger statement: an ack answers findings, a
+    # verdict replaces the count of them. On a public repo that meant any account
+    # could post `open=0` and turn the gate green, and with the round cap it would
+    # also mean two comments could exhaust the cap on somebody else's PR.
+    authors: frozenset[str] | None = None
 
 
 # Two of the five commenters named above are registered here, and the omissions
@@ -121,11 +172,22 @@ PRODUCERS: tuple[Producer, ...] = (
         label="Claude Review",
         required=True,
         pattern=re.compile(r"<!--\s*pr-feedback:\s*claude-review\s+open=(\d+)\s*-->"),
+        # `claude-review.yml` posts through the Claude GitHub App. Verified
+        # against the live comments on PR #222, not assumed. A `[bot]` suffix
+        # cannot be forged — GitHub logins may not contain brackets.
+        authors=frozenset({"claude[bot]"}),
     ),
     Producer(
         key="cowork-dod",
         label="DoD audit",
         required=False,
+        # No pinned `authors`, deliberately: a cowork routine writes this one, and
+        # it may run as the maintainer or as a bot depending on how it is invoked.
+        # So it falls back to write access, which still stops a stranger on a
+        # public repo. It is advisory and never required — forging its `open=0`
+        # suppresses DoD-audit findings and leaves `claude-review`, the producer
+        # that gates the merge, untouched. Named here rather than left as an
+        # asymmetry to notice.
         # `open=` is what makes it countable. A bare `<!-- cowork-dod -->` is the
         # older format and deliberately reads as no verdict rather than as zero:
         # a routine that has not been updated yet must not be able to clear a gate
@@ -142,6 +204,9 @@ ACK_RE = re.compile(r"<!--\s*addressed:\s*([a-z0-9][a-z0-9-]*)\s*-->", re.IGNORE
 # ordinary prose; the sticky comment still says how to clear the check, so the
 # way out of a wrongly-red gate is never closed, only moved to someone with
 # write access.
+#
+# Write access is necessary and, on an unattended PR, not sufficient: see
+# `is_acknowledged`, which additionally refuses an ack from the PR's own author.
 TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
@@ -212,6 +277,11 @@ class Snapshot:
     threads: tuple[Thread, ...]
     ci: CIState
     threads_truncated: bool = False
+    head_ref: str = ""
+    # Who applied `feedback-override`, when it is present. Empty when nobody did,
+    # or when the timeline could not be read — those are different, and
+    # ``classify`` treats them differently.
+    override_actor: str = ""
 
 
 @dataclass(frozen=True)
@@ -261,6 +331,54 @@ def acknowledged_producers(body: str) -> set[str]:
     return {match.group(1).lower() for match in ACK_RE.finditer(body)}
 
 
+def is_authentic_verdict(comment: Comment, producer: Producer) -> bool:
+    """Whether this comment is allowed to *be* a verdict from ``producer``.
+
+    Where a producer speaks under a known login, that login is the whole test.
+    Claude Review always arrives from ``claude[bot]``, and a ``[bot]`` suffix
+    cannot be forged because GitHub logins may not contain brackets.
+
+    Association is deliberately *not* also required: a bot commenting through
+    ``GITHUB_TOKEN`` carries ``author_association: NONE``, so demanding write
+    access would reject every genuine review and wedge the PR on one that could
+    never qualify — the deadlock this module exists to avoid.
+
+    A producer with no pinned login (the DoD audit, which a cowork routine writes
+    as the maintainer or as a bot depending on how it runs) falls back to write
+    access, which still stops a stranger on a public repo.
+    """
+    if producer.authors is not None:
+        return comment.author in producer.authors
+    if comment.author.endswith("[bot]"):
+        return True
+    return comment.association.upper() in TRUSTED_ASSOCIATIONS
+
+
+def review_rounds(comments: Iterable[Comment], producer: Producer) -> int:
+    """How many times this producer has posted a verdict **that found something**.
+
+    Two deliberate narrowings.
+
+    *Authentic only*, so a forged comment cannot inflate the count toward
+    ``MAX_REVIEW_ROUNDS`` and hand somebody a free pass on a PR they do not own.
+
+    *Non-empty only*, which is the difference between bounding the loop and
+    breaking the gate. Counting every verdict would cap a PR whose first review
+    was clean the moment a second one ran — so a regression introduced after a
+    clean pass could never reopen the gate, and "review found a new problem" and
+    "review ran out of patience" would be the same state. What runs forever is
+    the *findings* loop: find, fix, find again. That is what gets counted.
+    """
+    total = 0
+    for comment in comments:
+        match = producer.pattern.search(comment.body)
+        if match is None or not is_authentic_verdict(comment, producer):
+            continue
+        if int(match.group(1)) > 0:
+            total += 1
+    return total
+
+
 def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Comment, int] | None:
     """The newest countable verdict from one producer, or None if it never posted.
 
@@ -271,11 +389,16 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     Dated by ``written_at``: the DoD audit is instructed to edit one comment in
     place on every push, so its ``created_at`` is the hour the PR opened while
     the verdict inside it may be a minute old.
+
+    Comments that are not authentic verdicts (see ``is_authentic_verdict``) are
+    skipped entirely, so a forged one cannot even win the newest-wins race.
     """
     best: tuple[Comment, int] | None = None
     for comment in comments:
         match = producer.pattern.search(comment.body)
         if match is None:
+            continue
+        if not is_authentic_verdict(comment, producer):
             continue
         count = int(match.group(1))
         # Ties broken by id: two comments can share a timestamp at second
@@ -285,16 +408,48 @@ def latest_verdict(comments: Iterable[Comment], producer: Producer) -> tuple[Com
     return best
 
 
-def is_acknowledged(comments: Iterable[Comment], producer_key: str, after: datetime, after_id: int = 0) -> bool:
+def is_unattended(snapshot: Snapshot) -> bool:
+    """Whether this PR was written by a machine rather than by a person.
+
+    Two signals, either of which is enough: the ``cowork`` label, and a head
+    branch in one of the namespaces an unattended run pushes to. The label alone
+    was not enough once the auto lane widened — `cowork/house-rules.md` requires
+    it on every routine PR, but a run truncated between `git push` and
+    `gh pr create --label` leaves an unlabelled machine PR behind, and that is
+    exactly the PR that must not be trusted more than a labelled one.
+    """
+    return COWORK_LABEL in snapshot.labels or snapshot.head_ref.startswith(UNATTENDED_BRANCH_PREFIXES)
+
+
+def is_acknowledged(
+    comments: Iterable[Comment],
+    producer_key: str,
+    after: datetime,
+    after_id: int = 0,
+    deny_author: str | None = None,
+) -> bool:
     """Whether a trusted reply newer than ``after`` answers this producer's pass.
 
     ``after_id`` breaks the same second-granularity tie ``latest_verdict`` breaks:
     a reply posted in the same second as the verdict it answers is newer, and a
     strict ``>`` on the timestamp alone would drop it.
+
+    ``deny_author`` is the PR's own author, passed only for an unattended PR, and
+    it is what makes this gate mean anything once machines merge their own work.
+    A cowork routine posts under an account with write access, so
+    ``TRUSTED_ASSOCIATIONS`` alone would let the thing that wrote the change also
+    declare the review of it answered — a gate whose key is held by the applicant.
+    It may still *fix* a finding: a push triggers a re-review, and
+    ``latest_verdict`` then reads ``open=0`` from the reviewer itself. What it may
+    no longer do is disagree in a comment and merge anyway.
+
+    A human answering the review on their own PR is untouched: a person read it,
+    which is the whole thing being checked for.
     """
     return any(
         (comment.created_at, comment.id) > (after, after_id)
         and comment.association.upper() in TRUSTED_ASSOCIATIONS
+        and (deny_author is None or comment.author != deny_author)
         and producer_key in acknowledged_producers(comment.body)
         for comment in comments
     )
@@ -358,7 +513,13 @@ def open_producers(snapshot: Snapshot, now: datetime) -> tuple[list[OpenItem], s
         comment, count = latest
         if count == 0:
             continue
-        if is_acknowledged(snapshot.comments, producer.key, after=comment.written_at, after_id=comment.id):
+        if is_acknowledged(
+            snapshot.comments,
+            producer.key,
+            after=comment.written_at,
+            after_id=comment.id,
+            deny_author=snapshot.author if is_unattended(snapshot) else None,
+        ):
             continue
         plural = "finding" if count == 1 else "findings"
         items.append(
@@ -381,10 +542,35 @@ def describe(items: Sequence[OpenItem]) -> str:
 def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     """The whole decision. Everything above feeds this; nothing below re-decides it."""
     if OVERRIDE_LABEL in snapshot.labels:
-        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label")
+        # The override is a stronger dismissal than any marker — it clears every
+        # finding, every unresolved thread and a CHANGES_REQUESTED review at once —
+        # so the rule that governs the marker has to govern it too, or the lane
+        # simply uses the bigger lever. On an unattended PR the applicant holds
+        # write access, and `gh pr edit --add-label` sits inside the sweeps' bare
+        # `Bash` grant, so "a human's call" was a convention rather than a fact.
+        #
+        # Unknown actor still honours the override. This label exists to unbrick a
+        # gate that has genuinely gone wrong, and refusing it on a timeline we
+        # could not read would turn one API failure into a PR nobody can merge —
+        # the exact outcome it is the escape hatch for.
+        if is_unattended(snapshot) and snapshot.override_actor and snapshot.override_actor == snapshot.author:
+            return Verdict(
+                "failure",
+                f"`{OVERRIDE_LABEL}` was applied by this PR's own author — it does not count here",
+                (
+                    OpenItem(
+                        "override",
+                        OVERRIDE_LABEL,
+                        f"`{OVERRIDE_LABEL}` applied by {snapshot.override_actor}, who authored this "
+                        f"machine PR — a human other than the author must apply it, or fix the findings",
+                    ),
+                ),
+            )
+        who = f" by {snapshot.override_actor}" if snapshot.override_actor else ""
+        return Verdict("success", f"overridden by the `{OVERRIDE_LABEL}` label{who}")
     if snapshot.is_draft:
         return Verdict("success", "draft — review not applicable")
-    if snapshot.author in BOT_AUTHORS and COWORK_LABEL not in snapshot.labels:
+    if snapshot.author in BOT_AUTHORS and not is_unattended(snapshot):
         return Verdict("success", f"{snapshot.author} — review not applicable")
 
     items = open_threads(snapshot)
@@ -397,6 +583,23 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
 
     producer_items, waiting = open_producers(snapshot, now)
     items.extend(producer_items)
+
+    # The cap. Reached only on the required producer's own findings — an
+    # unresolved human thread or a requested-changes review is a person waiting
+    # for an answer, and running out of *review rounds* says nothing about those.
+    # Capping them too would let a PR merge past somebody who is still talking.
+    review = PRODUCERS[0]
+    if review_rounds(snapshot.comments, review) >= MAX_REVIEW_ROUNDS:
+        human = [item for item in items if item.kind != "producer" or item.key != review.key]
+        if not human:
+            capped = [item for item in items if item.kind == "producer" and item.key == review.key]
+            if capped:
+                noun = "finding" if len(capped) == 1 else "findings"
+                return Verdict(
+                    "success",
+                    f"review capped at {MAX_REVIEW_ROUNDS} rounds — {len(capped)} {noun} recorded, not fixed",
+                    tuple(capped),
+                )
 
     # Open items win over waiting: something is already unanswered, and a later
     # review pass can only add to that.
@@ -411,7 +614,7 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
 
 
 def _gh(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    return transport.gh(*args)
 
 
 def _gh_json(*args: str) -> object | None:
@@ -426,10 +629,142 @@ def _gh_json(*args: str) -> object | None:
         return None
 
 
-REVIEW_THREADS_QUERY = """
+# --- reads and writes, through whichever transport this machine has -----------
+#
+# `gh` when it is installed, REST with a token when it is not. Both branches ask
+# for the same thing; only the spelling differs. This gate is why the distinction
+# matters more here than anywhere: it runs in a cloud routine session that has a
+# token and no CLI, and a gate that cannot read a PR does not fail loudly — it
+# finds nothing, which reads exactly like a clean PR.
+
+
+def _read_paged(path: str) -> list | None:
+    """Every page of a list endpoint. None when the question could not be asked.
+
+    None rather than ``[]`` deliberately, and the callers depend on it: an empty
+    list of review threads means "nothing to answer" while a failed fetch means
+    "unknown", and collapsing them opens the gate on a network blip.
+    """
+    if transport.gh_available():
+        payload = _gh_json("api", path, "--paginate")
+        return payload if isinstance(payload, list) else None
+    result = transport.api_paged(f"/{path.lstrip('/')}")
+    if not result.ok:
+        print(f"[pr-feedback] GET {path} failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data if isinstance(result.data, list) else None
+
+
+def _read(path: str) -> object | None:
+    if transport.gh_available():
+        return _gh_json("api", path)
+    result = transport.api("GET", f"/{path.lstrip('/')}")
+    if not result.ok:
+        print(f"[pr-feedback] GET {path} failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data
+
+
+# Why the last read failed, for `main` to explain with. Module state rather than
+# a return value because `fetch_snapshot` has one caller and four ways to come
+# back empty, and threading a reason through all of them would be more moving
+# parts than the problem has.
+#
+# It exists because of what a routine session does to this script: GraphQL is
+# refused there outright (403, recorded in tests/fixtures/cowork_github_access_live.json),
+# so the gate reads *nothing* — and a gate that reads nothing must never be
+# mistaken for a gate that found nothing.
+LAST_FAILURE = ""
+
+# The refusal a routine session gets. Matched on the two stable halves of
+# GitHub's own message rather than the status code, because a 403 on this path
+# from a *token scope* problem is a different fault with a different remedy.
+_PROXY_REFUSAL = "not enabled for this session"
+
+
+def _graphql(variables: dict) -> dict | None:
+    """`PR_QUERY`, through whichever transport this machine has.
+
+    The transport routes this one itself, because `gh api graphql` takes a shape
+    (`-f query=`, `-F var=`) no caller should have to know, and because a
+    GraphQL error arrives inside a 200 — something has to notice that, and it is
+    not the caller.
+    """
+    global LAST_FAILURE
+    result = transport.graphql(PR_QUERY, variables)
+    if not result.ok:
+        LAST_FAILURE = f"graphql: {result.error}"
+        print(f"[pr-feedback] graphql failed: {result.error}", file=sys.stderr)
+        return None
+    return result.data if isinstance(result.data, dict) else None
+
+
+def unreadable_reason() -> str:
+    """What to print when the PR could not be read, in terms someone can act on.
+
+    The distinction this draws is the whole point: a session whose egress refuses
+    GraphQL cannot answer the question *at all*, and saying so is the difference
+    between "go look at the CI run" and "this PR is fine". `reviewDecision` and
+    whether a thread is resolved exist in v4 and nowhere in v3, so there is no
+    partial answer to fall back to — only a smaller answer that would read as a
+    whole one.
+    """
+    if _PROXY_REFUSAL in LAST_FAILURE:
+        return (
+            "this session's GitHub egress refuses GraphQL, and review threads plus "
+            "reviewDecision exist only there — so NOTHING was determined about this PR. "
+            "Do not read this as a clean PR. The full gate runs in "
+            ".github/workflows/pr-feedback.yml, where the query is served."
+        )
+    return LAST_FAILURE or "see the run log"
+
+
+def _write(method: str, path: str, fields: dict[str, object]) -> bool:
+    """One write. `gh api -f k=v` and a JSON body say the same thing.
+
+    `-f` sends strings, which is why the REST branch need not reproduce `-F`'s
+    typing: nothing written from here is a number.
+    """
+    if transport.gh_available():
+        args = ["api", "-X", method, path]
+        for key, value in fields.items():
+            # A list is `gh api`'s repeated-field spelling: `-f labels[]=x`. The
+            # REST branch below sends the real list, so callers write one shape.
+            if isinstance(value, list):
+                args += [arg for item in value for arg in ("-f", f"{key}[]={item}")]
+            else:
+                args += ["-f", f"{key}={value}"]
+        result = _gh(*args)
+        if result.returncode != 0:
+            print(f"[pr-feedback] {method} {path} failed: {result.stderr.strip()}", file=sys.stderr)
+            return False
+        return True
+    result = transport.api(method, f"/{path.lstrip('/')}", dict(fields))
+    if not result.ok:
+        print(f"[pr-feedback] {method} {path} failed: {result.error}", file=sys.stderr)
+        return False
+    return True
+
+
+# One query for the metadata *and* the threads, rather than `gh pr view` for the
+# first and GraphQL for the second.
+#
+# Not a tidy-up: `reviewDecision` is a v4 field with no REST equivalent at all,
+# and `classify` reads it to hold the gate on a CHANGES_REQUESTED review. Asking
+# for it here is what lets both transports answer the same question — the
+# alternative was a REST branch that silently never saw a requested change.
+# It also costs one call instead of two, on every run.
+PR_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $page: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      number
+      headRefOid
+      headRefName
+      isDraft
+      reviewDecision
+      author { login }
+      labels(first: 50) { nodes { name } }
       reviewThreads(first: $page) {
         pageInfo { hasNextPage }
         nodes {
@@ -451,13 +786,15 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
     """Read the PR once, from four read-only calls, into the shape ``classify`` wants."""
     owner, _, name = slug.partition("/")
 
-    meta = _gh_json("pr", "view", str(number), "--json", "number,headRefOid,isDraft,author,labels,reviewDecision")
-    if not isinstance(meta, dict):
+    graph = _graphql({"owner": owner, "name": name, "number": number, "page": THREAD_PAGE})
+    pull = (((graph or {}).get("data") or {}).get("repository") or {}).get("pullRequest")
+    if not isinstance(pull, dict):
         return None
-    head_sha = meta.get("headRefOid") or ""
+    head_sha = pull.get("headRefOid") or ""
+    labels = tuple(node.get("name", "") for node in ((pull.get("labels") or {}).get("nodes") or []))
 
-    raw_comments = _gh_json("api", f"repos/{slug}/issues/{number}/comments", "--paginate")
-    if not isinstance(raw_comments, list):
+    raw_comments = _read_paged(f"repos/{slug}/issues/{number}/comments")
+    if raw_comments is None:
         return None
     comments = tuple(
         Comment(
@@ -471,40 +808,25 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         for item in raw_comments
     ) + fetch_reviews(slug, number)
 
-    graph = _gh_json(
-        "api",
-        "graphql",
-        "-f",
-        f"query={REVIEW_THREADS_QUERY}",
-        "-F",
-        f"owner={owner}",
-        "-F",
-        f"name={name}",
-        "-F",
-        f"number={number}",
-        "-F",
-        f"page={THREAD_PAGE}",
-    )
-    threads: tuple[Thread, ...] = ()
-    truncated = False
-    if isinstance(graph, dict):
-        block = (((graph.get("data") or {}).get("repository") or {}).get("pullRequest") or {}).get(
-            "reviewThreads"
-        ) or {}
-        truncated = bool((block.get("pageInfo") or {}).get("hasNextPage"))
-        threads = tuple(_thread(node) for node in block.get("nodes") or [])
+    block = pull.get("reviewThreads") or {}
+    truncated = bool((block.get("pageInfo") or {}).get("hasNextPage"))
+    threads = tuple(_thread(node) for node in block.get("nodes") or [])
 
     return Snapshot(
         number=number,
         head_sha=head_sha,
-        author=(meta.get("author") or {}).get("login", ""),
-        is_draft=bool(meta.get("isDraft")),
-        labels=tuple(label.get("name", "") for label in meta.get("labels") or []),
-        review_decision=meta.get("reviewDecision") or None,
+        author=(pull.get("author") or {}).get("login", ""),
+        is_draft=bool(pull.get("isDraft")),
+        labels=labels,
+        review_decision=pull.get("reviewDecision") or None,
         comments=comments,
         threads=threads,
         ci=fetch_ci(slug, head_sha),
         threads_truncated=truncated,
+        head_ref=pull.get("headRefName") or "",
+        # Only asked when the label is actually present — one paginated call for a
+        # question that is almost always moot.
+        override_actor=(fetch_override_actor(slug, number) if OVERRIDE_LABEL in labels else ""),
     )
 
 
@@ -539,8 +861,8 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
     would turn "LGTM, nice work" into a merge block, which is how a check gets
     deleted rather than answered.
     """
-    raw = _gh_json("api", f"repos/{slug}/pulls/{number}/reviews", "--paginate")
-    if not isinstance(raw, list):
+    raw = _read_paged(f"repos/{slug}/pulls/{number}/reviews")
+    if raw is None:
         return ()
     return tuple(
         Comment(
@@ -559,11 +881,34 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
     )
 
 
+def fetch_override_actor(slug: str, number: int) -> str:
+    """Who most recently applied ``feedback-override``, or "" if unknown.
+
+    Read from the issue events timeline, which is the only place the *actor* of a
+    label is recorded — the labels on a PR carry no provenance at all. Empty on
+    any failure, and ``classify`` reads that as "unknown" rather than as "the
+    author", so a timeline this cannot fetch never turns into a blocked PR.
+    """
+    raw = _read_paged(f"repos/{slug}/issues/{number}/events")
+    if raw is None:
+        return ""
+    actor = ""
+    for item in raw:
+        if not isinstance(item, dict) or item.get("event") != "labeled":
+            continue
+        if ((item.get("label") or {}).get("name")) != OVERRIDE_LABEL:
+            continue
+        # Events arrive oldest-first; the last one wins, matching "most recently
+        # applied" after any remove/re-add.
+        actor = ((item.get("actor") or {}).get("login")) or ""
+    return actor
+
+
 def fetch_ci(slug: str, head_sha: str) -> CIState:
     """The CI run for this exact SHA — not the branch's latest, which may be older."""
     if not head_sha:
         return CIState(None, None)
-    payload = _gh_json("api", f"repos/{slug}/actions/runs?head_sha={head_sha}&per_page=100")
+    payload = _read(f"repos/{slug}/actions/runs?head_sha={head_sha}&per_page=100")
     if not isinstance(payload, dict):
         return CIState(None, None)
     runs = [run for run in payload.get("workflow_runs") or [] if run.get("name") == CI_WORKFLOW_NAME]
@@ -574,38 +919,55 @@ def fetch_ci(slug: str, head_sha: str) -> CIState:
 
 
 def repo_slug() -> str | None:
-    payload = _gh_json("repo", "view", "--json", "nameWithOwner")
-    return payload.get("nameWithOwner") if isinstance(payload, dict) else None
+    return transport.resolve_slug(ROOT)
 
 
 def current_pr() -> int | None:
-    payload = _gh_json("pr", "view", "--json", "number")
-    return int(payload["number"]) if isinstance(payload, dict) and payload.get("number") else None
+    """The open PR for the branch this checkout is on.
+
+    `gh pr view` works this out from the current branch. Without `gh` there is no
+    "current" anything, so the REST branch asks the same question explicitly:
+    which open PR has this branch as its head. A detached HEAD or a branch with
+    no PR answers None, which the caller already reports as "say which PR".
+    """
+    if transport.gh_available():
+        payload = _gh_json("pr", "view", "--json", "number")
+        return int(payload["number"]) if isinstance(payload, dict) and payload.get("number") else None
+    slug = repo_slug()
+    branch = _current_branch()
+    if not slug or not branch:
+        return None
+    owner, _, _name = slug.partition("/")
+    payload = _read(f"repos/{slug}/pulls?head={owner}:{branch}&state=open&per_page=1")
+    if not isinstance(payload, list) or not payload:
+        return None
+    number = payload[0].get("number")
+    return int(number) if number else None
+
+
+def _current_branch() -> str | None:
+    result = subprocess.run(  # noqa: S603 - literal argv
+        ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch if result.returncode == 0 and branch and branch != "HEAD" else None
 
 
 # --- emit --------------------------------------------------------------------
 
 
 def post_status(slug: str, head_sha: str, verdict: Verdict, target_url: str | None = None) -> bool:
-    args = [
-        "api",
-        "-X",
-        "POST",
-        f"repos/{slug}/statuses/{head_sha}",
-        "-f",
-        f"state={verdict.state}",
-        "-f",
-        f"context={STATUS_CONTEXT}",
-        "-f",
-        f"description={verdict.description[:DESCRIPTION_LIMIT]}",
-    ]
+    fields: dict[str, object] = {
+        "state": verdict.state,
+        "context": STATUS_CONTEXT,
+        "description": verdict.description[:DESCRIPTION_LIMIT],
+    }
     if target_url:
-        args += ["-f", f"target_url={target_url}"]
-    result = _gh(*args)
-    if result.returncode != 0:
-        print(f"[pr-feedback] could not post the status: {result.stderr.strip()}", file=sys.stderr)
-        return False
-    return True
+        fields["target_url"] = target_url
+    return _write("POST", f"repos/{slug}/statuses/{head_sha}", fields)
 
 
 def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
@@ -615,6 +977,24 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         # Pending holds the merge just as firmly as a failure. Calling it clear is
         # the one thing this comment must never say.
         lines += [f"**Review feedback: waiting.** {verdict.description}"]
+        return "\n".join(lines)
+    if verdict.state == "success" and verdict.items:
+        # Green, but not clean, and the comment must not blur the two. These
+        # findings were read by nobody and fixed by nobody; the merge stopped
+        # waiting for them because the review ran out of rounds, which is a
+        # decision about the loop and not a judgement about the code.
+        noun = "finding" if len(verdict.items) == 1 else "findings"
+        lines += [
+            f"**Review capped at {MAX_REVIEW_ROUNDS} rounds — {len(verdict.items)} {noun} "
+            f"recorded, not fixed.** This PR can merge.",
+            "",
+            *[f"- {item.detail}" for item in verdict.items],
+            "",
+            "An adversarial review of a large diff finds something every time, so the loop is "
+            f"bounded rather than run to zero. What is above was left undone deliberately — it is "
+            f"worth reading before merging, and worth filing if it matters. The `{CAPPED_LABEL}` "
+            "label marks this PR so it can be found again.",
+        ]
         return "\n".join(lines)
     if verdict.state != "failure":
         lines += [f"**Review feedback: clear.** {verdict.description}"]
@@ -627,6 +1007,25 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         "",
     ]
     lines += [f"- {item.detail}" for item in verdict.items]
+    # The advice has to match the PR. On an unattended PR an `<!-- addressed: -->`
+    # reply from the PR's own author is discarded, and on the cowork lane that
+    # author *is* the maintainer — so a human who reads this comment, disagrees
+    # with a finding and replies exactly as instructed would get silence and a
+    # re-rendered red check, with nothing anywhere saying why. Telling somebody to
+    # do the one thing that cannot work is worse than telling them nothing.
+    if is_unattended(snapshot):
+        lines += [
+            "",
+            "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and "
+            "push — the next review pass reports `open=0` and this clears itself. Hit "
+            "**Resolve conversation** on any thread you have answered.",
+            "",
+            "**This PR is machine-authored, so a reply cannot clear a finding here.** An "
+            "`<!-- addressed: … -->` marker written by this PR's own author is ignored: the account "
+            "that wrote the change would otherwise be answering the review of it. Fix the finding, or "
+            f"apply the `{OVERRIDE_LABEL}` label — a human's call, recorded here.",
+        ]
+        return "\n".join(lines)
     lines += [
         "",
         "Run `/pr-feedback " + str(snapshot.number) + "` to work through them, or by hand: fix and push "
@@ -650,9 +1049,32 @@ def upsert_sticky(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) 
             existing = comment.id
     body = sticky_body(snapshot, verdict)
     if existing is not None:
-        _gh("api", "-X", "PATCH", f"repos/{slug}/issues/comments/{existing}", "-f", f"body={body}")
+        _write("PATCH", f"repos/{slug}/issues/comments/{existing}", {"body": body})
     elif verdict.state == "failure":
-        _gh("api", "-X", "POST", f"repos/{slug}/issues/{number}/comments", "-f", f"body={body}")
+        _write("POST", f"repos/{slug}/issues/{number}/comments", {"body": body})
+
+
+def apply_capped_label(slug: str, number: int, snapshot: Snapshot, verdict: Verdict) -> None:
+    """Mark a PR that merged past unfixed findings, so it can be found again.
+
+    Only added, never removed: the label records that a cap was hit on this PR,
+    and a later push that happens to produce a clean review does not undo the
+    fact. Idempotent — GitHub ignores adding a label that is already present, and
+    the guard below keeps it to one call.
+
+    Applying a label that does not exist silently does nothing, so
+    ``review-capped`` is in ``expected_labels()`` and `make cowork-setup` creates
+    it. A missing label costs the record, not the merge.
+    """
+    capped = verdict.state == "success" and bool(verdict.items)
+    if not capped or CAPPED_LABEL in snapshot.labels:
+        return
+    # `labels[]=` is `gh api`'s spelling of a repeated field; the JSON body wants
+    # a real list. `_write` sends what each transport reads, so the value is a
+    # list here and the gh branch flattens it. Adds rather than replaces either
+    # way — POST to the collection, never PUT, for the reason
+    # `cowork_relay.py:_command` spells out at length.
+    _write("POST", f"repos/{slug}/issues/{number}/labels", {"labels": [CAPPED_LABEL]})
 
 
 def render_report(snapshot: Snapshot, verdict: Verdict) -> str:
@@ -671,8 +1093,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--target-url", help="with --status, the run URL the check links to")
     args = parser.parse_args(argv)
 
-    if shutil.which("gh") is None:
-        print("[pr-feedback] `gh` is not on PATH — install it: brew install gh", file=sys.stderr)
+    if not transport.gh_available() and not transport.github_token():
+        print(
+            "[pr-feedback] no `gh` on PATH and no GH_TOKEN — install gh (brew install gh), "
+            "or export GH_TOKEN for the REST fallback",
+            file=sys.stderr,
+        )
         return 2
     slug = repo_slug()
     if slug is None:
@@ -685,12 +1111,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     snapshot = fetch_snapshot(number, slug)
     if snapshot is None:
+        print(f"[pr-feedback] could not read PR #{number} — {unreadable_reason()}", file=sys.stderr)
         if args.status:
             # A *required* status that was never posted shows as "Expected —
             # waiting for status", which looks exactly like this workflow not
             # existing. Say what actually happened, on whatever SHA is reachable.
-            meta = _gh_json("pr", "view", str(number), "--json", "headRefOid")
-            head = meta.get("headRefOid") if isinstance(meta, dict) else None
+            # REST spells it `head.sha`; the GraphQL read above spells the same
+            # value `headRefOid`. This path exists for when that read failed.
+            meta = _read(f"repos/{slug}/pulls/{number}")
+            head = (meta.get("head") or {}).get("sha") if isinstance(meta, dict) else None
             if head:
                 post_status(slug, head, Verdict("pending", "could not read the PR — see the run log"), args.target_url)
         return 2
@@ -702,6 +1131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # unanswered review, and would be the first thing anyone disabled.
         ok = post_status(slug, snapshot.head_sha, verdict, args.target_url)
         upsert_sticky(slug, number, snapshot, verdict)
+        apply_capped_label(slug, number, snapshot, verdict)
         print(render_report(snapshot, verdict))
         return 0 if ok else 2
 

@@ -52,6 +52,27 @@ def append_component_progress(
     progress.append(event)
 
 
+def send_component_progress(
+    on_progress,
+    *,
+    component_id: str,
+    label: str,
+    status: str,
+    **kwargs,
+) -> None:
+    """Build one lifecycle event and hand it to a callback (None-safe).
+
+    The list-based ``append_component_progress`` suits engines that share a
+    progress list with their caller; callback-based engines (agentwatch) get
+    the same event shape through their existing ``on_progress`` callable.
+    """
+    if on_progress is None:
+        return
+    events: list = []
+    append_component_progress(events, component_id=component_id, label=label, status=status, **kwargs)
+    on_progress(events[0])
+
+
 def is_component_progress(item: Any) -> bool:
     """Return whether ``item`` is a well-formed component lifecycle event."""
     return (

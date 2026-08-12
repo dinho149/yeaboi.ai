@@ -1,5 +1,5 @@
 ---
-description: Run the cowork fleet — status, deploy, run one now, pause, resume, teardown
+description: Run the cowork fleet — status, today's schedule, deploy, run one now, pause, resume, teardown
 ---
 
 Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMENTS — defaults to
@@ -8,7 +8,8 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 | Verb | Does |
 |---|---|
 | `status` | what is running, against what the repo says. Read-only. |
-| `deploy` | register what is missing, update what has drifted, fill the README URL column. |
+| `deploy` | register what is missing, update what has drifted, wire webhooks for what it created, fill the README URL column. |
+| `today` | what runs today and over the next week. Read-only, and the one verb needing no API call. |
 | `run <name>` | fire one routine immediately, instead of waiting for its cron. |
 | `pause [name…]` | stop routines firing without removing them. No names means all of them. |
 | `resume [name…]` | undo a pause. |
@@ -18,7 +19,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 the routine table, `cowork/models.md` the tier table, `cowork/workstreams/` the label list,
 `cowork/definition-of-done.md` the Linear/Slack/Notion target ids — and `scripts/cowork_setup.py` has
 already parsed all four. Read its output; do not read those tables yourself, and do not assemble a
-request body or diff two routines in your head. Seventeen routines × six fields is exactly the work
+request body or diff two routines in your head. Twenty-two routines × six fields is exactly the work
 that goes right most of the time, and "most of the time" here is a sweep silently running last
 month's prompt.
 
@@ -26,10 +27,30 @@ month's prompt.
 
 1. `RemoteTrigger` with `action: "list"`.
 2. Save that response verbatim to a scratch file, e.g. `<scratchpad>/cowork-triggers.json`.
-3. Pass it to the script with `--triggers <file>`.
+3. **If it says `"has_more": true`, the fleet no longer fits in one page** — see below.
+4. Pass every file you saved to the script, `--triggers <file>` once each.
 
 If a step fails, report it and continue to the next — they are independent, and a missing Linear
 connector should not stop the routines from being read.
+
+### When the list pages
+
+The routines API returns twenty per page and hands back a `next_cursor`; `RemoteTrigger` has no
+parameter that would send one back, so page two is unreachable by list. Read the rest one routine at
+a time instead — and note that this is not a formality: **the routines past the boundary are the
+oldest ones**, which on this fleet is most of the sweeps.
+
+- `cowork/README.md`'s URL column is the ledger of every routine a deploy has registered.
+  `uv run python scripts/cowork_setup.py --json` needs no snapshot; the ids are in the table.
+- `RemoteTrigger` `action: "get"` for each id the page did not already carry, and save the envelopes
+  — a JSON array of them in one file is fine, and is what the script expects.
+- Pass the page and that file as two `--triggers`.
+
+The script then knows the read is partial and says so in every verb. **Updates are unaffected** —
+they only ever touch a routine that was actually read, and applying one twice writes the same value.
+A **create** is what a partial read cannot always vouch for: a routine whose README URL cell holds an
+id exists, so one that reads as missing anyway is reported and its body left empty. Do not work
+around that by planning from the page alone; that is the exact failure the parts exist to avoid.
 
 ---
 
@@ -85,18 +106,57 @@ a routine file, or when someone new joins.
      - `repo_url` — the script resolves this from `gh` on its own; if it still appears here, `gh` is
        not authenticated.
 
-     A body carrying an empty string for any of these is one the API will happily accept. Seventeen
+     A body carrying an empty string for any of these is one the API will happily accept. Twenty-two
      routines then register pointing at no repository, and it looks like it worked until the first
      Monday.
-5. **URLs.** Re-`list` (ids only exist after a create), save it, then
-   `uv run python scripts/cowork_setup.py --urls --triggers <file>`. This edits
-   `cowork/README.md` for you — do not edit the table by hand.
-6. **Remainder.** Report what no API reaches: the connectors at
-   <https://claude.ai/customize/connectors>, the Claude GitHub App, the `AUTO_VERSION_PAT` secret
-   (without it Claude Review never receives `workflow_run` events), and the three event routines,
-   with their triggers and filters from the manifest, added by hand at
-   <https://claude.ai/code/routines>.
-7. **Confirm.** Re-run `status` and give a one-line summary of what this run changed.
+   - **Keep the `trigger_name` of every routine you created** and got an id back for. Step 5 needs
+     them, and they are the only evidence that exists.
+5. **Webhooks.** What fires the event routines and `cd-deploy`. Re-`list` (ids only exist after a
+   create), save it, then
+   `uv run python scripts/cowork_setup.py --plan --triggers <file> --created "cowork: <name>" …`,
+   once per name from step 4. POST `create_webhook_trigger` with the `body` of every `webhooks[]`
+   entry whose `blocked` is **null**, and ignore every other entry — a blocked one carries an empty
+   body, so the rule is safe to apply mechanically.
+
+   **Never post a webhook for a routine this run did not create.** Four things are true of that
+   endpoint and each is recorded in `tests/fixtures/cowork_webhook_live.json`: nothing reports the
+   webhooks already attached to a routine, an identical POST is not deduped, there is no delete, and
+   an unknown event name is accepted with a 200. So a second POST makes the routine fire twice for
+   every event, permanently, and nothing will tell you. Entries under `webhooks_blocked` are the
+   normal steady state — report the count and move on.
+
+   A pre-existing routine that genuinely lost its webhook is repaired by hand at
+   <https://claude.ai/code/routines>, after checking there what is attached.
+6. **URLs.** `uv run python scripts/cowork_setup.py --urls --triggers <file>` on the same fresh
+   snapshot. This edits `cowork/README.md` for you — do not edit the table by hand.
+7. **Remainder.** Report what no API reaches: the connectors at
+   <https://claude.ai/customize/connectors>, the Claude GitHub App, and the `AUTO_VERSION_PAT` secret
+   (without it Claude Review never receives `workflow_run` events).
+8. **Confirm.** Re-run `status` and give a one-line summary of what this run changed.
+
+After the first deploy, most of this happens on its own: `cron/cd-deploy.md` is fired by a push
+webhook on `main` and runs steps 2–7 for every merge that touches `cowork/`. This command stays the
+escape hatch, and remains the only place a webhook for a pre-existing routine can be wired.
+
+## `today`
+
+```bash
+uv run python scripts/cowork_setup.py --agenda --text
+```
+
+Print exactly what it prints. Nothing posts this on a schedule — a routine used to, at 05:45 every
+morning including empty Sundays, and announcing what is *about* to run turned out to be worth much
+less than `cron/shipped-standup.md`'s report of what did. The schedule is still worth having on
+demand, which is what this is.
+
+The terminal shows Markdown source — `**cd-deploy**`, backticked times — rather than a terminal's
+own idea of bold. Rendering it here would mean a second renderer, and a second renderer is a second
+thing that can be wrong about a Tuesday.
+
+`--date YYYY-MM-DD` answers "what is on next Monday?". Nothing here touches the account — the
+schedule lives in `cowork/README.md`, not in the routines API, so this verb skips the
+`RemoteTrigger list` every other verb starts with. What it *cannot* tell you is whether the fleet
+is paused or drifted; that is `status`.
 
 ## `run <name>`
 

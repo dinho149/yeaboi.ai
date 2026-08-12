@@ -38,6 +38,10 @@
   --m-poker:#e6c846;
   --m-performance:#dc6e5a;
   --m-reporting:#8c78e6;
+  /* the Agents family (AGENT_*_THEME) */
+  --m-agent-usage:#46bee6;
+  --m-agent-standup:#78d2aa;
+  --m-agent-security:#e65a78;
 
   --border:rgba(228,230,232,.07);
   --border-strong:rgba(228,230,232,.14);

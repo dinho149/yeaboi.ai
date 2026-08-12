@@ -1,9 +1,11 @@
 """Tests for configuration and environment variable handling."""
 
 import os
+from pathlib import Path
 
 import pytest
 
+from yeaboi import config
 from yeaboi.config import (
     BETA_ACK_KEY,
     FORCE_BETA_NOTICE_ENV,
@@ -895,3 +897,92 @@ class TestStorageAndExportConfig:
         cfg.set_data_dir("  ")
         assert os.environ["YEABOI_HOME"] == ""
         assert get_data_dir() == ""
+
+
+class TestVoiceInstallOffer:
+    """The permanent "never ask again" tier of the dictation install offer."""
+
+    def test_defaults_on(self, monkeypatch):
+        monkeypatch.delenv("VOICE_INSTALL_OFFER", raising=False)
+        monkeypatch.delenv("YEABOI_FORCE_VOICE_OFFER", raising=False)
+        assert config.is_voice_install_offer_enabled() is True
+
+    @pytest.mark.parametrize("value", ["off", "false", "0", "no", "OFF"])
+    def test_disabling_values(self, monkeypatch, value):
+        monkeypatch.delenv("YEABOI_FORCE_VOICE_OFFER", raising=False)
+        monkeypatch.setenv("VOICE_INSTALL_OFFER", value)
+        assert config.is_voice_install_offer_enabled() is False
+
+    def test_the_force_env_reopens_a_permanent_decline(self, monkeypatch):
+        """A once-ever gate is otherwise impossible to demo or review."""
+        monkeypatch.setenv("VOICE_INSTALL_OFFER", "off")
+        monkeypatch.setenv("YEABOI_FORCE_VOICE_OFFER", "1")
+        assert config.is_voice_install_offer_enabled() is True
+
+    def test_setter_writes_env_and_disk(self, monkeypatch):
+        written: list[tuple[str, str]] = []
+        monkeypatch.setattr(config, "set_config_value", lambda k, v: written.append((k, v)) or Path("/tmp/.env"))
+        monkeypatch.delenv("YEABOI_FORCE_VOICE_OFFER", raising=False)
+        # The setter writes os.environ itself, so register the key for teardown.
+        monkeypatch.delenv("VOICE_INSTALL_OFFER", raising=False)
+        config.set_voice_install_offer(False)
+        assert os.environ["VOICE_INSTALL_OFFER"] == "off"
+        assert written == [("VOICE_INSTALL_OFFER", "off")]
+        assert config.is_voice_install_offer_enabled() is False
+
+    def test_a_failed_disk_write_still_honours_the_decline_this_session(self, monkeypatch):
+        """Re-asking on the next launch is the lesser failure; re-asking on the
+        next keystroke is not."""
+
+        def _boom(_k, _v):
+            raise OSError("read-only home")
+
+        monkeypatch.setattr(config, "set_config_value", _boom)
+        monkeypatch.delenv("YEABOI_FORCE_VOICE_OFFER", raising=False)
+        monkeypatch.delenv("VOICE_INSTALL_OFFER", raising=False)
+        config.set_voice_install_offer(False)
+        assert config.is_voice_install_offer_enabled() is False
+
+
+class TestVoiceExtraMarker:
+    def test_round_trip(self, monkeypatch):
+        monkeypatch.delenv("VOICE_EXTRA_INSTALLED", raising=False)
+        monkeypatch.setattr(config, "set_config_value", lambda _k, _v: Path("/tmp/.env"))
+        assert config.voice_extra_was_installed() is False
+        config.mark_voice_extra_installed()
+        assert config.voice_extra_was_installed() is True
+
+
+class TestLastCategory:
+    """The landing split's persisted category preselection."""
+
+    def test_default_is_humans(self, monkeypatch):
+        monkeypatch.delenv("YEABOI_LAST_CATEGORY", raising=False)
+        from yeaboi.config import get_last_category
+
+        assert get_last_category() == "humans"
+
+    def test_round_trip(self, monkeypatch, tmp_path):
+        from yeaboi import config as cfg
+
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "humans")
+        monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
+        cfg.set_last_category("agents")
+        assert os.environ["YEABOI_LAST_CATEGORY"] == "agents"
+        assert cfg.get_last_category() == "agents"
+        assert "YEABOI_LAST_CATEGORY" in (tmp_path / ".env").read_text()
+
+    def test_unknown_value_falls_back(self, monkeypatch):
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "robots!!")
+        from yeaboi.config import get_last_category
+
+        assert get_last_category() == "humans"
+
+    def test_setter_rejects_unknown(self, monkeypatch, tmp_path):
+        from yeaboi import config as cfg
+
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "humans")
+        monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
+        cfg.set_last_category("nonsense")
+        assert cfg.get_last_category() == "humans"
+        assert not (tmp_path / ".env").exists()

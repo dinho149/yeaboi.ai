@@ -33,8 +33,8 @@ GREETING_TEXT = (
     "I'll figure out whether this needs a Small plan (a ticket or two) or a "
     "Large one (epics and sprints) as we go — or force it any time with "
     "/small or /large. Prefer a questionnaire? /form opens one — and /finish "
-    "fills in defaults and builds the whole plan in one go. Type /help to see "
-    "every command."
+    "answers the rest with defaults. Once the questions are done I'll build the "
+    "plan and walk you through it stage by stage. Type /help to see every command."
 )
 
 SIZE_QUESTION_TEXT = (

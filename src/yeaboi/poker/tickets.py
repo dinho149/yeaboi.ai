@@ -24,6 +24,8 @@ import html
 import logging
 import re
 
+from yeaboi.redaction import log_safe
+
 # The wiki/HTML flatteners used to live here. They moved to a stdlib-only leaf
 # so ``tools/`` can flatten a ticket description at fetch time without importing
 # poker; the private names stay as aliases because this module and its tests
@@ -260,13 +262,15 @@ def update_ticket(
     string verbatim). The demo source accepts everything as a no-op success.
     """
     key = ticket.get("key", "")
+    # repr() inside log_safe, not %r: the repr is what shows whether points
+    # arrived as an int or a string, and log_safe is what stops a forged line.
     logger.info(
-        "poker update_ticket: source=%r key=%r summary=%s description=%s points=%r",
-        source,
-        key,
+        "poker update_ticket: source=%s key=%s summary=%s description=%s points=%s",
+        log_safe(repr(source)),
+        log_safe(repr(key)),
         summary is not None,
         description is not None,
-        story_points,
+        log_safe(repr(story_points)),
     )
     try:
         if source == SOURCE_DEMO:

@@ -618,6 +618,17 @@ _DUCK_SHADES_STAGE = 0.05  # seconds per lift stage (~0.5s for the full sequence
 _duck_region: tuple[int, int, int, int] | None = None
 _duck_shades_start = 0.0
 
+# Which mascot family the chrome draws this frame. Updated by MusicLive from the
+# page's `_duck_mascot` panel stamp (Agents pages stamp "robo"), and read by the
+# screensaver so idling on an Agents page keeps the robo. Module-global like all
+# per-frame duck state; reset in _reset_duck_state().
+_chrome_mascot = "duck"
+
+
+def current_chrome_mascot() -> str:
+    """The mascot family the chrome is currently drawing ("duck" or "robo")."""
+    return _chrome_mascot
+
 
 def duck_region() -> tuple[int, int, int, int] | None:
     """Clickable rect of the chrome companion duck this frame (1-based inclusive)."""
@@ -625,8 +636,16 @@ def duck_region() -> tuple[int, int, int, int] | None:
 
 
 def poke_duck() -> None:
-    """Start the shades-lift gag on the chrome duck (called when he's clicked)."""
+    """React to the chrome companion being clicked.
+
+    The duck plays the shades-lift gag; the robo has no FACE/GLASSES split (a
+    bolted visor can't lift), so he beeps — a short quack — instead of the
+    click silently doing nothing.
+    """
     global _duck_shades_start
+    if _chrome_mascot != "duck":
+        quack_duck()
+        return
     _duck_shades_start = time.monotonic()
 
 
@@ -799,13 +818,14 @@ def _reset_duck_state() -> None:
     global _duck_quack_start, _duck_quack_seconds, _duck_working, _duck_working_start
     global _duck_shades_start, _duck_slide_start, _duck_last_draw
     global _say_text, _say_start, _say_seq
-    global _duck_entrance_start, _duck_entrance_played, _duck_working_depth
+    global _duck_entrance_start, _duck_entrance_played, _duck_working_depth, _chrome_mascot
     _duck_quack_start, _duck_quack_seconds = 0.0, 0.6
     _duck_working, _duck_working_start = False, 0.0
     _duck_working_depth = 0
     _duck_shades_start = _duck_slide_start = _duck_last_draw = 0.0
     _say_text, _say_start, _say_seq = "", 0.0, 0
     _duck_entrance_start, _duck_entrance_played = 0.0, False
+    _chrome_mascot = "duck"
 
 
 def draw_companion_duck(
@@ -816,6 +836,7 @@ def draw_companion_duck(
     say_sticky: bool = False,
     say_hold: float | None = None,
     say_seq: int = 0,
+    mascot: str = "duck",
 ) -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
 
@@ -853,7 +874,7 @@ def draw_companion_duck(
 
         _frame_i = int((time.monotonic() - _duck_entrance_start) * 8)
         mini_rows = console.render_lines(
-            render_mini(_frame_i), options.update_width(_DUCK_MINI_W), pad=True, style=bg_style
+            render_mini(_frame_i, mascot=mascot), options.update_width(_DUCK_MINI_W), pad=True, style=bg_style
         )
         mh = len(mini_rows)
         rest_ml = width - _DUCK_MINI_W - _DUCK_RIGHT_MARGIN
@@ -884,11 +905,13 @@ def draw_companion_duck(
     # Mid-gag he wears the lifted shades (revealing the pair underneath);
     # otherwise the frame comes from the working-bob clock and the bill from the
     # quack clock (both idle → the familiar still pose, frame 0, bill closed).
+    # The gag is duck-only — the robo has no FACE/GLASSES split (poke_duck
+    # already routes his clicks to a quack instead).
     _lift = _duck_shades_lift()
     _head = (
-        render_head(_duck_frame(), flip=True, beak_open=_duck_beak_open())
-        if _lift is None
-        else render_head_shades(_lift, flip=True)
+        render_head_shades(_lift, flip=True)
+        if _lift is not None and mascot == "duck"
+        else render_head(_duck_frame(), flip=True, beak_open=_duck_beak_open(), mascot=mascot)
     )
     duck_rows = console.render_lines(_head, options.update_width(_DUCK_W), pad=True, style=bg_style)
     dh = len(duck_rows)
@@ -997,9 +1020,11 @@ class _MusicPocketFrame:
         with_copy: bool = False,
         hint_tab: Text | None = None,
         duck_say: str = "",
+        duck_mascot: str = "duck",
     ) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
+        self.duck_mascot = duck_mascot  # sprite family ("robo" on Agents pages)
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
@@ -1036,6 +1061,7 @@ class _MusicPocketFrame:
                 say_sticky=self.duck_say_sticky,
                 say_hold=self.duck_say_hold,
                 say_seq=self.duck_say_seq,
+                mascot=self.duck_mascot,
             )
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
@@ -1125,6 +1151,11 @@ class MusicLive(Live):
             return _build_too_small_screen(width, height)
 
         renderable = super().get_renderable()
+        # Adopt the page's mascot BEFORE any early return: the Agents menu is a
+        # _WelcomeFrame (not a Panel) and popups keep their own subtitle, but
+        # both must still steer the screensaver's mascot while they're showing.
+        global _chrome_mascot
+        _chrome_mascot = str(getattr(renderable, "_duck_mascot", "duck") or "duck")
         if not isinstance(renderable, Panel):
             return renderable
         # Safety net (main #104): no screen may ever show the terminal's own
@@ -1205,6 +1236,7 @@ class MusicLive(Live):
                 with_copy=with_copy,
                 hint_tab=hint_tab,
                 duck_say=duck_say,
+                duck_mascot=_chrome_mascot,
             )
             _frame.duck_say_sticky = _sticky
             _frame.duck_say_hold = _hold

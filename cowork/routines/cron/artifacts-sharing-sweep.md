@@ -1,6 +1,7 @@
 # artifacts-sharing sweep
 
 **Trigger** — cron `30 7 11,25 * *` (11th and 25th, 07:30 UTC)
+**Summary** — the export CSPs, editable shares, and the capability flags that gate them
 **Workstream** — [`workstreams/artifacts-sharing.md`](../../workstreams/artifacts-sharing.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = artifacts-sharing`.

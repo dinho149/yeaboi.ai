@@ -1,9 +1,9 @@
 """Surface-parity registry — every capability must ship on every surface (or be exempted).
 
-# See docs: "MCP Server" — the six delivery surfaces
+# See docs: "MCP Server" — the five delivery surfaces
 
-yeaboi has six delivery surfaces: the TUI, CLI flags/subcommands, the Python
-engines, the MCP server, the Claude Code plugin skills, and the OpenClaw skill.
+yeaboi has five delivery surfaces: the TUI, CLI flags/subcommands, the Python
+engines, the MCP server, and the Claude Code plugin skills.
 Features have a habit of landing TUI-only. This file is the enforcement: a
 declarative registry of capabilities mapped to the surfaces that implement
 them, plus discovery checks that FAIL when something new appears on one
@@ -245,8 +245,36 @@ CAPABILITIES: dict[str, dict] = {
         "engines": Exempt("TUI utility page — writes ~/.yeaboi/.env via config"),
         "mcp_tools": Exempt("TUI utility page; MCP servers must not rewrite host credentials"),
         "tui_mode": "settings",
-        "cli": {"--setup", "--theme", "--allow-path"},
+        "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice"},
         "skill": Exempt("TUI utility page"),
+    },
+    # ── The Agents family (agentwatch) — cards live on the Agents menu
+    # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
+    # All three modes ship at full parity: no Exempt entries, because each
+    # mode's engine/MCP/CLI/skill surfaces landed in the same phase commit that
+    # created its card.
+    "agent-usage": {
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_usage")},
+        # agents_usage_history is a read-only store wrapper (no pipeline) —
+        # parity with reporting_history / retro_history.
+        "mcp_tools": {"agents_usage", "agents_usage_history"},
+        "tui_mode": "agent-usage",
+        "cli": {"agents"},
+        "skill": "agents-usage",
+    },
+    "agent-standup": {
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
+        "mcp_tools": {"agents_standup_run", "agents_standup_history"},
+        "tui_mode": "agent-standup",
+        "cli": {"agents"},
+        "skill": "agents-standup",
+    },
+    "agent-security": {
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_security")},
+        "mcp_tools": {"agents_security_scan", "agents_security_history"},
+        "tui_mode": "agent-security",
+        "cli": {"agents"},
+        "skill": "agents-security",
     },
 }
 
@@ -270,6 +298,9 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf_six_month_review": ("yeaboi.performance.engine", "run_six_month_review"),
     "team_analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
+    "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
+    "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -321,6 +352,9 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf complete": ("yeaboi.performance.engine", "complete_one_on_one"),
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
     "analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
+    "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
+    "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -364,6 +398,9 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf prep": {"strict"},
     "perf complete": {"strict"},
     "perf review": {"strict"},
+    "agents cost": {"format", "strict"},
+    "agents standup": {"format", "strict"},
+    "agents security": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -524,12 +561,14 @@ class TestMcpTools:
 
 class TestTuiModes:
     def test_mode_cards_registered(self):
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        # The union of both category menus — Humans (_MODE_CARDS) and Agents
+        # (_AGENT_CARDS) — must equal the registered tui_mode column.
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
 
-        actual = {card["key"] for card in _MODE_CARDS}
+        actual = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
         registered = set(_non_exempt("tui_mode").values())
         assert actual == registered, (
-            f"_MODE_CARDS keys vs CAPABILITIES differ.\n"
+            f"_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
             f"  new unregistered cards: {sorted(actual - registered)}\n"
             f"  registered but card removed: {sorted(registered - actual)}\n{_HOW_TO}"
         )
@@ -572,10 +611,11 @@ class TestTips:
     def test_carded_capabilities_have_jump_targets(self):
         # Every capability that owns a mode card must have a tip whose mode_key
         # points at that exact card, so the jump-into-feature key can't rot.
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        # Cards span both category menus (the `g` jump switches category).
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
         from yeaboi.ui.shared._tips import _FEATURE_TIPS
 
-        card_keys = {card["key"] for card in _MODE_CARDS}
+        card_keys = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
         by_key = {t.key: t for t in _FEATURE_TIPS}
         for cap, tui_mode in _non_exempt("tui_mode").items():
             tip = by_key.get(cap)

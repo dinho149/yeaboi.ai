@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 26  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair  # noqa: E501
+CURRENT_SCHEMA_VERSION = 28  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -801,6 +801,40 @@ class SessionStore:
             # work. Same idiom as the v19/v20 renumbering above.
             self._apply_edit_provenance()
             logger.info("Migration v26: re-applied edit-provenance columns (v21 number collision)")
+
+        if from_version < 27:
+            # v27: the agentwatch (Agents family) tables — monitored-agent
+            # session rollups, ingest cursors, security findings, and the three
+            # report-history tables. Schema lives in agentwatch/store.py.
+            from yeaboi.agentwatch.store import _AGENTWATCH_SCHEMA
+
+            self._conn.executescript(_AGENTWATCH_SCHEMA)
+            logger.info("Migration v27: created agentwatch tables")
+
+        if from_version < 28:
+            # v28: standup GitHub owner scope — GitHub is picked by owner/org, the
+            # way Azure DevOps is picked by project, and the owner is expanded to
+            # its active repositories per run.
+            #
+            # Column only, deliberately no data backfill: deriving "acme" from a
+            # saved "acme/api" would widen an existing standup from one repo to
+            # every repo in that org without anyone asking. Saved repositories keep
+            # working untouched; the picker offers the owner upgrade explicitly.
+            #
+            # The bare except covers both "column already there" and "no
+            # standup_config yet"; neither is a problem, because StandupStore._migrate
+            # adds the same column independently — `--standup-run` and the MCP server
+            # open that store without ever constructing a SessionStore.
+            added = True
+            try:
+                self._conn.execute(
+                    """ALTER TABLE standup_config
+                       ADD COLUMN github_owners TEXT NOT NULL DEFAULT '[]'"""
+                )
+            except sqlite3.OperationalError:
+                added = False
+            if added:
+                logger.info("Migration v28: added standup GitHub owner scope")
 
     def _apply_edit_provenance(self) -> None:
         """The v21 migration body — idempotent, so v26 re-runs it verbatim.

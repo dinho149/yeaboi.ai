@@ -31,6 +31,13 @@ when the tuple of current env values changes (the setup wizard can write keys
 mid-process). Redaction runs once per *emitted* record — after the level
 check — and the never-log-per-frame rule keeps record volume low, so a single
 ``re.sub`` per record is cheap.
+
+:func:`log_safe` is the module's other half, and it solves the opposite
+problem. Redaction is about what a log line may *say*; ``log_safe`` is about
+where a log line may *end*. It cannot live in the formatter — by the time a
+record is formatted, the trusted format string and the tainted arguments have
+been flattened into one string and are no longer distinguishable — so it is
+applied at the call site instead.
 """
 
 from __future__ import annotations
@@ -40,6 +47,20 @@ import os
 import re
 
 REDACTED = "[REDACTED]"
+
+# C0 control characters minus the three whitespace ones (\t, \n, \r), plus DEL.
+# Nothing legitimate emits these into text bound for a log line or an artifact
+# field; something that sends them is broken or probing what the renderer does
+# with them. Each caller layers its own newline policy on top, because the two
+# want opposite things: ``artifacts.edits`` normalises CRLF and *keeps* the line
+# breaks, ``log_safe`` collapses them so a value cannot end its own log line.
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# How much of one interpolated value a log line will carry. Long enough to
+# identify a ticket key, a member name or an upstream error; short enough that
+# a megabyte of request body cannot push the surrounding evidence out of a
+# rotated file, which is the quieter half of a log-injection attack.
+LOG_VALUE_LIMIT = 200
 
 # Env vars whose values are credentials. Order does not matter — value
 # matching sorts longest-first at compile time so substring overlaps
@@ -66,6 +87,10 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
 _MIN_SECRET_LEN = 8
 
 # Token shapes for secrets that never passed through our env vars.
+# NOTE: agentwatch/collector.py attaches substring perf pre-checks to two of
+# these, keyed on the EXACT pattern strings (see _PATTERN_GUARDS there). If
+# you edit one of those patterns, its guard silently detaches — scans get
+# slower but stay correct; re-key the guard to restore the speed.
 # Prefixes are anchored (sk-ant-, ghp_, xoxb-, AKIA…) so prose can't match;
 # the Bearer/Basic pattern is the loosest and therefore requires a 16+ char
 # token tail to avoid matching ordinary sentences.
@@ -82,6 +107,12 @@ _TOKEN_PATTERNS: tuple[str, ...] = (
     r"secret_[A-Za-z0-9]{30,}",
     r"hooks\.slack\.com/services/[\w/]+",
     r"(?i:bearer|basic)\s+[A-Za-z0-9._~+/=-]{16,}",
+    # user:password inside a URL. Lookarounds so the scheme and host survive and
+    # only the credentials go: the voice installer logs the package-index URL,
+    # and a corporate mirror routinely carries a token there
+    # (https://svc:AKCp8…@nexus.corp/simple). Also covers Jira, SMTP and webhook
+    # URLs pasted anywhere else.
+    r"(?<=://)[^/\s:@]+:[^/\s@]{4,}(?=@)",
 )
 
 # Compiled-regex cache: (env value snapshot) -> compiled alternation.
@@ -112,6 +143,36 @@ def redact(text: str) -> str:
     Pure and idempotent — safe to apply to already-redacted text.
     """
     return _regex().sub(REDACTED, text)
+
+
+def log_safe(value: object, *, limit: int = LOG_VALUE_LIMIT) -> str:
+    """Render `value` safe to interpolate into a log line.
+
+    Log injection forges *records*, not characters: one CR or LF inside a
+    user-controlled value closes the line it sits on and lets whatever follows
+    be read as a new log entry — a fabricated ERROR, a fake admin action, or
+    enough padding to push real evidence out of a rotated file. The guarantee
+    this function makes is that a value can never end its own line.
+
+    Wrap the tainted argument, never the format string::
+
+        logger.info("share: vote for %s", log_safe(member))
+
+    The two ``replace`` calls are deliberately explicit rather than folded into
+    the regex: CodeQL's ``py/log-injection`` model recognises a ``str.replace``
+    of ``"\\r"``/``"\\n"`` as a sanitizer barrier and does not recognise an
+    equivalent ``re.sub``, so writing it the short way would leave every call
+    site still reported as tainted. Keep them.
+
+    Complements :class:`RedactingFormatter` rather than replacing it — that
+    strips secrets from the assembled line, this stops a value forging a new
+    one. Pure and idempotent.
+    """
+    text = str(value).replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    text = CONTROL_CHARS_RE.sub("", text)
+    if len(text) > limit:
+        text = text[: limit - 1] + "…"
+    return text
 
 
 class RedactingFormatter(logging.Formatter):

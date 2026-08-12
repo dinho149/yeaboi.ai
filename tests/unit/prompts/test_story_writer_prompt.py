@@ -7,6 +7,7 @@ from yeaboi.prompts.story_writer import (
     MAX_STORIES_PER_FEATURE,
     MAX_STORY_POINTS,
     MIN_STORIES_PER_FEATURE,
+    SMALL_PROJECT_MAX_STORIES,
     get_story_writer_prompt,
 )
 
@@ -244,3 +245,33 @@ class TestStoryWriterPromptImports:
         from yeaboi.prompts.story_writer import get_story_writer_prompt as imported_fn
 
         assert imported_fn is get_story_writer_prompt
+
+
+class TestMaxTotalStories:
+    """Small projects carry a hard total-story ceiling (YEA-57 item 7): the
+    cap instruction must replace the per-feature range AND beat any
+    team-calibration average — a one-sprint job must not inherit a large
+    team's stories-per-epic habit."""
+
+    def test_cap_instruction_present(self):
+        result = _make_prompt(max_total_stories=SMALL_PROJECT_MAX_STORIES)
+        assert f"at MOST {SMALL_PROJECT_MAX_STORIES} user stories" in result
+        assert f"HARD LIMIT: at most {SMALL_PROJECT_MAX_STORIES} stories in total" in result
+
+    def test_cap_suppresses_per_feature_range(self):
+        result = _make_prompt(max_total_stories=2)
+        assert f"{MIN_STORIES_PER_FEATURE}-{MAX_STORIES_PER_FEATURE} stories per feature" not in result
+
+    def test_cap_beats_team_calibration_average(self):
+        calibration = "Team history: avg 4.0 stories/epic across 12 epics."
+        result = _make_prompt(max_total_stories=2, team_calibration=calibration)
+        assert "HARD LIMIT: at most 2 stories in total" in result
+        assert "Aim for ~4 stories per feature" not in result
+
+    def test_no_cap_keeps_default_range(self):
+        result = _make_prompt()
+        assert f"{MIN_STORIES_PER_FEATURE}-{MAX_STORIES_PER_FEATURE} stories per feature" in result
+        assert "HARD LIMIT" not in result
+
+    def test_small_project_max_stories_is_2(self):
+        assert SMALL_PROJECT_MAX_STORIES == 2

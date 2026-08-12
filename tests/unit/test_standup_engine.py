@@ -796,6 +796,10 @@ class TestProgressCallback:
             "Collecting recent activity",
             "Reading sprint progress",
             "Resolving team & identities",
+            # The deterministic aggregate (the standup.aggregate seam) gets its
+            # own phase — with the sidecar it's a visible hop, without it the
+            # same work just used to hide inside the summary phase.
+            "Scoring activity & practices",
             "Writing summaries with AI",
             "Saving & exporting",
         ]
@@ -885,6 +889,41 @@ class TestWipFlow:
         assert engine._fallback_summary(acts) == "change 0; change 1; and 3 more"
         assert engine._fallback_summary(acts[:2]) == "change 0; change 1"
 
+    def test_strip_rationale_echo_drops_the_restated_opener_only(self):
+        # Real-run shape: the LLM opens the team summary by rewording the
+        # confidence rationale shown two lines above it.
+        rationale = "Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        summary = (
+            "The sprint is on day 2 of 10 with no points burned yet, putting the team behind the "
+            "ideal burn curve. Nikolai delivered the most concrete output, merging a substantial "
+            "Jenkins governance branch."
+        )
+        assert engine._strip_rationale_echo(summary, rationale) == (
+            "Nikolai delivered the most concrete output, merging a substantial Jenkins governance branch."
+        )
+
+    def test_strip_rationale_echo_keeps_a_sentence_with_its_own_content(self):
+        rationale = "Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        summary = "Two of six members show no activity on day 2, which is a risk worth surfacing."
+        assert engine._strip_rationale_echo(summary, rationale) == summary
+
+    def test_strip_rationale_echo_ignores_a_rationale_too_short_to_match_on(self):
+        assert engine._strip_rationale_echo("Behind pace.", "Behind.") == "Behind pace."
+
+    def test_fallback_team_summary_does_not_restate_chip_or_details(self):
+        # The confidence chip carries the label+rationale and the Details footer
+        # carries the per-source counts; the fallback must not render them twice.
+        from yeaboi.standup import confidence
+
+        bundle = ActivityBundle(items=[{"kind": "commit", "title": "x"}], counts=[("jira", 1)])
+        progress = confidence.SprintProgress(
+            confidence_label="Behind", confidence_rationale="Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        )
+        summary = engine._build_fallback_team_summary(bundle, progress)
+        assert summary == "Sprint status: Behind."
+        empty = engine._build_fallback_team_summary(ActivityBundle(), progress)
+        assert "No activity detected" in empty
+
     def test_llm_payload_splits_activity_and_in_progress(self, monkeypatch, db_path, seeded_session):
         items = [
             {"author": "Alice", "kind": "commit", "title": "login page", "source": "github"},
@@ -955,6 +994,254 @@ class TestWipFlow:
         assert seen["activity_count"] == 1
 
 
+class TestSkippedSourceReasons:
+    """``_skipped_sources`` is the only place that can tell the three cases apart."""
+
+    def _params(self, **overrides):
+        params = {
+            "jira_project": "",
+            "azdo_project": "",
+            "confluence_space": "",
+            "notion_root": "",
+            "github_repo": "",
+            "local_repo_path": "",
+            "github_repositories": [],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+        }
+        params.update(overrides)
+        return params
+
+    def test_connected_but_unticked_reads_as_a_choice(self, monkeypatch):
+        # A GitHub token is present, so this is two keypresses in the picker — not
+        # a .env problem, and not worth a notice.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["github"] == "not selected in setup"
+        assert "github" not in unmet
+
+    def test_unticked_and_unconfigured_names_the_env_var(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["github"] == "GITHUB_TOKEN not set"
+        assert "github" not in unmet
+
+    def test_ticked_but_unreachable_is_unmet(self, monkeypatch):
+        # Asked for and not delivered — the one case that earns a ⚠ notice.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], ["github"], [])
+        assert dict(skipped)["github"] == "GITHUB_TOKEN not set"
+        assert "github" in unmet
+
+    def test_empty_scope_says_so_rather_than_blaming_credentials(self, monkeypatch):
+        # The user ticked GitHub and chose no repos; _resolve_code_scope stripped it.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [], ["github"]
+        )
+        assert dict(skipped)["github"] == "selected, but no organisations or repositories in scope"
+        assert "github" in unmet
+
+    def test_a_source_that_ran_is_never_listed(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        skipped, _ = engine._skipped_sources(
+            self._params(jira_project="PROJ", github_repositories=["o/r"]),
+            {"jira", "github"},
+            ["jira"],
+            ["github"],
+            [],
+        )
+        assert "github" not in dict(skipped)
+
+    def test_azure_tickets_and_code_report_once_when_neither_was_asked_for(self, monkeypatch):
+        # They share one .env block; two lines for one missing integration is noise.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert "azure_devops" in dict(skipped)
+        assert "azdo_repos" not in dict(skipped)
+
+    def test_the_deduped_azure_row_says_it_covers_both_surfaces(self, monkeypatch):
+        # The surviving row is labelled "Azure DevOps tickets", so without this the
+        # reader is left wondering what happened to the code half.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["azure_devops"] == "AZURE_DEVOPS_PROJECT not set — tickets and code"
+
+    def test_azure_row_is_not_annotated_when_code_reports_separately(self, monkeypatch):
+        # Nothing was deduped here, so the qualifier would be a lie.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, _ = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], ["azure_devops"], []
+        )
+        assert dict(skipped)["azdo_repos"] == "AZURE_DEVOPS_PROJECT not set"
+        assert "— tickets and code" not in dict(skipped)["azure_devops"]
+
+    def test_a_deliberate_non_choice_is_listed_but_never_chased(self, monkeypatch):
+        # The whole point of the (skipped, unmet) split: someone with no local repo
+        # must not read "Not scanned: Local Git" at the bottom of every standup forever.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], [])
+        assert dict(skipped)["local_git"] == "no repo path configured"
+        assert "local_git" not in unmet
+
+    def test_documentation_sources_classify_like_the_rest(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        # Confluence is connected but unticked; Notion is neither.
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ", confluence_space="ENG"), {"jira"}, ["jira"], [], []
+        )
+        assert dict(skipped)["confluence"] == "not selected in setup"
+        assert dict(skipped)["notion"] == "NOTION_ROOT_PAGE_ID not set"
+        assert not {"confluence", "notion"} & unmet
+
+    def test_a_ticked_documentation_source_that_cannot_run_is_unmet(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ"), {"jira"}, ["jira"], [], ["confluence"]
+        )
+        assert dict(skipped)["confluence"] == "CONFLUENCE_SPACE_KEY not set"
+        assert "confluence" in unmet
+
+    def test_azure_code_reports_separately_when_it_was_asked_for(self, monkeypatch):
+        # Tickets ran, code did not: "Azure DevOps" alone would be ambiguous.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        skipped, unmet = engine._skipped_sources(
+            self._params(jira_project="PROJ", azdo_project="P"),
+            {"jira", "azure_devops"},
+            ["jira", "azure_devops"],
+            [],
+            [],
+            ["azure_devops"],
+        )
+        assert dict(skipped)["azdo_repos"] == "selected, but no Azure projects chosen"
+        assert "azdo_repos" in unmet
+
+
+class TestCodeScopeReportsWhatItDropped:
+    """The last return value of ``_resolve_code_scope``.
+
+    A source ticked in setup with nothing behind it used to be stripped silently,
+    which is indistinguishable from the source having found nothing.
+    """
+
+    def test_a_ticked_source_with_no_repos_is_reported_as_dropped(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": []}
+        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == [] and github == [] and owners == []
+        assert dropped == ["github"]
+
+    def test_azure_with_neither_projects_nor_repositories_is_dropped(self):
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["azure_devops"],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+        }
+        sources, _owners, _github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == []
+        assert dropped == ["azure_devops"]
+
+    def test_a_source_with_a_real_scope_is_not_dropped(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": ["o/r"]}
+        sources, _owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == ["github"] and github == ["o/r"]
+        assert dropped == []
+
+    def test_an_owner_is_scope_enough_to_keep_github(self):
+        """Owners are the GitHub analog of Azure projects — they count as scope."""
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["github"],
+            "github_owners": ["acme"],
+            "github_repositories": [],
+        }
+        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+            config, None, None, None, None
+        )
+        assert sources == ["github"] and owners == ["acme"] and github == []
+        assert dropped == []
+
+    def test_nothing_is_dropped_before_the_scope_has_ever_been_configured(self, monkeypatch):
+        # Defaults are a guess, not a choice — stripping them would report a
+        # decision the user never made. An unconfigured GitHub source with an
+        # empty scope is "not resolved yet", not "empty": the collector resolves
+        # it and reports its own failure if the token can list nothing.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        config = {"code_scope_configured": False, "code_sources": ["github"], "github_repositories": []}
+        sources, *_rest, dropped = engine._resolve_code_scope(config, None, None, None, None)
+        assert sources == ["github"]
+        assert dropped == []
+
+
+class TestGitHubOwnerScopeResolution:
+    """Where the owner list comes from when the caller does not supply one."""
+
+    def test_an_explicit_override_wins_over_saved_owners(self):
+        config = {"code_scope_configured": True, "code_sources": ["github"], "github_owners": ["saved"]}
+        _sources, owners, *_rest = engine._resolve_code_scope(
+            config, None, None, None, None, github_owners=["override"]
+        )
+        assert owners == ["override"]
+
+    def test_a_bare_token_enables_github_without_resolving_a_scope(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        sources, owners, github, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        # The point of the change: a token alone now produces code coverage
+        # instead of a report that reads like a quiet day. Which owners that
+        # means is the collector's job — resolution stays network-free.
+        assert sources == ["github"]
+        assert owners == [] and github == []
+
+    def test_scope_resolution_never_touches_the_network(self, monkeypatch):
+        """It runs on every path, including inside unit tests.
+
+        Discovering here blocked the standup's critical path on a GitHub call and
+        put a live 401 inside the test suite.
+        """
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("scope resolution must not call GitHub")
+
+        monkeypatch.setattr("yeaboi.tools.github._get_github_client", _boom)
+        monkeypatch.setattr("yeaboi.standup.code_scope.discover_github_owners", _boom)
+
+        engine._resolve_code_scope(None, None, None, None, None)
+
+    def test_a_pinned_legacy_repo_is_honoured_verbatim(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "acme/api")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        _sources, owners, github, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        # A pin is an explicit narrow scope; it reaches the collector as a
+        # repository, which is what stops the auto-discovery branch firing.
+        assert owners == [] and github == ["acme/api"]
+
+    def test_no_token_and_no_repo_means_no_github_at_all(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        sources, owners, *_rest = engine._resolve_code_scope(None, None, None, None, None)
+
+        assert sources == [] and owners == []
+
+
 class TestSkippedSources:
     def _run(self, monkeypatch, db_path, seeded_session, bundle):
         monkeypatch.setattr(engine.collector, "collect_recent_activity", lambda **kw: bundle)
@@ -982,10 +1269,15 @@ class TestSkippedSources:
         assert report.skipped_sources == (("github", "STANDUP_GITHUB_REPO not set"),)
 
     def test_partial_coverage_advises_configuring_skipped_sources(self, monkeypatch, db_path, seeded_session):
-        # Jira ran but GitHub/AzDO were not set up → the report itself must say
-        # so (⚠ Notices) and advise connecting them, not just the Activity detail.
+        # Jira ran but GitHub/AzDO were SELECTED and could not run → the report
+        # itself must say so (⚠ Notices), not just the Activity detail.
         from yeaboi.standup.collector import ActivityBundle
 
+        monkeypatch.setattr(
+            engine,
+            "_skipped_sources",
+            lambda *a, **kw: ([], {"github", "azure_devops"}),
+        )
         bundle = ActivityBundle(
             items=[],
             counts=[("jira", 2)],
@@ -996,10 +1288,41 @@ class TestSkippedSources:
         )
         report = self._run(monkeypatch, db_path, seeded_session, bundle)
         notice = next((w for w in report.warnings if w.startswith("Not scanned:")), "")
-        assert "Github (STANDUP_GITHUB_REPO not set)" in notice
-        assert "Azure Devops (AZURE_DEVOPS_PROJECT not set)" in notice
-        assert "connect these in .env" in notice
+        assert "GitHub (STANDUP_GITHUB_REPO not set)" in notice
+        assert "Azure DevOps tickets (AZURE_DEVOPS_PROJECT not set)" in notice
+        assert "connect them in .env" in notice
         assert notice == report.warnings[-1]  # advisory, so auth/LLM problems stay on top
+
+    def test_unselected_source_is_reported_but_never_warned_about(self, monkeypatch, db_path, seeded_session):
+        # Deliberately not ticking GitHub is a choice, not a problem. It belongs in
+        # the report's "Not scanned" panel — never in a ⚠ notice that would repeat
+        # on every run for the rest of the team's life.
+        from yeaboi.standup.collector import ActivityBundle
+
+        monkeypatch.setattr(engine, "_skipped_sources", lambda *a, **kw: ([], set()))
+        bundle = ActivityBundle(
+            items=[],
+            counts=[("jira", 2)],
+            skipped=[("github", "not selected in setup")],
+        )
+        report = self._run(monkeypatch, db_path, seeded_session, bundle)
+        assert report.skipped_sources == (("github", "not selected in setup"),)
+        assert not [w for w in report.warnings if w.startswith("Not scanned:")]
+
+    def test_missing_sdk_always_warns_even_if_unselected(self, monkeypatch, db_path, seeded_session):
+        # An ImportError is never a choice — the collector only records it for a
+        # source it actually tried to run.
+        from yeaboi.standup.collector import ActivityBundle
+
+        monkeypatch.setattr(engine, "_skipped_sources", lambda *a, **kw: ([], set()))
+        bundle = ActivityBundle(
+            items=[],
+            counts=[("jira", 2)],
+            skipped=[("notion", "SDK not installed")],
+        )
+        report = self._run(monkeypatch, db_path, seeded_session, bundle)
+        notice = next((w for w in report.warnings if w.startswith("Not scanned:")), "")
+        assert "Notion (SDK not installed)" in notice
 
     def test_nothing_configured_keeps_single_generic_notice(self, monkeypatch, db_path, seeded_session):
         # All sources skipped → the existing "No activity sources configured"
@@ -1083,6 +1406,60 @@ class TestMemberEvidence:
         rows = engine._member_evidence(acts)
         assert len(rows) == 1
         assert rows[0].url == ""
+
+    def test_same_pr_merge_from_both_sides_is_one_row(self):
+        # A merged PR lands as two merge commits — branch-side and target-side —
+        # with different SHAs/URLs but the same subject. One merge, one row.
+        acts = [
+            {
+                "kind": "commit",
+                "title": "Merge pull request 48780 from psot/jenkins into master",
+                "key": "e8bc280c",
+                "url": "https://a/c/e8bc280c",
+                "repository": "org/tf-jenkins",
+                "timestamp": "2026-08-07T16:29:44",
+            },
+            {
+                "kind": "commit",
+                "title": "Merge pull request 48780 from psot/jenkins into master",
+                "key": "31a595f1",
+                "url": "https://a/c/31a595f1",
+                "repository": "org/tf-jenkins",
+                "timestamp": "2026-08-07T15:48:17",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 1
+        assert rows[0].key == "e8bc280c"  # newest survives
+
+    def test_provenance_tailed_commits_on_one_pr_stay_separate_rows(self):
+        # The GitHub collector appends " (PR #91)" to every commit found on a
+        # PR branch — those are distinct authored commits, not merges, and must
+        # not collapse into one row.
+        acts = [
+            {"kind": "commit", "title": "Add retry (PR #91)", "key": "aaa1", "url": "https://g/aaa1"},
+            {"kind": "commit", "title": "Fix the test (PR #91)", "key": "bbb2", "url": "https://g/bbb2"},
+        ]
+        assert len(engine._member_evidence(acts)) == 2
+
+    def test_pr_merges_in_different_repos_stay_separate_rows(self):
+        acts = [
+            {
+                "kind": "commit",
+                "title": "Merge pull request 12 from x",
+                "key": "a",
+                "url": "https://a/1",
+                "repository": "org/one",
+            },
+            {
+                "kind": "commit",
+                "title": "Merge pull request 12 from x",
+                "key": "b",
+                "url": "https://a/2",
+                "repository": "org/two",
+            },
+        ]
+        assert len(engine._member_evidence(acts)) == 2
 
     def test_caps_at_eight_preserving_order(self):
         acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]
@@ -1186,6 +1563,83 @@ class TestMemberEvidence:
         rows = engine._member_evidence(acts)
         assert [c.key for c in rows[0].children] == ["aaa2", "aaa1"]
         assert rows[0].children[0].children == ()
+
+    def test_hierarchy_fields_survive_to_evidence_rows(self):
+        acts = [
+            {
+                "kind": "issue",
+                "title": "SSO error states",
+                "key": "PSOT-3",
+                "url": "https://j/browse/PSOT-3",
+                "issue_type": "Sub-task",
+                "parent_key": "PSOT-1",
+                "subtask": True,
+            }
+        ]
+        row = engine._member_evidence(acts)[0]
+        assert (row.issue_type, row.parent_key, row.subtask) == ("Sub-task", "PSOT-1", True)
+        # Tracker rows ARE tickets — they never name ticket_keys.
+        assert row.ticket_keys == ()
+
+    def test_code_rows_name_only_gated_exact_references(self):
+        acts = [
+            {
+                "kind": "pr",
+                "title": "PSOT-12 enable SSO",
+                "key": "#91",
+                "url": "https://g/pr/91",
+                "branch": "feature/UTF-8-support",  # ticket-shaped, not a ticket
+                "body": "Relates to ab#77.",
+                "work_item_ids": ("88",),
+            }
+        ]
+        row = engine._member_evidence(acts, prefixes=frozenset({"PSOT"}), work_item_ids=frozenset({"77"}))[0]
+        assert row.ticket_keys == ("PSOT-12", "#77", "#88")
+
+    def test_without_gates_no_keys_are_named(self):
+        # The suppress-only default: a caller that passes no gates gets no
+        # claims, never ungated ones.
+        acts = [{"kind": "pr", "title": "PSOT-12 enable SSO", "key": "#91", "url": "https://g/pr/91"}]
+        assert engine._member_evidence(acts)[0].ticket_keys == ()
+
+    def test_fallback_updates_carry_hierarchy_and_attach_keys(self):
+        # End to end through _build_fallback_member_updates: the gates are
+        # derived from the report's own tracker items, so the PR's reference
+        # to the story becomes a named key on its evidence row.
+        grouped = {
+            "Ada": [
+                {
+                    "kind": "issue",
+                    "source": "jira",
+                    "title": "SSO login flow",
+                    "key": "PSOT-1",
+                    "url": "https://j/browse/PSOT-1",
+                    "issue_type": "Story",
+                    "subtask": False,
+                },
+                {
+                    "kind": "issue",
+                    "source": "jira",
+                    "title": "SSO error states",
+                    "key": "PSOT-3",
+                    "url": "https://j/browse/PSOT-3",
+                    "issue_type": "Sub-task",
+                    "parent_key": "PSOT-1",
+                    "subtask": True,
+                },
+                {
+                    "kind": "pr",
+                    "source": "github",
+                    "title": "PSOT-1 enable SSO",
+                    "key": "#91",
+                    "url": "https://g/pr/91",
+                },
+            ]
+        }
+        update = engine._build_fallback_member_updates(grouped, {})[0]
+        subtask_row = next(r for r in update.ticketing_evidence if r.key == "PSOT-3")
+        assert subtask_row.subtask is True and subtask_row.parent_key == "PSOT-1"
+        assert update.code_evidence[0].ticket_keys == ("PSOT-1",)
 
     def test_grouping_carries_timestamp_and_summary(self):
         items = [
@@ -1956,7 +2410,22 @@ class TestLlmPayloadKeys:
     # Split by intent. Anything not in one of these two sets is undecided.
     FOR_THE_MODEL = frozenset({"kind", "title", "summary", "status", "source", "repository"})
     RENDERING_AND_RULES_ONLY = frozenset(
-        {"key", "url", "timestamp", "pr_id", "branch", "body", "changed_paths", "work_item_ids", "work_items_known"}
+        {
+            "key",
+            "url",
+            "timestamp",
+            "pr_id",
+            "branch",
+            "body",
+            "changed_paths",
+            "work_item_ids",
+            "work_items_known",
+            # Story/subtask hierarchy: deterministic, drawn by the web page —
+            # the model restating structure the UI renders would be noise.
+            "issue_type",
+            "parent_key",
+            "subtask",
+        }
     )
 
     def _row(self) -> dict:
@@ -1976,6 +2445,9 @@ class TestLlmPayloadKeys:
             "changed_files": [f"src/m{i}.py" for i in range(100)],
             "work_item_ids": ["1234"],
             "work_items_known": True,
+            "issue_type": "Story",
+            "parent_key": "PROJ-1",
+            "subtask": False,
         }
         return engine._group_activity_by_author([item], ["Alice"])["Alice"][0]
 
@@ -2113,3 +2585,100 @@ class TestPracticeFeedbackReachesTheRun:
             )
         seen = self._run(monkeypatch, db_path, seeded_session)
         assert seen["feedback"]("untracked-work", "url:https://x/pull/91") is False
+
+
+class TestAggregateDispatchProtocol:
+    """run_standup's use of the aggregate seam: backend choice + two-pass adjudication."""
+
+    def _canned_llm(self, monkeypatch):
+        llm_json = json.dumps({"members": [], "team_summary": "ok"})
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.get_llm",
+            lambda **k: type("L", (), {"invoke": lambda self, m: type("R", (), {"content": llm_json})()})(),
+        )
+
+    def test_go_result_wins_over_python(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[("jira", 0)])
+        self._canned_llm(monkeypatch)
+        from yeaboi.standup import aggregate
+
+        real = aggregate.aggregate_standup
+        served = {"n": 0}
+
+        def fake_go(inputs):
+            served["n"] += 1
+            return real(inputs)
+
+        monkeypatch.setattr(aggregate, "go_aggregate", fake_go)
+        python_calls = {"n": 0}
+
+        def spy_python(inputs):
+            python_calls["n"] += 1
+            return real(inputs)
+
+        monkeypatch.setattr(aggregate, "aggregate_standup", spy_python)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert served["n"] == 1
+        assert python_calls["n"] == 0  # the sidecar result was used as-is
+        assert report.date == "2026-07-10"
+
+    def test_two_pass_feeds_dropped_case_ids_back(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[("jira", 0)])
+        self._canned_llm(monkeypatch)
+        from yeaboi.standup import adjudicate, aggregate
+        from yeaboi.standup.habits import AdjudicationCase
+
+        real = aggregate.aggregate_standup
+        calls: list[dict] = []
+
+        def fake(inputs):
+            calls.append(inputs)
+            result = real(inputs)
+            if "dropped_case_ids" not in inputs:
+                result["adjudication_cases"] = [
+                    {"case_id": "work-0", "subject": "s", "branch": "", "paths": [], "candidates": [["K-1", "t", "x"]]}
+                ]
+            return result
+
+        monkeypatch.setattr(aggregate, "aggregate_standup", fake)
+        seen_cases: list = []
+
+        def fake_adjudicator(cases):
+            seen_cases.extend(cases)
+            return ["work-0", "bogus-9"]
+
+        monkeypatch.setattr(adjudicate, "build_adjudicator", lambda config, corrections: fake_adjudicator)
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert len(calls) == 2
+        # The engine passes every id back sorted; habits' pass-2 intersection
+        # is what discards the junk one.
+        assert calls[1]["dropped_case_ids"] == ["bogus-9", "work-0"]
+        assert isinstance(seen_cases[0], AdjudicationCase)
+        assert seen_cases[0].case_id == "work-0"
+
+    def test_failing_adjudicator_keeps_pass_one_result(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[("jira", 0)])
+        self._canned_llm(monkeypatch)
+        from yeaboi.standup import adjudicate, aggregate
+
+        real = aggregate.aggregate_standup
+        calls: list[dict] = []
+
+        def fake(inputs):
+            calls.append(inputs)
+            result = real(inputs)
+            if "dropped_case_ids" not in inputs:
+                result["adjudication_cases"] = [
+                    {"case_id": "work-0", "subject": "s", "branch": "", "paths": [], "candidates": [["K-1", "t", "x"]]}
+                ]
+            return result
+
+        monkeypatch.setattr(aggregate, "aggregate_standup", fake)
+
+        def boom(cases):
+            raise RuntimeError("adjudicator exploded")
+
+        monkeypatch.setattr(adjudicate, "build_adjudicator", lambda config, corrections: boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert len(calls) == 1  # no second pass — deterministic verdicts stand
+        assert report.date == "2026-07-10"

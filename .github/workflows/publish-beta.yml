@@ -1,0 +1,179 @@
+name: Publish pre-release to PyPI
+
+# Every release-worthy merge to main ships a PyPI PRE-RELEASE (X.Y.ZrcN) and
+# nothing else. `pip install yeaboi` cannot see these; `pip install --pre yeaboi`
+# can. The official X.Y.Z is cut by publish.yml, and only when a human promotes
+# the accumulated batch — see cowork/routines/cron/release-promote-ask.md.
+#
+# THIS FILENAME IS HALF OF A PYPI TRUSTED-PUBLISHER ENTRY. It needs its own
+# publisher on the `yeaboi` project (workflow `publish-beta.yml`, environment
+# `pypi`) alongside publish.yml's. Without it every beta dies at the upload step
+# with `invalid-publisher` — loudly, and with the official channel untouched,
+# which is why the new trigger lives here rather than inside publish.yml.
+#
+# No `v*` tag and no GitHub Release for a pre-release, on purpose: `v*` stays a
+# finals-only namespace, which is what makes "the last final tag" a reliable
+# anchor for the rc number, for the promotion manifest, and for
+# release-published-announce.md's `git log <previous-tag>..<tag>`.
+#
+# It DOES push a `beta/X.Y.ZrcN` tag, in a namespace inert to every one of those
+# readers, and only after the upload succeeds. Without it the newest pre-release
+# could only be computed as `next_prerelease(HEAD)` — what the *next* merge would
+# be numbered, which every docs and chore commit inflates past anything actually
+# on PyPI. That number was being printed as a `pip install --pre` line to a human
+# and could 404. The tag also pins the commit, which is what lets publish.yml cut
+# the official release from the exact tree somebody tested.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "publish an rc even if this push did not change the version"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialise, never cancel. Two merges a minute apart get two different rc numbers
+# (the number is a commit count), so a race cannot collide — but a cancelled beta
+# is a merge that silently never shipped, which is the failure this whole channel
+# exists to stop happening quietly.
+concurrency:
+  group: publish-beta
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Decide the pre-release version
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.v.outputs.should_release }}
+      version: ${{ steps.v.outputs.version }}
+      base: ${{ steps.v.outputs.base }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the rc number is a commit count; tags anchor it
+      - id: v
+        env:
+          BEFORE: ${{ github.event.before }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          # `{p;q;}` rather than `| head -1`: under `set -o pipefail` head closes
+          # the pipe and sed can exit 141, failing the step. Safe today only
+          # because pyproject.toml has one `version = ` line — which is a fact
+          # about the file, not about this function.
+          ver() { sed -nE '/^version = "/{s/^version = "([^"]+)".*/\1/;p;q;}'; }
+          BASE=$(ver < pyproject.toml)
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+
+          # Did THIS push change the version? auto-version.yml moves that line on
+          # the PR branch for every release-worthy change and leaves it alone for
+          # docs, CI and chore work, so this is the same cheap no-op publish.yml
+          # had — and it is what keeps rc numbers, and PyPI, from growing on every
+          # typo fix.
+          PREV=""
+          if [ -n "${BEFORE:-}" ] && git rev-parse -q --verify "$BEFORE^{commit}" >/dev/null 2>&1; then
+            PREV=$(git show "$BEFORE:pyproject.toml" | ver)
+          elif git rev-parse -q --verify "HEAD^" >/dev/null 2>&1; then
+            PREV=$(git show "HEAD^:pyproject.toml" | ver)
+          fi
+
+          if [ "${FORCE:-false}" != "true" ] && [ "$PREV" = "$BASE" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::version unchanged ($BASE) — no pre-release for this merge."
+            exit 0
+          fi
+
+          # Stdlib only, so this runs before any uv sync. Exit 1 means "nothing to
+          # pre-release" (the version matches the last released one); exit 2 means
+          # the version went backwards and a human has to look.
+          set +e
+          VERSION=$(python3 scripts/release_channel.py --next-rc)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 1 ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$BASE is the version already released — nothing to pre-release."
+            exit 0
+          fi
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::release_channel.py refused to number this commit — see its message above."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::pre-release $VERSION (base $BASE, commit ${GITHUB_SHA:0:8})"
+
+  test:
+    name: Lint & Test
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - run: make lint
+      - run: make test
+
+  publish:
+    name: Build & Publish the pre-release
+    needs: [check, test]
+    if: needs.check.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing (OIDC)
+      contents: write # push the beta/X.Y.ZrcN tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv python install 3.12
+      # The rc suffix is injected HERE and only here, into a checkout that is
+      # thrown away with the runner. It is never committed: scripts/bump_version.py
+      # rejects anything that is not X.Y.Z and auto-version.yml runs it on every
+      # release-worthy PR, so an rc string on main would break the next PR and the
+      # one after with no obvious cause. This job runs no tests for the same reason
+      # the stamp is not in `test` — nothing may observe the mutated file.
+      - name: Stamp the pre-release version
+        run: |
+          python3 scripts/release_channel.py --write --version "${{ needs.check.outputs.version }}"
+          grep -m1 '^version = ' pyproject.toml
+      - run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          skip-existing: true # a re-run recomputes the SAME rc; this makes that a no-op
+      # AFTER the upload, never before. The tag's whole value is that it means
+      # "this exists on PyPI" — created first, it would promise a file that a
+      # failed upload never produced, and promotion would pin a commit whose
+      # pre-release nobody could install. Idempotent, because a re-run recomputes
+      # the same rc and `skip-existing` already made the upload a green no-op.
+      - name: Tag the published pre-release
+        env:
+          TAG: beta/${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::notice::$TAG already exists — re-run, nothing to tag."
+            exit 0
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          echo "::notice::tagged $TAG at ${GITHUB_SHA:0:8}"
+      - name: Summary
+        run: |
+          {
+            echo "### Pre-release \`${{ needs.check.outputs.version }}\`"
+            echo
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- install: \`pip install --pre yeaboi==${{ needs.check.outputs.version }}\`"
+            echo "- promotion target: \`${{ needs.check.outputs.base }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

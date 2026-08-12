@@ -16,6 +16,7 @@ from yeaboi.ui.session._utils import _invoke_with_animation, _render_to_lines, _
 from yeaboi.ui.session.screens._accordion import _build_accordion_question_screen
 from yeaboi.ui.session.screens._screens import _build_summary_screen
 from yeaboi.ui.session.screens._screens_pipeline import _build_edit_prompt_screen
+from yeaboi.ui.shared._input import paste_payload
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,9 @@ def _edit_accordion_browse(
     graph_state: dict,
     _key,
     export_only: bool,
+    *,
+    return_state_on_esc: bool = False,
+    edit_hint: str = "Enter to edit · Ctrl+S save · Esc exit",
 ) -> dict | None:
     """Show the accordion with free arrow-key navigation for editing answers.
 
@@ -186,6 +190,13 @@ def _edit_accordion_browse(
     # to the review screen without changes.
 
     Returns updated graph_state, or None if user cancelled (Esc from session).
+
+    The chat driver opens this as a modal over the transcript and passes
+    return_state_on_esc=True (same flag, same reason as _phase_intake_questions):
+    an Esc mid-re-ask means "back to the chat", not "quit planning", so the two
+    cancel paths hand the state back instead of None. edit_hint is a parameter
+    for the same reason — "Esc exit" reads as exiting planning when there is a
+    chat behind this screen.
     """
     logger.debug("_edit_accordion_browse started")
     from yeaboi.ui.session.screens._accordion import _HIDDEN_QUESTIONS
@@ -219,7 +230,7 @@ def _edit_accordion_browse(
                 phase_label="",
                 width=w,
                 height=h,
-                edit_hint="Enter to edit \u00b7 Ctrl+S save \u00b7 Esc exit",
+                edit_hint=edit_hint,
             )
         )
 
@@ -281,10 +292,20 @@ def _edit_accordion_browse(
                 }
                 result = _invoke_with_animation(live, console, graph, invoke_state, "Re-asking question", "")
                 if result is None:
-                    return None
+                    logger.info("Accordion edit: re-ask cancelled (return_state=%s)", return_state_on_esc)
+                    if not return_state_on_esc:
+                        return None
+                    # The pop above was in preparation for an invoke that never
+                    # ran — put the gate back, or the caller returns to a chat
+                    # whose review is no longer pending.
+                    graph_state["pending_review"] = "project_intake"
+                    qs.current_question = original_q
+                    return graph_state
                 graph_state = result
                 # Enter single-question input for this question
-                graph_state = _phase_intake_questions(live, console, graph, graph_state, _key, export_only)
+                graph_state = _phase_intake_questions(
+                    live, console, graph, graph_state, _key, export_only, return_state_on_esc=return_state_on_esc
+                )
                 if graph_state is None:
                     return None
                 # After answering, stay in browse mode with updated state
@@ -342,7 +363,7 @@ def _get_edit_input(
             word_start = _word_boundary_left(input_value, len(input_value))
             input_value = input_value[:word_start]
         elif isinstance(key, str) and key.startswith("paste:"):
-            input_value += key[6:]
+            input_value += paste_payload(key)
         elif key == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)

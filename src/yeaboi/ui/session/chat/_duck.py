@@ -31,4 +31,27 @@ PHASE_QUIPS: dict[str, str] = {
     "capacity_planning": "Last stretch: capacity.",
 }
 
-__all__ = ["COACH_HOLD", "PRIORITY_COACH", "PRIORITY_EVENT", "ChatDuck", "PHASE_QUIPS"]
+# What the duck says while a turn is grinding — rotated by the driver's
+# _entertain_duck every few seconds so a long wait reads as showtime, not a
+# stall. Same ≤40-char bubble budget as DUCK_QUIPS (tested).
+WORKING_QUIPS: tuple[str, ...] = (
+    "Crunching the numbers…",
+    "Paddling hard below the surface…",
+    "Untangling the backlog…",
+    "Sharpening story points…",
+    "Consulting the rubber-duck council…",
+    "Herding user stories…",
+    "Negotiating with the sprint gods…",
+    "Stacking epics very carefully…",
+    "Waterproofing the plan…",
+    "Still quacking along…",
+)
+
+__all__ = [
+    "COACH_HOLD",
+    "PRIORITY_COACH",
+    "PRIORITY_EVENT",
+    "ChatDuck",
+    "PHASE_QUIPS",
+    "WORKING_QUIPS",
+]

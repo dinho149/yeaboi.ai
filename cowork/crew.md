@@ -16,7 +16,7 @@ carries `model: inherit` so the caller decides.
 
 ## Why the scribe is separate
 
-**One format, twenty routines.** Every ticket, digest, and Notion page has one shape because one
+**One format, twenty-two routines.** Every ticket, digest, and Notion page has one shape because one
 agent writes them all. Twenty routines each doing their own comms drift into twenty different
 ticket styles within a month.
 

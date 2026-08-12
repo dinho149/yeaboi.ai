@@ -35,12 +35,12 @@ from rich.live import Live
 from yeaboi.agent.chat_intake import GREETING_TEXT, SIZE_QUESTION_TEXT, parse_size_reply, resolve_intake_mode
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
 from yeaboi.agent.streaming import ChatStreamCancelledError, predict_next_node, stream_chat_turn
-from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS, validate_chat_input
+from yeaboi.input_guardrails import validate_chat_input
 from yeaboi.persistence import save_project_snapshot
 from yeaboi.prompts.intake import decorate_question_for_chat
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
-from yeaboi.ui.shared._input import set_text_entry
+from yeaboi.ui.shared._input import set_text_entry, take_paste_dropped
 from yeaboi.ui.shared._music_bar import (
     poke_duck,
     quack_duck,
@@ -51,7 +51,17 @@ from yeaboi.ui.shared._music_bar import (
 from yeaboi.ui.shared._scroll import SCROLL_BOTTOM, coalesce_scroll
 
 from ._commands import ChatContext, dispatch, matching_commands
-from ._composer import ChatComposer, PasteImage, Submit, Truncated, Voice
+from ._composer import (
+    ChatComposer,
+    Cleared,
+    PasteImage,
+    Restored,
+    Submit,
+    Truncated,
+    Voice,
+    clear_notice,
+    paste_notice,
+)
 from ._duck import ChatDuck
 from ._question_view import derive_question_view
 from ._screen import ChoiceRows, PipelineProgress, build_chat_screen
@@ -89,10 +99,18 @@ _PROGRESS_DONE_KEYS = {
     "task_decomposer": "tasks",
     "sprint_planner": "sprints",
 }
+# The line that stands in for the node's markdown summary once the card has
+# rendered it. A module constant because the resume replay writes it too, and
+# the two must not drift.
+_CONFIRM_VERDICT_PROMPT = (
+    "Here's everything I've got. Pick an option below — or type **accept**, **edit N**, or just tell me what's off."
+)
+
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
 _IDLE_HINT_SECONDS = 8.0  # stuck on a question this long → the duck offers a hint
+_WORK_QUIP_SECONDS = 5.0  # a working wait this long → the duck starts entertaining
 _BUBBLE_MIN_COLS = 12  # narrower than this and a bubble is skipped, not squeezed
 
 
@@ -107,8 +125,16 @@ def run_chat_session(
     bell: bool = True,
     dry_run: bool = False,
     initial_description: str = "",
+    stop_after_intake: bool = True,
 ) -> dict | None:
-    """Run the whole planning conversation. Returns the final state (or None on quit pre-description)."""
+    """Run the intake conversation. Returns the final state (or None on quit pre-description).
+
+    stop_after_intake (the production default): the chat owns the greeting, the
+    size pick, the questions and the summary confirmation, then hands the state
+    back so the card pipeline can run the reviews. False keeps the original
+    end-to-end chat (the pipeline/review/epic/capacity path below) — used by the
+    tests that cover it.
+    """
     driver = _ChatDriver(
         live,
         console,
@@ -119,6 +145,7 @@ def run_chat_session(
         bell=bell,
         dry_run=dry_run,
         initial_description=initial_description,
+        stop_after_intake=stop_after_intake,
     )
     # The chat is one big typing surface — suppress bare-letter chrome
     # shortcuts ("c" controls etc.) for the whole session.
@@ -142,6 +169,7 @@ class _ChatDriver:
         bell: bool,
         dry_run: bool,
         initial_description: str,
+        stop_after_intake: bool = True,
     ) -> None:
         self.live = live
         self.console = console
@@ -152,6 +180,7 @@ class _ChatDriver:
         self.bell = bell
         self.dry_run = dry_run
         self.initial_description = initial_description
+        self.stop_after_intake = stop_after_intake
 
         self.transcript = ChatTranscript()
         self.composer = ChatComposer()
@@ -179,6 +208,8 @@ class _ChatDriver:
         self._built_this_session = False  # a pipeline stage ran here (gates the celebration)
         self._last_phase = ""  # intake phase last seen (quack on boundary)
         self._hinted_q = -1  # question already idle-hinted (one per question)
+        self._work_quip_idx = -1  # last working-quip slot shown (reset per wait)
+        self._confirm_free_text = False  # Tell-me pick: next gate pass is composer-only
         self._idle_since = time.monotonic()  # last keypress — feeds hints + idle tips
 
     # ------------------------------------------------------------------ utils
@@ -257,6 +288,33 @@ class _ChatDriver:
         self.transcript.add_system(text)
         self._pin_bottom()
 
+    def _composer_cleared(self, event: Cleared | Restored) -> None:
+        """Report a Ctrl+U clear or its undo.
+
+        Logged as well as shown: it is the one destructive thing the box does,
+        so "my draft vanished" needs to be answerable from the log.
+        """
+        logger.info(
+            "Chat composer %s: chars=%d images=%d",
+            "cleared" if isinstance(event, Cleared) else "restored",
+            event.chars,
+            event.images,
+        )
+        self.notice = clear_notice(event)
+
+    def _paste_truncated(self, event: Truncated) -> None:
+        """Report a paste that did not fit — loudly, and in two places.
+
+        The hint line is gone on the very next keypress and clips below ~120
+        columns, so the same sentence also goes into the transcript, which wraps
+        and stays put. Someone who pastes a document and keeps typing must still
+        be able to find out that half of it never arrived.
+        """
+        message = paste_notice(event)
+        logger.info("Chat paste truncated: offered=%d kept=%d dropped=%d", event.offered, event.kept, event.dropped)
+        self.notice = message
+        self._note(message)
+
     def _bubble(self, text: str, hold: float | None = None) -> None:
         """Give the corner duck an ephemeral line (an ack, a stage quip).
 
@@ -304,6 +362,7 @@ class _ChatDriver:
             fast_forward=self._fast_forward,
             plan_complete=lambda: bool(self.state.get("sprints")),
             toggle_duck=self._toggle_duck,
+            show_questions=self._show_questions,
         )
 
     def _request_quit(self) -> None:
@@ -360,16 +419,91 @@ class _ChatDriver:
         self._drain_consents()
         logger.info("Chat: form takeover end (filled=%d)", filled)
 
+    def _edit_answers(self) -> None:
+        """Full-screen answer browser at the review gate — the pre-chat accordion.
+
+        Same modal pattern as _form_mode: the legacy phase owns the screen and
+        hands the state back. It is the accordion rather than a chat affordance
+        because the question that matters here — "what can I actually change?" —
+        is answered by seeing every question next to its answer, which a
+        transcript note listing this run's planned questions cannot do.
+        """
+        from yeaboi.ui.session.phases._phases_review import _edit_accordion_browse
+
+        qs = self._qs()
+        if qs is None:
+            self._note("Nothing to edit yet.")
+            return
+        # The dry-run branch of the accordion edits qs.answers in place without
+        # touching messages; the graph branch appends messages. Snapshot both,
+        # since which one moved decides how the chat re-anchors below.
+        before_answers = dict(qs.answers)
+        before_msgs = len(self.state.get("messages", []))
+        logger.info("Chat: answer browser start (%d answered)", len(before_answers))
+        result = _edit_accordion_browse(
+            self.live,
+            self.console,
+            self.graph,
+            self.state,
+            self._key,
+            False,
+            return_state_on_esc=True,
+            edit_hint="Enter to edit · ↑/↓ browse · Esc back to chat",
+        )
+        if result is not None:
+            self.state = result
+        # The "Your answers" card renders live from graph_state and caches its
+        # wrapped lines — without this it would redraw the pre-edit answers.
+        self.transcript.invalidate_artifacts()
+        qs = self._qs()
+        after_answers = dict(qs.answers) if qs else {}
+        changed = sorted(
+            q for q in set(before_answers) | set(after_answers) if before_answers.get(q) != after_answers.get(q)
+        )
+        replied = len(self.state.get("messages", [])) != before_msgs
+        if changed:
+            self._note("Updated " + ", ".join(f"Q{q}" for q in changed) + ".")
+        elif not replied:
+            self._note("No changes — back to the review.")
+        if replied:
+            # The node ran: its last reply is the summary (→ card + verdict) or
+            # whatever it asked next. _append_reply routes on the same gate
+            # predicate, so this is one call for both.
+            self._append_reply(streamed="")
+        elif changed and self._at_intake_summary():
+            # Dry-run edits move answers without messages — re-post the card.
+            self.transcript.add_artifact("intake_summary")
+            self._say(_CONFIRM_VERDICT_PROMPT)
+        self._save()
+        self._drain_consents()
+        logger.info("Chat: answer browser end (changed=%s)", changed)
+
     def _fast_forward(self) -> None:
-        """/finish — defaults for everything, then build the plan with no more stops."""
+        """/finish — default every remaining answer so the questions are done in one go.
+
+        It ends at the summary: the review gates after it belong to the card
+        pipeline, which stops at each one. _chat_fast_forward is still set
+        because the end-to-end chat path (stop_after_intake=False) reads it;
+        the handoff in run() pops it.
+        """
         if self.state.get("sprints"):
             self._note("The plan is already complete — /export saves it.")
+            return
+        if self.state.get("_chat_fast_forward"):
+            # /finish is a toggle: the second call is the graceful exit.
+            self._stop_fast_mode("/finish toggle")
+            self._note("Fast mode off — I'll stop at each review again.")
+            self._save()
             return
         if self._qs() is None:
             # Pre-graph (greeting): the intake needs a description before
             # there is anything to fast-forward — defer, like /form does.
+            if self._finish_requested:
+                self._finish_requested = False
+                self._note("Okay, no fast-forward — I'll ask the questions one by one.")
+                return
             self._finish_requested = True
-            self._note("I'll fast-forward right after you describe the project.")
+            self._note("I'll fast-forward right after you describe the project. /finish again cancels.")
             return
         self.state["_chat_fast_forward"] = True
         logger.info("Chat: fast-forward enabled (stage=%s)", self._stage())
@@ -378,11 +512,11 @@ class _ChatDriver:
             # The intake node handles the literal — one deterministic turn
             # that defaults every remaining question and shows the summary.
             self._run_turn("defaults all", echo_user=True)
-            self._note("One **accept** on the summary builds the whole plan — no more stops.")
+            self._note("That's every question answered — **accept** the summary and I'll start building.")
         elif qs is not None and qs.awaiting_confirmation:
-            self._note("Fast mode on — accept the summary and the whole plan builds with no more stops.")
+            self._note("The questions are already done — **accept** the summary and I'll start building.")
         else:
-            self._note("Fast mode on — remaining reviews will be auto-accepted.")
+            self._note("Nothing left to fast-forward.")
         self._save()
 
     def _switch_size(self, target_mode: str) -> None:
@@ -424,7 +558,9 @@ class _ChatDriver:
             self.edit_armed = True
             self._note("Edit mode — describe what you'd like changed and press Enter.")
         else:
-            self._note("Use /edit N to re-answer question N (see /summary for numbers).")
+            # Bare /edit during intake means "which one?" — the browser answers
+            # that better than a note telling the user to go find a number.
+            self._edit_answers()
 
     # ------------------------------------------------------------- attachments
 
@@ -445,10 +581,11 @@ class _ChatDriver:
             self.notice = f"Screenshot attached as {chip}"
 
     def _voice(self) -> None:
-        from yeaboi.ui.shared._voice_input import record_voice_input, voice_indicator
+        from yeaboi.ui.shared._voice_input import record_voice_input
 
-        def render_status(status: str, tick: float):
-            border, line = voice_indicator(status, tick)
+        def render_status(border: str, line: str):
+            # record_voice_input owns the indicator state (level, elapsed time,
+            # which mic opened) and hands us the finished pair to render.
             w, h = self.console.size
             return build_chat_screen(
                 self.transcript,
@@ -467,7 +604,11 @@ class _ChatDriver:
 
         spoken = record_voice_input(self.live, self.console, self._key, render_status=render_status)
         if spoken:
-            self.composer.insert_text(spoken)
+            result = self.composer.insert_text(spoken)
+            if not result.ok:
+                # A long dictation can hit the cap; an image chip (~11 chars)
+                # cannot, which is why _paste_image ignores its result.
+                self._paste_truncated(Truncated(offered=result.offered, kept=result.kept, dropped=result.dropped))
 
     # ------------------------------------------------------------- graph turns
 
@@ -477,7 +618,13 @@ class _ChatDriver:
         """One graph turn. Returns False when nothing ran (guardrail block, no graph)."""
         intake_turn = predict_next_node(self.state) == "project_intake"
         if echo_user and not synthetic:
-            block = validate_chat_input(text, intake=intake_turn)
+            # Regex layers only, on every turn. No topical classification here:
+            # every message that reaches _run_turn answers something the agent
+            # asked — an intake question, the review gate, a refinement request
+            # — and check_off_topic sees the reply without the question, so it
+            # scored "one", "any", "yeah" and "change q6" as off-topic and threw
+            # them away. The description is classified in _greeting_flow instead.
+            block = validate_chat_input(text)
             if block is not None:
                 logger.info("Chat input blocked: layer=%s len=%d", block.layer, len(text))
                 self._note(block.message)
@@ -486,6 +633,9 @@ class _ChatDriver:
         if echo_user:
             self.transcript.add_user(text)
             self._pin_bottom()
+        # Any turn ends the Tell-me composer-only window — the node re-shows
+        # the summary and the gate re-derives its menu fresh.
+        self._confirm_free_text = False
         logger.info("Chat turn start: len=%d images=%d synthetic=%s", len(text), len(images or []), synthetic)
 
         if self.graph is None:
@@ -494,6 +644,18 @@ class _ChatDriver:
         messages = list(self.state.get("messages", []))
         if text:
             messages.append(HumanMessage(content=text))
+        if intake_turn:
+            # The intake confirmation is the one turn the chat sends while a
+            # review gate is still open — project_intake consumes the reply
+            # itself rather than a review card doing it. Its confirm branch
+            # returns no "pending_review", and pending_review is a plain
+            # LastValue channel (agent/state.py), so whatever is in the input
+            # state survives the invoke: leave it set and the gate never
+            # closes, _stage() stays "intake" forever and the handoff below
+            # never fires. The card path pops it for exactly this reason
+            # (phases/_phases_review.py). Safe to drop unconditionally — the
+            # node re-sets it when the summary needs showing again ("edit").
+            self.state.pop("pending_review", None)
         invoke_state = {**self.state, "messages": messages}
         if images:
             if intake_turn:
@@ -516,6 +678,7 @@ class _ChatDriver:
 
         start = time.monotonic()
         first_token_logged = False
+        self._work_quip_idx = -1
         set_duck_working(True)  # the corner duck bobs through every wait
         try:
             while thread.is_alive():
@@ -526,6 +689,7 @@ class _ChatDriver:
                     first_token_logged = True
                 key = self._key(FRAME_TIME_30FPS)
                 self._processing_key(key, cancel)
+                self._entertain_duck(tick)
                 self._render(processing=True, tick=tick, stream_text=stream_text or None)
         finally:
             set_duck_working(False)
@@ -566,6 +730,18 @@ class _ChatDriver:
             return
         if key == "esc":
             cancel.set()
+            if self._finish_requested:
+                # A deferred /finish is fast mode that hasn't armed yet — Esc
+                # must cancel it too, or the description turn it interrupts
+                # would still fast-forward on completion.
+                self._finish_requested = False
+                self.notice = "Fast-forward cancelled."
+            if self.state.get("_chat_fast_forward"):
+                # Esc mid-turn also leaves fast mode: cancelling the stage but
+                # letting the next one auto-accept would look like Esc did
+                # nothing.
+                self._stop_fast_mode("esc during turn")
+                self.notice = "Fast mode stopped."
         elif key in ("scroll_up", "pageup", "home", "scroll_down", "pagedown", "end"):
             new = coalesce_scroll(self.scroll_offset, key, self.scroll_meta, self._key)
             if key in ("scroll_up", "pageup", "home"):
@@ -576,7 +752,36 @@ class _ChatDriver:
         elif key == "enter":
             self.notice = "Still working — your message will send when this finishes."
         else:
-            self.composer.handle_key(key)
+            # Typing continues during a turn, so clearing and truncation have to
+            # report here too — this branch used to discard the event entirely,
+            # which made both silent for the whole time the graph was working.
+            # Voice and image capture stay suppressed mid-turn, as before.
+            event = self.composer.handle_key(key, dropped=take_paste_dropped())
+            if isinstance(event, Cleared | Restored):
+                self._composer_cleared(event)
+            elif isinstance(event, Truncated):
+                self._paste_truncated(event)
+
+    def _at_intake_summary(self) -> bool:
+        """True when the newest reply is the intake summary awaiting a verdict.
+
+        One predicate for both paths that render it: the live turn
+        (:meth:`_append_reply`) and the resume replay
+        (:meth:`_rebuild_transcript`). They must agree, or reopening a session
+        parked on the gate resurrects the markdown wall the card replaced.
+        The sub-states are excluded because each one re-asks something instead
+        of re-showing the summary — a PTO prompt, a velocity prompt, or the
+        re-ask of the answer being edited.
+        """
+        qs = self._qs()
+        return (
+            qs is not None
+            and qs.awaiting_confirmation
+            and not qs._awaiting_leave_input
+            and not qs._awaiting_velocity_input
+            and qs.editing_question is None
+            and qs.current_question > TOTAL_QUESTIONS
+        )
 
     def _append_reply(self, *, streamed: str) -> None:
         """Append the assistant's reply bubble (or a review card + prompt)."""
@@ -588,18 +793,9 @@ class _ChatDriver:
         qs = self._qs()
         # Intake confirmation summary → card + short bubble instead of the
         # node's markdown wall (the card is the same data, rendered properly).
-        if (
-            qs is not None
-            and qs.awaiting_confirmation
-            and not qs._awaiting_leave_input
-            and not qs._awaiting_velocity_input
-            and qs.current_question > TOTAL_QUESTIONS
-        ):
+        if self._at_intake_summary():
             self.transcript.add_artifact("intake_summary")
-            self._say(
-                "Here's everything I've got. Reply **accept** to build the plan, "
-                "**edit N** to change an answer, or just tell me what's off."
-            )
+            self._say(_CONFIRM_VERDICT_PROMPT)
             return
 
         if qs is not None and not qs.completed:
@@ -681,7 +877,7 @@ class _ChatDriver:
         """Run one pipeline stage. Returns False when the turn failed/was cancelled."""
         node = predict_next_node(self.state) if not self.dry_run else self._dry_next_node()
         label, progress = self._stage_meta(node)
-        self.subtitle = f"{label}… {progress}"
+        self.subtitle = self._fast_prefix() + f"{label}… {progress}"
         self._refresh_progress(node)
         self._built_this_session = True
         logger.info("Pipeline stage entry (chat): %s", node)
@@ -731,8 +927,27 @@ class _ChatDriver:
             self._say(" · ".join(prompts) + ".")
         self._prompted.add(pending)
 
+    def _fast_prefix(self) -> str:
+        """Subtitle marker while fast mode is on — the exit must be visible."""
+        return "Fast mode (Esc stops) · " if self.state.get("_chat_fast_forward") else ""
+
+    def _stop_fast_mode(self, where: str) -> None:
+        self.state.pop("_chat_fast_forward", None)
+        logger.info("Chat: fast mode stopped (%s)", where)
+
     def _auto_accept_review(self) -> None:
-        """Fast mode: show the artifact, accept it, move on — no input loop."""
+        """Fast mode: show the artifact, accept it, move on — checking for an
+        Esc between accepts so the run stays stoppable."""
+        # Drain any keys pressed since the last frame: Esc here means "stop
+        # auto-accepting", and the review card then takes over normally.
+        # Other type-ahead is deliberately dropped — fast mode is not going
+        # to answer it, and replaying stale keys into the next input loop
+        # would act on a screen the user wasn't looking at.
+        while key := self._key(0):
+            if key == "esc":
+                self._stop_fast_mode("esc at review gate")
+                self._note("Fast mode stopped — here's the review.")
+                return
         pending = self.state.get("pending_review", "")
         if pending not in self._prompted:
             # /finish typed at an already-shown review gate must not re-add the card.
@@ -772,11 +987,14 @@ class _ChatDriver:
         thread.start()
         start = time.monotonic()
         cancel = threading.Event()  # reformat isn't cancellable; keys still buffer
+        self._work_quip_idx = -1
         set_duck_working(True)
         try:
             while thread.is_alive():
+                tick = time.monotonic() - start
                 self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-                self._render(processing=True, tick=time.monotonic() - start)
+                self._entertain_duck(tick)
+                self._render(processing=True, tick=tick)
         finally:
             set_duck_working(False)
         thread.join()
@@ -992,10 +1210,24 @@ class _ChatDriver:
 
             # Choice navigation only while the composer is empty (one rule).
             if self.choices is not None and self.choices.options and self.composer.is_empty():
-                if key in ("up", "scroll_up"):
+                if self.choices.auto_submit and not self.choices.multi and key.isdigit():
+                    # Command menus (size, review verdict): a bare digit picks
+                    # and submits in one stroke. Out-of-range digits fall
+                    # through to the composer like any other character.
+                    idx = int(key) - 1
+                    if 0 <= idx < len(self.choices.options):
+                        self.choices.highlight = idx
+                        logger.info("Chat choice auto-submit: %d", idx + 1)
+                        return self._choice_answer()
+                # Arrows move the highlight; the wheel deliberately does NOT.
+                # A menu sits under the thing it asks about — the review sits
+                # under a 30-row summary — so a wheel that only cycled three
+                # rows would trap the transcript off-screen. Wheel/PageUp fall
+                # through to the scroll handler below.
+                if key == "up":
                     self.choices.highlight = (self.choices.highlight - 1) % len(self.choices.options)
                     continue
-                if key in ("down", "scroll_down"):
+                if key == "down":
                     self.choices.highlight = (self.choices.highlight + 1) % len(self.choices.options)
                     continue
                 if key == " " and self.choices.multi:
@@ -1041,9 +1273,10 @@ class _ChatDriver:
             if key == "enter":
                 inline = self._pop_inline_command()
                 if inline is not None:
+                    self.composer.forget_stash()
                     return inline
 
-            event = self.composer.handle_key(key)
+            event = self.composer.handle_key(key, dropped=take_paste_dropped())
             if isinstance(event, Submit):
                 text = event.text
                 self.composer.reset()
@@ -1052,8 +1285,10 @@ class _ChatDriver:
                 self._voice()
             elif isinstance(event, PasteImage):
                 self._paste_image()
+            elif isinstance(event, Cleared | Restored):
+                self._composer_cleared(event)
             elif isinstance(event, Truncated):
-                self.notice = f"Paste truncated at {MAX_CHAT_INPUT_CHARS:,} characters."
+                self._paste_truncated(event)
         return None
 
     def _pop_inline_command(self) -> str | None:
@@ -1087,6 +1322,9 @@ class _ChatDriver:
 
     def _choice_answer(self) -> str:
         assert self.choices is not None
+        # This return leaves the input loop without touching handle_key, so the
+        # stash has to be burned here as it is on a typed submit.
+        self.composer.forget_stash()
         checked = [label for label, is_checked in self.choices.options if is_checked]
         if self.choices.multi and checked:
             return ", ".join(checked)
@@ -1143,12 +1381,30 @@ class _ChatDriver:
             form_offered = self.choices is not None and any(
                 label == _FORM_CHOICE_LABEL for label, _sel in self.choices.options
             )
+            # Typed "1"/"2" work through parse_size_reply; "3" (and "form")
+            # need the same parity while the third row is on offer.
+            wants_form = (picked and submit == _FORM_CHOICE_LABEL) or (
+                form_offered and submit.strip().lower() in ("3", "form")
+            )
+            # The description is the one message in the whole session that
+            # answers no question, so it is the one input check_off_topic can
+            # judge — and until now the only one it never saw, because the
+            # greeting hands it to _run_turn as synthetic (unvalidated) text.
+            # Everything else on this turn answers the size question: a picked
+            # row, the form preference, or a bare size reply (parse_size_reply
+            # is deterministic and total, so this costs nothing). Guarding here
+            # rather than after the branch below also keeps a rejected input
+            # from burning the resolve_intake_mode call.
+            if not picked and not wants_form and not parse_size_reply(submit):
+                block = validate_chat_input(submit, classify_topic=True)
+                if block is not None:
+                    logger.info("Chat input blocked: layer=%s len=%d", block.layer, len(submit))
+                    self._note(block.message)
+                    continue
             self.transcript.add_user(submit)
             self.choices = None
 
-            # Typed "1"/"2" work through parse_size_reply; "3" (and "form")
-            # need the same parity while the third row is on offer.
-            if (picked and submit == _FORM_CHOICE_LABEL) or (form_offered and submit.strip().lower() in ("3", "form")):
+            if wants_form:
                 # A form preference, not a size answer — the questionnaire
                 # needs a description (messages[0]) first, so keep collecting
                 # in chat and open the form right after the first invoke.
@@ -1237,7 +1493,9 @@ class _ChatDriver:
         ]
         if include_form:
             options.append((_FORM_CHOICE_LABEL, False))
-        return ChoiceRows(options=options, highlight=0, multi=False)
+        # auto_submit makes the placeholder's "Press 1 or 2 to size it"
+        # literally true — no Enter needed.
+        return ChoiceRows(options=options, highlight=0, multi=False, auto_submit=True)
 
     def _choice_mode(self, submit: str) -> str | None:
         lowered = submit.lower()
@@ -1255,11 +1513,30 @@ class _ChatDriver:
                 self.transcript.add_user(entry.get("text", ""))
             else:
                 self.transcript.add_assistant(entry.get("text", ""))
-        for message in self.state.get("messages", []):
+        messages = self.state.get("messages", [])
+        # The summary is a card in a live turn (_append_reply); replaying its
+        # markdown would hand a resumed session the wall of text the card
+        # exists to replace. It is the newest assistant reply whenever the
+        # questionnaire is parked on the verdict gate.
+        summary_at = -1
+        if self._at_intake_summary():
+            summary_at = max(
+                (
+                    i
+                    for i, m in enumerate(messages)
+                    if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content
+                ),
+                default=-1,
+            )
+        for i, message in enumerate(messages):
             if isinstance(message, HumanMessage) and isinstance(message.content, str):
                 self.transcript.add_user(message.content)
             elif isinstance(message, AIMessage) and isinstance(message.content, str) and message.content:
-                self.transcript.add_assistant(message.content)
+                if i == summary_at:
+                    self.transcript.add_artifact("intake_summary")
+                    self.transcript.add_assistant(_CONFIRM_VERDICT_PROMPT)
+                else:
+                    self.transcript.add_assistant(message.content)
         for kind, key in (
             ("analysis", "project_analysis"),
             ("features", "features"),
@@ -1329,11 +1606,14 @@ class _ChatDriver:
 
         start = time.monotonic()
         cancel = threading.Event()  # nothing to cancel; keys buffer as type-ahead
+        self._work_quip_idx = -1
         set_duck_working(True)
         try:
             while time.monotonic() - start < _DRY_STAGE_SECONDS:
+                tick = time.monotonic() - start
                 self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-                self._render(processing=True, tick=time.monotonic() - start)
+                self._entertain_duck(tick)
+                self._render(processing=True, tick=tick)
         finally:
             set_duck_working(False)
         if self._dry_full_state is None:
@@ -1375,6 +1655,14 @@ class _ChatDriver:
 
         while not self.quit:
             stage = self._stage()
+            if self.stop_after_intake and stage != "intake":
+                # The questionnaire is accepted — the card pipeline owns
+                # everything from here (reviews, exports, tracker sync,
+                # capacity), so hand the state back before any of the branches
+                # below can fire.
+                self.state.pop("_chat_fast_forward", None)
+                logger.info("Chat handing off after intake (next stage=%s)", stage)
+                break
             if stage == "capacity":
                 self._capacity_popup()
                 continue
@@ -1402,14 +1690,31 @@ class _ChatDriver:
 
             if stage == "intake":
                 view = derive_question_view(self.state)
-                self.subtitle = " · ".join(s for s in (view.progress, view.phase_label) if s)
+                self.subtitle = self._fast_prefix() + " · ".join(s for s in (view.progress, view.phase_label) if s)
                 self._coach_phase()
+                if view.choices and self._confirm_free_text:
+                    # The Tell-me pick promised the composer the floor — no
+                    # menu (and no digit auto-submit) until that reply runs.
+                    view.choices = None
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
-                    self.choices = ChoiceRows(options=list(view.choices), highlight=highlight, multi=view.multi_select)
+                    self.choices = ChoiceRows(
+                        options=list(view.choices),
+                        highlight=highlight,
+                        multi=view.multi_select,
+                        auto_submit=view.auto_submit,
+                    )
                 else:
                     self.choices = None
-                    if view.suggestion and self.composer.is_empty() and self._prefilled_q != view.current_question:
+                    # not has_stash(): a box emptied by Ctrl+U is waiting for its
+                    # undo, and prefilling the suggestion into it would make the
+                    # second Ctrl+U clear the suggestion instead of restoring.
+                    if (
+                        view.suggestion
+                        and self.composer.is_empty()
+                        and not self.composer.has_stash()
+                        and self._prefilled_q != view.current_question
+                    ):
                         self.composer.set_text(view.suggestion)
                         # set_text resets the cursor to 0,0 — typing must land
                         # after the suggestion, not before it.
@@ -1418,7 +1723,9 @@ class _ChatDriver:
                         self._prefilled_q = view.current_question
             else:
                 self.choices = None
-                self.subtitle = "" if stage != "chat" else "Plan complete — keep refining, or /export"
+                self.subtitle = self._fast_prefix() + (
+                    "" if stage != "chat" else "Plan complete — keep refining, or /export"
+                )
                 if stage == "chat":
                     self.progress = None  # the build is over — drop the checklist
                     self._maybe_celebrate_completion()
@@ -1444,7 +1751,12 @@ class _ChatDriver:
             if stage == "intake" and qs is not None and not qs.completed:
                 if qs.editing_question is not None:
                     answer = self._resolve_choice(answer, qs.editing_question)
-                elif not qs.awaiting_confirmation:
+                elif qs.awaiting_confirmation:
+                    mapped = self._confirm_pick(answer)
+                    if mapped is None:
+                        continue  # handled locally (Edit prefill / free-text nudge)
+                    answer = mapped
+                else:
                     dynamic = qs._follow_up_choices.get(qs.current_question)
                     if dynamic:
                         from yeaboi.repl._questionnaire import _resolve_dynamic_choice
@@ -1460,6 +1772,64 @@ class _ChatDriver:
         self._save()
         logger.info("Chat session ended: quit=%s messages=%d", self.quit, len(self.transcript.messages))
         return self.state
+
+    def _confirm_pick(self, submit: str) -> str | None:
+        """Map a confirmation-gate pick to what the node understands.
+
+        Returns the literal to send ("accept"/"override"), the typed text
+        unchanged, or None when the pick was handled locally and no graph
+        turn should run. The raw labels never reach the node: a bare digit
+        would read as an edit intent and the labels match no confirm keyword.
+        """
+        from ._question_view import CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT, CONFIRM_OVERRIDE_VELOCITY
+
+        if submit == CONFIRM_ACCEPT:
+            return "accept"
+        if submit == CONFIRM_OVERRIDE_VELOCITY:
+            return "override"
+        if submit == CONFIRM_EDIT:
+            # The full-screen browser, not a composer prefill: "edit N" only
+            # helps someone who already knows which N, and the chat's own list
+            # shows this run's planned questions rather than everything the
+            # summary is built from.
+            logger.info("Chat: confirm pick -> answer browser")
+            self._edit_answers()
+            return None
+        if submit == CONFIRM_FREETEXT:
+            # Drop the menu until the reply is sent: re-arming auto-submit
+            # over the free text just solicited would hijack a reply that
+            # starts with a digit ("3 sprints is too many" -> "override").
+            self._confirm_free_text = True
+            self._note("Go ahead — tell me what's off and I'll update the summary.")
+            logger.info("Chat: confirm pick -> free text")
+            return None
+        return submit
+
+    def _entertain_duck(self, tick: float) -> None:
+        """Rotate working quips (plus the odd gag) through a long wait.
+
+        Clock-derived: the quip slot is tick // _WORK_QUIP_SECONDS, so per
+        frame this is one division and usually one compare — the say(), the
+        gags and the log fire only when the slot changes, never per frame.
+        Short turns (< one slot) stay silent. PRIORITY_COACH keeps real
+        events (stage completions) winning the bubble.
+        """
+        from ._duck import COACH_HOLD, PRIORITY_COACH, WORKING_QUIPS
+
+        if tick < _WORK_QUIP_SECONDS:
+            return
+        idx = int(tick // _WORK_QUIP_SECONDS)
+        if idx == self._work_quip_idx:
+            return
+        self._work_quip_idx = idx
+        quip = WORKING_QUIPS[idx % len(WORKING_QUIPS)]
+        if self.duck.say(quip, priority=PRIORITY_COACH, hold=COACH_HOLD):
+            logger.debug("Duck working quip: %s", quip)  # decor, not a user action
+        if idx % 4 == 0:
+            quack_duck()
+        if idx == 5:
+            # One shades-lift gag on a genuinely long wait (~25s in).
+            poke_duck()
 
     def _coach_phase(self) -> None:
         """Quack + a short lead-in when the intake crosses a phase boundary."""
@@ -1480,7 +1850,7 @@ class _ChatDriver:
         from yeaboi.prompts.intake import QUESTION_DEFAULTS, is_choice_question
 
         if q > 20:
-            return "/finish builds the rest with defaults"
+            return "/finish answers the rest with defaults"
         if is_choice_question(q):
             return "Type the number — or ↑/↓ then Enter"
         if q in QUESTION_DEFAULTS:
@@ -1529,6 +1899,48 @@ class _ChatDriver:
         else:
             self._note("Duck's bubble is back.")
             self._bubble("Quack!")
+
+    def _show_questions(self) -> None:
+        """/questions — the planned-question checklist for this run.
+
+        Lists only the questions this run actually asks (user-answered +
+        remaining essential gaps), not the 30-question bank — the same sets
+        the "Question X of Y" subtitle counts.
+        """
+        from yeaboi.prompts.intake import QUESTION_SHORT_LABELS
+        from yeaboi.ui.session.chat._question_view import planned_question_sets
+
+        qs = self._qs()
+        if qs is None:
+            return
+        sets = planned_question_sets(qs)
+        if sets is None:
+            self._note("Couldn't derive the question plan — /summary shows your answers so far.")
+            return
+        remaining, asked = sets
+        planned = sorted(set(remaining) | asked)
+        if not planned:
+            self._note("Nothing left to ask — /summary shows everything I've got.")
+            return
+        remaining_set = set(remaining)
+        lines = ["Planned questions for this run:"]
+        for q in planned:
+            label = QUESTION_SHORT_LABELS.get(q, f"Question {q}")
+            if q == qs.current_question and q in remaining_set:
+                lines.append(f"● Q{q} {label} — current")
+            elif q in remaining_set:
+                lines.append(f"○ Q{q} {label}")
+            else:
+                answer = str(qs.answers.get(q, "")).strip().replace("\n", " ")
+                if len(answer) > 40:
+                    answer = answer[:37] + "…"
+                lines.append(f"✓ Q{q} {label}" + (f" — {answer}" if answer else ""))
+        lines.append("")
+        lines.append(
+            "Everything else is filled from your description and defaults — /summary shows it, /edit N changes it."
+        )
+        logger.info("Chat: /questions (%d planned, %d remaining)", len(planned), len(remaining))
+        self._note("\n".join(lines))
 
     def _maybe_celebrate_completion(self) -> None:
         """One-time completion beat: recap card + duck celebration.

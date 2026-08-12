@@ -31,6 +31,7 @@ from yeaboi.config import (
     get_azure_devops_team,
     get_azure_devops_token,
 )
+from yeaboi.redaction import log_safe
 from yeaboi.ticket_text import strip_html, ticket_text
 
 logger = logging.getLogger(__name__)
@@ -942,6 +943,24 @@ def _azdo_ticket_body(f: dict) -> str:
     )
 
 
+def _work_item_hierarchy(f: dict) -> dict:
+    """The story/subtask facts of a work item, from its already-fetched fields.
+
+    ``Task`` is the child type under the story-level item in all four default
+    AzDO processes (Agile User Story, Scrum PBI, CMMI Requirement, Basic Issue),
+    so it is the ``subtask`` analogue; ``System.Parent`` is a plain queryable
+    field — no relations expand needed. The parent key is spelled ``#123`` to
+    match how sibling evidence rows spell work-item keys.
+    """
+    wi_type = str(f.get("System.WorkItemType", "") or "")
+    parent_id = f.get("System.Parent")
+    return {
+        "issue_type": wi_type,
+        "subtask": wi_type.strip().lower() == "task",
+        "parent_key": f"#{parent_id}" if parent_id else "",
+    }
+
+
 def azdevops_recent_activity(
     project: str = "", days: int = 1, since=None, *, include_ticket_text: bool = False
 ) -> list[dict]:
@@ -999,6 +1018,8 @@ def azdevops_recent_activity(
             "System.AssignedTo",
             "System.ChangedBy",
             "System.ChangedDate",
+            "System.WorkItemType",
+            "System.Parent",
         ]
         text_fields = _AZDO_TEXT_FIELDS if include_ticket_text else []
         result = wit_client.query_by_wiql(wiql, top=100)
@@ -1027,6 +1048,7 @@ def azdevops_recent_activity(
                         "timestamp": str(f.get("System.ChangedDate", ""))[:19],
                         "key": f"#{wi_id}",
                         "url": _work_item_url(project, wi_id),
+                        **_work_item_hierarchy(f),
                         **({"body": _azdo_ticket_body(f)} if include_ticket_text else {}),
                     }
                 )
@@ -1218,6 +1240,7 @@ def _azdo_wip_items(
                     "timestamp": str(f.get("System.ChangedDate", ""))[:19],
                     "key": f"#{wi_id}",
                     "url": _work_item_url(project, wi_id),
+                    **_work_item_hierarchy(f),
                     **({"body": _azdo_ticket_body(f)} if text_fields else {}),
                 }
             )
@@ -2711,11 +2734,11 @@ def azdevops_update_work_item_fields(
     """
     project = project or get_azure_devops_project() or ""
     logger.info(
-        "azdevops_update_work_item_fields: id=%r summary=%s description=%s points=%r",
-        work_item_id,
+        "azdevops_update_work_item_fields: id=%s summary=%s description=%s points=%s",
+        log_safe(repr(work_item_id)),
         summary is not None,
         description is not None,
-        story_points,
+        log_safe(repr(story_points)),
     )
     try:
         from azure.devops.v7_1.work_item_tracking.models import JsonPatchOperation

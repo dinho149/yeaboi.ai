@@ -47,6 +47,7 @@ from urllib.parse import parse_qs, urlparse
 from yeaboi.poker import tickets as tickets_mod
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.page import build_poker_html
+from yeaboi.redaction import log_safe
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
@@ -115,9 +116,11 @@ class _DuelCapture:
             logger.info("poker: duel host mic skipped — %s", reason)
             return reason
         try:
-            from yeaboi.voice import Recorder
+            from yeaboi.voice import Recorder, resolve_device
 
-            recorder = Recorder()
+            # Honour the configured VOICE_DEVICE here too — the host running the
+            # duel is the same person who picked a microphone in Settings.
+            recorder = Recorder(device=resolve_device())
         except Exception as exc:  # mic permission / device errors must never 500
             logger.warning("poker: duel host mic failed to start: %s", exc)
             return "microphone could not start (see logs)"
@@ -229,10 +232,10 @@ class _PokerHandler(BaseHTTPRequestHandler):
     # Route the default noisy stderr access log into our logger at DEBUG, and never
     # log the query string — it carries the token AND the admin secret.
     def log_request(self, code: object = "-", size: object = "-") -> None:  # noqa: N802 - stdlib signature
-        logger.debug("poker-http %s %s -> %s", self.command, urlparse(self.path).path, code)
+        logger.debug("poker-http %s %s -> %s", log_safe(self.command), log_safe(urlparse(self.path).path), code)
 
     def log_message(self, fmt: str, *args: object) -> None:  # noqa: A003 - stdlib signature
-        logger.debug("poker-http %s", fmt % args if args else fmt)
+        logger.debug("poker-http %s", log_safe(fmt % args if args else fmt))
 
     @property
     def _board(self) -> PokerBoard:
@@ -624,7 +627,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._board.source, ticket, summary=summary, description=description, story_points=points
         )
         if not ok:
-            logger.warning("poker: ticket edit write-back failed for %s: %s", key, err)
+            logger.warning("poker: ticket edit write-back failed for %s: %s", log_safe(key), log_safe(err))
             self._board.set_notice(err)
             self._send_json(200, {"ok": False, "error": err, "state": self._board.state_snapshot(pid)})
             return

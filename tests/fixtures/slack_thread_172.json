@@ -1,0 +1,27 @@
+{
+  "_source": "C0BMADQQN1Z thread 1786263808.836259, the 2026-08-09 digest. Trimmed to the fields cowork_relay.py reads. Replies 13-15 are the relay's own acks: one correct, two duplicates it must never have posted. Every reaction is under U0BLM1QU3JN, including the robot_face marker — verified via slack_get_reactions — because the Slack connector posts as the human rather than as an app.",
+  "messages": [
+    {
+      "ts": "1786263812.848879",
+      "text": "#172 — [security][web-ux] Third-party CDN script (unpkg lenis) loaded on all 20 docs/ pages with no SRI — <https://github.com/dinho149/yeaboi.ai/issues/172|github.com/dinho149/yeaboi.ai/issues/172>",
+      "reactions": [
+        {"name": "white_check_mark", "count": 1, "users": ["U0BLM1QU3JN"]},
+        {"name": "robot_face", "count": 1, "users": ["U0BLM1QU3JN"]}
+      ]
+    },
+    {"ts": "1786263815.842519", "text": "#146 — [bug][platform] auto-version.yml rejects claude[bot] PRs — <https://github.com/dinho149/yeaboi.ai/issues/146|issues/146>"},
+    {"ts": "1786263818.719279", "text": "#143 — [bug][poker] concurrent finalize can double-write tracker points — <https://github.com/dinho149/yeaboi.ai/issues/143|issues/143>"},
+    {"ts": "1786263821.906479", "text": "#140 — [bug][integrations] jira cloud roster pagination crashes past page 1 — <https://github.com/dinho149/yeaboi.ai/issues/140|issues/140>"},
+    {"ts": "1786263824.498719", "text": "#179 — [feature][platform] In-TUI feedback submission has no CLI/MCP surface or recorded Exempt — <https://github.com/dinho149/yeaboi.ai/issues/179|issues/179>"},
+    {"ts": "1786263827.198699", "text": "#142 — [improvement][integrations] add work-item-type discovery to azdo sync — <https://github.com/dinho149/yeaboi.ai/issues/142|issues/142>"},
+    {"ts": "1786263832.632519", "text": "#149 — [chore][tui-ux] route re-analyse confirm dialog through build_popup — <https://github.com/dinho149/yeaboi.ai/issues/149|issues/149>"},
+    {"ts": "1786263836.562589", "text": "#148 — [chore][tui-ux] dedupe viewport math in intake and offline screens — <https://github.com/dinho149/yeaboi.ai/issues/148|issues/148>"},
+    {"ts": "1786263839.003819", "text": "#180 — [chore][platform] changelog.py absent from surface-parity CAPABILITIES registry — <https://github.com/dinho149/yeaboi.ai/issues/180|issues/180>"},
+    {"ts": "1786263847.972009", "text": "#189 — [docs][web-ux] team-analysis docs omit the Code and Docs components — <https://github.com/dinho149/yeaboi.ai/issues/189|issues/189>"},
+    {"ts": "1786263850.276799", "text": "#144 — [docs][web-ux] retro docs omit the carried action-item column — <https://github.com/dinho149/yeaboi.ai/issues/144|issues/144>"},
+    {"ts": "1786263854.690369", "text": "#170 — [docs][analysis] \"team-learning\" plugin-skill exemption is stale — team-analysis skill already covers its tools — <https://github.com/dinho149/yeaboi.ai/issues/170|issues/170>"},
+    {"ts": "1786277618.681119", "text": "added `claude-implement` to #172", "reactions": [{"name": "robot_face", "count": 1, "users": ["U0BLM1QU3JN"]}]},
+    {"ts": "1786291971.916109", "text": "added `claude-implement` to #172 (already applied)", "reactions": [{"name": "robot_face", "count": 1, "users": ["U0BLM1QU3JN"]}]},
+    {"ts": "1786299129.680879", "text": "added `claude-implement` to #172 (already applied)", "reactions": [{"name": "robot_face", "count": 1, "users": ["U0BLM1QU3JN"]}]}
+  ]
+}

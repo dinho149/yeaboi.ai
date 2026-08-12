@@ -88,3 +88,15 @@ class TestLifecycle:
         duck.say("Tasks sliced!", now=0.0)
         duck.say("Sprints packed!", now=0.1)
         assert duck.tick(now=0.2)[0] == "Sprints packed!"
+
+
+class TestQuipTables:
+    def test_quips_fit_the_bubble_budget(self):
+        # Same ≤40-char rule the shared DUCK_QUIPS table is held to — a longer
+        # line wraps out of the corner bubble.
+        from yeaboi.ui.session.chat._duck import PHASE_QUIPS, WORKING_QUIPS
+
+        for key, quip in PHASE_QUIPS.items():
+            assert 0 < len(quip) <= 40, key
+        for quip in WORKING_QUIPS:
+            assert 0 < len(quip) <= 40, quip

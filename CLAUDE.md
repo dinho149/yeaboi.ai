@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Terminal-based AI Scrum Master agent built with LangGraph, LangChain, and Anthropic Claude (with OpenAI, Google, AWS Bedrock, and local Ollama as alternative providers). Decomposes projects into epics, user stories, tasks, and sprint plans. Deployed on AWS Lightsail via OpenClaw with Bedrock.
+Terminal-based AI Scrum Master agent built with LangGraph, LangChain, and Anthropic Claude (with OpenAI, Google, AWS Bedrock, and local Ollama as alternative providers). Two audiences behind one landing split: **Humans** (decomposes projects into epics, user stories, tasks, and sprint plans; standups, retros, poker, performance, reporting) and **Agents** (the `agentwatch` family — cost, daily digests, and security posture of the AI coding agents working across the SDLC, computed locally from Claude Code session logs).
 
 ## Commands
 
@@ -29,6 +29,8 @@ make dev-board            # Seeded retro board on :5173 for front-end developmen
 make dev-poker            # Seeded planning-poker board on :5273
 make dev-deck             # Seeded reporting slide deck on :5373
 make graph                # Generate agent graph visualisation PNG
+make demo                 # Re-record docs/demo.cast.gz + docs/demo.gif (scripted, no interaction; needs agg)
+make demo-render          # Re-render the GIF from the committed cast (theme/size tweaks, no re-record)
 make build                # Build sdist + wheel into dist/
 make publish              # Publish to PyPI
 make record               # Re-record VCR cassettes against real APIs
@@ -38,7 +40,7 @@ make clean                # Remove build artifacts and caches
 Run a single test: `uv run pytest tests/unit/test_state.py -v`
 Run a single test class: `uv run pytest tests/unit/test_state.py::TestPriority -v`
 
-Terminal GIFs for the README: `asciinema rec docs/demo.cast -c "yeaboi --dry-run"` → `agg docs/demo.cast docs/demo.gif --theme github-dark` (install via `brew install asciinema agg`).
+Terminal GIFs for the README: `make demo` re-records `docs/demo.cast.gz` + `docs/demo.gif` from a scripted pty session — deterministic, no human interaction, verified for sanity before it exits (asciinema is not needed; install `agg` via `brew install agg`). `make demo-render` re-renders the GIF from the committed cast for theme/size tweaks without re-recording.
 
 ## Parallel Development (worktrees)
 
@@ -66,14 +68,19 @@ When driving multiple features at once, work as an **orchestrator**: one main se
 
 ## Cowork (`cowork/`)
 
-Fifteen standing workstreams, each scouting its own paths on a schedule via a Cowork routine. One per mode — **planning** (`agent/` + `prompts/` + `ui/session/`), standup, analysis, reporting, poker, retro, performance, roadmap, artifacts-sharing — plus security, integrations, tui-ux (including the `usage` and `settings` pages), web-ux, platform, and marketing. Cadence is tiered to surface size: weekly for large, fortnightly for mid, monthly for small. Routines are **account-scoped, not repo files**; `cowork/` is the versioned source of truth their prompts point at. Start at `cowork/README.md`.
+**The fleet does exactly two things: it maintains what exists, and it builds one provider integration at a time.** Fifteen standing workstreams. Thirteen are *maintenance* sweeps — one per mode: **planning** (`agent/` + `prompts/` + `ui/session/`), standup, analysis, reporting, poker, retro, performance, roadmap, artifacts-sharing, **agents** (the agentwatch family + `pricing.py`; its daily routine posts the agent standup digest rather than sweeping), plus tui-ux (including the `usage` and `settings` pages), web-ux and platform — and they may only return `bug`, `chore`, `docs` or `security`. `security` sweeps twice weekly. **`integrations` is the one that builds**, weekdays, as a week-long campaign. Sweep cadence is tiered to surface size: weekly for large, fortnightly for mid, monthly for small. Routines are **account-scoped, not repo files**; `cowork/` is the versioned source of truth their prompts point at. Start at `cowork/README.md`.
 
 - **`cowork/definition-of-done.md` is the one contract**, binding on routines *and* on `/ship`: Linear ticket, tests, lint, security, surface parity, observability, web bundles, Notion page, Slack post, review feedback. Items 2–7 gate the PR opening; item 10 gates the *merge* — the `pr-feedback` commit status stays red while a blocker/should-fix finding or an unresolved review thread is unanswered, which is the one part of the contract nothing used to enforce.
-- **`cowork/house-rules.md`** holds the closed auto-lane allowlist. Everything not on it becomes a `cowork:proposal` GitHub issue; a human approves by adding `claude-implement`, which the existing `claude.yml` job then implements. GitHub issues are the queue — there is no other shared state between runs.
+- **`cowork/house-rules.md`** holds the closed auto-lane allowlist and, beside it, **the campaign lane**. Everything not on either becomes a `cowork:proposal` GitHub issue; a human approves by adding `claude-implement`, which the existing `claude.yml` job then implements. GitHub issues are the queue — there is no other shared state between runs. A workstream may hold **two open proposals** (`PROPOSAL_CAP`, counted by `--proposal-slots` / `make cowork-slots`, never by eye), and an unreadable count is zero slots rather than two: a sweep that cannot see the queue files nothing, because the alternative is a backlog nobody can read filed by a fleet that never stops.
 - Three crew agents in `.claude/agents/`: `cowork-scout` (read-only survey), `cowork-scribe` (**the only author of outbound comms to Linear/Slack/Notion/issues** — the `slack-relay` routine's acks and human-verb relays are the one other writer), `cowork-builder` (implements one item in its charter's paths).
 - **`cowork/models.md` is the only file that names a model.** Everything else — routines, agents, `/ship`, `/migrate`, `/babysit-prs` — names a *tier* (`heavy`/`deep`/`standard`/`fast`/`inherit`); every agent stays `model: inherit` so the caller decides. The `.github/workflows/*.yml` jobs can't read a markdown table, so they read `vars.YEABOI_MODEL_*` repo variables with a `||` fallback pinned to prior behaviour. `tests/unit/test_cowork_models.py` fails if a model id is hardcoded anywhere else — including in `.claude/commands/` and `scripts/cowork_setup.py`.
-- **Setup is derived, never retyped.** `make cowork-setup` creates the twenty-six GitHub labels (from `workstreams/` plus the `type:*` vocabulary) and the four repo variables (from `models.md`); `/cowork deploy` registers the seventeen cron routines and the Linear labels, which need a Claude session because a routine is account-scoped with no CLI behind it. `make cowork-check` is the doctor — it fails when the README table, a routine file and the tier table disagree, and when a `src/yeaboi/*.py` module is claimed by no charter (a scout reads only its charter's paths, so an unclaimed file is one no routine ever opens). Neither would be noticed at run time. Connectors, the GitHub App, `AUTO_VERSION_PAT` and the three *event* routines stay manual and are reported on every run.
-- **The fleet has a lifecycle, and Python owns every comparison in it.** `/cowork status | deploy | run <name> | pause | resume | teardown`. The command makes the API calls and hands the `RemoteTrigger list` response to `scripts/cowork_setup.py --triggers`, which builds the request bodies, diffs the six compared fields, and edits the README URL column itself — the model posts what it is given and never diffs seventeen routines by eye. Two asymmetries are deliberate: **there is no delete** (teardown sets `enabled: false` and prints the URLs; it must not claim otherwise), and **`enabled` is reported but never reconciled**, so `deploy` cannot silently undo a `pause`. `environment_id` is likewise not compared — it is per-machine, and comparing it would flag every teammate's fleet as drifted.
+- **The fleet reports what it shipped, not what it is about to run.** `cron/shipped-standup.md` posts one message at 18:00 UTC: the day's merged PRs with the trace behind each (what proved it, the review verdict, the merge time), what is still building, what is stuck, and the pre-release it all landed in. It replaced two things — a 05:45 schedule post that was the one routine forbidden from staying quiet, and the per-PR ship note that `pr-merged-close-loop.md` used to fire once per merge with batching explicitly forbidden. The schedule renderer survives on demand: `scripts/cowork_setup.py --agenda` matches every cron against the date, converts to `DISPLAY_TZ` (UTC stays the source of truth and rides along in brackets), and `make cowork-agenda` / `/cowork today` print it. Every routine file still carries a `**Summary**` line capped at 90 characters.
+- **Security, bugs, chores and docs ship unattended, and so does a whole integration.** `cowork/house-rules.md`'s auto lane covers the first four — a bug enters it only on a regression test that fails before the fix and passes after, and behaviour may change while user-facing wording may not. What replaces the approval is the gate, not trust: an independent `code-reviewer` before the PR opens, `claude-review.yml` after CI, and `scripts/pr_feedback.py` refusing an `<!-- addressed: … -->` marker from the PR's own author on an unattended branch — so a machine may *fix* a finding and never *dismiss* one.
+- **No sweep can produce a `feature` or an `improvement` at all.** `cowork-scout.md`'s vocabulary is four words wide (`SCOUT_TYPES`, parsed back out of the agent file), the opportunity pass is gone from every charter, and `marketing` went with it. Capability work has one home: **the campaign lane**. Monday, `cron/integrations-campaign.md` shortlists three providers — one of `ticketing`, `docs`, `code` or `ops` (cloud and SaaS the agent can scan, against the charter's read-only/attributable/answers-a-question admission test) — and files them as `integration:candidate` issues that the digest re-lists every morning until answered. A ✅ applies **`integration:approved`**, never `claude-implement`, because `claude.yml` fires a 110-turn implement job on that label and a candidate describes a week of work. The rest of the week runs unattended: three PRs — client + cassette + credential, then wizard + `_verify_*` + settings section, then per-mode wiring — and it is done when the provider's row in `cowork/integrations-map.md` has no bare `—` left. `cowork/integration-campaign.md` is the procedure. The campaign is the only lane that edits outside its charter, through an **`Extends`** grant that is by *site* and by *operation* (append a provider, nothing else), declared reciprocally in both charters and asserted by a test, and that never includes `ui/mode_select/__init__.py`.
+- **A merge to `main` publishes a pre-release, not a release.** `publish-beta.yml` ships `X.Y.ZrcN` to PyPI on every release-worthy merge (`pip install yeaboi` cannot see it; `pip install --pre yeaboi` can), and those accumulate. `publish.yml` no longer fires on push: it cuts the official `X.Y.Z` when `release:promote` lands on the weekly ask issue, which is a human's ✅ in Slack carried by the relay — or `make beta-promote`, which emits the identical argv by importing it from `cowork_relay`. All the arithmetic — the rc number (a commit count since the last final tag), the batch manifest, the refusal to number a version that went backwards — lives in `scripts/release_channel.py`, and **an rc string is never committed**: it is stamped into a throwaway checkout in the publish job, because `bump_version.py` rejects anything that is not `X.Y.Z`.
+- **A published pre-release is tagged; the official release is cut from that tag, not from `main`.** `beta/X.Y.ZrcN` is pushed *after* the upload returns, so the tag means the file exists and pins the tree that produced it — a namespace inert to `last_final_tag()`'s `v*` glob. Two things follow. `installable` (newest `beta/*` tag) is the only field allowed in a `pip install --pre` line; `latest_prerelease` is `next_prerelease(HEAD)`, a forecast that every docs merge inflates past anything on PyPI, and quoting it hands out a 404. And `publish.yml` checks out the signed-off commit — `<!-- tested: -->` from a comment, else `<!-- beta: -->` from the body, else `main`, never a hard failure — so the tested rc and the published final are the same tree; whatever `main` has beyond it is *reported*, not silently included, which the old version-granularity drift check could not do. **The hand-test is two sessions, because the fleet does two things.** `make beta-check` reports only, printing one shared baseline and then a **MAINTENANCE** section (from `SURFACES`, gated on the batch's changed paths) and an **INTEGRATION: `<provider>`** section (from `INTEGRATION_ANGLES`, listing *every* angle and marking the ones this batch did not reach — an angle that vanishes reads as one that was never needed). Which section work lands in is decided by **paths**, with the `integration(<provider>):` PR-title prefix as a corroborating second signal that is the only thing catching a reach angle; a commit *trailer* cannot work here, because git reads trailers from the last paragraph only and `auto-version.yml` guarantees every release-worthy PR is multi-commit. `make beta-sign-maintenance` / `make beta-sign-integration` each write a `<!-- tested: … track=… -->` marker, and the **last required one** writes the bare `<!-- tested: … -->` marker — the two families are shaped so neither `publish.yml`'s grep nor `TESTED_RE` can match a tracked one, which is what makes a half-signed batch unpromotable and why `publish.yml` needed no edit. **A track with nothing in it is never required**, because an empty checklist reads as "signed off" when it means "never asked". **The full ritual, and every way a skipped week is deduped, is `cowork/release-signoff.md`.**
+- **Setup is derived, never retyped.** `make cowork-setup` creates the thirty-one GitHub labels (from `workstreams/` plus the `type:*` vocabulary) and the four repo variables (from `models.md`); `/cowork deploy` registers all twenty-three routines, the webhook triggers that fire the event-driven ones, and the Linear labels — which need a Claude session because a routine is account-scoped with no CLI behind it. `make cowork-check` is the doctor — it fails when the README table, a routine file and the tier table disagree, and when a `src/yeaboi/*.py` module is claimed by no charter (a scout reads only its charter's paths, so an unclaimed file is one no routine ever opens). Neither would be noticed at run time. Connectors, the GitHub App and `AUTO_VERSION_PAT` stay manual and are reported on every run.
+- **The fleet has a lifecycle, and Python owns every comparison in it.** `/cowork status | deploy | run <name> | pause | resume | teardown`. The command makes the API calls and hands the `RemoteTrigger list` response to `scripts/cowork_setup.py --triggers`, which builds the request bodies, diffs the six compared fields, and edits the README URL column itself — the model posts what it is given and never diffs twenty-three routines by eye. Two asymmetries are deliberate: **there is no delete** (teardown sets `enabled: false` and prints the URLs; it must not claim otherwise), and **`enabled` is reported but never reconciled**, so `deploy` cannot silently undo a `pause`. **A merge to `main` deploys itself**: `cron/cd-deploy.md` holds `RemoteTrigger` (the only routine besides `slack-relay` that does), is fired by a GitHub push webhook with a daily cron behind it, and runs the same reconcile under `--strict --no-create`. It never guesses what fired it — the API cannot scope a webhook to a branch, so it resets to `origin/main`, **re-reads its own file from that tree** (the copy that got it that far came from whatever branch was pushed), and always reconciles; the plan is the diff, and an empty one exits silently. `--strict` exits 2 on a suspicious plan, an unresolved `needs`, or more than `MASS_CHANGE_LIMIT` routines created and updated together. **It applies updates only**: a create races two runs against each other with no lock and no undo, so `--no-create` empties those bodies in Python and reports them for `/cowork deploy`. Webhook triggers cannot be read back, deduped or deleted, so one is posted **only** for a routine the same run just created — never by `cd-deploy`. `environment_id` is likewise not compared — it is per-machine, and comparing it would flag every teammate's fleet as drifted. **The fleet outgrew one page, so it is read in parts.** `RemoteTrigger list` returns twenty routines and a `next_cursor` the tool cannot send back, and a truncated page read alone is the one input that registers a second copy of a routine already firing — so `snapshot()` raises on it. The rest is read one at a time: a `get` per `trig_…` id in the README URL column, which is the ledger of everything a deploy registered (`recorded_triggers`), passed as further `--triggers` files. `Snapshot` then carries what such a read cannot prove, and the split is the point: an **update** is safe from a partial read (it only touches a routine it saw, and applying it twice writes the same value), a **create** is not, so one is blocked unless the README records no id for it — nothing of ours can hide past the boundary under a name no deploy ever used. The same blindness had a second victim: the relay resolved `pause`/`resume`/`run` by matching a name against that list, so the manifest carries each routine's `trigger_id` now and no fleet verb lists anything.
 
 ## Front End (`frontend/` → `src/yeaboi/web/static/`)
 
@@ -117,7 +124,11 @@ and never builds anything.
   (`OutputShareServer(editable=…)`), and a **correctable** standup, whose reader answers a practice
   signal (`ShareDocument.corrections`, set only when the TUI passes `session_id`+`run_id`). One
   policy rather than one each, because they differ in what they send and not at all in what they may
-  reach. `export/actions.ts` (edits) and `export/vote.ts` (verdicts) are the only network code in
+  reach. **The correctable half currently has no host**: both standup share paths went editable,
+  and one document cannot have two writers — an editable share replays its own edit log, a practice
+  vote rewrites the run beneath it. The path, its route and its tests stay because carrying a
+  verdict *through* the edit log (a third op beside `OP_NOTE`/`OP_FIELD`) is what would let both
+  live on one document; signals are answered from the TUI's Practices action until then. `export/actions.ts` (edits) and `export/vote.ts` (verdicts) are the only network code in
   the export bundle; gate any new control on the payload's capability flag — `edit`, `correctable` —
   or written exports render a button that does nothing. Post via `mutate('/api/…', {…})` with a
   literal path and body, and read via `payload.get("…")`, so `test_web_request_keys.py` keeps seeing
@@ -149,6 +160,35 @@ and never builds anything.
   became 90 with nothing reported. The deck's payload rides the same response-direction guard —
   an export is a file, so a dropped field surfaces months later as a blank slide with no server
   and no log to look at.
+
+## REQUIRED: Go sidecar dual maintenance
+
+Two Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with byte-level
+parity enforced by `tests/parity/` (`make parity`, and the `parity` CI job):
+
+- the **agentwatch** family (`src/yeaboi/agentwatch/{collector,store,engine,security_checks}.py`
+  ↔ `go/internal/agentwatch/`),
+- the **standup deterministic core** (`src/yeaboi/standup/{aggregate,references,relatedness,
+  habits,automation,insights,confidence,categories}.py` + the engine's evidence helpers
+  ↔ `go/internal/standup/`), and
+- the **team-analysis scoring core** (`src/yeaboi/analysis/{aggregate,code_health,coverage,
+  practices}.py` + `ai_usage.py`'s classifier block — the marker tables,
+  `_classify_ai_*`, `aggregate_ai_markers`, `_activity_bucket`, `_collect_samples`
+  ↔ `go/internal/analysis/`).
+
+Python is the reference implementation. Any behavior change in those files MUST be mirrored
+in the Go twin (each Go file names its Python twin in its header) — otherwise `make parity`
+fails and the change cannot merge. Purely additive Python work that the sidecar does not
+serve (new prose, new store columns, rendering) is exempt; when in doubt, run `make parity`.
+
+**One constant outside those files couples the two languages**: `sessions.py`'s
+`CURRENT_SCHEMA_VERSION`, mirrored by `currentSchemaVersion` in
+`go/internal/agentwatch/store.go`. Go refuses a database newer than it understands rather
+than writing behind Python's migrations, so bumping the schema without raising the Go
+ceiling makes the sidecar refuse every upgraded database — the agentwatch family silently
+reverts to the Python path with CI fully green. `tests/unit/test_gocore_packaging.py`
+fails on the drift; raise the Go constant once the new migration is mirrored (or leave it
+deliberately, and say why, when the sidecar must not write behind it).
 
 ## Code Style
 
@@ -192,7 +232,7 @@ Every new feature MUST include all three pillars before it can be considered com
 
 ## REQUIRED: Surface Parity
 
-yeaboi ships on **six surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the OpenClaw skill. Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, and plugin skills.
+yeaboi ships on **five surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, and the Claude Code plugin skills. Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, and plugin skills.
 
 The contract:
 
@@ -216,6 +256,8 @@ src/yeaboi/
   prompts/                           — one factory function per prompt (ARC framework)
   tools/                             — @tool-decorated integrations (GitHub, Jira, AzDO, Confluence, Notion, …)
   standup/ retro/ poker/ performance/ reporting/ roadmap/ analysis/  — standalone modes (shared blueprint)
+  agentwatch/                        — the Agents family: usage/standup/security engines over local agent-session telemetry
+  pricing.py                         — the per-model LLM rate table (cache-aware); every cost estimate goes through it
   mcp/                               — stdio MCP server (yeaboi-mcp; 27 tools over the engines)
   repl/                              — legacy REPL for CLI-flag-driven flows
   ui/                                — full-screen TUI (mode_select, provider_select, session, shared)
@@ -245,9 +287,7 @@ Deep reference lives in `.claude/skills/` and loads on demand in interactive ses
 | `mode-blueprints` | `standup/`, `retro/`, `performance/`, `reporting/`, `roadmap/`, or adding a new mode |
 | `logging` | logging calls, log files, `logging_setup.py` |
 | `ci-and-release` | `.github/workflows`, versioning, releasing, Dependabot, deployment |
-| `project-map` | full module map, CLI flags/subcommands, env vars, app flow, the MCP server + plugin, OpenClaw product skill |
-
-Note: `.claude/skills/` holds **dev-workflow** conventions; `src/yeaboi/skills/` (symlinked as `skills/`) is the **shipped OpenClaw product skill** — don't confuse them.
+| `project-map` | full module map, CLI flags/subcommands, env vars, app flow, the MCP server + plugin |
 
 ## Git Conventions
 

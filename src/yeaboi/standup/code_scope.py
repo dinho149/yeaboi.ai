@@ -21,12 +21,20 @@ def validate_code_sources(sources: list[str] | tuple[str, ...] | None) -> list[s
 
 
 def default_code_scope() -> tuple[list[str], list[str], list[str]]:
-    """Backward-compatible first-run scope from the legacy environment config."""
-    from yeaboi.config import get_azure_devops_project, get_standup_github_repo
+    """Backward-compatible first-run scope from the legacy environment config.
+
+    GitHub is enabled by a bare ``GITHUB_TOKEN`` and not only by the legacy
+    ``STANDUP_GITHUB_REPO``: a token with no repo used to mean "no code activity
+    at all", which is indistinguishable from a quiet day. The *scope* behind that
+    source is left empty here on purpose — this function is called on every
+    engine and TUI path and must stay network-free, so owner discovery happens
+    once, later, in ``engine._resolve_code_scope``.
+    """
+    from yeaboi.config import get_azure_devops_project, get_github_token, get_standup_github_repo
 
     github = [get_standup_github_repo().strip()] if get_standup_github_repo().strip() else []
     azdo_project = (get_azure_devops_project() or "").strip()
-    sources = ([SOURCE_GITHUB] if github else []) + ([SOURCE_AZDO] if azdo_project else [])
+    sources = ([SOURCE_GITHUB] if github or get_github_token() else []) + ([SOURCE_AZDO] if azdo_project else [])
     return sources, github, ([azdo_project] if azdo_project else [])
 
 
@@ -36,10 +44,10 @@ def discover_github_repositories(limit: int = 200) -> list[str]:
 
     repos: set[str] = set()
     try:
-        from yeaboi.tools.github import _get_github_client
+        from yeaboi.tools.github import _get_github_client, _take
 
         client = _get_github_client()
-        for repo in client.get_user().get_repos(sort="full_name")[:limit]:
+        for repo in _take(client.get_user().get_repos(sort="full_name"), limit):
             slug = (getattr(repo, "full_name", "") or "").strip()
             if slug:
                 repos.add(slug)
@@ -51,6 +59,117 @@ def discover_github_repositories(limit: int = 200) -> list[str]:
 
         repos.add(_parse_repo(legacy))
     return sorted(repos, key=str.lower)
+
+
+# Repos are matched to an owner by ``pushed_at``, which does not move for a day
+# of reviews or issue triage. Discovery therefore looks back further than the
+# standup window it is serving; the report's own ``since`` still decides which
+# items are shown, so the only effect is that a repo active last week stays in
+# scope for today's review comments instead of vanishing.
+_OWNER_ACTIVITY_DAYS = 14
+
+# Caps for the owner fan-out, mirroring azure_devops._MAX_ACTIVITY_REPOS: the
+# collector issues 3 API calls per repository, so an owner is exactly the kind of
+# container that can stall a standup — a 500-repo org would be 1500 sequential
+# calls on the critical path of a run whose whole lead time is 10 minutes. The
+# per-owner cap keeps one busy org from starving the others; the total is the
+# ceiling on the run. Both truncations are reported, never silent.
+_MAX_REPOS_PER_OWNER = 10
+_MAX_REPOS_TOTAL = 30
+
+
+def discover_github_owners(limit: int = 100) -> list[str]:
+    """List the GitHub owners/organisations visible to the configured token.
+
+    The standup analog of :func:`discover_azdo_projects` — a picked owner stands
+    for *all* of its repositories, the same way a picked Azure project stands for
+    all of the repos inside it. Delegates to ``github_list_owners``, which already
+    unions the authenticated login, the user's organisations, and the owners of
+    visible repositories so a fine-grained PAT that cannot list orgs still fills
+    the picker.
+    """
+    try:
+        from yeaboi.tools.github import github_list_owners
+
+        return github_list_owners(limit=limit)
+    except Exception as exc:
+        logger.warning("standup: GitHub owner discovery failed: %s", exc)
+        return []
+
+
+def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: int) -> tuple[list[str], list[str]]:
+    """Resolve picked owners to the repositories worth scanning.
+
+    Returns ``(repository_slugs, warnings)``. Expansion happens per run rather
+    than at configure time, which is the whole point of picking an owner: a repo
+    created this morning is covered by tonight's standup with nothing to re-tick.
+
+    Archived and never-pushed repositories are dropped by
+    ``github_analysis_inventory``; an owner whose listing failed outright comes
+    back as a ``discovery_error`` entry, which becomes a warning rather than a
+    repository — that entry carries the *owner* name, so treating it as a repo
+    would send the collector looking for a repository called "acme".
+
+    The result is capped (see the constants above) and ordered most-recently-
+    pushed first, so what survives a cap is the work most likely to be in today's
+    standup rather than whatever GitHub happened to list first.
+    """
+    selected = [str(owner).strip() for owner in (owners or ()) if str(owner).strip()]
+    if not selected:
+        return [], []
+    try:
+        from yeaboi.tools.github import github_analysis_inventory
+
+        inventory = github_analysis_inventory(selected, days=max(int(days), _OWNER_ACTIVITY_DAYS), include_trees=False)
+    except Exception as exc:
+        logger.warning("standup: GitHub owner expansion failed: %s", exc)
+        return [], [f"GitHub repository discovery failed for {', '.join(selected)}: {exc}"]
+
+    warnings: list[str] = []
+    by_owner: dict[str, list[tuple[str, str]]] = {}
+    for entry in inventory:
+        if entry.get("discovery_error"):
+            owner = str(entry.get("container") or entry.get("name") or "").strip()
+            detail = str(entry.get("error") or "repository discovery failed").strip()
+            warnings.append(f"GitHub owner {owner}: {detail}" if owner else f"GitHub: {detail}")
+            continue
+        if not entry.get("active"):
+            continue
+        slug = str(entry.get("name") or "").strip()
+        if not slug:
+            continue
+        owner = str(entry.get("container") or slug.partition("/")[0]).strip()
+        by_owner.setdefault(owner, []).append((str(entry.get("updated_at") or ""), slug))
+
+    repositories: dict[str, str] = {}
+    truncated: list[str] = []
+    total_dropped = 0
+    for owner in selected:
+        found = by_owner.get(owner, [])
+        # ISO-8601 sorts lexicographically; a repo with no recorded push sorts last.
+        found.sort(key=lambda pair: pair[0], reverse=True)
+        kept = 0
+        for _pushed, slug in found:
+            if kept >= _MAX_REPOS_PER_OWNER or len(repositories) >= _MAX_REPOS_TOTAL:
+                total_dropped += 1
+                continue
+            if repositories.setdefault(slug.lower(), slug) == slug:
+                kept += 1
+        if kept < len(found):
+            truncated.append(f"{owner} ({kept} of {len(found)})")
+    if truncated:
+        warnings.append(
+            "GitHub coverage was capped at the "
+            f"{_MAX_REPOS_PER_OWNER} most recently pushed repositories per owner "
+            f"(max {_MAX_REPOS_TOTAL} in total) — {total_dropped} skipped: {', '.join(truncated)}"
+        )
+    logger.info(
+        "standup: expanded %d GitHub owner(s) to %d active repository(ies) (%d dropped by cap)",
+        len(selected),
+        len(repositories),
+        total_dropped,
+    )
+    return list(repositories.values()), warnings
 
 
 def discover_azdo_projects(limit: int = 200) -> list[str]:
@@ -111,9 +230,16 @@ def discover_azdo_repositories(limit: int = 200) -> list[str]:
 
 
 def discover_code_repositories(sources: list[str]) -> dict[str, list[str]]:
-    """Discover GitHub repositories and Azure DevOps projects."""
+    """Discover the pickable code scope: GitHub owners and Azure DevOps projects.
+
+    Both sides return *containers*, not individual repositories, so the two
+    pickers mean the same thing — tick the thing you own, get everything inside
+    it. The GitHub key keeps its ``SOURCE_GITHUB`` name because it still answers
+    "what can I choose for GitHub"; use :func:`discover_github_repositories` when
+    a concrete repository list is genuinely wanted.
+    """
     selected = validate_code_sources(sources)
     return {
-        SOURCE_GITHUB: discover_github_repositories() if SOURCE_GITHUB in selected else [],
+        SOURCE_GITHUB: discover_github_owners() if SOURCE_GITHUB in selected else [],
         SOURCE_AZDO: discover_azdo_projects() if SOURCE_AZDO in selected else [],
     }

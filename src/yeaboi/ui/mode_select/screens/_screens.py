@@ -106,6 +106,40 @@ _MODE_CARDS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Agents mode definitions — the second category on the landing split. Kept as a
+# SEPARATE list, never merged into _MODE_CARDS: the welcome tests pin exact
+# renders and hardcoded indices against _MODE_CARDS, and the two menus are
+# separate screens sharing one builder (_build_mode_screen(cards=...)).
+# ---------------------------------------------------------------------------
+
+_AGENT_CARDS: list[dict[str, Any]] = [
+    {
+        "key": "agent-usage",
+        "title": "Usage",
+        "description": "See what your AI agents cost: tokens, cache, per-model and per-project spend, daily trend.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(70,190,230)",
+    },
+    {
+        "key": "agent-standup",
+        "title": "Standup",
+        "description": "A daily digest of what your agents did: sessions worked, commits and PRs, open threads.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(120,210,170)",
+    },
+    {
+        "key": "agent-security",
+        "title": "Security",
+        "description": "Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(230,90,120)",
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Intake mode definitions — shown when the user selects "+ New Project"
 # ---------------------------------------------------------------------------
 
@@ -199,13 +233,15 @@ _SWEEP_ROW_WEIGHT = 4.0
 _DISABLED_BADGE_RGB = (90, 90, 100)
 
 
-def mode_title_widths() -> list[int]:
-    """Block-font column width of every mode title, index-aligned to _MODE_CARDS.
+def mode_title_widths(cards: list[dict[str, Any]] | None = None) -> list[int]:
+    """Block-font column width of every mode title, index-aligned to ``cards``
+    (default ``_MODE_CARDS`` — pass ``_AGENT_CARDS`` for the Agents menu).
 
     The staggered intro reveal uses these to know when each title is fully wiped
     in (see the reveal loop in :mod:`yeaboi.ui.mode_select`).
     """
-    return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in _MODE_CARDS]
+    cards = _MODE_CARDS if cards is None else cards
+    return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in cards]
 
 
 def _card_badge(mode: dict[str, Any]) -> str:
@@ -485,9 +521,10 @@ def _build_update_box(*, cols: int) -> Panel | None:
 
     Styled warmer and heavier than the tip bubble (amber border + keycap) so it
     reads as *more pressing* than an ambient tip: it tells the user a new version
-    is out and that ``ctrl+U`` installs it in place. Returns None when there's
-    nothing to advertise, so the companion lane just shows the tip + duck. Reads
-    the check state lazily like :func:`_build_version_row` (monkeypatchable seam).
+    is out and that ``ctrl+U`` installs it and relaunches onto it. Returns None when
+    there's nothing to advertise, so the companion lane just shows the tip + duck.
+    Reads the check state lazily like :func:`_build_version_row` (monkeypatchable
+    seam).
     """
     from yeaboi.update_check import get_update_status
 
@@ -524,8 +561,11 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
     :func:`_build_update_box` is carrying it instead (wide/companion layout). Reads
     the check state lazily (like ``_build_tip_rows`` reads tips config) so no call
     site changes and tests can monkeypatch ``yeaboi.update_check.get_update_status``.
+    When this process was relaunched by the ctrl+U update instead, there is nothing
+    to advertise, so the row carries a ✓ updated chip confirming the version that
+    actually took.
     """
-    from yeaboi.update_check import get_update_status
+    from yeaboi.update_check import get_update_status, is_fresh_restart
 
     status = get_update_status()
     dim = f"rgb({_TIP_DOT_DIM[0]},{_TIP_DOT_DIM[1]},{_TIP_DOT_DIM[2]})"
@@ -544,6 +584,14 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
         if width >= 72:
             row.append("  ·  ", style=dim)
             row.append(status["upgrade_command"], style=accent)
+    elif not status["update_available"] and is_fresh_restart() and width >= 72:
+        # This process was relaunched by the ctrl+U update — confirm the version
+        # that actually took, so the restart visibly did something. Dropped first
+        # on narrow terminals, like the upgrade command above. A newer release
+        # discovered since the restart still wins the slot, in this layout via the
+        # explicit check (the branch above is off when _build_update_box has it).
+        row.append("  ·  ", style=dim)
+        row.append("✓ updated", style=accent)
     row.append("  ·  ", style=dim)
     row.append("c", style=key_style)
     row.append(" changelog", style=dim)
@@ -574,6 +622,8 @@ def _build_mode_screen(
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
     compose: dict | None = None,
+    cards: list[dict[str, Any]] | None = None,
+    mascot: str = "duck",
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -582,8 +632,13 @@ def _build_mode_screen(
     a single coherent top-left → bottom-right sweep.
     sweep_skip: index of one title to leave fully shown while the sweep reveals the
     rest — used by the return transition (the mode you came from is already home).
+    cards / mascot: the card list this menu shows (default ``_MODE_CARDS``) and the
+    companion sprite beside it ("duck" for Humans, "robo" for Agents). Only the
+    *source* of the rows changes — every layout constant stays identical, and
+    ``mode_at_row``/``selected_title_offset`` must be passed the same ``cards``.
     """
-    show = visible if visible is not None else list(range(len(_MODE_CARDS)))
+    cards = _MODE_CARDS if cards is None else cards
+    show = visible if visible is not None else list(range(len(cards)))
     fading = fade_indices or []
 
     # Decide the companion up front so the mode description can be clipped to the
@@ -598,7 +653,7 @@ def _build_mode_screen(
     body: list = []
     body_h = 0
     row_base = 0  # absolute menu-row of the current item's title, for the sweep
-    for i, mode in enumerate(_MODE_CARDS):
+    for i, mode in enumerate(cards):
         if i not in show:
             continue
         is_sel = i == selected
@@ -689,6 +744,7 @@ def _build_mode_screen(
                 extras_reveal=extras_reveal,
                 compose=compose,
                 lane_h=grid_h,
+                mascot=mascot,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -716,15 +772,23 @@ def _build_mode_screen(
     # build_page_panel (main #104) applies the neutral base tint so the main
     # menu never shows the terminal's own background.
     panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2))
+    # The menu draws its own companion in-panel, but the stamp still matters:
+    # MusicLive reads it into the chrome-mascot global, which the screensaver
+    # uses — idling on the Agents menu must save with the robo, not the duck.
+    panel._duck_mascot = mascot
     if not is_welcome:
         panel._no_back_hint = True  # the main menu's Esc isn't "go back" → no back tab
         return panel
     # Draw the music pocket over the reserved bottom rows. Returning a frame (not a
     # bare Panel) also means MusicLive won't stamp the flat music subtitle.
-    return _WelcomeFrame(panel, compose=compose)
+    frame = _WelcomeFrame(panel, compose=compose)
+    frame._duck_mascot = mascot  # the frame isn't a Panel; the stamp rides on it too
+    return frame
 
 
-def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -> int | None:
+def mode_at_row(
+    selected: int, *, width: int, height: int, row: int, col: int, cards: list[dict[str, Any]] | None = None
+) -> int | None:
     """Map a 1-based terminal (row, col) click to a mode-card index, or None.
 
     Reproduces the vertical layout maths of :func:`_build_mode_screen` so a click
@@ -733,8 +797,9 @@ def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -
     clicks inside the right-hand duck lane return None. Kept in lock-step with the
     builder: the layout constants (panel border + top padding, ``body_h``, the
     companion split, the 2 tip rows + 1 version row) must match exactly.
+    Pass the same ``cards`` the builder was given (default ``_MODE_CARDS``).
     """
-    n = len(_MODE_CARDS)
+    n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
     # Clicks in the duck's reserved right-hand lane aren't menu clicks.
     if show_companion and col > width - _COMPANION_COLS:
@@ -768,7 +833,7 @@ def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -
     return None
 
 
-def selected_title_offset(selected: int, *, width: int, height: int) -> int:
+def selected_title_offset(selected: int, *, width: int, height: int, cards: list[dict[str, Any]] | None = None) -> int:
     """Return the ``top_offset`` (blank content rows above the title) at which the
     currently-selected mode's title sits in :func:`_build_mode_screen`.
 
@@ -777,9 +842,10 @@ def selected_title_offset(selected: int, *, width: int, height: int) -> int:
     lifts from where it is instead of jumping to the middle first. Mirrors the
     vertical maths of :func:`_build_mode_screen`/:func:`mode_at_row` exactly (same
     ``body_h``, companion split, and centring), so the first slide frame lands the
-    title on the same row it occupied a frame earlier.
+    title on the same row it occupied a frame earlier. Pass the same ``cards``
+    the builder was given (default ``_MODE_CARDS``).
     """
-    n = len(_MODE_CARDS)
+    n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
 
     # body_h — total rows of the mode block (selected carries +3 for its blank+desc).
@@ -1108,6 +1174,7 @@ def _build_companion(
     extras_reveal: float | None = None,
     compose: dict | None = None,
     lane_h: int = 40,
+    mascot: str = "duck",
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -1133,10 +1200,11 @@ def _build_companion(
     # Duck faces left so he looks toward the mode list rather than the wall.
     # duck_lift not None → play the double-shades gag (sunglasses raised by that
     # many pixels, second pair revealed underneath); otherwise the resting head.
+    # The gag is duck-only (see _mascot.py), so the robo companion always rests.
     head = (
         render_head_shades(duck_lift, flip=True)
-        if duck_lift is not None
-        else render_head(0, flip=True, beak_open=beak_open)
+        if duck_lift is not None and mascot == "duck"
+        else render_head(0, flip=True, beak_open=beak_open, mascot=mascot)
     )
     # Entrance slide: left-pad the head so it glides from the right edge of the lane
     # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
@@ -1219,14 +1287,20 @@ def _build_update_screen(
     done: bool = False,
     ok: bool = False,
     detail: str = "",
+    restart_in: int | None = None,
+    can_restart: bool = False,
 ) -> Panel:
     """Modal shown by the ctrl+U update flow: a spinner while ``uv/pipx upgrade``
     runs, then a success or failure result.
 
     While running (``done=False``) it shows ``spinner`` + "updating to vX". On
-    success it says the new version is installed and to restart; on failure it
-    shows the manual command so the user can run it themselves. Any key dismisses
-    the result (handled by the caller).
+    success the app relaunches itself onto the new version, so the screen counts
+    ``restart_in`` down and offers esc as the way out. ``can_restart`` defaults to
+    False — the honest screen, asking for a manual restart — so that only a caller
+    that has actually resolved a relaunch command (see
+    ``update_check.resolve_relaunch_command``) can promise one. On failure it shows the manual
+    upgrade command so the user can run it themselves. Any key dismisses the
+    result (handled by the caller).
     """
     amber = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
     rows: list[RenderableType] = []
@@ -1239,8 +1313,12 @@ def _build_update_screen(
     elif ok:
         rows.append(Align.center(Text(f"✓  updated to v{latest}", style=f"bold {amber}")))
         rows.append(Text(""))
-        rows.append(Align.center(Text("restart yeaboi to use the new version", style="rgb(198,198,208)")))
-        rows.append(Align.center(Text("press any key", style="rgb(120,130,140)")))
+        if can_restart:
+            rows.append(Align.center(Text(f"restarting in {max(0, restart_in or 0)}…", style="rgb(198,198,208)")))
+            rows.append(Align.center(Text("esc to stay on this one", style="rgb(120,130,140)")))
+        else:
+            rows.append(Align.center(Text("restart yeaboi to use the new version", style="rgb(198,198,208)")))
+            rows.append(Align.center(Text("press any key", style="rgb(120,130,140)")))
         border = amber
     else:
         rows.append(Align.center(Text("update failed", style="bold rgb(226,110,90)")))

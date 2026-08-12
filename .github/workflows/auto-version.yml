@@ -1,13 +1,22 @@
 name: Auto Version Bump
 
 # Classify each PR and, for release-worthy changes, bump the version in
-# pyproject.toml on the PR branch. Merging then triggers publish.yml (which
-# releases whenever the version has no matching tag) — so releases happen with no
-# manual version bump. Cheap deterministic guards run first; the LLM is only asked
-# to choose the semver level when the change actually ships code.
+# pyproject.toml on the PR branch. Cheap deterministic guards run first; the LLM
+# is only asked to choose the semver level when the change actually ships code.
+#
+# Merging then triggers publish-beta.yml, which publishes a PyPI PRE-RELEASE
+# (X.Y.ZrcN) and nothing else. Those accumulate until a human promotes the batch,
+# and publish.yml cuts the official X.Y.Z. So this workflow decides what the next
+# final version WILL be; it no longer decides that anything ships to users.
+#
+# It must keep writing a plain X.Y.Z. scripts/bump_version.py rejects anything
+# else, and an rc string committed here would break the next PR's bump and the one
+# after — the rc suffix is stamped into a throwaway checkout in the publish job,
+# never into the repo.
 #
 # The bump lands on the PR *branch* (not main) on purpose: the human merge is what
-# pushes to main and triggers publish.yml — so nothing here has to push to main.
+# pushes to main and triggers publish-beta.yml — so nothing here has to push to
+# main.
 #
 # The bump push DOES need a real identity, though (see the checkout step): pushing
 # it as the default GITHUB_TOKEN makes the resulting CI run bot-actored, and GitHub
@@ -244,7 +253,7 @@ jobs:
       - name: Classify & bump with Claude
         id: claude
         if: steps.guard.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Second accepted credential, so a Console API key is a usable fallback

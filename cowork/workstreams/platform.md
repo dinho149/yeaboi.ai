@@ -3,8 +3,10 @@
 **Owns** — `src/yeaboi/cli.py` (2.5k LOC), `config.py`, `paths.py`, `logging_setup.py`,
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
-scaffold, `src/yeaboi/skills/` (the shipped OpenClaw skill), `.github/workflows/`, `Makefile`,
-`pyproject.toml`, `packaging/`, `scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`
+scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
+`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`, and the Go sidecar seam —
+`go/` (the `yeaboi-core` binary and its `internal/` twins of Python engines), `contracts/v1/`,
+`src/yeaboi/gocore/`, `tests/parity/` (the byte-parity gate between the twins)
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 
@@ -15,9 +17,9 @@ you. You own the server they plug into and the registry that proves they exist.
 
 ## Standing concerns
 
-- **Surface parity is the charter.** yeaboi ships on six surfaces — TUI, CLI, engines, MCP server,
-  plugin skills, OpenClaw skill. A capability on fewer than all six needs a recorded
-  `Exempt("reason")`, not silence. You are the workstream that notices when another workstream
+- **Surface parity is the charter.** yeaboi ships on five surfaces — TUI, CLI, engines, MCP
+  server, plugin skills. A capability on fewer than all five needs a recorded `Exempt("reason")`,
+  not silence. You are the workstream that notices when another workstream
   shipped TUI-only.
 - **Param parity** — engine signatures vs. MCP tool schemas. A new engine param must reach the tool
   or land in `HIDDEN_PARAMS` with a reason. `db_path`/`today`/`on_progress`/`dry_run` are injection
@@ -39,8 +41,6 @@ you. You own the server they plug into and the registry that proves they exist.
 - **Packaging** — the wheel packages only `src/yeaboi`; hatchling loads `.gitignore` as build
   excludes, so an unanchored glob can silently drop files from the wheel. `make build` and inspect.
 - **Telemetry stays opt-in** and its transparency page stays accurate.
-- **`.claude/skills/` is dev workflow; `src/yeaboi/skills/` is the shipped product skill.** Do not
-  confuse them.
 
 ## Auto lane, in practice
 
@@ -51,3 +51,7 @@ New flags, new MCP tools, workflow *behaviour* changes, and anything touching re
 
 Individual `mcp/tools_*.py` files and individual plugin skills — each belongs to its mode.
 `cowork/` itself — propose changes to it like anything else; it is reviewed by a human by design.
+
+**integrations** may append a provider's credential getters to `config.py` from a campaign run
+(`house-rules.md`, **Extends**) — that site and that operation only; everything else in the file is
+yours.

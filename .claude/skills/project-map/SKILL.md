@@ -1,6 +1,6 @@
 ---
 name: project-map
-description: Full annotated module map of src/yeaboi/ (incl. the MCP server, roadmap, analysis, and agent/headless.py), app flow, the complete CLI flags + subcommands, all environment variables, the MCP server internals + Claude Code plugin, and the OpenClaw skill. Use when navigating unfamiliar modules, adding CLI flags/subcommands, changing env/config, or working on the MCP server, plugin, or OpenClaw skill.
+description: Full annotated module map of src/yeaboi/ (incl. the MCP server, roadmap, analysis, and agent/headless.py), app flow, the complete CLI flags + subcommands, all environment variables, and the MCP server internals + Claude Code plugin. Use when navigating unfamiliar modules, adding CLI flags/subcommands, changing env/config, or working on the MCP server or plugin.
 ---
 
 # Project Map
@@ -75,6 +75,14 @@ src/yeaboi/
     delivery.py         — 1:1 summary email via SMTP (reuses standup config.get_smtp_*)
     store.py            — PerformanceStore (one_on_ones/reviews/notes tables, schema v8)
     references/         — bundled default competency_framework.md (overridable via env)
+  agentwatch/           — the Agents family: what the AI coding agents did, cost, and exposed
+    __init__.py         — public API (run_agent_usage, run_agent_standup, run_agent_security, AgentWatchStore)
+    collector.py        — refresh(): ingest local Claude Code/OpenClaw session JSONL → rollups + in-stream security signals (requestId-deduped, cursor-skipped, never stores transcript text)
+    engine.py           — the 3 pipelines (deterministic numbers → one LLM call for prose → artifact)
+    security_checks.py  — deterministic scans of agent settings/MCP config; findings are (pattern, file, line) only
+    render.py           — the 3 artifacts → Rich (CLI + TUI)
+    export.py           — the 3 artifacts → Markdown (no HTML yet — see the beta notice)
+    store.py            — AgentWatchStore (agent_sessions keyed on source_path, findings, 3 report tables, schema v27)
   reporting/            — Reporting mode (business-friendly delivery report: last sprint / last month)
     __init__.py         — public API (run_delivery_report, ReportingStore, export_report, build_presentation_html)
     activity.py         — gather_delivered_work(): team-wide completed (Done/Closed) tickets over the period
@@ -172,7 +180,8 @@ Key flags to know about when modifying the CLI:
 | `--dry-run` | TUI with mock data, no LLM calls |
 | `--setup` | Re-run first-time setup wizard |
 | `--allow-path PATH` | Session-only filesystem sandbox grant (repeatable); persistent allowances via `YEABOI_ALLOWED_PATHS` |
-| `--install-skill [DIR]` | Install bundled OpenClaw skill to `~/.openclaw/skills/` (or custom dir) |
+| `--list-audio-devices` | List the microphones dictation can record from, then exit (rescans first, so a mic plugged in after launch shows up); marks the `VOICE_DEVICE` pick |
+| `--install-voice` | Install the dictation packages + speech model into the running environment, then exit — the headless twin of the in-app offer (`voice_install.py`). No MCP tool by design |
 | `--standup-run` | Headless: run a daily standup and deliver it (what the OS scheduler invokes) |
 | `--standup-interactive` | With `--standup-run`: timed prompt for the user's update + confirm before generating (TTY-aware; headless fallback) |
 | `--standup-session ID` | Session to run the standup for (default: most recent) |
@@ -203,7 +212,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `ANTHROPIC_API_KEY` — required when using Anthropic (default provider)
 - `OPENAI_API_KEY` — required when `LLM_PROVIDER=openai`
 - `GOOGLE_API_KEY` — required when `LLM_PROVIDER=google`
-- `AWS_REGION` — required when `LLM_PROVIDER=bedrock` (auto-detected from `~/.aws/config` on Lightsail)
+- `AWS_REGION` — required when `LLM_PROVIDER=bedrock` (auto-detected from `~/.aws/config` when a profile is present)
 - `AWS_PROFILE` — optional, auto-detected from `~/.aws/config` (looks for profiles with `credential_source` or `role_arn`)
 - `LLM_PROVIDER` — `anthropic` (default), `openai`, `google`, `bedrock`, `ollama`
 - `LLM_MODEL` — optional model override for the selected provider
@@ -216,47 +225,32 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `CONFLUENCE_BASE_URL` / `CONFLUENCE_EMAIL` / `CONFLUENCE_API_TOKEN` — optional standalone Atlassian login for Confluence. Confluence reuses the Jira creds by default; these let it be configured **without** Jira (they win over `JIRA_*` when set — see `config.get_confluence_base_url`). The Docs setup step collects them inline when Jira wasn't configured.
 - `NOTION_TOKEN` — optional, Notion integration token (independent doc tool; its own auth, not shared with Jira/Confluence). Enables the 5 `notion_*` tools + analysis/standup context.
 - `NOTION_ROOT_PAGE_ID` — optional, default parent for created Notion pages; also gates the Notion source in the Daily Standup activity feed (the Confluence-space-key analog)
-- `YEABOI_ALLOWED_PATHS` — optional, comma-separated filesystem whitelist for the sandbox (`fs_policy.py`). The app may only read/write inside `~/.yeaboi` (or `$YEABOI_HOME`), a small documented built-in allowlist (CWD `.env`/`SCRUM.md`/`scrum-docs`, `~/.openclaw`, `~/.aws/config` read-only, LaunchAgents + Application Support for standup scheduling, legacy `~/.scrum-agent`), and the paths listed here. Session-only grants: `--allow-path`. Editable in the TUI via Settings → Allowed Paths.
+- `YEABOI_ALLOWED_PATHS` — optional, comma-separated filesystem whitelist for the sandbox (`fs_policy.py`). The app may only read/write inside `~/.yeaboi` (or `$YEABOI_HOME`), a small documented built-in allowlist (CWD `.env`/`SCRUM.md`/`scrum-docs`, `~/.aws/config` read-only, LaunchAgents + Application Support for standup scheduling, legacy `~/.scrum-agent`), and the paths listed here. Session-only grants: `--allow-path`. Editable in the TUI via Settings → Allowed Paths.
 - `YEABOI_HOME` — optional, relocates the whole data tree (exports, logs, sessions DB, scrum-docs…; default `~/.yeaboi`). Resolved once at import time in `paths.py` (`_resolve_root()`); `.env` itself always stays at `~/.yeaboi/.env` (the bootstrap file that holds this var). Editable in the TUI via Settings → Data Dir, which offers to move the existing tree (`paths.move_data_tree`) and notes a restart is needed to fully apply.
 - `NOTION_EXPORT_PARENT_PAGE_ID` — optional, a dedicated Notion page the Export buttons publish under; **blank groups exports under an auto-created "yeaboi" page (🤙 icon) inside `NOTION_ROOT_PAGE_ID`**. With neither set, Notion export shows a warning pointing at Setup (the Notion API can't create top-level pages).
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).
 - `ANONYMIZE_MASK_TERMS` — optional, comma-separated company-specific terms the Anonymize action always masks (e.g. `"YouLend,YL"`); seeds the deterministic pre-mask pass so they're redacted even when no LLM is available
 - `STANDUP_USER_NAME` — optional, your display name for your own standup update (default: "Me")
-- `STANDUP_GITHUB_REPO` — optional, GitHub repo (owner/repo) scanned for Daily Standup code activity
+- `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
 - `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
 - `YEABOI_NO_TUNNEL` — optional, `1`/`true`/`yes` stops the live boards opening a Cloudflare tunnel (`config.tunnels_disabled()`). The board still runs for the host on `127.0.0.1` but has nothing to share. Needed because the tunnel now auto-starts: without it `make run-dry` would download ~40 MB and publish a public URL
 - `CLOUDFLARED_PATH` — optional, path to an existing `cloudflared` binary for Retro remote tunnels (else the app auto-downloads one to `~/.yeaboi/bin/`)
+- `YEABOI_UPDATE_CHECK` — optional, `0`/`false`/`off`/`no` disables the background PyPI update check (`update_check.start_background_check`). Used by `make demo` recordings so the version row can never repaint mid-capture; also the opt-out for air-gapped installs
 - `PERFORMANCE_FRAMEWORK_PATH` — optional, path to a custom competency framework / review template for Performance mode's 6-month review (else the bundled `performance/references/competency_framework.md` default is used). 1:1 summary emails reuse the standup `STANDUP_SMTP_*` / `STANDUP_EMAIL_RECIPIENTS` settings.
 - `BETA_NOTICES_ENABLED` — default on; `false` silences the one-line beta caveat the CLI prints to stderr before a beta subcommand runs (`yeaboi perf …`). Does **not** affect the TUI's one-time notice.
 - `BETA_NOTICES_ACK` — **state, not configuration.** Comma-separated `_MODE_CARDS` keys whose one-time TUI beta notice has been dismissed; written automatically to `~/.yeaboi/.env` on Continue. Not surfaced on the Settings page (it would invite hand-editing).
 - `YEABOI_FORCE_BETA_NOTICE` — re-show an already-acknowledged TUI beta notice. `1`/`true` for all modes, or a comma-separated list of mode keys. The only way to re-check a once-ever gate for demos, screenshots or review.
+- `VOICE_MODEL` — local Whisper size for dictation (`tiny`, `base` (default), `small`, `medium`, `large-v3`, plus the `.en` variants)
+- `VOICE_INSTALL_OFFER` — `on` (default) / `off`: whether double-tapping Space may offer to install dictation in place. `n` at the offer sets `off`; `YEABOI_FORCE_VOICE_OFFER=1` overrides it for one run
+- `VOICE_EXTRA_INSTALLED` — set once yeaboi has installed dictation itself, so a `uv tool upgrade` that wipes it can be explained rather than silently regressed
+- `VOICE_DEVICE` — microphone for dictation: a PortAudio index (`2`) or a case-insensitive name substring (`shure`). Empty = system default. Set it from Settings → Voice Input → Input Device (an arrow-selectable picker with a live level test), or discover names with `yeaboi --list-audio-devices`
 - `SESSION_PRUNE_DAYS` — auto-prune sessions older than N days (default: 30, 0 = disabled)
+- `YEABOI_GO` — three-state switch for the Go core sidecar serving agentwatch AND the Daily Standup's deterministic aggregation (`standup.aggregate`; see `contracts/v1/rpc.md`, `src/yeaboi/gocore/`, `src/yeaboi/standup/aggregate.py`). Unset = **auto**: use the sidecar iff a binary is discovered (the default since the `yeaboi[core]` wheel). `0`/`false` = off; `1`/`true` = forced on (a missing binary then logs a line). Any sidecar failure silently falls back to the Python engines
+- `YEABOI_CORE_BIN` — explicit path to the `yeaboi-core` binary (`make go-build` puts it at `bin/yeaboi-core`); otherwise the `yeaboi-core` platform wheel (installed via `pip install "yeaboi[core]"`, released by `publish-core.yml` on its own `core-v*` tags) or `$PATH` is searched
 - `LOG_LEVEL` — file logger level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — optional, enables LangSmith tracing
 - Copy `.env.example` to `.env` and fill in keys (`make env`)
 - Never commit `.env` or API keys
-
-## OpenClaw Skill
-
-The `src/yeaboi/skills/scrum-planner/` directory contains an OpenClaw skill that replicates the smart intake TUI experience conversationally. OpenClaw acts as the front-end (asks questions, handles follow-ups), then calls the **yeaboi MCP server's tools** as the back-end (the old SCRUM.md temp-file + `--non-interactive` shell-out + JSON-polling pattern was removed).
-
-**How it works:**
-1. OpenClaw asks ~7 essential questions (matching `SMART_ESSENTIALS` from `prompts/intake.py`)
-2. Answers map to `plan_generate` params: Q1 → `description`, Q6/Q8 → `team_size`/`sprint_length_weeks`, the rest → `answers` {number: answer}, extras → `project_context`
-3. Requires the `yeaboi-mcp` server registered in OpenClaw's MCP config (`uvx --from 'yeaboi[mcp]' yeaboi-mcp`)
-4. The returned envelope is presented phase-by-phase; `plan_export`/`plan_publish` handle output
-
-**Key files:**
-- `skills/scrum-planner/SKILL.md` — agent instructions (persona, conversation flow, MCP tool invocation, output formatting)
-- `skills/scrum-planner/README.md` — installation and usage docs
-- `skills/scrum-planner/scripts/` — helper scripts for the skill
-- `skills/scrum-planner/references/` — reference material
-
-**Installing the skill:**
-```bash
-yeaboi --install-skill          # installs to ~/.openclaw/skills/
-yeaboi --install-skill /path    # custom directory
-```

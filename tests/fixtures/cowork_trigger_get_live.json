@@ -1,0 +1,48 @@
+{
+  "trigger": {
+    "api_token_hint": "",
+    "created_at": "2026-08-04T04:07:38.881265Z",
+    "created_via": "http_api",
+    "cron_expression": "30 6 * * 3",
+    "enabled": true,
+    "enabled_plugins": [],
+    "ended_reason": "",
+    "extra_marketplaces": [],
+    "id": "trig_01BcyJ4pNnPVPcDok47L2f9N",
+    "job_config": {
+      "ccr": {
+        "environment_id": "env_019pHU7d9FEBMq6ssvFnFmNK",
+        "events": [
+          {
+            "data": {
+              "message": {
+                "content": "You are the `standup` workstream for yeaboi. Read `cowork/routines/cron/standup-sweep.md` in this repo and follow it exactly.",
+                "role": "user"
+              },
+              "parent_tool_use_id": null,
+              "session_id": "",
+              "type": "user",
+              "uuid": "a0eddee3-cee5-4222-8b26-a218b4a8d10c"
+            }
+          }
+        ],
+        "session_context": {
+          "allowed_tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"],
+          "model": "MODEL_ID_FROM_MODELS_MD",
+          "sources": [{"git_repository": {"url": "https://github.com/dinho149/yeaboi.ai"}}]
+        }
+      }
+    },
+    "last_fired_at": "2026-08-05T06:34:13.381944Z",
+    "mcp_connections": [
+      {"clear_tool_policy_overrides": false, "connector_uuid": "uuid-linear", "name": "Linear", "permitted_tools": [], "tool_policy_overrides": [], "url": "https://mcp.linear.app/mcp"},
+      {"clear_tool_policy_overrides": false, "connector_uuid": "uuid-slack", "name": "Slack", "permitted_tools": [], "tool_policy_overrides": [], "url": "https://mcp.slack.com/mcp"},
+      {"clear_tool_policy_overrides": false, "connector_uuid": "uuid-notion", "name": "Notion", "permitted_tools": [], "tool_policy_overrides": [], "url": "https://mcp.notion.com/mcp"}
+    ],
+    "name": "cowork: standup-sweep",
+    "next_run_at": "2026-08-12T06:30:57.254291093Z",
+    "persist_session": false,
+    "suspension_reason": "",
+    "updated_at": "2026-08-04T04:07:38.881265Z"
+  }
+}
