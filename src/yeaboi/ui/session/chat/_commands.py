@@ -18,6 +18,8 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from ._composer import NEWLINE_KEY, InsertResult, paste_notice
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +35,7 @@ class ChatContext:
     run_turn: Callable[[str], None]  # submit a synthetic user turn (guardrail-exempt)
     add_system: Callable[[str], None]  # dim notice line in the transcript
     add_artifact: Callable[[str], None]  # push an artifact card by kind
-    insert_text: Callable[[str], bool]  # composer insert; False = truncated
+    insert_text: Callable[[str], InsertResult]  # composer insert; .dropped > 0 = did not all fit
     trigger_voice: Callable[[], None]
     trigger_image: Callable[[], None]
     export: Callable[[str], None]  # scope: "plan" | "transcript" | "both" | "" (ask)
@@ -64,8 +66,8 @@ def _cmd_help(ctx: ChatContext, args: str) -> None:
             lines.append(f"/{cmd.name} — {cmd.help}")
     lines.append("")
     lines.append(
-        "Shortcuts: Enter send · Alt+Enter newline · Ctrl+V paste screenshot · "
-        "double-tap Space voice · ↑/↓ choices or cursor · Esc Esc leave"
+        f"Shortcuts: Enter send · {NEWLINE_KEY} newline · Ctrl+U clear the box (Ctrl+U again undoes) · "
+        "Ctrl+V paste screenshot · double-tap Space voice · ↑/↓ choices or cursor · Esc Esc leave"
     )
     ctx.add_system("\n".join(lines))
 
@@ -122,19 +124,18 @@ def _cmd_voice(ctx: ChatContext, args: str) -> None:
 
 
 def _cmd_paste(ctx: ChatContext, args: str) -> None:
-    # Newline-preserving paste: terminal bracketed paste strips every newline
-    # (see ui/shared/_input.py), so long/structured text goes through the
-    # clipboard directly — same escape hatch the standup transcript uses.
+    # Reads the clipboard directly rather than through the terminal, so it also
+    # sidesteps whatever the terminal does to a paste of its own (size caps,
+    # flow control) — same escape hatch the standup transcript uses.
     from yeaboi.clipboard import read_clipboard_text
 
     text = read_clipboard_text()
     if not text:
         ctx.add_system("Clipboard is empty (or unreadable) — copy the text first, then /paste.")
         return
-    if not ctx.insert_text(text):
-        from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS
-
-        ctx.add_system(f"Paste truncated at {MAX_CHAT_INPUT_CHARS:,} characters.")
+    result = ctx.insert_text(text)
+    if not result.ok:
+        ctx.add_system(paste_notice(result))
 
 
 def _cmd_small(ctx: ChatContext, args: str) -> None:

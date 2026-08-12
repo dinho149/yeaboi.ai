@@ -1751,3 +1751,145 @@ class TestScrollingWithAMenuUp:
         driver._input_loop()
         assert driver.choices.highlight == 1
         assert driver.follow is True  # still pinned to the newest line
+
+
+def _shown_notices(driver: _ChatDriver) -> list[str]:
+    """Run the input loop, collecting the notice as each frame renders it.
+
+    Asserting driver.notice after the loop would always see "": the loop clears
+    it on the NEXT keypress, so what matters is what was on screen in between.
+    """
+    seen: list[str] = []
+    original = driver._render
+
+    def _record() -> None:
+        seen.append(driver.notice)
+        original()
+
+    driver._render = _record
+    driver._input_loop()
+    driver._render = original
+    return [notice for notice in seen if notice]
+
+
+class TestClearUndo:
+    """Ctrl+U empties the box and a second Ctrl+U puts it back — in both key
+    loops, since typing continues while the graph is working."""
+
+    def _drafted(self, text: str, keys: list[str]) -> _ChatDriver:
+        driver = _driver(FakeGraph([]), _keys(keys), {"messages": []})
+        driver.composer.set_text(text)
+        driver.composer.col = len(driver.composer.lines[0])
+        return driver
+
+    def test_ctrl_u_clears_and_says_how_to_undo(self):
+        driver = self._drafted("a long draft", ["clear", "esc", "esc"])
+        notices = _shown_notices(driver)
+        assert driver.composer.text() == ""
+        assert any("Ctrl+U again to undo" in notice for notice in notices)
+
+    def test_ctrl_u_twice_restores_the_draft(self):
+        driver = self._drafted("a long draft", ["clear", "clear", "esc", "esc"])
+        notices = _shown_notices(driver)
+        assert driver.composer.text() == "a long draft"
+        assert any(notice.startswith("Restored your message") for notice in notices)
+
+    def test_ctrl_u_on_an_empty_box_says_nothing(self):
+        driver = self._drafted("", ["clear", "esc", "esc"])
+        # Only the Esc prompt, never a clear/restore line.
+        assert not [n for n in _shown_notices(driver) if "message" in n]
+
+    def test_ctrl_u_clears_and_restores_image_chips(self):
+        driver = self._drafted("look [image #1]", ["clear", "clear", "esc", "esc"])
+        driver.composer.attachments = ["/tmp/shot.png"]
+        seen: list[list[str]] = []
+        original = driver._render
+
+        def _record() -> None:
+            seen.append(list(driver.composer.attachments))
+            original()
+
+        driver._render = _record
+        driver._input_loop()
+        assert [] in seen  # the chip went away with the text…
+        assert driver.composer.attachments == ["/tmp/shot.png"]  # …and came back with it
+
+    def test_clear_and_undo_work_during_a_turn(self):
+        import threading
+
+        driver = self._drafted("mid-turn draft", [])
+        driver._processing_key("clear", threading.Event())
+        assert driver.composer.text() == ""
+        assert "Ctrl+U again to undo" in driver.notice
+        driver._processing_key("clear", threading.Event())
+        assert driver.composer.text() == "mid-turn draft"
+
+    def test_answering_a_menu_burns_the_stash(self):
+        """The choices answer leaves the loop without touching handle_key.
+
+        A stash surviving it blocks every later suggestion prefill (the guard
+        tests has_stash) and lets a Ctrl+U three questions on resurrect a draft
+        from a different question.
+        """
+        driver = self._drafted("a prefilled suggestion", ["clear", "enter", "esc", "esc"])
+        driver.choices = ChoiceRows(options=[("Greenfield", False), ("Existing", False)], highlight=0)
+        assert driver._input_loop() == "Greenfield"
+        assert not driver.composer.has_stash()
+
+    def test_an_inline_command_burns_the_stash(self):
+        driver = self._drafted("build an app /small", ["clear", "clear", "enter"])
+        assert driver._input_loop() == "/small"
+        assert not driver.composer.has_stash()
+
+    def test_a_sent_message_is_not_recoverable(self):
+        driver = self._drafted("send me", ["enter"])
+        assert driver._input_loop() == "send me"
+        driver._key = _keys(["clear", "esc", "esc"])
+        assert not [n for n in _shown_notices(driver) if "message" in n]
+        assert driver.composer.text() == ""
+
+
+class TestLargePaste:
+    """A paste bigger than the message cap has to say so — the old notice could
+    not fire at all, because the reader capped the text before the composer saw
+    it."""
+
+    def _driver_with(self, keys: list[str]) -> _ChatDriver:
+        return _driver(FakeGraph([]), _keys(keys), {"messages": []})
+
+    def test_notice_and_transcript_carry_the_numbers(self):
+        from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS
+
+        over = 24_812
+        driver = self._driver_with(["paste:" + "x" * (MAX_CHAT_INPUT_CHARS + over), "esc", "esc"])
+        notices = _shown_notices(driver)
+        assert any(f"{MAX_CHAT_INPUT_CHARS + over:,}" in notice for notice in notices)
+        assert any(f"dropped {over:,}" in notice for notice in notices)
+        # Durable too: the hint line is gone on the next keypress.
+        assert any(f"dropped {over:,}" in message.text for message in driver.transcript.messages)
+
+    def test_reader_drops_are_counted_into_the_total(self, monkeypatch):
+        from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS
+        from yeaboi.ui.session.chat import _driver as driver_mod
+
+        monkeypatch.setattr(driver_mod, "take_paste_dropped", lambda: 500_000)
+        driver = self._driver_with(["paste:" + "x" * (MAX_CHAT_INPUT_CHARS + 10), "esc", "esc"])
+        notices = _shown_notices(driver)
+        assert any(f"{MAX_CHAT_INPUT_CHARS + 500_010:,}" in notice for notice in notices)
+
+    def test_paste_into_a_full_box_says_nothing_fit(self):
+        from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS
+
+        driver = self._driver_with(["paste:more", "esc", "esc"])
+        driver.composer.insert_text("x" * MAX_CHAT_INPUT_CHARS)
+        notices = _shown_notices(driver)
+        assert any(notice.startswith("Nothing pasted") for notice in notices)
+
+    def test_truncation_still_reported_during_a_turn(self):
+        import threading
+
+        from yeaboi.input_guardrails import MAX_CHAT_INPUT_CHARS
+
+        driver = self._driver_with([])
+        driver._processing_key("paste:" + "x" * (MAX_CHAT_INPUT_CHARS + 7), threading.Event())
+        assert "dropped 7" in driver.notice

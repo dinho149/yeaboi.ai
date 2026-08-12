@@ -5704,7 +5704,7 @@ def _build_standup_input_screen(
             overflow="ellipsis",
         )
     else:
-        newline_hint = "  ·  Alt+Enter (or Ctrl+N) for a new line" if box_rows > 1 else ""
+        newline_hint = "  ·  Ctrl+N (or Alt+Enter) for a new line" if box_rows > 1 else ""
         hints = (
             "Enter to confirm  ·  Esc to cancel"
             + newline_hint
