@@ -187,8 +187,14 @@ def github_analysis_inventory(
                 # discovery only", and both callers that set it (the analysis
                 # cold path for large estates, and standup's code-scope owner
                 # listing) would otherwise pay a few hundred extra calls on a hot
-                # path to serve a different mode. The shortlist enrichment fills
-                # languages back in live for the five repos that actually matter.
+                # path to serve a different mode.
+                #
+                # The cost is paid by prior-art ranking, and it is worth stating
+                # plainly: a cold-path row stores no languages, so `score()`'s
+                # stack term — its heaviest, at weight 3.0 — cannot fire for any
+                # repository in that estate, and the ranking collapses to keyword
+                # overlap. Shortlist enrichment infers languages from the file
+                # tree afterwards, which reaches the pitch but never the rank.
                 languages = _repo_languages(repo) if (include_trees and active) else []
                 out.append(
                     {

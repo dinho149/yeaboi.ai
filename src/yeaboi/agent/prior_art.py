@@ -490,6 +490,7 @@ def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
         frameworks: tuple[str, ...] = ()
         integrations: tuple[str, ...] = ()
         structure: tuple[str, ...] = ()
+        languages: tuple[str, ...] = ()
         try:
             from yeaboi.tools.github import github_read_repo, github_repo_tree
 
@@ -501,6 +502,14 @@ def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
             paths, tree_error = github_repo_tree(candidate.url)
             if not tree_error or paths:
                 structure = structure_signals(paths)
+                # The cold discovery path (`include_trees=False`) skips the
+                # per-repo languages call, so a large-estate inventory stores
+                # GitHub rows with no languages at all. Inferring them from the
+                # tree is weaker than GitHub's byte counts but it is what the
+                # pitch has to work with — and it is only the pitch: enrichment
+                # runs after rank(), so a cold-path estate is still *ranked*
+                # without its heaviest term.
+                languages = languages_from_paths(paths)
         except Exception:
             logger.warning("prior_art: enrichment failed for %s", candidate.key, exc_info=True)
         out.append(
@@ -509,6 +518,7 @@ def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
                 frameworks=frameworks or candidate.frameworks,
                 integrations=integrations or candidate.integrations,
                 structure=structure or candidate.structure,
+                languages=candidate.languages or languages,
             )
         )
     return out

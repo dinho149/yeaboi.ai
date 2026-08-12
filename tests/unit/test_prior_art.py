@@ -324,6 +324,26 @@ class TestEnrich:
         c = self._candidate(url="")
         assert prior_art.enrich([c]) == [c]
 
+    def test_a_cold_path_row_gets_languages_from_its_tree(self, monkeypatch):
+        """`include_trees=False` skips the per-repo languages call, so a
+        large-estate inventory stores GitHub rows with none. The tree is a
+        weaker source, and it reaches the pitch only — enrichment runs after
+        rank(), so the ranking is still done without the stack term."""
+        import yeaboi.tools.github as gh
+
+        monkeypatch.setattr(gh, "github_read_repo", _FakeTool("Repository: acme/auth\n"))
+        monkeypatch.setattr(gh, "github_repo_tree", lambda url: (["a/b.py", "c.py", "d.ts"], ""))
+        (out,) = prior_art.enrich([self._candidate(languages=())])
+        assert out.languages == ("Python", "TypeScript")
+
+    def test_a_stored_language_breakdown_wins_over_the_inferred_one(self, monkeypatch):
+        import yeaboi.tools.github as gh
+
+        monkeypatch.setattr(gh, "github_read_repo", _FakeTool("Repository: acme/auth\n"))
+        monkeypatch.setattr(gh, "github_repo_tree", lambda url: (["a.py"], ""))
+        (out,) = prior_art.enrich([self._candidate(languages=("Go",))])
+        assert out.languages == ("Go",)
+
 
 def _stub_examples(monkeypatch, examples):
     """Stand in for the analysis-profile read. Mirrors the real signature —
