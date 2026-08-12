@@ -273,6 +273,11 @@ DEPLOY_ROUTINE = "cd-deploy"
 KEEP_LABELS = frozenset(
     {
         "claude-implement",
+        # Applied by `claude.yml`'s outcome guard and by the reconciler, not by any
+        # cowork routine — so teardown must leave it, exactly as it leaves the
+        # approval label it sits beside. Deleting it would strip the one record
+        # that an implement run failed off every issue carrying it.
+        "implement-blocked",
         "feedback-override",
         "release:promotion",
         "release:promote",
@@ -598,6 +603,13 @@ def expected_labels() -> list[Label]:
         # backlog.
         Label(QUEUE_LABEL, "c2e0c6", "Approved by rule — an auto-lane item a sweep will build"),
         Label("claude-implement", "0e8a16", "Approved — the claude.yml implement job builds this"),
+        # Applied by `claude.yml` when its outcome guard fails, and by
+        # `implement-reconcile.yml` when three re-fires produced no PR. It is the
+        # terminal state that stops a level-triggered reconciler retrying a broken
+        # implement job every six hours forever. `claude-implement` deliberately
+        # stays on beside it — that is the label `digest.md` queries to report the
+        # issue at all, and removing it would hide the failure rather than name it.
+        Label("implement-blocked", "d93f0b", "The implement job produced no PR — a human has to look"),
         Label("feedback-override", "b60205", "Clears the pr-feedback merge gate — a human's call, recorded on the PR"),
         # The promotion pair. `release:promotion` marks the weekly ask issue and is
         # applied only by `cron/release-promote-ask.md`; `release:promote` is the

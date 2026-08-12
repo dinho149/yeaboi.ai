@@ -389,6 +389,12 @@ The single decision point. It is the only routine that posts proposals to Slack.
      state from 2026-08-09 — the implement job it triggered exited green having written nothing —
      and the fleet's only report of it was the same three lines of Slack it had already posted.
      Anything listed here for more than a day is a broken lane, not a slow one.
+
+     **An issue also carrying `implement-blocked` is a lane that gave up**, not one that is slow:
+     the implement job produced no PR three times, or its outcome guard failed, and
+     `implement-reconcile.yml` has stopped retrying it. Say so — `— implement-blocked after <n>
+     attempts` — because nothing else will: the issue keeps `claude-implement`, so the age-out
+     still refuses to touch it, and this section is the only place it surfaces at all.
    - **Blocked** — line one is the workstream and its linked PR, `**<workstream>** [PR #123 —
      <title>](<pr url>)`; line two is `— ` and what is actually holding that PR up, from the
      `pr_feedback.py` run below (red CI, or *n* unanswered findings).

@@ -1,0 +1,101 @@
+name: Implement reconcile
+
+# `claude-implement` is a LEVEL — "this issue is approved and unbuilt" — but
+# `claude.yml`'s implement job only ever observed its EDGE (`issues: labeled`).
+# Everything that can go wrong between the two was therefore unrecoverable:
+#
+#   - a second ✅ is a no-op. `cowork_relay.py` emits `gh issue edit --add-label`,
+#     which does nothing when the label is already there. Issue #172 was approved
+#     five times between 2026-08-09 and 08-11 and built once.
+#   - a run that fired and produced nothing left no retry. #172's did exactly
+#     that: 231s, exit `success`, no branch, no PR, no comment.
+#   - a `labeled` event GitHub never delivered is simply lost.
+#
+# This job reads the level instead, so one mechanism covers all three. It runs no
+# model of its own — it is `gh` and `jq`, and its only power is to re-fire a job a
+# human already authorised.
+on:
+  schedule:
+    # :37 rather than the hour. GitHub queues scheduled workflows fleet-wide on
+    # the hour and delivers them late under load, which for a reconciler means
+    # drifting past the window it is reconciling.
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+  actions: write # to dispatch claude.yml
+
+concurrency:
+  group: implement-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Re-fire approved issues that produced no PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # Three attempts, then stop and say so. A level-triggered re-firer with a
+          # broken implement job would otherwise burn a 110-turn agent every six
+          # hours forever, which is the one way this job can be worse than the bug
+          # it fixes.
+          MAX_ATTEMPTS: "3"
+        run: |
+          set -euo pipefail
+
+          approved=$(gh issue list --repo "$REPO" --label claude-implement --state open \
+            --json number --jq '.[].number')
+          if [ -z "$approved" ]; then
+            echo "Nothing carries claude-implement. Exiting."
+            exit 0
+          fi
+
+          for n in $approved; do
+            labels=$(gh issue view "$n" --repo "$REPO" --json labels --jq '[.labels[].name]')
+            if jq -e 'index("implement-blocked")' <<< "$labels" >/dev/null; then
+              echo "#$n is implement-blocked — a human has to look. Skipping."
+              continue
+            fi
+
+            # The authoritative question, and the same one digest.md's
+            # approved-with-no-PR section asks.
+            if [ -n "$(gh pr list --repo "$REPO" --search "$n in:body" --state all --json number --jq '.[0].number')" ]; then
+              echo "#$n already has a PR. Nothing to do."
+              continue
+            fi
+            # Both branch conventions: claude-code-action names its own branches
+            # `claude/issue-N-…`, and a push that has not reached `gh pr create`
+            # yet is a run still in flight, not a run that failed.
+            if [ -n "$(git ls-remote --heads origin "refs/heads/feature/issue-$n-*" "refs/heads/claude/issue-$n-*")" ]; then
+              echo "#$n has a branch pushed but no PR — a run is mid-flight or truncated. Leaving it."
+              continue
+            fi
+            if gh run list --repo "$REPO" --workflow claude.yml --status in_progress \
+                 --json displayTitle --jq '.[].displayTitle' | grep -q "$n"; then
+              echo "#$n has a run in progress. Leaving it."
+              continue
+            fi
+
+            attempts=$(gh issue view "$n" --repo "$REPO" --json comments \
+              --jq '[.comments[] | select(.body | contains("<!-- implement-attempt -->"))] | length')
+            if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
+              echo "::warning::#$n has had $attempts attempts and still has no PR — marking implement-blocked."
+              gh issue edit "$n" --repo "$REPO" --add-label implement-blocked
+              gh issue comment "$n" --repo "$REPO" --body "Re-fired $attempts times with no PR to show for it, so this is now \`implement-blocked\` and the reconciler will leave it alone. The daily digest reports it under **Approved, no PR yet**. Remove the label to let it retry."
+              continue
+            fi
+
+            next=$((attempts + 1))
+            echo "Re-firing #$n (attempt $next/$MAX_ATTEMPTS)."
+            gh workflow run claude.yml --repo "$REPO" --ref main -f issue="$n"
+            gh issue comment "$n" --repo "$REPO" --body "Approved but no PR — re-firing the implement job (attempt $next/$MAX_ATTEMPTS).
+
+          <!-- implement-attempt -->"
+          done

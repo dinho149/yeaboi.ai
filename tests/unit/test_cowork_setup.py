@@ -811,6 +811,7 @@ class TestLabels:
                 "cowork:proposal",
                 "claude-implement",
                 "cowork:queued",
+                "implement-blocked",
                 "feedback-override",
                 "release:promotion",
                 "release:promote",
@@ -2216,12 +2217,16 @@ class TestTeardown:
         gate; the ``release:*`` pair is what ``publish.yml`` fires on, so deleting
         either disarms the only path that cuts an official release; and
         ``integration:approved`` is what the campaign routine reads to know which
-        provider it is building, so deleting it strands every ✅ on a shortlist.
+        provider it is building, so deleting it strands every ✅ on a shortlist;
+        and ``implement-blocked`` is the terminal state that stops a level-triggered
+        reconciler re-firing a broken implement job every six hours, so deleting it
+        both strips that record off every issue and restarts the loop.
         Removing any of them with the fleet would break a live gate, and the
         breakage is silent: applying a label that does not exist does nothing.
         """
         assert setup.KEEP_LABELS == {
             "claude-implement",
+            "implement-blocked",
             "feedback-override",
             "release:promotion",
             "release:promote",
