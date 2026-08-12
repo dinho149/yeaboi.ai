@@ -116,9 +116,13 @@ jobs:
           {
             echo "number=$N"
             echo "labels=$labels"
-            echo "title<<CLAUDE_EOF"
+            # Delimiter varied per run: it wraps an issue title, which is
+            # attacker-influenced text on a public repo. The human-approval gate in
+            # front of this is the real defence; this is the cheap half.
+            delim="CLAUDE_EOF_${GITHUB_RUN_ID}_${RANDOM}"
+            echo "title<<${delim}"
             jq -r .title <<< "$data"
-            echo "CLAUDE_EOF"
+            echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
       # Captured before the action runs, so the ambiguous-exit check below can ask
@@ -272,6 +276,7 @@ jobs:
       # no-op leaves the issue invisible to every routine. Assert the outcome
       # rather than the exit status.
       - name: Assert the run produced something
+        id: guard
         # Only when the action actually ran. `!= 'skipped'` also matches the empty
         # conclusion a step has when an earlier one failed, which would stack a
         # misleading "produced nothing" on top of a genuine `uv sync` failure.
@@ -311,8 +316,14 @@ jobs:
           # Ask the authoritative question first — the same one `digest.md`'s
           # approved-with-no-PR section asks. A PR is the deliverable, and looking
           # for it directly does not care what the branch was called.
-          if [ -n "$(gh pr list --search "$ISSUE in:body" --state all --json number --jq '.[0].number')" ]; then
-            echo "PR open for #$ISSUE."
+          # Open or merged only. `--state all` would let attempt 1's PR — including
+          # one CLOSED UNMERGED, which is among the likeliest reasons a re-fire is
+          # happening — answer for attempt 2, printing "PR open" without ever having
+          # checked that and bypassing this entire guard on precisely the path this
+          # workflow now makes normal.
+          if [ -n "$(gh pr list --search "$ISSUE in:body" --state all --json number,state,mergedAt \
+               --jq '[.[] | select(.state == "OPEN" or .mergedAt != null)][0].number')" ]; then
+            echo "An open or merged PR exists for #$ISSUE."
             exit 0
           fi
           # Both conventions: `claude-code-action` names branches `claude/issue-N-…`
@@ -373,7 +384,14 @@ jobs:
       # approved-with-no-PR section queries, and removing it would hide the failure
       # rather than report it.
       - name: Report a run that produced nothing
-        if: failure() && steps.target.outputs.number != ''
+        # Gated on the guard specifically, never on bare `failure()`. `failure()` is
+        # true if ANY earlier step failed, so a flaky checkout or a `uv sync` that
+        # 503s would land the terminal label: the reconciler then skips the issue,
+        # the age-out still refuses to touch it because it keeps `claude-implement`,
+        # and it needs a human. A transient infra blip becoming an unrecoverable
+        # state is the exact loss class this workflow exists to close — and the
+        # guard above already scopes itself for the same reason.
+        if: always() && steps.guard.conclusion == 'failure' && steps.target.outputs.number != ''
         env:
           ISSUE: ${{ steps.target.outputs.number }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

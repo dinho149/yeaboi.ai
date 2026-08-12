@@ -64,10 +64,16 @@ jobs:
               continue
             fi
 
-            # The authoritative question, and the same one digest.md's
-            # approved-with-no-PR section asks.
-            if [ -n "$(gh pr list --repo "$REPO" --search "$n in:body" --state all --json number --jq '.[0].number')" ]; then
-              echo "#$n already has a PR. Nothing to do."
+            # Open or merged only. `--state all` would count a PR from a previous
+            # attempt that was CLOSED UNMERGED — which is among the likeliest
+            # reasons a re-fire is wanted at all. Counting it means such an issue is
+            # never re-fired *and* never blocked: it simply stops existing to the
+            # fleet, because `digest.md`'s approved-with-no-PR section asks this
+            # same question and would also see it.
+            if [ -n "$(gh pr list --repo "$REPO" --search "$n in:body" --state all \
+                 --json number,state,mergedAt \
+                 --jq '[.[] | select(.state == "OPEN" or .mergedAt != null)][0].number')" ]; then
+              echo "#$n already has an open or merged PR. Nothing to do."
               continue
             fi
             # Both branch conventions: claude-code-action names its own branches
@@ -83,12 +89,32 @@ jobs:
               continue
             fi
 
-            attempts=$(gh issue view "$n" --repo "$REPO" --json comments \
-              --jq '[.comments[] | select(.body | contains("<!-- implement-attempt -->"))] | length')
+            # Counted SINCE the last time `implement-blocked` was removed, not over
+            # all time. Nothing deletes the attempt markers, so a lifetime count
+            # made the documented recovery path — "remove the label to let it
+            # retry" — do the opposite: the next tick lands straight back in the
+            # cap branch, re-applies the label and posts the same notice, six hours
+            # apart, forever. Following the instructions was what generated the
+            # noise.
+            cleared=$(gh issue view "$n" --repo "$REPO" --json timelineItems \
+              --jq '[.timelineItems[]? | select(.__typename == "UnlabeledEvent")
+                     | select(.label.name == "implement-blocked") | .createdAt] | last // ""' 2>/dev/null || echo "")
+            if [ -n "$cleared" ]; then
+              # shellcheck disable=SC2016  # `$since` is a jq variable bound by --arg, not a shell one
+              attempts=$(gh issue view "$n" --repo "$REPO" --json comments \
+                --jq --arg since "$cleared" \
+                '[.comments[] | select(.body | contains("<!-- implement-attempt -->"))
+                  | select(.createdAt > $since)] | length')
+            else
+              attempts=$(gh issue view "$n" --repo "$REPO" --json comments \
+                --jq '[.comments[] | select(.body | contains("<!-- implement-attempt -->"))] | length')
+            fi
             if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
               echo "::warning::#$n has had $attempts attempts and still has no PR — marking implement-blocked."
               gh issue edit "$n" --repo "$REPO" --add-label implement-blocked
-              gh issue comment "$n" --repo "$REPO" --body "Re-fired $attempts times with no PR to show for it, so this is now \`implement-blocked\` and the reconciler will leave it alone. The daily digest reports it under **Approved, no PR yet**. Remove the label to let it retry."
+              gh issue comment "$n" --repo "$REPO" --body "Re-fired $attempts times with no PR to show for it, so this is now \`implement-blocked\` and the reconciler will leave it alone. The daily digest reports it under **Approved, no PR yet**.
+
+          Removing the \`implement-blocked\` label resets the attempt count and lets it retry — attempts are counted from when that label was last removed, not over the issue's lifetime."
               continue
             fi
 
