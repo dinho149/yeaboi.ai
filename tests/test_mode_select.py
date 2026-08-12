@@ -2,8 +2,10 @@
 
 from io import StringIO
 
+import pytest
 from rich.console import Console
 
+from yeaboi import music
 from yeaboi.ui.mode_select import (
     ProjectSummary,
     _build_action_button,
@@ -542,7 +544,19 @@ class TestCompanionEntrance:
 
 
 class TestMusicPocket:
-    """The welcome screen boxes the music bar in a bottom-right pocket."""
+    """The welcome screen boxes the music bar in a bottom-right pocket.
+
+    Music availability is pinned, because `build_music_subtitle` early-returns a
+    `brew install ffmpeg` hint when `ffplay` is missing — and that is the one
+    branch with no "channel" hint in it. So this file passed on any machine with
+    ffmpeg and failed on any without, which for months meant it passed for
+    everyone who ran it and was never run anywhere that did not have it. Bringing
+    `tests/*.py` into CI is what surfaced it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _music_installed(self, monkeypatch):
+        monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
 
     def test_pocket_renders_with_music_and_border(self):
         panel = _build_mode_screen(0, width=120, height=40, shimmer_tick=1.0)
