@@ -271,8 +271,9 @@ class TestTheReleaseStepsCannotDieOnTheirOwnPlumbing:
         an absent comment.
         """
         text = self._step("--json comments")
-        line = next(line for line in text.splitlines() if "--json comments" in line)
-        assert line.rstrip().endswith("|| true)"), "a failed `gh issue view` would abort the promotion"
+        # The assignment spans several lines (the author filter), so the check is
+        # on where it ends rather than on one line of it.
+        assert "marker tested || true)" in text, "a failed `gh issue view` would abort the promotion"
 
 
 class TestTheRepoSetupJobIsRedOnlyForRealProblems:

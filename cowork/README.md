@@ -196,7 +196,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | — |
+| `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | https://claude.ai/code/routines/trig_019w6RJqz8aWJ13TkXmPUgtX |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
 | `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` | https://claude.ai/code/routines/trig_0118jEhPuaKrCaUWCYQtVgEv |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
