@@ -54,10 +54,20 @@ announce who is unauthorized.
    correct outcome and not an error worth a reply. Identify a digest by its per-item thread
    replies, never by "the bot posted at the top level".
 
-   `cron/release-promote-ask.md`'s reply *is* actionable and does have the leading `#<number>`, but
-   it is not a proposal: `PROMOTE_RE` in `scripts/cowork_relay.py` matches its
-   `#<issue> — promote X.Y.Z — <link>` shape and a ✅ there applies `release:promote` instead of
-   `claude-implement`. You do not decide that — the script does, and it is the script's plan you
+   **Two replies are actionable and are not proposals.** Both have the leading `#<number>`, and both
+   are told apart by the script, never by you:
+
+   - `cron/release-promote-ask.md`'s `#<issue> — promote X.Y.Z — <link>` (`PROMOTE_RE`) — a ✅ there
+     applies `release:promote`.
+   - the digest's `#<issue> — integration candidate: <provider> — <link>` (`CANDIDATE_RE`), filed by
+     `cron/integrations-campaign.md` — a ✅ there applies `integration:approved`, which is what tells
+     the next campaign run which provider it is building.
+
+   Neither applies `claude-implement`, and the second one especially must not: `claude.yml` fires a
+   110-turn unattended implement job on anything receiving that label, and a candidate issue
+   describes a week of work across six workstreams' files. In both cases the script confirms against
+   a label only the filing routine can apply, so a crafted issue title routes nothing — and when it
+   cannot confirm, the verb is `ask`. You do not decide any of that; it is the script's plan you
    carry out.
 
    **Follow `slack_read_thread`'s pagination to the end; never read the first page and stop.** Since
@@ -142,7 +152,11 @@ announce who is unauthorized.
 - **`close #<n>`** as a message → same as ❌.
 - **`pause <routine|all>` / `resume <routine|all>` / `run <routine>`** → names are routine stems
   (`security-sweep`, `digest`), resolved through `uv run python scripts/cowork_setup.py --json` —
-  the manifest, never memory — then `RemoteTrigger` `update {"enabled": false|true}` or `run`. A
+  the manifest, never memory, and **never a `RemoteTrigger list`**: the list pages at twenty and
+  cannot be asked for page two, so matching a name against it finds nothing for most of the fleet
+  and reads as "no such routine". The manifest carries each `trigger_id` (`null` means the README
+  records none — say so rather than searching). Then `RemoteTrigger` `update
+  {"enabled": false|true}` or `run` against that id. A
   workstream name that matches a single sweep's stem prefix ("pause security") is close enough to
   resolve; anything that resolves to nothing or to more than one routine → ask in thread.
   **`pause all` never pauses `cowork: slack-relay` itself** — a relay that pauses itself cannot
@@ -182,8 +196,13 @@ through `gh` and are unaffected.
 
 ## Stop conditions
 
-"Silently" below means nothing posted to Slack — the one-line run accounting (step 5) still ends
-the session's output, and is what tells these apart after the fact.
+"Silently" below means nothing posted to Slack. The one-line run accounting (step 5) is the **last
+line of the session's own output**, read at claude.ai/code/routines — it is **never a Slack
+message**, and posting it is the one way this routine can break its own silence. A run that posts
+"_slack-relay run — read 51 messages, 0 new actions, exiting silently_" has announced, in the
+channel, that it had nothing to say; that message was observed in `#yeaboi-claude`, and a routine
+that fires seventeen times a day cannot afford it. If there is no plan, the channel learns nothing
+from this routine at all.
 
 - The allowlist is empty or still carries a placeholder: exit, silently.
 - Nothing unprocessed from an allowlisted human: exit, silently — the common case.

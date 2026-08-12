@@ -27,10 +27,30 @@ month's prompt.
 
 1. `RemoteTrigger` with `action: "list"`.
 2. Save that response verbatim to a scratch file, e.g. `<scratchpad>/cowork-triggers.json`.
-3. Pass it to the script with `--triggers <file>`.
+3. **If it says `"has_more": true`, the fleet no longer fits in one page** — see below.
+4. Pass every file you saved to the script, `--triggers <file>` once each.
 
 If a step fails, report it and continue to the next — they are independent, and a missing Linear
 connector should not stop the routines from being read.
+
+### When the list pages
+
+The routines API returns twenty per page and hands back a `next_cursor`; `RemoteTrigger` has no
+parameter that would send one back, so page two is unreachable by list. Read the rest one routine at
+a time instead — and note that this is not a formality: **the routines past the boundary are the
+oldest ones**, which on this fleet is most of the sweeps.
+
+- `cowork/README.md`'s URL column is the ledger of every routine a deploy has registered.
+  `uv run python scripts/cowork_setup.py --json` needs no snapshot; the ids are in the table.
+- `RemoteTrigger` `action: "get"` for each id the page did not already carry, and save the envelopes
+  — a JSON array of them in one file is fine, and is what the script expects.
+- Pass the page and that file as two `--triggers`.
+
+The script then knows the read is partial and says so in every verb. **Updates are unaffected** —
+they only ever touch a routine that was actually read, and applying one twice writes the same value.
+A **create** is what a partial read cannot always vouch for: a routine whose README URL cell holds an
+id exists, so one that reads as missing anyway is reported and its body left empty. Do not work
+around that by planning from the page alone; that is the exact failure the parts exist to avoid.
 
 ---
 

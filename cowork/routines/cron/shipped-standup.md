@@ -42,10 +42,16 @@ reactable, and a reply shape that looked like the digest's would be parsed as on
    these.** If a fact is not there, leave that clause out; a missing clause is honest and an
    invented one is the whole message's credibility.
 
-3. **The beta** — `uv run python scripts/release_channel.py --manifest --json`. `latest_prerelease`
-   is the version named in the footer, and it is what the reader installs to feel the day's work.
-   If it is `null`, nothing bumped the version: say `no new pre-release` rather than printing a
-   stale one.
+3. **The beta** — `uv run python scripts/release_channel.py --manifest --json`. **`installable`**
+   is the version named in the header and the footer, and it is what the reader installs to feel
+   the day's work. If it is `null`, nothing has been published for this batch: say
+   `no new pre-release` rather than printing a stale one.
+
+   **Not `latest_prerelease`.** That field is what the *next* release-worthy merge would be
+   numbered — a commit count, raised by every docs and chore merge, including ones that publish
+   nothing. `installable` is backed by a `beta/X.Y.ZrcN` tag, and `publish-beta.yml` pushes the tag
+   only after the PyPI upload returns. One of the two is a fact and the other is a forecast, and
+   the footer is an install command.
 
 4. **What is building** — `gh pr list --label cowork --state open --json number,title,labels,url`.
    One line each. A PR open more than 7 days, or one whose checks are red, belongs under **Stuck**
@@ -54,25 +60,53 @@ reactable, and a reply shape that looked like the digest's would be parsed as on
 
 5. **Post**, through `cowork-scribe`:
 
+```slack
+🚢 **Shipped** — Tue 11 Aug · 3 merged → `3.6.0rc9`
+
+1. **[security]** [pin 4 unpinned action SHAs](https://github.com/dinho149/yeaboi.ai/pull/238)
+   — codeql clean · 12 tests · review clean · merged 14:02
+2. **[bug]** [standup confidence wrong on day 1](https://github.com/dinho149/yeaboi.ai/pull/239)
+   — regression test added, failed before and passes after · review clean · merged 16:40
+3. **[chore]** [drop 3 dead helpers in retro/](https://github.com/dinho149/yeaboi.ai/pull/240)
+   — review clean · merged 17:15
+───────────────────────────
+
+🔨 **Building** (1)
+
+1. [poker point write-back races](https://github.com/dinho149/yeaboi.ai/pull/241)
+   — opened 2 days ago, CI green
+───────────────────────────
+
+🚧 **Stuck** (1)
+
+1. [doc drift in POKER_DECK](https://github.com/dinho149/yeaboi.ai/pull/145)
+   — CI green, no review posted in 7 days
+───────────────────────────
+
+`pip install --pre yeaboi==3.6.0rc9`
 ```
-🤙 cowork — Tue 11 Aug
 
-Shipped 3 → beta 3.6.0rc9
-  · [security] pinned 4 unpinned action SHAs
-      codeql · 12 tests · review clean · merged 14:02
-  · [bug] standup confidence wrong on day 1
-      regression test added · review clean · merged 16:40
-  · [chore] dropped 3 dead helpers in retro/
+Every merged item links to its PR. The old shape named what shipped and gave a reader nowhere to
+click, which meant "what proved it" could only ever be as good as the one clause beside it.
 
-Building  poker point write-back races (PR #241)
-Stuck     none
+**Omit a section that is empty**, heading and all — `🚧 **Stuck** (0)` is a line whose only content
+is that it has none. If nothing is stuck, the reader learns that from its absence, the same way the
+digest drops an empty type.
 
-pip install --pre yeaboi==3.6.0rc9
-```
+**A divider is the only separator that survives a list.** Slack renders `1.` items as a list block
+and eats the blank line that ends it, so a heading written after a list arrives glued to the final
+item and reads as part of it. The divider is not blank, so it survives — it lands against the last
+item, which is what a divider is for, and the blank line *after* it is kept. This was measured
+against `#yeaboi-claude`, not assumed.
+
+**Do not align columns with spaces.** The old shape set `Building` and `Stuck` as a two-column
+table padded with spaces; Slack renders in a proportional font, so that alignment was never visible
+to anybody — the same fact `scripts/cowork_setup.py` records about the agenda. Bold headings and
+list markers are the only structure this dialect actually has.
 
 The `[type]` tag comes from the PR's `type:<kind>` label, which
 [house-rules.md](../../house-rules.md) requires on every cowork PR. A PR without one ships untagged
-rather than unmentioned — report it with a bare `·` and no tag, so the missing label is visible
+rather than unmentioned — report it with the link and no tag, so the missing label is visible
 instead of papered over.
 
 ## Stop conditions

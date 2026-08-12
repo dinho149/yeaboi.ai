@@ -30,14 +30,11 @@ delivery, transcript intake, practice signals), `mcp/tools_standup.py`,
 Broken tests, dead collector code, docs that describe the pre-transcript flow. Signal thresholds,
 new detectors, and anything a reader sees always propose.
 
-## Opportunity space
-
-Where a `[feature]`/`[improvement]` find is most likely to be real here: gaps a team feels weekly —
-what `standup_gaps` surfaces but nothing acts on, delivery channels a team asks for by hand, and
-signals collected but never shown to the person they would help. The evidence bar in
-`cowork-scout.md` applies — name the friction, the gap, or the repeated step.
-
 ## Out of scope
 
 The export bundle's markup and CSS (**web-ux**). Jira/AzDO fetching itself (**integrations**) —
 standup owns how it is *interpreted*.
+
+**integrations** may append a provider to `standup/collector.py`'s `fetchers` dict from a campaign
+run (`house-rules.md`, **Extends**) — a new entry only. How a source is *interpreted*, and every
+other line in that file, stays yours.

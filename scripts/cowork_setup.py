@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — sixteen charters, twenty-four routines, a
+``cowork/`` is a complete specification — fifteen charters, twenty-three routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
 registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
@@ -15,6 +15,12 @@ None of that data needs re-authoring. Every routine file carries a regular
 ``models.md`` maps a tier to an id. This script parses those and applies what a
 shell can apply.
 
+**It reaches GitHub two ways.** `gh` when it is installed and authenticated, and
+the REST API with ``GH_TOKEN``/``GITHUB_TOKEN`` when it is not. The fallback is
+not a convenience: `cron/cd-deploy.md` runs this script from a cloud routine
+session that is handed a token and no CLI, so without it every automatic deploy
+stopped at the labels step and the fleet was never reconciled.
+
 **It deliberately names no model.** The ids come out of ``cowork/models.md`` at
 run time, because that file being the only place a model is written down is the
 whole contract — see ``tests/unit/test_cowork_models.py``, which fails if one is
@@ -25,7 +31,7 @@ the in-session ``RemoteTrigger`` tool, with no CLI behind it. So ``/cowork`` mak
 the API calls and hands the response back here as a snapshot — every comparison,
 every request body and every file edit stays in tested Python, and the model is
 left with nothing to improvise. The first version of this script asked the command
-to hand-edit sixteen table cells instead, and sixteen table cells did not get
+to hand-edit twenty-odd table cells instead, and those table cells did not get
 edited.
 
 Usage::
@@ -43,6 +49,16 @@ Usage::
 
     # …and the shell half of teardown (routines are /cowork teardown's job):
     uv run python scripts/cowork_setup.py --teardown --labels --variables --yes
+
+Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 3 reads to
+decide whether to keep going:
+
+    0   applied, or nothing needed applying
+    1   a GitHub write degraded — reported as a note, and non-zero only under
+        --strict. Nothing downstream reads a label, so this does not invalidate
+        a routine reconciliation.
+    2   `cowork/` disagrees with itself. Nothing was applied and nothing further
+        should be registered from these files. Same meaning as --plan's 2.
 """
 
 from __future__ import annotations
@@ -60,6 +76,12 @@ from pathlib import Path
 from typing import TextIO
 from zoneinfo import ZoneInfo
 
+# scripts/ is not a package, so the sibling transport is imported by path. It is
+# stdlib-only like this file, so this adds no dependency — only a second file
+# that has to travel with this one (the test fixtures copy both).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COWORK = REPO_ROOT / "cowork"
 README = COWORK / "README.md"
@@ -67,6 +89,7 @@ MODELS_DOC = COWORK / "models.md"
 DOD_DOC = COWORK / "definition-of-done.md"
 ROUTINES_DIR = COWORK / "routines"
 WORKSTREAMS_DIR = COWORK / "workstreams"
+SCOUT_AGENT = REPO_ROOT / ".claude" / "agents" / "cowork-scout.md"
 
 # The thin prompt every routine is registered with, quoted in README.md under
 # "How routines actually work". Held here as a format string so the manifest can
@@ -91,7 +114,7 @@ CONNECTORS = ("Linear", "Slack", "Notion")
 # auto lane, and spawn the three crew agents. Kept here rather than in the slash
 # command so every routine gets the same set and it is reviewable in one place.
 #
-# One shared set, including `digest` and `marketing-weekly`, whose own files say
+# One shared set, including `digest`, whose own file says
 # never to edit a file. That is a deliberate difference from the connector list
 # above, and rests on a different argument: a connector is a capability to reach
 # *outside* the repo, where the blast radius is somebody else's inbox, while a
@@ -247,7 +270,15 @@ DEPLOY_ROUTINE = "cd-deploy"
 # ``publish.yml`` fires on the second landing on an issue that already carries the
 # first, so a teardown that deleted either would disarm the only path that can cut
 # an official release, and nothing would say so.
-KEEP_LABELS = frozenset({"claude-implement", "feedback-override", "release:promotion", "release:promote"})
+KEEP_LABELS = frozenset(
+    {
+        "claude-implement",
+        "feedback-override",
+        "release:promotion",
+        "release:promote",
+        "integration:approved",
+    }
+)
 
 # The proposal-type vocabulary, carried in issue titles as `[type][workstream] …`
 # and on issues as `type:<kind>` labels. Shared with the feedback system:
@@ -255,6 +286,37 @@ KEEP_LABELS = frozenset({"claude-implement", "feedback-override", "release:promo
 # ``feedback-remediation.yml`` normalizes the same set — `other` exists for that
 # system and is never used by a cowork scout.
 PROPOSAL_TYPES = ("bug", "feature", "improvement", "chore", "docs", "security", "other")
+
+# What a cowork *scout* may return, which is narrower than the label vocabulary
+# above and deliberately so. `feature` and `improvement` are absent: capability
+# work exists only inside an integration campaign (`cowork/integration-campaign.md`),
+# where a human approves a provider rather than a find. The two labels survive
+# because `feedback.py` files in-app *user* feedback under the same names — a label
+# no routine may apply is still a label the repo needs.
+#
+# Retyped nowhere: `parse_scout_types()` reads it back out of the agent file, and a
+# test asserts the two agree. The agent's JSON schema is the contract a model
+# actually reads, so it is the source and this tuple is the assertion.
+SCOUT_TYPES = ("bug", "chore", "docs", "security")
+
+# How many open `cowork:proposal` issues one workstream may have at once.
+#
+# The propose lane had no bound at all. A scout returns up to ten finds, the auto
+# lane consumes at most one, so a single sweep could legitimately open nine
+# issues — and fifteen workstreams run on overlapping crons. `digest.md`'s
+# 14-day age-out was the only pressure release, which means the queue drained on
+# a clock rather than on anybody deciding anything.
+#
+# Two is deliberate rather than tuned. One would mean a sweep that files
+# something scouts nothing for a fortnight; three starts to bury the digest
+# again. Fifteen workstreams at two is a fleet ceiling of thirty, which is a
+# list a human can still read in one sitting.
+#
+# `integration:candidate` issues are outside this cap on purpose: they carry
+# neither `cowork:proposal` nor a `type:` label, so `proposal_slots` does not see
+# them. A shortlist that could be squeezed out by two open bugs would be a
+# shortlist that silently stops arriving.
+PROPOSAL_CAP = 2
 
 _TYPE_COLORS = {
     "bug": "d73a4a",
@@ -265,6 +327,8 @@ _TYPE_COLORS = {
     "security": "ee0701",
     "other": "cfd3d7",
 }
+
+_SCOUT_TYPE_UNION = re.compile(r'"type":\s*"([a-z|]+)"')
 
 _DASHES = {"—", "–", "-", ""}
 
@@ -400,6 +464,8 @@ _TIER_ROW = re.compile(r"^\|\s*`(\w+)`\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re
 _VARIABLE_ROW = re.compile(r"^\|\s*`(YEABOI_MODEL_\w+)`\s*\|\s*`([^`]+)`\s*\|", re.M)
 # `| `cron/security-sweep.md` | `0 6 * * 1,4` Mon + Thu | security | `deep` | |`
 _ROUTINE_ROW = re.compile(r"^\|\s*`(cron|events)/([a-z0-9-]+)\.md`\s*\|(.*)$", re.M)
+# The id inside a claude.ai routine URL, as the README URL column records it.
+_TRIGGER_ID = re.compile(r"trig_[A-Za-z0-9]+")
 # `| Linear | team **Yeaboi** | `a324…` |`
 _TARGET_ROW = re.compile(r"^\|\s*(\w+)\s*\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|", re.M)
 
@@ -465,8 +531,20 @@ def parse_targets(text: str | None = None) -> dict[str, str]:
     return {system.lower(): target_id for system, _, target_id in _TARGET_ROW.findall(tail)}
 
 
+def parse_scout_types(text: str | None = None) -> tuple[str, ...]:
+    """The ``type`` union out of ``.claude/agents/cowork-scout.md``'s JSON schema.
+
+    Parsed rather than trusted, for the same reason ``parse_tiers`` parses
+    ``models.md``: the agent file is what a model reads at run time, so a constant
+    that disagrees with it is a constant describing a fleet that no longer exists.
+    """
+    text = SCOUT_AGENT.read_text(encoding="utf-8") if text is None else text
+    match = _SCOUT_TYPE_UNION.search(text)
+    return tuple(match.group(1).split("|")) if match else ()
+
+
 def parse_workstreams() -> list[str]:
-    """The sixteen workstream names, from the charter filenames."""
+    """The fifteen workstream names, from the charter filenames."""
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
 
 
@@ -493,6 +571,18 @@ def expected_labels() -> list[Label]:
         # nobody meant — see the note on PROMOTE_RE in `scripts/cowork_relay.py`.
         Label("release:promotion", "c2e0c6", "The weekly ask: promote the accumulated pre-releases?"),
         Label("release:promote", "0e8a16", "Approved — publish.yml cuts the official release"),
+        # The campaign pair, shaped exactly like the promotion pair above and for
+        # the same reason. `integration:candidate` marks a shortlisted provider and
+        # is applied only by `cron/integrations-campaign.md`; `integration:approved`
+        # is the human's ✅, carried by the relay, and is what the next campaign run
+        # reads to know which provider it is building.
+        #
+        # It has to be its own label rather than a reuse of `claude-implement`:
+        # `claude.yml` fires an unattended 110-turn implement job on anything that
+        # receives that one, and a candidate issue describes a week of work across
+        # six workstreams' files. See CANDIDATE_RE in `scripts/cowork_relay.py`.
+        Label("integration:candidate", "fef2c0", "A shortlisted provider — ✅ one to make it this week's campaign"),
+        Label("integration:approved", "0e8a16", "Approved — the campaign builds this provider across every angle"),
         # Applied by scripts/pr_feedback.py when a PR merges past findings the
         # review ran out of rounds to pursue. Descriptive, not a gate — but it is
         # the only durable record that a merge was capped, and applying a label
@@ -522,7 +612,7 @@ def parse_routines(readme_text: str | None = None) -> list[Routine]:
     """Every registered routine, resolved from the README table plus its own file.
 
     The README table is the spine rather than the routine files, because it is
-    the only place every routine carries an explicit tier — the fourteen sweeps
+    the only place every routine carries an explicit tier — the thirteen sweeps
     take theirs from ``sweep-procedure.md`` and so have no ``**Model**`` line of
     their own. ``check_repo()`` then asserts the two agree, so using one as the
     source does not let the other rot.
@@ -1401,7 +1491,7 @@ def owned_modules() -> set[str]:
 def check_charter_coverage(report: Report) -> None:
     """Every top-level module belongs to a charter, or says why it does not.
 
-    The label check below proves the sixteen charters agree with the sixteen
+    The label check below proves the fifteen charters agree with the fifteen
     labels; nothing proved they covered the repo. Fourteen modules were claimed by
     nobody when this was written — a scout reads only the paths its charter
     declares, so an unclaimed file is one no routine will ever look at, and the
@@ -1422,64 +1512,231 @@ def check_charter_coverage(report: Report) -> None:
         )
 
 
-# --- gh ----------------------------------------------------------------------
+# --- GitHub ------------------------------------------------------------------
+#
+# Two transports behind one set of operations, both of them `_gh_transport`'s.
+# `gh` is preferred whenever it is there — it is what a developer has already
+# authenticated, and keeping that path byte-for-byte identical means this script
+# behaves locally exactly as it always has.
+#
+# The REST fallback exists because the environment that matters most has no `gh`
+# at all. `cron/cd-deploy.md` runs this script from a cloud routine session, and
+# that session is handed a GitHub *token* rather than the CLI. So every firing
+# took the "not on PATH" branch, exited 1 under `--strict`, and the routine's own
+# stop condition halted it before step 4 — the fleet reconciliation it exists to
+# do. A missing binary is not a reason to stop deploying.
+#
+# The transport itself lives next door because `pr_feedback.py` and
+# `cowork_relay.py` need the identical thing, and a transport written three
+# times is a transport wrong in the same way three times. What stays here is the
+# *choosing* and the reporting: which transport this run picked, and how a
+# refusal is spoken as a `STRICT.note`.
+
+# Delegating wrappers rather than bare aliases. An alias binds the function
+# object at import, so a test replacing `_api` here would still leave
+# `transport.api_paged` calling the real one underneath it — the seam would leak
+# for exactly the paged reads that do the most work. These forward by name, and
+# `transport.api` stays the one place to intercept.
 
 
 def _gh(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    return transport.gh(*args)
+
+
+def _api(method: str, path: str, body: dict | None = None) -> transport.ApiResult:
+    return transport.api(method, path, body)
+
+
+def _api_paged(path: str, key: str | None = None) -> transport.ApiResult:
+    return transport.api_paged(path, key)
+
+
+def _segment(name: str) -> str:
+    return transport.segment(name)
+
+
+def github_token() -> str | None:
+    return transport.github_token()
+
+
+ApiResult = transport.ApiResult
+
+# Which transport this run resolved. "gh" is the default rather than None so a
+# caller that never asked keeps the historical path; `github_ready()` is what
+# actually chooses, and `main()` resets this the way it resets STRICT.
+TRANSPORT = "gh"
 
 
 def gh_ready() -> bool:
-    """Whether `gh` is installed and authenticated, with the remedy printed if not."""
+    """Whether the `gh` CLI is installed and authenticated.
+
+    A thin wrapper rather than a direct re-export: it is the seam a test forces
+    to pick a transport, so it has to be a name on *this* module that monkeypatch
+    can replace without reaching into the shared one.
+    """
+    return transport.gh_ready()
+
+
+def api_ready() -> bool:
+    """Whether the REST transport has both halves it needs: a token, and a
+    repository to point it at. Neither is worth a note on its own — a machine
+    with `gh` working needs neither."""
+    return bool(github_token()) and bool(repo_slug())
+
+
+def _why_no_gh() -> tuple[str, str]:
+    """Which of the two `gh` problems this is, and what fixes it. Said the same
+    way whether it ends in a fallback or a degradation."""
     if shutil.which("gh") is None:
-        STRICT.note(
-            "`gh` is not on PATH — skipping every GitHub check",
-            "install it: brew install gh",
-        )
-        return False
-    if _gh("auth", "status").returncode != 0:
-        STRICT.note(
-            "`gh` is not authenticated — skipping every GitHub check",
-            "run: gh auth login",
-        )
-        return False
-    return True
+        return "is not on PATH", "install it: brew install gh"
+    return "is not authenticated", "run: gh auth login"
+
+
+def github_ready() -> bool:
+    """Choose this run's transport, reporting the remedy when neither answers."""
+    global TRANSPORT
+    if gh_ready():
+        TRANSPORT = "gh"
+        return True
+    problem, remedy = _why_no_gh()
+    if api_ready():
+        TRANSPORT = "api"
+        say(f"github: `gh` {problem} — using the REST API against {repo_slug()}")
+        return True
+    TRANSPORT = "gh"
+    STRICT.note(
+        f"`gh` {problem} and no API token answered — skipping every GitHub check",
+        f"{remedy} — or export GH_TOKEN, which is all the REST fallback needs",
+    )
+    return False
 
 
 def existing_labels() -> set[str] | None:
     """Every label on the repo, or None if the query itself failed.
 
     None rather than an empty set, and the same for the variables below: they are
-    different facts and the difference matters. ``gh_ready()`` passing does not
-    mean the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all twenty-nine labels
+    different facts and the difference matters. A ready transport does not mean
+    the next call succeeds — a missing remote, the wrong repo, a rate limit —
+    and an empty set read as truth makes the doctor report all thirty-one labels
     missing and ``apply_labels`` try to create every one of them.
     """
-    result = _gh("label", "list", "--limit", "200", "--json", "name")
-    if result.returncode != 0:
-        STRICT.note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
+    if TRANSPORT == "gh":
+        result = _gh("label", "list", "--limit", "200", "--json", "name")
+        if result.returncode != 0:
+            STRICT.note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
+            return None
+        return {item["name"] for item in json.loads(result.stdout or "[]")}
+    slug = repo_slug()
+    if not slug:
+        STRICT.note("could not list the repo's labels", "no owner/name resolved for this checkout")
         return None
-    return {item["name"] for item in json.loads(result.stdout or "[]")}
+    result = _api_paged(f"/repos/{slug}/labels")
+    if not result.ok:
+        STRICT.note("could not list the repo's labels", result.error)
+        return None
+    return {item["name"] for item in result.data}
 
 
 def existing_variables() -> dict[str, str] | None:
-    result = _gh("variable", "list", "--json", "name,value")
-    if result.returncode != 0:
-        STRICT.note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
+    if TRANSPORT == "gh":
+        result = _gh("variable", "list", "--json", "name,value")
+        if result.returncode != 0:
+            STRICT.note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
+            return None
+        return {item["name"]: item.get("value", "") for item in json.loads(result.stdout or "[]")}
+    slug = repo_slug()
+    if not slug:
+        STRICT.note("could not list the repo's variables", "no owner/name resolved for this checkout")
         return None
-    return {item["name"]: item.get("value", "") for item in json.loads(result.stdout or "[]")}
+    result = _api_paged(f"/repos/{slug}/actions/variables", key="variables")
+    if not result.ok:
+        STRICT.note("could not list the repo's variables", result.error)
+        return None
+    return {item["name"]: item.get("value", "") for item in result.data}
+
+
+def create_label(label: Label) -> tuple[bool, str]:
+    """Create one label. Returns (created, why not) so the caller does the noting."""
+    if TRANSPORT == "gh":
+        result = _gh(
+            "label",
+            "create",
+            label.name,
+            "--color",
+            label.color,
+            "--description",
+            label.description,
+        )
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    # Bare hex, no leading `#` — which is how expected_labels() already spells
+    # every colour, because that is what `gh label create --color` wanted too.
+    result = _api(
+        "POST",
+        f"/repos/{slug}/labels",
+        {"name": label.name, "color": label.color.lstrip("#"), "description": label.description},
+    )
+    return result.ok, result.error
+
+
+def set_variable(name: str, value: str, exists: bool) -> tuple[bool, str]:
+    """Set one repository variable, creating or updating as needed.
+
+    `gh variable set` is one verb for both. REST is not: a create is a POST to
+    the collection and an update is a PATCH to the item, and using the wrong one
+    is a 409 or a 404 rather than a silent no-op. The caller already knows which
+    it is — it had to list them to decide there was anything to do.
+    """
+    if TRANSPORT == "gh":
+        result = _gh("variable", "set", name, "--body", value)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    if exists:
+        result = _api("PATCH", f"/repos/{slug}/actions/variables/{_segment(name)}", {"name": name, "value": value})
+    else:
+        result = _api("POST", f"/repos/{slug}/actions/variables", {"name": name, "value": value})
+    return result.ok, result.error
+
+
+def delete_label(name: str) -> tuple[bool, str]:
+    if TRANSPORT == "gh":
+        result = _gh("label", "delete", name, "--yes")
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    result = _api("DELETE", f"/repos/{slug}/labels/{_segment(name)}")
+    return result.ok, result.error
+
+
+def delete_variable(name: str) -> tuple[bool, str]:
+    if TRANSPORT == "gh":
+        result = _gh("variable", "delete", name)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    result = _api("DELETE", f"/repos/{slug}/actions/variables/{_segment(name)}")
+    return result.ok, result.error
 
 
 def repo_slug() -> str | None:
-    result = _gh("repo", "view", "--json", "nameWithOwner")
-    if result.returncode != 0:
-        return None
-    return json.loads(result.stdout or "{}").get("nameWithOwner")
+    """``owner/name`` for this checkout, memoised by the shared transport.
+
+    A wrapper rather than a re-export for the same reason as `gh_ready()`: tests
+    replace this name to point the script at a fixed repository, and a bare
+    re-export would leave them patching an alias the callers never look up.
+    """
+    return transport.resolve_slug(REPO_ROOT)
 
 
 def repo_url() -> str | None:
     """The clone URL a routine's ``git_repository`` source points at."""
-    slug = repo_slug() if shutil.which("gh") else None
+    slug = repo_slug()
     return f"https://github.com/{slug}" if slug else None
 
 
@@ -1501,19 +1758,11 @@ def apply_labels() -> None:
         say(f"labels: all {len(expected_labels())} already present")
         return
     for label in missing:
-        result = _gh(
-            "label",
-            "create",
-            label.name,
-            "--color",
-            label.color,
-            "--description",
-            label.description,
-        )
-        if result.returncode == 0:
+        created, why = create_label(label)
+        if created:
             say(f"labels: created {label.name}")
         else:
-            STRICT.note(f"labels: could not create {label.name}", result.stderr.strip() or "unknown gh error")
+            STRICT.note(f"labels: could not create {label.name}", why)
     say(f"labels: {len(present)} already present, {len(missing)} attempted")
 
 
@@ -1531,49 +1780,75 @@ def apply_variables() -> None:
         if current.get(name) == value:
             say(f"variables: {name} already set")
             continue
-        result = _gh("variable", "set", name, "--body", value)
-        if result.returncode == 0:
+        was_set, why = set_variable(name, value, exists=name in current)
+        if was_set:
             say(f"variables: set {name}")
         else:
             STRICT.note(
                 f"variables: could not set {name}",
-                result.stderr.strip()
+                why
                 or "repository variables need admin on the repo — "
-                "`gh auth refresh -h github.com -s repo` (a 403 here is the silent-green case)",
+                "`gh auth refresh -h github.com -s repo`, or a token carrying "
+                "`administration: write` (a 403 here is the silent-green case)",
             )
 
 
 def merge_gate_armed() -> bool | None:
     """Whether `pr-feedback` is a required status check on the `main-branch` ruleset.
 
-    None when the question could not be asked — no `gh`, no repo, or a failed
-    query — which is deliberately not the same answer as False. A missing gate is
-    a finding; an unanswerable question is a note, and conflating them would fail
-    the doctor on every machine without `gh` authenticated.
+    None when the question could not be asked — no transport, no repo, or a
+    failed query — which is deliberately not the same answer as False. A missing
+    gate is a finding; an unanswerable question is a note, and conflating them
+    would fail the doctor on every machine with neither `gh` nor a token.
 
     This is the setting that decides whether the auto lane merges anything. Every
     workflow that would arm `gh pr merge --auto` runs this same query first and
     refuses when it is false, so without it the lane opens PRs that sit waiting
     for a human click — the thing it exists to remove.
     """
-    if not shutil.which("gh"):
-        return None
     slug = repo_slug()
     if not slug:
         return None
-    query = (
-        'any(.[]; .type=="required_status_checks" and '
-        'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
-    )
-    result = subprocess.run(  # noqa: S603 - literal argv
-        ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
+    # Keyed on the transport this run resolved, not on `gh` being on PATH: a
+    # machine with `gh` installed but unauthenticated and a token exported reads
+    # every other check over REST, and having this one alone answer "cannot ask"
+    # would report the gate unchecked on a run that checked everything else.
+    if TRANSPORT == "gh":
+        # `shutil.which` is still consulted here, because this is the one probe
+        # reached on a run where no transport resolved at all:
+        # `report_manual_remainder()` calls it after `github_ready()` has already
+        # declined, and TRANSPORT is "gh" then by default rather than by evidence.
+        if shutil.which("gh") is None:
+            return None
+        query = (
+            'any(.[]; .type=="required_status_checks" and '
+            'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
+        )
+        result = subprocess.run(  # noqa: S603 - literal argv
+            ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() == "true"
+    if not github_token():
         return None
-    return result.stdout.strip() == "true"
+    # The same question the jq expression above asks, asked in Python because
+    # there is no jq here either.
+    answer = _api("GET", f"/repos/{slug}/rules/branches/main")
+    if not answer.ok or not isinstance(answer.data, list):
+        return None
+    return any(
+        rule.get("type") == "required_status_checks"
+        and any(
+            check.get("context") == "pr-feedback"
+            for check in (rule.get("parameters") or {}).get("required_status_checks") or []
+        )
+        for rule in answer.data
+        if isinstance(rule, dict)
+    )
 
 
 def check_merge_gate(report: Report) -> None:
@@ -1626,6 +1901,128 @@ def report_merge_gate() -> None:
     print(f"       https://github.com/{slug}/settings/rules")
 
 
+def open_proposals(workstream: str) -> tuple[list[dict] | None, str]:
+    """The open ``cowork:proposal`` issues for one workstream, or None and why not.
+
+    **REST on both transports, deliberately.** Every other read in this file
+    branches to `gh <verb> --json` when `gh` is there, and that is right for
+    labels and variables. It would be wrong here: `gh issue list --json` is
+    GraphQL underneath, and `tests/fixtures/cowork_github_access_live.json`
+    records a routine session where `gh` was installed, `GH_TOKEN` was set, and
+    the GraphQL POST came back 403 from the egress proxy anyway — while
+    ``GET /repos/{slug}/issues?labels=`` was served. A gate built on the refused
+    call fails on exactly the unattended runs it exists to bound, so both
+    branches ask the same REST question and only the credential differs.
+
+    None rather than an empty list on failure, for the reason `existing_labels()`
+    gives: "no issues" and "could not ask" are different facts, and the caller
+    turns the second into zero slots rather than into a full queue.
+    """
+    slug = repo_slug()
+    if not slug:
+        return None, "no owner/name resolved for this checkout"
+    # No `per_page` here: `transport.api_paged` appends its own, and two of them
+    # agreeing today is only luck about which one somebody changes next.
+    path = f"/repos/{slug}/issues?labels=cowork:proposal,workstream:{_segment(workstream)}&state=open"
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return None, "gh is not on PATH"
+        result = _gh("api", path.lstrip("/"))
+        if result.returncode != 0:
+            return None, result.stderr.strip() or "unknown gh error"
+        try:
+            items = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError as error:  # an egress proxy's HTML error page
+            return None, f"gh api returned no JSON: {error}"
+    else:
+        answer = _api_paged(path)
+        if not answer.ok:
+            return None, answer.error
+        items = answer.data
+    if not isinstance(items, list):
+        return None, "the issues endpoint did not return a list"
+    # `/issues` returns pull requests too — GitHub models a PR as an issue, and a
+    # cowork PR carries `workstream:<name>` by house rule. Counting those would
+    # let an open PR eat a proposal slot, which is the one-open-PR guard charging
+    # twice for the same piece of work.
+    return [item for item in items if isinstance(item, dict) and "pull_request" not in item], ""
+
+
+def _age_days(stamp: str, now: datetime) -> int | None:
+    """Whole days since an ISO-8601 ``created_at``, or None if it will not parse."""
+    try:
+        created = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return max(0, (now - created).days)
+
+
+def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
+    """How many proposals one workstream may still file, and what is holding it.
+
+    The arithmetic lives here rather than in the routine prose for the reason the
+    `--triggers` reconcile does: a model asked to count fifteen queues by eye
+    will eventually miscount one, and nothing downstream would notice. The sweep
+    runs this and obeys the number.
+
+    ``slots: None`` is the unreadable case and never zero-by-accident — the sweep
+    reads None as "file criticals only, and say so", which is the same rule
+    `digest.md` applies to a `pr_feedback.py` that could not read a PR: a failed
+    query is never reported as a clean answer.
+    """
+    issues, error = open_proposals(workstream)
+    if issues is None:
+        return {
+            "workstream": workstream,
+            "cap": PROPOSAL_CAP,
+            "open": None,
+            "slots": None,
+            "blocking": [],
+            "error": error,
+        }
+    moment = now or datetime.now(UTC)
+    blocking = [
+        {
+            "number": issue.get("number"),
+            "title": issue.get("title", ""),
+            "age_days": _age_days(issue.get("created_at", ""), moment),
+        }
+        for issue in issues
+    ]
+    blocking.sort(key=lambda item: (-(item["age_days"] or 0), item["number"] or 0))
+    return {
+        "workstream": workstream,
+        "cap": PROPOSAL_CAP,
+        "open": len(issues),
+        # Clamped at zero: a queue already over the cap (a human filing by hand,
+        # or a cap lowered later) is a full queue, not a negative allowance that
+        # arithmetic downstream could turn back into room.
+        "slots": max(0, PROPOSAL_CAP - len(issues)),
+        "blocking": blocking,
+    }
+
+
+def report_proposal_slots(workstream: str | None, now: datetime | None = None) -> int:
+    """Print the slots JSON for one workstream, or for all fifteen.
+
+    One object for a named workstream because that is what a sweep asks; a list
+    for the whole fleet because that is what `cron/digest.md`'s Held section is
+    built from. Exit code stays 0 either way — a full queue is a normal outcome
+    and a routine branching on the exit status would read it as a failure.
+    """
+    if workstream:
+        known = parse_workstreams()
+        if workstream not in known:
+            print(f"unknown workstream: {workstream} (known: {', '.join(known)})", file=sys.stderr)
+            return 2
+        print(json.dumps(proposal_slots(workstream, now), indent=2))
+        return 0
+    print(json.dumps([proposal_slots(name, now) for name in parse_workstreams()], indent=2))
+    return 0
+
+
 def report_manual_remainder(routines: Sequence[Routine]) -> None:
     """Print what no shell can do, with the link for each.
 
@@ -1667,9 +2064,17 @@ def manifest() -> dict:
     Asking a model to read four markdown tables reliably on every run is the kind
     of thing that works nineteen times out of twenty; the twentieth registers a
     routine pointing at a file that does not exist.
+
+    ``trigger_id`` rides along for the same reason it exists at all: addressing
+    one routine — ``pause``, ``resume``, ``run`` — needs its id, and the obvious
+    way to get one, listing the fleet and matching by name, silently stopped
+    working when the fleet outgrew a page. ``None`` means the README records
+    none, which is a routine that was never deployed rather than a lookup to
+    retry.
     """
+    recorded = recorded_triggers()
     return {
-        "repo": repo_slug() if shutil.which("gh") else None,
+        "repo": repo_slug(),
         "repo_url": repo_url(),
         "connectors": list(CONNECTORS),
         "default_allowed_tools": list(ALLOWED_TOOLS),
@@ -1680,6 +2085,7 @@ def manifest() -> dict:
             {
                 "name": routine.name,
                 "trigger_name": routine.trigger_name,
+                "trigger_id": recorded.get(routine.path),
                 "path": routine.path,
                 "kind": routine.kind,
                 "cron": routine.cron,
@@ -1701,7 +2107,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across twenty-four routines is exactly
+# split is the point: comparing seven fields across twenty-three routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -1713,29 +2119,203 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering twenty-four routines that already exist.
+    propose registering twenty-three routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
     as missing and get created a second time. ``Plan.suspicious`` cannot catch it
-    either — a short page produces creates with no orphan. So it raises.
+    either — a short page produces creates with no orphan. So one page on its own
+    raises; a fleet past the page size is read in parts instead (``read_parts``).
+
+    The truncation is read from ``_walk``'s own flags rather than the top level,
+    because the top level is not where it always is: an array of envelopes is a
+    documented way to save these, and checking ``payload["has_more"]`` would wave
+    a truncated page through the moment somebody wrapped it in a list.
+    """
+    read = _walk(payload)
+    if read.truncated:
+        raise ValueError(
+            "the snapshot is one page of a longer list (has_more: true) — "
+            "deploying from it would re-create every routine past the page "
+            "boundary; pass the rest as further --triggers files before planning"
+        )
+    return read.entries
+
+
+@dataclass(frozen=True)
+class _Read:
+    """What one payload turned out to hold, and what it claims about the rest."""
+
+    entries: list[dict]
+    more: bool = False  # a page said there was more after it
+    terminal: bool = False  # a page said there was not
+    gets: bool = False  # a single-routine read was in there
+
+    @property
+    def truncated(self) -> bool:
+        return self.more and not self.terminal
+
+    def then(self, other: _Read) -> _Read:
+        return _Read(
+            entries=[*self.entries, *other.entries],
+            more=self.more or other.more,
+            terminal=self.terminal or other.terminal,
+            gets=self.gets or other.gets,
+        )
+
+
+def _walk(payload: object) -> _Read:
+    """Everything one saved response holds, however it was saved.
+
+    Four envelopes are accepted because four are what turn up: ``list`` returns
+    ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, a snapshot saved
+    by hand is often the bare array, and a fleet read in parts is an array of any
+    of those. Guessing wrong on any of them reads as an empty account — which is
+    the one wrong answer that would have this script propose registering
+    twenty-three routines that already exist.
+
+    A ``get`` proves nothing either way: it answers for one routine and says
+    nothing about how many there are. Only a ``list`` page can close the
+    question, and only by saying ``has_more`` is false. That a ``get`` was there
+    at all is worth recording separately, because it is the mark of a fleet read
+    in parts — and only such a read needs checking against the ledger.
     """
     if isinstance(payload, dict):
         if isinstance(payload.get("trigger"), dict):
-            return [payload["trigger"]]
-        if payload.get("has_more"):
-            raise ValueError(
-                "the snapshot is one page of a longer list (has_more: true) — "
-                "deploying from it would re-create every routine past the page "
-                "boundary; fetch the rest and concatenate before planning"
+            return _Read([payload["trigger"]], gets=True)
+        if isinstance(payload.get("data"), list):
+            more = bool(payload.get("has_more"))
+            return _Read(list(payload["data"]), more=more, terminal=not more)
+        # A lone routine, already unwrapped. Not marked as a `get`: an array of
+        # these is the hand-saved bare array the old contract reads as the whole
+        # account, and only the `{"trigger": …}` envelope is evidence that
+        # somebody was reading the fleet one routine at a time. Anything without
+        # an id is not a routine, and reading it as one plans against a fiction.
+        return _Read([payload]) if payload.get("id") else _Read([])
+    if isinstance(payload, list):
+        read = _Read([])
+        for item in payload:
+            read = read.then(_walk(item))
+        return read
+    return _Read([])
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """Every live routine the parts supplied could see, and what they cannot prove.
+
+    ``RemoteTrigger list`` pages, and the tool exposes no cursor — so once the
+    fleet outgrew one page, the whole account stopped being readable in one call.
+    A fleet past the page size is read in parts instead: the newest page, plus a
+    ``get`` for every trigger id ``cowork/README.md`` records.
+
+    That assembly cannot prove it saw everything, and this type is careful not to
+    claim it did. ``boundary`` is whether a page said there was more and none
+    proved otherwise; ``unresolved`` is the recorded ids no part read back. What
+    the two decide together is narrow and it is the whole point: an **update** is
+    safe from a partial snapshot (it only ever touches a routine it can see, and
+    applying it twice writes the same value), while a **create** is not (a
+    routine past the boundary reads as missing, and registering a second copy of
+    something already firing cannot be undone).
+    """
+
+    triggers: list[dict]
+    boundary: bool = False
+    unresolved: tuple[str, ...] = ()
+    # Whether the ledger was consulted at all. Without it, no unresolved id is
+    # not the same statement as every recorded id accounted for, and only one of
+    # those two is worth saying out loud.
+    ledger: bool = False
+
+    @property
+    def partial(self) -> str | None:
+        """Why this snapshot cannot vouch for the whole account, or ``None``.
+
+        An unread recorded id counts on its own, without waiting for a page to
+        announce truncation. Truncation is a signal that can simply go missing —
+        an assembly of nothing but ``get`` envelopes carries none, and would
+        otherwise read as a complete account containing four routines.
+        """
+        if self.unresolved:
+            return (
+                f"{len(self.unresolved)} routine id(s) the README records were not read back: "
+                f"{', '.join(self.unresolved)}"
             )
-        data = payload.get("data", [])
-        return list(data) if isinstance(data, list) else []
-    return list(payload) if isinstance(payload, list) else []
+        if not self.boundary:
+            return None
+        if self.ledger:
+            return (
+                "a page said there was more; every routine id the README records was read back, "
+                "so the only routines this cannot see are ones no deploy registered"
+            )
+        return "a page said there was more, and the README ledger was not consulted"
 
 
-def load_snapshot(path: str | Path) -> list[dict]:
-    return snapshot(json.loads(Path(path).read_text(encoding="utf-8")))
+def read_parts(payloads: Sequence[object], recorded: Sequence[str] | None = None) -> Snapshot:
+    """Assemble one snapshot out of however many responses it took to read the fleet.
+
+    ``recorded`` is the trigger ids ``cowork/README.md`` holds — the ledger of
+    what this fleet has actually registered, written back by ``--urls`` on every
+    deploy. Any of them missing from the parts is the actionable half of a
+    partial read: those routines exist, they were not read, and a ``get`` each
+    would finish the job.
+
+    It is checked on **any assembled read**, not only one where a page announced
+    truncation. Truncation is one signal for this and it can go missing: a caller
+    that passes the per-id reads and forgets the page file hands over something
+    that declares nothing at all, and every routine it happens not to contain
+    would read as one to register. Anything carrying a ``get``, or arriving in
+    more than one part, is an assembly — a single ``list`` page or a hand-saved
+    array is the account itself and vouches for nothing but is vouched for.
+
+    An id in the ledger that no longer exists then makes every read partial until
+    the table is corrected. That is the right way round: it costs a create that
+    has to wait, and the other way costs a duplicate that cannot be deleted.
+    """
+    seen: dict[str, dict] = {}
+    loose: list[dict] = []
+    more = terminal = gets = False
+    for payload in payloads:
+        found = _walk(payload)
+        more, terminal, gets = more or found.more, terminal or found.terminal, gets or found.gets
+        for entry in found.entries:
+            # Parts overlap by design — the page and the per-id reads both carry
+            # the newest routines — so the same routine arriving twice is the
+            # normal case, not drift. First read wins; they are the same object.
+            key = entry.get("id")
+            if not key:
+                loose.append(entry)
+            elif key not in seen:
+                seen[key] = entry
+
+    boundary = more and not terminal
+    assembled = boundary or gets or len(payloads) > 1
+    unresolved = tuple(sorted(set(recorded) - set(seen))) if (recorded is not None and assembled) else ()
+    return Snapshot(
+        triggers=[*seen.values(), *loose],
+        boundary=boundary,
+        unresolved=unresolved,
+        ledger=recorded is not None and assembled,
+    )
+
+
+def load_snapshot(paths: str | Path | Sequence[str | Path]) -> Snapshot:
+    """Read one or more saved responses into a single ``Snapshot``.
+
+    A single file keeps the old contract exactly, truncation included: on its own
+    it raises rather than plan against a short page. Two or more are an assembly,
+    which is allowed to be incomplete because it says so.
+
+    Either way the ledger is consulted, because "one file" is not a promise that
+    it holds the account — the per-id reads can arrive in one file with no page
+    beside them, and nothing in that payload would say so.
+    """
+    if isinstance(paths, str | Path):
+        paths = [paths]
+    payloads = [json.loads(Path(path).read_text(encoding="utf-8")) for path in paths]
+    if len(payloads) == 1:
+        snapshot(payloads[0])  # for the raise; read_parts does the reading
+    return read_parts(payloads, recorded=recorded_ids())
 
 
 def desired_trigger(
@@ -1934,6 +2514,11 @@ class Plan:
     # Fields a create body needs that nothing available could supply. Only ever
     # populated when there is something to create — see `needs` below.
     needs: list[str] = field(default_factory=list)
+    # Why the snapshot behind this plan could not see the whole account, if it
+    # could not. Set from `Snapshot.partial`; it qualifies `orphans` (a routine
+    # past the page boundary cannot be reported as one) and is what blocks the
+    # creates it applies to.
+    partial: str | None = None
 
     @property
     def postable_creates(self) -> list[TriggerAction]:
@@ -1999,8 +2584,15 @@ class Plan:
 
         A genuine rename looks identical, which is why this asks rather than
         decides.
+
+        It weighs **postable** creates only, because a blocked one is not an
+        action and there is nothing to refuse. That is not a nicety: retiring a
+        routine leaves an orphan that no API can delete, so counting blocked
+        creates would have `cd-deploy` — which runs `--no-create`, and so can
+        never do the dangerous thing — exit 2 on every firing from the first
+        retirement onwards, and stop applying updates for good.
         """
-        return bool(self.create and self.orphans)
+        return bool(self.postable_creates and self.orphans)
 
     def as_dict(self) -> dict:
         return {
@@ -2016,6 +2608,7 @@ class Plan:
             "self_update": self.self_update,
             "suspicious": self.suspicious,
             "needs": self.needs,
+            "partial": self.partial,
         }
 
 
@@ -2294,7 +2887,7 @@ def compared_fields(routine: Routine, current: dict, repo_url: str | None) -> di
 
 
 def trigger_plan(
-    live: Sequence[dict],
+    live: Snapshot | Sequence[dict],
     routines: Sequence[Routine] | None = None,
     repo_url: str | None = None,
     environment_id: str | None = None,
@@ -2317,6 +2910,15 @@ def trigger_plan(
     twice writes the same value. So an unattended deploy takes the updates and
     leaves the creates to a session with a human in it.
 
+    A **partial** ``Snapshot`` blocks creates for the same reason and by the same
+    mechanism, but not always all of them. A routine whose README URL cell is
+    blank has never been registered by a deploy, so nothing of ours can be
+    hiding past the page boundary under its name and creating it is as safe as
+    it ever was; a routine the README does record, yet the snapshot reads as
+    missing, is precisely the dangerous case. When the read could not even
+    account for every recorded id, no create is postable at all — the ledger is
+    the only thing making the distinction, and it did not hold.
+
     Two fields are read and reported but never reconciled:
 
     ``enabled`` — because ``pause`` is a supported verb. If deploy re-enabled a
@@ -2327,7 +2929,12 @@ def trigger_plan(
     every teammate's fleet as drifted the moment they ran a check.
     """
     routines = list(routines if routines is not None else parse_routines())
-    live = list(live)
+    partial = live.partial if isinstance(live, Snapshot) else None
+    # A partial read that cannot account for every recorded id blocks every
+    # create; one that can, blocks only the routines the README says exist.
+    blanket = partial if (isinstance(live, Snapshot) and live.unresolved) else None
+    unregistered = unregistered_routines() if partial else frozenset()
+    live = list(live.triggers if isinstance(live, Snapshot) else live)
 
     repo_url = repo_url or repo_url_of(live)
     environment_id = environment_id or environment_of(live)
@@ -2337,7 +2944,7 @@ def trigger_plan(
 
     observed = {trigger["trigger_name"]: trigger for trigger in map(observed_trigger, live)}
     by_name = {entry.get("name", ""): entry for entry in live}
-    plan = Plan()
+    plan = Plan(partial=partial)
 
     # Every routine, event ones included. They were unplannable while the routines
     # API took a cron expression only — which is why cowork/README.md used to tell
@@ -2349,6 +2956,25 @@ def trigger_plan(
         current = observed.get(routine.trigger_name)
 
         if current is None:
+            blocked = None
+            if not allow_create:
+                blocked = (
+                    "registering a routine is not safe to do unattended — two runs would "
+                    "each create it, the API has no delete, and both copies would then fire. "
+                    "Run /cowork deploy from a session with a human in it."
+                )
+            elif blanket:
+                blocked = (
+                    f"this snapshot cannot see the whole fleet ({blanket}), so a routine it "
+                    "reads as missing may be one already firing past the page boundary. "
+                    "Read the missing ids back with RemoteTrigger get and plan again."
+                )
+            elif partial and routine.path not in unregistered:
+                blocked = (
+                    f"this snapshot cannot see the whole fleet ({partial}), and cowork/README.md "
+                    "records a URL for this routine — so it exists, and creating it would "
+                    "register a second copy of something already firing."
+                )
             plan.create.append(
                 TriggerAction(
                     action="create",
@@ -2356,12 +2982,8 @@ def trigger_plan(
                     trigger_name=routine.trigger_name,
                     trigger_id=None,
                     fields={},
-                    body=wanted if allow_create else {},
-                    blocked=None
-                    if allow_create
-                    else "registering a routine is not safe to do unattended — two runs would "
-                    "each create it, the API has no delete, and both copies would then fire. "
-                    "Run /cowork deploy from a session with a human in it.",
+                    body={} if blocked else wanted,
+                    blocked=blocked,
                 )
             )
             continue
@@ -2407,7 +3029,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers twenty-four routines pointing at no repository — which looks like it
+    # registers twenty-three routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.postable_creates:
         if not repo_url:
@@ -2499,8 +3121,54 @@ def missing_urls(text: str | None = None) -> list[str]:
     return blank
 
 
-def apply_urls(path: str | Path) -> int:
-    plan = trigger_plan(load_snapshot(path))
+def recorded_triggers(text: str | None = None) -> dict[str, str]:
+    """Routine path -> the trigger id the README URL column records for it.
+
+    The ledger. ``--urls`` writes that column on every deploy, so this is what
+    the fleet has actually registered — and the only answer available once
+    ``RemoteTrigger list`` pages, since it cannot be asked for page two. Two
+    things read it: a partial snapshot is checked against it, and the manifest
+    hands it to the routines that address one routine by id.
+
+    A row with no id is simply absent. That is a real state, not a parse
+    failure: a routine added to the table but never deployed carries an em dash
+    by convention, and an em dash is not an id.
+    """
+    text = README.read_text(encoding="utf-8") if text is None else text
+    found = {}
+    for line in text.splitlines():
+        match = _ROUTINE_ROW.match(line)
+        if not match:
+            continue
+        cells = line.split("|")
+        if len(cells) != 7:
+            continue
+        if id_match := _TRIGGER_ID.search(cells[5]):
+            found[f"{match.group(1)}/{match.group(2)}.md"] = id_match.group(0)
+    return found
+
+
+def unregistered_routines(text: str | None = None) -> frozenset[str]:
+    """Routine paths the README records no trigger id for.
+
+    What makes a create safe from a snapshot that cannot see the whole fleet: no
+    deploy has ever registered these, so nothing of ours can be firing past the
+    page boundary under their name.
+    """
+    text = README.read_text(encoding="utf-8") if text is None else text
+    recorded = recorded_triggers(text)
+    return frozenset(
+        f"{kind}/{stem}.md" for kind, stem, _ in _ROUTINE_ROW.findall(text) if f"{kind}/{stem}.md" not in recorded
+    )
+
+
+def recorded_ids(text: str | None = None) -> tuple[str, ...]:
+    """Every trigger id the README records, in table order."""
+    return tuple(dict.fromkeys(recorded_triggers(text).values()))
+
+
+def apply_urls(paths: str | Path | Sequence[str | Path]) -> int:
+    plan = trigger_plan(load_snapshot(paths))
     before = README.read_text(encoding="utf-8")
     after = readme_with_urls(before, plan.urls)
     if after == before:
@@ -2538,7 +3206,7 @@ def apply_teardown(labels: bool, variables: bool) -> int:
             "pass --labels and/or --variables; the routines are /cowork teardown's half",
         )
         return 1
-    if not gh_ready():
+    if not github_ready():
         return 1
 
     if labels:
@@ -2548,11 +3216,11 @@ def apply_teardown(labels: bool, variables: bool) -> int:
         for label in teardown_labels():
             if label.name not in present:
                 continue
-            result = _gh("label", "delete", label.name, "--yes")
-            if result.returncode == 0:
+            deleted, why = delete_label(label.name)
+            if deleted:
                 say(f"teardown: deleted label {label.name}")
             else:
-                note(f"teardown: could not delete {label.name}", result.stderr.strip() or "unknown gh error")
+                note(f"teardown: could not delete {label.name}", why)
         say(f"teardown: kept {', '.join(sorted(KEEP_LABELS))} — live gates outside cowork depend on them")
         say("teardown: kept the type:* labels — the feedback system shares them")
 
@@ -2563,11 +3231,11 @@ def apply_teardown(labels: bool, variables: bool) -> int:
         for name in parse_model_variables():
             if name not in current:
                 continue
-            result = _gh("variable", "delete", name)
-            if result.returncode == 0:
+            unset, why = delete_variable(name)
+            if unset:
                 say(f"teardown: unset {name}")
             else:
-                note(f"teardown: could not unset {name}", result.stderr.strip() or "unknown gh error")
+                note(f"teardown: could not unset {name}", why)
         note(
             "teardown: the workflows now fall back to their pinned defaults",
             "that is by design — every --model expression carries a `||` fallback",
@@ -2584,11 +3252,20 @@ def apply_teardown(labels: bool, variables: bool) -> int:
 # --- entry point -------------------------------------------------------------
 
 
-def check_triggers(report: Report, path: str | Path) -> None:
+def check_triggers(report: Report, paths: str | Path | Sequence[str | Path]) -> None:
     """Fold the account half into the doctor, from a ``/cowork``-supplied snapshot."""
-    plan = trigger_plan(load_snapshot(path))
+    plan = trigger_plan(load_snapshot(paths))
+
+    if plan.partial:
+        report.notes.append(f"the snapshot is a partial read of the account — {plan.partial}")
 
     for action in plan.create:
+        # Under a partial read this cannot be told apart from a routine that is
+        # registered and simply was not read, and reporting a clean fleet as
+        # broken is how a doctor stops being read at all.
+        if plan.partial and action.blocked:
+            report.notes.append(f"routine `{action.trigger_name}` was not read back — registered or missing is unknown")
+            continue
         report.fail(
             f"routine `{action.trigger_name}` is not registered",
             "run: /cowork deploy",
@@ -2604,6 +3281,12 @@ def check_triggers(report: Report, path: str | Path) -> None:
             f"routine `{orphan['trigger_name']}` is registered but has no README row",
             "add its row to cowork/README.md, or turn it off with /cowork teardown",
         )
+    if plan.partial:
+        # The other direction of the same blindness, and the quieter one: an
+        # orphan past the page boundary is a routine still firing on a prompt
+        # nothing in the repo describes, and this is the only line that says the
+        # list above may not be all of them.
+        report.notes.append("orphans were looked for in a partial read — there may be more")
     if plan.suspicious:
         report.fail(
             "the snapshot reports both a missing routine and an unrecognised one",
@@ -2620,7 +3303,7 @@ def check_triggers(report: Report, path: str | Path) -> None:
         report.notes.append(f"{len(plan.disabled)} routine(s) are paused: {', '.join(sorted(plan.disabled))}")
 
 
-def run_check(local_only: bool, triggers: str | None = None) -> int:
+def run_check(local_only: bool, triggers: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
 
@@ -2631,7 +3314,7 @@ def run_check(local_only: bool, triggers: str | None = None) -> int:
 
     if local_only:
         note("--local: skipping every GitHub check")
-    elif gh_ready():
+    elif github_ready():
         check_merge_gate(report)
         # A failed query is not an empty repo. Reported by the helper and skipped
         # here, rather than turning one gh error into twenty-two findings.
@@ -2680,12 +3363,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--local", action="store_true", help="with --check, skip every gh call")
     parser.add_argument("--json", action="store_true", help="print the routine manifest for /cowork")
     parser.add_argument("--agenda", action="store_true", help="print what the fleet runs today, and the week after")
+    parser.add_argument(
+        "--proposal-slots",
+        nargs="?",
+        const="",
+        metavar="WORKSTREAM",
+        help="print how many proposals a workstream may still file (omit the name for all fifteen)",
+    )
     parser.add_argument("--text", action="store_true", help="with --agenda, print the rendered message, not JSON")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="with --agenda, the day to report on (default today)")
     parser.add_argument(
         "--triggers",
         metavar="FILE",
-        help="a `RemoteTrigger list` response, saved by /cowork — the account half's input",
+        action="append",
+        help="a `RemoteTrigger list` response, saved by /cowork — the account half's input. "
+        "Repeat it once the fleet outgrows a page: the list plus a `get` per recorded id",
     )
     parser.add_argument("--plan", action="store_true", help="with --triggers, print the reconcile plan as JSON")
     parser.add_argument(
@@ -2726,9 +3418,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Reset, not just set: `main()` is called more than once in a process by the
     # test suite, and a degradation carried over from a previous call would fail a
-    # run that did nothing wrong.
+    # run that did nothing wrong. TRANSPORT is reset for the same reason — a run
+    # that resolved REST must not decide the next run's transport for it.
+    global TRANSPORT
     STRICT.strict = args.strict
     STRICT.degraded.clear()
+    TRANSPORT = "gh"
+    transport.reset_slug_cache()
 
     if (args.plan or args.urls) and not args.triggers:
         fail("--plan and --urls need a snapshot: --triggers <file> (see /cowork)")
@@ -2737,6 +3433,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         print(json.dumps(manifest(), indent=2))
         return 0
+
+    if args.proposal_slots is not None:
+        # A read, so it needs a transport but nothing else — no labels, no
+        # variables, no routine parse. `github_ready()` is what picks between
+        # `gh` and REST and reports the remedy when neither answers; without a
+        # transport every workstream reports `slots: null`, which the sweep
+        # already knows how to read.
+        github_ready()
+        return report_proposal_slots(args.proposal_slots or None)
 
     if args.agenda:
         try:
@@ -2757,12 +3462,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         # — so gh is only consulted when there is no live routine to read.
         plan = trigger_plan(
             live,
-            repo_url=repo_url_of(live) or repo_url(),
-            environment_id=environment_of(live) or args.environment,
+            repo_url=repo_url_of(live.triggers) or repo_url(),
+            environment_id=environment_of(live.triggers) or args.environment,
             created=args.created,
             allow_create=not args.no_create,
         )
         print(json.dumps(plan.as_dict(), indent=2))
+        if plan.partial:
+            note(
+                f"plan: partial read — {plan.partial}",
+                "updates are unaffected; a create it may not vouch for carries a reason and an empty body",
+                stream=sys.stderr,
+            )
         if plan.needs:
             note(
                 f"plan: {len(plan.create)} create(s) are missing {', '.join(plan.needs)}",
@@ -2787,7 +3498,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # A --created name the snapshot has never heard of means the create and
         # the re-list disagree — which is exactly the state in which posting a
         # webhook would attach it to the wrong routine, or to none.
-        known = {entry.get("name", "") for entry in live}
+        known = {entry.get("name", "") for entry in live.triggers}
         if unknown := [name for name in args.created if name not in known]:
             fail(f"--created names {', '.join(unknown)}, which the snapshot does not contain")
             fail("     re-list after the creates and pass the fresh snapshot")
@@ -2825,17 +3536,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
     if not report.ok:
+        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 3 reads.
+        # 1 here means the GitHub apply degraded, which has no bearing on a
+        # routine's trigger body — those are built from these same files, and
+        # these files are fine. 2 means the files are not, and nothing further
+        # should be registered from them. Same convention as `--plan`, where 2 is
+        # already "it refused itself; a human should look".
         fail("cowork/ disagrees with itself — fix this before registering anything:")
         for problem in report.problems:
             fail(f"  ✗ {problem}")
-        return 1
+        return 2
 
     routines = parse_routines()
-    if gh_ready():
+    if github_ready():
         apply_labels()
         apply_variables()
     else:
-        STRICT.note("nothing was applied to GitHub", "authenticate with `gh auth login`, then re-run")
+        STRICT.note(
+            "nothing was applied to GitHub",
+            "authenticate with `gh auth login`, or export GH_TOKEN, then re-run",
+        )
 
     report_manual_remainder(routines)
     return strict_exit()

@@ -1,8 +1,14 @@
 # Integrations map
 
 Which provider reaches which mode, through what, and where a mode deliberately does not consume one.
-Maintained by the **reach** week of [`routines/cron/integrations-sweep.md`](routines/cron/integrations-sweep.md);
-the charter is [`workstreams/integrations.md`](workstreams/integrations.md).
+Maintained by [`routines/cron/integrations-campaign.md`](routines/cron/integrations-campaign.md),
+whose angle 3 closes a provider's row; the charter is
+[`workstreams/integrations.md`](workstreams/integrations.md), and the procedure is
+[`integration-campaign.md`](integration-campaign.md).
+
+**This file is the campaign's definition of done.** A provider is finished when it has a matrix row
+with no bare `—` — every mode either consumes it or carries a line in *Recorded gaps* saying why not
+— and a Per-provider section naming its credential, its verification probe and its scope discovery.
 
 This file exists because "connected" and "used" are different states and only one of them is visible.
 A credential can pass its wizard probe, be stored in `~/.yeaboi/.env`, and change nothing a user ever
@@ -139,7 +145,7 @@ No recorded reason yet — each is a question for the owning workstream, not a d
 | Gap | Owner | Note |
 |---|---|---|
 | Ops / infra providers reach no mode | integrations | The whole bottom matrix row. Six modes have a question an ops provider would answer; see the charter's admission test. |
-| No provider is verifiable after setup | tui-ux | Five `_verify_*` probes exist and the settings screen calls none of them. |
+| No provider is verifiable after setup | tui-ux | Five `_verify_*` probes exist and the settings screen calls none of them. **This is the integration campaign's one named prerequisite** — angle 2 degrades to wizard-probe-only until it lands, and says so in its PR body. It is tui-ux's because every provider then reuses one surface; built inside a campaign, the second campaign would have nothing to do for that angle. |
 | Nothing tells a user what a connected provider powers | integrations | This file is the maintainer's copy of an answer no user can reach. |
 | Adding a provider costs ~13 edit sites | integrations | There is no fetcher protocol; `CoverageTracker` and the retry/classify closure inside `collector.collect_recent_activity`
 between them already define most of one. |

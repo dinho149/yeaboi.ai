@@ -49,6 +49,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# scripts/ is not a package, so the sibling transport is imported by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+
 ROOT = Path(__file__).resolve().parent.parent
 RELAY_ROUTINE = ROOT / "cowork" / "routines" / "cron" / "slack-relay.md"
 
@@ -87,6 +91,31 @@ PROMOTION_LABEL = "release:promotion"
 # which needs repo write. The regex picks a label; the workflow decides whether
 # it means anything.
 PROMOTE_RE = re.compile(r"^#(\d+)\s+—\s+promote\s+\d+\.\d+\.\d+\b")
+
+# The integration shortlist is the second thread reply that is not a proposal, and
+# it is told apart the same way: the leading-`#<number>` contract plus a fixed
+# second field. `cron/integrations-campaign.md` files the issues,
+# `cron/digest.md` renders `#241 — integration candidate: gitlab — <link>`.
+#
+# It exists because reusing `claude-implement` here would be actively destructive
+# rather than merely wrong. `claude.yml` fires its 110-turn `implement` job on any
+# issue *receiving* that label, so a ✅ meaning "build GitLab this week" would
+# instead launch one unattended agent against an issue describing a whole week of
+# work across six workstreams' files — which either grab-bags it into one PR or
+# stops at the paths rule, and either way spends the approval with nothing to show
+# and no second chance until next Monday.
+#
+# Same defence as the promotion pair: the text is DATA — anyone can file an issue
+# titled to match — so the regex only *routes*, and `is_campaign_candidate`
+# confirms against the `integration:candidate` label, which needs repo write.
+CANDIDATE_RE = re.compile(r"^#(\d+)\s+—\s+integration candidate\b")
+
+# Applied only by `cron/integrations-campaign.md`, at creation time.
+CANDIDATE_LABEL = "integration:candidate"
+# What a ✅ on a candidate applies. Deliberately not `claude-implement`: the
+# campaign routine reads this label on its own next run and picks the angle up
+# itself, so nothing else has to fire.
+APPROVED_LABEL = "integration:approved"
 
 
 class RelayError(RuntimeError):
@@ -159,9 +188,31 @@ def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None
     ``None`` routes to `ask` in `build_plan`, the verb that already exists for "do
     not guess". Same reasoning as `merge_gate_armed` in `scripts/cowork_setup.py`:
     an unanswerable question is not a no.
+
+    **A CLOSED promotion ask is also ``None``**, and it is the reason this reads
+    state at all. `cron/release-promote-ask.md` supersedes an unanswered ask by
+    closing it and opening a fresh one, which dedups GitHub — but the Slack half
+    does not: last week's thread reply is still in this relay's read window, still
+    unmarked, and still actionable. `publish.yml`'s guard fires on the `labeled`
+    event and never looks at issue state, so a ✅ on the stale reply would promote
+    against a manifest nobody read. The ask routine's own "never leave two open"
+    rule cannot defend that, because the artifact lives in Slack. Refusing here is
+    where it has to be refused, and `ask` rather than `reject` because the human
+    probably does want to promote — just on this week's issue.
+    """
+    return _has_open_label(issue, PROMOTION_LABEL, runner)
+
+
+def _has_open_label(issue: int, label: str, runner: Callable[[list[str]], str | None] | None) -> bool | None:
+    """Whether ``issue`` is open and carries ``label``. Tristate, like its callers.
+
+    The shared body behind `is_promotion` and `is_campaign_candidate`: both ask the
+    same question of a different label, and both need ``None`` to mean "could not
+    ask" rather than "no". See `is_promotion` for why that distinction is the whole
+    point rather than defensive coding.
     """
     run = runner or _gh_labels
-    payload = run(["gh", "issue", "view", str(issue), "--json", "labels"])
+    payload = run(["gh", "issue", "view", str(issue), "--json", "labels,state"])
     if not payload:
         return None
     try:
@@ -171,12 +222,68 @@ def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None
     labels = data.get("labels") if isinstance(data, dict) else None
     if not isinstance(labels, list):
         return None
-    return any(isinstance(entry, dict) and entry.get("name") == PROMOTION_LABEL for entry in labels)
+    if not any(isinstance(entry, dict) and entry.get("name") == label for entry in labels):
+        return False
+    # A payload with no `state` at all predates this check rather than describing a
+    # closed issue; absence is not evidence, so it reads as open.
+    return None if str(data.get("state", "OPEN")).upper() == "CLOSED" else True
+
+
+def is_campaign_candidate(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
+    """Whether ``issue`` carries the `integration:candidate` label the campaign applies.
+
+    Tristate for the same reason `is_promotion` is, and with the same fallback:
+    ``None`` routes to `ask`. The failure it refuses is the mirror image of the
+    promotion one — there, an unanswerable question would turn a release ask into
+    an implementation run; here, it would turn "build GitLab" into
+    `claude-implement` on an issue that is a week-long plan, which is the exact
+    outcome the separate label exists to prevent. Guessing in either direction
+    spends a human's ✅ on something they did not ask for.
+
+    **A CLOSED candidate is also ``None``.** Monday supersedes an unanswered
+    shortlist by closing it and filing a fresh one, which dedups GitHub but not
+    Slack: last week's three thread replies are still in the read window and still
+    unmarked. A late ✅ on a superseded pick would approve a campaign against a
+    shortlist nobody re-read. `ask` rather than `reject`, because the human
+    probably does want a campaign — just this week's one.
+    """
+    return _has_open_label(issue, CANDIDATE_LABEL, runner)
 
 
 def _gh_labels(argv: list[str]) -> str | None:
-    result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
-    return result.stdout if result.returncode == 0 else None
+    """Read one issue's labels, through whichever transport this machine has.
+
+    The argv is still the input, and still literal, because the caller's whole
+    point is that a command is data here rather than a format string. What
+    changed is that a routine session has no `gh` to run it with: every relay run
+    there answered ``None`` to "is this the release ask?", which routes to `ask`
+    — safe, and silently useless, since the maintainer's ✅ then did nothing at
+    all.
+
+    The REST half reads the same issue and reshapes the answer into the
+    ``{"labels": [{"name": …}]}`` the caller already parses, rather than teaching
+    the caller a second shape.
+    """
+    if transport.gh_available():
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+        return result.stdout if result.returncode == 0 else None
+    slug = transport.resolve_slug(ROOT)
+    if not slug:
+        return None
+    # argv is ["gh", "issue", "view", "<n>", "--json", "labels,state"] — the number
+    # is the only part that varies, and it is read rather than reassembled so a
+    # future verb cannot quietly change which issue is asked about.
+    number = next((part for part in argv if part.isdigit()), None)
+    if number is None:
+        return None
+    answer = transport.api("GET", f"/repos/{slug}/issues/{number}")
+    if not answer.ok or not isinstance(answer.data, dict):
+        return None
+    labels = answer.data.get("labels") or []
+    names = [entry.get("name") for entry in labels if isinstance(entry, dict)]
+    # REST spells state lowercase, `gh --json` spells it uppercase; the caller
+    # upper-cases either way rather than learning both.
+    return json.dumps({"labels": [{"name": name} for name in names if name], "state": answer.data.get("state", "open")})
 
 
 def _command(verb: str, issue: int) -> list[str]:
@@ -196,6 +303,8 @@ def _command(verb: str, issue: int) -> list[str]:
         return ["gh", "issue", "edit", str(issue), "--add-label", APPROVAL_LABEL]
     if verb == "promote":
         return ["gh", "issue", "edit", str(issue), "--add-label", PROMOTE_LABEL]
+    if verb == "campaign":
+        return ["gh", "issue", "edit", str(issue), "--add-label", APPROVED_LABEL]
     if verb == "reject":
         return ["gh", "issue", "close", str(issue)]
     raise RelayError(f"no command for verb {verb!r}")
@@ -206,6 +315,7 @@ def build_plan(
     allowlist: dict[str, str],
     *,
     promotion_check: Callable[[int], bool] | None = None,
+    candidate_check: Callable[[int], bool] | None = None,
 ) -> dict[str, Any]:
     """Turn a thread into the list of actions still owed, oldest first.
 
@@ -221,6 +331,7 @@ def build_plan(
     # Injection seam: the real check calls `gh`, and every other decision here is
     # pure. Tests pass a stub; nothing else should.
     is_promotion_issue = promotion_check or is_promotion
+    is_candidate_issue = candidate_check or is_campaign_candidate
 
     plan: list[dict[str, Any]] = []
     item_replies = marked = ignored_markers = 0
@@ -268,20 +379,33 @@ def build_plan(
         # `claude-implement`, and nothing would say so. `is_promotion` confirms
         # against the `release:promotion` label, which only the ask routine
         # applies, so a matching title on an ordinary proposal stays an approval.
+        #
+        # ❌ on an integration candidate is `reject` too: closing it is exactly
+        # "not this provider", and Monday's run reads closed candidates as the
+        # standing record of what it must not re-propose.
         who = allowlist[(approvers or rejecters)[0]]
+        special: tuple[str, Callable[[int], bool | None]] | None = None
+        if PROMOTE_RE.match(text):
+            special = ("promote", is_promotion_issue)
+        elif CANDIDATE_RE.match(text):
+            special = ("campaign", is_candidate_issue)
+
         if not approvers:
             verb = "reject"
-        elif not PROMOTE_RE.match(text):
+        elif special is None:
             verb = "approve"
         else:
-            confirmed = is_promotion_issue(issue)
+            label_verb, confirm = special
+            confirmed = confirm(issue)
             if confirmed is None:
-                # Could not tell — not the same as "not a promotion". `approve`
-                # applies `claude-implement`, which starts an implementation run
-                # against the release ask itself. Ask a human; that is the verb.
+                # Could not tell, or the issue is closed — neither is "not a
+                # promotion" and neither is "not a candidate". `approve` applies
+                # `claude-implement`, which starts an implementation run against
+                # the release ask, or against a week-long campaign plan. Ask a
+                # human; that is the verb.
                 plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None})
                 continue
-            verb = "promote" if confirmed else "approve"
+            verb = label_verb if confirmed else "approve"
         plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
 
     plan.sort(key=lambda item: str(item["ts"]))

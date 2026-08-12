@@ -37,3 +37,7 @@ propose.
 
 The planning pipeline the intake hands off to (**planning**). Document fetching from
 Notion/Confluence (**integrations**).
+
+**integrations** may append a provider to `roadmap/ingest.py`'s `RoadmapSource` and `ingest_source()`
+from a campaign run (`house-rules.md`, **Extends**) — a new source only; the ranking and the fallback
+stay yours.

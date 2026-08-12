@@ -37,13 +37,6 @@ a week-old surface invents findings (see the cadence rule in the README).
 Broken tests, stale pricing-table comments, docs drift. New detectors, new pricing rows, threshold
 changes, and anything that alters a rendered number always propose.
 
-## Opportunity space
-
-Where a `[feature]`/`[improvement]` find is most likely real here: sources the collector doesn't
-read yet (Codex CLI, Gemini CLI session logs), the HTML export follow-up (with **web-ux**), trend
-comparisons across saved reports, and team-shared telemetry. The evidence bar in `cowork-scout.md`
-applies.
-
 ## Out of scope
 
 Repo-side agent-identity detection lives in `analysis/ai_usage.py` (**analysis** owns it; agents

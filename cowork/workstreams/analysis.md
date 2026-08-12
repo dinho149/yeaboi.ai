@@ -38,3 +38,7 @@ they change numbers people have already seen.
 
 The team-profile export's React components and Block rendering (**web-ux**). Tracker API mechanics
 (**integrations**).
+
+**integrations** may append a provider to `analysis/engine.py`'s `_COMPONENTS` and its
+`_available_*_sources` probes from a campaign run (`house-rules.md`, **Extends**) — registration
+only. Every threshold, marker and metric definition in that file stays yours.

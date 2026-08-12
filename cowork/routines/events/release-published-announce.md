@@ -36,8 +36,22 @@ for one. The stop condition below is belt and braces rather than the thing keepi
 3. **Notion** — append an entry to the changelog page under 🤙 yeaboi (create it on first run):
    version, date, and the grouped notes. Newest first.
 
-4. **Slack** — one `#yeaboi-claude` message: version, the two or three things that actually matter,
-   the PyPI link (`https://pypi.org/project/yeaboi/<version>/`), and the GitHub release link.
+4. **Slack** — one `#yeaboi-claude` message:
+
+   ```slack
+   🎉 **3.7.0 is out** — 8 changes · [release notes](https://github.com/dinho149/yeaboi.ai/releases/tag/v3.7.0)
+
+   1. Standup now names every source it skipped instead of reporting a partial run as a whole one
+   2. The live standup share is editable in the browser
+   3. cd-deploy reaches GitHub without the `gh` CLI, so merges to `cowork/` actually deploy
+   ───────────────────────────
+
+   `pip install --upgrade yeaboi` · [on PyPI](https://pypi.org/project/yeaboi/3.7.0/)
+   ```
+
+   Two or three things that actually matter, grouped by what changed for a user — not the batch
+   manifest, which is grouped by version. If the whole release is chores and dependency bumps, say
+   that in one line rather than inflating it into three.
 
 5. **Sanity check before announcing** — confirm the version is actually installable
    (`pip index versions yeaboi` or the PyPI JSON API). If PyPI has not caught up, wait and re-check

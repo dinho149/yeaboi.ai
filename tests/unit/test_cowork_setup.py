@@ -13,7 +13,12 @@ a sweep that ran on a Tuesday it was never meant to. So it is caught statically
 here, the same way ``test_cowork_models.py`` catches a pasted model id.
 
 No test in this file calls ``gh`` or touches the network: every parser takes text,
-and ``--check --local`` skips the remote half by design.
+``--check --local`` skips the remote half by design, and the two GitHub
+transports are reached only through their seams — ``_gh`` for the CLI half and
+``_api`` for the REST half. Anything asserting on the REST transport must also
+clear ``GH_TOKEN``/``GITHUB_TOKEN`` from the environment (the ``no_token``
+fixture does), or a developer who exports one turns a unit test into a live call
+against their own repository.
 """
 
 from __future__ import annotations
@@ -51,6 +56,34 @@ CRON_ROUTINES = [r for r in ROUTINES if r.kind == "cron"]
 
 def _routine_ids(routine) -> str:
     return routine.path
+
+
+@pytest.fixture(autouse=True)
+def _no_live_github(monkeypatch):
+    """Nothing in this file may reach GitHub, by either transport.
+
+    ``_gh`` used to be the only seam, and faking it was enough. There are two
+    now, and the second authenticates from the *environment*: on a machine with
+    no `gh` installed and ``GH_TOKEN`` exported, `apply_teardown`'s tests would
+    resolve the developer's own repository from `origin` and issue real DELETEs
+    against their labels. Nothing in the test body would look wrong.
+
+    So: both token variables cleared for every test, ``_api`` refusing by
+    default so any new test that falls through the seam fails loudly rather than
+    silently going live, and the per-run module state the transports memoise
+    reset — ``_SLUG`` in particular, which otherwise carries one test's fake
+    remote into the next.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setattr(setup, "TRANSPORT", "gh")
+    setup.transport.reset_slug_cache()
+
+    def refuse(method, path, body=None):
+        raise AssertionError(f"a test reached the REST transport unstubbed: {method} {path}")
+
+    monkeypatch.setattr(setup.transport, "api", refuse)
 
 
 class TestRoutinesResolve:
@@ -121,7 +154,7 @@ class TestFilesAgreeWithTheTable:
             [
                 "cron/digest.md",
                 "cron/cd-deploy.md",
-                "cron/marketing-weekly.md",
+                "cron/integrations-campaign.md",
                 "cron/release-promote-ask.md",
                 "cron/shipped-standup.md",
                 "cron/slack-relay.md",
@@ -515,7 +548,12 @@ class TestAgenda:
         lines = setup.agenda(date(2026, 10, 26))["lines"]
         assert any(line.startswith("**Mon 2 Nov** —") for line in lines), lines
         assert not any(line.startswith("**Sun 1") for line in lines), lines
-        assert any("Sun 1 Nov is clear" in line for line in lines), lines
+        # Matched in two parts, like the sibling test above: how many quiet days
+        # the closing sentence lists depends on the cadence, so "Sun 1 Nov is
+        # clear" became "Sat 31 and Sun 1 Nov are clear" the day the Saturday
+        # routine was retired. The fact under test is that Sunday's month is
+        # named there and nowhere else, which is exactly these two substrings.
+        assert any("Sun 1 Nov" in line and "clear" in line for line in lines), lines
 
     def test_a_collapsed_quiet_day_does_not_take_a_rendered_month_with_it(self):
         """The other half: Sun 30 Aug is folded away and Tue 1 Sep still says Sep."""
@@ -774,6 +812,8 @@ class TestLabels:
                 "feedback-override",
                 "release:promotion",
                 "release:promote",
+                "integration:candidate",
+                "integration:approved",
                 "review-capped",
             }
             | {f"workstream:{w}" for w in WORKSTREAMS}
@@ -796,6 +836,59 @@ class TestLabels:
 
         assert {t.lower() for t in FEEDBACK_TYPES} <= set(setup.PROPOSAL_TYPES)
 
+    def test_the_scout_vocabulary_is_narrower_than_the_label_vocabulary(self):
+        # `feature` and `improvement` are labels the repo needs and finds no
+        # routine may produce. They survive because `src/yeaboi/feedback.py`
+        # files in-app USER feedback under the same names; what went away is
+        # cowork-scout's opportunity pass, and with it any way for a sweep to
+        # emit one. Capability work has exactly one home now — the campaign lane.
+        assert set(setup.SCOUT_TYPES) <= set(setup.PROPOSAL_TYPES)
+        assert "feature" not in setup.SCOUT_TYPES
+        assert "improvement" not in setup.SCOUT_TYPES
+
+    def test_the_scout_agent_and_the_constant_agree(self):
+        # Derived, not retyped. The agent file's JSON schema is what a model
+        # actually reads at run time, so a constant that drifts from it describes
+        # a fleet that no longer exists — the same argument `parse_tiers` makes
+        # about models.md. This pins the CONTRACT TEXT and not the behaviour;
+        # nothing can test that a model honours a vocabulary, exactly as nothing
+        # can test that `critical` is used honestly.
+        assert setup.parse_scout_types() == setup.SCOUT_TYPES
+
+    def test_no_charter_still_advertises_an_opportunity_pass(self):
+        # The opportunity sections told a scout where a `feature` find was most
+        # likely to be real. With the type gone from its vocabulary, a surviving
+        # section is an instruction to produce something it cannot file.
+        for charter in sorted(setup.WORKSTREAMS_DIR.glob("*.md")):
+            body = charter.read_text(encoding="utf-8")
+            assert "## Opportunity space" not in body, f"{charter.name} still declares an opportunity pass"
+        agent = setup.SCOUT_AGENT.read_text(encoding="utf-8")
+        assert "Hunt opportunities" not in agent
+
+    def test_the_extends_grant_is_declared_on_both_sides(self):
+        # `Extends` lets a campaign append a provider inside six other
+        # workstreams' files. A grant written down only where it is USED is one
+        # the owner can delete half of without noticing — so each owner names it
+        # too, and this asserts the pair. The owners are parsed out of the
+        # granting paragraph itself, so adding a site to it without telling its
+        # owner fails here.
+        charter = (setup.WORKSTREAMS_DIR / "integrations.md").read_text(encoding="utf-8")
+        # The paragraph that GRANTS, not the Reads paragraph that cross-references
+        # it — both contain the word, and only one names owners.
+        _, sep, tail = charter.partition("\n**Extends** —")
+        assert sep, "integrations.md no longer declares an Extends paragraph"
+        block = tail.split("\n\n", 1)[0]
+        assert block, "integrations.md no longer declares an Extends paragraph"
+        owners = set(re.findall(r"— \*\*([a-z-]+)\*\*", block))
+        assert owners, f"no owners named in the Extends paragraph: {block!r}"
+        assert owners <= set(WORKSTREAMS), f"Extends names a workstream that does not exist: {owners}"
+        for owner in sorted(owners):
+            body = (setup.WORKSTREAMS_DIR / f"{owner}.md").read_text(encoding="utf-8")
+            assert "**Extends**" in body, f"{owner}.md never acknowledges the campaign's Extends grant"
+            assert "integrations" in body, f"{owner}.md acknowledges Extends without naming who holds it"
+        # The file the rule was written for is outside the grant, on every angle.
+        assert "mode_select/__init__.py" not in block
+
     def test_the_digest_declares_a_section_for_every_scout_proposal_type(self):
         # The digest lists proposals in one section per type, so a type missing
         # from its section order is a kind of work that gets filed and then
@@ -813,14 +906,25 @@ class TestLabels:
         order = re.search(r"Section order is fixed: \*\*(.+?)\*\*", digest)
         assert order, "digest.md no longer declares a fixed section order"
         sections = {name.strip().lower() for name in order.group(1).split(",")}
-        for kind in setup.PROPOSAL_TYPES:
-            if kind == "other":
-                continue
+        for kind in setup.SCOUT_TYPES:
             assert {kind, f"{kind}s"} & sections, f"digest.md's section order omits type:{kind}"
+        # And the two a scout cannot emit have no section, because a heading for a
+        # bucket that is always empty is the "nothing today" fatigue the stop
+        # conditions exist to prevent. User feedback reaches the digest through
+        # 💡 Feature candidates instead, which is a different query and says so.
+        assert not {"features", "improvements"} & sections
 
     # Sections the digest heads that are not one of the PROPOSAL_TYPES: user
     # feedback, the marketing draft, and the health/calibration reporting.
-    NON_TYPE_SECTIONS = ("Feature candidates", "Marketing", "Blocked", "Silent", "Calibration")
+    NON_TYPE_SECTIONS = (
+        "Feature candidates",
+        "Integration",
+        "Approved, no PR yet",
+        "Blocked",
+        "Held",
+        "Silent",
+        "Calibration",
+    )
 
     @staticmethod
     def _emoji_table() -> dict[str, str]:
@@ -844,9 +948,7 @@ class TestLabels:
         # anchor from this one.
         rows = self._emoji_table()
         assert rows, "digest.md no longer declares an emoji table"
-        for kind in setup.PROPOSAL_TYPES:
-            if kind == "other":
-                continue
+        for kind in setup.SCOUT_TYPES:
             assert {kind, f"{kind}s"} & {name.lower() for name in rows}, f"digest.md's emoji table omits type:{kind}"
         # The type sections are only half the message; a dropped row here is a
         # heading with nothing to anchor it and nothing to notice.
@@ -868,7 +970,9 @@ class TestLabels:
         digest = (setup.ROUTINES_DIR / "cron" / "digest.md").read_text(encoding="utf-8")
         rows = self._emoji_table()
 
-        fences = re.findall(r"^\s*```\n(.*?)^\s*```", digest, re.M | re.S)
+        # ```slack marks a literal channel message, which is what TestSlackTemplates
+        # lints; the info string is optional here so this keeps passing either way.
+        fences = re.findall(r"^\s*```(?:slack)?\n(.*?)^\s*```", digest, re.M | re.S)
         assert fences, "digest.md no longer shows the message shape as a worked example"
         example = "\n".join(fences)
 
@@ -892,10 +996,13 @@ class TestLabels:
                 f"digest.md never heads the {section} section with {rows[section]!r}"
             )
 
-    def test_there_are_sixteen_workstreams(self):
+    def test_there_are_fifteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
-        # health check all say sixteen (agents joined with the agentwatch family).
-        assert len(WORKSTREAMS) == 16
+        # health check all spell it out in prose, and none of them is derived.
+        # Thirteen maintain a surface, `security` scouts twice a week, and
+        # `integrations` is the one that builds — `marketing` went with the
+        # opportunity lane, because it fed neither hand-test track.
+        assert len(WORKSTREAMS) == 15
 
     def test_every_workstream_owns_at_least_one_routine(self):
         owned = {r.workstream for r in ROUTINES if r.workstream}
@@ -1055,6 +1162,7 @@ class TestManifest:
             "routines",
         }
         assert len(payload["routines"]) == len(ROUTINES)
+        assert set(payload["routines"][0]) >= {"trigger_name", "trigger_id", "prompt", "allowed_tools"}
         assert payload["connectors"] == ["Linear", "Slack", "Notion"]
         assert "Task" in payload["default_allowed_tools"], "a sweep spawns the crew agents"
 
@@ -1064,6 +1172,23 @@ class TestManifest:
             if routine["kind"] != "cron":
                 continue
             assert routine["cron"] and routine["model"] and routine["prompt"] and routine["trigger_name"]
+
+    def test_a_registered_routine_carries_the_id_that_addresses_it(self, monkeypatch):
+        """`pause`/`resume`/`run` need an id, and listing the fleet to find one pages.
+
+        The relay used to resolve a name against a `RemoteTrigger list`, which
+        stopped answering for most of the fleet the moment it crossed twenty
+        routines — and answered "no such routine" rather than failing.
+        """
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)
+        addressable = [r for r in setup.manifest()["routines"] if r["trigger_id"]]
+        assert len(addressable) == len(setup.recorded_triggers())
+        assert all(r["trigger_id"].startswith("trig_") for r in addressable)
+
+    def test_an_undeployed_routine_carries_no_id_rather_than_a_guess(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)
+        monkeypatch.setattr(setup, "recorded_triggers", lambda *a, **k: {})
+        assert all(routine["trigger_id"] is None for routine in setup.manifest()["routines"])
 
 
 class TestMergeGateCheck:
@@ -1102,8 +1227,40 @@ class TestMergeGateCheck:
         assert report.ok
         assert report.notes and "not checked" in report.notes[0]
 
-    def test_the_probe_reports_none_without_gh(self, monkeypatch):
+    def test_the_probe_reports_none_without_gh_or_a_token(self, monkeypatch):
+        """Neither transport can answer, so the answer is None.
+
+        The token has to be cleared explicitly: without `gh` the probe now falls
+        through to REST, and a developer with GH_TOKEN exported would otherwise
+        have this test make a real request against their own repo.
+        """
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
         monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        assert setup.merge_gate_armed() is None
+
+    def test_the_probe_reads_the_ruleset_over_rest(self, monkeypatch):
+        """The jq expression's answer, computed in Python — there is no jq in a
+        routine session either."""
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        ruleset = [
+            {"type": "deletion"},
+            {"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "ci"}]}},
+        ]
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(True, ruleset))
+        assert setup.merge_gate_armed() is False
+
+        ruleset[1]["parameters"]["required_status_checks"].append({"context": "pr-feedback"})
+        assert setup.merge_gate_armed() is True
+
+    def test_a_failed_rest_query_is_still_unanswerable(self, monkeypatch):
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(False, error="HTTP 404"))
         assert setup.merge_gate_armed() is None
 
     def test_the_probe_reports_none_when_the_query_fails(self, monkeypatch):
@@ -1137,6 +1294,8 @@ class TestCheckMode:
         copy = tmp_path / "repo"
         (copy / "scripts").mkdir(parents=True)
         shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
         shutil.copytree(ROOT / "cowork", copy / "cowork")
         return copy
 
@@ -1221,6 +1380,48 @@ class TestCheckMode:
         result = self._run(repo_copy)
         assert result.returncode == 1
         assert "day-of-month AND day-of-week" in result.stderr
+
+
+class TestApplyRunExitCodes:
+    """The default run's exit codes, which `cron/cd-deploy.md` step 3 branches on.
+
+    Not part of `TestCheckMode` above: this is neither ``--check`` nor
+    ``--local``. It is the apply run, and the only reason it is assertable
+    without a network is that it refuses before choosing a transport.
+    """
+
+    @pytest.fixture
+    def repo_copy(self, tmp_path: Path) -> Path:
+        """A throwaway copy of cowork/ + the script, safe to corrupt."""
+        copy = tmp_path / "repo"
+        (copy / "scripts").mkdir(parents=True)
+        shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
+        shutil.copytree(ROOT / "cowork", copy / "cowork")
+        return copy
+
+    def test_the_default_run_refuses_a_disagreeing_repo_with_exit_2(self, repo_copy: Path):
+        """2, not 1, and `cron/cd-deploy.md` step 3 is what reads the difference.
+
+        1 from that step means the GitHub apply degraded — no labels created, or
+        a variable rejected — which says nothing about a routine's trigger body
+        and must not stop the deploy. 2 means `cowork/` itself disagrees, and
+        registering anything from it would be registering a routine that cannot
+        read its own instructions. The run reaches neither transport: it refuses
+        before `github_ready()` is ever called, which is what makes this
+        assertable without a network.
+        """
+        (repo_copy / "cowork" / "routines" / "cron" / "digest.md").unlink()
+        result = subprocess.run(
+            [sys.executable, str(repo_copy / "scripts" / "cowork_setup.py")],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={"PATH": "/usr/bin:/bin", "HOME": str(repo_copy)},
+        )
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "disagrees with itself" in result.stderr
 
 
 # --- the account half --------------------------------------------------------
@@ -1468,6 +1669,21 @@ class TestTriggerPlan:
         snapshot.append({"id": "trig_ghost", "name": "cowork: ghost-sweep", "enabled": True})
         assert not setup.trigger_plan(snapshot).suspicious
 
+    def test_a_blocked_create_beside_an_orphan_is_not_flagged(self):
+        """A run that cannot create anything has nothing dangerous to refuse.
+
+        Retiring a routine leaves an orphan no API can delete, so if a blocked
+        create counted, `cd-deploy` — which always runs `--no-create` — would
+        exit 2 on every firing from the first retirement onwards and quietly
+        stop applying updates for good.
+        """
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        snapshot.append({"id": "trig_ghost", "name": "cowork: retired-sweep", "enabled": True})
+        plan = setup.trigger_plan(snapshot, allow_create=False)
+        assert plan.creates_blocked == ["digest"] and plan.orphans
+        assert not plan.suspicious
+        assert setup.trigger_plan(snapshot).suspicious, "an interactive deploy still asks"
+
     def test_a_routine_someone_else_made_is_left_alone(self):
         """Only the `cowork: ` prefix is ours. Deleting anything else is not our call."""
         snapshot = _perfect_snapshot()
@@ -1554,6 +1770,196 @@ class TestTriggerPlan:
         """Captured either way depending on how /cowork saved the response."""
         entries = _perfect_snapshot()
         assert setup.snapshot({"data": entries}) == setup.snapshot(entries) == entries
+
+
+class TestPagedSnapshot:
+    """Reading a fleet that no longer fits in one `RemoteTrigger list` response.
+
+    The account pages at twenty and the tool exposes no cursor, so the whole
+    fleet stopped being readable in one call the moment it crossed that line —
+    which is a deploy that cannot plan, and a `cd-deploy` that silently cannot
+    reconcile. The fleet is read in parts instead: the newest page, plus a `get`
+    for every trigger id cowork/README.md records.
+
+    Everything here is about what such a read may and may not conclude. An
+    update is safe from it; a create is the one that cannot be taken back.
+    """
+
+    GET_FIXTURE = ROOT / "tests" / "fixtures" / "cowork_trigger_get_live.json"
+
+    def _parts(self, entries: list[dict], page: int = 2) -> tuple[dict, list[dict]]:
+        """A truncated page, and the rest as the per-id reads that recover them."""
+        return {"data": entries[:page], "has_more": True}, [{"trigger": e} for e in entries[page:]]
+
+    def test_the_parts_are_joined_into_one_fleet(self):
+        entries = _perfect_snapshot()
+        page, gets = self._parts(entries)
+        snap = setup.read_parts([page, gets], recorded=[e["id"] for e in entries])
+        assert len(snap.triggers) == len(entries)
+        assert setup.trigger_plan(snap).clean
+
+    def test_overlapping_parts_are_not_two_routines(self):
+        """The page and the per-id reads both carry the newest routines, by design."""
+        entries = _perfect_snapshot()
+        page, gets = self._parts(entries, page=len(entries))
+        snap = setup.read_parts([page, *gets, page], recorded=[e["id"] for e in entries])
+        assert len(snap.triggers) == len(entries)
+
+    def test_a_read_that_saw_the_last_page_is_not_partial(self):
+        """`has_more: false` is the only thing that can close the question."""
+        entries = _perfect_snapshot()
+        first = {"data": entries[:3], "has_more": True}
+        last = {"data": entries[3:], "has_more": False}
+        assert setup.read_parts([first, last]).partial is None
+
+    def test_a_get_alone_never_proves_completeness(self):
+        """It answers for one routine and says nothing about how many there are."""
+        entries = _perfect_snapshot()
+        page, gets = self._parts(entries)
+        assert setup.read_parts([page, gets]).boundary is True
+
+    def test_no_unresolved_ids_is_not_a_clean_ledger_when_none_was_read(self):
+        """Two different statements, and only one of them is worth making."""
+        entries = _perfect_snapshot()
+        page, gets = self._parts(entries)
+        assert "not consulted" in setup.read_parts([page, gets]).partial
+        checked = setup.read_parts([page, gets], recorded=[e["id"] for e in entries])
+        assert "every routine id the README records was read back" in checked.partial
+
+    def test_one_truncated_file_still_refuses(self, tmp_path):
+        """Unchanged where it matters: a short page alone is the original hazard."""
+        path = tmp_path / "page.json"
+        path.write_text(json.dumps({"data": _perfect_snapshot()[:4], "has_more": True}))
+        with pytest.raises(ValueError, match="has_more"):
+            setup.load_snapshot(path)
+
+    def test_wrapping_a_truncated_page_in_an_array_does_not_smuggle_it_past(self):
+        """The refusal reads the parts, not the top level.
+
+        An array of envelopes is a documented way to save these, so a check that
+        only looked at `payload["has_more"]` would wave a short page through the
+        moment somebody wrapped it in a list — and every routine past the
+        boundary would then read as one to register.
+        """
+        page = {"data": _perfect_snapshot()[:4], "has_more": True}
+        with pytest.raises(ValueError, match="has_more"):
+            setup.snapshot([page])
+
+    def test_per_id_reads_with_no_page_beside_them_are_checked_against_the_ledger(self):
+        """The signal that says "there is more" can simply be absent.
+
+        A caller that saves the `get` envelopes and forgets the page file hands
+        over something that declares nothing at all. Without the ledger it reads
+        as an account containing four routines, and everything else in the table
+        becomes a create.
+        """
+        entries = _perfect_snapshot()
+        gets = [{"trigger": e} for e in entries[:4]]
+        snap = setup.read_parts([gets], recorded=[e["id"] for e in entries])
+        assert snap.boundary is False, "nothing here said there was more — that is the point"
+        assert snap.partial and "were not read back" in snap.partial
+        assert setup.trigger_plan(snap).postable_creates == []
+
+    def test_a_hand_saved_array_is_still_the_whole_account(self):
+        """The older convention, and it must not become partial by accident.
+
+        A bare array is how a `list` response gets saved by hand; only the
+        `{"trigger": …}` envelope marks a fleet read one routine at a time.
+        """
+        entries = _perfect_snapshot()
+        snap = setup.read_parts([entries], recorded=["trig_stale"])
+        assert snap.partial is None
+        assert setup.trigger_plan(snap).clean
+
+    def test_updates_still_flow_from_a_partial_read(self):
+        """The whole point: drift on a routine you can see is still drift."""
+        entries = _perfect_snapshot()
+        _by_name(entries, "digest")["cron_expression"] = "0 0 * * 0"
+        page, gets = self._parts(entries)
+        plan = setup.trigger_plan(setup.read_parts([page, gets], recorded=[e["id"] for e in entries]))
+        assert [action.name for action in plan.update] == ["digest"]
+        assert plan.update[0].body["cron_expression"] == "15 8 * * *"
+
+    def test_an_unread_recorded_id_blocks_every_create(self):
+        """A routine the ledger records and no part read back is one that exists."""
+        entries = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        page, gets = self._parts(entries)
+        snap = setup.read_parts([page, gets], recorded=[*[e["id"] for e in entries], "trig_unread"])
+        plan = setup.trigger_plan(snap)
+        assert plan.creates_blocked == ["digest"]
+        assert plan.postable_creates == []
+        assert plan.create[0].body == {}, "a blocked action must carry nothing postable"
+        assert "trig_unread" in plan.partial
+
+    def test_a_routine_the_readme_records_is_never_created_from_a_partial_read(self):
+        """The dangerous case: it is registered, and the page boundary hid it."""
+        entries = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        page, gets = self._parts(entries)
+        snap = setup.read_parts([page, gets], recorded=[e["id"] for e in entries])
+        plan = setup.trigger_plan(snap)
+        assert plan.creates_blocked == ["digest"], "cowork/README.md records a URL for digest"
+        assert plan.postable_creates == []
+
+    def test_a_routine_the_readme_does_not_record_is_still_creatable(self, monkeypatch):
+        """Nothing of ours can hide past the boundary under a name no deploy used.
+
+        Without this the first deploy after a routine is added would refuse it
+        for as long as the fleet stays over one page — which is forever.
+        """
+        entries = _perfect_snapshot()
+        fresh = next(r for r in ROUTINES if r.name == "digest")
+        monkeypatch.setattr(setup, "unregistered_routines", lambda *a, **k: frozenset({fresh.path}))
+        page, gets = self._parts([e for e in entries if e["name"] != fresh.trigger_name])
+        snap = setup.read_parts([page, gets], recorded=[e["id"] for e in entries if e["name"] != fresh.trigger_name])
+        plan = setup.trigger_plan(snap)
+        assert [action.name for action in plan.postable_creates] == ["digest"]
+        assert plan.create[0].body["name"] == "cowork: digest"
+
+    def test_the_plan_reports_the_partial_read(self):
+        entries = _perfect_snapshot()
+        page, gets = self._parts(entries)
+        payload = json.loads(json.dumps(setup.trigger_plan(setup.read_parts([page, gets])).as_dict()))
+        assert payload["partial"], "a plan that cannot see the whole fleet must say so"
+        assert setup.trigger_plan(entries).as_dict()["partial"] is None
+
+    def test_an_unread_routine_is_a_note_and_not_a_failure(self, tmp_path):
+        """A doctor that calls a healthy fleet broken is one nobody re-runs."""
+        entries = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        page, gets = self._parts(entries)
+        paths = []
+        for index, part in enumerate([page, gets]):
+            path = tmp_path / f"part{index}.json"
+            path.write_text(json.dumps(part))
+            paths.append(path)
+        report = setup.Report()
+        setup.check_triggers(report, paths)
+        assert not [p for p in report.problems if "cowork: digest" in p]
+        assert any("cowork: digest" in n and "unknown" in n for n in report.notes)
+        assert any("partial read" in n for n in report.notes)
+
+    def test_the_readme_ledger_is_read_off_the_url_column(self):
+        ids = setup.recorded_ids()
+        assert ids and all(i.startswith("trig_") for i in ids)
+        assert len(set(ids)) == len(ids), "two rows claiming one id is drift, not a ledger"
+
+    def test_an_em_dash_is_not_an_id(self):
+        """The table's own mark for a row that is written down but not running."""
+        table = "| `cron/ghost.md` | daily | ghost | fast | — |\n"
+        assert setup.unregistered_routines(table) == frozenset({"cron/ghost.md"})
+        live = "| `cron/ghost.md` | daily | ghost | fast | https://claude.ai/code/routines/trig_01 |\n"
+        assert setup.unregistered_routines(live) == frozenset()
+
+    def test_the_real_get_envelope_is_understood(self):
+        """Read against a real API response, not one this module generated."""
+        payload = json.loads(self.GET_FIXTURE.read_text().replace(FIXTURE_MODEL, TIERS["standard"].model_id))
+        snap = setup.read_parts([payload])
+        assert len(snap.triggers) == 1
+        assert setup.observed_trigger(snap.triggers[0])["trigger_name"] == "cowork: standup-sweep"
+        assert snap.boundary is False, "a get on its own declares nothing about the rest"
+
+    def test_the_get_fixture_names_no_model(self):
+        """Same contract as cowork/: models.md is the only place an id is written."""
+        assert not re.search(r"claude-(?:opus|sonnet|haiku|fable)-[\w.-]*\d", self.GET_FIXTURE.read_text())
 
 
 class TestToolOverrides:
@@ -1806,15 +2212,18 @@ class TestTeardown:
         ``claude-implement`` predates cowork and gates the claude.yml implement
         job; ``feedback-override`` is the escape hatch on the pr-feedback merge
         gate; the ``release:*`` pair is what ``publish.yml`` fires on, so deleting
-        either disarms the only path that cuts an official release. Removing any
-        of them with the fleet would break a live gate, and the breakage is
-        silent: applying a label that does not exist does nothing.
+        either disarms the only path that cuts an official release; and
+        ``integration:approved`` is what the campaign routine reads to know which
+        provider it is building, so deleting it strands every ✅ on a shortlist.
+        Removing any of them with the fleet would break a live gate, and the
+        breakage is silent: applying a label that does not exist does nothing.
         """
         assert setup.KEEP_LABELS == {
             "claude-implement",
             "feedback-override",
             "release:promotion",
             "release:promote",
+            "integration:approved",
         }
         assert not (setup.KEEP_LABELS & {label.name for label in setup.teardown_labels()})
 
@@ -1825,9 +2234,11 @@ class TestTeardown:
             if label.name not in setup.KEEP_LABELS and not label.name.startswith("type:")
         }
         assert {label.name for label in setup.teardown_labels()} == expected
-        # cowork, cowork:proposal, review-capped — the three non-workstream,
-        # non-type labels cowork creates and may therefore also remove.
-        assert len(expected) == len(WORKSTREAMS) + 3
+        # cowork, cowork:proposal, review-capped, integration:candidate — the four
+        # non-workstream, non-type labels cowork creates and may therefore also
+        # remove. `integration:approved` is not among them: it is a live gate, so
+        # it sits in KEEP_LABELS beside the `release:*` pair for the same reason.
+        assert len(expected) == len(WORKSTREAMS) + 4
 
     def test_it_refuses_without_yes(self):
         result = subprocess.run(
@@ -1845,8 +2256,10 @@ class TestTeardown:
 class TestGhWrites:
     """The half of the script that mutates anything.
 
-    ``_gh`` is the single seam every GitHub call goes through, so all of this is
-    reachable with one monkeypatch and none of it touches the network.
+    ``_gh`` is the seam the CLI half goes through, so all of this is reachable
+    with one monkeypatch. It is no longer the *only* seam — `_no_live_github`
+    above keeps the REST one shut for this class, and the fixture below pins the
+    transport so these assertions stay assertions about `gh`.
     """
 
     @pytest.fixture
@@ -1861,6 +2274,10 @@ class TestGhWrites:
             return subprocess.CompletedProcess(args, code, out, "boom" if code else "")
 
         monkeypatch.setattr(setup, "_gh", fake)
+        # `apply_teardown()` picks a transport before it writes anything, and
+        # `gh_ready()` would otherwise shell a real `gh auth status` here — or,
+        # on a machine without `gh`, hand these tests to the REST transport.
+        monkeypatch.setattr(setup, "gh_ready", lambda: True)
         return type("Gh", (), {"calls": calls, "replies": replies})()
 
     def _label_list(self, names: list[str]) -> tuple[int, str]:
@@ -1959,6 +2376,236 @@ class TestGhWrites:
         assert setup.missing_urls(readme.read_text()) == []
         once = readme.read_text()
         assert setup.apply_urls(path) == 0 and readme.read_text() == once
+
+
+class TestApiTransport:
+    """The half that runs where `gh` does not.
+
+    `cron/cd-deploy.md` executes this script from a cloud routine session, and
+    that session has a GitHub token but no CLI. Every firing therefore took
+    `gh_ready()`'s "not on PATH" branch, exited 1 under ``--strict``, and the
+    routine's stop condition halted it before reconciling the fleet — the one
+    thing it exists to do. Nothing here was covered by a test, which is why it
+    ran that way for as long as it did.
+
+    ``_api`` is the seam, the way ``_gh`` is for the CLI half. Nothing below
+    opens a socket.
+    """
+
+    @pytest.fixture
+    def api(self, monkeypatch):
+        """Record every REST call; reply from a per-test script keyed on
+        ``(method, path)`` with the query string stripped."""
+        calls: list[tuple[str, str, dict | None]] = []
+        replies: dict[tuple[str, str], object] = {}
+
+        def fake(method: str, path: str, body: dict | None = None):
+            calls.append((method, path, body))
+            key = (method, path.split("?")[0])
+            if key in replies:
+                answer = replies[key]
+                if isinstance(answer, setup.ApiResult):
+                    return answer
+                return setup.ApiResult(True, answer)
+            return setup.ApiResult(True, [])
+
+        monkeypatch.setattr(setup.transport, "api", fake)
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        return type("Api", (), {"calls": calls, "replies": replies})()
+
+    # --- token resolution ----------------------------------------------------
+
+    def test_gh_token_wins_over_github_token(self, monkeypatch):
+        """`gh`'s own precedence, so a machine setting both gets one identity."""
+        monkeypatch.setenv("GITHUB_TOKEN", "second")
+        assert setup.github_token() == "second"
+        monkeypatch.setenv("GH_TOKEN", "first")
+        assert setup.github_token() == "first"
+
+    def test_no_token_is_none_not_empty(self):
+        assert setup.github_token() is None
+
+    # --- transport selection -------------------------------------------------
+
+    def test_gh_is_preferred_when_it_is_there(self, monkeypatch):
+        """Local behaviour must not change: an authenticated CLI still wins."""
+        monkeypatch.setattr(setup, "gh_ready", lambda: True)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        assert setup.github_ready() is True
+        assert setup.TRANSPORT == "gh"
+
+    def test_rest_takes_over_when_gh_is_absent(self, monkeypatch, capsys):
+        monkeypatch.setattr(setup, "gh_ready", lambda: False)
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        assert setup.github_ready() is True
+        assert setup.TRANSPORT == "api"
+        out = capsys.readouterr().out
+        assert "REST API" in out and "is not on PATH" in out
+
+    def test_rest_takes_over_when_gh_is_merely_unauthenticated(self, monkeypatch, capsys):
+        """The other half of the same fallback, said accurately: an installed but
+        logged-out `gh` is a different problem from a missing one, and printing
+        the wrong one sends the reader to the wrong remedy."""
+        monkeypatch.setattr(setup, "gh_ready", lambda: False)
+        monkeypatch.setattr(setup.shutil, "which", lambda name: "/usr/bin/gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        assert setup.github_ready() is True
+        assert setup.TRANSPORT == "api"
+        assert "is not authenticated" in capsys.readouterr().out
+
+    def test_neither_transport_degrades_exactly_once(self, monkeypatch, capsys):
+        """The production failure, and the case nothing asserted before."""
+        monkeypatch.setattr(setup, "gh_ready", lambda: False)
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        setup.STRICT.degraded.clear()
+        assert setup.github_ready() is False
+        assert len(setup.STRICT.degraded) == 1
+        out = capsys.readouterr().out
+        assert "GH_TOKEN" in out, "the remedy must name the fallback, not just `brew install gh`"
+
+    def test_a_token_with_no_repo_is_not_ready(self, monkeypatch):
+        """Both halves or neither — a token pointed at nothing cannot be used."""
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: None)
+        assert setup.api_ready() is False
+
+    # --- reads ---------------------------------------------------------------
+
+    def test_labels_are_read_from_the_rest_endpoint(self, api):
+        api.replies[("GET", "/repos/o/r/labels")] = [{"name": "cowork"}, {"name": "type:bug"}]
+        assert setup.existing_labels() == {"cowork", "type:bug"}
+        assert api.calls[0][0] == "GET"
+        assert api.calls[0][1].startswith("/repos/o/r/labels?per_page=100")
+
+    def test_variables_are_unwrapped_from_their_envelope(self, api):
+        """`/actions/variables` returns an object around the list; `/labels` does
+        not. Reading the wrong shape would look like an empty repo."""
+        api.replies[("GET", "/repos/o/r/actions/variables")] = {
+            "total_count": 1,
+            "variables": [{"name": "YEABOI_MODEL_HEAVY", "value": "x"}],
+        }
+        assert setup.existing_variables() == {"YEABOI_MODEL_HEAVY": "x"}
+
+    def test_a_failed_query_is_none_not_an_empty_repo(self, api):
+        """The invariant `TestGhWrites` pins for the CLI half, on this one too:
+        None and empty are different facts, and the difference is 29 findings."""
+        api.replies[("GET", "/repos/o/r/labels")] = setup.ApiResult(False, error="HTTP 403")
+        api.replies[("GET", "/repos/o/r/actions/variables")] = setup.ApiResult(False, error="HTTP 403")
+        assert setup.existing_labels() is None
+        assert setup.existing_variables() is None
+
+    def test_no_slug_is_a_degradation_not_a_crash(self, api, monkeypatch):
+        monkeypatch.setattr(setup, "repo_slug", lambda: None)
+        setup.STRICT.degraded.clear()
+        assert setup.existing_labels() is None
+        assert setup.STRICT.degraded
+
+    # --- writes --------------------------------------------------------------
+
+    def test_only_missing_labels_are_posted(self, api):
+        api.replies[("GET", "/repos/o/r/labels")] = [{"name": label.name} for label in setup.expected_labels()][:2]
+        setup.apply_labels()
+        posted = [body["name"] for method, path, body in api.calls if method == "POST" and path == "/repos/o/r/labels"]
+        assert len(posted) == len(setup.expected_labels()) - 2
+        assert "workstream:security" in posted
+
+    def test_a_posted_label_carries_bare_hex(self, api):
+        """REST rejects a leading `#`. `expected_labels()` already spells them
+        bare, which is what `gh label create --color` wanted too — asserted
+        rather than assumed, because nothing else would catch it changing."""
+        setup.apply_labels()
+        colors = [body["color"] for method, path, body in api.calls if method == "POST"]
+        assert colors and all(re.fullmatch(r"[0-9a-fA-F]{6}", color) for color in colors)
+
+    def test_a_new_variable_is_posted_to_the_collection(self, api):
+        api.replies[("GET", "/repos/o/r/actions/variables")] = {"variables": []}
+        setup.apply_variables()
+        writes = [(method, path, body) for method, path, body in api.calls if method in {"POST", "PATCH"}]
+        assert writes and all(method == "POST" for method, _, _ in writes)
+        assert all(path == "/repos/o/r/actions/variables" for _, path, _ in writes)
+
+    def test_an_existing_variable_is_patched_on_its_item(self, api):
+        """One `gh variable set` is two different REST calls, and using the
+        collection for an update is a 409 rather than a silent no-op."""
+        wanted = setup.parse_model_variables()
+        name = next(iter(wanted))
+        api.replies[("GET", "/repos/o/r/actions/variables")] = {
+            "variables": [{"name": name, "value": "stale"}],
+        }
+        setup.apply_variables()
+        patches = [(path, body) for method, path, body in api.calls if method == "PATCH"]
+        assert (f"/repos/o/r/actions/variables/{name}", {"name": name, "value": wanted[name]}) in patches
+
+    def test_a_rejected_write_degrades_with_the_api_reason(self, api, capsys):
+        api.replies[("GET", "/repos/o/r/actions/variables")] = {"variables": []}
+        api.replies[("POST", "/repos/o/r/actions/variables")] = setup.ApiResult(
+            False, error="HTTP 403 on POST: Resource not accessible by integration"
+        )
+        setup.STRICT.degraded.clear()
+        setup.apply_variables()
+        assert setup.STRICT.degraded
+        assert "not accessible by integration" in capsys.readouterr().out
+
+    def test_teardown_deletes_by_item_path(self, api):
+        api.replies[("GET", "/repos/o/r/labels")] = [{"name": "workstream:security"}]
+        api.replies[("GET", "/repos/o/r/actions/variables")] = {"variables": []}
+        setup.apply_teardown(labels=True, variables=False)
+        deletes = [path for method, path, _ in api.calls if method == "DELETE"]
+        assert "/repos/o/r/labels/workstream%3Asecurity" in deletes
+
+    # --- slug resolution -----------------------------------------------------
+
+    def test_the_env_names_the_repo_when_gh_cannot(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        monkeypatch.setenv("GITHUB_REPOSITORY", "owner/name")
+        assert setup.repo_slug() == "owner/name"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "git@github.com:owner/name.git",
+            "https://github.com/owner/name.git",
+            "https://github.com/owner/name",
+            "ssh://git@github.com/owner/name.git",
+        ],
+    )
+    def test_the_origin_remote_names_the_repo(self, monkeypatch, url):
+        """What actually resolves it in a routine session: step 1 of
+        `cron/cd-deploy.md` runs `git fetch origin main`, so a remote is there
+        even though `gh` is not."""
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        monkeypatch.setattr(
+            setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, url + "\n", "")
+        )
+        assert setup.repo_slug() == "owner/name"
+
+    def test_an_unreadable_remote_is_none(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda name: None)
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        monkeypatch.setattr(setup.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"))
+        assert setup.repo_slug() is None
+
+    # --- the token never leaks ----------------------------------------------
+
+    def test_the_token_is_never_printed(self, monkeypatch, capsys):
+        """It is a token even when it is not a secret-shaped one, and this script
+        prints everything it does."""
+        monkeypatch.setattr(setup, "gh_ready", lambda: False)
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setenv("GH_TOKEN", "ghp_notarealtoken")
+        monkeypatch.setattr(setup.transport, "api", lambda *a, **k: setup.ApiResult(False, error="HTTP 403"))
+        setup.STRICT.degraded.clear()
+        setup.github_ready()
+        setup.existing_labels()
+        captured = capsys.readouterr()
+        assert "ghp_notarealtoken" not in captured.out + captured.err
+        setup.STRICT.degraded.clear()
 
 
 class TestSnapshotFlags:
@@ -2088,6 +2735,8 @@ class TestWebhookDoctor:
         copy = tmp_path / "repo"
         (copy / "scripts").mkdir(parents=True)
         shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        # The transport is a sibling import, so it has to travel with the script.
+        shutil.copy(ROOT / "scripts" / "_gh_transport.py", copy / "scripts" / "_gh_transport.py")
         shutil.copytree(ROOT / "cowork", copy / "cowork")
         return copy
 
@@ -2496,3 +3145,335 @@ class TestStrict:
         result = self._plan(tmp_path, _perfect_snapshot(), "--created", "cowork: not-a-routine")
         assert result.returncode == 2
         assert "does not contain" in result.stderr
+
+
+class TestSlackTemplates:
+    """The literal Slack templates in ``cowork/routines/**.md``, linted.
+
+    Every message the fleet posts is specified as a worked example rather than
+    as a list of topics to cover, because the one routine specified the other
+    way — ``cron/cd-deploy.md`` step 7 — wrote a fresh essay per run and put
+    thirty-six of them in ``#yeaboi-claude`` in a single day. These checks are
+    what stop a template drifting back out of the shared grammar in
+    ``.claude/agents/cowork-scribe.md``; nothing at run time would notice.
+
+    Two info strings carry meaning, and the tests are near-inverses:
+
+    ``slack``        a channel message — the grammar applies.
+    ``slack-reply``  a thread reply parsed by ``scripts/cowork_relay.py``
+                     before anybody reads it — the grammar must *not* apply.
+    """
+
+    # Column 0 or indented inside a numbered step; the closing fence matches the
+    # opening indent, which is what keeps a nested fence from ending this one.
+    FENCE = re.compile(r"^(?P<indent>[ \t]*)```(?P<info>[a-z-]*)\n(?P<body>.*?)^(?P=indent)```", re.M | re.S)
+
+    # `<emoji> **<Name>** — <clause>`. Deliberately not `(n)`: that is a *section*
+    # heading's shape, and a title line wearing it reads as one.
+    TITLE = re.compile(r"^(?P<emoji>\S+) \*\*(?P<name>[^*]+)\*\* — .+")
+    HEADING = re.compile(r"^\S+ \*\*[^*]+\*\*\s*\(")
+
+    # The five that were actually observed on `cd-deploy` within one day in
+    # August 2026, before step 7 had a template. A blocklist is all a template
+    # can be checked against — "no sign-off" is not provable from the text.
+    SIGN_OFF = re.compile(
+        r"(?im)^\s*(?:—\s*(?:cowork-scribe|cd-deploy|posted by)|_?generated by|co-authored-by:)",
+    )
+
+    @staticmethod
+    def _blocks(info: str) -> dict[str, str]:
+        """Every fenced block with ``info`` under ``cowork/routines``, dedented."""
+        found: dict[str, str] = {}
+        for path in sorted(setup.ROUTINES_DIR.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for n, match in enumerate(TestSlackTemplates.FENCE.finditer(text), start=1):
+                if match.group("info") != info:
+                    continue
+                indent = match.group("indent")
+                body = "\n".join(
+                    line[len(indent) :] if line.startswith(indent) else line
+                    for line in match.group("body").rstrip("\n").split("\n")
+                )
+                found[f"{path.relative_to(setup.ROUTINES_DIR)}#{n}"] = body
+        return found
+
+    def test_every_routine_that_posts_shows_a_template(self):
+        """The list is the point: a poster with no worked example is the state
+        this whole class exists to stop coming back."""
+        posters = {
+            "cron/digest.md",
+            "cron/shipped-standup.md",
+            "cron/agents-standup.md",
+            "cron/release-promote-ask.md",
+            "cron/cd-deploy.md",
+            "cron/security-sweep.md",
+            "events/release-published-announce.md",
+        }
+        have = {key.split("#")[0] for key in self._blocks("slack")}
+        assert posters <= have, f"these routines post to Slack with no template: {sorted(posters - have)}"
+
+    def test_the_first_line_is_a_title_line(self):
+        for key, body in sorted(self._blocks("slack").items()):
+            first = body.split("\n")[0]
+            assert self.TITLE.match(first), f"{key}: not a title line: {first!r}"
+            assert not self.HEADING.match(first), f"{key}: title line wears a section heading's `(n)`: {first!r}"
+
+    def test_no_line_carries_slack_mrkdwn_emphasis(self):
+        """`*x*` is Markdown italic and mrkdwn bold, and the connector reads
+        Markdown — so the wrong dialect does not fail, it renders the wrong
+        weight. Same check as the agenda's, on the templates."""
+        for key, body in sorted(self._blocks("slack").items()):
+            for line in body.split("\n"):
+                assert not re.search(r"(?<!\*)\*(?!\*)", line), f"{key}: {line}"
+
+    def test_no_bare_urls(self):
+        """Links are embedded in the text they name. Unlike the agenda's check,
+        this cannot be `"http" not in blob` — these templates carry embedded
+        links on purpose, so the link form is stripped before looking."""
+        for key, body in sorted(self._blocks("slack").items()):
+            stripped = re.sub(r"\]\(https?://[^)]+\)", "]()", body)
+            assert "http" not in stripped, f"{key}: a URL outside a [title](url) link"
+
+    def test_emoji_only_ever_anchor_a_line(self):
+        """One anchor, at the start. `line[0]` would be wrong: 🗳️ and ⚠️ are
+        `So` followed by a variation selector, so the anchor is not one char."""
+        for key, body in sorted(self._blocks("slack").items()):
+            for line in body.split("\n"):
+                # The divider is U+2500 BOX DRAWINGS LIGHT HORIZONTAL, whose
+                # category is also `So`. It is a rule, not an anchor, and a
+                # line of them is the whole line.
+                if line and set(line) == {"\u2500"}:
+                    continue
+                # ✅/❌ are verbs, not anchors, and a footer that instructs
+                # carries both on one line by design. They have their own rule
+                # in `test_the_approval_verbs_never_head_anything`.
+                symbols = [
+                    char for char in line if unicodedata.category(char) == "So" and char not in {"\u2705", "\u274c"}
+                ]
+                if not symbols:
+                    continue
+                assert len(symbols) == 1, f"{key}: more than one emoji on a line: {line}"
+                assert line.startswith(symbols[0]), f"{key}: an anchor belongs at the start: {line}"
+
+    def test_the_approval_verbs_never_head_anything(self):
+        """✅/❌ are the verbs a human reacts with. Forbidden in a title line or
+        a heading, where a reader has to work out whether they mean something;
+        allowed in a footer that instructs, which is them doing their job."""
+        for key, body in sorted(self._blocks("slack").items()):
+            for line in body.split("\n"):
+                if self.TITLE.match(line) or self.HEADING.match(line):
+                    assert not {"✅", "❌"} & set(line), f"{key}: approval verb in a heading: {line}"
+
+    def test_the_robot_marker_is_never_written_as_text(self):
+        """🤖 is the relay's `handled` marker. An allowlisted human's 🤖 on a
+        digest item hides it from every future run, so the glyph is never made
+        ambient in the channel it acts in."""
+        for key, body in sorted(self._blocks("slack").items()):
+            assert "\U0001f916" not in body, f"{key}: 🤖 is a reserved marker, not decoration"
+
+    def test_no_template_signs_off(self):
+        for key, body in sorted(self._blocks("slack").items()):
+            assert not self.SIGN_OFF.search(body), f"{key}: the channel has one voice; drop the sign-off"
+
+    def test_a_parsed_reply_is_exempt_from_all_of_it(self):
+        """The inverse lint, and the more valuable one. These lines are parsed
+        before they are read: `ITEM_RE`/`PROMOTE_RE` in `scripts/cowork_relay.py`
+        anchor on a leading `#<n> — `, so a reply that gains a bold run, an
+        emoji or an embedded link is an approval that cannot land."""
+        blocks = self._blocks("slack-reply")
+        assert blocks, "the parsed reply contracts are no longer shown as worked examples"
+        for key, body in sorted(blocks.items()):
+            for line in body.split("\n"):
+                assert re.match(r"^#(\d+|<issue(?:-number)?>)\s+—\s", line), f"{key}: must lead with the number: {line}"
+                assert "**" not in line, f"{key}: no bold in a parsed reply: {line}"
+                assert "](" not in line, f"{key}: no embedded link in a parsed reply: {line}"
+                assert not [c for c in line if unicodedata.category(c) == "So"], f"{key}: no emoji: {line}"
+
+    def test_an_ack_never_leads_with_the_issue_number(self):
+        """The relay posts as the human, so its own acks come back on the next
+        hourly read looking exactly like human input. `ITEM_RE` is anchored, and
+        that anchor is the only thing keeping the routine from answering itself
+        — so an ack states the verb first and the number inside the sentence.
+
+        Checked with the real regex rather than a copy of it, against the
+        examples the routine actually shows, so the two cannot drift apart.
+        """
+        relay_spec = importlib.util.spec_from_file_location("cowork_relay", ROOT / "scripts" / "cowork_relay.py")
+        relay_module = importlib.util.module_from_spec(relay_spec)
+        relay_spec.loader.exec_module(relay_module)
+        relay = (setup.ROUTINES_DIR / "cron" / "slack-relay.md").read_text(encoding="utf-8")
+        examples = re.search(r"for an action, exactly what was done \((.*?)\), one line", relay, re.S)
+        assert examples, "cron/slack-relay.md no longer shows what an ack looks like"
+        quoted = re.findall(r'"([^"]+)"', examples.group(1))
+        assert len(quoted) >= 2, f"too few ack examples to check: {quoted}"
+        for ack in quoted:
+            assert not relay_module.ITEM_RE.match(ack), (
+                f"this ack parses as a digest item reply, so the relay would answer itself: {ack!r}"
+            )
+
+
+class TestProposalSlots:
+    """The proposal cap, which is the only thing bounding the propose lane.
+
+    Before it, a scout returning ten finds could open nine issues in one morning
+    and nothing looked at how many were already there — the fleet's queue reached
+    forty-one, behind a digest whose whole job is to put a short list in front of
+    a human. The arithmetic lives in Python for the reason the trigger reconcile
+    does: a routine asked to count sixteen queues by eye will miscount one, and
+    nothing downstream would notice.
+    """
+
+    NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+
+    @staticmethod
+    def _issue(number: int, days_old: int = 1, **extra) -> dict:
+        created = TestProposalSlots.NOW - timedelta(days=days_old, hours=1)
+        return {
+            "number": number,
+            "title": f"[bug][platform] finding {number}",
+            "created_at": created.isoformat().replace("+00:00", "Z"),
+            **extra,
+        }
+
+    def _serve(self, monkeypatch, items, ok=True, error=""):
+        """Answer the REST read with a fixed page, over the API transport."""
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        seen: list[str] = []
+
+        def paged(path, key=None):
+            seen.append(path)
+            return setup.ApiResult(ok, items, error)
+
+        monkeypatch.setattr(setup.transport, "api_paged", paged)
+        return seen
+
+    @pytest.mark.parametrize(("open_count", "slots"), [(0, 2), (1, 1), (2, 0), (3, 0), (10, 0)])
+    def test_the_cap_arithmetic(self, monkeypatch, open_count, slots):
+        # Clamped at zero above the cap rather than going negative: a queue can
+        # legitimately exceed it — a human filing by hand, or the cap lowered
+        # later — and a negative allowance is a number arithmetic downstream
+        # could turn back into room.
+        self._serve(monkeypatch, [self._issue(n) for n in range(open_count)])
+        answer = setup.proposal_slots("platform", now=self.NOW)
+        assert (answer["open"], answer["slots"], answer["cap"]) == (open_count, slots, setup.PROPOSAL_CAP)
+
+    def test_pull_requests_do_not_eat_a_slot(self, monkeypatch):
+        """GitHub models a PR as an issue, and `/issues` returns both. A cowork PR
+        carries `workstream:<name>` by house rule, so counting it would let the
+        one-open-PR guard charge twice for the same piece of work."""
+        self._serve(
+            monkeypatch,
+            [self._issue(1), self._issue(2, pull_request={"url": "…"}), self._issue(3, pull_request={})],
+        )
+        answer = setup.proposal_slots("platform", now=self.NOW)
+        assert answer["open"] == 1
+        assert [item["number"] for item in answer["blocking"]] == [1]
+
+    def test_an_unreadable_count_is_null_and_never_zero(self, monkeypatch):
+        """The distinction the sweep depends on. `slots: 0` is a full queue and
+        `slots: None` is a failed query, and the sweep answers them differently —
+        the second files criticals and says the read failed. Reporting a refused
+        query as an empty queue would open the gate on exactly the unattended
+        runs it exists to bound."""
+        self._serve(monkeypatch, None, ok=False, error="HTTP 403")
+        answer = setup.proposal_slots("platform", now=self.NOW)
+        assert answer["slots"] is None
+        assert answer["open"] is None
+        assert answer["error"] == "HTTP 403"
+        assert answer["blocking"] == []
+
+    def test_a_non_list_body_is_unreadable_too(self, monkeypatch):
+        """What an egress proxy's error page looks like once it has been parsed:
+        a 2xx carrying something that is not the collection."""
+        self._serve(monkeypatch, {"message": "Not Found"})
+        assert setup.proposal_slots("platform", now=self.NOW)["slots"] is None
+
+    def test_no_slug_is_unreadable_rather_than_empty(self, monkeypatch):
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setattr(setup, "repo_slug", lambda: None)
+        assert setup.proposal_slots("platform", now=self.NOW)["slots"] is None
+
+    def test_the_blocking_list_names_the_issues_to_answer(self, monkeypatch):
+        """Oldest first, because answering one is what reopens a slot and the
+        one that has waited longest is the one to answer."""
+        self._serve(monkeypatch, [self._issue(180, days_old=2), self._issue(146, days_old=7)])
+        blocking = setup.proposal_slots("platform", now=self.NOW)["blocking"]
+        assert [(item["number"], item["age_days"]) for item in blocking] == [(146, 7), (180, 2)]
+        assert all(item["title"] for item in blocking)
+
+    def test_an_unparseable_timestamp_does_not_break_the_row(self, monkeypatch):
+        """A missing age is a missing age. The row still names the issue, because
+        the number is what a human needs and the age is decoration on it."""
+        self._serve(monkeypatch, [{"number": 5, "title": "t", "created_at": "not a date"}])
+        blocking = setup.proposal_slots("platform", now=self.NOW)["blocking"]
+        assert blocking == [{"number": 5, "title": "t", "age_days": None}]
+
+    def test_the_read_is_rest_on_both_transports(self, monkeypatch):
+        """The one that matters most. Every other read in the script branches to
+        `gh <verb> --json` when `gh` is there, and that is right for labels. It
+        is wrong here: `gh issue list --json` is GraphQL underneath, and
+        ``cowork_github_access_live.json`` records a routine session where `gh`
+        was installed, GH_TOKEN was set, and the GraphQL POST came back 403 from
+        the egress proxy anyway. A gate built on the refused call fails on the
+        unattended runs it exists to bound."""
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        calls: list[tuple[str, ...]] = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            return subprocess.CompletedProcess(list(args), 0, json.dumps([self._issue(1)]), "")
+
+        monkeypatch.setattr(setup.transport, "gh", fake_gh)
+        assert setup.proposal_slots("platform", now=self.NOW)["open"] == 1
+        assert calls, "the gh branch made no call"
+        assert calls[0][0] == "api", f"the gh branch must ask REST, not {calls[0]}"
+        assert "issue" not in calls[0][1].split("?")[0].split("/")[0]
+        assert "labels=cowork:proposal,workstream:platform" in calls[0][1]
+
+    def test_a_gh_html_error_page_is_unreadable(self, monkeypatch):
+        """`gh api` exiting 0 with something that will not parse is the same
+        proxy failure the REST half handles, arriving through the other door."""
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        monkeypatch.setattr(
+            setup.transport, "gh", lambda *a: subprocess.CompletedProcess(list(a), 0, "<html>nope</html>", "")
+        )
+        assert setup.proposal_slots("platform", now=self.NOW)["slots"] is None
+
+    def test_the_fleet_report_covers_every_workstream(self, monkeypatch, capsys):
+        self._serve(monkeypatch, [])
+        assert setup.report_proposal_slots(None, now=self.NOW) == 0
+        rows = json.loads(capsys.readouterr().out)
+        assert [row["workstream"] for row in rows] == setup.parse_workstreams()
+
+    def test_one_workstream_reports_an_object_not_a_list(self, monkeypatch, capsys):
+        self._serve(monkeypatch, [self._issue(1)])
+        assert setup.report_proposal_slots("platform", now=self.NOW) == 0
+        assert json.loads(capsys.readouterr().out)["workstream"] == "platform"
+
+    def test_an_unknown_workstream_is_an_error_not_an_empty_queue(self, monkeypatch, capsys):
+        """A typo must not read as "nothing open, file away" — that is the one
+        wrong answer this command can give."""
+        self._serve(monkeypatch, [])
+        assert setup.report_proposal_slots("web-ui", now=self.NOW) == 2
+        assert "unknown workstream" in capsys.readouterr().err
+
+    def test_a_full_queue_still_exits_zero(self, monkeypatch, capsys):
+        """A full queue is a normal outcome, not a failure. A routine branching
+        on the exit status would read a healthy pause as a broken command."""
+        self._serve(monkeypatch, [self._issue(1), self._issue(2)])
+        assert setup.report_proposal_slots("platform", now=self.NOW) == 0
+        assert json.loads(capsys.readouterr().out)["slots"] == 0
+
+    def test_the_cap_is_the_number_the_house_rules_state(self):
+        """The rule is written in two places — prose a routine reads, and the
+        constant it obeys — so they are pinned together."""
+        rules = (setup.COWORK / "house-rules.md").read_text(encoding="utf-8")
+        assert f"`PROPOSAL_CAP = {setup.PROPOSAL_CAP}`" in rules, (
+            f"house-rules.md no longer states a cap of {setup.PROPOSAL_CAP}"
+        )

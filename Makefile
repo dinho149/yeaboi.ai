@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-teardown go-build go-test go-lint parity
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-teardown go-build go-test go-lint parity
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -89,6 +89,34 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
+
+# --- Beta sign-off (see cowork/release-signoff.md) --------------------------
+#
+# Every release-worthy merge publishes a PyPI pre-release; a human turns the
+# accumulated batch into the official X.Y.Z once a week. These are that human's
+# commands, and there are two test sessions rather than one: the fleet
+# maintains what exists AND builds one provider integration a week, and those are
+# different things to sit down and exercise.
+#
+# `beta-check` only reports. Each `beta-sign-*` records that track's sign-off on
+# the promotion ask, and the LAST one writes the bare `<!-- tested: -->` marker
+# publish.yml greps for — which is what lets it cut the final from the exact
+# commit that was tested, and what stops a half-signed batch being promoted.
+#
+# Two targets rather than `make beta-sign <track>`: Make reads a bare word as a
+# second goal, so that spelling fails with "No rule to make target 'integration'".
+
+beta-check: ## What is installable, what changed, and what to exercise by hand
+	@$(UV) run python scripts/beta_signoff.py check
+
+beta-sign-maintenance: ## Record the maintenance sign-off (security, bugs, chores, docs)
+	@$(UV) run python scripts/beta_signoff.py sign maintenance
+
+beta-sign-integration: ## Record the integration sign-off (this week's provider campaign)
+	@$(UV) run python scripts/beta_signoff.py sign integration
+
+beta-promote: ## Promote the tested pre-release to the official X.Y.Z (prompts)
+	@$(UV) run python scripts/beta_signoff.py promote
 
 # --- Front end — TS sources in frontend/, built output committed ------------
 #
@@ -227,6 +255,9 @@ cowork-agenda: ## Show what the cowork fleet runs today, and over the next week
 
 cowork-check: ## Verify cowork labels, repo variables, and routine/README agreement
 	@$(UV) run python scripts/cowork_setup.py --check
+
+cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=name for one)
+	@$(UV) run python scripts/cowork_setup.py --proposal-slots $(WORKSTREAM)
 
 # Deleting a workstream label strips it off every issue carrying it, and nothing
 # puts those back — hence the prompt, and hence the routines staying out of it.

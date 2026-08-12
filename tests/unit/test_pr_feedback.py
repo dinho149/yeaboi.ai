@@ -841,26 +841,58 @@ class FakeGh:
 def gh(monkeypatch):
     fake = FakeGh()
     monkeypatch.setattr(prf, "_gh", fake)
+    # `transport.graphql` routes itself and calls the transport's own `gh`, so
+    # patching only `prf._gh` leaves the GraphQL read going out over the network.
+    # It did, briefly, and the test failure named a real repository.
+    monkeypatch.setattr(prf.transport, "gh", fake)
+    monkeypatch.setattr(prf.transport, "gh_available", lambda: True)
     return fake
 
 
+@pytest.fixture(autouse=True)
+def _no_live_github(monkeypatch):
+    """No ambient token, no memoised repository, and no unstubbed REST call.
+
+    ``_gh`` is no longer the only seam: the transport authenticates from the
+    *environment*, so a developer with GH_TOKEN exported would have any gap in a
+    stub go live against their own repo rather than fail.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    prf.transport.reset_slug_cache()
+
+    def refuse(method, path, body=None):
+        raise AssertionError(f"a test reached the REST transport unstubbed: {method} {path}")
+
+    monkeypatch.setattr(prf.transport, "api", refuse)
+
+
 def _seed_pr(gh, **over):
-    gh.reply(
-        "pr view",
-        {
-            "number": 123,
-            "headRefOid": HEAD,
-            "isDraft": False,
-            "author": {"login": AUTHOR},
-            "labels": [{"name": "cowork"}],
-            "reviewDecision": None,
-            **over,
-        },
-    )
     gh.reply("issues/123/comments", [])
     gh.reply("pulls/123/reviews", [])
-    gh.reply("graphql", {"data": {"repository": {"pullRequest": {"reviewThreads": {"pageInfo": {}, "nodes": []}}}}})
+    gh.reply("graphql", {"data": {"repository": {"pullRequest": _pull(**over)}}})
     gh.reply("actions/runs", {"workflow_runs": []})
+
+
+def _pull(threads=None, has_next=False, **over):
+    """The `pullRequest` node `PR_QUERY` returns — metadata and threads together.
+
+    They used to come from two calls, `gh pr view` and a GraphQL query. One call
+    now, because `reviewDecision` has no REST equivalent and asking for it here
+    is what lets both transports answer the same question.
+    """
+    return {
+        "number": 123,
+        "headRefOid": HEAD,
+        "headRefName": "feature/x",
+        "isDraft": False,
+        "reviewDecision": None,
+        "author": {"login": AUTHOR},
+        "labels": {"nodes": [{"name": "cowork"}]},
+        "reviewThreads": {"pageInfo": {"hasNextPage": has_next}, "nodes": threads or []},
+        **over,
+    }
 
 
 class TestFetch:
@@ -893,7 +925,9 @@ class TestFetch:
         assert snap.comments[0].written_at > snap.comments[0].created_at
 
     def test_a_failed_read_is_none_rather_than_a_half_snapshot(self, gh):
-        gh.reply("pr view", "", code=1)
+        """The metadata read is the GraphQL one now. A half snapshot would be
+        read as a PR with no threads and no labels — a clean one."""
+        gh.reply("graphql", "", code=1)
         assert prf.fetch_snapshot(123, "o/r") is None
 
     def test_threads_are_normalised_and_truncation_is_carried(self, gh):
@@ -995,9 +1029,19 @@ class TestFetch:
         assert prf.fetch_ci("o/r", HEAD) == prf.CIState(None, None)
         assert prf.fetch_ci("o/r", "") == prf.CIState(None, None)
 
-    def test_the_repo_and_pr_lookups_survive_a_gh_failure(self, gh):
+    def test_the_repo_and_pr_lookups_survive_a_gh_failure(self, gh, monkeypatch):
+        """A rejected lookup is None, not a guess.
+
+        `repo_slug` falls through `gh` to the environment to the git remote, so
+        failing only the `gh` call would still find this checkout's own repo —
+        the autouse guard clears GITHUB_REPOSITORY and the remote is stubbed
+        away here, leaving nothing to answer with.
+        """
         gh.reply("repo view", "", code=1)
         gh.reply("pr view", "", code=1)
+        monkeypatch.setattr(
+            prf.transport.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "no remote")
+        )
         assert prf.repo_slug() is None
         assert prf.current_pr() is None
 
@@ -1014,7 +1058,7 @@ class TestPosting:
     def test_a_failed_post_is_reported_rather_than_swallowed(self, gh, capsys):
         gh.reply("statuses", "", code=1)
         assert prf.post_status("o/r", HEAD, prf.Verdict("success", "fine")) is False
-        assert "could not post the status" in capsys.readouterr().err
+        assert f"POST repos/o/r/statuses/{HEAD} failed" in capsys.readouterr().err
 
     def test_a_clear_verdict_never_creates_a_comment(self, gh):
         """Only ever edited into an existing sticky. A PR with nothing to say
@@ -1050,7 +1094,10 @@ class TestPosting:
 class TestMain:
     @pytest.fixture(autouse=True)
     def _gh_on_path(self, monkeypatch):
-        monkeypatch.setattr(prf.shutil, "which", lambda _: "/usr/bin/gh")
+        """`gh` present and answering, which is what the `gh` fixture already
+        fakes — pinned here too so `main`'s "no transport at all" guard is only
+        exercised by the test that means to."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: "/usr/bin/gh")
 
     def _repo(self, gh):
         gh.reply("repo view", {"nameWithOwner": "o/r"})
@@ -1092,19 +1139,81 @@ class TestMain:
         """A required status that was never posted is indistinguishable in the UI
         from this workflow not existing, and blocks the merge with nothing to do."""
         self._repo(gh)
-        gh.reply("issues/123/comments", "", code=1)
-        gh.reply("pr view", {"headRefOid": HEAD})
+        _seed_pr(gh)
+        # The comments read fails, so the snapshot is None and the fallback path
+        # re-reads the head SHA on its own — over REST's spelling, `head.sha`.
+        gh.replies.insert(0, ("issues/123/comments", 1, ""))
+        gh.reply("repos/o/r/pulls/123", {"head": {"sha": HEAD}})
         assert prf.main(["--pr", "123", "--status"]) == 2
         posted = " ".join(gh.sent(f"statuses/{HEAD}")[0])
         assert "state=pending" in posted
 
-    def test_a_missing_gh_says_how_to_get_one(self, monkeypatch, capsys):
-        monkeypatch.setattr(prf.shutil, "which", lambda _: None)
+    def test_no_transport_at_all_says_how_to_get_one(self, monkeypatch, capsys):
+        """No `gh` *and* no token. Either alone is fine now, and saying so is the
+        point: the routine session that runs this has only the second, and the
+        old message sent it to `brew install gh`."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: None)
         assert prf.main(["--pr", "1"]) == 2
-        assert "brew install gh" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "brew install gh" in err and "GH_TOKEN" in err
+
+    def test_a_token_alone_is_enough_to_start(self, monkeypatch, gh, capsys):
+        """The production shape: a token, no CLI. It must get past the guard —
+        it used to exit 2 here and post nothing, which reads as a gate that was
+        never asked to run."""
+        monkeypatch.setattr(prf.transport.shutil, "which", lambda _: None)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(prf.transport, "gh_available", lambda: False)
+        monkeypatch.setattr(prf, "repo_slug", lambda: None)
+        assert prf.main(["--pr", "1"]) == 2
+        err = capsys.readouterr().err
+        assert "brew install gh" not in err
+        assert "could not resolve the repo" in err
 
     def test_no_pr_and_none_on_this_branch_is_an_error_not_a_pass(self, gh, capsys):
         self._repo(gh)
         gh.reply("pr view", "", code=1)
         assert prf.main([]) == 2
         assert "no PR given" in capsys.readouterr().err
+
+
+class TestAnUnreadablePRIsNotACleanOne:
+    """The failure this whole gate exists to prevent, in its newest form.
+
+    A routine session's GitHub egress refuses GraphQL (403, recorded in
+    `tests/fixtures/cowork_github_access_live.json`), and review threads plus
+    `reviewDecision` exist in v4 and nowhere in v3. So there the gate reads
+    *nothing* — and the one thing it must never do is let that look like a PR
+    with nothing to answer.
+    """
+
+    def test_the_proxy_refusal_is_named_with_its_remedy(self):
+        prf.LAST_FAILURE = (
+            "graphql: HTTP 403 on POST /graphql: This GraphQL query is not enabled for this session "
+            "— only the pinned set of PR-review operations is served."
+        )
+        reason = prf.unreadable_reason()
+        assert "NOTHING was determined" in reason
+        assert "Do not read this as a clean PR" in reason
+        assert "pr-feedback.yml" in reason
+
+    def test_an_ordinary_failure_is_not_dressed_up_as_the_proxy(self):
+        """A 403 from a token-scope problem is a different fault with a different
+        remedy, so the proxy wording must not be reached for every failure."""
+        prf.LAST_FAILURE = "graphql: HTTP 401 on POST /graphql: Bad credentials"
+        reason = prf.unreadable_reason()
+        assert "Bad credentials" in reason
+        assert "NOTHING was determined" not in reason
+
+    def test_an_unreadable_pr_says_so_on_stderr_and_exits_non_zero(self, monkeypatch, capsys):
+        monkeypatch.setattr(prf.transport, "gh_available", lambda: False)
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(prf, "repo_slug", lambda: "owner/name")
+        monkeypatch.setattr(prf, "fetch_snapshot", lambda number, slug: None)
+        prf.LAST_FAILURE = "graphql: this GraphQL query is not enabled for this session"
+
+        assert prf.main(["--pr", "7"]) == 2
+
+        err = capsys.readouterr().err
+        assert "could not read PR #7" in err
+        assert "Do not read this as a clean PR" in err

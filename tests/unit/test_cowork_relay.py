@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,11 @@ def item(number: int, ts: str = "1", **reactions: list[str]) -> dict:
 def promotion(number: int, version: str = "3.6.1", ts: str = "1", **reactions: list[str]) -> dict:
     """The ask routine's reply, in the exact contract `PROMOTE_RE` parses."""
     return reply(ts, f"#{number} — promote {version} — https://example.invalid/{number}", **reactions)
+
+
+def candidate(number: int, provider: str = "gitlab", ts: str = "1", **reactions: list[str]) -> dict:
+    """The digest's shortlist line, in the exact contract `CANDIDATE_RE` parses."""
+    return reply(ts, f"#{number} — integration candidate: {provider} — https://example.invalid/{number}", **reactions)
 
 
 class TestRecordedFailure:
@@ -183,8 +189,42 @@ class TestPromotion:
             return '{"labels": [{"name": "release:promotion"}, {"name": "type:chore"}]}'
 
         assert relay.is_promotion(231, runner=runner) is True
-        assert seen["argv"] == ["gh", "issue", "view", "231", "--json", "labels"]
+        assert seen["argv"] == ["gh", "issue", "view", "231", "--json", "labels,state"]
         assert relay.is_promotion(231, runner=lambda a: '{"labels": [{"name": "type:chore"}]}') is False
+
+    def test_a_closed_ask_cannot_be_promoted(self):
+        """The stale-Slack-reply hole, closed on the only side that can close it.
+
+        `cron/release-promote-ask.md` supersedes an unanswered ask by closing it
+        and opening a fresh one — which dedups GitHub and does nothing for Slack.
+        Last week's thread reply is still in the 48h read window, still unmarked,
+        and `publish.yml`'s guard fires on the `labeled` event without ever
+        looking at issue state. A ✅ there would promote against a manifest nobody
+        read. `ask` rather than `reject`: the human does want to promote, just not
+        on that issue.
+        """
+        payload = '{"labels": [{"name": "release:promotion"}], "state": "CLOSED"}'
+        assert relay.is_promotion(231, runner=lambda argv: payload) is None
+        plan = relay.build_plan(
+            [promotion(231, white_check_mark=[HUMAN])],
+            ALLOWLIST,
+            promotion_check=lambda n: relay.is_promotion(231, runner=lambda a: payload),
+        )["plan"]
+        assert plan[0]["verb"] == "ask"
+        assert plan[0]["command"] is None, "no label at all — not release:promote, not claude-implement"
+
+    def test_an_open_ask_still_promotes(self):
+        payload = '{"labels": [{"name": "release:promotion"}], "state": "OPEN"}'
+        assert relay.is_promotion(231, runner=lambda argv: payload) is True
+
+    def test_a_payload_with_no_state_reads_as_open(self):
+        """Absence is not evidence: an older transport shape is not a closed issue."""
+        assert relay.is_promotion(231, runner=lambda a: '{"labels": [{"name": "release:promotion"}]}') is True
+
+    def test_a_closed_ordinary_proposal_is_untouched_by_the_state_check(self):
+        """The state read must only gate promotion, not ordinary approvals."""
+        payload = '{"labels": [{"name": "type:chore"}], "state": "CLOSED"}'
+        assert relay.is_promotion(231, runner=lambda a: payload) is False
 
     def test_an_ordinary_proposal_is_still_an_approval(self):
         plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
@@ -228,6 +268,128 @@ class TestPromotion:
             [promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST, promotion_check=lambda n: True
         )["plan"]
         assert plan == []
+
+
+class TestCampaignCandidate:
+    """✅ on a shortlisted provider makes it this week's campaign.
+
+    Cloned from `TestPromotion` deliberately, including the tristate and the
+    crafted-title defence, because the failure it prevents is worse. Reusing
+    `claude-implement` here would not merely mislabel: `claude.yml` fires a
+    110-turn unattended implement job on any issue receiving that label, and a
+    candidate issue describes a week of work across six workstreams' files. The
+    approval would be spent with nothing to show and no second chance until the
+    next shortlist.
+    """
+
+    def test_an_approval_on_a_candidate_starts_the_campaign(self):
+        plan = relay.build_plan([candidate(241, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "campaign"
+        assert plan[0]["command"] == ["gh", "issue", "edit", "241", "--add-label", "integration:approved"]
+        assert "claude-implement" not in plan[0]["command"], "this is the whole reason the label is separate"
+
+    def test_the_shape_alone_is_not_enough_without_the_label(self):
+        plan = relay.build_plan([candidate(241, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: False)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "approve"
+        assert plan[0]["command"][-1] == "claude-implement"
+
+    @pytest.mark.parametrize("payload", [None, "not json", '{"labels": "wrong shape"}', ""])
+    def test_an_unanswerable_question_is_not_a_no(self, payload):
+        assert relay.is_campaign_candidate(241, runner=lambda argv: payload) is None
+
+    def test_an_unreachable_github_asks_rather_than_approving(self):
+        plan = relay.build_plan([candidate(241, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: None)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "ask"
+        assert plan[0]["command"] is None, "no command at all — not `claude-implement` by another name"
+
+    def test_the_label_is_read_from_github(self):
+        seen = {}
+
+        def runner(argv):
+            seen["argv"] = argv
+            return '{"labels": [{"name": "integration:candidate"}]}'
+
+        assert relay.is_campaign_candidate(241, runner=runner) is True
+        assert seen["argv"] == ["gh", "issue", "view", "241", "--json", "labels,state"]
+        assert relay.is_campaign_candidate(241, runner=lambda a: '{"labels": [{"name": "type:chore"}]}') is False
+
+    def test_a_closed_candidate_cannot_be_approved(self):
+        """Monday supersedes an unanswered shortlist by closing it and filing a
+        fresh one — which dedups GitHub and does nothing for Slack. Last week's
+        three replies are still in the read window. A late ✅ would approve a
+        campaign against a shortlist nobody re-read."""
+        payload = '{"labels": [{"name": "integration:candidate"}], "state": "CLOSED"}'
+        assert relay.is_campaign_candidate(241, runner=lambda argv: payload) is None
+        plan = relay.build_plan(
+            [candidate(241, white_check_mark=[HUMAN])],
+            ALLOWLIST,
+            candidate_check=lambda n: relay.is_campaign_candidate(241, runner=lambda a: payload),
+        )["plan"]
+        assert plan[0]["verb"] == "ask"
+        assert plan[0]["command"] is None
+
+    def test_a_payload_with_no_state_reads_as_open(self):
+        assert relay.is_campaign_candidate(241, runner=lambda a: '{"labels": [{"name": "integration:candidate"}]}')
+
+    def test_an_ordinary_proposal_is_still_an_approval(self):
+        """The test that would have caught reusing `claude-implement` for the pick."""
+        plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True)[
+            "plan"
+        ]
+        assert plan[0]["verb"] == "approve"
+        assert plan[0]["command"][-1] == "claude-implement"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "#12 — [bug][platform] integration candidates keep timing out — https://example.invalid/12",
+            "#12 — integration candidates — https://example.invalid/12",
+            "integration candidate: gitlab — #12",
+        ],
+    )
+    def test_a_title_that_merely_mentions_one_does_not(self, text):
+        plan = relay.build_plan(
+            [reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True
+        )["plan"]
+        assert all(entry["verb"] != "campaign" for entry in plan)
+
+    def test_a_rejection_just_closes_it(self):
+        """❌ is "not this provider", and Monday reads closed candidates as the
+        standing record of what it must not re-propose."""
+        plan = relay.build_plan([candidate(241, x=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True)["plan"]
+        assert plan[0]["verb"] == "reject"
+        assert plan[0]["command"] == ["gh", "issue", "close", "241"]
+
+    def test_the_campaign_command_cannot_replace_a_label_set(self):
+        for entry in relay.build_plan(
+            [candidate(241, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True
+        )["plan"]:
+            argv = entry["command"]
+            assert "api" not in argv
+            assert not {"PUT", "-X", "--method"} & set(argv)
+            assert "--remove-label" not in argv
+
+    def test_an_unauthorised_reaction_approves_nothing(self):
+        plan = relay.build_plan(
+            [candidate(241, white_check_mark=["USTRANGER"])], ALLOWLIST, candidate_check=lambda n: True
+        )["plan"]
+        assert plan == []
+
+    def test_a_promotion_and_a_candidate_do_not_collide(self):
+        """Two special contracts in one thread, each routed by its own label."""
+        plan = relay.build_plan(
+            [promotion(231, ts="1", white_check_mark=[HUMAN]), candidate(241, ts="2", white_check_mark=[HUMAN])],
+            ALLOWLIST,
+            promotion_check=lambda n: True,
+            candidate_check=lambda n: True,
+        )["plan"]
+        assert [entry["verb"] for entry in plan] == ["promote", "campaign"]
 
 
 class TestAuthorisation:
@@ -342,3 +504,39 @@ class TestEntryPoint:
     def test_no_command_for_an_unknown_verb(self):
         with pytest.raises(relay.RelayError):
             relay._command("shrug", 1)
+
+
+class TestTheDigestWritesWhatTheRelayParses:
+    """The reply shape is a contract between two files that never see each other.
+
+    `cron/digest.md` is prose a model follows; `CANDIDATE_RE` is a regex that
+    reads the result an hour later. Nothing at run time reconciles them, and the
+    failure is not a parse error: a candidate written in the ordinary
+    verbatim-title shape still matches `ITEM_RE`, so a ✅ on it resolves to
+    `approve` and applies `claude-implement` — and `claude.yml` fires a 110-turn
+    unattended implement job on an issue describing a week of work across six
+    workstreams' files. That is the exact outcome the separate
+    `integration:approved` label exists to prevent.
+    """
+
+    def _examples(self) -> list[str]:
+        text = (ROOT / "cowork" / "routines" / "cron" / "digest.md").read_text(encoding="utf-8")
+        blocks = re.findall(r"```slack-reply\n(.*?)```", text, re.S)
+        assert blocks, "digest.md no longer shows the reply shape it is required to write"
+        return [line.strip() for block in blocks for line in block.splitlines() if line.strip()]
+
+    def test_every_example_reply_is_one_the_relay_can_read(self):
+        for line in self._examples():
+            assert relay.ITEM_RE.match(line), f"the relay would ignore this reply entirely: {line}"
+
+    def test_the_candidate_shape_is_shown_and_routes_to_the_campaign_label(self):
+        """Shown, not merely described: the model copies the example."""
+        candidates = [line for line in self._examples() if relay.CANDIDATE_RE.match(line)]
+        assert candidates, "digest.md shows no `integration candidate:` reply, so ✅ on one cannot work"
+        for line in candidates:
+            assert "claude-implement" not in line
+
+    def test_a_candidate_written_in_the_ordinary_shape_would_route_to_implement(self):
+        """Why the test above matters, stated as the failure it prevents."""
+        wrong = "#248 — Integrate GitLab so the roadmap can read epics — https://example.invalid/248"
+        assert relay.ITEM_RE.match(wrong) and not relay.CANDIDATE_RE.match(wrong)
