@@ -285,10 +285,35 @@ def notion_read_page(page_id: str) -> str:
             kwargs = {"block_id": page_id, "page_size": 100}
             if cursor:
                 kwargs["start_cursor"] = cursor
-            children = client.blocks.children.list(**kwargs)
+            try:
+                children = client.blocks.children.list(**kwargs)
+            except APIResponseError as e:
+                # A mid-walk failure must not discard the prefix already collected.
+                # While this made exactly one request an error lost nothing; now a
+                # 429 on request 3 of 4 would throw away three pages the caller can
+                # still use. A failure on the *first* request has no prefix to keep,
+                # so it stays an error and reaches the handler below unchanged.
+                if not blocks:
+                    raise
+                logger.warning(
+                    "notion_read_page: %s on request %d for page %s — returning %d block(s) as a partial read",
+                    e,
+                    requests + 1,
+                    page_id,
+                    len(blocks),
+                )
+                capped = True
+                break
             requests += 1
             if not isinstance(children, dict):
                 # Undocumented response shape — keep what we have, report it partial.
+                logger.warning(
+                    "notion_read_page: non-dict response on request %d for page %s — "
+                    "returning %d block(s) as a partial read",
+                    requests,
+                    page_id,
+                    len(blocks),
+                )
                 capped = True
                 break
             blocks.extend(children.get("results", []))
@@ -297,9 +322,28 @@ def notion_read_page(page_id: str) -> str:
             cursor = children.get("next_cursor")
             if not cursor:
                 # More exists and Notion gave us no way to ask for it.
+                logger.warning(
+                    "notion_read_page: page %s reported has_more with no next_cursor after %d block(s) — "
+                    "returning a partial read",
+                    page_id,
+                    len(blocks),
+                )
                 capped = True
                 break
-            if len(_blocks_to_text(blocks)) >= _MAX_CONTENT_CHARS or requests >= _MAX_BLOCK_REQUESTS:
+            if requests >= _MAX_BLOCK_REQUESTS:
+                # By construction pathological: if this ever fires on a real page,
+                # the ceiling is what wants re-tuning, so say so rather than only
+                # recording it at debug level nobody runs with.
+                logger.warning(
+                    "notion_read_page: hit the %d-request ceiling on page %s after %d block(s) — "
+                    "returning a partial read",
+                    _MAX_BLOCK_REQUESTS,
+                    page_id,
+                    len(blocks),
+                )
+                capped = True
+                break
+            if len(_blocks_to_text(blocks)) >= _MAX_CONTENT_CHARS:
                 capped = True
                 break
 

@@ -6,6 +6,7 @@ each tool, plus helpers and registration in get_tools(). Mirrors
 test_tools_confluence.py.
 """
 
+import logging
 from unittest.mock import MagicMock
 
 import httpx
@@ -372,6 +373,58 @@ class TestNotionReadPage:
         assert "block 99" in result
         assert "Truncated" in result
         assert mock_client.blocks.children.list.call_count == 2
+
+    def test_keeps_the_prefix_when_a_later_request_errors(self, monkeypatch):
+        # A rate limit part-way through the walk must not discard what is already
+        # held: before this call paginated, one request meant an error lost nothing.
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                raise _make_api_error(429)
+            return {
+                "results": [_para_block(f"block {i}") for i in range(100)],
+                "has_more": True,
+                "next_cursor": "cur2",
+            }
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("6", "Rate limited")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "6"})
+
+        assert "block 99" in result
+        assert "Truncated" in result
+        assert "Error" not in result
+
+    def test_first_request_error_is_still_an_error(self, monkeypatch):
+        # No prefix exists yet, so there is nothing to preserve and the failure must
+        # surface rather than be dressed up as a truncated read of an empty page.
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("7", "Dead")
+        mock_client.blocks.children.list.side_effect = _make_api_error(429)
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "7"})
+
+        assert "Error" in result
+        assert "Truncated" not in result
+
+    def test_every_partial_read_warns(self, monkeypatch, caplog):
+        # get_log_level() falls back to WARNING, so a debug line records these for
+        # nobody. Each anomalous exit has to be visible in a default-level run.
+        def _list(*_args, **kwargs):
+            return {"results": [_para_block("x")], "has_more": True, "next_cursor": None}
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("8", "No cursor")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        with caplog.at_level(logging.WARNING, logger="yeaboi.tools.notion"):
+            notion_read_page.invoke({"page_id": "8"})
+
+        assert any("has_more with no next_cursor" in r.getMessage() for r in caplog.records)
 
     def test_http_error_404(self, monkeypatch):
         mock_client = MagicMock()
