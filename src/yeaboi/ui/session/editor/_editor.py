@@ -43,6 +43,7 @@ from yeaboi.ui.session.editor._editor_core import (
 )
 from yeaboi.ui.shared._animations import lerp_color
 from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
+from yeaboi.ui.shared._input import paste_payload
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -699,7 +700,7 @@ def edit_story(
         elif isinstance(key, str) and key.startswith("paste:"):
             min_col = _editable_start(buffer[cursor_row])
             if min_col is not None and cursor_col >= min_col:
-                pasted = key[6:].replace("\n", " ")
+                pasted = paste_payload(key)
                 buffer[cursor_row] = buffer[cursor_row][:cursor_col] + pasted + buffer[cursor_row][cursor_col:]
                 cursor_col += len(pasted)
         elif isinstance(key, str) and len(key) == 1 and key.isprintable():

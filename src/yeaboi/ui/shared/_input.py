@@ -24,6 +24,30 @@ _last_read_had_input = False
 # Set while a field is being typed into, so the app-wide single-letter shortcuts
 # (currently 'c' for the controls drawer) don't steal characters from the buffer.
 _text_entry = False
+# Raw bytes read ahead of the caller and not yet consumed: the tail of a chunked
+# bracketed-paste read that ran past the end marker. Popped before touching the fd
+# so the keystroke typed straight after a paste is never lost. Distinct from
+# _pushback, which holds already-decoded key NAMES and pops LIFO; these are bytes
+# and must come back in order. Single-threaded input, so a plain bytearray is safe.
+_pending_bytes = bytearray()
+# Characters the most recent bracketed paste dropped at _PASTE_KEEP_LIMIT, so the
+# caller can report what the terminal sent rather than only what survived. Read via
+# take_paste_dropped(); same "extra detail about the key just returned" pattern as
+# _last_read_had_input above.
+_last_paste_dropped = 0
+
+# Bracketed paste bounds. The keep limit is deliberately far above the app's own
+# message cap (input_guardrails.MAX_CHAT_INPUT_CHARS) so the *field* does the
+# truncating and can quote real numbers; the reader's job is only to stop a
+# runaway stream from eating memory. The drain limit and the two clocks bound a
+# paste whose end marker never arrives — a byte-at-a-time blocking read used to
+# hang the TUI outright in that case.
+_PASTE_KEEP_LIMIT = 100_000
+_PASTE_DRAIN_LIMIT = 4_000_000
+_PASTE_IDLE_SECONDS = 0.5
+_PASTE_DRAIN_SECONDS = 5.0
+_PASTE_END = b"\x1b[201~"
+_PASTE_CHUNK = 65536
 
 
 def set_text_entry(active: bool) -> None:
@@ -39,6 +63,34 @@ def set_text_entry(active: bool) -> None:
 def push_back_key(key: str) -> None:
     """Return a key to the front of the input stream (LIFO with the buffer)."""
     _pushback.append(key)
+
+
+def take_paste_dropped() -> int:
+    """Characters the most recent bracketed paste dropped at _PASTE_KEEP_LIMIT.
+
+    Read-and-reset: a "paste:" key and its drop count are consumed together, so a
+    stale count can never be attributed to the next paste. Kept off the key string
+    on purpose — "paste:<content>" is parsed by a dozen screens, and a wire-format
+    change would make every one of them silently swallow the paste instead of
+    failing loudly.
+    """
+    global _last_paste_dropped
+    dropped, _last_paste_dropped = _last_paste_dropped, 0
+    return dropped
+
+
+def paste_payload(key: str, *, multiline: bool = False) -> str:
+    """The text carried by a "paste:" key, shaped for the field receiving it.
+
+    Bracketed paste preserves newlines (a pasted brief keeps its paragraphs), so
+    single-line fields — the default — collapse them to spaces and strip the edges:
+    a copied API token almost always carries a trailing newline, and a literal "\n"
+    in a one-row box is invisible corruption.
+    """
+    text = key[len("paste:") :] if key.startswith("paste:") else ""
+    if multiline:
+        return text
+    return text.replace("\n", " ").strip()
 
 
 # True when the most recent "esc" event came from clicking the back tab rather
@@ -80,6 +132,78 @@ def _esc(*, from_tab: bool = False) -> str:
     return "esc"
 
 
+def _read_paste(fd: int) -> tuple[str, int]:
+    """Read a bracketed-paste payload through to its "\x1b[201~" end marker.
+
+    Returns (kept, total): the cleaned text, capped at _PASTE_KEEP_LIMIT, and how
+    many characters the terminal actually sent.
+
+    Three things here are load-bearing and were each a bug before:
+
+    1. It ALWAYS drains to the end marker, however much it keeps. Stopping early
+       leaves the rest of the paste in the tty, where the next reads decode it as
+       individual keystrokes — including the "\r" that means "enter", which sends
+       a half-pasted message and then types the remainder into the next one.
+    2. It reads in chunks and decodes ONCE. Byte-at-a-time decoding turned every
+       non-ASCII character (curly quotes, em dashes, emoji) into U+FFFD, and would
+       cost millions of syscalls at these sizes.
+    3. Every read is bounded. The old loop's blocking read hung the TUI forever if
+       a paste was aborted mid-stream.
+    """
+    import select as _select
+    import time as _time
+
+    # Seed from the read-ahead tail: two pastes in one burst leave the second
+    # one's opening bytes there, and reading the fd first would reorder them.
+    buf = bytearray(_pending_bytes)
+    _pending_bytes.clear()
+    deadline = _time.monotonic() + _PASTE_DRAIN_SECONDS
+    end = buf.find(_PASTE_END)
+    abandoned = False
+    while end == -1:
+        if _time.monotonic() > deadline or len(buf) > _PASTE_DRAIN_LIMIT:
+            abandoned = True
+            break
+        if not _select.select([fd], [], [], _PASTE_IDLE_SECONDS)[0]:
+            # Paste bytes stream continuously; a gap this long means the stream
+            # died without a terminator. Take what we have rather than block.
+            abandoned = True
+            break
+        chunk = os.read(fd, _PASTE_CHUNK)
+        if not chunk:
+            abandoned = True
+            break
+        # Search from just before the join so a marker split across two chunks
+        # is still found, without rescanning the whole buffer each time.
+        start = max(0, len(buf) - (len(_PASTE_END) - 1))
+        buf += chunk
+        end = buf.find(_PASTE_END, start)
+        if end != -1:
+            break
+
+    if end == -1:
+        payload, tail = bytes(buf), b""
+    else:
+        payload, tail = bytes(buf[:end]), bytes(buf[end + len(_PASTE_END) :])
+    if abandoned:
+        # Only here: the stream is malformed or absurd, so its remainder must be
+        # discarded rather than replayed as fake keystrokes. The normal path must
+        # never flush — per-call reads preserve type-ahead (see _read_key_impl).
+        try:
+            termios.tcflush(fd, termios.TCIFLUSH)
+        except Exception:  # noqa: BLE001 - a failed flush must not break input
+            pass
+    elif tail:
+        _pending_bytes.extend(tail)
+
+    text = payload.decode("utf-8", errors="replace")
+    # CRLF and lone CR both mean "new line" here; keeping \n is the whole point,
+    # since multi-line pastes used to arrive with their words glued together.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = "".join(c for c in text if c == "\n" or c.isprintable())
+    return text[:_PASTE_KEEP_LIMIT], len(text)
+
+
 def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
     """Read a single keypress from the terminal in raw mode.
 
@@ -104,8 +228,9 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
     """
     import select as _select
 
-    global _last_read_had_input
+    global _last_read_had_input, _last_paste_dropped
     _last_read_had_input = False
+    _last_paste_dropped = 0
 
     if _pushback:
         _last_read_had_input = True
@@ -129,11 +254,16 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         #   - ISIG — signal generation, so every control char arrives as a keypress
         #     rather than a signal; read_key turns Ctrl+C back into KeyboardInterrupt
         #     itself, so quitting behaves exactly as it looks.
+        #   - ICRNL — CR-to-NL translation, so a pasted CRLF arrives as CRLF and
+        #     _read_paste can fold it into one newline. Left on, the line
+        #     discipline hands us "\n\n" and every Windows-line-ended paste
+        #     comes out double-spaced. Enter is unaffected: "\r" and "\n" both
+        #     already decode to "enter" below.
         new_settings = termios.tcgetattr(fd)
-        new_settings[0] &= ~termios.IXON  # input flags (c_iflag)
+        new_settings[0] &= ~(termios.IXON | termios.ICRNL)  # input flags (c_iflag)
         new_settings[3] &= ~(termios.IEXTEN | termios.ISIG)  # local flags (c_lflag)
         termios.tcsetattr(fd, termios.TCSANOW, new_settings)
-        if timeout is not None:
+        if timeout is not None and not _pending_bytes:
             try:
                 ready, _, _ = _select.select([fd], [], [], timeout)
             except KeyboardInterrupt:
@@ -142,7 +272,13 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                 return ""
 
         def _read1() -> str:
-            """Read exactly 1 byte from fd, bypassing Python's buffer."""
+            """Read exactly 1 byte, from the paste read-ahead tail or the fd.
+
+            Bypasses Python's buffer (see the docstring above); the tail comes
+            first and in order, so a key typed straight after a paste survives.
+            """
+            if _pending_bytes:
+                return bytes([_pending_bytes.pop(0)]).decode("utf-8", errors="replace")
             return os.read(fd, 1).decode("utf-8", errors="replace")
 
         def _read_available(wait: float = 0.05) -> str:
@@ -333,27 +469,9 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                     # Read remaining 3 chars of the start marker: "00~"
                     marker_rest = _read1() + _read1() + _read1()
                     if marker_rest == "00~":
-                        # Blocking reads until end marker \x1b[201~
-                        chars: list[str] = []
-                        max_len = 10000  # safety limit
-                        while len(chars) < max_len:
-                            c = _read1()
-                            if c == "\x1b":
-                                # Potential end marker: \x1b[201~
-                                m1 = _read1()
-                                if m1 == "[":
-                                    m2 = _read1() + _read1() + _read1() + _read1()
-                                    if m2 == "201~":
-                                        break  # end of paste
-                                    chars.append("\x1b[" + m2)
-                                else:
-                                    chars.append("\x1b" + m1)
-                            else:
-                                chars.append(c)
-                        content = "".join(chars)
-                        content = content.replace("\r", "").replace("\n", "")
-                        content = "".join(c for c in content if c.isprintable())
+                        content, total = _read_paste(fd)
                         if content:
+                            _last_paste_dropped = total - len(content)
                             return f"paste:{content}"
                     else:
                         _read_available()
@@ -481,9 +599,10 @@ def enter_raw_mode(stdin=None) -> None:
         _saved_term_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # disables ICANON + ECHO
         # Mirror read_key: drop IXON/IEXTEN/ISIG so Ctrl+S / Ctrl+O / Ctrl+C reach
-        # the app rather than the line discipline (read_key re-raises Ctrl+C).
+        # the app rather than the line discipline (read_key re-raises Ctrl+C),
+        # and ICRNL so a pasted CRLF stays CRLF (see read_key for why).
         m = termios.tcgetattr(fd)
-        m[0] &= ~termios.IXON
+        m[0] &= ~(termios.IXON | termios.ICRNL)
         m[3] &= ~(termios.IEXTEN | termios.ISIG)
         termios.tcsetattr(fd, termios.TCSANOW, m)
     except Exception:  # noqa: BLE001 - not a tty (pipe, redirect, CI); leave as-is

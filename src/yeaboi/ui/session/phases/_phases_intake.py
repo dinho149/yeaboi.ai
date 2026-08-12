@@ -27,6 +27,7 @@ from yeaboi.ui.session.screens._screens_input import (
     _image_hint,
     _voice_hint,
 )
+from yeaboi.ui.shared._input import paste_payload
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ def _phase_description_input(
             input_lines[cursor_row] = line[:word_start] + line[cursor_col:]
             cursor_col = word_start
         elif isinstance(key, str) and key.startswith("paste:"):
-            pasted = key[6:]
+            pasted = paste_payload(key, multiline=True)
             paste_lines = pasted.split("\n")
             if paste_lines:
                 # Insert first chunk at cursor
@@ -715,7 +716,7 @@ def _question_input_loop(
             input_value = input_value[:word_start] + input_value[cursor_pos:]
             cursor_pos = word_start
         elif isinstance(key, str) and key.startswith("paste:"):
-            pasted = key[6:]
+            pasted = paste_payload(key)
             input_value = input_value[:cursor_pos] + pasted + input_value[cursor_pos:]
             cursor_pos += len(pasted)
         elif key == "ctrl+v":

@@ -24,6 +24,7 @@ from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
 from yeaboi.ui.provider_select._verification import _verify_azdevops, _verify_jira
 from yeaboi.ui.provider_select.screens._screens_vc import _build_issue_tracking_screen
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
+from yeaboi.ui.shared._input import paste_payload
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 
 logger = logging.getLogger(__name__)
@@ -353,7 +354,7 @@ def _run_issue_tracking(
             elif key == "tab":
                 it_selected = (it_selected + 1) % it_n
             elif key.startswith("paste:"):
-                it_values[it_selected] = it_values.get(it_selected, "") + key[6:]
+                it_values[it_selected] = it_values.get(it_selected, "") + paste_payload(key)
                 it_errors.pop(it_selected, None)
                 it_verified.pop(it_selected, None)
             elif key == "ctrl+v":

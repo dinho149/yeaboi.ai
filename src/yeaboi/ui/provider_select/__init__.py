@@ -49,7 +49,7 @@ from yeaboi.ui.shared._animations import COLOR_RGB, FADE_IN_LEVELS, FADE_OUT_LEV
 # Ctrl+V response for token/model fields — their content never reaches an LLM,
 # so image paste is rejected with the standard notice (see ui/shared/_attachments.py).
 from yeaboi.ui.shared._attachments import UNSUPPORTED_MESSAGE as _IMG_UNSUPPORTED
-from yeaboi.ui.shared._input import disable_bracketed_paste, enable_bracketed_paste
+from yeaboi.ui.shared._input import disable_bracketed_paste, enable_bracketed_paste, paste_payload
 from yeaboi.ui.shared._input import read_key as _read_key  # noqa: F401 — re-export for compat
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 
@@ -429,7 +429,7 @@ def select_provider(
                         err = ""
                         verified = None
                     elif key.startswith("paste:"):
-                        val += key[6:]
+                        val += paste_payload(key)
                         err = ""
                         verified = None
                     elif key == "ctrl+v":
@@ -667,7 +667,7 @@ def select_provider(
                         error = ""
                         verified = None
                     elif key.startswith("paste:"):
-                        input_value += key[6:]
+                        input_value += paste_payload(key)
                         error = ""
                         verified = None
                     elif key == "ctrl+v":
@@ -1019,7 +1019,7 @@ def select_provider(
                         vc_error = ""
                         vc_verified = None
                     elif key.startswith("paste:"):
-                        vc_input += key[6:]
+                        vc_input += paste_payload(key)
                         vc_error = ""
                         vc_verified = None
                     elif key == "ctrl+v":

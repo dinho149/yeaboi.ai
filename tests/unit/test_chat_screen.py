@@ -228,3 +228,56 @@ class TestStates:
         out = _render(_screen(composer=composer, command_menu=menu))
         assert "/export" in out
         assert "/edit" in out
+
+
+class TestHintRow:
+    """The hint row is the only place most people learn these keys, so it has to
+    name keys that work and finish its sentences."""
+
+    def _hint(self, width: int) -> str:
+        out = _ANSI.sub("", _render(_screen(width=width, console=_console(width)), width=width))
+        return next(line for line in out.splitlines() if "Enter" in line and "send" in line)
+
+    def test_names_ctrl_n_and_never_alt_enter(self):
+        # Alt+Enter needs Option-as-Meta, which iTerm2 and Terminal.app do not
+        # set by default — advertising it left users with no reachable newline.
+        out = _ANSI.sub("", _render(_screen(width=160, console=_console(160)), width=160))
+        assert "Ctrl+N newline" in out
+        assert "Alt+Enter" not in out
+
+    def test_offers_the_clear_key(self):
+        out = _ANSI.sub("", _render(_screen(width=160, console=_console(160)), width=160))
+        assert "Ctrl+U clear" in out
+
+    def test_row_never_ellipsizes(self):
+        for width in (80, 100, 120, 160):
+            assert "…" not in self._hint(width), f"hint clipped at {width} cols"
+
+    def test_narrow_row_keeps_send_newline_and_the_way_out(self):
+        line = self._hint(80)
+        assert "Enter send" in line
+        assert "Ctrl+N newline" in line
+        assert "Esc Esc" in line  # the escape hatch used to be the part cut off
+
+    def test_screenshot_hint_is_sacrificed_first(self):
+        assert "screenshot" in self._hint(160)
+        assert "screenshot" not in self._hint(80)
+
+    def test_drawer_keeps_every_pair_at_any_width(self):
+        panel = build_chat_screen(
+            ChatTranscript(), ChatComposer(), {}, width=80, height=40, scroll_offset=0, console=_console(80)
+        )
+        tab = panel._hint_tab.plain
+        for fragment in ("Enter send", "Ctrl+N newline", "Ctrl+U clear", "/ commands", "Esc leave"):
+            assert fragment in tab
+
+    def test_truncation_notice_numbers_survive_at_80_columns(self):
+        notice = "Pasted 34,812 characters — kept 10,000, dropped 24,812. The message limit is 10,000 characters."
+        out = _ANSI.sub("", _render(_screen(width=80, console=_console(80), notice=notice), width=80))
+        assert "Pasted 34,812 characters" in out
+        assert "dropped 24,812" in out
+
+    def test_tips_card_names_the_working_keys(self):
+        out = _ANSI.sub("", _render(_screen(width=120, console=_console(120)), width=120))
+        assert "Ctrl+N" in out and "new line" in out
+        assert "clear the box" in out

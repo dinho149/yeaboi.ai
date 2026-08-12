@@ -78,7 +78,7 @@ from yeaboi.ui.shared._animations import (
 )
 from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
-from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
@@ -1526,7 +1526,7 @@ def _settings_edit_keypress(sk: str, edit: dict) -> None:
     elif sk == "end":
         edit["cur"] = len(buf)
     elif isinstance(sk, str) and sk.startswith("paste:"):
-        txt = sk[len("paste:") :]
+        txt = paste_payload(sk)
         edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
     elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
         edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
@@ -3151,7 +3151,7 @@ def _standup_read_line(
         elif k == "word_backspace":  # Ctrl+W
             value = value.rstrip().rsplit(" ", 1)[0] if " " in value.strip() else ""
         elif isinstance(k, str) and k.startswith("paste:"):
-            value += k[len("paste:") :]
+            value += paste_payload(k, multiline=box_rows > 1)
         elif k == "ctrl+v":
             if attachments is None:
                 unsupported_notice(_set_notice)
@@ -15007,7 +15007,7 @@ def select_mode(
                             import_value = ""
                             import_error = ""
                         elif key.startswith("paste:") if isinstance(key, str) else False:
-                            import_value += key[6:]
+                            import_value += paste_payload(key)
                             import_error = ""
                         elif key == "ctrl+v":
                             # A file-path field never reaches an LLM — reject image paste.
