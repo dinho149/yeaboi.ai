@@ -601,6 +601,14 @@ class TestSettingsScreen:
         output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
 
+    def test_tunnel_timeout_row_on_the_system_tab(self):
+        # Auto-expiry for retro/poker/output-share Cloudflare tunnels — same
+        # "0 disables" convention as Session Prune Days, shown right beside it.
+        default = self._render({}, height=60, active_tab=1)
+        assert "Tunnel Timeout" in default and "60" in default
+        off = self._render({"TUNNEL_TIMEOUT_MINUTES": "0"}, height=60, active_tab=1)
+        assert "Tunnel Timeout" in off
+
     def test_settings_tab_action_mapping(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, settings_tab_action
 

@@ -25,6 +25,7 @@ from yeaboi.config import (
     get_team_analysis_fast_model,
     get_team_analysis_llm_max_concurrency,
     get_team_analysis_llm_target_seconds,
+    get_tunnel_timeout_minutes,
     is_beta_notice_enabled,
     is_beta_notice_seen,
     is_langsmith_enabled,
@@ -566,6 +567,34 @@ class TestGetSessionPruneDays:
     def test_invalid_falls_back_to_30(self, monkeypatch):
         monkeypatch.setenv("SESSION_PRUNE_DAYS", "abc")
         assert get_session_prune_days() == 30
+
+
+class TestGetTunnelTimeoutMinutes:
+    """Tests for get_tunnel_timeout_minutes() — TUNNEL_TIMEOUT_MINUTES env var."""
+
+    def test_default_60(self, monkeypatch):
+        monkeypatch.delenv("TUNNEL_TIMEOUT_MINUTES", raising=False)
+        assert get_tunnel_timeout_minutes() == 60
+
+    def test_custom_value(self, monkeypatch):
+        monkeypatch.setenv("TUNNEL_TIMEOUT_MINUTES", "15")
+        assert get_tunnel_timeout_minutes() == 15
+
+    def test_zero_disables(self, monkeypatch):
+        monkeypatch.setenv("TUNNEL_TIMEOUT_MINUTES", "0")
+        assert get_tunnel_timeout_minutes() == 0
+
+    def test_negative_clamps_to_zero(self, monkeypatch):
+        monkeypatch.setenv("TUNNEL_TIMEOUT_MINUTES", "-5")
+        assert get_tunnel_timeout_minutes() == 0
+
+    def test_invalid_falls_back_to_60(self, monkeypatch):
+        monkeypatch.setenv("TUNNEL_TIMEOUT_MINUTES", "abc")
+        assert get_tunnel_timeout_minutes() == 60
+
+    def test_clamps_to_24h(self, monkeypatch):
+        monkeypatch.setenv("TUNNEL_TIMEOUT_MINUTES", "999999")
+        assert get_tunnel_timeout_minutes() == 1440
 
 
 class TestStandupConfig:

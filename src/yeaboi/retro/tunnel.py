@@ -34,6 +34,7 @@ import subprocess
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -202,7 +203,7 @@ def ensure_cloudflared() -> Path | None:
 class CloudflareTunnel:
     """A Cloudflare quick tunnel forwarding a public HTTPS URL to a local port."""
 
-    def __init__(self, port: int, *, binary: Path | None = None) -> None:
+    def __init__(self, port: int, *, binary: Path | None = None, on_expire: Callable[[], None] | None = None) -> None:
         self.port = port
         self._binary = binary
         self._proc: subprocess.Popen | None = None
@@ -216,6 +217,11 @@ class CloudflareTunnel:
         # Set by stop(): cancels an in-flight start() so a teardown during the handshake
         # can never be followed by a retry launching a cloudflared nobody will stop.
         self._stopped = threading.Event()
+        # Called once (from the timer thread) when the tunnel auto-expires — lets the
+        # TUI screen that owns this tunnel update its own state (e.g. offer "Retry
+        # Link"). Never called on a manual stop() — see stop()'s timer cancellation.
+        self._on_expire = on_expire
+        self._expire_timer: threading.Timer | None = None
 
     @property
     def public_url(self) -> str:
@@ -259,7 +265,39 @@ class CloudflareTunnel:
         host = url.split("://", 1)[-1].split("/", 1)[0]
         self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
         logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
+        self._schedule_expiry()
         return url
+
+    def _schedule_expiry(self) -> None:
+        """Arm the auto-expiry timer per ``TUNNEL_TIMEOUT_MINUTES`` (0 = never).
+
+        Only called after a *successful* start — a tunnel that never came up
+        has nothing to expire, and arming a timer on a failed attempt would
+        leak a live (if daemon) thread into callers/tests that never call
+        stop() on a failure.
+        """
+        from yeaboi.config import get_tunnel_timeout_minutes
+
+        minutes = get_tunnel_timeout_minutes()
+        if minutes <= 0 or self._stopped.is_set():
+            return
+        timer = threading.Timer(minutes * 60.0, self._expire)
+        timer.daemon = True
+        self._expire_timer = timer
+        timer.start()
+        logger.info("retro: tunnel will auto-expire after %d minute(s)", minutes)
+
+    def _expire(self) -> None:
+        """Timer callback: stop the tunnel and notify the owning screen."""
+        if self._stopped.is_set():
+            return
+        logger.info("retro: cloudflare tunnel auto-expired (local_port=%d)", self.port)
+        self.stop()
+        if self._on_expire is not None:
+            try:
+                self._on_expire()
+            except Exception:  # noqa: BLE001 - never let a UI callback crash the timer thread
+                logger.warning("retro: on_expire callback raised", exc_info=True)
 
     def _attempt(self, binary: Path, *, deadline: float, extra_args: tuple[str, ...] = ()) -> str | None:
         """One cloudflared launch: wait for the URL banner, then for an edge connection.
@@ -446,9 +484,14 @@ class CloudflareTunnel:
 
         The cancel flag is what makes teardown-during-setup safe: without it, a
         ``stop()`` that lands mid-handshake could be followed by the ``--region us``
-        retry launching a fresh cloudflared that nothing ever stops.
+        retry launching a fresh cloudflared that nothing ever stops. It also cancels
+        a pending auto-expiry timer, so a host-initiated close can never race a
+        stale timer into firing (and calling ``on_expire``) after teardown.
         """
         self._stopped.set()
+        if self._expire_timer is not None:
+            self._expire_timer.cancel()
+            self._expire_timer = None
         self._terminate()
 
     def _terminate(self) -> None:

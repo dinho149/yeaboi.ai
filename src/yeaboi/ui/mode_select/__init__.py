@@ -1470,6 +1470,7 @@ def _collect_settings_data() -> dict:
         "AWS_PROFILE",
         "LOG_LEVEL",
         "SESSION_PRUNE_DAYS",
+        "TUNNEL_TIMEOUT_MINUTES",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
@@ -10559,7 +10560,22 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-                tunnel = CloudflareTunnel(server.port, binary=binary)
+
+                def _on_expired() -> None:
+                    # Runs on the tunnel's timer thread once TUNNEL_TIMEOUT_MINUTES
+                    # elapses. Reuse the existing "Retry Link" affordance rather than
+                    # inventing a new one — un-publish the URL server-side too, so
+                    # /api/invite and the QR stop handing out a dead link.
+                    remote["tunnel"] = None
+                    remote["url"] = ""
+                    server.set_public_url("")
+                    remote["status"] = (
+                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
+                    )
+                    remote["failed"] = True
+                    logger.info("retro: secure link expired (session=%s)", session_id)
+
+                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
                 # Published BEFORE start(), which blocks for up to the 45 s
                 # handshake budget (URL + edge registration + a possible
                 # --region retry) plus the ~30 s DNS-propagation gate. The
@@ -11398,7 +11414,20 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-                tunnel = CloudflareTunnel(server.port, binary=binary)
+
+                def _on_expired() -> None:
+                    # See the retro loop's _on_expired for the full note: reuses the
+                    # existing "Retry Link" affordance and un-publishes server-side.
+                    remote["tunnel"] = None
+                    remote["url"] = ""
+                    server.set_public_url("")
+                    remote["status"] = (
+                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
+                    )
+                    remote["failed"] = True
+                    logger.info("poker: secure link expired (session=%s)", session_id)
+
+                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
                 # Published BEFORE start() so the page's finally can stop it —
                 # see the retro loop for the orphaned-cloudflared note.
                 remote["tunnel"] = tunnel
