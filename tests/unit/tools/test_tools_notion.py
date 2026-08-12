@@ -410,9 +410,36 @@ class TestNotionReadPage:
         assert "Error" in result
         assert "Truncated" not in result
 
-    def test_every_partial_read_warns(self, monkeypatch, caplog):
+    def test_keeps_the_prefix_when_a_later_request_times_out(self, monkeypatch):
+        # RequestTimeoutError is a sibling of HTTPResponseError, not a child, so an
+        # `except APIResponseError` does not see it — and a timeout needs only one
+        # slow response out of up to fifty calls, where a 429 needs a quota decision.
+        from notion_client.errors import RequestTimeoutError
+
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                raise RequestTimeoutError()
+            return {
+                "results": [_para_block(f"block {i}") for i in range(100)],
+                "has_more": True,
+                "next_cursor": "cur2",
+            }
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("9", "Slow")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "9"})
+
+        assert "block 99" in result
+        assert "Truncated" in result
+        assert "Error" not in result
+
+    def test_no_cursor_exit_warns(self, monkeypatch, caplog):
         # get_log_level() falls back to WARNING, so a debug line records these for
-        # nobody. Each anomalous exit has to be visible in a default-level run.
+        # nobody. Each anomalous exit has to be visible in a default-level run, and
+        # each is pinned by its own assertion rather than one standing for all three.
         def _list(*_args, **kwargs):
             return {"results": [_para_block("x")], "has_more": True, "next_cursor": None}
 
@@ -425,6 +452,53 @@ class TestNotionReadPage:
             notion_read_page.invoke({"page_id": "8"})
 
         assert any("has_more with no next_cursor" in r.getMessage() for r in caplog.records)
+
+    def test_malformed_response_exit_warns(self, monkeypatch, caplog):
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                return None
+            return {"results": [_para_block("x")], "has_more": True, "next_cursor": "cur2"}
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("10", "Malformed")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        with caplog.at_level(logging.WARNING, logger="yeaboi.tools.notion"):
+            notion_read_page.invoke({"page_id": "10"})
+
+        assert any("non-dict response" in r.getMessage() for r in caplog.records)
+
+    def test_request_ceiling_exit_warns(self, monkeypatch, caplog):
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("11", "Endless")
+        mock_client.blocks.children.list.return_value = {
+            "results": [{"type": "image", "image": {}}],
+            "has_more": True,
+            "next_cursor": "next",
+        }
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        with caplog.at_level(logging.WARNING, logger="yeaboi.tools.notion"):
+            notion_read_page.invoke({"page_id": "11"})
+
+        assert any("request ceiling" in r.getMessage() for r in caplog.records)
+
+    def test_mid_walk_failure_exit_warns(self, monkeypatch, caplog):
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                raise _make_api_error(429)
+            return {"results": [_para_block("x")], "has_more": True, "next_cursor": "cur2"}
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("12", "Rate limited")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        with caplog.at_level(logging.WARNING, logger="yeaboi.tools.notion"):
+            notion_read_page.invoke({"page_id": "12"})
+
+        assert any("partial read" in r.getMessage() for r in caplog.records)
 
     def test_http_error_404(self, monkeypatch):
         mock_client = MagicMock()

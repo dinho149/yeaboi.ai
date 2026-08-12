@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 
 from langchain_core.tools import tool
 from notion_client import Client
-from notion_client.errors import APIResponseError
+from notion_client.errors import APIResponseError, NotionClientErrorBase
 
 from yeaboi.config import get_notion_root_page_id, get_notion_token
 
@@ -287,12 +287,22 @@ def notion_read_page(page_id: str) -> str:
                 kwargs["start_cursor"] = cursor
             try:
                 children = client.blocks.children.list(**kwargs)
-            except APIResponseError as e:
+            except NotionClientErrorBase as e:
                 # A mid-walk failure must not discard the prefix already collected.
                 # While this made exactly one request an error lost nothing; now a
                 # 429 on request 3 of 4 would throw away three pages the caller can
                 # still use. A failure on the *first* request has no prefix to keep,
                 # so it stays an error and reaches the handler below unchanged.
+                #
+                # The SDK's own base class, not APIResponseError: that child is
+                # built from a *parsed* JSON error body, so catching it alone would
+                # keep the prefix for a 429 and drop it for the two failures where
+                # there is no body to parse — RequestTimeoutError (its sibling) and
+                # UnknownHTTPResponseError (a gateway's HTML 502). A timeout is the
+                # likelier of the two here: it needs one slow response out of up to
+                # fifty back-to-back calls, not a quota decision. Deliberately not
+                # bare `Exception`, so a genuine bug in this loop still surfaces as
+                # an error rather than as a plausible-looking truncated read.
                 if not blocks:
                     raise
                 logger.warning(
