@@ -12,6 +12,7 @@ import httpx
 
 from yeaboi.tools import get_tools
 from yeaboi.tools.notion import (
+    _MAX_BLOCK_REQUESTS,
     _MISSING_CONFIG_MSG,
     _blocks_to_text,
     _notion_error_msg,
@@ -312,6 +313,65 @@ class TestNotionReadPage:
 
         assert "Truncated" in result
         assert mock_client.blocks.children.list.call_count == 1
+
+    def test_stops_at_the_request_ceiling_and_reports_it(self, monkeypatch):
+        # Blocks that render to no text (images, dividers, embeds) never reach the
+        # character ceiling, so only the request ceiling bounds this walk — and it
+        # must report the stop rather than return the empty prefix as a whole page.
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("3", "All images")
+        mock_client.blocks.children.list.return_value = {
+            "results": [{"type": "image", "image": {}} for _ in range(100)],
+            "has_more": True,
+            "next_cursor": "next",
+        }
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "3"})
+
+        assert "Truncated" in result
+        assert mock_client.blocks.children.list.call_count == _MAX_BLOCK_REQUESTS
+
+    def test_reports_truncation_when_has_more_carries_no_cursor(self, monkeypatch):
+        # has_more says there is more; the missing cursor means we cannot fetch it.
+        # Undocumented, but dropping the rest unannounced is the bug being fixed.
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("4", "No cursor")
+        mock_client.blocks.children.list.return_value = {
+            "results": [_para_block(f"block {i}") for i in range(100)],
+            "has_more": True,
+            "next_cursor": None,
+        }
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "4"})
+
+        assert "block 99" in result
+        assert "Truncated" in result
+        assert mock_client.blocks.children.list.call_count == 1
+
+    def test_reports_truncation_when_a_later_response_is_malformed(self, monkeypatch):
+        # A mid-walk response of an unexpected shape ends the read early; what was
+        # collected is kept, and the read is declared partial.
+        def _list(*_args, **kwargs):
+            if kwargs.get("start_cursor") == "cur2":
+                return None
+            return {
+                "results": [_para_block(f"block {i}") for i in range(100)],
+                "has_more": True,
+                "next_cursor": "cur2",
+            }
+
+        mock_client = MagicMock()
+        mock_client.pages.retrieve.return_value = _make_page("5", "Malformed")
+        mock_client.blocks.children.list.side_effect = _list
+        monkeypatch.setattr("yeaboi.tools.notion._make_notion_client", lambda: mock_client)
+
+        result = notion_read_page.invoke({"page_id": "5"})
+
+        assert "block 99" in result
+        assert "Truncated" in result
+        assert mock_client.blocks.children.list.call_count == 2
 
     def test_http_error_404(self, monkeypatch):
         mock_client = MagicMock()

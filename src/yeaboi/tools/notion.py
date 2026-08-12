@@ -43,6 +43,16 @@ _MISSING_CONFIG_MSG = "Error: Notion is not configured. Ensure NOTION_TOKEN is s
 # See docs: "Tools" — scoping tool output for LLM relevance
 _MAX_CONTENT_CHARS = 8_000
 
+# Hard ceiling on the number of blocks.children.list calls one page read may make.
+# The character ceiling above cannot bound the walk on its own: _blocks_to_text
+# renders only _TEXT_BLOCK_TYPES, so a page built of images, dividers, embeds or
+# column blocks renders to "" no matter how many blocks it has, and the walk would
+# follow cursors indefinitely — hundreds of sequential requests against a ~3 req/s
+# rate limit inside a single tool call. 8 000 characters cannot need more than a few
+# dozen responses of 100 text-bearing blocks, so 50 is out of reach for a legitimate
+# page while turning a pathological one into a bounded, reported truncation.
+_MAX_BLOCK_REQUESTS = 50
+
 # Block types whose rich_text we render as readable plain text. Notion pages are a
 # tree of typed blocks; we pull text from the common textual ones and skip the rest.
 _TEXT_BLOCK_TYPES = (
@@ -260,13 +270,16 @@ def notion_read_page(page_id: str) -> str:
         # One response carries at most 100 children and signals the rest via
         # has_more/next_cursor, so a page longer than that is only half-read unless
         # the cursor is followed to exhaustion. Same walk as
-        # notion_read_page_text._children below and _ensure_notion_brand_parent.
-        blocks: list = []
+        # notion_read_page_text._children below and as _ensure_notion_brand_parent
+        # in export_targets.py.
+        blocks: list[dict] = []
         cursor: str | None = None
         requests = 0
-        # True when paging stopped at the content ceiling rather than at the end of
-        # the page — reported through the same [Truncated …] suffix as an over-long
-        # body, so the walk is bounded without ever cutting silently.
+        # True whenever the walk stopped for one of our own reasons rather than
+        # because the server said the page was complete: either ceiling, or a
+        # response we cannot continue from. Every one of those exits reports through
+        # the same [Truncated …] suffix as an over-long body, so a partial read is
+        # never handed to the LLM as a whole page.
         capped = False
         while True:
             kwargs = {"block_id": page_id, "page_size": 100}
@@ -274,18 +287,26 @@ def notion_read_page(page_id: str) -> str:
                 kwargs["start_cursor"] = cursor
             children = client.blocks.children.list(**kwargs)
             requests += 1
-            blocks.extend(children.get("results", []) if isinstance(children, dict) else [])
-            cursor = children.get("next_cursor") if isinstance(children, dict) else None
-            if not isinstance(children, dict) or not children.get("has_more") or not cursor:
+            if not isinstance(children, dict):
+                # Undocumented response shape — keep what we have, report it partial.
+                capped = True
                 break
-            if len(_blocks_to_text(blocks)) >= _MAX_CONTENT_CHARS:
+            blocks.extend(children.get("results", []))
+            if not children.get("has_more"):
+                break  # the only exit that means "this is the whole page"
+            cursor = children.get("next_cursor")
+            if not cursor:
+                # More exists and Notion gave us no way to ask for it.
+                capped = True
+                break
+            if len(_blocks_to_text(blocks)) >= _MAX_CONTENT_CHARS or requests >= _MAX_BLOCK_REQUESTS:
                 capped = True
                 break
 
         content = _blocks_to_text(blocks)
 
-        # A ceiling-stopped walk is truncated even when the rendered prefix lands
-        # exactly on the limit, which a length test alone would read as complete.
+        # A capped walk is truncated even when the rendered prefix lands under (or
+        # exactly on) the limit, which a length test alone would read as complete.
         truncated = capped or len(content) > _MAX_CONTENT_CHARS
         if truncated:
             content = content[:_MAX_CONTENT_CHARS]
