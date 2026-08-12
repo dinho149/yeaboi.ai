@@ -337,6 +337,7 @@ rest of the verbs on it:
 | `/cowork today` | what runs today and over the next week, in one message shape. Read-only. |
 | `make cowork-check` | the repo half of `status`, with no session needed. |
 | `make cowork-slots` | how full each workstream's proposal queue is, and which issues are holding it. Read-only. |
+| `make cowork-blocked` | whether a standing fault has already been reported, so a routine says it once. Read-only. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 
 Two things are worth knowing before you rely on any of it.

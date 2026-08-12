@@ -3477,3 +3477,176 @@ class TestProposalSlots:
         assert f"`PROPOSAL_CAP = {setup.PROPOSAL_CAP}`" in rules, (
             f"house-rules.md no longer states a cap of {setup.PROPOSAL_CAP}"
         )
+
+
+class TestBlockedReport:
+    """Whether a standing fault has already been reported.
+
+    This exists because `cd-deploy`'s say-it-once rule read the last 24 hours of
+    Slack, and a merge fires the routine twice: GitHub sends a `push` event for a
+    branch deletion as well as for a commit, every PR deletes its head branch on
+    merge, and the webhook filters neither out. Both sessions read the channel
+    before either has posted, both see nothing, and both post. Channel history
+    cannot dedup concurrent runs — an issue, which exists before either session
+    looks, can.
+    """
+
+    MARKER = "cd-deploy: RemoteTrigger absent from the routine session"
+
+    # Every marker `cd-deploy.md` is allowed to use. Exact whole-title equality is
+    # what the query does, so a marker reworded in the prose is a fault that posts
+    # and files all over again — these strings are the contract.
+    MARKERS = (
+        "cd-deploy: RemoteTrigger absent from the routine session",
+        "cd-deploy: repo variables refused by the egress proxy",
+    )
+
+    @staticmethod
+    def _issue(number: int, title: str, **extra) -> dict:
+        return {"number": number, "title": title, "html_url": f"https://gh/i/{number}", **extra}
+
+    def _serve(self, monkeypatch, items, ok=True, error=""):
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        seen: list[str] = []
+
+        def paged(path, key=None):
+            seen.append(path)
+            return setup.ApiResult(ok, items, error)
+
+        monkeypatch.setattr(setup.transport, "api_paged", paged)
+        return seen
+
+    def _titled(self, number: int = 7, **extra) -> dict:
+        return self._issue(number, f"{setup.BLOCKED_TITLE}{self.MARKER}", **extra)
+
+    def test_an_open_report_silences_the_routine(self, monkeypatch):
+        self._serve(monkeypatch, [self._titled()])
+        answer = setup.blocked_report(self.MARKER)
+        assert answer["reported"] is True
+        assert answer["issue"]["number"] == 7
+
+    def test_nothing_open_is_the_one_answer_that_posts(self, monkeypatch):
+        self._serve(monkeypatch, [self._issue(1, "[bug][platform] something else")])
+        answer = setup.blocked_report(self.MARKER)
+        assert answer["reported"] is False
+        assert answer["issue"] is None
+
+    def test_an_unreadable_query_is_null_and_never_false(self, monkeypatch):
+        """The failure that matters. `False` means "nobody has said it" and
+        produces a post; turning "could not ask" into it is how a standing fault
+        posts once per push forever — the exact bug this replaced."""
+        self._serve(monkeypatch, None, ok=False, error="403 from the egress proxy")
+        answer = setup.blocked_report(self.MARKER)
+        assert answer["reported"] is None
+        assert answer["reported"] is not False
+        assert "403" in answer["error"]
+
+    def test_a_pull_request_is_not_a_report(self, monkeypatch):
+        """`/issues` returns PRs too. A PR titled after the fault it fixes would
+        silence the routine from the moment somebody starts fixing it until they
+        merge — which is precisely when the fault is still happening."""
+        self._serve(monkeypatch, [self._titled(pull_request={"url": "…"})])
+        assert setup.blocked_report(self.MARKER)["reported"] is False
+
+    def test_a_different_marker_is_a_different_fault(self, monkeypatch):
+        self._serve(monkeypatch, [self._titled()])
+        assert setup.blocked_report("cd-deploy: something else entirely")["reported"] is False
+
+    def test_the_oldest_report_is_the_one_named(self, monkeypatch):
+        """Two reports means the dedup already leaked once; naming the newest
+        would send a reader to the duplicate rather than the thread with the
+        history on it."""
+        self._serve(monkeypatch, [self._titled(41), self._titled(12)])
+        assert setup.blocked_report(self.MARKER)["issue"]["number"] == 12
+
+    def test_no_slug_cannot_be_read_as_unreported(self, monkeypatch):
+        monkeypatch.setattr(setup, "repo_slug", lambda: "")
+        assert setup.blocked_report(self.MARKER)["reported"] is None
+
+    def test_a_proxy_html_page_over_gh_is_null(self, monkeypatch):
+        """The routine sessions' failure shape: `gh` is installed and answers,
+        but an egress proxy returns HTML instead of JSON."""
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        monkeypatch.setattr(
+            setup.transport, "gh", lambda *a: subprocess.CompletedProcess(list(a), 0, "<html>nope</html>", "")
+        )
+        assert setup.blocked_report(self.MARKER)["reported"] is None
+
+    def test_every_state_exits_zero(self, monkeypatch, capsys):
+        """Already-reported is the common and *desired* outcome. A routine
+        branching on the exit status would read a working silence as a failure."""
+        for items, expected in ((([self._titled()]), True), ([], False)):
+            self._serve(monkeypatch, items)
+            assert setup.report_blocked(self.MARKER) == 0
+            assert json.loads(capsys.readouterr().out)["reported"] is expected
+
+    def test_the_gh_transport_reads_past_the_first_page(self, monkeypatch):
+        """The bug that would have shipped. `gh api` stops at thirty items and
+        this query has no label filter to bound it, so an open report on page two
+        reads back as "nobody has said it" — the routine then posts *and* files a
+        duplicate, which is this whole gate failing in the only direction that
+        matters. `open_proposals` gets away with one page because two labels bound
+        it to a handful; this one is bounded only by the repo's open-issue count.
+        """
+        monkeypatch.setattr(setup, "TRANSPORT", "gh")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        monkeypatch.setattr(setup.shutil, "which", lambda _: "/usr/bin/gh")
+        calls: list[tuple[str, ...]] = []
+
+        def gh(*args):
+            calls.append(args)
+            return subprocess.CompletedProcess(list(args), 0, json.dumps([self._titled(9)]), "")
+
+        monkeypatch.setattr(setup.transport, "gh", gh)
+        assert setup.blocked_report(self.MARKER)["reported"] is True
+        assert "--paginate" in calls[0], f"the gh read is capped at one page: {calls[0]}"
+
+    def test_an_empty_marker_is_refused_not_asked(self, monkeypatch, capsys):
+        """`[blocked] ` alone matches nothing, so it answers `false` forever and
+        posts forever while looking like a working call."""
+        self._serve(monkeypatch, [])
+        assert setup.report_blocked("   ") == 2
+        assert "needs a marker" in capsys.readouterr().err
+
+    def test_the_cli_flag_reaches_the_report(self, monkeypatch, capsys):
+        """Covers the argparse wiring and the dispatch order — an `if` on
+        truthiness rather than `is not None` sends `--blocked-report ""` into the
+        full setup run instead of erroring."""
+        self._serve(monkeypatch, [self._titled()])
+
+        def ready():
+            # `main()` resets TRANSPORT before dispatching, so the stub has to
+            # pick one the way the real `github_ready()` does — otherwise this
+            # asserts against the `gh` branch by accident.
+            setup.TRANSPORT = "api"
+            return True
+
+        monkeypatch.setattr(setup, "github_ready", ready)
+        assert setup.main(["--blocked-report", self.MARKER]) == 0
+        assert json.loads(capsys.readouterr().out)["reported"] is True
+
+    def test_the_routine_names_every_marker_and_no_others(self):
+        """The prose and the query are pinned together: a reworded marker in
+        `cd-deploy.md` is a new fault that starts posting again. Both directions
+        are checked — a marker dropped from the routine, and one invented there
+        without being recorded here."""
+        routine = (setup.COWORK / "routines" / "cron" / "cd-deploy.md").read_text(encoding="utf-8")
+        assert "--blocked-report" in routine, "cd-deploy.md no longer asks the dedup question"
+        for marker in self.MARKERS:
+            assert marker in routine, f"cd-deploy.md no longer names the marker {marker!r}"
+        found = set(re.findall(r"`(cd-deploy: [^`]+)`", routine))
+        assert found == set(self.MARKERS), f"cd-deploy.md's marker vocabulary drifted: {found}"
+
+    def test_the_report_is_not_labelled_as_a_proposal(self):
+        """`cowork:proposal` is what `open_proposals` counts against
+        `PROPOSAL_CAP`, so labelling a standing fault with it would park one of
+        the platform workstream's two slots forever — and its approval verb is
+        `claude-implement`, which fires an implement job on an issue no code
+        change resolves."""
+        routine = (setup.COWORK / "routines" / "cron" / "cd-deploy.md").read_text(encoding="utf-8")
+        gate = routine[routine.index("Say it once") : routine.index("## If `RemoteTrigger`")]
+        assert "`type:bug`" in gate and "`workstream:platform`" in gate
+        assert "Not `cowork:proposal`" in gate, "the gate no longer says which label it must not use"
