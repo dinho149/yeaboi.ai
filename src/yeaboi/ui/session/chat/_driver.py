@@ -108,6 +108,26 @@ _CONFIRM_VERDICT_PROMPT = (
 
 _PRIOR_ART_VERDICT_PROMPT = "You already own this one. Pick an option below — or type **yes**, **no**, or **skip**."
 
+
+def _prior_art_verdict_prompt(qs) -> str:
+    """The verdict line, ending in what happens after the pick.
+
+    The card replaces itself each time the loop advances, so a bare prompt
+    leaves someone looking at "1 of 3" with no way to know that answering is
+    the thing that reaches 2 and 3 — the one question the card cannot answer
+    about itself.
+    """
+    candidates = getattr(qs, "_prior_art_candidates", None) or []
+    remaining = len(candidates) - (getattr(qs, "_prior_art_index", 0) + 1)
+    if remaining == 1:
+        tail = " Answering brings up the last one."
+    elif remaining > 1:
+        tail = f" Answering brings up the next of {remaining} more."
+    else:
+        tail = " This is the last one."
+    return _PRIOR_ART_VERDICT_PROMPT + tail
+
+
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
@@ -815,7 +835,7 @@ class _ChatDriver:
         # properly and the choice rows carry the keys.
         if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
             self.transcript.add_artifact("prior_art")
-            self._say(_PRIOR_ART_VERDICT_PROMPT)
+            self._say(_prior_art_verdict_prompt(qs))
             return
 
         # Nothing found — the node's message is already the whole statement, so

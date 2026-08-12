@@ -26,8 +26,14 @@ def _qs(stage=""):
     qs.awaiting_confirmation = True
     qs._prior_art_stage = stage
     qs._prior_art_candidates = [
-        {"name": "acme/auth", "platform": "github", "pitch": ["does OIDC"], "stack": ["Python"]},
-        {"name": "acme/pay", "platform": "github", "pitch": ["takes cards"], "stack": ["Go"]},
+        {
+            "key": "github:acme/auth",
+            "name": "acme/auth",
+            "platform": "github",
+            "pitch": ["does OIDC"],
+            "stack": ["Python"],
+        },
+        {"key": "github:acme/pay", "name": "acme/pay", "platform": "github", "pitch": ["takes cards"], "stack": ["Go"]},
     ]
     qs._prior_art_index = 0
     return qs
@@ -84,7 +90,6 @@ class TestCard:
         assert "acme/auth" in out
         assert "does OIDC" in out
         assert "1 of 2" in out
-        assert "acme/pay" not in out
 
     def test_follows_the_index(self):
         from rich.console import Console
@@ -103,6 +108,72 @@ class TestCard:
 
     def test_no_questionnaire_renders_nothing(self):
         assert _artifact_renderable("prior_art", {}, 68) is None
+
+
+class TestRoster:
+    """The card replaces itself as the loop advances, so the roster is the only
+    evidence the other candidates exist — without it "1 of 3" reads as a pager
+    with no pager keys."""
+
+    def _out(self, qs, width=70):
+        from rich.console import Console
+
+        console = Console(width=width, record=True)
+        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, width - 2))
+        return console.export_text()
+
+    def test_every_candidate_is_listed_not_just_the_current_one(self):
+        out = self._out(_qs("ask"))
+        assert "acme/auth" in out
+        assert "acme/pay" in out
+
+    def test_the_current_one_is_marked_as_being_decided(self):
+        assert "deciding now" in self._out(_qs("ask"))
+
+    def test_a_decided_candidate_carries_its_verdict(self):
+        qs = _qs("ask")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
+        qs._prior_art_index = 1
+        out = self._out(qs)
+        assert "kept" in out
+
+    def test_a_rejected_candidate_says_so(self):
+        qs = _qs("ask")
+        qs._prior_art_rejected = [{"key": "github:acme/auth", "name": "acme/auth", "reason": "too old"}]
+        qs._prior_art_index = 1
+        out = self._out(qs)
+        assert "not relevant" in out
+
+    def test_a_lone_candidate_gets_no_roster(self):
+        """One row that says "deciding now" under a card about that one repo is
+        noise, not orientation."""
+        qs = _qs("ask")
+        qs._prior_art_candidates = qs._prior_art_candidates[:1]
+        out = self._out(qs)
+        assert "1 of 1" in out
+        assert "deciding now" not in out
+
+
+class TestVerdictPrompt:
+    def _prompt(self, index, total):
+        from yeaboi.ui.session.chat._driver import _prior_art_verdict_prompt
+
+        qs = _qs("ask")
+        qs._prior_art_candidates = [{"key": f"k{i}", "name": f"r{i}"} for i in range(total)]
+        qs._prior_art_index = index
+        return _prior_art_verdict_prompt(qs)
+
+    def test_more_than_one_left_names_the_count(self):
+        assert "next of 2 more" in self._prompt(0, 3)
+
+    def test_exactly_one_left_says_last(self):
+        assert "the last one" in self._prompt(1, 3)
+
+    def test_the_final_candidate_promises_nothing_further(self):
+        assert "This is the last one." in self._prompt(2, 3)
+
+    def test_the_pick_instructions_survive(self):
+        assert "**yes**" in self._prompt(0, 3)
 
 
 class TestDriverGuards:

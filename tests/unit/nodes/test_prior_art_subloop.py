@@ -300,6 +300,17 @@ class TestPrompt:
     def test_exhausted_list_renders_nothing(self):
         assert _prior_art_prompt(_qs(stage="ask", candidates=[], index=5)) == ""
 
+    def test_says_that_answering_reaches_the_rest(self):
+        """One candidate is on screen at a time on every surface, so the prompt
+        has to say what the position indicator cannot: that a verdict is the
+        way to the others."""
+        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
+        assert "1 more after this" in _prior_art_prompt(qs)
+
+    def test_the_last_candidate_promises_nothing_further(self):
+        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")], index=1)
+        assert "after this" not in _prior_art_prompt(qs)
+
     def test_advance_past_the_end_finishes(self, _no_ledger_writes):
         qs = _qs(stage="ask", candidates=[_candidate()], index=0)
         result = _prior_art_advance(qs)

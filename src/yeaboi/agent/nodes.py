@@ -3841,6 +3841,12 @@ def _prior_art_prompt(questionnaire: QuestionnaireState) -> str:
         f"[2] {_PRIOR_ART_REJECT}",
         f"[3] {_PRIOR_ART_SKIP}",
     ]
+    # Say that answering is what reaches the rest. The candidates are asked
+    # about one at a time on every surface, so "1 of 3" on its own reads as a
+    # pager offering no way to reach 2 and 3.
+    remaining = total - position
+    if remaining:
+        lines += ["", f"_Answering brings up the next — {remaining} more after this._"]
     return "\n".join(lines)
 
 

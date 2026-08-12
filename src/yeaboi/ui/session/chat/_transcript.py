@@ -136,9 +136,36 @@ def _render_prior_art(qs, render_w: int):
         rows.append(Text(""))
         rows.append(Text("  " + " · ".join(str(s) for s in stack), style="dim"))
 
-    footer = Text("")
-    rows.append(footer)
+    rows.append(Text(""))
     rows.append(Text(f"  {index + 1} of {len(candidates)}", style="dim"))
+    # The roster. One card per kind means this card *replaces itself* as the
+    # loop advances, so without the full list there is no evidence the other
+    # candidates exist — "1 of 3" reads as a pager with no pager keys. Listing
+    # every one, with what was already decided, makes the sequence visible
+    # without adding navigation the rest of intake does not have.
+    if len(candidates) > 1:
+        accepted = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_accepted", None) or [])}
+        rejected = {str(c.get("key", "")) for c in (getattr(qs, "_prior_art_rejected", None) or [])}
+        for position, other in enumerate(candidates):
+            name = str(other.get("name", ""))
+            key = str(other.get("key", ""))
+            line = Text(overflow="ellipsis", no_wrap=True)
+            if position == index:
+                line.append("  ▶ ", style="bold")
+                line.append(name, style="bold white")
+                line.append("   deciding now", style="dim")
+            elif key and key in accepted:
+                line.append("  ✓ ", style="green")
+                line.append(name, style="dim")
+                line.append("   kept", style="dim")
+            elif key and key in rejected:
+                line.append("  ✗ ", style="dim")
+                line.append(name, style="dim")
+                line.append("   not relevant", style="dim")
+            else:
+                line.append("  · ", style="dim")
+                line.append(name, style="dim")
+            rows.append(line)
     return Group(*rows)
 
 
