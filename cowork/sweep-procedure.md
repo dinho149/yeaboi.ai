@@ -15,13 +15,19 @@ workstream and any per-run focus; everything else is here.
      comments" in brackets with nothing behind it, and for months nothing did.
 
      **On a cowork PR you may fix a finding; you may not dismiss one.** Fix what is right and
-     push — a re-review reports `open=0` on its own, which is what clears the gate. If you
-     believe a `blocker` or `should-fix` is wrong, **do not write an `<!-- addressed: … -->`
-     marker**: convert the PR to a proposal (see step 5) and let a human answer it.
-     `scripts/pr_feedback.py` enforces this rather than trusting it — an ack from the PR's own
-     author does not count on an unattended PR — so a marker written here does nothing except
-     make the PR look answered to a reader. Disagreeing with a review is a judgement call, and
-     the whole point of the auto lane is that it only carries work that needs none.
+     push, then **reply saying what you changed** and end the reply with
+     `<!-- addressed: claude-review fixed=N -->`. Both halves are required: the re-review
+     reporting `open=0` is what stops the finding blocking, and the reply is what stops the
+     whole record of the fix being a number going down. If you believe a `blocker` or
+     `should-fix` is wrong, **do not write an `answered=` claim**: convert the PR to a proposal
+     (see step 5) and let a human answer it. `scripts/pr_feedback.py` enforces the split rather
+     than trusting it — a dismissal from the PR's own author does not count on an unattended PR,
+     and a `fixed=` claim from that same author does, because the reviewer's next read of the
+     diff is what checks it. Disagreeing with a review is a judgement call, and the whole point
+     of the auto lane is that it only carries work that needs none.
+
+     Same rule on the resolve button: reply in a thread before you resolve it. A thread this
+     PR's author resolved with nothing from them in it comes back as an open item.
 
    If that PR is already green and more than 7 days old, comment once on it saying the workstream has
    been blocked on it since `<date>` and has scouted nothing in the meantime. One open PR per

@@ -28,25 +28,45 @@ the correct response to a good half of them is a sentence rather than a commit.
 3. **Fixes** — apply the minimal change, run `make test` and `make lint`, then
    commit (lowercase imperative + the Co-Authored-By trailer from CLAUDE.md) and
    push to the SAME branch. Never force-push, never touch `main`, never open a
-   new PR. The next review pass sees the fix and reports `open=0` on its own;
-   you do not need to reply about it.
-4. **Answers** — post ONE comment per producer, covering every finding you are
-   not fixing, each with a one-line reason. End it with the marker for that
-   producer, on its own line:
+   new PR.
+4. **Reply — every round, whatever you did about it.** ONE comment per producer,
+   with a line per finding saying which way it went and why, ending with that
+   producer's marker on its own line:
 
    ```
-   <!-- addressed: claude-review -->
+   Round 1 — 3 findings:
+   - `collector.py:88` last page dropped — **fixed** in a1b2c3d, the loop now
+     reads `next_page` until it is null.
+   - `engine.py:210` unbounded retry — **fixed** in a1b2c3d, capped at 3.
+   - `store.py:44` prefer a context manager — **not changing**: the connection
+     outlives the call and closing it here breaks `--resume`.
+
+   <!-- addressed: claude-review fixed=2 answered=1 -->
    ```
 
-   The marker is what clears the gate, and it is scoped to the pass it follows —
-   `scripts/pr_feedback.py` only honours a reply *newer* than the verdict it
-   answers. Post the reply after the review it responds to, never before.
+   `fixed=` counts what you changed; `answered=` counts what you argued. They are
+   different numbers because they are checked by different things — the reviewer's
+   next pass reads the diff and re-reports a fix that is not there, and nothing
+   but a person checks a disagreement.
+
+   **A fix without this reply does not clear the gate.** "Push and the next
+   verdict reads `open=0`" used to be enough; it is not, because the whole record
+   of what you did about three findings would be a number going down, and nobody
+   can review a subtraction. `scripts/pr_feedback.py` reports the round as
+   `stopped being reported without anything saying what changed`.
+
+   The marker is scoped to the pass it follows — only a reply *newer* than the
+   verdict counts. Post it after the review it answers, never before.
 5. **Human threads** — reply in the thread first, then resolve it via the
    GraphQL `resolveReviewThread` mutation:
 
    ```bash
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<threadId>
    ```
+
+   The order is now enforced, not trusted: a thread you resolved with no comment
+   from you in it comes back as an open item naming you. Resolved threads still
+   take comments, so the fix is to reply — nothing has to be un-resolved.
 
 6. Re-run `uv run python scripts/pr_feedback.py --pr <n>` and confirm it is
    clear before reporting.
@@ -56,7 +76,12 @@ the correct response to a good half of them is a sentence rather than a commit.
 - **Never resolve a thread you did not answer.** Resolving is a claim that the
   reviewer was heard. Silently closing threads is the exact behaviour this whole
   gate was built to stop, and doing it from an agent would be worse than a human
-  doing it, because it scales.
+  doing it, because it scales. `silently_resolved()` in `scripts/pr_feedback.py`
+  now checks it.
+- **Never claim a fix you did not make.** `fixed=` is the one marker field an
+  unattended PR's own author is allowed to write, and it is allowed precisely
+  because the next review pass reads the diff and re-reports anything that is
+  still there. Inflating it does not buy a merge; it buys another round.
 - **Never mark something addressed that you merely disagree with silently.** The
   marker means "there is a reply below saying why". If you have not written that
   reply, do not write the marker.
@@ -67,7 +92,9 @@ the correct response to a good half of them is a sentence rather than a commit.
   quietly dropping it.
 
 Report, in three lines: what you fixed (with the pushed SHA), what you answered
-and why, and the script's final verdict. If an item needs a decision you cannot
-make — a product judgment, a disagreement with a human reviewer — leave it open,
-say which one, and explain what the decision is. An honestly red gate is the
-working state; a green one you talked your way into is not.
+and why, and the script's final verdict — `--json` carries a `ledger` field with
+one line per round and who wrote back to it, which is the short version. If an
+item needs a decision you cannot make — a product judgment, a disagreement with a
+human reviewer — leave it open, say which one, and explain what the decision is.
+An honestly red gate is the working state; a green one you talked your way into
+is not.

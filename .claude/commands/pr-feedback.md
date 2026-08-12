@@ -31,29 +31,49 @@ all point here rather than restating it.
    the reviewer that findings are cheap.
 
 4. **Fixes** — minimal change, `make test` + `make lint`, commit with the repo's
-   conventions and push to the same branch. Nothing else is needed: the push re-runs
-   CI, which re-runs the review, which reports `open=0`, and the gate clears itself.
+   conventions and push to the same branch.
 
-5. **Answers** — one comment per producer covering every finding you are not fixing,
-   each with a one-line reason, ending with that producer's marker on its own line:
+5. **Reply — one comment per producer, covering every finding, whichever way it
+   went.** A line each, saying what you did and why, ending with that producer's
+   marker on its own line:
 
    ```
-   <!-- addressed: claude-review -->
+   <!-- addressed: claude-review fixed=2 answered=1 -->
    ```
+
+   `fixed=` counts the ones you changed; `answered=` counts the ones you argued.
+   Two numbers rather than one because they are checked by different things: the
+   reviewer's next pass reads the diff and re-reports a fix that is not there,
+   and nothing but a person checks a disagreement. A bare `<!-- addressed:
+   claude-review -->` is the older shape and still means "all of them, answered".
+
+   **On an unattended PR a fix without this reply does not clear the gate.** The
+   next verdict reporting `open=0` used to be the whole clearing mechanism, and it
+   left the entire record of what a machine did about three findings as a number
+   going down — which nobody can review. `scripts/pr_feedback.py` reports that
+   round as `stopped being reported without anything saying what changed`, and the
+   way through is one comment. It is never capped and never expires.
+
+   **On a local branch none of it is required**, for the same reason nothing else
+   on that lane is: you did the fixing and you are the one merging.
 
    The marker only counts if the comment is **newer than the verdict it answers**, so
    post it after the review, not before. If you push again afterwards, the next review
    pass will have read your reply and should stop reporting the finding at all.
 
-   **On an unattended PR this step does not exist.** A cowork PR, a `feature/issue-N-…`
-   branch, a triage or sentinel branch — `scripts/pr_feedback.py` refuses an ack from
-   the PR's own author there, so the marker is inert and the gate stays red.
-   `CLAUDE.md` prescribes `feature/<description>` for human branches, so if you happen
-   to name one `feature/issue-…` you land in this rule too — rename the branch, or use
-   `feedback-override`, which is recorded on the PR either way. That is
-   deliberate: the account that wrote the change also has write access, so without it
-   the applicant would be holding the key. Fix the finding (step 4) or hand the PR back
-   to a human as a proposal. Only step 4 clears an unattended PR.
+   **A machine may not dismiss its own review.** On a cowork PR, a
+   `feature/issue-N-…` branch, or a triage or sentinel branch,
+   `scripts/pr_feedback.py` discards an `answered=` claim from the PR's own author,
+   so arguing a finding down there is inert and the gate stays red. `fixed=` from
+   that same author is accepted, and the asymmetry is the point: a claimed fix is
+   checked by the reviewer's next read, a claimed disagreement by nothing.
+   Without it the applicant would be holding the key: the account that wrote the
+   change also has write access. So on that lane the route through a finding you
+   disagree with is to hand it back to a human — as a proposal, or via
+   `feedback-override`, which is a human's call and is recorded on the PR either
+   way. `CLAUDE.md` prescribes `feature/<description>` for human branches, so if
+   you happen to name one `feature/issue-…` you land in this rule too; rename the
+   branch.
 
 6. **Human threads** — reply in the thread, then resolve it:
 
@@ -61,9 +81,15 @@ all point here rather than restating it.
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<threadId>
    ```
 
-   The thread ids are in the `--json` output. Reply first, always.
+   The thread ids are in the `--json` output. Reply first, always — on an
+   unattended PR that order is enforced rather than trusted: a thread the PR's own
+   author resolved with no comment from them in it comes back as an open item.
+   Resolved threads still accept comments, so the fix is a reply, not an un-resolve.
 
-7. **Confirm** — re-run step 1 and report the final verdict with the PR URL.
+7. **Confirm** — re-run step 1 and report the final verdict with the PR URL. The
+   `--json` output carries a `ledger`: one line per review round, what it found,
+   and who wrote back to it. That is the shortest honest answer to "was this
+   actually worked through, or did the number just go down".
 
 For several PRs at once, or to run this unattended, use `/babysit-prs fix` — it spawns
 the `pr-responder` subagent (`.claude/agents/pr-responder.md`) per PR in its own worktree.
@@ -72,7 +98,11 @@ the `pr-responder` subagent (`.claude/agents/pr-responder.md`) per PR in its own
 
 - **Never resolve a thread you did not answer**, and never write an `<!-- addressed: -->`
   marker without the reply that justifies it. The marker means "there is a reason below".
-  Closing feedback silently is the behaviour this gate exists to stop.
+  Closing feedback silently is the behaviour this gate exists to stop — and on the
+  unattended lane both halves are now checked in code rather than trusted.
+- **Never claim a `fixed=` you did not make.** It is the one field the PR's own
+  author may write on the enforced lane, and it is allowed only because the next
+  review pass verifies it. Inflating it does not buy a merge; it buys a round.
 - **A machine never answers its own review.** On an unattended PR the only way to clear a
   finding is to fix it; disagreement is escalated to a human, never asserted. This one is
   enforced in code rather than trusted, because it is the single rule standing between an

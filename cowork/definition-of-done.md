@@ -14,7 +14,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 | 7 | **Web bundles** — anything under `frontend/` ⇒ `make web` and the rebuilt `src/yeaboi/web/static/` committed in the *same* commit | CI `web` job |
 | 8 | **Notion** — page created or updated under 🤙 yeaboi for any user-facing change | scribe |
 | 9 | **Slack** — the merge appears in the day's `cron/shipped-standup.md` post: what shipped, what proved it, which pre-release it is in | scribe |
-| 10 | **Review feedback** — every finding the PR's reviewers rated blocker or should-fix is fixed or answered, and every human review thread is resolved by someone who replied to it | the `pr-feedback` commit status (`scripts/pr_feedback.py`), required by the `main-branch` ruleset |
+| 10 | **Review feedback** — every finding the PR's reviewers rated blocker or should-fix is fixed or answered, **and said so in a reply**, and every human review thread is resolved by someone who replied to it | the `pr-feedback` commit status (`scripts/pr_feedback.py`), required by the `main-branch` ruleset |
 
 ## Rules
 
@@ -50,23 +50,58 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   It is answered, not obeyed: a finding you disagree with is closed by a reply saying why, which the
   next review pass reads and stops raising. What is not allowed is silence.
 
+  **And a fix is not silence either — it has to be written down.** On the unattended lane, a
+  findings-bearing verdict the reviewer has since moved past needs a reply saying what changed:
+  ``<!-- addressed: claude-review fixed=2 answered=1 -->`` and a line per finding. The old rule was
+  the opposite — push, get re-reviewed, and `open=0` cleared the gate on its own — which is right
+  when a person did the fixing and about to click merge, and is a silence when an agent did it and
+  merges itself. The whole record of what happened to three findings was a number going down, and a
+  subtraction cannot be reviewed. `unaccounted_rounds()` asks for the account and nothing more: it
+  never re-opens a finding the reviewer stopped reporting, and it never asks anyone to agree with
+  the fix. It is also **never capped** — unlike the findings, which have no natural terminator, this
+  is one comment.
+
+  **This item binds the unattended lane only.** A PR from a branch a person is sitting at the
+  keyboard for gets the review — once — and the `pr-feedback` status reports its findings as
+  *advisory* and stays green. The gate exists because an unattended PR has nobody on the other end
+  to weigh a finding against the cost of not merging; a human's own branch has exactly that person,
+  already reading the review, and holding their merge to make them type a marker at themselves is
+  ceremony rather than review. `scripts/pr_feedback.py` decides the lane with `is_unattended()`,
+  the same two signals as everything else here: the `cowork` label, or an unattended branch prefix.
+
   **On an unattended PR the disagreement half is withdrawn**, because there is nobody on the other
   end of it. A cowork PR, a `feature/issue-N-…` branch, a triage or sentinel branch: the only way to
-  clear a finding there is to fix it and let the re-review report `open=0` itself.
-  `scripts/pr_feedback.py` refuses an `<!-- addressed: … -->` marker from the PR's own author on
-  those branches — and a `feedback-override` label from that author too, since the override clears
+  clear a finding there is to fix it, let the re-review report `open=0`, and say what you changed.
+  `scripts/pr_feedback.py` refuses an `answered=` claim from the PR's own author on
+  those branches — while accepting `fixed=` from that same author, because a claimed fix is checked
+  by the reviewer's next read of the diff and a claimed disagreement is checked by nobody — and a `feedback-override` label from that author too, since the override clears
   more at once than any marker does — the account that wrote the change also has write access, so without that refusal
   the applicant would be holding the key to the gate. A machine that disagrees with a reviewer hands
   the work back as a proposal; it never overrules one.
 
-  **There is a third exit, and it is deliberate: the review runs out of rounds.** After
-  `MAX_REVIEW_ROUNDS` verdicts that found something, `scripts/pr_feedback.py` stops blocking on
+  **The same rule reaches the resolve button.** Every agent prompt here says never to resolve a
+  thread you did not answer, and until `silently_resolved()` existed that was a convention held up by
+  nothing. On the unattended lane a thread the PR's own author resolved with no comment from them in
+  it is an open item naming them. Resolved threads still accept comments, so the way through is a
+  reply — nothing has to be un-resolved.
+
+  **There is a third exit, and it is deliberate: only the first round blocks.** After
+  `BLOCKING_ROUNDS` verdicts that found something — one — `scripts/pr_feedback.py` stops blocking on
   Claude Review, labels the PR `review-capped`, and lists what was left in the sticky comment. An
   adversarial review of a large diff finds something every time, so running the loop to zero is not
   a condition that reliably arrives — four consecutive rounds on PR #222 each produced real
-  findings. Unresolved *human* threads and a requested-changes review are never capped: a person
-  waiting for an answer is not a loop. What makes the cap safe is that a merge no longer reaches
-  users; it publishes a pre-release, and the weekly promotion is where a human looks.
+  findings, and none of them was a reason that PR should not have merged when it did.
+
+  **One finding still survives that: a `critical` one.** The reviewer's marker carries two numbers,
+  `open=N critical=M`, where M is the `blocker`-severity subset of N — the ones where merging as-is
+  ships a defect. A second-round verdict with `critical` above zero holds the merge however many
+  rounds have run, which is what makes "one blocking round" safe rather than merely cheap: the
+  round that catches the blocker introduced *by* the first round's fix is exactly the one worth
+  waiting for. `MAX_REVIEW_ROUNDS` remains the point the reviewer stops writing at all.
+
+  Unresolved *human* threads and a requested-changes review are never capped: a person waiting for
+  an answer is not a loop. What makes the cap safe is that a merge no longer reaches users; it
+  publishes a pre-release, and the weekly promotion is where a human looks.
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a
   Python-only change), say so in the PR body in one line. Silence is not an exemption.
 
