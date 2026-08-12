@@ -7,6 +7,7 @@ one, and every impure edge degrades instead of raising.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -404,3 +405,115 @@ class TestDbPathSeam:
         monkeypatch.setattr("yeaboi.agent.nodes._load_team_examples", lambda pid: {"repository_inventory": [_row()]})
         rows, reason = prior_art.load_candidates("p")
         assert rows == [] and reason == prior_art.EMPTY_NO_PROFILE
+
+
+class TestNameTokens:
+    """A repository name is a path of segments, not a sentence.
+
+    Found by running the feature against a real 300-repo Azure DevOps estate:
+    every single repository scored 0.0. `_TOKEN_RE` keeps "." as a word
+    character so prose like "node.js" survives, which collapsed
+    `YL.Web.Api.Internal.Loan` into one unmatchable token.
+    """
+
+    def test_a_dotted_pascal_case_name_splits_into_words(self):
+        assert prior_art._name_tokens("YL.Web.DeveloperDashboard") == {"web", "developer", "dashboard"}
+
+    def test_acronym_runs_split_before_a_following_word(self):
+        assert prior_art._name_tokens("APIGateway") == {"api", "gateway"}
+
+    def test_dashes_and_underscores_split_too(self):
+        assert prior_art._name_tokens("tf-transfer_family") == {"transfer", "family"}
+
+    def test_two_letter_segments_are_dropped_as_noise(self):
+        # "YL" is a company prefix, not a word about the repository.
+        assert "yl" not in prior_art._name_tokens("YL.Domain.Loan")
+
+    def test_a_dotted_name_actually_scores_now(self):
+        reqs = prior_art.requirements_from_answers({1: "a dashboard for loan tracking"})
+        value, why = prior_art.score({"name": "YL.Web.DeveloperDashboard"}, reqs)
+        assert value >= prior_art._MIN_SCORE
+        assert "dashboard" in why[0]
+
+
+class TestCommonNameTokens:
+    """One shared word out of a naming convention is not evidence."""
+
+    def _estate(self, n=40):
+        return [{"key": f"azdo:o/r{i}", "name": f"YL.Web.Api.Thing{i}"} for i in range(n)]
+
+    def test_convention_words_are_measured_and_dropped(self):
+        common = prior_art._common_name_tokens(self._estate())
+        assert {"web", "api"} <= common
+
+    def test_a_rare_word_survives(self):
+        rows = self._estate()
+        rows.append({"key": "azdo:o/loan", "name": "YL.Domain.Loan"})
+        assert "loan" not in prior_art._common_name_tokens(rows)
+
+    def test_a_small_estate_infers_nothing(self):
+        """Below a handful of repositories there is no convention to measure,
+        and every word would look ubiquitous."""
+        assert prior_art._common_name_tokens([{"name": "YL.Web.Api"}]) == frozenset()
+
+    def test_ranking_does_not_return_the_whole_estate_on_a_filler_word(self):
+        rows = self._estate()
+        reqs = prior_art.requirements_from_answers({1: "a new web api"})
+        assert prior_art.rank(rows, reqs) == []
+
+
+class TestLanguagesFromPaths:
+    def test_counts_extensions_most_files_first(self):
+        languages = prior_art.languages_from_paths(["a.cs", "b.cs", "c.tsx", "d.tf"])
+        assert languages[0] == "C#"
+        assert set(languages) == {"C#", "TypeScript", "Terraform"}
+
+    def test_unknown_extensions_are_ignored(self):
+        assert prior_art.languages_from_paths(["README.md", "LICENSE"]) == ()
+
+    def test_empty_input_is_empty_output(self):
+        assert prior_art.languages_from_paths(None) == ()
+
+
+class TestAzureEnrichment:
+    """Azure reports no description, no languages and no push date, so without
+    the tree an AzDO candidate reaches the pitch with only its name — and the
+    heaviest scoring term is permanently unavailable to an all-Azure estate."""
+
+    def _candidate(self):
+        return prior_art.RepoCandidate(
+            key="azdo:o/r", name="YL.Domain.Loan", platform="azdo", url="https://dev.azure/x"
+        )
+
+    def test_tree_supplies_languages_and_structure(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.azdevops_repo_tree",
+            lambda url: (["src/Loan.cs", "src/B.cs", "tests/LoanTests.cs", ".github/workflows/ci.yml"], ""),
+        )
+        (out,) = prior_art.enrich([self._candidate()])
+        assert out.languages == ("C#",)
+        assert "tests" in out.structure
+
+    def test_a_failed_tree_keeps_the_stored_row(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.azdevops_repo_tree",
+            lambda url: ([], "Error: no access"),
+        )
+        (out,) = prior_art.enrich([self._candidate()])
+        assert out == self._candidate()
+
+    def test_a_raising_tree_does_not_lose_the_candidate(self, monkeypatch):
+        def _boom(url):
+            raise RuntimeError("azure down")
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_repo_tree", _boom)
+        (out,) = prior_art.enrich([self._candidate()])
+        assert out.key == "azdo:o/r"
+
+    def test_a_candidate_with_no_url_is_left_alone(self, monkeypatch):
+        def _boom(url):
+            raise AssertionError("must not reach the network without a URL")
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_repo_tree", _boom)
+        bare = dataclasses.replace(self._candidate(), url="")
+        assert prior_art.enrich([bare]) == [bare]

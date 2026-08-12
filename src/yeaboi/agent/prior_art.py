@@ -198,6 +198,47 @@ def _tokens(text: str) -> set[str]:
 _SHORT_STACK_TOKENS = frozenset({"go", "c", "r", "c#", "f#", "js", "ts", "ml", "qt", "vb", "sh"})
 
 
+# A repository name is not prose. Azure DevOps shops in particular name
+# repositories `YL.Web.Api.Internal.Loan`, and `_TOKEN_RE` treats "." as a word
+# character (so that "node.js" and "asp.net" survive prose) — which collapsed
+# that whole name into ONE token and made it unmatchable. Names are therefore
+# split on their separators and at case boundaries instead.
+_NAME_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
+_CASE_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+# Above this share of the estate, a name token describes the org's naming
+# convention rather than the repository — "Web", "Api", "Common", a company
+# prefix. Matching on those returns a hundred equally-scored repositories, so
+# they are dropped. Measured per run, because every org's filler words differ.
+_COMMON_TOKEN_RATIO = 0.15
+_MIN_ROWS_FOR_COMMON = 8
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Meaningful lowercase words in a repository name.
+
+    `YL.Web.DeveloperDashboard` -> {"web", "developer", "dashboard"}.
+    """
+    parts: list[str] = []
+    for chunk in _NAME_SPLIT_RE.split(name or ""):
+        if chunk:
+            parts.extend(_CASE_SPLIT_RE.split(chunk))
+    return {p.lower() for p in parts if len(p) > 2 and p.lower() not in _STOPWORDS}
+
+
+def _common_name_tokens(rows) -> frozenset[str]:
+    """Name tokens too widespread in this estate to discriminate. Pure."""
+    rows = list(rows or [])
+    if len(rows) < _MIN_ROWS_FOR_COMMON:
+        return frozenset()
+    counts: dict[str, int] = {}
+    for row in rows:
+        for tok in _name_tokens(str(row.get("name", "") or "")):
+            counts[tok] = counts.get(tok, 0) + 1
+    ceiling = max(2, int(len(rows) * _COMMON_TOKEN_RATIO))
+    return frozenset(tok for tok, seen in counts.items() if seen > ceiling)
+
+
 def _stack_tokens(text: str) -> set[str]:
     """Like ``_tokens``, but keeps short language names.
 
@@ -252,11 +293,18 @@ def _recency_score(updated_at: str) -> float:
     return 0.0
 
 
-def score(row: dict, requirements: Requirements) -> tuple[float, list[str]]:
+def score(
+    row: dict,
+    requirements: Requirements,
+    common_tokens: frozenset[str] = frozenset(),
+) -> tuple[float, list[str]]:
     """Score one inventory row against the requirements — ``(score, why)``.
 
     Pure. ``why`` is the deterministic evidence, which doubles as the fallback
     pitch when no LLM is available.
+
+    `common_tokens` are name words this estate uses everywhere; `rank` measures
+    them and passes them in so scoring stays a function of its arguments.
     """
     why: list[str] = []
     total = 0.0
@@ -269,7 +317,11 @@ def score(row: dict, requirements: Requirements) -> tuple[float, list[str]]:
         why.append(f"Shares your stack: {', '.join(shared_stack)}")
 
     prose = _tokens(requirements.prose)
-    haystack = _tokens(f"{row.get('name', '')} {row.get('description', '')}")
+    # The name is split structurally, the description read as prose — a name
+    # is a path of segments, and treating it as a sentence loses every word.
+    haystack = (_name_tokens(str(row.get("name", "") or "")) - common_tokens) | _tokens(
+        str(row.get("description", "") or "")
+    )
     shared_words = sorted(prose & haystack)
     if shared_words:
         total += _W_KEYWORD * len(shared_words)
@@ -294,12 +346,13 @@ def rank(
     user already gave is never re-litigated by a score.
     """
     ledger = ledger or Ledger()
+    common = _common_name_tokens(rows)
     scored: list[tuple[float, RepoCandidate]] = []
     for row in rows or []:
         key = str(row.get("key") or "")
         if not key or ledger.is_rejected(key):
             continue
-        value, why = score(row, requirements)
+        value, why = score(row, requirements, common)
         if value < _MIN_SCORE:
             continue
         scored.append(
@@ -363,6 +416,48 @@ def _is_error(text: str) -> bool:
     return not text or text.startswith(("Error:", "GitHub rate limit"))
 
 
+# Extension -> language, for estates whose provider reports no language
+# breakdown. Deliberately small: this exists to give the stack term *something*
+# on Azure DevOps, not to reimplement linguist.
+_EXTENSION_LANGUAGES: tuple[tuple[str, str], ...] = (
+    (".cs", "C#"),
+    (".fs", "F#"),
+    (".vb", "Visual Basic"),
+    (".py", "Python"),
+    (".ts", "TypeScript"),
+    (".tsx", "TypeScript"),
+    (".js", "JavaScript"),
+    (".jsx", "JavaScript"),
+    (".go", "Go"),
+    (".java", "Java"),
+    (".kt", "Kotlin"),
+    (".rb", "Ruby"),
+    (".php", "PHP"),
+    (".rs", "Rust"),
+    (".scala", "Scala"),
+    (".swift", "Swift"),
+    (".tf", "Terraform"),
+    (".sql", "SQL"),
+)
+
+
+def languages_from_paths(paths, limit: int = 5) -> tuple[str, ...]:
+    """Infer languages from file extensions, most files first. Pure.
+
+    A weaker signal than a provider's own byte-count breakdown, and used only
+    where there is no such breakdown to have.
+    """
+    counts: dict[str, int] = {}
+    for raw in paths or ():
+        lowered = str(raw).lower()
+        for ext, language in _EXTENSION_LANGUAGES:
+            if lowered.endswith(ext):
+                counts[language] = counts.get(language, 0) + 1
+                break
+    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    return tuple(language for language, _ in ranked[:limit])
+
+
 def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
     """Fill in frameworks, integrations and structure for the shortlist only.
 
@@ -374,11 +469,17 @@ def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
 
     out: list[RepoCandidate] = []
     for candidate in candidates:
-        if not candidate.url or candidate.platform != "github":
-            # Azure exposes neither a description nor a language breakdown, so
-            # there is nothing to enrich with; those candidates pitch from the
-            # inventory row alone. Known asymmetry, not an oversight.
+        if not candidate.url:
             out.append(candidate)
+            continue
+        if candidate.platform != "github":
+            # Azure DevOps reports no description, no language breakdown and no
+            # push date, so an AzDO candidate would otherwise reach the pitch
+            # with nothing but its name. The tree is the one thing the API will
+            # give us: it yields structure signals, and languages inferred from
+            # extensions — which is what puts the (heaviest) stack term back in
+            # reach for an estate that is entirely Azure.
+            out.append(_enrich_from_tree(candidate))
             continue
         frameworks: tuple[str, ...] = ()
         integrations: tuple[str, ...] = ()
@@ -405,6 +506,26 @@ def enrich(candidates: list[RepoCandidate]) -> list[RepoCandidate]:
             )
         )
     return out
+
+
+def _enrich_from_tree(candidate: RepoCandidate) -> RepoCandidate:
+    """Enrich a non-GitHub candidate from its file tree alone. Fails soft."""
+    if candidate.platform != "azdo":
+        return candidate
+    try:
+        from yeaboi.tools.azure_devops import azdevops_repo_tree
+
+        paths, tree_error = azdevops_repo_tree(candidate.url)
+        if tree_error and not paths:
+            return candidate
+        return dataclasses.replace(
+            candidate,
+            languages=candidate.languages or languages_from_paths(paths),
+            structure=structure_signals(paths) or candidate.structure,
+        )
+    except Exception:
+        logger.warning("prior_art: tree enrichment failed for %s", candidate.key, exc_info=True)
+        return candidate
 
 
 def _fallback_pitch(candidate: RepoCandidate) -> tuple[str, ...]:
