@@ -1,8 +1,19 @@
 name: Publish to PyPI
 
 # The OFFICIAL release, and the only thing in this repo that can produce one.
-# Merging to main no longer publishes: publish-beta.yml ships X.Y.ZrcN on every
-# release-worthy merge, and those accumulate until a human promotes the batch.
+#
+# TWO LANES MERGE HERE, and only one of them waits. A merge whose PR is the
+# fleet's — `cowork`-labelled, or an unattended branch prefix — publishes
+# X.Y.ZrcN and nothing else; those accumulate until a human promotes the batch.
+# A merge whose PR is a human's cuts the official X.Y.Z on the spot. The gate
+# exists because unattended work should not reach `pip install yeaboi` without
+# somebody signing for it, and a human's own merge IS that signature — making
+# them wait a week for their own change was the gate misfiring on its author.
+#
+# It is a trigger distinction, not a contents one. Everything lands on one
+# branch and one version line, so an official release carries whatever the
+# fleet merged below it. What the lane decides is WHEN a release is cut, never
+# what is in it — the `left_behind` report below is the honest half of that.
 # Promotion is ✅ in Slack -> cron/slack-relay.md -> `gh issue edit <n> --add-label
 # release:promote` on the weekly promotion issue -> this workflow. Applying a
 # label needs repo write, which is the load-bearing half of the authorisation.
@@ -18,6 +29,8 @@ name: Publish to PyPI
 # code and said nothing at all. Whatever is left behind is reported instead, and
 # rides the next release.
 on:
+  push:
+    branches: [main] # a human's merge — classified in `check`, see the `lane` step
   issues:
     types: [labeled]
   workflow_dispatch:
@@ -30,7 +43,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-final
+  # A push gets a group per COMMIT; promotions keep sharing one.
+  #
+  # GitHub queues at most one pending run per group and cancels a previously
+  # pending one when a third joins — `cancel-in-progress: false` does not stop
+  # that, it only protects the run already executing. With the old trigger this
+  # group saw a run a week and it never came up. Now every merge enters it, so
+  # three merges in quick succession would cancel the middle one, and if that
+  # was the human merge its release silently never happens with nothing but a
+  # cancelled run to show for it. Two pushes publish two different versions and
+  # are independent; two ✅ on the same batch are not, and still serialise.
+  group: publish-final-${{ github.event_name == 'push' && github.sha || 'promote' }}
   cancel-in-progress: false
 
 jobs:
@@ -43,14 +66,20 @@ jobs:
     # reply that quotes an issue title — so a crafted title could at worst route
     # an allowlisted ✅ to the wrong issue. It cannot put `release:promotion`
     # there.
+    #
+    # `push` is admitted here and refused later, in `lane`, because the lane a
+    # merge came from cannot be read from the event payload — it takes a PR
+    # lookup, and an `if:` expression cannot make an API call.
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.label.name == 'release:promote' &&
        contains(github.event.issue.labels.*.name, 'release:promotion'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write # a second ✅ is closed out here rather than left open and red
+      pull-requests: read # `lane` reads the labels and head ref of the merged PR
     outputs:
       version: ${{ steps.v.outputs.version }}
       sha: ${{ steps.pin.outputs.sha }}
@@ -63,7 +92,64 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # tags, and the manifest's commit range
+      - id: lane
+        # WHICH LANE MERGED THIS — the only question a push event has to answer.
+        #
+        # `scripts/release_lane.py` decides, over `pr_feedback.py`'s own
+        # `COWORK_LABEL` / `UNATTENDED_BRANCH_PREFIXES` — the same predicate the
+        # pr-feedback gate and `claude-review.yml` already trust. Nothing about
+        # it is re-spelled in this file; see that script for why.
+        #
+        # Only the `cowork` label OR an unattended prefix marks the fleet lane —
+        # never authorship. `claude[bot]` authors plenty of human-driven PRs from
+        # `/ship`, and a maintainer merging one has signed for it just as surely
+        # as if they had typed it.
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Ruleset 14008705 enforces `pull_request` on the default branch, so
+          # every push here is a merged PR and this lookup always has one to read.
+          # EVERY associated PR, not `.[0]`. This endpoint can return more than
+          # one — an open PR that rebased onto main, a cherry-pick — in an order
+          # it does not document, so taking the first is taking an arbitrary one.
+          # release_lane.py resolves the list with any-fleet-wins, because of the
+          # two ways a wrong pick goes, one makes a human merge wait and the
+          # other publishes a fleet merge to PyPI, which has no delete.
+          #
+          # `if length == 0 then null` rather than a bare `.[] | …`: jq cannot
+          # iterate over the null an empty array yields, so the bare form exits 5
+          # and a commit with no PR behind it would be read as a FAILED lookup.
+          # That is the safe direction by luck, not by design — it made
+          # release_lane.py's documented "no PR is a human" path unreachable, and
+          # the two disagreeing about the same case is how one ends up wrong.
+          if ! PR=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+                      --jq 'if length == 0 then null else [.[] | {labels: [.labels[].name], head: .head.ref}] end'); then
+            # A rate-limited or flaking lookup must not be the thing that decides
+            # to publish. Unclassified means "stay on the pre-release channel":
+            # the work still ships as an rc and rides the next release, which is
+            # recoverable. Guessing "human" here is not — PyPI has no delete.
+            echo "::warning::could not read the PR behind ${GITHUB_SHA:0:8} — staying on the pre-release channel."
+            echo "unattended=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Unclassified is not "human": a non-zero exit means the payload did
+          # not parse, and that must not be the thing that decides to publish.
+          if ! VERDICT=$(printf '%s' "$PR" | python3 scripts/release_lane.py); then
+            echo "::warning::could not classify ${GITHUB_SHA:0:8} — staying on the pre-release channel."
+            echo "unattended=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$VERDICT" = "fleet" ]; then
+            echo "::notice::unattended merge — publishing a pre-release only; it promotes with the batch."
+            echo "unattended=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::human merge — cutting the official release."
+            echo "unattended=false" >> "$GITHUB_OUTPUT"
+          fi
       - id: pin
+        if: steps.lane.outputs.unattended != 'true'
         # Resolve WHICH TREE to release, and check it out, before anything reads
         # pyproject.toml or builds the notes. Three sources, most-trusted first:
         #
@@ -135,12 +221,21 @@ jobs:
           fi
           if [ -z "$SHA" ]; then
             SHA=$(git rev-parse HEAD)
-            echo "::warning::no pre-release tag to pin to — promoting main at ${SHA:0:8} untested."
+            if [ "${{ github.event_name }}" = "push" ]; then
+              # Not a fallback on this path — a human merge IS the pushed commit,
+              # and there is no rc to pin to because this release is what created
+              # the version. Saying "untested" here would be noise on the lane
+              # that is now the normal one.
+              echo "::notice::releasing the merged commit ${SHA:0:8}."
+            else
+              echo "::warning::no pre-release tag to pin to — promoting main at ${SHA:0:8} untested."
+            fi
           fi
           git checkout --detach "$SHA"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - id: notes
+        if: steps.lane.outputs.unattended != 'true'
         # Built here, in `check`, and carried to the release job as an artifact.
         # It used to run after the PyPI upload, under `bash -e`, and this script
         # exits non-zero on a git failure — which would have left a final
@@ -153,11 +248,13 @@ jobs:
           python3 scripts/release_channel.py --manifest --release-notes > notes.md
           cat notes.md
       - uses: actions/upload-artifact@v4
+        if: steps.lane.outputs.unattended != 'true'
         with:
           name: release-notes
           path: notes.md
           retention-days: 1
       - id: v
+        if: steps.lane.outputs.unattended != 'true'
         env:
           # The version the human actually saw, carried in the issue body as
           # `<!-- promote: X.Y.Z -->` by the ask routine. Data, never a command:
@@ -341,6 +438,7 @@ jobs:
           name: v${{ needs.check.outputs.version }}
           body_path: /tmp/notes/notes.md
           generate_release_notes: true # appended under the batch manifest
+          make_latest: true # the official `v*` release is the one "Latest" points at
       - name: Close the promotion issue
         if: github.event_name == 'issues'
         env:

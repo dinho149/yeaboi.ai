@@ -106,8 +106,10 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   waiting for. `MAX_REVIEW_ROUNDS` remains the point the reviewer stops writing at all.
 
   Unresolved *human* threads and a requested-changes review are never capped: a person waiting for
-  an answer is not a loop. What makes the cap safe is that a merge no longer reaches users; it
-  publishes a pre-release, and the weekly promotion is where a human looks.
+  an answer is not a loop. What makes the cap safe is that an *unattended* merge does not reach
+  users; it publishes a pre-release, and the weekly promotion is where a human looks. (A human's
+  own merge does cut a release — but that is a lane with a human in it by construction, which is
+  the condition this cap exists to substitute for.)
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a
   Python-only change), say so in the PR body in one line. Silence is not an exemption.
 
