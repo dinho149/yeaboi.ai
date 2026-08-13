@@ -62,19 +62,24 @@ def get_standup_digest_prompt(
     digest_date: str,
     window_start: str,
     total_cost_usd: float,
-    sessions: list[tuple[str, str, float, int, list[str]]],
+    sessions: list[tuple[str, str, float, int, list[str], str, list[str]]],
     repo_items: list[tuple[str, str, str, str, str]],
 ) -> str:
     """Build the agent-standup digest prompt.
 
     Args:
-        sessions: (project, source, cost_usd, turns, models) rows, costliest first.
+        sessions: (project, source, cost_usd, turns, models, branch, top_tools)
+            rows, costliest first. Branch and tools are the only evidence here of
+            *what* a session did — without them the model can say where the work
+            happened and what it cost, and then has nothing left but to call the
+            most expensive session a highlight.
         repo_items: (kind, title, repo, status, agent_marker) tracker rows.
     """
     session_lines = (
         "\n".join(
-            f"- {project} ({source}, {turns} turn(s), ${cost:,.2f}, {'/'.join(models)})"
-            for project, source, cost, turns, models in sessions
+            f"- {project}{f' on {branch}' if branch else ''} ({source}, {turns} turn(s), "
+            f"${cost:,.2f}, {'/'.join(models)}" + (f", mostly {', '.join(tools)}" if tools else "") + ")"
+            for project, source, cost, turns, models, branch, tools in sessions
         )
         or "(no local agent sessions)"
     )
@@ -97,6 +102,9 @@ def get_standup_digest_prompt(
         "- Ground EVERY statement in the evidence below — never invent work or restate costs beyond the total given.\n"
         "- narrative: 2-3 sentences, plain prose, leading with the most consequential work.\n"
         "- highlights: the shipped/merged/completed things worth telling the team (max 5, one line each).\n"
+        "  A session is a highlight only for what it DID — the branch, the tools, what landed. Cost "
+        "ranks the list; it is never by itself the reason a line is in it, and one lone session is "
+        "not a highlight of anything.\n"
         "- attention_items: open agent PRs waiting on review, failures, or anything needing a human (max 5).\n"
         "- Detection is a lower bound — do not claim agents were idle; absence of evidence is not idleness.\n"
         'Return STRICT JSON: {"narrative": "...", "highlights": ["..."], "attention_items": ["..."]}'

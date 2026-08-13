@@ -118,9 +118,15 @@ def format_standup_rich(digest: AgentStandupDigest) -> RenderableType:
     header.append(f"{digest.window_start} → {digest.window_end}", style=_MUTED)
     parts.append(header)
 
+    # Shared with both exporters, so the terminal, the Slack post and the written
+    # file never disagree about what the run measured. See `standup_totals`.
+    from yeaboi.agentwatch.export import standup_totals
+
+    count, cost = standup_totals(digest)
     totals = Text()
-    totals.append(f"{digest.sessions_worked} session(s)", style="bold white")
-    totals.append(f" — ${digest.total_cost_usd:,.2f} estimated", style=_MUTED)
+    totals.append(count, style="bold white")
+    if cost:
+        totals.append(f" — {cost}", style=_MUTED)
     if digest.agents_seen:
         totals.append(f" · {', '.join(digest.agents_seen)}", style=_MUTED)
     parts.append(totals)

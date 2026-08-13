@@ -78,15 +78,38 @@ def build_usage_markdown(report: AgentUsageReport) -> str:
     return "\n".join(lines)
 
 
+def standup_totals(digest: AgentStandupDigest) -> tuple[str, str | None]:
+    """What a standup digest counted, as ``(count phrase, cost phrase or None)``.
+
+    One decision, three renderers. `build_standup_markdown`, `build_standup_plaintext`
+    and `render.format_standup_rich` all lead with this, and they must agree: the
+    markdown one is written to disk on every run, so a headline that is only honest
+    in Slack is one that ships wrong in the file nobody re-reads for months.
+
+    ``0 session(s), $0.00 estimated`` is the shape to avoid. It is *true* on a run
+    that did not collect local sessions (``include_local_sessions=False``, which is
+    how the cloud routine runs) and it reads as "the agents cost nothing today".
+    So a digest with no sessions counts whatever it does have, and the cost phrase
+    is dropped entirely rather than printed as zero — a total of $0.00 is a claim
+    about spend, and this run did not measure spend. `digest.coverage_notes` says
+    which of "none ran" and "none were collected" it was; that is their job, not
+    the headline's.
+    """
+    if digest.sessions_worked:
+        return f"{digest.sessions_worked} session(s)", f"${digest.total_cost_usd:,.2f} estimated"
+    if digest.repo_activity:
+        return f"{len(digest.repo_activity)} agent-authored tracker item(s)", None
+    return "no agent activity recorded in the window", None
+
+
 def build_standup_markdown(digest: AgentStandupDigest) -> str:
     """The agent standup digest as a shareable Markdown document."""
+    count, cost = standup_totals(digest)
+    seen = f", agents seen: {', '.join(digest.agents_seen)}" if digest.agents_seen else ""
     lines: list[str] = [
         f"# Agent Standup — {digest.digest_date}",
         "",
-        f"Window {digest.window_start} → {digest.window_end}: "
-        f"**{digest.sessions_worked} session(s)**, ${digest.total_cost_usd:,.2f} estimated"
-        + (f", agents seen: {', '.join(digest.agents_seen)}" if digest.agents_seen else "")
-        + ".",
+        f"Window {digest.window_start} → {digest.window_end}: **{count}**" + (f", {cost}" if cost else "") + seen + ".",
     ]
     if digest.narrative:
         lines += ["", digest.narrative]
@@ -118,11 +141,10 @@ def build_standup_markdown(digest: AgentStandupDigest) -> str:
 
 def build_standup_plaintext(digest: AgentStandupDigest) -> str:
     """A compact plaintext digest for Slack delivery (no markdown tables)."""
-    lines = [
-        f"*Agent Standup — {digest.digest_date}*",
-        f"{digest.sessions_worked} session(s), ${digest.total_cost_usd:,.2f} estimated"
-        + (f" · {', '.join(digest.agents_seen)}" if digest.agents_seen else ""),
-    ]
+    seen = f" · {', '.join(digest.agents_seen)}" if digest.agents_seen else ""
+    count, cost = standup_totals(digest)
+    headline = count + (f", {cost}" if cost else "") + seen
+    lines = [f"*Agent Standup — {digest.digest_date}*", headline]
     if digest.narrative:
         lines += ["", digest.narrative]
     for title, items in (

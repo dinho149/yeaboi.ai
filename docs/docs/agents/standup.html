@@ -75,11 +75,13 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       <p>By default the digest reaches back to the start of the <strong>previous working day</strong>, which is the same rule the human standup uses: a Monday run covers Friday, so a weekend never hides a Saturday night's agent work. Pass <code>--days N</code> to look back a fixed number of days instead.</p>
 
       <h2 id="sources">Sources</h2>
-      <p>Local session rollups are always included. On top of those, yeaboi can scan your trackers for <strong>agent-authored</strong> commits and pull requests — GitHub and Azure DevOps — so the digest covers work that left the machine as well as work that happened on it. Tracker scanning is best-effort: it is skipped with a warning rather than failing the run.</p>
+      <p>Local session rollups are included by default. On top of those, yeaboi can scan your trackers for <strong>agent-authored</strong> commits and pull requests — GitHub and Azure DevOps — so the digest covers work that left the machine as well as work that happened on it. Tracker scanning is best-effort: it is skipped with a warning rather than failing the run.</p>
       <pre><code>yeaboi agents standup                          # local + both trackers
 yeaboi agents standup --tracker-sources        # local only
 yeaboi agents standup --tracker-sources github
-yeaboi agents standup --github-owners my-org</code></pre>
+yeaboi agents standup --github-owners my-org
+yeaboi agents standup --no-local-sessions      # trackers only</code></pre>
+      <p><code>--no-local-sessions</code> skips the local scan entirely rather than running it and discarding the result, and the digest says so in its coverage notes. Use it wherever <code>~/.claude</code> is not the machine whose work you are reporting on — a CI job or a scheduled cloud run, where the only sessions on disk are that job's own. Without it such a run reports itself as the team's agent activity.</p>
 
       <h2 id="delivery">Delivery</h2>
       <p><code>--deliver</code> posts the digest to your configured Slack webhook and raises a desktop notification. Delivery never raises — a webhook that is down becomes a warning on the report, not a failed run, because the digest itself is still worth having.</p>

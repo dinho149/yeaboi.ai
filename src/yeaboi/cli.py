@@ -860,6 +860,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="Azure DevOps projects to scan (default configured)",
     )
+    astandup_p.add_argument(
+        "--no-local-sessions",
+        dest="include_local_sessions",
+        action="store_false",
+        help="Skip local session logs for a tracker-only digest (use off this machine)",
+    )
     astandup_p.add_argument("--deliver", action="store_true", help="Post the digest to the configured Slack webhook")
     astandup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     astandup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
@@ -1775,6 +1781,7 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
             tracker_sources=args.tracker_sources,
             github_owners=args.github_owners,
             azdo_projects=args.azdo_projects,
+            include_local_sessions=args.include_local_sessions,
             deliver=args.deliver,
         )
         for warning in digest.warnings:

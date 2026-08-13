@@ -153,6 +153,7 @@ class TestFilesAgreeWithTheTable:
         ]
         assert sorted(declaring) == sorted(
             [
+                "cron/day-ahead.md",
                 "cron/digest.md",
                 "cron/cd-deploy.md",
                 "cron/integrations-campaign.md",
@@ -436,15 +437,19 @@ class TestAgenda:
         upcoming = {name for entry in payload["ahead"] for name in entry["names"]}
         assert {"performance-sweep", "artifacts-sharing-sweep", "roadmap-sweep"} <= upcoming
 
-    def test_the_posting_routine_is_in_the_payload_and_not_in_the_message(self):
-        """A line announcing the message you are holding is the one line in a
-        four-line post that says nothing. It stays in the payload, which is the
-        fleet's schedule and does include it."""
+    def test_the_evening_post_is_announced_like_everything_else(self):
+        """`shipped-standup` used to be filtered out of the rendered message. It is
+        one of the two things a reader waits for in Slack, so a schedule that
+        answers "when should I expect something" has to name it. Being daily, it
+        is named once in the closing line rather than seven times down the tail."""
         payload = setup.agenda(date(2026, 8, 16))
-        assert setup.DAILY_POSTER in {entry["name"] for entry in payload["today"]}
-        assert setup.DAILY_POSTER in payload["daily"]
+        assert "shipped-standup" in {entry["name"] for entry in payload["today"]}
+        assert "shipped-standup" in payload["daily"]
         blob = "\n".join(payload["lines"])
-        assert setup.DAILY_POSTER not in blob
+        assert "shipped-standup" in blob
+        assert not any("shipped-standup" in entry["names"] for entry in payload["ahead"]), (
+            "a daily routine restated on every day of the tail is noise"
+        )
 
     def test_the_payload_is_json_serialisable(self):
         assert json.loads(json.dumps(setup.agenda(date(2026, 8, 13))))
@@ -503,8 +508,6 @@ class TestAgenda:
         payload = setup.agenda(date(2026, 8, 13))
         blob = "\n".join(payload["lines"])
         for entry in payload["today"] + payload["background"]:
-            if entry["name"] == setup.DAILY_POSTER:
-                continue  # the one documented omission — see the test above
             assert entry["name"] in blob, entry["name"]
 
     @pytest.mark.skipif(setup.display_zone()[0] is None, reason="no tz database")
@@ -526,9 +529,7 @@ class TestAgenda:
         """A day with nothing on it, written as its own line, reads as a routine
         called "nothing" — and spends a line of the post saying so."""
         payload = setup.agenda(date(2026, 8, 16))
-        quiet = [
-            entry for entry in payload["ahead"] if not [name for name in entry["names"] if name != setup.DAILY_POSTER]
-        ]
+        quiet = [entry for entry in payload["ahead"] if not entry["names"]]
         assert quiet, "16 Aug 2026 is chosen for having a quiet day in its tail"
         for entry in quiet:
             future = date.fromisoformat(entry["date"])
@@ -1161,6 +1162,7 @@ class TestManifest:
             "default_allowed_tools",
             "targets",
             "labels",
+            "linear_labels",
             "variables",
             "routines",
         }
@@ -2103,7 +2105,7 @@ class TestToolOverrides:
         """`cron/shipped-standup.md` states this as a safety property — it reads a
         day of merged PRs and posts one message — so it is pinned rather than left
         as prose. Task stays: unlike the relay, it spawns the scribe."""
-        tools = setup.routine_tools(setup.DAILY_POSTER)
+        tools = setup.routine_tools("shipped-standup")
         assert not {"Write", "Edit"} & set(tools)
         assert "Task" in tools and "Bash" in tools
 
@@ -4279,3 +4281,87 @@ class TestBlockedReport:
         gate = routine[routine.index("Say it once") : routine.index("## If `RemoteTrigger`")]
         assert "`type:bug`" in gate and "`workstream:platform`" in gate
         assert "Not `cowork:proposal`" in gate, "the gate no longer says which label it must not use"
+
+
+class TestLinearLabels:
+    """What `/cowork deploy` creates on the Linear team, derived rather than typed.
+
+    The proposal queue's labels are GitHub-only, and shipping them to Linear would
+    put `claude-implement` on a board where nothing reads it. The one non-workstream
+    label that does belong there is the disclosure approval: a disclosure-class find
+    has no GitHub issue by construction, so `claude-implement` cannot be its verb.
+    """
+
+    def test_it_carries_every_workstream_and_nothing_from_the_queue(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)  # no gh call
+        names = setup.manifest()["linear_labels"]
+        workstreams = {label.name for label in setup.expected_labels() if label.name.startswith("workstream:")}
+        assert workstreams <= set(names)
+        for queue_only in ("cowork", "cowork:proposal", "claude-implement"):
+            assert queue_only not in names, f"{queue_only} is GitHub-only — Linear has no proposal queue"
+        assert not [n for n in names if n.startswith("type:")]
+
+    def test_the_disclosure_approval_is_there(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)  # no gh call
+        assert "security:approved" in setup.manifest()["linear_labels"]
+        assert setup.LINEAR_ONLY_LABELS == ("security:approved",)
+
+    def test_the_relay_and_the_setup_agree_on_its_name(self):
+        """Two files apply and drain this label; a typo in either is a silent no-op."""
+        relay_src = (setup.REPO_ROOT / "scripts" / "cowork_relay.py").read_text(encoding="utf-8")
+        assert 'SECURITY_APPROVED_LABEL = "security:approved"' in relay_src
+        sweep = (setup.ROUTINES_DIR / "cron" / "security-sweep.md").read_text(encoding="utf-8")
+        assert "security:approved" in sweep, "the sweep must drain the label the relay applies"
+
+
+class TestTheAgentsExampleCannotBeCopied:
+    """The 2026-08-13 digest, made unrepeatable.
+
+    `cron/agents-standup.md` showed a fully-worked example message. Its footer read
+    "Local-session coverage is partial here: this run saw trackers only." — an
+    illustrative sentence, not engine output. The scribe copied it verbatim into a
+    real post that had just reported one session, so the message contradicted
+    itself two lines apart, and the string existed exactly once in the whole repo:
+    in that example.
+
+    The fix is that no value in the shape is plausible enough to reuse. This test
+    is what keeps it that way, because the next person to make the example
+    "clearer" will make it copyable again.
+    """
+
+    ROUTINE = setup.ROUTINES_DIR / "cron" / "agents-standup.md"
+    DIVIDER = "─"
+
+    def _slack_lines(self) -> list[str]:
+        import re
+
+        blocks = re.findall(r"```slack\n(.*?)```", self.ROUTINE.read_text(encoding="utf-8"), re.S)
+        assert blocks, "agents-standup.md shows no message shape at all"
+        return [line.strip() for block in blocks for line in block.splitlines() if line.strip()]
+
+    def test_every_value_in_the_shape_is_a_placeholder(self):
+        for line in self._slack_lines():
+            if set(line) <= {self.DIVIDER}:
+                continue
+            assert "<" in line, f"this line could be posted verbatim as if it were data: {line}"
+
+    def test_the_sentence_that_leaked_is_not_in_the_shape(self):
+        """Scoped to the ```slack blocks on purpose. The prose above them quotes the
+        sentence while explaining what it did, which is documentation; the failure
+        was that it sat somewhere a model reads as something to write."""
+        for line in self._slack_lines():
+            assert "coverage is partial" not in line
+            assert "saw trackers only" not in line
+
+    def test_the_footer_is_pinned_to_the_engine_field(self):
+        text = self.ROUTINE.read_text(encoding="utf-8")
+        assert "digest.coverage_notes" in text
+        assert "omitted" in text and "empty" in text, "an empty coverage array must produce no footer at all"
+
+    def test_the_run_is_tracker_only_and_says_why(self):
+        text = self.ROUTINE.read_text(encoding="utf-8")
+        assert "--no-local-sessions" in text
+        assert "sessions_worked" in text, "the routine must say the zero is by construction"
+
+    def test_warnings_are_required_to_reach_the_post(self):
+        assert "digest.warnings" in self.ROUTINE.read_text(encoding="utf-8")

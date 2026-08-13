@@ -76,10 +76,15 @@ a routine file, or when someone new joins.
    from a table that disagrees with its own file is how a sweep ends up on the wrong schedule.
 2. **Labels and variables.** `make cowork-setup`. Report the counts.
 3. **Linear labels.** Take `targets.linear` from `--json` for the team id, `list_issue_labels` for
-   that team, then `create_issue_label` for each `workstream:<name>` in the manifest's `labels` that
-   is missing. The non-workstream labels (`cowork`, `cowork:proposal`, `claude-implement`, and the
-   `type:*` set) are GitHub-only — the proposal queue lives in GitHub issues, and Linear only ever
-   carries the workstream dimension.
+   that team, then `create_issue_label` for each name in the manifest's **`linear_labels`** that is
+   missing. Use that list, not `labels` — the proposal queue's labels (`cowork`, `cowork:proposal`,
+   `claude-implement`, the `type:*` set) are GitHub-only and must never reach Linear.
+
+   `linear_labels` is the workstream dimension plus `security:approved`, which is the one Linear
+   label that is not a workstream. A disclosure-class security find has no GitHub issue by
+   construction, so `claude-implement` cannot be its approval; `cron/slack-relay.md` applies
+   `security:approved` to the Linear ticket when you react ✅, and the next `cron/security-sweep.md`
+   run drains it. Without the label the approval has nowhere to land.
 4. **Routines.** The account-scoped half, and the reason this is a command and not a make target.
    - Load the `schedule` skill first (Skill tool, `schedule`) for the current `RemoteTrigger`
      contract and how an `environment_id` is resolved. Do not work from memory: it is an account-side

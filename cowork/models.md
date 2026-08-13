@@ -54,6 +54,7 @@ tier belongs in one place. The rest do model-worthy work in their own session an
 | the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
 | `cron/shipped-standup.md` | `standard` | Reads a day of merged PRs and their checks, and writes the one-line-each trace of what shipped |
 | `cron/digest.md` | `standard` | Buckets ~20 issue titles by type and ranks each bucket into one message |
+| `cron/day-ahead.md` | `fast` | Runs one script and posts what it printed; every judgement in the message was made in Python |
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
 | `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
 | `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |

@@ -230,3 +230,65 @@ class TestRefreshingBannerProgress:
             )
         )
         assert "Refreshing…" in out
+
+
+class TestStandupPlaintextHeadline:
+    """The Slack header must count what the run measured, not what it skipped."""
+
+    def _digest(self, **kw):
+        from yeaboi.agent.state import AgentRepoActivityRow, AgentStandupDigest
+
+        base = {"digest_date": "2026-08-13"}
+        if kw.pop("with_tracker_row", False):
+            kw["repo_activity"] = (AgentRepoActivityRow(kind="pr", title="add retry", repo="webapp", status="merged"),)
+        return AgentStandupDigest(**base, **kw)
+
+    def test_sessions_lead_when_there_are_any(self):
+        from yeaboi.agentwatch.export import build_standup_plaintext
+
+        text = build_standup_plaintext(self._digest(sessions_worked=3, total_cost_usd=12.5))
+        assert "3 session(s), $12.50 estimated" in text
+
+    def test_a_tracker_only_run_never_reports_zero_sessions_and_no_spend(self):
+        """ "0 session(s), $0.00 estimated" reads as "the agents were free today"
+        when it means "that is not what this run measured"."""
+        from yeaboi.agentwatch.export import build_standup_plaintext
+
+        text = build_standup_plaintext(self._digest(with_tracker_row=True))
+        assert "1 agent-authored tracker item(s)" in text
+        assert "session(s)" not in text
+        assert "$0.00" not in text
+
+    def test_a_wholly_empty_digest_says_so_plainly(self):
+        from yeaboi.agentwatch.export import build_standup_plaintext
+
+        text = build_standup_plaintext(self._digest())
+        assert "no agent activity recorded in the window" in text
+        assert "$0.00" not in text
+
+    def test_every_renderer_of_the_same_digest_agrees(self):
+        """Three surfaces, one headline decision.
+
+        Slack is the one that gets read, but `export_artifact` writes the markdown
+        on every run — so a fix applied only to the plaintext builder still ships
+        "0 session(s), $0.00 estimated" to a file, where the coverage note that
+        explains it is further away than it is in a Slack post.
+        """
+        from rich.console import Console
+
+        from yeaboi.agentwatch.export import build_standup_markdown, build_standup_plaintext
+        from yeaboi.agentwatch.render import format_standup_rich
+
+        digest = self._digest(with_tracker_row=True)
+        console = Console(width=200, no_color=True, legacy_windows=False)
+        with console.capture() as captured:
+            console.print(format_standup_rich(digest))
+
+        for surface, text in (
+            ("plaintext", build_standup_plaintext(digest)),
+            ("markdown", build_standup_markdown(digest)),
+            ("rich", captured.get()),
+        ):
+            assert "1 agent-authored tracker item(s)" in text, f"{surface} does not count what the run measured"
+            assert "session(s)" not in text, f"{surface} still reports sessions it never collected"
+            assert "$0.00" not in text, f"{surface} still reports $0.00, which reads as free"

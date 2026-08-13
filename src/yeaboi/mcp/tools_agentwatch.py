@@ -37,7 +37,12 @@ def _usage_history(limit: int):
 
 
 def _standup_run(
-    days: int, tracker_sources: list | None, github_owners: list | None, azdo_projects: list | None, deliver: bool
+    days: int,
+    tracker_sources: list | None,
+    github_owners: list | None,
+    azdo_projects: list | None,
+    include_local_sessions: bool,
+    deliver: bool,
 ):
     if days < 0 or days > 90:
         raise ValueError("days must be between 0 (previous working day) and 90.")
@@ -50,6 +55,7 @@ def _standup_run(
         tracker_sources=tracker_sources,
         github_owners=github_owners,
         azdo_projects=azdo_projects,
+        include_local_sessions=include_local_sessions,
         deliver=deliver,
     )
 
@@ -132,18 +138,31 @@ def register(app) -> None:
         tracker_sources: list[str] | None = None,
         github_owners: list[str] | None = None,
         azdo_projects: list[str] | None = None,
+        include_local_sessions: bool = True,
         deliver: bool = False,
     ) -> dict:
         """BETA — Run the daily agent standup: what the user's AI coding agents did — local
         sessions worked (with cost) plus agent-authored commits/PRs found in GitHub/Azure DevOps.
         days=0 covers everything since the previous working day (a Monday run reaches Friday);
-        tracker_sources=[] skips trackers for a local-only digest. deliver=true posts to the
-        configured Slack webhook — ask the user before enabling.
+        tracker_sources=[] skips trackers for a local-only digest, and
+        include_local_sessions=false is the mirror — a tracker-only digest. Session logs are read
+        from the machine this runs on, so set it false anywhere that is not the user's own
+        machine, or the digest reports whatever sessions that host happens to have. deliver=true
+        posts to the configured Slack webhook — ask the user before enabling.
 
         The Agents modes are in beta — detection is a lower bound; never present absence of
         evidence as agent idleness."""
         return _with_beta(
-            await run_engine(ctx, _standup_run, days, tracker_sources, github_owners, azdo_projects, deliver)
+            await run_engine(
+                ctx,
+                _standup_run,
+                days,
+                tracker_sources,
+                github_owners,
+                azdo_projects,
+                include_local_sessions,
+                deliver,
+            )
         )
 
     @app.tool()
