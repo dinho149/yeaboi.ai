@@ -50,6 +50,22 @@ def export_plan_json(graph_state: dict) -> str:
             "board": profile_id.split("-", 1)[1] if "-" in profile_id else profile_id,
         }
 
+    # Prior art — existing team repositories the user confirmed this plan
+    # builds on. Words and numbers only, like every other payload here.
+    prior_art = graph_state.get("prior_art") or ()
+    if prior_art:
+        output["prior_art"] = [
+            {
+                "key": ref.key,
+                "name": ref.name,
+                "url": ref.url,
+                "platform": ref.platform,
+                "pitch": list(ref.pitch),
+                "stack": list(ref.stack),
+            }
+            for ref in prior_art
+        ]
+
     # Project metadata from analysis + questionnaire
     analysis = graph_state.get("project_analysis")
     questionnaire = graph_state.get("questionnaire")

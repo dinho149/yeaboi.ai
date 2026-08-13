@@ -29,13 +29,19 @@ repos:
     hooks:
       - id: gitleaks
 
-  # Run unit tests before every commit (< 3s, no API keys, no graph compilation).
+  # Run the unit tests this change touches before every commit, in parallel.
   # Integration + contract tests run in CI on every PR — see .github/workflows/ci.yml.
+  #
+  # Scoped rather than the whole lane: 11,000 tests on every commit is a gate
+  # people learn to pass with --no-verify. `scripts/test_scope.py` picks the
+  # areas the staged files touch plus the always-run repo guards, and widens to
+  # everything whenever it cannot classify a path — so the narrowing can cost
+  # time, never coverage.
   - repo: local
     hooks:
       - id: unit-tests
         name: Unit tests
         language: system
-        entry: uv run pytest tests/unit/ --tb=short -q
+        entry: make test-scoped
         pass_filenames: false
         files: \.py$

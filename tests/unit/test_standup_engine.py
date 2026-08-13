@@ -1126,7 +1126,7 @@ class TestCodeScopeReportsWhatItDropped:
 
     def test_a_ticked_source_with_no_repos_is_reported_as_dropped(self):
         config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": []}
-        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+        sources, owners, github, _projects, _legacy, dropped, _excluded = engine._resolve_code_scope(
             config, None, None, None, None
         )
         assert sources == [] and github == [] and owners == []
@@ -1139,7 +1139,7 @@ class TestCodeScopeReportsWhatItDropped:
             "azdo_projects": [],
             "azdo_repositories": [],
         }
-        sources, _owners, _github, _projects, _legacy, dropped = engine._resolve_code_scope(
+        sources, _owners, _github, _projects, _legacy, dropped, _excluded = engine._resolve_code_scope(
             config, None, None, None, None
         )
         assert sources == []
@@ -1147,7 +1147,7 @@ class TestCodeScopeReportsWhatItDropped:
 
     def test_a_source_with_a_real_scope_is_not_dropped(self):
         config = {"code_scope_configured": True, "code_sources": ["github"], "github_repositories": ["o/r"]}
-        sources, _owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+        sources, _owners, github, _projects, _legacy, dropped, _excluded = engine._resolve_code_scope(
             config, None, None, None, None
         )
         assert sources == ["github"] and github == ["o/r"]
@@ -1161,7 +1161,7 @@ class TestCodeScopeReportsWhatItDropped:
             "github_owners": ["acme"],
             "github_repositories": [],
         }
-        sources, owners, github, _projects, _legacy, dropped = engine._resolve_code_scope(
+        sources, owners, github, _projects, _legacy, dropped, _excluded = engine._resolve_code_scope(
             config, None, None, None, None
         )
         assert sources == ["github"] and owners == ["acme"] and github == []
@@ -1240,6 +1240,50 @@ class TestGitHubOwnerScopeResolution:
         sources, owners, *_rest = engine._resolve_code_scope(None, None, None, None, None)
 
         assert sources == [] and owners == []
+
+
+class TestGitHubExcludedRepositoriesResolution:
+    """Where the exclusion list comes from — never widens, only trims."""
+
+    def test_an_explicit_override_wins_over_saved_exclusions(self):
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["github"],
+            "github_owners": ["acme"],
+            "github_excluded_repositories": ["acme/saved"],
+        }
+        *_rest, excluded = engine._resolve_code_scope(
+            config, None, None, None, None, github_excluded_repositories=["acme/override"]
+        )
+        assert excluded == ["acme/override"]
+
+    def test_saved_exclusions_apply_when_configured_and_no_override(self):
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["github"],
+            "github_owners": ["acme"],
+            "github_excluded_repositories": ["acme/noisy"],
+        }
+        *_rest, excluded = engine._resolve_code_scope(config, None, None, None, None)
+        assert excluded == ["acme/noisy"]
+
+    def test_unconfigured_run_has_no_exclusions(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "token")
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+
+        *_rest, excluded = engine._resolve_code_scope(None, None, None, None, None)
+        assert excluded == []
+
+    def test_empty_override_is_an_explicit_clear(self):
+        config = {
+            "code_scope_configured": True,
+            "code_sources": ["github"],
+            "github_owners": ["acme"],
+            "github_excluded_repositories": ["acme/noisy"],
+        }
+        *_rest, excluded = engine._resolve_code_scope(config, None, None, None, None, github_excluded_repositories=[])
+        assert excluded == []
 
 
 class TestSkippedSources:

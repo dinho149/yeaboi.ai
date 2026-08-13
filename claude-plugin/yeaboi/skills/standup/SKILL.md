@@ -85,9 +85,12 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    team), use `standup_config_get` / `standup_config_set`. Call
    `standup_members` first to preview candidates from Jira, Azure DevOps, or
    both, and `standup_repositories` to discover GitHub repository/Azure project choices.
-   Save an explicit `code_sources`, `github_repositories`, and
-   `azdo_projects` scope; GitHub identifiers are `owner/repo`, while each Azure
-   project dynamically covers all accessible repositories. Save `documentation_sources` as a subset
+   Save an explicit `code_sources`, `github_owners`, `github_repositories`,
+   `github_excluded_repositories`, and `azdo_projects` scope; a GitHub owner
+   dynamically covers every active repository inside it (same as an Azure
+   project), `github_excluded_repositories` (`owner/repo` slugs) opts specific
+   repos back out of that expansion, and `github_repositories` pins exact
+   repos regardless of owner scope. Save `documentation_sources` as a subset
    of `confluence`/`notion`; documentation files in selected repositories are
    included automatically. The selected roster is authoritative:
    unselected authors are excluded from member updates and team totals.

@@ -100,6 +100,7 @@ function Body({ report }: { report: ExportReport }) {
           sprints={report.sprints}
           velocity={report.velocity}
           images={report.images}
+          priorArt={report.priorArt}
         />
       );
     case 'standup':

@@ -183,6 +183,7 @@ def run_repl(
     resume_session_id: str | None = None,
     non_interactive: bool = False,
     output_format: str | None = None,
+    prior_art: list[str] | None = None,
 ) -> None:
     """Run the interactive REPL loop.
 
@@ -212,6 +213,10 @@ def run_repl(
         output_format: Output format for non-interactive mode — "json",
             "html", or "markdown". When set, the corresponding export is
             written at pipeline completion.
+        prior_art: Repository keys ("github:acme/auth") to treat as accepted
+            prior art. Non-interactive runs never guess these — the intake's
+            prior-art step needs a human, so a headless caller states them or
+            the plan gets none.
     """
     logger.info("run_repl started: mode=%s export_only=%s", intake_mode, export_only)
 
@@ -287,6 +292,10 @@ def run_repl(
     # turns. After each graph.invoke(), we save the returned state and merge
     # the next user message into it before the next invocation.
     graph_state: dict = {"messages": []}
+    if prior_art:
+        from yeaboi.agent.state import prior_art_refs
+
+        graph_state["prior_art"] = prior_art_refs(prior_art)
 
     # Output detail level — toggled by /compact and /verbose commands.
     # Compact mode hides secondary columns (descriptions, ACs, disciplines).

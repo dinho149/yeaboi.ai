@@ -254,8 +254,14 @@ jobs:
             For each alert, one deduped issue per RULE — not per alert, or a
             repeated rule floods the queue:
 
-            1. `gh issue list --label cowork:proposal --search "<rule id>" --state all`.
+            1. `gh issue list --label cowork --search "<rule id>" --state all`.
                `--state all` so a rule someone already rejected is not re-filed.
+               `--label cowork` rather than `cowork:proposal`: those two are
+               mutually exclusive with `cowork:queued` (`cowork/house-rules.md`,
+               **The queue**), so searching the narrower label would miss a rule
+               whose issue had been reclassified and open a second public issue
+               re-asking a decision `triage-policy.yml` already records. Both
+               labels sit beside `cowork`, so this sees either.
                If an open issue covers the rule, add a short comment listing this
                week's alert numbers instead of opening a duplicate.
             2. Otherwise open `[security][security] codeql: <rule id>` labelled

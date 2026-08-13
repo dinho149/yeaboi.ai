@@ -111,7 +111,12 @@ test has ever seen.
    would write the fleet from a snapshot the script itself declined to stand behind. Here, nothing
    downstream reads the labels.
 
-4. **Reconcile the routines.** `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
+4. **Reconcile the routines.** **First, check the tool is here at all.** If `RemoteTrigger` is not in
+   this session's toolset, stop and follow [If `RemoteTrigger` is
+   unavailable](#if-remotetrigger-is-unavailable) below — that is a standing environment gap rather
+   than a failed call, and it is reported *once* rather than once per firing.
+
+   Otherwise: `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
    scratch file, then
    `uv run python scripts/cowork_setup.py --plan --strict --no-create --triggers <file>`.
    - **If the response says `"has_more": true`, that page is not the fleet.** The API returns twenty
@@ -203,14 +208,97 @@ test has ever seen.
    must *not* wear 🚨: an alarm that fires on every reconcile is an alarm this message cannot use
    on the one day it needs it.
 
-   **Say it once.** Before posting an ALERT, read the last 24 hours of `#yeaboi-claude`. If the
-   most recent `cd-deploy` post names the same blocked cause *and* the same commit, **post
-   nothing** — the run log still records the firing, and that is where "how often" is answered.
-   The webhook fires on every push to every branch, so a standing environment fault posts once
-   per push otherwise: this rule was written after one such fault produced thirty-six near
-   identical essays in a single day, which is how a channel gets muted. A new commit, or a new
-   cause on the same commit, is new information and posts. Nothing suppresses a TELL, because a
-   TELL only exists when something actually changed.
+   **Say it once, and ask an issue rather than the channel.** Before posting an ALERT for a
+   standing fault, run
+   `uv run python scripts/cowork_setup.py --blocked-report "<marker>"` and obey `reported`:
+
+   - **`true`** — an open `[blocked] <marker>` issue already says it. **Post nothing.** The run log
+     still records the firing, and that is where "how often" is answered.
+   - **`false`** — nobody has said it. Post the ALERT once, and file that issue in the same step:
+     `cowork-scribe` writes it, title `[blocked] <marker>`, labels `type:bug` and
+     `workstream:platform`. **It searches open issues for that exact title first and files nothing
+     if one is already there** — see the first-occurrence hole below.
+     **Not `cowork:proposal`**, and that is deliberate rather than an omission. That label is what
+     `open_proposals` counts against `PROPOSAL_CAP`, so a standing fault would permanently occupy
+     one of the platform workstream's two proposal slots and sit in `digest.md`'s Held section
+     forever — and its approval verb is `claude-implement`, which fires a 110-turn implement job on
+     an issue that no code change in this repo can resolve.
+     **If the filing itself fails**, say so in the post in one line: the ALERT went out, the issue
+     did not, so this will post again next firing. The read here is REST through this script; the
+     write is the scribe over a connector, and `tests/fixtures/cowork_github_access_live.json` does
+     not record `POST /repos/…/issues` as probed. Silence about a failed filing is a routine that
+     looks deduped and is not.
+   - **`null`** — the query failed. **Post nothing**, for the reason `proposal_slots` turns an
+     unreadable queue into zero slots: a routine that cannot tell whether it has already spoken
+     must not assume it has not.
+
+   **The markers are a closed set.** A marker is matched on exact whole-title equality, so a
+   reworded one is a new fault that posts and files all over again — which means a free-hand marker
+   defeats the gate on the first rewording. Only these exist:
+
+   - `cd-deploy: RemoteTrigger absent from the routine session`
+   - `cd-deploy: repo variables refused by the egress proxy`
+
+   `tests/unit/test_cowork_setup.py` pins both strings against this file. A fault that is not one of
+   these is not gated and is not a standing fault: report it the ordinary way, and add a marker here
+   if it turns out to recur.
+
+   **This used to read the last 24 hours of `#yeaboi-claude` instead, and that cannot work — because
+   a merge fires this routine twice.** GitHub sends a `push` event for a branch *deletion* as well
+   as for a commit, and every PR here deletes its head branch on merge. With `filter: {}` matching
+   both, one merge delivers two events seconds apart: the merge commit on `main`, and the deleted
+   head branch. Both sessions reset to the same `origin/main`, both read the channel *before* either
+   has posted, both see nothing, and both post.
+
+   It is a read-then-write race, and there is no lock to take. Note what this means for the rule
+   that was there: it is not broadly broken — a lone push to a branch *is* suppressed correctly,
+   which is why single firings between merges post nothing. It fails only on the concurrent pair,
+   and merges are exactly what generate the pair. An issue is durable shared state that outlives
+   the session that wrote it, which is the property channel history does not have, and it matches
+   the house rule that GitHub issues are the only state shared between runs.
+
+   **Be exact about what this does and does not fix.** It does not make the race disappear: on the
+   *first* occurrence of a marker both concurrent sessions read `false`, so both post and both try
+   to file — which is why the scribe searches before creating, and why a second `[blocked]` issue
+   appearing means the dedup leaked and the duplicate should be closed. What it fixes is the
+   recurrence: from the next merge onward the issue is there, every session reads `true`, and the
+   fault never speaks again. One pair of messages per fault, not one pair per merge — thirty-six
+   essays in a day become two, and then nothing.
+
+   A genuinely new cause is a new marker and posts. Nothing suppresses a TELL, because a TELL only
+   exists when something actually changed — and a TELL names what it changed, so two of them are
+   never the same message twice.
+
+## If `RemoteTrigger` is unavailable
+
+The reconcile needs the `RemoteTrigger` tool, which this routine is granted and the sweeps are not.
+**Being granted it is not the same as having it**: `allowed_tools` filters the session's toolset, it
+does not add a tool the execution environment does not ship, so `cowork: cd-deploy` can carry
+`RemoteTrigger` in its registered `allowed_tools` — read it back with `RemoteTrigger get` and see it
+there — while no such tool exists in the session that runs. That is the observed state, not a
+hypothetical: every firing from 2026-08-10 onward reported it.
+
+When it happens, steps 4–6 cannot run at all. There is no degraded reconcile to attempt — without a
+snapshot there is no plan, and without a plan there is nothing this routine is permitted to POST.
+
+So:
+
+- **Do not stop at step 3.** Steps 2 and 3 are independent of the tool and their result is worth
+  keeping; report what they did.
+- **Report through the say-it-once gate in step 7.** The marker is exactly:
+
+  `cd-deploy: RemoteTrigger absent from the routine session`
+
+  The first occurrence posts an ALERT and files the issue; every firing after that is silent. **Do
+  not reword it between runs** — the marker *is* the identity of the report, so a reworded one is a
+  new fault that posts all over again. `tests/unit/test_cowork_setup.py` pins this exact string.
+- **Say what is still true**, once, in that first post: the fleet is unchanged rather than
+  half-applied, and `/cowork deploy` from a local session is the escape hatch that still works.
+
+**This routine cannot repair this itself**, and the escape hatch is the same one the stop conditions
+name for a bad prompt: a human runs `/cowork deploy`. Until the tool is provisioned, the claim that a
+merge to `main` deploys itself is false, and the issue is what keeps that visible after the channel
+goes quiet — which is the whole point of going quiet.
 
 ## Stop conditions
 
@@ -220,8 +308,11 @@ test has ever seen.
   routine nobody reads by Thursday. The one thing that breaks the silence without a plan is a step 3
   degradation: a label or variable that could not be applied is posted even when the fleet needed no
   change, because nothing else in the day would mention it — **once**, per step 7's say-it-once
-  rule, and then not again until the commit or the cause changes. "Nothing else would mention it"
-  is an argument for saying it, not for saying it on every push.
+  rule, under the marker `cd-deploy: repo variables refused by the egress proxy`, and then not
+  again while that issue stays open. **Not "until the commit changes"**: the gate is keyed on the
+  marker alone, because a standing environment fault is the same fault on every commit and keying
+  it on the tree meant re-announcing it once per merge forever. "Nothing else would mention it" is
+  an argument for saying it, not for saying it on every push.
 - **Never compose a request body.** Only bodies that came out of `--plan` are ever POSTed. In
   particular never send `{"enabled": …}`: the plan never carries it, because `pause` is a supported
   verb and a deploy that silently un-paused the fleet would undo a human's decision with nothing

@@ -5925,7 +5925,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 4  # per-box leveling allowance — grew with the Advanced box (Duck row)
+_SETTINGS_MAX_STRETCH = 5  # per-box leveling allowance — grew with the Advanced box (Tunnel Timeout row)
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -6380,6 +6380,9 @@ def _build_settings_screen(
         _heading("Advanced")
         _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"), env="LOG_LEVEL")
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
+        # Auto-expiry for retro/poker/output-share Cloudflare tunnels, in minutes.
+        # 0 disables it — the tunnel then runs until the board/share is closed.
+        _row("Tunnel Timeout (min)", config_data.get("TUNNEL_TIMEOUT_MINUTES", "60"), env="TUNNEL_TIMEOUT_MINUTES")
         # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
         _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
         _row(

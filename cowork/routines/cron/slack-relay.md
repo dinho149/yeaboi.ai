@@ -146,6 +146,18 @@ announce who is unauthorized.
   `claude-implement` — the workstream label being the one `claude.yml` reads to find the charter
   that says which paths the build may touch. The grant no longer includes `gh api`, so the wrong
   call is now unavailable rather than merely forbidden.
+- **✅ on a reply whose issue is *already* labelled** → `gh issue comment <n>` carrying
+  `<!-- implement-retry -->`, which the helper emits for you in place of the label call. This is
+  not a second approval — it is a re-fire request, and `claude.yml` re-reads the live label before
+  it acts on the marker, so the comment asks and never authorises.
+
+  It exists because `--add-label` on a label that is already there is a **silent no-op**, and the
+  implement job fires on the `labeled` *event*, which GitHub does not emit for one. #172 was ✅'d
+  five times between 2026-08-09 and 08-11 and built once; this routine acked all five, so nothing
+  anywhere reported that four of them did nothing. A remove-then-add would have been the shorter
+  fix and the wrong one: it is two writes, and a crash between them leaves the issue carrying no
+  `claude-implement` at all — the label `digest.md` queries to report an approval the fleet never
+  acted on.
 - **❌ on a digest thread reply**, or on any message that references exactly one open issue or PR →
   `gh issue close <n>` / `gh pr close <n>`. A message referencing several is ambiguous — ask in
   thread, act on nothing.
@@ -179,9 +191,13 @@ No new state — GitHub issues are the queue, and this routine keeps it that way
   looking exactly like human input.
 - **A reply carrying 🤖 is done.** The marker sits on the message, never on a reaction — a reaction
   cannot carry one. Marked means handled, whatever the reaction under it says.
-- Before any GitHub write, check current state. Label already present, or issue already closed:
-  the verb already happened (here or on GitHub directly) — mark the message and say nothing at all,
-  in Slack or on the issue.
+- Before any GitHub write, check current state. Issue already closed: the verb already happened
+  (here or on GitHub directly) — mark the message and say nothing at all, in Slack or on the issue.
+- **"Label already present" is no longer "the verb already happened."** It means *already
+  approved*, and if no PR came of it the thing still owed is a re-fire, not silence — the helper
+  emits `refire` for exactly this case and it does get a one-line thread ack, because a second ✅
+  that produces nothing visible is indistinguishable from the bug it is working around. What
+  stays silent is an approval whose PR already exists; `scripts/cowork_relay.py` decides, not you.
 - Both ✅ and ❌ from allowlisted humans on one item: do nothing, reply asking for a single verb.
 - Once GitHub says decided, later reactions on the same item are ignored. GitHub is authoritative;
   Slack is how a decision arrives, not where it lives.

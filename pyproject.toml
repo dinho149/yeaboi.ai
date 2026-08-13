@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "3.8.2"
+version = "3.11.1"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -97,6 +97,10 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-recording",
+    # `-n auto --dist loadfile` on the unit lane. The suite was fully serial and
+    # the two test jobs were the whole pipeline; this is the cheapest minute to
+    # get back. loadfile keeps a file's tests on one worker — see the Makefile.
+    "pytest-xdist",
     "ruff",
     "pre-commit",
     # so CI exercises the chart-generation tests

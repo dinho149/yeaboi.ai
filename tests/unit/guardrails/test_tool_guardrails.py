@@ -15,7 +15,7 @@ from yeaboi.repl import _display_tool_activity
 
 def _make_console() -> tuple[Console, StringIO]:
     buf = StringIO()
-    console = Console(file=buf, force_terminal=True, width=120)
+    console = Console(file=buf, force_terminal=True, color_system="truecolor", width=120)
     return console, buf
 
 

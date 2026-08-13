@@ -5,9 +5,17 @@
 **Workstream** — none; this routine is the release channel's one human decision.
 **Model** — `fast` ([models.md](../../models.md))
 
-Merging to `main` does not ship to users any more. Every release-worthy merge publishes a PyPI
-**pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see, and those accumulate. This routine
-is the one place a human is asked to turn a batch into an official version — the last backstop in
+**The fleet's merges do not ship to users; a human's do.** Every release-worthy merge publishes a
+PyPI **pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see. An unattended merge stops
+there and accumulates; a human's own merge also cuts the official `X.Y.Z`, because a maintainer
+merging their own PR has already signed for it and holding that for a weekly ask was the gate
+misfiring on its author. `scripts/release_lane.py` draws the line, over `pr_feedback.py`'s
+`COWORK_LABEL` / `UNATTENDED_BRANCH_PREFIXES`.
+
+So this routine's batch is whatever the fleet built that no human merge has carried out since. That
+is usually smaller than it used to be, and in a week with any human merge in it, often empty — the
+ask is skipped in that case rather than posted with nothing in it. This is still the one place a
+human is asked to turn an *unattended* batch into an official version — the last backstop in
 [house-rules.md](../../house-rules.md)'s gate, and the only one that involves somebody who has
 actually been running the code.
 

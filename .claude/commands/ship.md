@@ -27,9 +27,11 @@ The contract this branch must satisfy is `cowork/definition-of-done.md` — the 
 
 7. **Hand off the review loop (DoD item 10)** — say plainly that the PR is **not done yet**, and why: `claude-review.yml` fires on `workflow_run` *after* CI succeeds, which is minutes from now, so at this moment its review does not exist. The `code-reviewer` pass in step 2 is not it — that one had no CI results, no diff-on-`main` context, and nobody else's eyes.
 
-   Name the follow-up: `/pr-feedback <n>` once CI is green, or `/babysit-prs` across every open PR. Do not wait for it here; a `/ship` that blocks for ten minutes gets run less often, and the `pr-feedback` status is holding the merge in the meantime whether anyone waits or not.
+   Name the follow-up: `/pr-feedback <n>` once CI is green, or `/babysit-prs` across every open PR. Do not wait for it here; a `/ship` that blocks for ten minutes gets run less often.
 
-   This is also why step 6 needs no extra guard: `gh pr merge --auto` waits on the required checks, and `pr-feedback` is one of them, so an auto-merge cannot outrun the review.
+   **On a branch you are shipping by hand, that review is advisory and the `pr-feedback` status stays green.** It runs once, it posts what it found, and it does not hold the merge — you are the person it would otherwise be arguing with. Read it anyway; that is the whole point of it existing. The gate enforces on the unattended lane (`cowork/…`, `feature/issue-…`, triage and sentinel branches, or anything labelled `cowork`), where nobody is on the other end. **A human reviewer's unresolved thread, or a `Request changes` review, still holds the check here** — that one has somebody waiting by construction.
+
+   So step 6 does need the judgement it asks for: `gh pr merge --auto` waits on the required checks, and on a hand-shipped branch `pr-feedback` will be green whatever the review says. An auto-merge can outrun the review here — which is why step 6 is limited to changes that are genuinely low-risk.
 
 8. **Report** — output the PR URL and a one-line status, ending with what is still outstanding: the pending review, and items 8–9.
 

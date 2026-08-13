@@ -48,6 +48,10 @@ Procedure:
    using the ticket identifier from your inputs (the magic word is what makes the Linear GitHub
    integration attach the PR and move the ticket to Done on merge — a bare Linear URL does
    neither), and a line for any DoD item that genuinely does not apply.
+
+   **If your inputs name a GitHub issue** — because the item came off the `cowork:queued` queue, or
+   was approved with `claude-implement` — add `Closes #<n>` for it too, beside the Linear line. The
+   merge is the only thing that closes a queue entry; without that line the queue only ever grows.
 8. Label the PR `cowork` and `workstream:<name>`.
 
 Rules:

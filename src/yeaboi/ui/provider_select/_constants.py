@@ -21,8 +21,7 @@ from typing import Any
 TOKEN_HELP: dict[str, dict[str, str]] = {
     "GITHUB_TOKEN": {
         "url": "https://github.com/settings/tokens",
-        "scope": "Fine-grained: Contents Read · Issues Read · Metadata Read "
-        "(classic: public_repo, or repo for private)",
+        "scope": "'repo' scope + 'Configure SSO' if the org uses SSO (fine-grained: org-approved)",
     },
     "AZURE_DEVOPS_TOKEN": {
         "url": "https://dev.azure.com",

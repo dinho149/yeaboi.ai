@@ -359,6 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--prior-art",
+        action="append",
+        default=None,
+        metavar="REPO_KEY",
+        help="Existing repository to build this plan on, as a key like 'github:acme/auth' "
+        "(repeatable). Requires --non-interactive; an interactive run asks about prior art "
+        "in the intake instead, so the flag is ignored there.",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -611,6 +621,12 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         metavar="OWNER/REPO",
         help="Override saved GitHub repository scope (exact repos, unioned with --github-owners)",
+    )
+    standup_p.add_argument(
+        "--github-excluded-repositories",
+        nargs="+",
+        metavar="OWNER/REPO",
+        help="Override saved GitHub repos to drop from an included owner's expansion",
     )
     standup_p.add_argument(
         "--azdo-projects",
@@ -1019,6 +1035,7 @@ def _run_headless(args: argparse.Namespace) -> None:
         theme=args.theme,
         non_interactive=True,
         output_format=output_format,
+        prior_art=args.prior_art,
     )
 
 
@@ -1440,6 +1457,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
         code_sources=args.code_sources,
         github_owners=args.github_owners,
         github_repositories=args.github_repositories,
+        github_excluded_repositories=args.github_excluded_repositories,
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,
         documentation_sources=args.documentation_sources,

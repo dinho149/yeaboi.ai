@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -229,6 +228,20 @@ def _has_open_label(issue: int, label: str, runner: Callable[[list[str]], str | 
     return None if str(data.get("state", "OPEN")).upper() == "CLOSED" else True
 
 
+def is_approved(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
+    """Whether ``issue`` is already carrying `claude-implement`.
+
+    Tristate like its siblings, but read the other way round by its caller: a
+    ``None`` here means "could not tell", and the caller keeps the plain `approve`
+    verb rather than routing to `ask`. Applying a label that is already present is
+    a harmless no-op; refusing to act would strand the ordinary first approval
+    behind a `gh` call the routine sessions' egress proxy is known to refuse. The
+    asymmetry with `is_promotion` is deliberate — there, guessing wrong starts an
+    implementation run against a release ask, and here it does nothing at all.
+    """
+    return _has_open_label(issue, APPROVAL_LABEL, runner)
+
+
 def is_campaign_candidate(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
     """Whether ``issue`` carries the `integration:candidate` label the campaign applies.
 
@@ -265,7 +278,7 @@ def _gh_labels(argv: list[str]) -> str | None:
     the caller a second shape.
     """
     if transport.gh_available():
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
+        result = transport._run(argv, capture_output=True, text=True, check=False)  # noqa: S603 - literal argv
         return result.stdout if result.returncode == 0 else None
     slug = transport.resolve_slug(ROOT)
     if not slug:
@@ -301,6 +314,27 @@ def _command(verb: str, issue: int) -> list[str]:
     """
     if verb == "approve":
         return ["gh", "issue", "edit", str(issue), "--add-label", APPROVAL_LABEL]
+    if verb == "refire":
+        # A repeat ✅ on an issue that is already approved. `--add-label` on a label
+        # that is already there is a *silent no-op*, and `claude.yml`'s implement
+        # job fires on the `labeled` event — so #172 was approved five times
+        # between 2026-08-09 and 08-11 and built once, with nothing anywhere
+        # reporting that the other four did nothing at all.
+        #
+        # A comment rather than a remove-then-add: that pair is lossy, and a crash
+        # between its two writes leaves the issue carrying no `claude-implement`,
+        # which is the exact label `digest.md` queries to report an approval the
+        # fleet never acted on. This marker is picked up by `claude.yml`, which
+        # then re-reads the label live before doing anything — so the comment
+        # requests, and never authorises.
+        return [
+            "gh",
+            "issue",
+            "comment",
+            str(issue),
+            "--body",
+            "re-approved via Slack ✅ — already labelled, so re-firing the implement job.\n\n<!-- implement-retry -->",
+        ]
     if verb == "promote":
         return ["gh", "issue", "edit", str(issue), "--add-label", PROMOTE_LABEL]
     if verb == "campaign":
@@ -316,6 +350,7 @@ def build_plan(
     *,
     promotion_check: Callable[[int], bool] | None = None,
     candidate_check: Callable[[int], bool] | None = None,
+    approved_check: Callable[[int], bool] | None = None,
 ) -> dict[str, Any]:
     """Turn a thread into the list of actions still owed, oldest first.
 
@@ -332,6 +367,7 @@ def build_plan(
     # pure. Tests pass a stub; nothing else should.
     is_promotion_issue = promotion_check or is_promotion
     is_candidate_issue = candidate_check or is_campaign_candidate
+    is_approved_issue = approved_check or is_approved
 
     plan: list[dict[str, Any]] = []
     item_replies = marked = ignored_markers = 0
@@ -393,7 +429,13 @@ def build_plan(
         if not approvers:
             verb = "reject"
         elif special is None:
-            verb = "approve"
+            # Already approved? Then this ✅ is a re-fire request, not an approval.
+            # `None` keeps the existing `approve` behaviour rather than routing to
+            # `ask`: applying a label that is already there is harmless, whereas
+            # refusing to act on an unreadable answer would strand the ordinary
+            # first-approval path behind a `gh` call that routine sessions' egress
+            # proxy is known to refuse.
+            verb = "refire" if is_approved_issue(issue) else "approve"
         else:
             label_verb, confirm = special
             confirmed = confirm(issue)

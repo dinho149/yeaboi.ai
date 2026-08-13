@@ -185,6 +185,7 @@ def collect_recent_activity(
     github_repo: str = "",
     github_owners: list[str] | None = None,
     github_repositories: list[str] | None = None,
+    github_excluded_repositories: list[str] | None = None,
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
     local_repo_path: str = "",
@@ -493,7 +494,9 @@ def collect_recent_activity(
                 window_days = days
                 if since is not None:
                     window_days = max(1, (datetime.now(since.tzinfo) - since).days)
-                expanded, scope_warnings = expand_github_owners(owners, days=window_days)
+                expanded, scope_warnings = expand_github_owners(
+                    owners, days=window_days, excluded=github_excluded_repositories
+                )
                 for warning in scope_warnings:
                     source_errors.append((SOURCE_GITHUB, warning))
             # Explicit repositories win the ordering: the owner fan-out is capped

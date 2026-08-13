@@ -125,13 +125,14 @@ def _plan_generate(
     team_size: int,
     sprint_length_weeks: int,
     project_context: str,
+    prior_art: list[str] | None,
     on_progress,
 ) -> dict:
     from yeaboi.agent.headless import run_planning_pipeline
     from yeaboi.json_exporter import export_plan_json
 
     questionnaire = _build_questionnaire(description, answers, team_size, sprint_length_weeks, project_context)
-    state = run_planning_pipeline(questionnaire, on_progress=on_progress)
+    state = run_planning_pipeline(questionnaire, on_progress=on_progress, prior_art=prior_art)
     plan = json.loads(export_plan_json(state))
     plan["session_id"] = state.get("_session_id", "")
     return plan
@@ -201,6 +202,56 @@ def _plan_sync(session_id: str, destination: str, on_progress=None) -> dict:
     }
 
 
+def _plan_prior_art(description: str, answers: dict | None, profile_id: str) -> dict:
+    """Shortlist the team's own repositories as prior art for a new project."""
+    from yeaboi.agent import prior_art as engine
+
+    if not description.strip():
+        raise ValueError("description is required — a few sentences about the project.")
+    merged: dict[int, str] = {1: description, 2: "Greenfield"}
+    for key, value in (answers or {}).items():
+        try:
+            number = int(key)
+        except (TypeError, ValueError):
+            raise ValueError(f"answers keys must be question numbers 1-30, got {key!r}") from None
+        merged[number] = str(value)
+
+    result = engine.shortlist(merged, profile_id=profile_id)
+    return {
+        "candidates": [
+            {
+                "key": c.key,
+                "name": c.name,
+                "platform": c.platform,
+                "url": c.url,
+                "pitch": list(c.pitch),
+                "stack": list(c.stack),
+                "last_activity": c.last_activity,
+            }
+            for c in result.candidates
+        ],
+        "empty_reason": result.empty_reason,
+        "message": result.message,
+    }
+
+
+def _plan_prior_art_feedback(repo_key: str, verdict: str, reason: str, repo_name: str) -> dict:
+    """Record that a repository is (or is not) useful prior art."""
+    from yeaboi.agent import prior_art_feedback
+
+    if verdict not in prior_art_feedback.VERDICTS:
+        raise ValueError(f"verdict must be one of {prior_art_feedback.VERDICTS}, got {verdict!r}")
+    recorded = prior_art_feedback.apply_verdict(
+        repo_key=repo_key,
+        verdict=verdict,
+        reason=reason,
+        repo_name=repo_name,
+    )
+    if not recorded:
+        raise ValueError(f"Could not record a verdict for {repo_key!r} — check the key is non-empty.")
+    return {"repo_key": repo_key.strip().lower(), "verdict": verdict, "recorded": True}
+
+
 def register(app) -> None:
     """Attach the planning tools to the FastMCP app."""
 
@@ -212,12 +263,15 @@ def register(app) -> None:
         team_size: int = 0,
         sprint_length_weeks: int = 0,
         project_context: str = "",
+        prior_art: list[str] | None = None,
     ) -> dict:
         """Generate a full sprint plan (analysis, epics, stories, tasks, sprints) from a project
         description. Gather the intake_questions smart_essentials from the user first and pass
         them as `answers` {question_number: answer}; `project_context` takes free-form notes
         (tech stack, constraints, goals). Takes a few minutes — several LLM calls. The plan is
-        saved as a session (see data.session_id) for plan_get/plan_export and the other modes."""
+        saved as a session (see data.session_id) for plan_get/plan_export and the other modes.
+        `prior_art` takes repository keys from plan_prior_art that the user confirmed are
+        relevant — pass only what they approved; the plan builds on them."""
 
         def report(node_name: str, step: int) -> None:
             # Called from the engine's worker thread — bridge the async
@@ -235,8 +289,31 @@ def register(app) -> None:
             team_size,
             sprint_length_weeks,
             project_context,
+            prior_art,
             report,
         )
+
+    @app.tool()
+    async def plan_prior_art(ctx: Context, description: str, answers: dict | None = None, profile_id: str = "") -> dict:
+        """Shortlist the team's OWN existing repositories that could help a new greenfield
+        project, each with why it might be relevant. Candidates come from the saved
+        team-analysis profile; the shortlist is then enriched from GitHub (needs a token to go
+        beyond the stored row) and pitched by the LLM. Show the user the list and ask which are
+        actually relevant before passing the approved keys to plan_generate's `prior_art`. When
+        `empty_reason` is set, relay `message` — it tells the user what to do about it."""
+        # Not `run_readonly`: that path is for deterministic work — it reports
+        # `llm_mode: "n/a"`, skips the engine lock and never injects the
+        # sampling model. The pitch step calls the LLM, so a sampling-only host
+        # would silently fall back to deterministic bullets while the envelope
+        # still claimed no model was involved.
+        return await run_engine(ctx, _plan_prior_art, description, answers, profile_id)
+
+    @app.tool()
+    async def plan_prior_art_feedback(repo_key: str, verdict: str, reason: str = "", repo_name: str = "") -> dict:
+        """Record the user's verdict on a prior-art suggestion (verdict: 'up' or 'down').
+        A 'down' permanently stops that repository being suggested for any future project, so
+        only call it when the user actually said it is not relevant — pass their reason."""
+        return await run_readonly(_plan_prior_art_feedback, repo_key, verdict, reason, repo_name)
 
     @app.tool()
     async def intake_questions() -> dict:

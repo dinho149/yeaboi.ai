@@ -77,6 +77,23 @@ _OWNER_ACTIVITY_DAYS = 14
 _MAX_REPOS_PER_OWNER = 10
 _MAX_REPOS_TOTAL = 30
 
+# The repo-exclude picker needs the FULL candidate set inside an owner, not just
+# what would survive this run's activity/cap filters — a repo excluded during a
+# quiet month, or one that has never been pushed to, must still be excludable.
+# Only archived repositories are dropped (see list_owner_repositories below);
+# this window only bounds how far back github_analysis_inventory looks, which
+# the picker otherwise ignores.
+_PICKER_LOOKBACK_DAYS = 3650
+
+# The picker shows far more than any one run would ever scan (see
+# expand_github_owners's tighter caps above), but it still walks the whole
+# paginated repo list per owner, so an unbounded org turns "open the picker"
+# into a long spinner and an unusable single-column list. These are generous
+# on purpose — a repo just outside them is still excludable via
+# STANDUP_GITHUB_REPO / config edit, only not from this screen.
+_MAX_PICKER_REPOS_PER_OWNER = 200
+_MAX_PICKER_REPOS_TOTAL = 500
+
 
 def discover_github_owners(limit: int = 100) -> list[str]:
     """List the GitHub owners/organisations visible to the configured token.
@@ -97,7 +114,12 @@ def discover_github_owners(limit: int = 100) -> list[str]:
         return []
 
 
-def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: int) -> tuple[list[str], list[str]]:
+def expand_github_owners(
+    owners: list[str] | tuple[str, ...] | None,
+    *,
+    days: int,
+    excluded: list[str] | tuple[str, ...] | None = None,
+) -> tuple[list[str], list[str]]:
     """Resolve picked owners to the repositories worth scanning.
 
     Returns ``(repository_slugs, warnings)``. Expansion happens per run rather
@@ -110,6 +132,10 @@ def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: in
     repository — that entry carries the *owner* name, so treating it as a repo
     would send the collector looking for a repository called "acme".
 
+    ``excluded`` (owner/repo slugs, case-insensitive) is dropped BEFORE the caps
+    below are applied, so excluding a noisy repo frees its slot for another repo
+    in the same owner rather than wasting it.
+
     The result is capped (see the constants above) and ordered most-recently-
     pushed first, so what survives a cap is the work most likely to be in today's
     standup rather than whatever GitHub happened to list first.
@@ -117,6 +143,7 @@ def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: in
     selected = [str(owner).strip() for owner in (owners or ()) if str(owner).strip()]
     if not selected:
         return [], []
+    excluded_slugs = {str(repo).strip().lower() for repo in (excluded or ()) if str(repo).strip()}
     try:
         from yeaboi.tools.github import github_analysis_inventory
 
@@ -127,6 +154,7 @@ def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: in
 
     warnings: list[str] = []
     by_owner: dict[str, list[tuple[str, str]]] = {}
+    excluded_count = 0
     for entry in inventory:
         if entry.get("discovery_error"):
             owner = str(entry.get("container") or entry.get("name") or "").strip()
@@ -137,6 +165,9 @@ def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: in
             continue
         slug = str(entry.get("name") or "").strip()
         if not slug:
+            continue
+        if slug.lower() in excluded_slugs:
+            excluded_count += 1
             continue
         owner = str(entry.get("container") or slug.partition("/")[0]).strip()
         by_owner.setdefault(owner, []).append((str(entry.get("updated_at") or ""), slug))
@@ -164,12 +195,78 @@ def expand_github_owners(owners: list[str] | tuple[str, ...] | None, *, days: in
             f"(max {_MAX_REPOS_TOTAL} in total) — {total_dropped} skipped: {', '.join(truncated)}"
         )
     logger.info(
-        "standup: expanded %d GitHub owner(s) to %d active repository(ies) (%d dropped by cap)",
+        "standup: expanded %d GitHub owner(s) to %d active repository(ies) (%d dropped by cap, %d excluded)",
         len(selected),
         len(repositories),
         total_dropped,
+        excluded_count,
     )
     return list(repositories.values()), warnings
+
+
+def list_owner_repositories(
+    owners: list[str] | tuple[str, ...] | None, *, days: int = _PICKER_LOOKBACK_DAYS
+) -> tuple[dict[str, list[str]], list[str]]:
+    """List every non-archived repository inside the given owners, for the repo-exclude picker.
+
+    Unlike :func:`expand_github_owners` (which filters to a run's activity
+    window and applies the scan caps), this surfaces the full candidate set —
+    a repo should stay excludable even in a quiet week, and the picker must
+    show everything that COULD be scanned, not just what would fit this run's
+    budget. Only archived repositories and outright discovery failures are
+    dropped.
+
+    Returns ``(owner -> sorted repository slugs, warnings)``.
+    """
+    selected = [str(owner).strip() for owner in (owners or ()) if str(owner).strip()]
+    if not selected:
+        return {}, []
+    try:
+        from yeaboi.tools.github import github_analysis_inventory
+
+        inventory = github_analysis_inventory(selected, days=max(1, int(days)), include_trees=False)
+    except Exception as exc:
+        logger.warning("standup: GitHub repository listing failed: %s", exc)
+        return {}, [f"GitHub repository discovery failed for {', '.join(selected)}: {exc}"]
+
+    warnings: list[str] = []
+    by_owner: dict[str, list[str]] = {}
+    for entry in inventory:
+        if entry.get("discovery_error"):
+            owner = str(entry.get("container") or entry.get("name") or "").strip()
+            detail = str(entry.get("error") or "repository discovery failed").strip()
+            warnings.append(f"GitHub owner {owner}: {detail}" if owner else f"GitHub: {detail}")
+            continue
+        if entry.get("skip_reason") == "archived repository":
+            continue
+        slug = str(entry.get("name") or "").strip()
+        if not slug:
+            continue
+        owner = str(entry.get("container") or slug.partition("/")[0]).strip()
+        by_owner.setdefault(owner, []).append(slug)
+
+    truncated: list[str] = []
+    total_dropped = 0
+    total_kept = 0
+    for owner, slugs in by_owner.items():
+        ordered = sorted(dict.fromkeys(slugs), key=str.lower)
+        kept: list[str] = []
+        for slug in ordered:
+            if len(kept) >= _MAX_PICKER_REPOS_PER_OWNER or total_kept >= _MAX_PICKER_REPOS_TOTAL:
+                total_dropped += 1
+                continue
+            kept.append(slug)
+            total_kept += 1
+        if len(kept) < len(ordered):
+            truncated.append(f"{owner} ({len(kept)} of {len(ordered)})")
+        by_owner[owner] = kept
+    if truncated:
+        warnings.append(
+            "GitHub repository listing was capped at "
+            f"{_MAX_PICKER_REPOS_PER_OWNER} repositories per owner (max {_MAX_PICKER_REPOS_TOTAL} in "
+            f"total) — {total_dropped} not shown: {', '.join(truncated)}"
+        )
+    return by_owner, warnings
 
 
 def discover_azdo_projects(limit: int = 200) -> list[str]:

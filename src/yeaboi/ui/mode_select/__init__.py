@@ -1470,6 +1470,7 @@ def _collect_settings_data() -> dict:
         "AWS_PROFILE",
         "LOG_LEVEL",
         "SESSION_PRUNE_DAYS",
+        "TUNNEL_TIMEOUT_MINUTES",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
@@ -3425,12 +3426,15 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
             return None
         owners = list(config.get("github_owners", ()))
         github = list(config.get("github_repositories", ()))
+        excluded = list(config.get("github_excluded_repositories", ()))
         projects = list(config.get("azdo_projects", ()))
         parts = []
         if owners:
             parts.append(f"{len(owners)} GitHub org(s)")
         if github:
             parts.append(f"{len(github)} GitHub repo(s)")
+        if excluded:
+            parts.append(f"{len(excluded)} repo(s) excluded")
         if projects:
             parts.append(f"{len(projects)} Azure project(s)")
         counts = " · ".join(parts)
@@ -3471,6 +3475,7 @@ _STANDUP_SETUP_FIELDS = (
     "code_sources",
     "github_owners",
     "github_repositories",
+    "github_excluded_repositories",
     "azdo_projects",
     "azdo_repositories",
     "code_scope_configured",
@@ -3804,6 +3809,7 @@ def _standup_team_configure(
             code_sources=merged.get("code_sources", []),
             github_owners=merged.get("github_owners", []),
             github_repositories=merged.get("github_repositories", []),
+            github_excluded_repositories=merged.get("github_excluded_repositories", []),
             azdo_projects=merged.get("azdo_projects", []),
             azdo_repositories=merged.get("azdo_repositories", []),
             code_scope_configured=merged.get("code_scope_configured", False),
@@ -3834,21 +3840,28 @@ def _standup_code_configure(
     supports_timeout,
     session_id: str,
 ) -> tuple[bool, str]:
-    """Choose GitHub organisations/Azure projects and persist the code scope.
+    """Choose GitHub organisations + repositories, and Azure DevOps projects; persist the code scope.
 
-    Both sides of this picker are *containers*: an Azure project has always meant
-    "every repo in it", and a GitHub owner now means the same. That is the whole
-    difference from the old screen, which asked for repositories one at a time and
-    so went stale the moment someone created a new one.
+    GitHub and Azure DevOps get their own screens now — mixing "GitHub · acme"
+    and "Azure DevOps · Platform" rows in one list read as one system when they
+    are two. Picking an owner/project is still a *container* pick — everything
+    inside it is in scope, so the estate never goes stale — but GitHub adds a
+    second step: which repos inside the chosen owners to actually scan, all
+    pre-checked, so excluding a noisy one is the only tick anybody has to make.
     """
     import threading
 
     from yeaboi.config import (
         get_azure_devops_org_url,
+        get_azure_devops_project,
         get_github_token,
         get_standup_github_repo,
     )
-    from yeaboi.standup.code_scope import default_code_scope, discover_code_repositories
+    from yeaboi.standup.code_scope import (
+        default_code_scope,
+        discover_code_repositories,
+        list_owner_repositories,
+    )
     from yeaboi.standup.store import StandupStore
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -3877,92 +3890,173 @@ def _standup_code_configure(
     if selected_sources == "cancel":
         return False, "Repository selection cancelled."
 
-    result_box: list = [None]
-    done = threading.Event()
+    def _run_discovery(fetch, label: str, thread_name: str):
+        """Run ``fetch`` on a worker thread behind a progress spinner."""
+        result_box: list = [None]
+        done = threading.Event()
 
-    def _discover() -> None:
-        try:
-            result_box[0] = discover_code_repositories(selected_sources)
-        except Exception as exc:
-            logger.warning("standup code: repository discovery failed: %s", exc)
-            result_box[0] = {}
-        finally:
-            done.set()
+        def _work() -> None:
+            try:
+                result_box[0] = fetch()
+            except Exception as exc:
+                logger.warning("standup code: %s failed: %s", label, exc)
+                result_box[0] = None
+            finally:
+                done.set()
 
-    started = time.monotonic()
-    duck_working_thread(_discover, name="standup-code-repositories").start()
-    tick = 0.0
-    while not done.is_set():
-        tick += frame_time
-        w, h = console.size
-        live.update(
-            _build_standup_progress_screen(
-                ["Discovering repositories"],
-                width=w,
-                height=max(10, h - 1),
-                elapsed=time.monotonic() - started,
-                anim_tick=tick,
-                label="Loading selected code sources",
+        started = time.monotonic()
+        duck_working_thread(_work, name=thread_name).start()
+        tick = 0.0
+        while not done.is_set():
+            tick += frame_time
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    [label],
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=time.monotonic() - started,
+                    anim_tick=tick,
+                    label=label,
+                )
             )
-        )
-        time.sleep(frame_time)
+            time.sleep(frame_time)
+        return result_box[0]
 
-    discovered = result_box[0] or {}
+    discovered = (
+        _run_discovery(
+            lambda: discover_code_repositories(selected_sources),
+            "Discovering repositories",
+            "standup-code-sources",
+        )
+        or {}
+    )
     github_choices = list(discovered.get("github", ()))
     azdo_project_choices = list(discovered.get("azure_devops", ()))
-    github_labels = {f"GitHub · {owner}": owner for owner in github_choices}
-    azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
-    choices = [*github_labels, *azdo_labels]
-    # Only owners the user actually chose. Deriving them from a saved repository
-    # list would pre-tick "GitHub · acme" for someone whose scope is one repo, and
-    # accepting the default — while here to add an Azure project, say — would widen
-    # their standup to the whole org off a row that says nothing about it. Their
-    # repositories are preserved instead (see prior_repositories below), so nothing
-    # is lost by leaving these unticked; widening is a tick they have to make.
-    saved_owners = {owner.lower() for owner in existing.get("github_owners", ())}
-    saved_azdo_projects = list(existing.get("azdo_projects", ()))
-    if existing.get("code_scope_configured"):
-        initial_repositories = [
-            *(label for label, owner in github_labels.items() if owner.lower() in saved_owners),
-            *(label for label, project in azdo_labels.items() if project in saved_azdo_projects),
-        ]
-    else:
-        from yeaboi.config import get_azure_devops_project
 
-        legacy_project = (get_azure_devops_project() or "").lower()
-        # Nothing configured: everything the token can see is in scope, matching
-        # what an unconfigured run already does (engine._resolve_code_scope) — but
-        # a pinned STANDUP_GITHUB_REPO is an explicit narrow scope, so it pre-ticks
-        # nothing and survives as a repository entry, exactly as the engine treats it.
-        initial_repositories = [
-            *([] if default_github else github_labels),
-            *(label for label, project in azdo_labels.items() if project.lower() == legacy_project),
-        ]
-    selected_repositories = _run_standup_member_select(
-        live,
-        console,
-        read_key,
-        frame_time,
-        supports_timeout,
-        choices,
-        initial_repositories,
-        heading="Choose GitHub organisations and Azure projects",
-        empty_message="No accessible organisations or projects found for the selected code source(s).",
-    )
-    if selected_repositories == "cancel":
-        return False, "Code scope selection cancelled."
-    if not selected_repositories:
+    selected_github_owners: list[str] = []
+    # Survives untouched unless the repo-exclude step below actually runs — same
+    # "nothing lost unless explicitly superseded" rule as preserved_repositories
+    # applies below to explicit repos.
+    excluded_repositories = list(existing.get("github_excluded_repositories", ()))
+    # A narrow repo scope already on file — explicit pins from a previous save,
+    # or a legacy STANDUP_GITHUB_REPO pin before anything was ever configured.
+    # Computed once, up front, so the pretick decision below and the survival
+    # check further down (preserved_repositories) can't drift from each other.
+    prior_repositories = list(existing.get("github_repositories", ())) or list(default_github)
+
+    if "github" in selected_sources:
+        github_labels = {f"GitHub · {owner}": owner for owner in github_choices}
+        saved_owners = {owner.lower() for owner in existing.get("github_owners", ())}
+        if saved_owners:
+            # GitHub has been scoped before — never widen it silently; the
+            # picker offers that upgrade explicitly, exactly as it always has.
+            initial_owner_labels = [label for label, owner in github_labels.items() if owner.lower() in saved_owners]
+        elif prior_repositories:
+            # A narrow repo scope already exists (see above) and no owner has
+            # ever been chosen; widening it to those repos' whole owner(s)
+            # would be a surprise, so nothing pre-ticks here.
+            initial_owner_labels = []
+        else:
+            # GitHub has never been scoped before — whether this is a first-ever
+            # walk, or the standup was already configured (say, Azure-only) and
+            # GitHub is only now being added. Either way it starts fully
+            # selected, matching what an unconfigured run already covers: every
+            # owner the token can see. Nobody should have to re-discover that
+            # by hand just because Azure got configured first.
+            initial_owner_labels = list(github_labels)
+        selected_owner_labels = _run_standup_member_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            list(github_labels),
+            initial_owner_labels,
+            heading="Choose GitHub organisations",
+            empty_message="No accessible organisations found for GitHub.",
+        )
+        if selected_owner_labels == "cancel":
+            return False, "Code scope selection cancelled."
+        selected_set = set(selected_owner_labels)
+        selected_github_owners = [owner for label, owner in github_labels.items() if label in selected_set]
+
+        if selected_github_owners:
+            owner_repos, repo_warnings = _run_discovery(
+                lambda: list_owner_repositories(selected_github_owners),
+                "Discovering GitHub repositories",
+                "standup-code-repositories",
+            ) or ({}, [])
+            for warning in repo_warnings:
+                logger.warning("standup code: GitHub repository listing: %s", warning)
+            repo_choices = sorted({repo for repos in owner_repos.values() for repo in repos}, key=str.lower)
+            if repo_choices:
+                saved_excluded = {repo.lower() for repo in existing.get("github_excluded_repositories", ())}
+                # Everything selected by default: excluding a repo is the only
+                # tick anyone should have to make. A repo already excluded stays
+                # unticked so re-entering this screen doesn't silently undo it.
+                initial_repo_labels = [repo for repo in repo_choices if repo.lower() not in saved_excluded]
+                selected_repo_labels = _run_standup_member_select(
+                    live,
+                    console,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    repo_choices,
+                    initial_repo_labels,
+                    heading="Choose repositories to scan (everything selected by default)",
+                    empty_message="No repositories found for the selected organisation(s).",
+                )
+                if selected_repo_labels == "cancel":
+                    return False, "Code scope selection cancelled."
+                kept = set(selected_repo_labels)
+                # A partial listing failure (one owner's discovery_error, another's
+                # repos returned fine) must not read as "nothing excluded" for the
+                # owner the screen never showed — that would silently un-exclude
+                # repos this run just didn't manage to list. Only repos actually
+                # shown on screen can move in or out of the exclusion list; an
+                # exclusion for a repo outside `repo_choices` survives untouched.
+                shown = {repo.lower() for repo in repo_choices}
+                retained = [
+                    repo for repo in existing.get("github_excluded_repositories", ()) if repo.lower() not in shown
+                ]
+                newly_excluded = [repo for repo in repo_choices if repo not in kept]
+                excluded_repositories = retained + newly_excluded
+
+    selected_azdo_projects: list[str] = []
+    if "azure_devops" in selected_sources:
+        azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
+        saved_azdo_projects = list(existing.get("azdo_projects", ()))
+        if existing.get("code_scope_configured"):
+            initial_azdo_labels = [label for label, project in azdo_labels.items() if project in saved_azdo_projects]
+        else:
+            legacy_project = (get_azure_devops_project() or "").lower()
+            initial_azdo_labels = [label for label, project in azdo_labels.items() if project.lower() == legacy_project]
+        selected_azdo_labels = _run_standup_member_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            list(azdo_labels),
+            initial_azdo_labels,
+            heading="Choose Azure DevOps projects",
+            empty_message="No accessible Azure DevOps projects found.",
+        )
+        if selected_azdo_labels == "cancel":
+            return False, "Code scope selection cancelled."
+        selected_set = set(selected_azdo_labels)
+        selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
+
+    if not selected_github_owners and not selected_azdo_projects:
         return False, "No accessible organisations or projects found — check integration permissions."
 
-    selected_set = set(selected_repositories)
-    selected_github_owners = [owner for label, owner in github_labels.items() if label in selected_set]
-    selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
-    # Repositories survive unless a chosen owner already covers them. Clearing the
-    # list outright lost three things: a pinned STANDUP_GITHUB_REPO on the first
-    # walk, a deliberately narrow saved scope, and — worst, because it is invisible
-    # — any repo whose owner never surfaced in discovery (github_list_owners caps
-    # at 100 and either of its lookups can fail and be skipped).
-    prior_repositories = list(existing.get("github_repositories", ())) or list(default_github)
+    # Explicit repositories survive unless a chosen owner already covers them.
+    # Clearing the list outright lost three things: a pinned STANDUP_GITHUB_REPO
+    # on the first walk, a deliberately narrow saved scope, and — worst, because
+    # it is invisible — any repo whose owner never surfaced in discovery
+    # (github_list_owners caps at 100 and either of its lookups can fail and be
+    # skipped).
     covered_owners = {owner.lower() for owner in selected_github_owners}
     preserved_repositories = [
         repository
@@ -4001,6 +4095,7 @@ def _standup_code_configure(
             code_sources=selected_sources,
             github_owners=selected_github_owners,
             github_repositories=preserved_repositories,
+            github_excluded_repositories=excluded_repositories,
             azdo_projects=selected_azdo_projects,
             azdo_repositories=[],
             code_scope_configured=True,
@@ -4015,16 +4110,18 @@ def _standup_code_configure(
             habit_ai_match=merged.get("habit_ai_match", "on"),
         )
     logger.info(
-        "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d azdo_projects=%d",
+        "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d excluded=%d azdo_projects=%d",
         session_id,
         selected_sources,
         len(selected_github_owners),
         len(preserved_repositories),
+        len(excluded_repositories),
         len(selected_azdo_projects),
     )
     kept = f" + {len(preserved_repositories)} pinned repo(s)" if preserved_repositories else ""
+    excluded_note = f", {len(excluded_repositories)} repo(s) excluded" if excluded_repositories else ""
     return True, (
-        f"Code scope saved — {len(selected_github_owners)} GitHub org(s){kept}, "
+        f"Code scope saved — {len(selected_github_owners)} GitHub org(s){kept}{excluded_note}, "
         f"{len(selected_azdo_projects)} Azure project(s)."
     )
 
@@ -4092,6 +4189,7 @@ def _standup_documentation_configure(
         "code_sources": [],
         "github_owners": [],
         "github_repositories": [],
+        "github_excluded_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
         "code_scope_configured": False,
@@ -4114,6 +4212,7 @@ def _standup_documentation_configure(
             code_sources=merged["code_sources"],
             github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
+            github_excluded_repositories=merged["github_excluded_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
             code_scope_configured=merged["code_scope_configured"],
@@ -4270,6 +4369,7 @@ def _standup_transcripts_configure(
         "code_sources": [],
         "github_owners": [],
         "github_repositories": [],
+        "github_excluded_repositories": [],
         "azdo_projects": [],
         "azdo_repositories": [],
         "code_scope_configured": False,
@@ -4294,6 +4394,7 @@ def _standup_transcripts_configure(
             code_sources=merged["code_sources"],
             github_owners=merged["github_owners"],
             github_repositories=merged["github_repositories"],
+            github_excluded_repositories=merged["github_excluded_repositories"],
             azdo_projects=merged["azdo_projects"],
             azdo_repositories=merged["azdo_repositories"],
             code_scope_configured=merged["code_scope_configured"],
@@ -4671,6 +4772,7 @@ def _run_standup_schedule_wizard(
             code_sources=existing.get("code_sources", []),
             github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
+            github_excluded_repositories=existing.get("github_excluded_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
             code_scope_configured=existing.get("code_scope_configured", False),
@@ -4781,6 +4883,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             code_sources=existing.get("code_sources", []),
             github_owners=existing.get("github_owners", []),
             github_repositories=existing.get("github_repositories", []),
+            github_excluded_repositories=existing.get("github_excluded_repositories", []),
             azdo_projects=existing.get("azdo_projects", []),
             azdo_repositories=existing.get("azdo_repositories", []),
             code_scope_configured=existing.get("code_scope_configured", False),
@@ -10532,9 +10635,11 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("retro: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    # Empty on purpose: the status slot renders `message or remote["status"]`, so
-    # an empty message lets the tunnel narrate its own progress, and the first
-    # thing the host does takes the slot back.
+    # Empty on purpose: the status slot renders `_link_status_text() or message or
+    # remote["status"]`, so an empty message lets the tunnel narrate its own
+    # progress, and the first thing the host does takes the slot back — except for
+    # a time-critical tunnel event (an expiry warning, or the expiry itself), which
+    # always wins over whatever `message` last held (see `_link_status_text`).
     message = ""
 
     # Tunnel state. The server binds loopback, so the Cloudflare tunnel is the
@@ -10544,7 +10649,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # a worker thread; the frame-timed loop shows its progress and fills in the
     # participant link the moment it lands.
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
@@ -10559,7 +10664,23 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-                tunnel = CloudflareTunnel(server.port, binary=binary)
+
+                def _on_expired() -> None:
+                    # Runs on the tunnel's timer thread once TUNNEL_TIMEOUT_MINUTES
+                    # elapses. Reuse the existing "Retry Link" affordance rather than
+                    # inventing a new one — un-publish the URL server-side too, so
+                    # /api/invite and the QR stop handing out a dead link.
+                    remote["tunnel"] = None
+                    remote["url"] = ""
+                    server.set_public_url("")
+                    remote["status"] = (
+                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
+                    )
+                    remote["failed"] = True
+                    remote["expired"] = True
+                    logger.info("retro: secure link expired (session=%s)", session_id)
+
+                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
                 # Published BEFORE start(), which blocks for up to the 45 s
                 # handshake budget (URL + edge registration + a possible
                 # --region retry) plus the ~30 s DNS-propagation gate. The
@@ -10608,6 +10729,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         logger.info("retro: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
         remote["failed"] = False
+        remote["expired"] = False
         remote["status"] = "Setting up the secure link…"
         duck_working_thread(_worker, name="retro-tunnel-setup").start()
 
@@ -10641,6 +10763,30 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         if remote["failed"]:
             base.append("Retry Link")
         return base
+
+    def _link_status_text() -> str:
+        """Time-critical tunnel-health text, or "" when there is none.
+
+        A retro can easily run 60-90 minutes, and a quick tunnel gets a fresh
+        random hostname on every launch — once this one auto-expires, Retry
+        Link hands out a *different* URL, so the invite already sent to
+        everyone is permanently dead. Warn the host with time left to wrap
+        up or re-share, rather than the link just vanishing mid-ceremony.
+
+        Returned text must win over `message` in `_data()`, not just
+        `remote["status"]` — `message` is a sticky action-result string (set
+        by Copy Invite etc. and never cleared per frame) that would otherwise
+        swallow this for the rest of the session the moment the host presses
+        the one button they need to press to share the link at all.
+        """
+        if remote["expired"]:
+            return remote["status"]
+        tunnel = remote.get("tunnel")
+        remaining = tunnel.time_until_expiry() if tunnel is not None else None
+        if remaining is not None and remaining <= 300:
+            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
+            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
+        return ""
 
     def _data() -> dict:
         grids = board.cards_by_grid()
@@ -10676,11 +10822,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             "host_url": server.url,
             "public_url": server.share_url,
             "link_failed": remote["failed"],
-            # `message` wins. It is only ever set by something the host just did,
-            # and the tunnel status is ambient — it goes non-empty on frame 1 and
-            # stays set for the whole session, so reading it first (as this did)
-            # silently swallowed every action result and error on the page.
-            "message": message or remote["status"],
+            # `_link_status_text()` wins first: it is only non-"" for a time-critical
+            # tunnel event (the expiry warning, or the expiry itself), and both must
+            # reach the host even mid-frame after a sticky `message`. Otherwise
+            # `message` wins over the ambient `remote["status"]` — `message` is only
+            # ever set by something the host just did, and reading status first (as
+            # this did) silently swallowed every action result and error on the page.
+            "message": _link_status_text() or message or remote["status"],
             "grids": grids,
             "carried": carried,
             "actions": _actions(),
@@ -11376,14 +11524,15 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
     # Empty on purpose — see the retro loop: the status slot renders
-    # `message or remote["status"]`, so the tunnel narrates until the host acts.
+    # `_link_status_text() or message or remote["status"]`, so the tunnel narrates
+    # until the host acts, except a time-critical tunnel event which always wins.
     message = ""
 
     # Tunnel state — see the retro loop for the full note. The short version: the
     # server binds loopback, so this tunnel is the only way a teammate reaches the
     # board, and it therefore starts by itself rather than on a button.
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
@@ -11398,7 +11547,21 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-                tunnel = CloudflareTunnel(server.port, binary=binary)
+
+                def _on_expired() -> None:
+                    # See the retro loop's _on_expired for the full note: reuses the
+                    # existing "Retry Link" affordance and un-publishes server-side.
+                    remote["tunnel"] = None
+                    remote["url"] = ""
+                    server.set_public_url("")
+                    remote["status"] = (
+                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
+                    )
+                    remote["failed"] = True
+                    remote["expired"] = True
+                    logger.info("poker: secure link expired (session=%s)", session_id)
+
+                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
                 # Published BEFORE start() so the page's finally can stop it —
                 # see the retro loop for the orphaned-cloudflared note.
                 remote["tunnel"] = tunnel
@@ -11438,6 +11601,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         logger.info("poker: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
         remote["failed"] = False
+        remote["expired"] = False
         remote["status"] = "Setting up the secure link…"
         duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
@@ -11453,6 +11617,21 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             base.append("Retry Link")
         return base
 
+    def _link_status_text() -> str:
+        # See the retro loop's _link_status_text for the full note: a quick
+        # tunnel gets a fresh random hostname on every launch, so once this
+        # one auto-expires the invite already sent to the table is
+        # permanently dead. Returns "" when there's nothing urgent — must win
+        # over the sticky `message` in `_data()`, not just `remote["status"]`.
+        if remote["expired"]:
+            return remote["status"]
+        tunnel = remote.get("tunnel")
+        remaining = tunnel.time_until_expiry() if tunnel is not None else None
+        if remaining is not None and remaining <= 300:
+            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
+            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
+        return ""
+
     def _data() -> dict:
         return {
             "session_name": session_name or setup["scope_label"],
@@ -11460,8 +11639,8 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             "host_url": server.url,
             "public_url": server.share_url,
             "link_failed": remote["failed"],
-            # `message` wins — see the retro loop for why the order matters.
-            "message": message or remote["status"],
+            # `_link_status_text()` wins first — see the retro loop for why.
+            "message": _link_status_text() or message or remote["status"],
             "state": board.state_snapshot(),
             "actions": _actions(),
         }

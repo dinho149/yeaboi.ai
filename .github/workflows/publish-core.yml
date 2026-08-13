@@ -100,3 +100,9 @@ jobs:
           tag_name: core-v${{ needs.check.outputs.version }}
           name: yeaboi-core v${{ needs.check.outputs.version }}
           generate_release_notes: false # notes would be the whole repo's; the wheel is one binary
+          # `core-v*` is a sidecar wheel on its own version line, not the product.
+          # Without this the newest core release wins the repo's "Latest" badge —
+          # GitHub picks by publish date, not by tag namespace — and the release
+          # page points at a Go binary instead of the yeaboi somebody came to
+          # install. Only publish.yml's `v*` may claim it.
+          make_latest: false

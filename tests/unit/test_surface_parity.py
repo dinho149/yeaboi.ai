@@ -67,7 +67,16 @@ class Exempt(NamedTuple):
 CAPABILITIES: dict[str, dict] = {
     "planning": {
         "engines": {("yeaboi.agent.headless", "run_planning_pipeline")},
-        "mcp_tools": {"plan_generate", "intake_questions", "plan_get", "plan_export", "plan_publish", "plan_sync"},
+        "mcp_tools": {
+            "plan_generate",
+            "intake_questions",
+            "plan_get",
+            "plan_export",
+            "plan_publish",
+            "plan_sync",
+            "plan_prior_art",
+            "plan_prior_art_feedback",
+        },
         "tui_mode": "project-planning",
         "cli": {
             "--non-interactive",
@@ -80,6 +89,7 @@ CAPABILITIES: dict[str, dict] = {
             "--export-questionnaire",
             "--export-only",
             "--mode",
+            "--prior-art",
         },
         "skill": "plan-sprint",
     },

@@ -180,7 +180,21 @@ def run_output_share(
                 _set(done=True)
                 return
             _set(status="Starting the secure tunnel and checking public DNS…")
-            tunnel = CloudflareTunnel(server.port, binary=binary)
+
+            def _on_expired() -> None:
+                # Runs on the tunnel's timer thread once TUNNEL_TIMEOUT_MINUTES
+                # elapses. There is no retry affordance on this screen — collapse
+                # to the same "Back only" terminal state as any other setup
+                # failure (e.g. the ensure_cloudflared() failure above), rather
+                # than inventing a new control.
+                with lock:
+                    srv = state.get("server")
+                if srv is not None:
+                    srv.set_public_url("")  # type: ignore[union-attr]
+                _set(active=False, done=True, public_url="", error="Secure link expired after the configured timeout.")
+                logger.info("output sharing expired (mode=%s)", document.source_mode)
+
+            tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
             _set(tunnel=tunnel)
             public_url = tunnel.start(timeout=45)
             if not public_url:

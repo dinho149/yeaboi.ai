@@ -10,6 +10,7 @@ See README: "Testing — Contract Tests" for background on VCR.py replay.
 
 from __future__ import annotations
 
+import os
 import webbrowser
 from pathlib import Path
 
@@ -38,6 +39,36 @@ def _sandbox_allows_test_dirs(tmp_path_factory):
     mp.setenv("YEABOI_ALLOWED_PATHS", f"{basetemp},{fixtures_dir},{Path.cwd()}")
     yield
     mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _no_env_leak():
+    """`os.environ` is restored after every test, whatever the test did to it.
+
+    Thirteen setters in ``config.py`` write straight to ``os.environ`` on
+    purpose — ``set_tips_enabled``, ``set_duck_enabled``, the beta ack, the log
+    level and the rest — so a preference change takes effect in the running
+    session without a reload. A test that calls one without putting the key under
+    ``monkeypatch`` therefore leaks it into every test that runs *after* it, in
+    whatever order the collector happened to pick.
+
+    That is invisible until the order changes, and it changed twice at once here:
+    ``tests/*.py`` joined the unit lane, and the lane went parallel.
+    ``test_set_tips_enabled_preserves_other_keys`` left ``TIPS_ENABLED=false``
+    behind, and four welcome-screen tests then rendered a screen with no tip
+    strip and failed on a missing row — passing alone, failing in the suite, with
+    nothing in either failure naming the environment.
+
+    Restoring wholesale rather than fixing the two callers, because the callers
+    are not the bug: writing to ``os.environ`` is what those functions are *for*,
+    there are thirteen of them, and the next one added would reintroduce this
+    with no test to catch it. Cost is one dict copy per test.
+    """
+    before = os.environ.copy()
+    yield
+    if os.environ != before:
+        os.environ.clear()
+        os.environ.update(before)
 
 
 class RealBrowserBlocked(BaseException):
@@ -193,6 +224,84 @@ def _no_real_package_install(monkeypatch):
         raise RealPackageInstallBlocked(f"test tried to spawn a real installer: {argv}")
 
     monkeypatch.setattr("yeaboi.voice_install._popen", _blocked)
+
+
+class RealGitHubWriteBlocked(BaseException):
+    """A test reached the real `gh` CLI. Never caught — see the fixture below.
+
+    ``BaseException`` for the same reason ``RealPackageInstallBlocked`` is: this
+    fires inside code whose whole contract is to degrade gracefully, and a broad
+    ``except Exception`` on the way out would swallow it and report a failed `gh`
+    call instead of failing the test.
+    """
+
+
+@pytest.fixture(autouse=True)
+def _no_real_gh_calls(monkeypatch):
+    """No test may shell out to the real `gh` CLI.
+
+    This is not hypothetical. ``TestMigrateProposalsApply`` stubbed
+    ``cowork_setup._api`` — the REST seam — and asserted on the calls. That was
+    complete for as long as ``_reclassify`` had only a REST branch. The moment it
+    grew a ``gh`` branch (``TRANSPORT`` defaults to ``"gh"``), those same tests
+    took the unstubbed path and ran real commands against the real repository:
+    ``gh issue edit 7 --add-label cowork:queued`` plus four ``gh issue comment``
+    calls, landing on a PR merged months earlier. They had to be undone by hand.
+
+    A test asserting on writes is exactly a test that will make them if a seam
+    moves, and "stub the right seam" is not a property anything checks. Blocking
+    the single process seam is, and it fails loudly rather than mutating anything.
+
+    Blocked at the **process spawn** inside ``_gh_transport``, not at ``gh()``
+    itself. That is deliberate and is the only level that works for everyone:
+    ``test_gh_transport.py`` calls ``transport.gh`` directly on purpose — proving a
+    missing binary degrades to 127 rather than a traceback — and stubs
+    ``transport._run`` beneath it, while ``test_cowork_setup.py`` stubs
+    ``transport.gh`` above it. Both are legitimate, both share this MonkeyPatch
+    instance, and a stub at either level lands after ours and wins. What is left
+    over is precisely the case with no stub at all, which is the one that reaches
+    the network.
+
+    **There can be more than one ``_gh_transport``, and patching the wrong one is
+    silent.** ``scripts/`` is not a package, and the two loaders disagree about who
+    owns the name: ``cowork_setup`` and ``cowork_relay`` do a plain ``import
+    _gh_transport``, binding whatever object exists at their load time, while
+    ``test_gh_transport.py`` builds a *fresh* module off the file path and assigns
+    it over ``sys.modules["_gh_transport"]``. Collection is alphabetical, so in a
+    full-suite run the registry entry is the fresh object and ``cowork_setup``
+    still holds the original — patching only the registry leaves the module that
+    caused the incident unguarded, and the guard's own proof passes when run on one
+    file because there the two happen to coincide.
+
+    So every distinct transport object reachable from the loaded scripts modules is
+    patched, deduped by identity. If none was imported there is nothing to block
+    and this is a no-op.
+    """
+    import sys as _sys
+
+    reachable = []
+    for name in ("_gh_transport", "cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff"):
+        module = _sys.modules.get(name)
+        if module is None:
+            continue
+        candidate = module if name == "_gh_transport" else getattr(module, "transport", None)
+        if candidate is not None and not any(candidate is seen for seen in reachable):
+            reachable.append(candidate)
+
+    for transport in reachable:
+        real = transport._run
+
+        def _blocked(argv, *args, _real=real, **kwargs):
+            # `gh` only. Everything else through this seam is `git remote get-url
+            # origin` — a local, read-only lookup that cannot reach GitHub and that
+            # several tests legitimately let run. Blocking it too would fail seven
+            # tests that never did anything wrong, and a guard with collateral like
+            # that gets loosened rather than kept.
+            if argv and argv[0] == "gh":
+                raise RealGitHubWriteBlocked(f"test tried to spawn the real gh CLI: {argv}")
+            return _real(argv, *args, **kwargs)
+
+        monkeypatch.setattr(transport, "_run", _blocked)
 
 
 @pytest.fixture(autouse=True)

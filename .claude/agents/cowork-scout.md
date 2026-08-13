@@ -43,8 +43,21 @@ Procedure:
      assertion that fails on today's `main` and passes once fixed. Name it in `evidence`. If you
      cannot describe that test concretely, you do not understand the bug well enough to hand it to
      an unwatched builder: mark it `propose` and say so in `why_it_matters`.
-5. Deduplicate against `gh issue list --label "workstream:<name>" --state all --limit 60`. A find that
-   restates an open proposal, or one closed unapproved, is dropped.
+5. **Deduplicate — and report what you matched rather than dropping it.** `gh issue list --label
+   "workstream:<name>" --state all --limit 60`; read each row's **state and labels**, because both
+   decide the answer.
+   - restates an issue **closed** unapproved → **drop it.** A closing is a rejection.
+   - restates an **open** issue and you classified the find `propose` → **drop it.** The question
+     is already asked.
+   - restates an **open** issue and you classified the find `auto` → **return it**, with `restates`
+     set to that issue's number. What to do about it is the caller's call, not yours: an open issue
+     is a question waiting on a human, and the whole premise of the auto lane is that this find is
+     not one. A shelf of unanswered issues suppressing the very work that would clear it is what
+     this rule used to do, for forty-two issues and a fortnight each.
+
+   If that `gh` call comes back empty, ask `uv run python scripts/cowork_setup.py --proposal-slots
+   <name>` and `--queued <name>` instead — an empty result there means "could not ask", not
+   "nothing open", and a dedupe run against nothing re-files everything.
 
 Return JSON and nothing else:
 
@@ -53,8 +66,15 @@ Return JSON and nothing else:
  "finds": [{"title": "", "type": "bug|chore|docs|security",
             "why_it_matters": "", "evidence": "file:line or command output",
             "paths": [], "impact": 1, "effort": "S|M|L", "risk": "low|med|high",
-            "lane": "auto|propose", "critical": false, "owner": "<workstream if not yours>"}]}
+            "lane": "auto|propose", "critical": false, "restates": null,
+            "owner": "<workstream if not yours>"}]}
 ```
+
+`restates` is the number of the **open** issue this find is already written up in, or `null`. Set it
+whenever step 5 matched one, whichever lane you chose — it is the only thing that lets the sweep pick
+up an existing write-up instead of filing a second issue about it, and it is a fact you established
+in step 5 rather than extra work. A number here is never an instruction to do anything; the sweep
+decides.
 
 `type` is a closed vocabulary of four, and the auto-lane categories map onto it exactly — security
 patch → `security`, a reproducible defect or a flaky test → `bug`, dead code, lint and

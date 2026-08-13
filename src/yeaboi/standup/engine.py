@@ -256,16 +256,20 @@ def _resolve_code_scope(
     azdo_projects: list[str] | None,
     azdo_repositories: list[str] | None,
     github_owners: list[str] | None = None,
-) -> tuple[list[str], list[str], list[str], list[str], list[str] | None, list[str]]:
+    github_excluded_repositories: list[str] | None = None,
+) -> tuple[list[str], list[str], list[str], list[str], list[str] | None, list[str], list[str]]:
     """Resolve GitHub owner/repository and Azure project scope.
 
     GitHub owners are the analog of Azure projects: one picked owner stands for
     every repository inside it, and the collector expands it per run. Explicit
     repositories still work and are unioned with the expansion.
+    ``github_excluded_repositories`` is the narrow opt-out from that expansion
+    (see code_scope.expand_github_owners) — never widens scope, only trims it.
 
-    The last element is the sources dropped for having an empty scope — selected
-    in setup, but with no repository or project behind them. That used to happen
-    silently, which is indistinguishable from the source having found nothing.
+    The second-to-last element is the sources dropped for having an empty scope
+    — selected in setup, but with no repository or project behind them. That
+    used to happen silently, which is indistinguishable from the source having
+    found nothing.
     """
     from yeaboi.standup.code_scope import default_code_scope, validate_code_sources
 
@@ -299,6 +303,13 @@ def _resolve_code_scope(
         # scope resolution block on the network on the standup's critical path,
         # and put a live API call inside every unit test that touched it.
         owners = []
+    excluded_repositories = list(
+        dict.fromkeys(
+            github_excluded_repositories
+            if github_excluded_repositories is not None
+            else ((config or {}).get("github_excluded_repositories", []) if configured else [])
+        )
+    )
     legacy_repositories = list(
         dict.fromkeys(
             azdo_repositories
@@ -338,7 +349,7 @@ def _resolve_code_scope(
     # when callers supply them and do not supply projects.
     if azdo_projects is not None or projects:
         legacy_repositories = None
-    return sources, owners, github, projects, legacy_repositories, dropped
+    return sources, owners, github, projects, legacy_repositories, dropped, excluded_repositories
 
 
 def _resolve_documentation_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
@@ -1373,6 +1384,7 @@ def run_standup(
     code_sources: list[str] | None = None,
     github_owners: list[str] | None = None,
     github_repositories: list[str] | None = None,
+    github_excluded_repositories: list[str] | None = None,
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
     documentation_sources: list[str] | None = None,
@@ -1397,6 +1409,9 @@ def run_standup(
             saved Team selection; an explicit empty list makes a self-only run.
         code_sources/repositories: optional code-scope overrides; GitHub is
             repository-scoped and Azure Repos is project-scoped.
+        github_excluded_repositories: repos to drop from an otherwise-included
+            GitHub owner's expansion (see code_scope.expand_github_owners) —
+            never widens scope, only trims it.
         documentation_sources: optional Confluence/Notion provider override;
             repository documentation follows the selected code repositories.
         review_transcripts: when True (default), sweep the transcript folders
@@ -1495,9 +1510,19 @@ def run_standup(
         selected_azdo_projects,
         selected_azdo_repos,
         dropped_code_sources,
-    ) = _resolve_code_scope(config, code_sources, github_repositories, azdo_projects, azdo_repositories, github_owners)
+        selected_github_excluded,
+    ) = _resolve_code_scope(
+        config,
+        code_sources,
+        github_repositories,
+        azdo_projects,
+        azdo_repositories,
+        github_owners,
+        github_excluded_repositories,
+    )
     source_params["github_owners"] = selected_github_owners
     source_params["github_repositories"] = selected_github_repos
+    source_params["github_excluded_repositories"] = selected_github_excluded
     source_params["azdo_projects"] = selected_azdo_projects
     source_params["azdo_repositories"] = selected_azdo_repos
     selected_documentation_sources = _resolve_documentation_sources(config, documentation_sources, source_params)

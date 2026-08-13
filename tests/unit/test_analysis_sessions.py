@@ -58,8 +58,12 @@ class TestSchemaVersion:
         # v27 adds the agentwatch tables (agent_sessions, agent_ingest_files,
         # agent_security_findings, and the three report-history tables); v28
         # adds standup_config.github_owners, the GitHub org scope that mirrors
-        # the Azure project picker.
-        assert CURRENT_SCHEMA_VERSION == 28
+        # the Azure project picker; v29 adds
+        # standup_config.github_excluded_repositories, the narrow opt-out from
+        # an owner's expansion.
+        # v30 adds planning_prior_art_feedback, the global ledger of which
+        # existing repos the user ruled out as prior art.
+        assert CURRENT_SCHEMA_VERSION == 30
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

@@ -58,6 +58,15 @@ The single decision point. It is the only routine that posts proposals to Slack.
    from users — and capability work reaches it through 🔌 **Integration**. Both are below, under
    their own headings, because neither came from a scout.
 
+   **What is in these four sections is now narrower than the type name suggests, and that is the
+   point.** A `cowork:proposal` carrying `type:bug` is a bug the **auto lane refused** — one whose
+   regression test nobody could name, or whose fix would change user-facing wording. Bugs, chores,
+   docs drift and security patches the lane *can* take carry `cowork:queued` instead
+   (`house-rules.md`, **The queue**), never reach step 1's query at all, and are built by a sweep
+   without asking anyone. So an empty 🐛 **Bugs** heading no longer means the codebase has no bugs;
+   it means every bug the fleet found was one it could prove and ship. 🛠️ **Queued** below is where
+   that shows up, and it is the section to read before concluding the fleet is idle.
+
    Section order is fixed: **Security, Bugs, Chores, Docs**. Fixed on
    purpose — a reader scanning the same message every morning should not have to hunt for where the
    chores went. Security leads because it used to be a thumb on a flat scale and is now a section.
@@ -197,6 +206,7 @@ The single decision point. It is the only routine that posts proposals to Slack.
    | Silent | 🔇 |
    | Approved, no PR yet | ⏳ |
    | Held | ⏸️ |
+   | Queued | 🛠️ |
    | Calibration | 📊 |
 
    None of them is ✅ or ❌. Those two are the approval verbs, and a reader who meets one as
@@ -243,8 +253,8 @@ The single decision point. It is the only routine that posts proposals to Slack.
      would only restate them; the per-workstream remainder is the one place a reader learns which
      surface the backlog is piling up on. Omit the line entirely when the sections above listed
      everything — a remainder of zero is not a fact anyone needs.
-   - the four health sections from step 5 — ⏳ **Approved, no PR yet**, 🚧 **Blocked on an open
-     PR**, ⏸️ **Held** and 🔇 **Silent 21+ days** — sharing one divider, because they are four parts
+   - the five health sections from step 5 — ⏳ **Approved, no PR yet**, 🚧 **Blocked on an open
+     PR**, ⏸️ **Held**, 🛠️ **Queued** and 🔇 **Silent 21+ days** — sharing one divider, because they are five parts
      of one health report and splitting them reads as unrelated topics. Approved-with-no-PR leads:
      it is the only one of the four where a human already said yes, so it is the only one where the
      silence is the fleet's fault rather than the backlog's. **Held** sits before **Silent** because
@@ -305,15 +315,36 @@ The single decision point. It is the only routine that posts proposals to Slack.
    division is what a reader relies on: this message is asking you something, the standup is
    telling you something.
 
-   Note what this routine no longer competes with. Security, bug and chore finds go straight to a
-   PR now (`house-rules.md`), so those three sections are empty on most days and the queue this
-   digest reports is mostly `feature` and `improvement` — the finds that genuinely need a human.
-   That shrinkage is behaviour, not an edit: the sections stay declared, and an empty one is
-   omitted exactly as before.
+   Note what this routine no longer competes with, and why that is now true rather than intended.
+   Security, bug, chore and docs finds the auto lane can take carry `cowork:queued` and are
+   excluded from step 1's query **by construction** — not "usually empty on most days", but *not in
+   the queue this routine reads*. What survives into the four type sections is the residue the lane
+   refused, and it is meant to be a short list. When it is not, the calibration line in step 6 is
+   the thing that says so.
+
+   This paragraph used to claim the shrinkage as behaviour while nothing implemented it: the dedupe
+   was lane-blind, so an unanswered proposal about a bug *suppressed* the auto-lane find that would
+   have fixed it, and the digest asked about forty-two of them.
 
 4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
    "closed unapproved after 14 days — re-file if still relevant". Never touch an issue that carries
-   `claude-implement`.
+   `claude-implement`, and **never touch one that carries `cowork:queued`.**
+
+   A queued item is work waiting on the fleet, not a question waiting on a human, so a fourteen-day
+   clock is measuring the wrong thing on it — and closing it would be worse than pointless. Both
+   dedupe passes read a closing as "a human said no", so the find would be suppressed permanently
+   *and* the write-up would be gone. Nothing must produce that signal on the fleet's behalf.
+
+   **And age a bounced proposal from when it came back, not from when it was filed.** A proposal
+   that was queued and then bounced (`sweep-procedure.md` step 5) keeps its original `createdAt`,
+   so an eight-day-old issue returning to the queue would have six days to be answered. Take the
+   age from the most recent `cowork:proposal` labelling event when there is one, the same way
+   ⏳ **Approved, no PR yet** takes its age from the label rather than the filing:
+
+   ```bash
+   gh api repos/{owner}/{repo}/issues/<n>/timeline \
+     --jq '[.[] | select(.event == "labeled" and .label.name == "cowork:proposal")] | last | .created_at'
+   ```
 
    A human comment does **not** exempt an issue. Commenting "not now" is the natural way to say no,
    and exempting commented issues would make every explicit rejection immortal while silence — the
@@ -327,9 +358,9 @@ The single decision point. It is the only routine that posts proposals to Slack.
 5. **Report the health lines** — if any workstream has filed nothing in 21 days, say so in the
    digest. A silent scout is usually a broken scout, not a clean codebase.
 
-   Separate the four ways work goes quiet, under four headings — ⏳ **Approved, no PR yet**,
-   🚧 **Blocked on an open PR**, ⏸️ **Held** and 🔇 **Silent 21+ days** — each an ordered list, one
-   item per entry, in the same two-line shape as a proposal. These were one prose paragraph, which
+   Separate the five ways work goes quiet, under five headings — ⏳ **Approved, no PR yet**,
+   🚧 **Blocked on an open PR**, ⏸️ **Held**, 🛠️ **Queued** and 🔇 **Silent 21+ days** — each an
+   ordered list, one item per entry, in the same two-line shape as a proposal. These were one prose paragraph, which
    is why nobody read past the first name.
 
    The lines carry different facts, because the states are different facts:
@@ -358,6 +389,12 @@ The single decision point. It is the only routine that posts proposals to Slack.
      state from 2026-08-09 — the implement job it triggered exited green having written nothing —
      and the fleet's only report of it was the same three lines of Slack it had already posted.
      Anything listed here for more than a day is a broken lane, not a slow one.
+
+     **An issue also carrying `implement-blocked` is a lane that gave up**, not one that is slow:
+     the implement job produced no PR three times, or its outcome guard failed, and
+     `implement-reconcile.yml` has stopped retrying it. Say so — `— implement-blocked after <n>
+     attempts` — because nothing else will: the issue keeps `claude-implement`, so the age-out
+     still refuses to touch it, and this section is the only place it surfaces at all.
    - **Blocked** — line one is the workstream and its linked PR, `**<workstream>** [PR #123 —
      <title>](<pr url>)`; line two is `— ` and what is actually holding that PR up, from the
      `pr_feedback.py` run below (red CI, or *n* unanswered findings).
@@ -377,11 +414,32 @@ The single decision point. It is the only routine that posts proposals to Slack.
      A row with `slots: null` could not be read at all. Say so — `**<workstream>** — proposal count
      unreadable` — and never as zero open or as a healthy queue, for the same reason a
      `pr_feedback.py` that exits 2 is never reported as a clean PR.
+   - **Queued** — a workstream with `cowork:queued` items waiting to be built.
+     `uv run python scripts/cowork_setup.py --queued` with no argument answers for all fifteen at
+     once; list every row with a non-zero count. Line one is `**<workstream>**` and the count,
+     `— <n> queued, oldest <k>d`; line two is `— ` and the top item by build order, so a reader can
+     see what is coming.
+
+     **This section asks for nothing, and it is here anyway.** It is the counterpart of ⏸️ **Held**:
+     Held says "the queue is full, answer one"; Queued says "the fleet owes you *n* builds and there
+     is nothing for you to do." Without it a morning with four empty type sections is
+     indistinguishable between a clean codebase and a fleet with thirty-nine items it has not got
+     to — which is exactly the state this system was in, invisibly, for a week. It sits after Held
+     and before Silent because it explains away entries a reader would otherwise go hunting for in
+     both.
+
+     A row whose count could not be read says `**<workstream>** — queue unreadable`, never zero, for
+     the same reason a `slots: null` row is never reported as a healthy queue.
    - **Silent** — a silent workstream has no PR and nothing blocking it, which is the whole problem,
      so there is nothing to link. Line one is `**<workstream>**` and the date it last filed
      (`— last filed <YYYY-MM-DD>`, or `never`); line two is `— ` and the number of days that is,
      which is the number the 21-day line is about. Do not invent a blocker to fill the shape: "no
      open PR, nothing filed in 34 days" is the finding.
+
+     A workstream with queued items, no open PR and nothing merged from it in 21 days is **silent
+     with a cause**, and the cause is the interesting half: say `— <n> queued, nothing merged in
+     <k> days` as the why-now. That is a drain that has stopped, not a scout that found nothing,
+     and it is the one failure mode the queue introduces.
 
    Run `gh pr list --label cowork --state open --json number,labels,createdAt,url` first: a
    workstream with an open PR is **blocked**, not silent — it is forbidden from scouting until that
@@ -390,8 +448,9 @@ The single decision point. It is the only routine that posts proposals to Slack.
    no open PR and an open slot is the case worth worrying about — that is a scout that surveyed a
    surface it could file against and found nothing, three weeks running.
 
-   **Omit any of the four headings that has no entries**, the same way an empty type section is
-   omitted. On a healthy morning ⏸️ **Held** does not appear at all.
+   **Omit any of the five headings that has no entries**, the same way an empty type section is
+   omitted. On a healthy morning ⏸️ **Held** does not appear at all — and neither does 🛠️ **Queued**,
+   which is the state the drain is aiming at.
 
    Say *what* is blocking each one, because the two causes need different people. Run
    `uv run python scripts/pr_feedback.py --pr <n>` per blocked PR: red CI is a machine problem an
@@ -438,3 +497,18 @@ The single decision point. It is the only routine that posts proposals to Slack.
   Check the third query before you decide the queue is empty.
 - The calibration line alone is not a reason to post. On a Monday with an otherwise empty queue,
   stay quiet — a health metric is worth reading beside work, not instead of it.
+- **A queue is not a reason to post either.** `cowork:queued` items are work in flight, not
+  decisions — 🛠️ **Queued** rides along on a morning this routine was going to post anyway, exactly
+  as 📊 **Calibration** does, and never drags it into the channel by itself. A digest reporting the
+  same thirty-nine items every morning for eight weeks would train everyone to skip it, on precisely
+  the run where a real question was in it.
+- **But two faults are, because nothing else reports them.** Post even with an otherwise empty
+  queue when either holds:
+  - ⏳ **Approved, no PR yet** has any entry — a human already said yes and the fleet did not move,
+    which step 5 calls a broken lane rather than a slow one;
+  - a workstream has `cowork:queued` items, no open cowork PR, and nothing merged from it in 21
+    days — a drain that has stopped.
+
+  Both were previously invisible whenever this routine chose silence. That mattered less when the
+  proposal queue was almost never empty; with the type sections structurally quiet, "the digest said
+  nothing" becomes the normal morning, and these two must not ride on it.

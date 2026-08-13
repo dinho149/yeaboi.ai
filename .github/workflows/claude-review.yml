@@ -94,19 +94,39 @@ jobs:
           # would silently drop the review on exactly the PRs that most need one.
           # This is the same failure shape as the AUTO_VERSION_PAT incident above:
           # no run, no skip notice, no signal. Drafts are still skipped.
-          # Stop after MAX_REVIEW_ROUNDS findings-bearing verdicts. Kept in step
-          # with scripts/pr_feedback.py, which stops *blocking* at the same
-          # number — if this kept reviewing past the cap the findings would be
-          # written and immediately ignored, which is worse than not writing
-          # them. Counted the same way there: only verdicts that found something,
-          # so a clean pass never spends a round.
+          # How many findings-bearing verdicts this reviewer may post, and it is
+          # per lane. Both numbers are mirrored from scripts/pr_feedback.py
+          # (MAX_REVIEW_ROUNDS / LOCAL_REVIEW_ROUNDS) and pinned by
+          # tests/unit/test_pr_feedback.py::TestTheReviewCaps — a bash literal in
+          # a YAML file is invisible to every other check in this repo.
+          #
+          # ONE on a local branch. The author is sitting right there and will read
+          # what comes back; a second adversarial pass over the same diff costs a
+          # full model run on every push and finds the tail, not the bug. The gate
+          # does not enforce on that lane at all, so a second round could only ever
+          # produce advice nobody asked for twice.
+          #
+          # TWO on the unattended lane, where the second round is the one that
+          # catches the blocker the first round's fix introduced — and where
+          # pr_feedback.py stops blocking on anything but a `critical` finding
+          # after the first. Reviewing past the point the gate stops reading is
+          # worse than not reviewing: the findings get written and ignored.
+          if [ "$unattended" = "true" ] || [ "$cowork" = "true" ]; then
+            cap=2
+          else
+            cap=1
+          fi
+          # The trailing `-->` is deliberately not matched: the marker gained an
+          # optional ` critical=M` field before it, and anchoring on the close
+          # would silently stop counting every verdict that carries one — the
+          # round counter would read zero forever and the loop would never end.
           rounds=$(gh api "repos/${{ github.repository }}/issues/$number/comments" --paginate \
             --jq '[.[] | select(.user.login == "claude[bot]") | .body
-                   | capture("<!-- pr-feedback: claude-review open=(?<n>[0-9]+) -->")
+                   | capture("<!-- pr-feedback: claude-review open=(?<n>[0-9]+)")
                    | select(.n != "0")] | length' 2>/dev/null || echo 0)
-          echo "findings-bearing review rounds so far: $rounds (cap 2)"
-          if [ "${rounds:-0}" -ge 2 ]; then
-            echo "Review cap reached — not reviewing again. pr_feedback.py stops blocking at the same count."
+          echo "findings-bearing review rounds so far: $rounds (cap $cap, unattended=$unattended)"
+          if [ "${rounds:-0}" -ge "$cap" ]; then
+            echo "Review cap reached for this lane — not reviewing again."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -171,6 +191,14 @@ jobs:
             Someone took the time to say why they are not changing it, and a reviewer
             that keeps re-raising an answered point trains everyone to stop reading it.
 
+            **A claimed fix is not an answer — it is a claim you are the check on.**
+            A reply ending `<!-- addressed: claude-review fixed=N -->` says somebody
+            changed the code, and nothing but this review verifies that. Read the
+            change and re-report the finding if it is still there. `answered=` is the
+            half that says "not changing this, and here is why"; `fixed=` is the half
+            you check. Treating the two the same would turn the marker into a way to
+            switch you off.
+
             Post the result as a single PR review comment via
             `gh pr comment ${{ steps.pr.outputs.number }} --body "..."`:
             a short verdict line, then only findings that matter (file:line, what, why).
@@ -180,19 +208,26 @@ jobs:
 
             **End the comment with this exact line, on its own:**
 
-                <!-- pr-feedback: claude-review open=N -->
+                <!-- pr-feedback: claude-review open=N critical=M -->
 
-            where N is the number of findings you just reported that a reasonable
-            author must act on or answer — the `blocker` and `should-fix` ones, the
-            same bar `/ship` resolves against. Nits, praise, and observations count
-            zero. A clean review is `open=0`.
+            **N** is the number of findings you just reported that a reasonable author
+            must act on or answer — the `blocker` and `should-fix` ones, the same bar
+            `/ship` resolves against. Nits, praise, and observations count zero. A clean
+            review is `open=0 critical=0`.
 
-            That line is not decoration: `scripts/pr_feedback.py` counts it, and the
-            `pr-feedback` commit status blocks the merge while it is above zero and
-            unanswered. Omitting it does not make the PR mergeable — it makes the gate
-            report that the review never ran. Getting N right is the review's most
-            load-bearing output, so if you are unsure whether something is a nit,
-            it is a nit.
+            **M** is the `blocker` subset of those N: the ones where merging as-is ships
+            a defect. Data loss, a security hole, a crash on a normal path, a broken
+            migration. M is 0 on most reviews and that is the expected answer — a
+            should-fix finding is not a blocker just because it is real.
+
+            That line is not decoration, and the two numbers do different jobs.
+            `scripts/pr_feedback.py` counts them, and the `pr-feedback` commit status
+            blocks the merge on N for the **first** round only; after that **only M**
+            holds it. So an inflated M is the expensive mistake here — it is the one
+            number that can hold a merge indefinitely. An inflated N costs one round.
+            Omitting the line does not make the PR mergeable: it makes the gate report
+            that the review never ran. If you are unsure whether something is a nit, it
+            is a nit; if you are unsure whether something is a blocker, it is not.
 
             Budget your turns: posting the comment is the one non-negotiable step.
             On a large diff, skim breadth-first and go deep only on the riskiest

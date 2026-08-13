@@ -336,6 +336,28 @@ class TestGlobalCodeDocs:
         assert prof.ai_adoption.footprint_pct == 40.0
         assert prof.doc_quality.avg_clarity == 70.0
 
+    def test_repo_inventory_is_lifted_to_the_top_of_examples(self, wired, db, monkeypatch):
+        # Produced by the code scan but consumed by planning, which should not
+        # have to know that — a reader guessing a nested path finds nothing.
+        rows = [{"key": "github:acme/api", "provider": "github", "name": "acme/api"}]
+
+        def fake_ai(source, pk, ds, alls, members=None, sub_sources=None, **kwargs):
+            return (
+                AiAdoptionSignal(scanned_commits=1, ai_commits=0, footprint_pct=0.0),
+                {"summary": {}, "coverage": [], "repository_inventory": rows},
+            )
+
+        monkeypatch.setattr("yeaboi.analysis.ai_usage.run_ai_adoption", fake_ai)
+        r = run_team_analysis(components=_ALL, db_path=db)
+        assert r["delivery"]["jira"]["examples"]["repository_inventory"] == rows
+
+    def test_absent_repo_inventory_does_not_write_an_empty_key(self, wired, db):
+        # An empty list would read as "the estate is empty" rather than
+        # "this profile predates the feature" — which is the honest empty
+        # state planning has to distinguish.
+        r = run_team_analysis(components=_ALL, db_path=db)
+        assert "repository_inventory" not in r["delivery"]["jira"]["examples"]
+
     def test_scanned_once_across_two_delivery_trackers(self, wired, db, monkeypatch):
         _configure(monkeypatch, jira=True, azdevops=True)
         r = run_team_analysis(

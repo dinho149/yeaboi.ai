@@ -273,6 +273,11 @@ DEPLOY_ROUTINE = "cd-deploy"
 KEEP_LABELS = frozenset(
     {
         "claude-implement",
+        # Applied by `claude.yml`'s outcome guard and by the reconciler, not by any
+        # cowork routine — so teardown must leave it, exactly as it leaves the
+        # approval label it sits beside. Deleting it would strip the one record
+        # that an implement run failed off every issue carrying it.
+        "implement-blocked",
         "feedback-override",
         "release:promotion",
         "release:promote",
@@ -317,6 +322,29 @@ SCOUT_TYPES = ("bug", "chore", "docs", "security")
 # them. A shortlist that could be squeezed out by two open bugs would be a
 # shortlist that silently stops arriving.
 PROPOSAL_CAP = 2
+
+# The two labels that split one queue in half, and the reason they may never
+# both sit on one issue.
+#
+# `cowork:proposal` is a **question waiting on a human**. `cowork:queued` is a
+# **work item waiting on the fleet** — a find already covered by the auto-lane
+# allowlist in `house-rules.md`, so nobody has to be asked. Same write-up, same
+# labels otherwise; what differs is who answers it.
+#
+# They are mutually exclusive, and that is load-bearing rather than tidy. Every
+# consumer in this repo — `open_proposals` here, `digest.md`'s three queries,
+# `codeql-triage.yml`, `flaky-test-hunter.yml` — asks GitHub for
+# `labels=cowork:proposal,…`, and that parameter is AND-only: there is no way to
+# spell "and not queued". Exclusivity is what keeps every one of them correct
+# without a single edit.
+#
+# The reclassification that moves an issue between them is two REST calls, add
+# then remove, so a run that dies in between leaves both on. `_has_label` and
+# the filter in `open_proposals` resolve that state as **queued**, which is the
+# safe direction: read as a proposal it would hold a slot no human verb could
+# ever release, which is the exact failure this whole split exists to end.
+PROPOSAL_LABEL = "cowork:proposal"
+QUEUE_LABEL = "cowork:queued"
 
 _TYPE_COLORS = {
     "bug": "d73a4a",
@@ -561,8 +589,27 @@ def expected_labels() -> list[Label]:
     """
     labels = [
         Label("cowork", "5319e7", "Opened by a cowork routine"),
-        Label("cowork:proposal", "d4c5f9", "A cowork find awaiting a human's claude-implement"),
+        Label(PROPOSAL_LABEL, "d4c5f9", "A cowork find awaiting a human's claude-implement"),
+        # Not an approval, and not a second `cowork:proposal`. It records that a
+        # rule already covered this find — `house-rules.md`, **The auto lane** —
+        # so it is a work item rather than a question, and a sweep builds it
+        # unattended. Paler than the approval green on purpose: nobody said yes
+        # to this, a rule did.
+        #
+        # A routine may apply this one. It may never apply `claude-implement`,
+        # which is why this had to be its own label rather than a reuse: that one
+        # fires a 110-turn `claude.yml` job, and the closed allowlist of things a
+        # machine may apply must not widen just to let a sweep pick up its own
+        # backlog.
+        Label(QUEUE_LABEL, "c2e0c6", "Approved by rule — an auto-lane item a sweep will build"),
         Label("claude-implement", "0e8a16", "Approved — the claude.yml implement job builds this"),
+        # Applied by `claude.yml` when its outcome guard fails, and by
+        # `implement-reconcile.yml` when three re-fires produced no PR. It is the
+        # terminal state that stops a level-triggered reconciler retrying a broken
+        # implement job every six hours forever. `claude-implement` deliberately
+        # stays on beside it — that is the label `digest.md` queries to report the
+        # issue at all, and removing it would hide the failure rather than name it.
+        Label("implement-blocked", "d93f0b", "The implement job produced no PR — a human has to look"),
         Label("feedback-override", "b60205", "Clears the pr-feedback merge gate — a human's call, recorded on the PR"),
         # The promotion pair. `release:promotion` marks the weekly ask issue and is
         # applied only by `cron/release-promote-ask.md`; `release:promote` is the
@@ -1824,12 +1871,12 @@ def merge_gate_armed() -> bool | None:
             'any(.[]; .type=="required_status_checks" and '
             'any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
         )
-        result = subprocess.run(  # noqa: S603 - literal argv
-            ["gh", "api", f"repos/{slug}/rules/branches/main", "--jq", query],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Through `_gh` like every other CLI call in this file, rather than its own
+        # `subprocess.run`. It was the one that had its own, which meant it was the
+        # one call the tests could not stub — `TestStrict` was making a live
+        # `gh api .../rules/branches/main` request on every run, against whatever
+        # repo the checkout pointed at.
+        result = _gh("api", f"repos/{slug}/rules/branches/main", "--jq", query)
         if result.returncode != 0:
             return None
         return result.stdout.strip() == "true"
@@ -1901,8 +1948,28 @@ def report_merge_gate() -> None:
     print(f"       https://github.com/{slug}/settings/rules")
 
 
-def open_proposals(workstream: str) -> tuple[list[dict] | None, str]:
-    """The open ``cowork:proposal`` issues for one workstream, or None and why not.
+def _has_label(issue: dict, name: str) -> bool:
+    """Whether a REST issue payload carries a label.
+
+    ``labels`` is a list of objects on the issues endpoint and a list of bare
+    strings in one or two places GitHub still emits the older shape. Reading only
+    the first would silently count every queued issue against the cap again —
+    silently being the operative word, since the wrong answer here is a number
+    that looks perfectly reasonable.
+    """
+    for label in issue.get("labels") or []:
+        if (label.get("name") if isinstance(label, dict) else label) == name:
+            return True
+    return False
+
+
+def _issues_labelled(labels: str, workstream: str | None) -> tuple[list[dict] | None, str]:
+    """Open issues carrying every label in ``labels``, for one workstream.
+
+    ``workstream=None`` drops that half of the filter and asks across the whole
+    repo. Only the backfill uses it, and it needs to: one of the things it must
+    classify is an issue carrying **no** `workstream:` label at all, which a
+    per-workstream sweep can never see and which has no charter to build against.
 
     **REST on both transports, deliberately.** Every other read in this file
     branches to `gh <verb> --json` when `gh` is there, and that is right for
@@ -1923,11 +1990,19 @@ def open_proposals(workstream: str) -> tuple[list[dict] | None, str]:
         return None, "no owner/name resolved for this checkout"
     # No `per_page` here: `transport.api_paged` appends its own, and two of them
     # agreeing today is only luck about which one somebody changes next.
-    path = f"/repos/{slug}/issues?labels=cowork:proposal,workstream:{_segment(workstream)}&state=open"
+    scope = f",workstream:{_segment(workstream)}" if workstream else ""
+    path = f"/repos/{slug}/issues?labels={labels}{scope}&state=open"
     if TRANSPORT == "gh":
         if shutil.which("gh") is None:
             return None, "gh is not on PATH"
-        result = _gh("api", path.lstrip("/"))
+        # `--paginate` walks the Link headers and merges the arrays; `per_page`
+        # only widens each hop. Both, for the reason `open_blocked_reports`
+        # gives: a bare `gh api` stops at 30 and reads back as a short list
+        # rather than as an error. Unscoped — which is how the backfill asks —
+        # that silently left fifteen of forty-five issues unclassified, and the
+        # command reported a clean plan over them. The REST branch below has
+        # paged from the start; this one had not.
+        result = _gh("api", "--paginate", f"{path.lstrip('/')}&per_page=100")
         if result.returncode != 0:
             return None, result.stderr.strip() or "unknown gh error"
         try:
@@ -1946,6 +2021,49 @@ def open_proposals(workstream: str) -> tuple[list[dict] | None, str]:
     # let an open PR eat a proposal slot, which is the one-open-PR guard charging
     # twice for the same piece of work.
     return [item for item in items if isinstance(item, dict) and "pull_request" not in item], ""
+
+
+def open_proposals(workstream: str) -> tuple[list[dict] | None, str]:
+    """The open ``cowork:proposal`` issues for one workstream, or None and why not.
+
+    These are the *questions* — the finds the auto lane could not take, waiting on
+    a human's ✅. They are what `PROPOSAL_CAP` bounds and what `digest.md` lists.
+
+    An issue carrying ``cowork:queued`` as well is **queued, not proposed**, and
+    is filtered out here. The two labels are mutually exclusive by design
+    (see `QUEUE_LABEL`), so this only ever fires on the crash window between the
+    reclassification's two REST calls — and resolving that window towards
+    "queued" is the safe direction: counted as a proposal it would hold a slot
+    that only a human verb could release, on an issue no human is going to be
+    shown. Counted as queued it costs one extra line in one digest.
+    """
+    issues, error = _issues_labelled(PROPOSAL_LABEL, workstream)
+    if issues is None:
+        return None, error
+    return [issue for issue in issues if not _has_label(issue, QUEUE_LABEL)], ""
+
+
+def queued_items(workstream: str) -> tuple[list[dict] | None, str]:
+    """The open ``cowork:queued`` issues a sweep should build, or None and why not.
+
+    The counterpart of `open_proposals`: that one answers "may I file?", this one
+    answers "what should I build?".
+
+    **Anything carrying ``claude-implement`` is withheld.** A human can add that
+    label to any issue at any moment, and `claude.yml` then fires a 110-turn
+    implement job on it. If the same issue were still offered to a sweep, two
+    builders would race one item and open two PRs for it. The digest already
+    watches those issues under ⏳ *Approved, no PR yet*, so nothing goes missing
+    by leaving them out — they simply have a different owner.
+
+    None rather than an empty list on failure, and the caller must keep the two
+    apart in the other direction from the cap: an unreadable queue reported as
+    empty is a sweep that quietly stops draining and looks idle instead.
+    """
+    issues, error = _issues_labelled(QUEUE_LABEL, workstream)
+    if issues is None:
+        return None, error
+    return [issue for issue in issues if not _has_label(issue, "claude-implement")], ""
 
 
 def _age_days(stamp: str, now: datetime) -> int | None:
@@ -1973,12 +2091,25 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
     query is never reported as a clean answer.
     """
     issues, error = open_proposals(workstream)
+    # The queue depth rides along because `digest.md`'s 🛠️ Queued section is the
+    # counterpart of its ⏸️ Held section and is built from the same call: Held
+    # says "the queue is full, answer one", Queued says "the fleet owes you n
+    # builds and there is nothing for you to do". Reported, never counted — a
+    # queued item is work in flight and holds no slot.
+    # The reason a queue read failed is discarded here on purpose: this payload's
+    # gating fact is `slots`, and `queued: null` already carries "could not ask"
+    # under the same convention `slots: null` uses. A sweep that needs the reason
+    # is asking the build question, not the filing one, and `--queued` reports it
+    # in full there.
+    queued, _queued_error = queued_items(workstream)
+    queued_count = None if queued is None else len(queued)
     if issues is None:
         return {
             "workstream": workstream,
             "cap": PROPOSAL_CAP,
             "open": None,
             "slots": None,
+            "queued": queued_count,
             "blocking": [],
             "error": error,
         }
@@ -2000,6 +2131,11 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
         # or a cap lowered later) is a full queue, not a negative allowance that
         # arithmetic downstream could turn back into room.
         "slots": max(0, PROPOSAL_CAP - len(issues)),
+        # `None`, never zero, on an unreadable read — the same rule `slots`
+        # follows. A queue reported as empty when it could not be asked is a
+        # workstream that looks idle rather than blind, and the digest's
+        # "queued but nothing merged in 21 days" alarm would never fire.
+        "queued": queued_count,
         "blocking": blocking,
     }
 
@@ -2020,6 +2156,451 @@ def report_proposal_slots(workstream: str | None, now: datetime | None = None) -
         print(json.dumps(proposal_slots(workstream, now), indent=2))
         return 0
     print(json.dumps([proposal_slots(name, now) for name in parse_workstreams()], indent=2))
+    return 0
+
+
+def _queue_rank(issue: dict) -> tuple:
+    """The order `sweep-procedure.md` step 5 builds in, computed once, here.
+
+    Same key the auto lane has always sorted on — highest ``impact``, ties to
+    lower ``risk`` — with age as the final tie-break so the queue drains oldest
+    first. A model asked to sort fifteen queues by eye will eventually get one
+    wrong and nothing downstream would notice, which is the argument this whole
+    file is built on.
+
+    A body with no ``**Impact** N · **Effort** X · **Risk** Y`` line reports
+    ``impact: null``; it ranks as 3 (the middle) rather than as 0, because an
+    unparsed line is a missing fact and not a low score, and sorting it to the
+    bottom would quietly bury every find the scribe wrote before that template.
+    """
+    impact = issue.get("impact")
+    risk = issue.get("risk")
+    return (
+        -(impact if isinstance(impact, int) else 3),
+        risk if isinstance(risk, int) else 3,
+        -(issue.get("age_days") or 0),
+        issue.get("number") or 0,
+    )
+
+
+# `cowork-scribe.md` writes `**Impact** <1-5> · **Effort** <S/M/L> · **Risk**
+# <low/med/high>`. Impact is a number and **risk is a word** — which the first
+# version of this did not allow for, so it matched nothing any scribe has ever
+# written and every queued item ranked as a neutral 3. Worse, both halves were one
+# pattern, so an unmatched risk discarded the impact beside it.
+#
+# Two independent searches now. A body may carry one and not the other (an older
+# issue, a hand-written one), and losing a fact that is present because a
+# different one is missing is exactly the silent miscount `_queue_rank` exists to
+# prevent. Risk comes back on one 1-3 scale whichever way it was written.
+_IMPACT_RE = re.compile(r"\*\*Impact\*\*\s*(?P<impact>\d+)", re.IGNORECASE)
+_RISK_RE = re.compile(r"\*\*Risk\*\*\s*(?P<risk>low|med(?:ium)?|high|\d+)", re.IGNORECASE)
+_RISK_WORDS = {"low": 1, "med": 2, "medium": 2, "high": 3}
+
+
+def _has_section(body: str, name: str) -> bool:
+    """Whether an issue body carries a ``name`` section, in any of its spellings.
+
+    The scribe writes `**Evidence**`; older issues and the CodeQL job write
+    `## Evidence`. Matching only the first spelling held #140 — which carries two
+    `file:line` references under an H2 — as though it had no evidence at all. A
+    format check standing in for a substance check gets to be wrong in both
+    directions, so it may at least not be wrong about punctuation.
+    """
+    return re.search(rf"^\s*(?:#+\s*|\*\*){re.escape(name)}\b", body, re.IGNORECASE | re.MULTILINE) is not None
+
+
+# CodeQL triage files its own proposals, and they are the one family that is
+# *deliberately* not auto-lane work: `codeql-triage.yml` opens an issue only for a
+# rule whose `propose` entry in `.github/codeql/triage-policy.yml` records why a
+# human has to decide it. Queuing one would hand a recorded human decision back to
+# a machine to re-make. Identified by title because that is what the workflow
+# controls — the labels it applies are the same three any security find carries.
+CODEQL_PROPOSAL = "codeql:"
+
+
+def _scores(body: str | None) -> tuple[int | None, int | None]:
+    """``(impact, risk)`` parsed out of an issue body; either half may be None."""
+    text = body or ""
+    impact_match = _IMPACT_RE.search(text)
+    risk_match = _RISK_RE.search(text)
+    impact = int(impact_match["impact"]) if impact_match else None
+    risk = None
+    if risk_match:
+        raw = risk_match["risk"].lower()
+        risk = _RISK_WORDS.get(raw, int(raw) if raw.isdigit() else None)
+    return impact, risk
+
+
+def queue_report(workstream: str, now: datetime | None = None) -> dict:
+    """What one workstream's sweep should build next, in the order it should build it."""
+    issues, error = queued_items(workstream)
+    if issues is None:
+        return {"workstream": workstream, "queued": None, "items": [], "error": error}
+    moment = now or datetime.now(UTC)
+    items = []
+    for issue in issues:
+        impact, risk = _scores(issue.get("body"))
+        items.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "type": next(
+                    (
+                        name.split(":", 1)[1]
+                        for name in (
+                            (label.get("name") if isinstance(label, dict) else label)
+                            for label in issue.get("labels") or []
+                        )
+                        if isinstance(name, str) and name.startswith("type:")
+                    ),
+                    None,
+                ),
+                "impact": impact,
+                "risk": risk,
+                "age_days": _age_days(issue.get("created_at", ""), moment),
+                "url": issue.get("html_url", ""),
+            }
+        )
+    items.sort(key=_queue_rank)
+    return {"workstream": workstream, "queued": len(items), "items": items}
+
+
+def report_queued(workstream: str | None, now: datetime | None = None) -> int:
+    """Print the queue for one workstream, or for all fifteen.
+
+    One object for a named workstream because that is what a sweep asks; a list
+    for the whole fleet because that is what `cron/digest.md`'s Queued section is
+    built from. Exit code stays 0 either way — an empty queue is the goal state,
+    and a routine branching on the exit status would read it as a failure.
+    """
+    if workstream:
+        known = parse_workstreams()
+        if workstream not in known:
+            print(f"unknown workstream: {workstream} (known: {', '.join(known)})", file=sys.stderr)
+            return 2
+        print(json.dumps(queue_report(workstream, now), indent=2))
+        return 0
+    print(json.dumps([queue_report(name, now) for name in parse_workstreams()], indent=2))
+    return 0
+
+
+# The comment left on every issue the backfill reclassifies. Fixed wording so it
+# is greppable, and so a bounced item's history reads straight afterwards.
+MIGRATION_NOTE = """**Reclassified in place** — `cowork:queued`.
+
+This find is on the auto-lane allowlist (`cowork/house-rules.md`, **The auto lane**), so it is not a
+question for a human. **Nothing above has changed.** The `{workstream}` sweep will pick it up,
+re-check it against the allowlist, and open a PR; this issue closes when that PR merges. It no
+longer counts against the workstream's proposal cap, and the daily digest no longer lists it.
+
+If the sweep finds it does not clear the auto-lane conditions after all, it puts `cowork:proposal`
+back with a comment naming the condition that failed."""
+
+
+def _labels_of(issue: dict) -> set[str]:
+    """Every label name on a REST issue payload, both shapes."""
+    return {
+        name
+        for name in ((item.get("name") if isinstance(item, dict) else item) for item in issue.get("labels") or [])
+        if isinstance(name, str)
+    }
+
+
+def migration_plan(issues: Sequence[dict], workstreams: Sequence[str] | None = None) -> dict:
+    """Classify a backlog of open ``cowork:proposal`` issues. Pure — no I/O.
+
+    First match wins, and the order is the point: every rule above `queue` is a
+    reason **not** to touch an issue, so the default is only reached by an issue
+    that survived all of them.
+
+    **This does not have to be right, and that is the design.** `cowork:queued`
+    grants nothing — `sweep-procedure.md` step 5 re-checks the full allowlist
+    before building and bounces what fails, at a cost of one comment. A backfill
+    that had to be correct would have to be a judgement, and a judgement over
+    forty-two issues is not something to run in bulk.
+    """
+    known = set(workstreams if workstreams is not None else parse_workstreams())
+    planned = []
+    for issue in issues:
+        if "pull_request" in issue:
+            continue  # `/issues` returns PRs too; a PR is not a backlog item
+        labels = _labels_of(issue)
+        workstream = next((name.split(":", 1)[1] for name in sorted(labels) if name.startswith("workstream:")), None)
+        kind = next((name.split(":", 1)[1] for name in sorted(labels) if name.startswith("type:")), None)
+        body = issue.get("body") or ""
+
+        if "claude-implement" in labels:
+            action, reason = "skip", "already approved — claude.yml owns it"
+        elif labels & {"integration:candidate", "integration:approved"}:
+            action, reason = "skip", "campaign lane, not the auto lane"
+        elif QUEUE_LABEL in labels:
+            action, reason = "repair", "already queued — an earlier run stopped between its two calls"
+        elif workstream is None or workstream not in known:
+            action, reason = "hold", "no known workstream label, so no charter and no paths to build in"
+        elif kind not in SCOUT_TYPES:
+            action, reason = "hold", f"type `{kind}` is outside the auto-lane vocabulary"
+        elif CODEQL_PROPOSAL in issue.get("title", "").lower():
+            action, reason = "hold", "codeql triage already recorded that this rule needs a human"
+        elif not _has_section(body, "Evidence") and not _has_section(body, "What"):
+            action, reason = "hold", "no evidence of any kind — nothing to reproduce or re-verify"
+        else:
+            action, reason = "queue", "on the auto-lane allowlist on its face"
+
+        impact, risk = _scores(body)
+        planned.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "workstream": workstream,
+                "type": kind,
+                "action": action,
+                "reason": reason,
+                "impact": impact,
+                "risk": risk,
+                # A flag on the row, not a different action. Whether the evidence
+                # really yields a failing test is a judgement, and the sweep makes
+                # it at build time — `house-rules.md` admits a bug on a failing
+                # test, not on an argument, and that has not moved.
+                "needs_repro": action == "queue" and kind == "bug",
+            }
+        )
+    planned.sort(key=lambda row: row["number"] or 0)
+    counts = {name: sum(1 for row in planned if row["action"] == name) for name in ("queue", "hold", "skip", "repair")}
+    return {"planned": planned, "counts": counts}
+
+
+def _reclassify(number: int, workstream: str, *, repair: bool) -> tuple[bool, str]:
+    """Move one issue from the proposal queue to the build queue.
+
+    **Three verbs, and this is the closed list**: add a label, delete one label,
+    post a comment. Never ``PUT /issues/{n}/labels`` — that verb replaces the
+    whole set, and it is exactly how #172 lost `cowork:proposal`,
+    `workstream:web-ux` and `type:security` in a single call and then ran an
+    implement job with no charter at all. "Keep every write-up" is enforced by
+    the absence of the verbs that could break it, not by intent.
+
+    Add before remove, always. A run that dies in between leaves both labels on,
+    which every reader resolves as *queued* — the harmless direction. Removing
+    first would leave an issue in neither queue, invisible to the digest and to
+    every sweep.
+    """
+    # Both transports, like every other writer in this file. The read half asks
+    # REST on both paths deliberately (`_issues_labelled` says why at length), but
+    # the write half had only the REST branch — so on a laptop with `gh` logged in
+    # and no `GH_TOKEN` exported, every issue read back fine and every write failed
+    # with "no GH_TOKEN in the environment". That is the ordinary way a human runs
+    # this, and it is the only way it is allowed to be run.
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return False, "gh is not on PATH"
+        if not repair:
+            result = _gh("issue", "edit", str(number), "--add-label", QUEUE_LABEL)
+            if result.returncode != 0:
+                return False, result.stderr.strip() or "unknown gh error"
+            body = MIGRATION_NOTE.format(workstream=workstream)
+            result = _gh("issue", "comment", str(number), "--body", body)
+            if result.returncode != 0:
+                return False, result.stderr.strip() or "unknown gh error"
+        # `--remove-label` removes one; `gh api -X PUT .../labels` would replace the
+        # whole set. Same distinction `cowork_relay.py:_command` is built around,
+        # and the same incident behind it (#172).
+        result = _gh("issue", "edit", str(number), "--remove-label", PROPOSAL_LABEL)
+        return result.returncode == 0, result.stderr.strip() or "unknown gh error"
+
+    slug = repo_slug()
+    if not slug:
+        return False, "no owner/name resolved for this checkout"
+    if not repair:
+        result = _api("POST", f"/repos/{slug}/issues/{number}/labels", {"labels": [QUEUE_LABEL]})
+        if not result.ok:
+            return False, result.error
+        body = MIGRATION_NOTE.format(workstream=workstream)
+        result = _api("POST", f"/repos/{slug}/issues/{number}/comments", {"body": body})
+        if not result.ok:
+            return False, result.error
+    result = _api("DELETE", f"/repos/{slug}/issues/{number}/labels/{_segment(PROPOSAL_LABEL)}")
+    return result.ok, result.error
+
+
+def migrate_proposals(apply: bool = False) -> int:
+    """The one-time backfill of a proposal backlog into the build queue.
+
+    Idempotent by construction: the read only returns `cowork:proposal` issues,
+    and a reclassified issue no longer carries that label, so a second run plans
+    nothing. The only re-plannable state is `repair` — both labels at once — and
+    that is the crash-recovery case this exists to clean up.
+
+    **stdout is the plan and nothing else**, for the reason `--plan` keeps it
+    that way: it is a JSON document somebody pipes, and one progress line in it
+    turns a fleet into a parse error. Every human line goes to stderr.
+    """
+    issues, error = _issues_labelled(PROPOSAL_LABEL, None)
+    if issues is None:
+        fail(f"could not read the proposal backlog: {error}")
+        return 2
+    plan = migration_plan(issues)
+    counts = plan["counts"]
+    if not apply:
+        print(json.dumps(plan, indent=2))
+        note(
+            f"dry run — {counts['queue']} would be queued, {counts['repair']} repaired, "
+            f"{counts['hold']} left as questions, {counts['skip']} untouched",
+            "re-run with --yes to apply",
+            stream=sys.stderr,
+        )
+        return 0
+
+    failures = []
+    for row in plan["planned"]:
+        if row["action"] not in ("queue", "repair"):
+            continue
+        ok, why = _reclassify(row["number"], row["workstream"] or "owning", repair=row["action"] == "repair")
+        if not ok:
+            failures.append(row["number"])
+            note(f"#{row['number']} not reclassified: {why}", stream=sys.stderr)
+    for row in plan["planned"]:
+        if row["action"] == "hold":
+            note(f"#{row['number']} stays a proposal — {row['reason']}", stream=sys.stderr)
+    print(json.dumps(plan, indent=2))
+    note(
+        f"{counts['queue'] + counts['repair'] - len(failures)} reclassified, "
+        f"{counts['hold']} left as questions, {counts['skip']} untouched",
+        stream=sys.stderr,
+    )
+    if failures:
+        fail(f"{len(failures)} issue(s) not reclassified — re-run to retry, it is idempotent")
+        return 1
+    return 0
+
+
+# The title prefix every standing-fault report carries, and the whole of its
+# identity. A title rather than a label on purpose: a label would have to be added
+# to the `workstreams/` vocabulary, created by `make cowork-setup` and counted by
+# `make cowork-check` — three files edited so one routine can ask one question,
+# and a fleet that cannot report a fault until a deploy has run is a fleet that
+# cannot report the fault that stops deploys running.
+BLOCKED_TITLE = "[blocked] "
+
+
+def open_blocked_reports(marker: str) -> tuple[list[dict] | None, str]:
+    """The open issues already reporting ``marker``, or None and why not.
+
+    REST on both transports for the reason `open_proposals` gives at length: the
+    `gh issue list --json` path is GraphQL underneath and comes back 403 from the
+    routine sessions' egress proxy, while ``GET /repos/{slug}/issues`` is served.
+    This query runs almost exclusively in exactly those sessions, so building it
+    on the refused call would mean it worked everywhere except where it is used.
+
+    None rather than an empty list on failure, and the caller must keep them
+    apart: "nothing has reported this" is the one answer that produces a Slack
+    post, and turning "could not ask" into it is how a standing fault posts once
+    per push forever.
+    """
+    slug = repo_slug()
+    if not slug:
+        return None, "no owner/name resolved for this checkout"
+    # No label filter: the marker lives in the title precisely so this works
+    # before any label exists, and before a deploy has run to create one.
+    #
+    # Which makes paging load-bearing here in a way it is not for
+    # `open_proposals`. That query is bounded by two labels and fits a page; this
+    # one filters nothing, so it is bounded only by how many issues the repo has
+    # open — 47 today against `gh api`'s default page of 30. An open report
+    # sitting on page two reads back as "nobody has said it", and the routine
+    # then posts *and* files a duplicate: this whole change failing in the one
+    # direction it exists to prevent.
+    path = f"/repos/{slug}/issues?state=open"
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return None, "gh is not on PATH"
+        # `--paginate` walks the Link headers and merges the arrays; `per_page`
+        # is appended only here because `transport.api_paged` adds its own, and
+        # two of them in one URL is a query nobody meant.
+        result = _gh("api", "--paginate", f"{path.lstrip('/')}&per_page=100")
+        if result.returncode != 0:
+            return None, result.stderr.strip() or "unknown gh error"
+        try:
+            items = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError as error:  # an egress proxy's HTML error page
+            return None, f"gh api returned no JSON: {error}"
+    else:
+        answer = _api_paged(path)
+        if not answer.ok:
+            return None, answer.error
+        items = answer.data
+    if not isinstance(items, list):
+        return None, "the issues endpoint did not return a list"
+    wanted = f"{BLOCKED_TITLE}{marker}"
+    return [
+        item
+        for item in items
+        # `/issues` returns pull requests too, and a PR titled after the fault it
+        # fixes would otherwise read as the report itself — silencing the routine
+        # from the moment somebody starts fixing it until they merge.
+        if isinstance(item, dict) and "pull_request" not in item and (item.get("title") or "").strip() == wanted
+    ], ""
+
+
+def blocked_report(marker: str) -> dict:
+    """Whether ``marker`` has already been reported, for a routine to branch on.
+
+    Three states, and the routine owes each a different behaviour, which is why
+    this is not a bool:
+
+    - ``reported: true`` — an open issue already says it. Post nothing. The run
+      log still records the firing, and that is where "how often" is answered.
+    - ``reported: false`` — nobody has said it. Post once, and file the issue.
+    - ``reported: null`` — the query itself failed. **Post nothing**, the same
+      way `proposal_slots` turns an unreadable queue into zero slots rather than
+      into a full allowance: a routine that cannot tell whether it has already
+      spoken must not assume it has not.
+
+    This replaces reading the last 24 hours of Slack, which cannot work at all
+    when a routine fires twice from one push — both sessions read the channel
+    before either has posted, both see nothing, and both post. An issue is
+    durable shared state that exists *before* the concurrent runs look at it,
+    which is the property Slack history does not have.
+    """
+    issues, error = open_blocked_reports(marker)
+    if issues is None:
+        return {"marker": marker, "reported": None, "issue": None, "error": error}
+    # A numberless item sorts last rather than first: `or 0` would let one win
+    # the `min` and hand back `issue.number: null`, which reads as a report
+    # nobody can open.
+    first = min(issues, key=lambda item: item.get("number") or sys.maxsize) if issues else None
+    return {
+        "marker": marker,
+        "reported": bool(issues),
+        "issue": (
+            {
+                "number": first.get("number"),
+                "url": first.get("html_url", ""),
+                "title": first.get("title", ""),
+            }
+            if first
+            else None
+        ),
+        "error": "",
+    }
+
+
+def report_blocked(marker: str) -> int:
+    """Print the blocked-report JSON for one marker.
+
+    Exit code stays 0 for all three states. A routine branching on the status
+    would read "already reported" — the *common* and desired outcome — as a
+    failure, and the whole point of this call is to make silence the normal path.
+
+    An empty marker is the one refusal, for the reason `report_proposal_slots`
+    refuses an unknown workstream: it would match every report titled exactly
+    ``[blocked]`` and nothing else, so it answers `false` forever and posts
+    forever, while looking like a working call.
+    """
+    if not marker.strip():
+        print("--blocked-report needs a marker: the fault's identity, e.g. 'cd-deploy: …'", file=sys.stderr)
+        return 2
+    print(json.dumps(blocked_report(marker), indent=2))
     return 0
 
 
@@ -3370,6 +3951,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="WORKSTREAM",
         help="print how many proposals a workstream may still file (omit the name for all fifteen)",
     )
+    parser.add_argument(
+        "--queued",
+        nargs="?",
+        const="",
+        metavar="WORKSTREAM",
+        help="print the open cowork:queued items a sweep should build, in build order "
+        "(omit the name for all fifteen; queued=null means the query failed)",
+    )
+    parser.add_argument(
+        "--migrate-proposals",
+        action="store_true",
+        help="one-off: reclassify auto-lane-eligible cowork:proposal issues as cowork:queued "
+        "(prints the plan and changes nothing without --yes)",
+    )
+    parser.add_argument(
+        "--blocked-report",
+        metavar="MARKER",
+        help="print whether an open issue already reports this standing fault "
+        "(reported=null means the query failed — stay silent, do not post)",
+    )
     parser.add_argument("--text", action="store_true", help="with --agenda, print the rendered message, not JSON")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="with --agenda, the day to report on (default today)")
     parser.add_argument(
@@ -3389,7 +3990,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--teardown", action="store_true", help="remove what this script created (needs --yes)")
     parser.add_argument("--labels", action="store_true", help="with --teardown, delete the GitHub labels")
     parser.add_argument("--variables", action="store_true", help="with --teardown, unset the model variables")
-    parser.add_argument("--yes", action="store_true", help="with --teardown, skip the confirmation")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="with --teardown, skip the confirmation; with --migrate-proposals, apply the plan",
+    )
     parser.add_argument(
         "--created",
         action="append",
@@ -3442,6 +4047,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         # already knows how to read.
         github_ready()
         return report_proposal_slots(args.proposal_slots or None)
+
+    if args.migrate_proposals:
+        # A human's one-off, and the guard says so in the one way a routine
+        # cannot argue with. Reclassifying forty issues on a mechanical rule is a
+        # judgement about a backlog; the fleet reclassifies ONE issue at a time,
+        # having read it (`sweep-procedure.md` step 4). `--strict` is the flag no
+        # human passes and every unattended caller does.
+        if args.yes and args.strict:
+            fail("--migrate-proposals --yes is a human's one-off; --strict means nobody is reading")
+            return 2
+        github_ready()
+        return migrate_proposals(apply=args.yes)
+
+    if args.queued is not None:
+        # Same shape as --proposal-slots above: a read that needs a transport and
+        # nothing else. Without one every workstream reports `queued: null`,
+        # which the sweep reads as "could not ask" and never as "nothing to do".
+        github_ready()
+        return report_queued(args.queued or None)
+
+    if args.blocked_report is not None:
+        # Same shape as --proposal-slots above: a read that needs a transport and
+        # nothing else. Without one the marker reports `reported: null`, which the
+        # routine reads as "stay silent" — the safe direction for a call whose
+        # only job is to decide whether to speak.
+        github_ready()
+        return report_blocked(args.blocked_report)
 
     if args.agenda:
         try:

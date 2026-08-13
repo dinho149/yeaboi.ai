@@ -54,6 +54,15 @@ CONFIRM_EDIT = "Edit an answer…"
 CONFIRM_OVERRIDE_VELOCITY = "Override the velocity…"
 CONFIRM_FREETEXT = "Tell me what's off…"
 
+# Prior-art sub-loop labels. Same rule as the CONFIRM_* set above: the raw
+# label must never reach the graph — the driver maps a pick to the node's
+# literal ("1"/"2"/"3"), because _parse_edit_intent reads a bare digit as
+# "edit QN" and the node's handler does not know these strings.
+PRIOR_ART_YES = "Yes, relevant"
+PRIOR_ART_NO = "Not relevant…"
+PRIOR_ART_SKIP = "Skip the rest"
+PRIOR_ART_CONTINUE = "Continue"
+
 
 def planned_question_sets(qs: QuestionnaireState) -> tuple[list[int], set[int]] | None:
     """(remaining gaps, user-answered) — the questions this run actually asks.
@@ -156,6 +165,32 @@ def derive_question_view(graph_state: dict) -> QuestionView:
     # Guard mirrors _append_reply's card condition exactly — the choices must
     # appear iff the card+prompt did, and never during the PTO sub-loop,
     # velocity number entry, or an edit re-ask.
+    # Prior-art sub-loop: a per-candidate verdict, offered exactly where the
+    # node is waiting for one. Checked BEFORE the confirmation gate because
+    # both run with awaiting_confirmation set and cur_q past the last question
+    # — without this the Accept/Edit menu would render over the prior-art card.
+    if qs.awaiting_confirmation and getattr(qs, "_prior_art_stage", "") == "ask":
+        view.choices = [
+            (PRIOR_ART_YES, True),
+            (PRIOR_ART_NO, False),
+            (PRIOR_ART_SKIP, False),
+        ]
+        view.multi_select = False
+        view.auto_submit = True
+        return view
+    # Nothing was found, and the card says why. There is no verdict to give,
+    # so the only affordance is an acknowledgement — but it still has to be a
+    # row, or the card renders with no way forward and reads as a hang.
+    if qs.awaiting_confirmation and getattr(qs, "_prior_art_stage", "") == "empty":
+        view.choices = [(PRIOR_ART_CONTINUE, True)]
+        view.multi_select = False
+        view.auto_submit = True
+        return view
+    # The "why isn't it relevant" reply is prose — the composer owns it, the
+    # same way CONFIRM_FREETEXT hands over.
+    if qs.awaiting_confirmation and getattr(qs, "_prior_art_stage", "") == "reason":
+        return view
+
     if (
         qs.awaiting_confirmation
         and not qs._awaiting_leave_input

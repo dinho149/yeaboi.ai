@@ -2062,17 +2062,21 @@ def _load_team_profile(profile_id: str = "") -> object | None:
         return None
 
 
-def _load_team_examples(profile_id: str = "") -> dict | None:
+def _load_team_examples(profile_id: str = "", db_path=None) -> dict | None:
     """Load the examples dict for the team profile from SQLite.
 
     If profile_id is given, loads examples for that specific profile.
     Otherwise auto-detects from configured Jira/AzDO project keys.
+
+    `db_path` is the injection seam callers test against — without it a test
+    that passes a temporary database would still read the developer's real
+    `~/.yeaboi/sessions.db` and quietly depend on whatever is in it.
     """
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.team_profile import TeamProfileStore
 
-        db_path = get_db_path()
+        db_path = db_path or get_db_path()
         if not db_path.exists():
             return None
 
@@ -3394,6 +3398,18 @@ def _build_intake_summary(questionnaire: QuestionnaireState) -> str:
     )
     body = "\n---\n\n".join(sections)
 
+    # Prior art — the existing repositories the user accepted as reference.
+    # Rendered above the answers because it is the one part of the summary the
+    # user chose rather than typed, and the part they will scan for.
+    accepted = questionnaire._prior_art_accepted
+    if accepted:
+        prior_lines = ["## Prior art\n", "Existing repositories you said are relevant:\n"]
+        for candidate in accepted:
+            name = candidate.get("name", "")
+            pitch = candidate.get("pitch") or ()
+            prior_lines.append(f"- **{name}**" + (f" — {pitch[0]}" if pitch else ""))
+        body = "\n".join(prior_lines) + "\n\n---\n\n" + body
+
     # Add a footer when defaults were used so the user knows to review assumptions
     if num_defaulted > 0:
         footer = (
@@ -3685,6 +3701,24 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
             ],
         }
 
+    # ── Prior-art sub-loop ────────────────────────────────────────────
+    # See docs: "Project Intake Questionnaire" — prior art
+    #
+    # A greenfield project is planned from a blank page even when the team
+    # already owns most of the pieces. Before the summary is signed off, offer
+    # the repositories analysis found and let the user rule each in or out.
+    # Same shape as the PTO sub-loop above: a stage flag on the questionnaire,
+    # awaiting_confirmation set so the handler runs in the confirmation gate.
+    if not questionnaire._prior_art_stage and _prior_art_applies(questionnaire):
+        prompt = _start_prior_art(questionnaire)
+        if prompt is not None:
+            questionnaire.current_question = TOTAL_QUESTIONS + 1
+            questionnaire.awaiting_confirmation = True
+            return {
+                "questionnaire": questionnaire,
+                "messages": [AIMessage(content=f"{prefix}{prompt}")],
+            }
+
     # PTO already handled (or quick mode) — show the confirmation summary
     questionnaire.current_question = TOTAL_QUESTIONS + 1
     questionnaire.awaiting_confirmation = True
@@ -3694,6 +3728,170 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
         "messages": [AIMessage(content=f"{prefix}{summary}{_CONFIRM_PROMPT}")],
         "pending_review": "project_intake",
     }
+
+
+# ---------------------------------------------------------------------------
+# Prior art — the team's own repositories, offered as reference for a new build
+# ---------------------------------------------------------------------------
+# See docs: "Project Intake Questionnaire" — prior art
+
+_PRIOR_ART_ACCEPT = "Yes, relevant"
+_PRIOR_ART_REJECT = "Not relevant"
+_PRIOR_ART_SKIP = "Skip the rest"
+
+
+def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
+    """Whether this project gets the prior-art step at all (greenfield only)."""
+    from yeaboi.agent import prior_art
+
+    return prior_art.applies(questionnaire.answers)
+
+
+def _start_prior_art(questionnaire: QuestionnaireState) -> str | None:
+    """Run the scan and open the sub-loop. None means "nothing to ask".
+
+    Returns the first candidate's prompt when there is a shortlist. When there
+    is not, the stage is closed out and the reason recorded so the card can say
+    which of "no profile" / "profile too old" / "nothing matched" happened —
+    going quiet would leave the user unable to tell a gap from a verdict.
+    """
+    from yeaboi.agent import prior_art
+
+    try:
+        result = prior_art.shortlist(
+            questionnaire.answers,
+            profile_id=questionnaire._analysis_profile_id,
+        )
+    except Exception as exc:
+        if _should_reraise_llm_error(exc):
+            raise
+        logger.warning("prior_art: scan failed, skipping the step", exc_info=True)
+        questionnaire._prior_art_stage = "done"
+        return None
+    if not result.candidates:
+        questionnaire._prior_art_empty_reason = result.empty_reason
+        logger.info("prior_art: no candidates (%s)", result.empty_reason)
+        # Say so rather than going quiet: a user who has never run Team
+        # Analysis, one whose profile predates this feature, and one whose
+        # repositories genuinely do not match are three different situations
+        # with three different things to do about them, and silence reads as
+        # "your repos were considered and rejected" in all three.
+        if result.message:
+            questionnaire._prior_art_stage = "empty"
+            return result.message
+        questionnaire._prior_art_stage = "done"
+        return None
+    # `stack` is a property, so asdict() drops it — add it explicitly or the
+    # prompt and the promoted reference silently fall back to languages alone.
+    questionnaire._prior_art_candidates = [{**dataclasses.asdict(c), "stack": list(c.stack)} for c in result.candidates]
+    questionnaire._prior_art_index = 0
+    questionnaire._prior_art_stage = "ask"
+    logger.info("prior_art: asking about %d repositories", len(result.candidates))
+    return _prior_art_prompt(questionnaire)
+
+
+def _accepted_prior_art(questionnaire: QuestionnaireState) -> tuple:
+    """The accepted candidates as durable PriorArtRefs."""
+    from yeaboi.agent.state import PriorArtRef
+
+    refs = []
+    for candidate in questionnaire._prior_art_accepted:
+        refs.append(
+            PriorArtRef(
+                key=str(candidate.get("key", "") or ""),
+                name=str(candidate.get("name", "") or ""),
+                url=str(candidate.get("url", "") or ""),
+                platform=str(candidate.get("platform", "") or ""),
+                pitch=tuple(candidate.get("pitch") or ()),
+                stack=tuple(candidate.get("stack") or candidate.get("languages") or ()),
+            )
+        )
+    return tuple(refs)
+
+
+def _prior_art_current(questionnaire: QuestionnaireState) -> dict | None:
+    """The candidate currently on screen, or None when the list is exhausted."""
+    index = questionnaire._prior_art_index
+    candidates = questionnaire._prior_art_candidates
+    return candidates[index] if 0 <= index < len(candidates) else None
+
+
+def _prior_art_prompt(questionnaire: QuestionnaireState) -> str:
+    """The question for the current candidate, pitch and all."""
+    candidate = _prior_art_current(questionnaire)
+    if candidate is None:
+        return ""
+    total = len(questionnaire._prior_art_candidates)
+    position = questionnaire._prior_art_index + 1
+    lines = [
+        f"**Prior art {position} of {total}** — you already have **{candidate.get('name', '')}**.",
+        "",
+    ]
+    for bullet in candidate.get("pitch") or ():
+        lines.append(f"- {bullet}")
+    stack = candidate.get("stack") or candidate.get("languages") or ()
+    if stack:
+        lines.append("")
+        lines.append(f"_{', '.join(stack)}_")
+    lines += [
+        "",
+        "Is it relevant to this project?",
+        "",
+        f"[1] {_PRIOR_ART_ACCEPT}",
+        f"[2] {_PRIOR_ART_REJECT}",
+        f"[3] {_PRIOR_ART_SKIP}",
+    ]
+    # Say that answering is what reaches the rest. The candidates are asked
+    # about one at a time on every surface, so "1 of 3" on its own reads as a
+    # pager offering no way to reach 2 and 3.
+    remaining = total - position
+    if remaining:
+        lines += ["", f"_Answering brings up the next — {remaining} more after this._"]
+    return "\n".join(lines)
+
+
+def _prior_art_advance(questionnaire: QuestionnaireState) -> dict:
+    """Move to the next candidate, or finish the sub-loop.
+
+    Finishing writes the rejections to the global ledger and hands back to the
+    funnel, which shows the summary the accepted references now appear in.
+    """
+    questionnaire._prior_art_index += 1
+    questionnaire._prior_art_stage = "ask"
+    if _prior_art_current(questionnaire) is not None:
+        return {
+            "questionnaire": questionnaire,
+            "messages": [AIMessage(content=_prior_art_prompt(questionnaire))],
+        }
+    return _finish_prior_art(questionnaire)
+
+
+def _finish_prior_art(questionnaire: QuestionnaireState) -> dict:
+    """Close the sub-loop: persist rejections, then show the summary."""
+    from yeaboi.agent import prior_art_feedback
+
+    questionnaire._prior_art_stage = "done"
+    for rejection in questionnaire._prior_art_rejected:
+        prior_art_feedback.apply_verdict(
+            repo_key=rejection.get("key", ""),
+            verdict=prior_art_feedback.VERDICT_DOWN,
+            reason=rejection.get("reason", ""),
+            repo_name=rejection.get("name", ""),
+            project=str(questionnaire.answers.get(1, ""))[:120],
+        )
+    for accepted in questionnaire._prior_art_accepted:
+        prior_art_feedback.apply_verdict(
+            repo_key=accepted.get("key", ""),
+            verdict=prior_art_feedback.VERDICT_UP,
+            repo_name=accepted.get("name", ""),
+            project=str(questionnaire.answers.get(1, ""))[:120],
+        )
+    logger.info(
+        "prior_art: %d accepted, %d rejected",
+        len(questionnaire._prior_art_accepted),
+        len(questionnaire._prior_art_rejected),
+    )
+    return _show_summary_or_pto(questionnaire)
 
 
 def apply_size_switch(graph_state: dict, target_mode: str) -> None:
@@ -3728,6 +3926,17 @@ def apply_size_switch(graph_state: dict, target_mode: str) -> None:
         qs.awaiting_confirmation = False
         qs.editing_question = None
         qs._reopen_for_epic = True
+        # Prior art resets in both directions, unlike the PTO block below: the
+        # guard skips a stage that is already open, but the confirmation-gate
+        # handler still claims the turn — so a switch made mid-loop would eat
+        # the user's first reply at the new summary and answer a card about a
+        # repository they can no longer see. Accepted refs are already on
+        # graph_state["prior_art"], which the confirm path falls back to.
+        qs._prior_art_stage = ""
+        qs._prior_art_candidates = []
+        qs._prior_art_index = 0
+        qs._prior_art_accepted = []
+        qs._prior_art_rejected = []
         if target_mode == "small_project":
             qs._planned_leave_entries = []
             qs._awaiting_leave_input = False
@@ -3837,6 +4046,10 @@ def project_intake(state: ScrumState) -> dict:
     # (a separate TODO) will add LLM-powered refinement later.
     """
     questionnaire = state.get("questionnaire")
+    if questionnaire is not None:
+        # Refresh the stash on every invoke, so a resumed session — whose
+        # transients were dropped — reaches the prior-art step with a profile.
+        questionnaire._analysis_profile_id = state.get("analysis_profile_id", "") or ""
 
     # ── Tracker choice resolution ────────────────────────────────────
     # When both Jira and Azure DevOps are configured, the user picks one
@@ -3883,6 +4096,10 @@ def project_intake(state: ScrumState) -> dict:
         # pre-populates the questionnaire so the user only answers remaining
         # questions they haven't already covered.
         qs = QuestionnaireState()
+        # The prior-art step runs from _show_summary_or_pto, which sees only the
+        # questionnaire — stash the profile id rather than thread graph state
+        # through eleven call sites. Same pattern as _repo_context.
+        qs._analysis_profile_id = state.get("analysis_profile_id", "") or ""
 
         # Apply tracker preference from the choice resolution above (if any).
         if _pending_tracker_pref:
@@ -4663,15 +4880,12 @@ def project_intake(state: ScrumState) -> dict:
                         "messages": [AIMessage(content="Who is taking leave? (name or initials):")],
                     }
                 elif choice in ("2", "no", "n"):
-                    # No planned leave — exit sub-loop
+                    # No planned leave — exit sub-loop back through the funnel.
+                    # "done" rather than "" because the PTO guard tests the
+                    # stage for falsiness; clearing it would re-ask forever.
                     questionnaire._awaiting_leave_input = False
-                    questionnaire._leave_input_stage = ""
-                    summary = _build_intake_summary(questionnaire)
-                    return {
-                        "questionnaire": questionnaire,
-                        "messages": [AIMessage(content=f"{summary}{_CONFIRM_PROMPT}")],
-                        "pending_review": "project_intake",
-                    }
+                    questionnaire._leave_input_stage = "done"
+                    return _show_summary_or_pto(questionnaire)
                 else:
                     # Invalid input — re-prompt
                     return {
@@ -4793,21 +5007,82 @@ def project_intake(state: ScrumState) -> dict:
                         "messages": [AIMessage(content="Who is taking leave? (name or initials):")],
                     }
                 elif user_text.lower() in ("2", "done", "d"):
-                    # Done — exit sub-loop, re-show summary with PTO factored in
+                    # Done — exit the sub-loop back through the funnel so any
+                    # step that sits between PTO and the summary still runs.
                     questionnaire._awaiting_leave_input = False
-                    questionnaire._leave_input_stage = ""
-                    summary = _build_intake_summary(questionnaire)
-                    return {
-                        "questionnaire": questionnaire,
-                        "messages": [AIMessage(content=f"{summary}{_CONFIRM_PROMPT}")],
-                        "pending_review": "project_intake",
-                    }
+                    questionnaire._leave_input_stage = "done"
+                    return _show_summary_or_pto(questionnaire)
                 else:
                     # Invalid input — re-prompt
                     return {
                         "questionnaire": questionnaire,
                         "messages": [AIMessage(content="Please choose [1] Add another or [2] Done:")],
                     }
+
+        # ── Prior-art sub-loop handler ────────────────────────────────
+        # See docs: "Project Intake Questionnaire" — prior art
+        #
+        # Sits after PTO and before the velocity menu, mirroring the PTO
+        # handler's shape: a transient stage flag drives a small state machine
+        # and every exit routes back through _show_summary_or_pto.
+        if questionnaire._prior_art_stage == "empty":
+            # Nothing to decide — the card only had to be read. Any input
+            # acknowledges it and moves on to the summary.
+            questionnaire._prior_art_stage = "done"
+            return _show_summary_or_pto(questionnaire)
+
+        if questionnaire._prior_art_stage in ("ask", "reason"):
+            user_text = last_msg.content.strip()
+            candidate = _prior_art_current(questionnaire)
+            if candidate is None:
+                # Defensive: the list emptied underneath us (a resumed session
+                # drops the transients). Close out rather than loop.
+                return _finish_prior_art(questionnaire)
+
+            if questionnaire._prior_art_stage == "reason":
+                # Empty is a legitimate answer — "no" without a "why" is still
+                # a rejection, and demanding a reason would train people to
+                # accept things to get past the prompt.
+                questionnaire._prior_art_rejected.append(
+                    {
+                        "key": candidate.get("key", ""),
+                        "name": candidate.get("name", ""),
+                        "reason": "" if user_text.lower() in ("skip", "-") else user_text,
+                    }
+                )
+                return _prior_art_advance(questionnaire)
+
+            choice = user_text.lower()
+            if choice in ("1", "y", "yes", _PRIOR_ART_ACCEPT.lower()):
+                questionnaire._prior_art_accepted.append(candidate)
+                return _prior_art_advance(questionnaire)
+            if choice in ("2", "n", "no", _PRIOR_ART_REJECT.lower()):
+                questionnaire._prior_art_stage = "reason"
+                return {
+                    "questionnaire": questionnaire,
+                    "messages": [
+                        AIMessage(
+                            content=(
+                                f"Why isn't **{candidate.get('name', '')}** relevant? "
+                                "I'll stop suggesting it. (Enter to skip)"
+                            )
+                        )
+                    ],
+                }
+            if choice in ("3", "skip", "skip the rest", _PRIOR_ART_SKIP.lower()):
+                # Bailing out is not a rejection — nothing is written to the
+                # ledger for the candidates never seen.
+                return _finish_prior_art(questionnaire)
+            return {
+                "questionnaire": questionnaire,
+                "messages": [
+                    AIMessage(
+                        content=(
+                            f"Please choose [1] {_PRIOR_ART_ACCEPT}, [2] {_PRIOR_ART_REJECT} or [3] {_PRIOR_ART_SKIP}:"
+                        )
+                    )
+                ],
+            }
 
         # ── Velocity choice menu handler ─────────────────────────────
         # "1" or "accept" → accept computed/overridden velocity
@@ -5004,6 +5279,18 @@ def project_intake(state: ScrumState) -> dict:
             "sprint_start_date": sprint_start,
             "starting_sprint_number": starting_sprint,
             "planned_leave_entries": list(questionnaire._planned_leave_entries),
+            # Promote the accepted references off the transient questionnaire
+            # onto durable state — the analyzer, the summary and the exports
+            # all read them from here, and a resumed session must keep them.
+            #
+            # `prior_art` is a plain LastValue channel, so whatever this node
+            # returns *replaces* the channel. A headless run seeds the state
+            # directly (`run_planning_pipeline(prior_art=…)`, and the MCP and
+            # CLI surfaces behind it) and never walks the sub-loop, so
+            # returning the empty questionnaire tuple here would silently
+            # discard the caller's references before the analyzer ever sees
+            # them. Fall back to what is already on the state instead.
+            "prior_art": _accepted_prior_art(questionnaire) or tuple(state.get("prior_art") or ()),
             "messages": [AIMessage(content=msg)],
         }
 
@@ -6038,6 +6325,7 @@ def project_analyzer(state: ScrumState) -> dict:
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,
+        prior_art=tuple(state.get("prior_art") or ()),
     )
 
     # Pasted screenshots (Ctrl+V in the description/questionnaire inputs, plus any
@@ -6427,6 +6715,7 @@ def feature_generator(state: ScrumState) -> dict:
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,
+        prior_art=tuple(state.get("prior_art") or ()),
     )
 
     # Screenshots attached to review-edit feedback (Ctrl+V) — sent only when the

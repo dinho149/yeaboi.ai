@@ -45,6 +45,24 @@ def reply(ts: str, text: str, **reactions: list[str]) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def _not_already_approved(monkeypatch):
+    """Default every plan to "this issue is not yet approved".
+
+    `build_plan` asks `is_approved` on the plain-approval path, and that shells
+    out to `gh issue view`. Unstubbed, every test in this file that builds a plan
+    made a live GitHub read against whatever repo the checkout pointed at — which
+    passed quietly until `_no_real_gh_calls` started refusing, and then failed
+    only in a *scoped* CI run, because which modules are loaded decides which
+    transport objects the guard reached.
+
+    False rather than None is what these tests mean: they assert on the `approve`
+    verb, which is the first approval. The handful about re-firing pass
+    `approved_check` explicitly, and an explicit argument wins over this.
+    """
+    monkeypatch.setattr(relay, "is_approved", lambda issue, **kwargs: False)
+
+
 def item(number: int, ts: str = "1", **reactions: list[str]) -> dict:
     return reply(ts, f"#{number} — [bug][platform] something — https://example.invalid/{number}", **reactions)
 
@@ -90,13 +108,44 @@ class TestRecordedFailure:
             assert relay.ITEM_RE.match(ack["text"]) is None
         # and with every marker stripped, they are still not actionable
         bare = [{**r, "reactions": []} for r in thread]
-        assert relay.build_plan(bare, ALLOWLIST)["counts"]["item_replies"] == 12
+        counts = relay.build_plan(bare, ALLOWLIST, approved_check=lambda n: False)["counts"]
+        assert counts["item_replies"] == 12
 
     def test_stripping_the_marker_recovers_exactly_one_approval(self, thread):
+        """`approved_check` stubbed False — the state #172 was actually in when
+        this thread was recorded, before the label existed on it."""
         thread[0]["reactions"] = [r for r in thread[0]["reactions"] if r["name"] != relay.DONE]
-        plan = relay.build_plan(thread, ALLOWLIST)["plan"]
+        plan = relay.build_plan(thread, ALLOWLIST, approved_check=lambda n: False)["plan"]
         assert [(p["issue"], p["verb"]) for p in plan] == [(172, "approve")]
         assert plan[0]["who"] == ALLOWLIST[HUMAN]
+
+    def test_the_same_thread_re_fires_once_the_issue_is_already_labelled(self, thread):
+        """The bug this recording is of, stated as the fix.
+
+        #172 was ✅'d five times between 2026-08-09 and 08-11. Every one after the
+        first emitted `--add-label claude-implement` onto an issue that already had
+        it — a silent no-op, because `claude.yml`'s implement job fires on the
+        `labeled` *event* and GitHub emits none for a label that is already there.
+        The relay acked all five, so nothing anywhere reported that four of them
+        did nothing.
+        """
+        thread[0]["reactions"] = [r for r in thread[0]["reactions"] if r["name"] != relay.DONE]
+        plan = relay.build_plan(thread, ALLOWLIST, approved_check=lambda n: True)["plan"]
+        assert [(p["issue"], p["verb"]) for p in plan] == [(172, "refire")]
+        assert plan[0]["command"][:3] == ["gh", "issue", "comment"]
+        assert "<!-- implement-retry -->" in plan[0]["command"][-1]
+
+    def test_an_unreadable_approval_state_still_approves(self, thread):
+        """The asymmetry with `is_promotion`, which routes `None` to `ask`.
+
+        Guessing wrong there starts an implementation run against a release ask.
+        Guessing wrong here re-applies a label that is already present, which does
+        nothing — so refusing to act would only strand the ordinary first approval
+        behind a `gh` call the routine sessions' egress proxy is known to refuse.
+        """
+        thread[0]["reactions"] = [r for r in thread[0]["reactions"] if r["name"] != relay.DONE]
+        plan = relay.build_plan(thread, ALLOWLIST, approved_check=lambda n: None)["plan"]
+        assert [(p["issue"], p["verb"]) for p in plan] == [(172, "approve")]
 
 
 class TestVerbs:
@@ -108,16 +157,33 @@ class TestVerbs:
         lost `workstream:` label is what scopes which paths the implement job may
         touch, so this is a boundary, not bookkeeping.
         """
-        plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        fresh = [item(172, white_check_mark=[HUMAN])]
+        plan = relay.build_plan(fresh, ALLOWLIST, approved_check=lambda n: False)["plan"]
         assert plan[0]["command"] == ["gh", "issue", "edit", "172", "--add-label", "claude-implement"]
 
-    def test_no_emitted_command_can_replace_a_label_set(self):
-        thread = [item(1, ts="1", white_check_mark=[HUMAN]), item(2, ts="2", x=[HUMAN])]
-        for entry in relay.build_plan(thread, ALLOWLIST)["plan"]:
-            argv = entry["command"]
-            assert "api" not in argv
-            assert not {"PUT", "-X", "--method"} & set(argv)
-            assert "--remove-label" not in argv
+    @pytest.mark.parametrize("verb", ["approve", "refire", "promote", "campaign", "reject"])
+    def test_no_emitted_command_can_replace_a_label_set(self, verb):
+        """Over every verb by name, rather than over whichever ones a sample thread
+        happens to reach — `refire` needs a stubbed label read to be reached at all,
+        and a safety assertion that silently skips the newest verb is not one.
+
+        `gh issue edit --add-label` adds; `gh api -X PUT .../labels` replaces. On
+        2026-08-09 something ran the second, and #172 lost `cowork:proposal`,
+        `workstream:web-ux` and `type:security` in the same second it gained
+        `claude-implement` — leaving the implement job with no charter naming which
+        paths it was allowed to touch.
+        """
+        argv = relay._command(verb, 7)
+        assert "api" not in argv
+        assert not {"PUT", "-X", "--method"} & set(argv)
+        assert "--remove-label" not in argv
+
+    def test_every_verb_build_plan_can_choose_has_a_command(self):
+        """`_command` raises on an unknown verb, so a verb added to `build_plan`
+        without one turns a relay run into a crash mid-plan — after it has already
+        executed the entries before it."""
+        for verb in ("approve", "refire", "promote", "campaign", "reject"):
+            assert relay._command(verb, 1)[0] == "gh"
 
     def test_a_rejection_closes(self):
         plan = relay.build_plan([item(5, x=[HUMAN])], ALLOWLIST)["plan"]
@@ -125,7 +191,9 @@ class TestVerbs:
         assert plan[0]["command"] == ["gh", "issue", "close", "5"]
 
     def test_both_verbs_from_a_human_asks_and_acts_on_nothing(self):
-        plan = relay.build_plan([item(9, white_check_mark=[HUMAN], x=[HUMAN])], ALLOWLIST)["plan"]
+        plan = relay.build_plan(
+            [item(9, white_check_mark=[HUMAN], x=[HUMAN])], ALLOWLIST, approved_check=lambda n: False
+        )["plan"]
         assert plan[0]["verb"] == "ask"
         assert plan[0]["command"] is None
 
@@ -227,7 +295,8 @@ class TestPromotion:
         assert relay.is_promotion(231, runner=lambda a: payload) is False
 
     def test_an_ordinary_proposal_is_still_an_approval(self):
-        plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        fresh = [item(172, white_check_mark=[HUMAN])]
+        plan = relay.build_plan(fresh, ALLOWLIST, approved_check=lambda n: False)["plan"]
         assert plan[0]["verb"] == "approve"
         assert plan[0]["command"][-1] == "claude-implement"
 
@@ -339,9 +408,12 @@ class TestCampaignCandidate:
 
     def test_an_ordinary_proposal_is_still_an_approval(self):
         """The test that would have caught reusing `claude-implement` for the pick."""
-        plan = relay.build_plan([item(172, white_check_mark=[HUMAN])], ALLOWLIST, candidate_check=lambda n: True)[
-            "plan"
-        ]
+        plan = relay.build_plan(
+            [item(172, white_check_mark=[HUMAN])],
+            ALLOWLIST,
+            candidate_check=lambda n: True,
+            approved_check=lambda n: False,
+        )["plan"]
         assert plan[0]["verb"] == "approve"
         assert plan[0]["command"][-1] == "claude-implement"
 

@@ -772,6 +772,24 @@ def tunnels_disabled() -> bool:
     return os.getenv("YEABOI_NO_TUNNEL", "").strip().lower() in ("1", "true", "yes")
 
 
+def get_tunnel_timeout_minutes() -> int:
+    """Auto-expiry for Cloudflare share tunnels, in minutes (default 60).
+
+    A share left open forever is a real exposure window — code-gated, but
+    reachable from the internet for as long as the host's TUI screen stays
+    open. ``0`` switches the timeout off entirely, matching how
+    ``SESSION_PRUNE_DAYS`` uses ``0`` to mean "never" (see
+    ``get_session_prune_days``). Clamped to at most 24h so a typo can't leave
+    a tunnel open for weeks.
+    """
+    raw = os.getenv("TUNNEL_TIMEOUT_MINUTES", "60")
+    try:
+        minutes = int(raw)
+    except ValueError:
+        return 60
+    return max(0, min(minutes, 1440))
+
+
 def get_slack_webhook_url() -> str:
     """Return the Slack incoming-webhook URL for standup delivery, or '' if unset."""
     return os.getenv("SLACK_WEBHOOK_URL", "") or ""

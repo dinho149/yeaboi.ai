@@ -840,9 +840,11 @@ class TestTokenHelp:
         assert "Scope:" not in out
 
     def test_github_pat_screen_shows_scope(self):
-        # _VC_OPTIONS[0] is GitHub → the PAT screen shows the required scope.
+        # _VC_OPTIONS[0] is GitHub → the PAT screen shows the required scope,
+        # including the SSO-authorization step an org-owned token also needs.
         out = _render(_build_vc_input_screen(_VC_OPTIONS[0], "ghp_x", width=100, height=30))
-        assert "Contents Read" in out
+        assert "'repo' scope" in out
+        assert "Configure SSO" in out
 
     def test_llm_key_screen_has_no_scope(self):
         # LLM API keys have no granular scopes — the scope line must not appear.
