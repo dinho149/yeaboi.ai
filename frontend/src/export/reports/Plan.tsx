@@ -27,7 +27,7 @@ import {
   StatTile,
 } from '../../design/primitives';
 import type { Tone } from '../../design/tone';
-import type { PlanFeature, PlanSprint, PlanStory, PlanTask } from '../boot';
+import type { PlanFeature, PlanPriorArt, PlanSprint, PlanStory, PlanTask } from '../boot';
 import styles from './reports.module.css';
 
 /** The plan's own priority ramp. Anything else renders neutral. */
@@ -159,6 +159,7 @@ export function Plan({
   sprints,
   velocity,
   images,
+  priorArt,
 }: {
   questionnaire: Array<[string, string, string]>;
   analysis: {
@@ -186,9 +187,16 @@ export function Plan({
   sprints: PlanSprint[];
   velocity: number;
   images: string[];
+  priorArt: PlanPriorArt[];
 }) {
   const nothing =
-    !questionnaire.length && !analysis && !features.length && !storyGroups.length && !taskGroups.length && !sprints.length;
+    !questionnaire.length &&
+    !analysis &&
+    !features.length &&
+    !storyGroups.length &&
+    !taskGroups.length &&
+    !sprints.length &&
+    !priorArt.length;
   if (nothing) return <p className={styles['empty']}>No artifacts to export yet.</p>;
 
   const mix = countedSegments(pointsByDiscipline);
@@ -196,6 +204,46 @@ export function Plan({
 
   return (
     <>
+      {priorArt.length ? (
+        <section id="prior-art">
+          <h2 className={styles['h2']}>Prior Art</h2>
+          {priorArt.map((repo) => (
+            <Card
+              key={repo.name}
+              title={
+                // The payload has always carried `url`; not rendering it left
+                // the HTML export showing a bare name where the markdown
+                // export links the repository.
+                repo.url ? (
+                  <a href={repo.url} target="_blank" rel="noopener noreferrer">
+                    {repo.name}
+                  </a>
+                ) : (
+                  repo.name
+                )
+              }
+              actions={
+                repo.stack.length ? (
+                  <div className={styles['chips']}>
+                    {repo.stack.map((item) => (
+                      <Chip key={item}>{item}</Chip>
+                    ))}
+                  </div>
+                ) : undefined
+              }
+            >
+              {repo.pitch.length ? (
+                <ul className={styles['bullets']}>
+                  {repo.pitch.map((line, index) => (
+                    <li key={index}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </Card>
+          ))}
+        </section>
+      ) : null}
+
       {questionnaire.length ? (
         <section id="questionnaire">
           <h2 className={styles['h2']}>Intake Questionnaire</h2>

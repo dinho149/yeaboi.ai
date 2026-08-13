@@ -359,6 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--prior-art",
+        action="append",
+        default=None,
+        metavar="REPO_KEY",
+        help="Existing repository to build this plan on, as a key like 'github:acme/auth' "
+        "(repeatable). Requires --non-interactive; an interactive run asks about prior art "
+        "in the intake instead, so the flag is ignored there.",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -1025,6 +1035,7 @@ def _run_headless(args: argparse.Namespace) -> None:
         theme=args.theme,
         non_interactive=True,
         output_format=output_format,
+        prior_art=args.prior_art,
     )
 
 

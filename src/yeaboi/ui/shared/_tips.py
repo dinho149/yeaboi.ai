@@ -69,9 +69,18 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         mode_key="team-analysis",
         is_new=True,
     ),
+    # Two tips share the "planning" key on purpose: adding the new one by
+    # overwriting the old one cost /form and /finish their only discoverability
+    # surface. The registry keys by capability, not by tip, and both carry the
+    # same mode_key, so the jump-into-feature target is unambiguous.
     FeatureTip(
         "planning",
         "\U0001f5fa️ Tip: Planning starts as a chat — /form gives a classic form, /finish defaults the rest",
+        mode_key="project-planning",
+    ),
+    FeatureTip(
+        "planning",
+        "\U0001f5fa️ Tip: Planning a greenfield build shows you which of your own repos could help",
         mode_key="project-planning",
         is_new=True,
     ),

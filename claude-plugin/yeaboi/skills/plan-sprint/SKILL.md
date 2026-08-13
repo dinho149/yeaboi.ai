@@ -36,22 +36,35 @@ moving, never rush.
    - Anything extra the user mentions (constraints, deadlines, integrations,
      out-of-scope notes) goes into `project_context` verbatim.
 
-3. **Confirm before generating.** Recap the collected answers in a short list
+3. **Offer prior art (greenfield only).** If the answer to Q2 is greenfield,
+   call `plan_prior_art` with the description and answers. It shortlists the
+   team's *own* existing repositories that could help, each with a short pitch.
+   - Show the list and ask which are actually relevant. Do not assume — the
+     whole point is that only the user knows.
+   - When `empty_reason` is set, relay `message` verbatim and move on: it tells
+     the user whether they have no analysis profile, an old one, or simply no
+     close match.
+   - For anything the user rejects, call `plan_prior_art_feedback` with
+     `verdict: "down"` and their reason. This is permanent across every future
+     project, so only send it when they actually said no.
+
+4. **Confirm before generating.** Recap the collected answers in a short list
    and ask the user to confirm. On confirmation, call `plan_generate` with:
    - `description` — the project description (Q1)
    - `answers` — `{question_number: answer}` for everything the user answered
    - `project_context` — the extra free-form notes from step 2
+   - `prior_art` — the repository keys the user approved in step 3, if any
    Warn the user it takes a few minutes (several LLM calls); progress
    notifications will stream as the pipeline advances.
 
-4. **Present the plan.** From the returned `data`: summarize the analysis in a
+5. **Present the plan.** From the returned `data`: summarize the analysis in a
    sentence or two, then show epics with their stories (title, points,
    discipline), and the sprint breakdown (sprint goal + total points each).
    Don't dump raw JSON. Check `warnings` — if `llm_mode` is `"fallback"`, tell
    the user the content is a deterministic skeleton and how to fix it (the
    warning text explains).
 
-5. **Offer follow-ups.** The plan is saved as a session (`data.session_id`).
+6. **Offer follow-ups.** The plan is saved as a session (`data.session_id`).
    Offer to:
    - export it to a file (`plan_export`, markdown or HTML),
    - publish it to the user's docs (`plan_publish`, `destination: "notion"` or

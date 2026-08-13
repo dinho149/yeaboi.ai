@@ -119,6 +119,23 @@ def _render_tui_intake_summary(qs, table_width: int) -> Group:
         tables.append(table)
         tables.append(Text(""))  # blank line between sections
 
+    # Prior art the user accepted. The markdown summary carries a "## Prior
+    # art" block, and in the chat that markdown is replaced by this card — so
+    # without this section the default planning surface would ask someone to
+    # sign off a summary that omits the repositories they just chose.
+    accepted = getattr(qs, "_prior_art_accepted", None) or []
+    if accepted:
+        tables.append(Text(title_indent + "Prior art", style="bold rgb(70,100,180)"))
+        for candidate in accepted:
+            row = Text(overflow="fold")
+            row.append("      ")
+            row.append(str(candidate.get("name", "")), style="bold")
+            stack = candidate.get("stack") or candidate.get("languages") or ()
+            if stack:
+                row.append("  " + " · ".join(str(part) for part in stack), style="dim")
+            tables.append(row)
+        tables.append(Text(""))
+
     # Remove trailing blank after the last section
     if tables and isinstance(tables[-1], Text):
         tables.pop()

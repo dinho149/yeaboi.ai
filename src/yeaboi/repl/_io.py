@@ -437,6 +437,26 @@ def build_plan_markdown(graph_state: dict) -> str:
                 lines.append(f"- ⚠️ {a}")
         lines.append("")
 
+    # Prior art — the team's own repositories the user confirmed this plan
+    # builds on. Markdown is not just a file: `plan_publish` renders Notion and
+    # Confluence pages from this same string, so leaving it out here would drop
+    # prior art from two surfaces that the JSON and HTML exports both carry.
+    prior_art = graph_state.get("prior_art") or ()
+    if prior_art:
+        lines.append("## Prior Art")
+        lines.append("")
+        lines.append("Existing repositories this plan builds on:")
+        lines.append("")
+        for ref in prior_art:
+            name = f"[{ref.name}]({ref.url})" if ref.url else ref.name
+            platform = f" ({ref.platform})" if ref.platform else ""
+            lines.append(f"- **{name}**{platform}")
+            for bullet in ref.pitch:
+                lines.append(f"  - {bullet}")
+            if ref.stack:
+                lines.append(f"  - *Stack:* {', '.join(ref.stack)}")
+        lines.append("")
+
     # Capacity breakdown — recompute from state fields so the user sees the
     # same deduction math that drove sprint planning.
     _append_capacity_section(lines, graph_state)

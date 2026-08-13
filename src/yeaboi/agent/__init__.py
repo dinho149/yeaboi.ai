@@ -43,6 +43,7 @@ _EXPORTS = {
     "OneOnOnePrep": "yeaboi.agent.state",
     "OneOnOneRecord": "yeaboi.agent.state",
     "PracticeSignal": "yeaboi.agent.state",
+    "PriorArtRef": "yeaboi.agent.state",
     "ProjectAnalysis": "yeaboi.agent.state",
     "PromptQualityRating": "yeaboi.agent.state",
     "RetroCard": "yeaboi.agent.state",
@@ -57,6 +58,9 @@ _EXPORTS = {
     "TranscriptClaim": "yeaboi.agent.state",
     "TranscriptReview": "yeaboi.agent.state",
     "TranscriptSource": "yeaboi.agent.state",
+    "prior_art_from_dicts": "yeaboi.agent.state",
+    "prior_art_refs": "yeaboi.agent.state",
+    "prior_art_to_dicts": "yeaboi.agent.state",
     "AnswerSource": "yeaboi.prompts.intake",
 }
 

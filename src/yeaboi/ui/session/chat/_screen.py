@@ -257,6 +257,11 @@ def _placeholder(stage: str, graph_state: dict, choices: ChoiceRows | None) -> s
         return "Pick with ↑/↓ — or just type your answer…"
     if stage == "intake" and not graph_state.get("messages"):
         return "Describe your project — a few sentences is enough…"
+    # The prior-art "why isn't it relevant" reply has no menu, so the ghost
+    # text is the only thing telling the user Enter alone is a valid answer.
+    qs = graph_state.get("questionnaire")
+    if stage == "intake" and getattr(qs, "_prior_art_stage", "") == "reason":
+        return "Why isn't it relevant? I'll stop suggesting it — or Enter to skip…"
     if stage == "intake":
         return "Type an answer — /skip /defaults /form /finish all work…"
     if stage in ("review", "epic"):

@@ -129,7 +129,7 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
 
     from langchain_core.messages import messages_to_dict
 
-    from yeaboi.agent.state import QuestionnaireState
+    from yeaboi.agent.state import QuestionnaireState, prior_art_to_dicts
 
     _STATES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -169,6 +169,12 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
                 serialized[key] = [asdict(item) for item in val]
             else:
                 serialized[key] = asdict(val)
+
+    # prior_art is a TUPLE of frozen dataclasses. The artifact loop above
+    # handles a list or a single object; asdict() on a tuple raises, so it gets
+    # its own line rather than a fourth branch nobody would notice was missing.
+    if graph_state.get("prior_art"):
+        serialized["prior_art"] = prior_art_to_dicts(graph_state["prior_art"])
 
     # Serialize simple scalar fields
     for key in (
@@ -241,6 +247,7 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         StoryPointValue,
         Task,
         UserStory,
+        prior_art_from_dicts,
     )
 
     state_file = _STATES_DIR / f"{project_id}.json"
@@ -358,6 +365,9 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         elif isinstance(val, dict):
             _restore_enums(cls, val)
             graph_state[key] = cls(**_filter_known_fields(cls, val))
+
+    if "prior_art" in raw:
+        graph_state["prior_art"] = prior_art_from_dicts(raw["prior_art"])
 
     # Deserialize scalar fields
     for key in (

@@ -288,6 +288,17 @@ export interface PlanTask {
   aiPrompt?: string;
 }
 
+/** An existing team repository the plan was confirmed to build on. */
+export interface PlanPriorArt {
+  name: string;
+  url: string;
+  platform: string;
+  /** Why it is relevant — 2-4 short clauses. */
+  pitch: string[];
+  /** Languages, frameworks and integrations it is built from. */
+  stack: string[];
+}
+
 export interface PlanSprint {
   name: string;
   goal: string;
@@ -550,6 +561,8 @@ export type ExportReport = (
       /** Gross velocity, for comparing against a sprint's reduced capacity. */
       velocity: number;
       images: string[];
+      /** Existing repositories the user confirmed this plan builds on. */
+      priorArt: PlanPriorArt[];
     }
   | {
       kind: 'profile';

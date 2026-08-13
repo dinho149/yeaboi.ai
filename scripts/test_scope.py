@@ -133,6 +133,8 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_coverage.py",
             "tests/unit/test_practices.py",
             "tests/unit/test_ai_usage.py",
+            "tests/unit/test_repo_inventory.py",
+            "tests/unit/test_prior_art.py",
         ),
     ),
     Area(
@@ -175,6 +177,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_phases_*.py",
             "tests/unit/test_planning_*.py",
             "tests/unit/test_plan_*.py",
+            "tests/unit/test_prior_art*.py",
             "tests/unit/test_chat_*.py",
             "tests/unit/test_headless_pipeline.py",
             "tests/unit/test_streaming.py",
@@ -207,6 +210,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_ticket_text.py",
             "tests/unit/test_markdown_convert.py",
             "tests/unit/test_local_git.py",
+            "tests/unit/test_repo_tree_helpers.py",
         ),
     ),
     Area(

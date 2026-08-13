@@ -108,3 +108,23 @@ class TestApplySizeSwitch:
         state = {"_intake_mode": "small_project"}
         apply_size_switch(state, "smart")
         assert state["_intake_mode"] == "smart"
+
+    def test_prior_art_resets_in_both_directions(self):
+        """The guard skips a stage that is already open, but the
+        confirmation-gate handler still claims the turn — so a switch made
+        mid-loop would eat the user's first reply at the new summary and answer
+        a card about a repository they can no longer see."""
+        for target in ("small_project", "smart"):
+            state = _large_state()
+            state["_intake_mode"] = "smart" if target == "small_project" else "small_project"
+            qs = state["questionnaire"]
+            qs._prior_art_stage = "ask"
+            qs._prior_art_candidates = [{"key": "github:acme/auth", "name": "acme/auth"}]
+            qs._prior_art_index = 0
+            qs._prior_art_accepted = [{"key": "github:acme/auth"}]
+            qs._prior_art_rejected = [{"key": "github:acme/pay"}]
+            apply_size_switch(state, target)
+            assert qs._prior_art_stage == "", target
+            assert qs._prior_art_candidates == [], target
+            assert qs._prior_art_accepted == [], target
+            assert qs._prior_art_rejected == [], target
