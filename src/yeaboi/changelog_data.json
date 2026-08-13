@@ -2,6 +2,25 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.11.1",
+      "date": "2026-08-12",
+      "summary": "Fixed a silent data loss bug in the Notion integration where pages with more than 100 top-level blocks were truncated without notification. The tool now paginates through all child blocks until completion or a resource ceiling, and reports every partial read with a truncation marker so the LLM knows the document it read was incomplete.",
+      "highlights": [
+        {
+          "text": "Notion page reads now paginate through all child blocks (was truncating after 100 blocks silently)",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "All partial reads are now reported with a truncation marker so incomplete documents are visible",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.11.0",
       "date": "2026-08-12",
       "summary": "When starting a greenfield project in Planning mode, yeaboi now offers your team's own repositories as prior art — ranked by relevance to the project requirements and presented with a concrete pitch of what each repo does. This leverages the team inventory that Team Analysis already fetches, so no new API calls are needed. Accepted prior-art repositories feed into plan generation and appear in the summary and exports. Rejections are remembered globally with the user's reason, so irrelevant repos are never re-offered. The step sits between the PTO sub-loop and the intake summary, and degrades gracefully to deterministic fallback facts if the LLM fails.",
