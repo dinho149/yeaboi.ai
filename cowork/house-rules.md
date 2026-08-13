@@ -168,10 +168,15 @@ The lane is wide; what keeps it safe is the merge path, and none of it is discre
   required status check on the `main-branch` ruleset for that sentence to be true; it is a manual
   setup step. Every workflow that would arm `--auto` checks for it first and refuses when it is
   absent, rather than merging on CI alone and calling it reviewed.
-- **Nothing ships to users on merge.** A merge to `main` publishes a PyPI *pre-release*;
-  `pip install yeaboi` is unaffected. The accumulated batch becomes an official version only when a
-  human promotes it — see [`routines/cron/release-promote-ask.md`](routines/cron/release-promote-ask.md).
-  This is the last backstop: a wrong fix that survives everything above still has to get past a
+- **Nothing the fleet merges ships to users on merge.** An *unattended* merge to `main` — this
+  lane — publishes a PyPI *pre-release*; `pip install yeaboi` is unaffected. The accumulated batch
+  becomes an official version only when a human promotes it — see
+  [`routines/cron/release-promote-ask.md`](routines/cron/release-promote-ask.md).
+  `scripts/release_lane.py` is what draws the line, over this file's own label and branch prefixes.
+  Note what it does not buy: a human merging anything cuts an official release from `main`, which
+  carries whatever the fleet merged below it. The backstop is against the fleet shipping *by
+  itself*, not against its work reaching users — a wrong fix that survives everything above still
+  has to get past a
   person who has been running it.
 
 ## Merges are already bounded — do not throttle the auto lane

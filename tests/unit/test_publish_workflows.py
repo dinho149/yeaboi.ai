@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 PUBLISH = WORKFLOWS / "publish.yml"
 PUBLISH_BETA = WORKFLOWS / "publish-beta.yml"
+PUBLISH_CORE = WORKFLOWS / "publish-core.yml"
 CLAUDE_REVIEW = WORKFLOWS / "claude-review.yml"
 
 _spec = importlib.util.spec_from_file_location("pr_feedback", ROOT / "scripts" / "pr_feedback.py")
@@ -40,14 +41,66 @@ def load(path: Path) -> dict:
 
 
 class TestTheOfficialChannelIsPromotionOnly:
-    """The headline property: merging to main cannot cut a release."""
+    """The headline property: an UNATTENDED merge to main cannot cut a release.
 
-    def test_publish_has_no_push_trigger(self):
-        triggers = load(PUBLISH)[True]
-        assert "push" not in triggers, (
-            "publish.yml fired on push again — merging to main would publish an official "
-            "release straight to PyPI, which is the whole thing the beta channel replaced."
+    This used to read "merging to main cannot cut a release" and assert that
+    `publish.yml` had no `push:` trigger at all. That was too wide by one lane:
+    the gate exists so unattended work does not reach `pip install yeaboi`
+    without somebody signing for it, and a human merging their own PR *is* that
+    signature. Holding their work for a weekly ask was the gate misfiring on its
+    author — 14 of the 17 commits it stranded before v3.10.0 were the
+    maintainer's. The property that actually matters is the one below.
+    """
+
+    def test_a_push_cannot_publish_without_being_classified(self):
+        """The `push` trigger is admitted, so every step that leads to an upload
+        must be gated on the lane verdict. A step that forgets the guard runs for
+        a fleet merge too, and `check` starts handing `go=true` to the publish
+        job — the exact regression the old no-push-trigger test prevented."""
+        steps = load(PUBLISH)["jobs"]["check"]["steps"]
+        lane = [s for s in steps if s.get("id") == "lane"]
+        assert lane, "check has no `lane` step, but publish.yml fires on push"
+        assert lane[0]["if"] == "github.event_name == 'push'"
+
+        guard = "steps.lane.outputs.unattended != 'true'"
+        after = steps[steps.index(lane[0]) + 1 :]
+
+        # `name` as the last fallback: the duplicate-approval step has no `id` and
+        # no `uses`, so keying on those two alone put a bare `None` in this list
+        # and made the exemption below unmatchable.
+        def label(step: dict) -> str:
+            return step.get("id") or step.get("uses") or step.get("name") or "<unnamed>"
+
+        ungated = {label(s): str(s.get("if", "")) for s in after if guard not in str(s.get("if", ""))}
+        # One exemption, and it has to earn it: a step with no lane guard is only
+        # safe if it cannot run on a push at all.
+        assert all("issues" in cond for cond in ungated.values()), (
+            f"steps after `lane` with neither the lane guard nor an issues-only condition: "
+            f"{ {k: v for k, v in ungated.items() if 'issues' not in v} }"
         )
+
+    def test_the_lane_verdict_is_not_respelled_in_yaml(self):
+        """One predicate, one language. A prefix added to `pr_feedback.py` and
+        not to a YAML copy would turn a fleet merge into an official release."""
+        text = PUBLISH.read_text(encoding="utf-8")
+        assert "release_lane.py" in text
+        for prefix in prf.UNATTENDED_BRANCH_PREFIXES:
+            assert prefix not in text, f"publish.yml hardcodes the unattended prefix {prefix!r}"
+
+    def test_an_unreadable_lane_stays_on_the_prerelease_channel(self):
+        """PyPI has no delete, so "I could not tell" must fail toward the rc."""
+        lane = next(s for s in load(PUBLISH)["jobs"]["check"]["steps"] if s.get("id") == "lane")
+        setter = 'echo "unattended=true" >> "$GITHUB_OUTPUT"'
+        # Per BLOCK, not a bare count: three copies inside the fleet branch would
+        # satisfy a count of three while leaving both failure paths falling
+        # through to `unattended` unset — which reads as "human" and publishes.
+        blocks = re.split(r"\n\s*(?=if |fi\b|else\b)", lane["run"])
+        failure_blocks = [b for b in blocks if "if ! " in b]
+        assert len(failure_blocks) == 2, (
+            f"expected the gh lookup and the classifier to be the two guarded calls, got {len(failure_blocks)}"
+        )
+        for block in failure_blocks:
+            assert setter in block, f"a failure path does not stay on the pre-release channel:\n{block}"
 
     def test_publish_fires_on_the_promotion_label(self):
         triggers = load(PUBLISH)[True]
@@ -211,6 +264,58 @@ class TestTheBetaChannelStaysABeta:
     def test_the_beta_publish_is_not_cancellable(self):
         """A cancelled beta is a merge that silently never shipped."""
         assert load(PUBLISH_BETA)["concurrency"]["cancel-in-progress"] is False
+
+
+class TestOnlyTheOfficialReleaseIsLatest:
+    """GitHub's "Latest" badge is picked by publish date, not by tag namespace.
+
+    Three channels write to the same repo on their own version lines, so
+    whichever published most recently wins it by default — which is how a
+    `core-v0.3.0` Go wheel came to be the release page for a product on
+    `v3.7.0`. Nothing goes red when that happens: the badge is the only
+    symptom, and it is on the release page rather than in CI.
+    """
+
+    def _release_steps(self) -> dict[str, dict]:
+        """Every GitHub Release any workflow can create, by workflow filename.
+
+        Discovered rather than listed: a channel added later is the whole risk
+        here, and one named in a test is one that already exists.
+        """
+        found: dict[str, dict] = {}
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            for job in load(path)["jobs"].values():
+                for step in job.get("steps", []):
+                    if "action-gh-release" in str(step.get("uses", "")):
+                        found[path.name] = step["with"]
+        return found
+
+    def _release_inputs(self, path: Path) -> dict:
+        steps = self._release_steps()
+        assert path.name in steps, f"{path.name} creates no GitHub Release"
+        return steps[path.name]
+
+    def test_every_channel_decides_the_badge_on_purpose(self):
+        """The default is date-based, so an undeclared channel steals the badge
+        the first time it publishes after a release. Declaring it is the point —
+        this fails for a new workflow whether it wants the badge or not."""
+        undeclared = [name for name, inputs in self._release_steps().items() if "make_latest" not in inputs]
+        assert not undeclared, f"release steps with no make_latest: {undeclared}"
+
+    def test_exactly_one_channel_claims_the_badge(self):
+        claimants = [name for name, inputs in self._release_steps().items() if inputs.get("make_latest") is True]
+        assert claimants == ["publish.yml"]
+
+    def test_the_official_release_claims_latest(self):
+        assert self._release_inputs(PUBLISH)["make_latest"] is True
+
+    def test_the_core_wheel_disclaims_latest(self):
+        """The sidecar is a dependency of the product, not the product."""
+        assert self._release_inputs(PUBLISH_CORE)["make_latest"] is False
+
+    def test_the_channels_stay_on_separate_tag_namespaces(self):
+        assert self._release_inputs(PUBLISH)["tag_name"].startswith("v")
+        assert self._release_inputs(PUBLISH_CORE)["tag_name"].startswith("core-v")
 
 
 class TestUnattendedBranchPrefixesAgree:

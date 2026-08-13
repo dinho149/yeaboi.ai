@@ -262,8 +262,8 @@ independent `code-reviewer` before the PR opens, `claude-review.yml` after CI, a
 unattended branch — so a machine may *fix* a finding and never *dismiss* one. Before that refusal
 existed, the routine that opened a PR could also declare the review of it answered.
 
-**And nothing ships to users on merge.** A merge publishes a PyPI pre-release; the accumulated batch
-becomes an official version only when a human ✅s
+**And nothing the fleet merges ships to users on merge.** An unattended merge publishes a PyPI
+pre-release; the accumulated batch becomes an official version only when a human ✅s
 [`cron/release-promote-ask.md`](routines/cron/release-promote-ask.md)'s weekly question. That is the
 last backstop, and the only one involving somebody who has actually been running the code.
 

@@ -2,10 +2,17 @@
 
 **Summary** — the weekly ritual that turns accumulated pre-releases into an official version
 
-Merging to `main` does not ship to users. Every release-worthy merge publishes a PyPI
-**pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see, and those accumulate until
-somebody who has actually run the code says yes. This page is that person's job, start to finish.
-It takes two commands and about twenty minutes.
+**The fleet's merges do not ship to users; a human's do.** Every release-worthy merge publishes a
+PyPI **pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see. An unattended merge stops
+there and accumulates until somebody who has actually run the code says yes; a human's own merge
+cuts the official `X.Y.Z` on the spot, because merging your own PR is that yes.
+
+This page is the first person's job, start to finish. It takes two commands and about twenty
+minutes, and it applies to a batch the fleet built alone — a stretch of `main` with no human merge
+in it. Note what that does NOT mean: one branch, one version line, so an official release carries
+whatever the fleet merged below it. The lane decides *when* a release is cut, never what is in it.
+Unattended work reaches users the moment a human merges anything — the ritual below is what makes
+sure somebody has looked when the fleet has been shipping alone.
 
 Everything a machine can decide is already decided by the time an rc exists: `make test`,
 `make lint`, `make parity` and `make web-check` all ran, an independent reviewer read the diff, and
