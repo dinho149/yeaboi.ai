@@ -193,10 +193,12 @@ class TestProse:
         assert any("No agent activity" in w for w in digest.warnings)
 
     def test_no_local_sessions_is_stated_as_a_coverage_note(self, db_path):
-        # A cloud/CI run sees no ~/.claude at all, so its digest is
-        # tracker-only. Without this note "the agents were idle" and "this
-        # environment can't see them" look identical — and the scheduled cowork
-        # routine runs in exactly that environment.
+        # An environment with no ~/.claude history in the window says so, rather
+        # than reporting a quiet day: "the agents were idle" and "this machine
+        # can't see them" would otherwise look identical. The cowork routine no
+        # longer relies on this note — it passes include_local_sessions=False and
+        # gets the distinct one — but a local run against an empty window still
+        # lands here, which is the case this pins.
         digest = engine.run_agent_standup(db_path=db_path, today=MONDAY)
         assert any("tracker activity only" in note for note in digest.coverage_notes)
 
@@ -308,3 +310,101 @@ class TestProgressScreen:
             )
         )
         assert "Refreshing…" in out
+
+
+class TestTrackerOnly:
+    """`include_local_sessions=False` — the digest that does not look at this machine.
+
+    Session logs come from the host's own `~/.claude`, so a digest run somewhere
+    else does not see *fewer* sessions, it sees a different set. On 2026-08-13 the
+    cloud routine reported "1 session · $0.10" — its own session, presented as the
+    fleet's day's work, while the same window on the user's machine held 74.
+    """
+
+    def test_the_local_half_is_not_scanned_at_all(self, db_path, monkeypatch):
+        """Skipped, never scanned-then-discarded: scanning is what found the phantom."""
+        _seed_session(db_path)
+        called = []
+        monkeypatch.setattr(engine, "_deterministic_standup_digest", lambda **kw: called.append(kw))
+        monkeypatch.setattr(engine, "_go_standup_digest", lambda **kw: called.append(kw))
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
+        assert called == [], "the local half ran despite include_local_sessions=False"
+        assert digest.sessions_worked == 0
+        assert digest.session_summaries == ()
+        assert digest.total_cost_usd == 0.0
+
+    def test_a_seeded_session_is_not_reported(self, db_path):
+        _seed_session(db_path)
+        assert engine.run_agent_standup(db_path=db_path, today=MONDAY).sessions_worked == 1
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
+        assert digest.sessions_worked == 0
+
+    def test_its_coverage_note_is_not_the_no_history_one(self, db_path):
+        """Two empties that must never read alike: "this machine has nothing" and
+        "nobody looked". Confusing them is how an unasked question reads as an idle fleet."""
+        not_collected = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
+        no_history = engine.run_agent_standup(db_path=db_path, today=MONDAY)
+        assert not_collected.coverage_notes != no_history.coverage_notes
+        assert "were not collected" in not_collected.coverage_notes[0]
+        assert "not a statement about how much local agent work happened" in not_collected.coverage_notes[0]
+        assert "no agent session history" in no_history.coverage_notes[0]
+
+    def test_the_empty_warning_claims_nothing_about_local_work(self, db_path):
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
+        assert digest.warnings
+        assert not any("nothing worked locally" in w for w in digest.warnings)
+
+    def test_tracker_rows_still_land(self, db_path, monkeypatch):
+        import yeaboi.analysis.ai_usage as ai_usage
+
+        monkeypatch.setattr(ai_usage, "collect_ai_activity", lambda *a, **kw: ([AGENT_PR], [], [], []))
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
+        assert len(digest.repo_activity) == 1
+        assert digest.repo_activity[0].title == "add retry logic"
+
+
+class TestHighlightsAreAboutWork:
+    """A highlight has to be about what an agent did, not what it cost.
+
+    The fallback used to append the top three sessions by cost unconditionally, so
+    a one-session day produced "⭐ Highlights (1) — Session on yeaboi.ai
+    (claude_code, $0.10)": a highlight only because it was `summaries[0]`.
+    """
+
+    def test_a_lone_session_is_not_a_highlight(self, db_path):
+        _seed_session(db_path)
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY)
+        assert digest.sessions_worked == 1
+        assert digest.highlights == ()
+
+    def test_a_merged_pr_outranks_sessions_entirely(self, db_path, monkeypatch):
+        import yeaboi.analysis.ai_usage as ai_usage
+
+        monkeypatch.setattr(ai_usage, "collect_ai_activity", lambda *a, **kw: ([AGENT_PR], [], [], []))
+        _seed_session(db_path)
+        _seed_session(db_path, session_id="s2", project="/home/dev/other")
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY)
+        assert any(h.startswith("Merged:") for h in digest.highlights)
+        assert not any("$" in h and "—" in h for h in digest.highlights), "sessions padded a real highlight list"
+
+    def test_several_sessions_are_described_by_what_they_did(self, db_path):
+        _seed_session(db_path)
+        _seed_session(db_path, session_id="s2", project="/home/dev/other")
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY)
+        assert digest.highlights
+        for line in digest.highlights:
+            assert "feature/x" in line, "the branch is the only thing here saying where the work went"
+            assert "mostly " in line, "tools are what distinguish a session from a cost"
+
+    def test_the_prompt_is_given_the_branch_and_tools(self, db_path):
+        """Without them the model can only rank by cost, which is the same bug."""
+        from yeaboi.prompts.agentwatch import get_standup_digest_prompt
+
+        prompt = get_standup_digest_prompt(
+            digest_date="2026-08-10",
+            window_start="2026-08-07",
+            total_cost_usd=30.0,
+            sessions=[("webapp", "claude_code", 30.0, 4, ["claude-opus-5"], "feature/x", ["Read", "Bash"])],
+            repo_items=[],
+        )
+        assert "feature/x" in prompt and "mostly Read, Bash" in prompt

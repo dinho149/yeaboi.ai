@@ -61,13 +61,15 @@ rule is in [house-rules.md](house-rules.md); the arithmetic is
 
 ## What arrives in Slack, and what does not
 
-Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is one to three
-channel messages a day**, worst case about five, plus thread replies. Every message opens with a
+Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is two to four
+channel messages a day**, worst case about six, plus thread replies. Two of them bookend the day
+and always arrive; the rest are exceptions reporting themselves. Every message opens with a
 title line carrying a fixed emoji, so a message is identifiable from its notification preview
 before it is opened.
 
 | When | What arrives | Stays silent when |
 |---|---|---|
+| Daily 05:45 UTC | 📅 **Today** — what runs today and when, in local time | never — a schedule that goes quiet is a schedule you cannot trust |
 | Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
 | Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, plus ⏸️ **Held** and 🛠️ **Queued** — what the fleet owes you, which asks nothing | nothing is waiting, and neither fault fired |
 | Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release | nothing shipped, building or stuck |
@@ -75,19 +77,25 @@ before it is opened.
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
 | A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
 | A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
-| A disclosure-class security find | 🔐 **Security** — that one exists, and its ticket | rare by construction |
+| A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
 | The 13 maintenance sweeps | **nothing, ever** | always — a sweep files a GitHub issue and exits |
 
 Three things follow from that table, and they are the whole design:
 
-- **Silence is the default and it is load-bearing.** Every routine but the agents standup is
-  allowed to say nothing, and most of them say nothing most days. A routine that reports every
-  morning is a routine nobody reads by Thursday, and a muted channel is worse than no channel —
-  the one day it matters, nobody looks.
+- **Silence is the default and it is load-bearing.** Every routine but the two that bookend the
+  day — 📅 at 05:45 and 🧭 at 06:15 — is allowed to say nothing, and most of them say nothing most
+  days. A routine that reports every morning is a routine nobody reads by Thursday, and a muted
+  channel is worse than no channel — the one day it matters, nobody looks. The two exceptions
+  earn it by being the ones you *wait* for: silence from a findings routine means it found
+  nothing, silence from a schedule is ambiguous.
 - **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and it
   is the only one with a thread. ✅ and ❌ mean approve and reject, they are never decoration, and
-  they only work **on a thread reply** — a reaction on a parent message resolves to nothing.
+  they work **on a thread reply** — a reaction on a parent message resolves to nothing, with one
+  named exception: 🔐's disclosure post, which has no thread and no GitHub issue by construction,
+  where ✅ applies `security:approved` in Linear and the next security sweep drains it. That is a
+  lane, not a loophole — a top-level message can reach *that* verb and no other, so a `#<number>`
+  posted at the top level is still not an approval of anything.
 - **🤖 is not decoration either.** The relay reacts 🤖 onto a message to record that it is handled,
   and reads it back the same way. Reacting 🤖 to a digest item yourself hides that item from every
   future run.
@@ -208,6 +216,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
+| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | — |
 | `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | https://claude.ai/code/routines/trig_019w6RJqz8aWJ13TkXmPUgtX |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
 | `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` | https://claude.ai/code/routines/trig_0118jEhPuaKrCaUWCYQtVgEv |
@@ -318,7 +327,7 @@ pair the promotion path fires on, the `integration:candidate`/`integration:appro
 campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-three routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

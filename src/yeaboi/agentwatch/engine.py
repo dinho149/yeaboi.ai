@@ -724,14 +724,35 @@ def _collect_agent_repo_activity(
     return tuple(rows), tuple(coverage)
 
 
+def _session_line(summary) -> str:
+    """One session as a sentence about what it did, not merely that it existed.
+
+    ``_summarise_sessions`` sorts costliest-first, so the old "Session on {project}
+    (${cost})" made a $0.10 session a "highlight" purely for being ``summaries[0]``.
+    Branch and tools are already on the row and say something a reader can act on;
+    cost alone never did.
+    """
+    where = f"{summary.project}/{summary.branch}" if summary.branch else summary.project
+    facts = []
+    if summary.turns:
+        facts.append(f"{summary.turns} turns")
+    if summary.top_tools:
+        facts.append("mostly " + ", ".join(name for name, _count in summary.top_tools[:2]))
+    facts.append(f"${summary.cost_usd:,.2f}")
+    return f"{where} — {', '.join(facts)}"
+
+
 def _fallback_standup_prose(summaries: tuple, repo_rows: tuple) -> tuple[tuple[str, ...], tuple[str, ...], str]:
     """Deterministic highlights / attention items / narrative — evidence, not analysis."""
     highlights = []
     for row in repo_rows:
         if row.kind == "pr" and row.status == "merged":
             highlights.append(f"Merged: {row.title} ({row.repo}, {row.agent_marker})")
-    for summary in summaries[:3]:
-        highlights.append(f"Session on {summary.project} ({summary.source}, ${summary.cost_usd:,.2f})")
+    # Sessions are a fallback for the *prose*, not a headline. With something
+    # merged to point at they add nothing, and a lone session is not a highlight
+    # of anything — it is the only row there was.
+    if not highlights and len(summaries) > 1:
+        highlights.extend(_session_line(summary) for summary in summaries[:3])
     attention = [
         f"Open agent PR: {row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open"
     ]
@@ -796,12 +817,43 @@ def _deterministic_standup_digest(
     )
 
 
+def _tracker_only_digest(*, window_start: str, digest_date: str, on_progress=None) -> AgentStandupDigest:
+    """The local half, deliberately not run — an empty digest and a note saying so.
+
+    Distinct from ``_deterministic_standup_digest``'s empty result, and the two
+    notes must not be confused. That one means "this machine has no agent history
+    in the window"; this one means "nobody looked". A reader who cannot tell them
+    apart cannot tell an idle fleet from an unasked question, which is the whole
+    failure this note family exists to prevent.
+
+    Not mirrored in the Go core: the sidecar's contract is the scan, and this is
+    the decision not to scan. ``_deterministic_standup_digest`` is untouched.
+    """
+    _emit(on_progress, "scan", "no_data", label="Scan agent sessions", detail="skipped — trackers only")
+    return AgentStandupDigest(
+        digest_date=digest_date,
+        window_start=window_start,
+        window_end=digest_date,
+        sessions_worked=0,
+        total_cost_usd=0.0,
+        agents_seen=(),
+        session_summaries=(),
+        coverage_notes=(
+            "Local agent sessions were not collected in this run — session logs are read from the "
+            "machine the digest runs on, so this covers agent-authored tracker activity only. "
+            "It is not a statement about how much local agent work happened.",
+        ),
+        warnings=(),
+    )
+
+
 def run_agent_standup(
     *,
     days: int | None = None,
     tracker_sources: list[str] | None = None,
     github_owners: list[str] | None = None,
     azdo_projects: list[str] | None = None,
+    include_local_sessions: bool = True,
     deliver: bool = False,
     db_path=None,
     today: date | None = None,
@@ -814,9 +866,19 @@ def run_agent_standup(
     the previous working day (a Monday run covers Friday), so weekend gaps
     never hide agent work; an explicit ``days`` looks back that many days.
 
-    Sources: local session rollups always; tracker scanning (GitHub/AzDO
+    Sources: local session rollups by default; tracker scanning (GitHub/AzDO
     agent-authored commits/PRs) is best-effort — pass ``tracker_sources=[]``
     for a local-only digest, or a subset of {"github", "azdo"}.
+
+    ``include_local_sessions=False`` is the mirror of that: skip the local half
+    entirely for a tracker-only digest. It exists because session logs are read
+    from *this machine's* ``~/.claude``, so a run somewhere else does not see
+    fewer sessions — it sees a different set. The cowork routine runs in the
+    cloud, and on 2026-08-13 it reported "1 session · $0.10", which was its own
+    session: the digest had found itself and said so as though it were the
+    fleet's work. Not scanning is the honest option, and it must skip the scan
+    rather than discard its result, because scanning is what produced the
+    phantom.
 
     deliver=True posts the digest to the configured Slack webhook and raises a
     desktop notification (never raises; failures become warnings).
@@ -832,19 +894,33 @@ def run_agent_standup(
         window_start_dt = datetime.combine(resolved_today - timedelta(days=window_days - 1), datetime.min.time())
     window_start = window_start_dt.date().isoformat()
     digest_date = resolved_today.isoformat()
-    logger.info("agent standup: window %s..%s (deliver=%s dry_run=%s)", window_start, digest_date, deliver, dry_run)
+    # `local=` is the run's key decision and belongs in the entry log: with it
+    # absent, a tracker-only run and a machine with no agent history produce
+    # byte-identical logs, which is the exact confusion the coverage note exists
+    # to prevent — and the log is where it is diagnosed after the fact.
+    logger.info(
+        "agent standup: window %s..%s (deliver=%s dry_run=%s local=%s)",
+        window_start,
+        digest_date,
+        deliver,
+        dry_run,
+        include_local_sessions,
+    )
 
     # Go core first (single-writer: the sidecar scans and summarises before
     # Python opens the store); None falls back to the Python local half. Both
     # produce the identical deterministic digest (tests/parity), and the
     # tracker leg + LLM below run in Python either way.
-    digest = _go_standup_digest(
-        window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
-    )
-    if digest is None:
-        digest = _deterministic_standup_digest(
+    if include_local_sessions:
+        digest = _go_standup_digest(
             window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
         )
+        if digest is None:
+            digest = _deterministic_standup_digest(
+                window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
+            )
+    else:
+        digest = _tracker_only_digest(window_start=window_start, digest_date=digest_date, on_progress=on_progress)
     warnings = list(digest.warnings)
     summaries = digest.session_summaries
     total_cost = digest.total_cost_usd
@@ -867,7 +943,14 @@ def run_agent_standup(
     in_flight = tuple(f"{row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open")[:8]
 
     if not summaries and not repo_rows:
-        warnings.append("No agent activity found in the window — nothing worked locally, nothing agent-marked landed.")
+        # Two different empties. "Nothing worked locally" is a claim about the
+        # local scan, and a tracker-only run never made it — saying it anyway is
+        # the same error as the phantom session, pointed the other way.
+        warnings.append(
+            "No agent-marked tracker activity found in the window, and local sessions were not collected."
+            if not include_local_sessions
+            else "No agent activity found in the window — nothing worked locally, nothing agent-marked landed."
+        )
 
     # ── The one LLM call: narrative prose over the deterministic rows ─────
     highlights: tuple[str, ...] = ()
@@ -881,7 +964,18 @@ def run_agent_standup(
             digest_date=digest_date,
             window_start=window_start,
             total_cost_usd=total_cost,
-            sessions=[(s.project, s.source, s.cost_usd, s.turns, list(s.models)) for s in summaries[:12]],
+            sessions=[
+                (
+                    s.project,
+                    s.source,
+                    s.cost_usd,
+                    s.turns,
+                    list(s.models),
+                    s.branch,
+                    [name for name, _count in s.top_tools],
+                )
+                for s in summaries[:12]
+            ],
             repo_items=[(r.kind, r.title, r.repo, r.status, r.agent_marker) for r in repo_rows[:20]],
         )
         parsed, llm_warnings = _invoke_llm(prompt, what="standup-digest")
@@ -931,8 +1025,9 @@ def run_agent_standup(
         logger.warning("agent standup: export failed: %s", exc)
 
     logger.info(
-        "agent standup: %d session(s), %d tracker item(s), $%.2f",
+        "agent standup: %d session(s)%s, %d tracker item(s), $%.2f",
         digest.sessions_worked,
+        "" if include_local_sessions else " (not collected)",
         len(digest.repo_activity),
         digest.total_cost_usd,
     )

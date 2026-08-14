@@ -90,6 +90,8 @@ class TestRecordedFailure:
         assert result["counts"] == {
             "replies": 15,
             "item_replies": 12,
+            "disclosure_posts": 0,
+            "channel_ignored": 0,
             "marked": 1,
             "ignored_markers": 0,
             "actionable": 0,
@@ -525,6 +527,8 @@ class TestTheMarkerIsAuthorised:
         assert result["counts"] == {
             "replies": 1,
             "item_replies": 1,
+            "disclosure_posts": 0,
+            "channel_ignored": 0,
             "marked": 1,
             "ignored_markers": 0,
             "actionable": 0,
@@ -612,3 +616,125 @@ class TestTheDigestWritesWhatTheRelayParses:
         """Why the test above matters, stated as the failure it prevents."""
         wrong = "#248 — Integrate GitLab so the roadmap can read epics — https://example.invalid/248"
         assert relay.ITEM_RE.match(wrong) and not relay.CANDIDATE_RE.match(wrong)
+
+
+def disclosure(ticket: str, *, decorated: bool = True, **reactions: list[str]) -> dict:
+    """`cron/security-sweep.md`'s post as Slack hands it back — shortcode, `*bold*`.
+
+    Channel-level, which is what it is in life: the post has no thread, so it
+    reaches the helper through `channel_messages` and carries the stamp.
+    """
+    head = ":closed_lock_with_key: *Security*" if decorated else "🔐 **Security**"
+    link = f"<https://linear.app/yeaboi/issue/{ticket}|{ticket}>"
+    body = f"{head} — disclosure filed · {link} · needs your call on scope-vs-remove"
+    return {**reply("1", body, **reactions), relay.CHANNEL_LEVEL: True}
+
+
+class TestDisclosure:
+    """✅ on a disclosure post starts the work it describes.
+
+    The gap this closes is not a mislabel but a dead end. A disclosure-class find
+    is never filed as a public GitHub issue, so it has no issue number, no digest
+    thread and no queue entry — and every verb in this relay keyed on one. The
+    find left the fleet at the Slack post and only a human retyping it by hand
+    could bring it back.
+    """
+
+    def test_an_approval_names_the_ticket_and_emits_no_command(self):
+        plan = relay.build_plan([disclosure("YEA-94", white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "disclosure-approve"
+        assert plan[0]["ticket"] == "YEA-94"
+        assert plan[0]["command"] is None, "there is no Linear CLI to emit argv for"
+        assert "issue" not in plan[0], "a disclosure has no GitHub issue — that is the whole carve-out"
+
+    def test_a_rejection_declines_it(self):
+        plan = relay.build_plan([disclosure("YEA-94", x=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "disclosure-decline"
+
+    def test_both_reactions_ask_rather_than_guess(self):
+        plan = relay.build_plan([disclosure("YEA-94", white_check_mark=[HUMAN], x=[HUMAN])], ALLOWLIST)["plan"]
+        assert plan[0]["verb"] == "ask" and plan[0]["who"] is None
+
+    @pytest.mark.parametrize("decorated", [True, False])
+    def test_both_spellings_of_the_title_are_read(self, decorated):
+        """Slack returns a shortcode; the routine file writes the codepoint."""
+        posts = [disclosure("YEA-94", decorated=decorated, white_check_mark=[HUMAN])]
+        assert relay.build_plan(posts, ALLOWLIST)["counts"]["disclosure_posts"] == 1
+
+    def test_its_own_ack_is_not_an_input(self):
+        """The hourly re-read would otherwise re-approve every disclosure forever."""
+        ack = reply("2", "applied `security:approved` to YEA-94 — the next sweep drains it", white_check_mark=[HUMAN])
+        result = relay.build_plan([ack], ALLOWLIST)
+        assert result["plan"] == []
+        assert result["counts"]["disclosure_posts"] == 0
+
+    def test_a_marked_post_is_seen_but_owes_nothing(self):
+        result = relay.build_plan([disclosure("YEA-94", robot_face=[HUMAN], white_check_mark=[HUMAN])], ALLOWLIST)
+        assert result["plan"] == []
+        assert result["counts"]["disclosure_posts"] == 1, "seen and settled must not read as never posted"
+
+    def test_a_reaction_from_outside_the_allowlist_does_nothing(self):
+        assert relay.build_plan([disclosure("YEA-94", white_check_mark=["USTRANGER"])], ALLOWLIST)["plan"] == []
+
+    def test_a_post_with_no_ticket_is_never_acted_on(self):
+        malformed = reply("1", ":closed_lock_with_key: *Security* — disclosure filed", white_check_mark=[HUMAN])
+        result = relay.build_plan([malformed], ALLOWLIST)
+        assert result["plan"] == []
+        assert result["counts"]["disclosure_posts"] == 1
+
+    def test_another_bot_post_carrying_a_ticket_id_is_not_a_disclosure(self):
+        """`TICKET_RE` is read only out of a message the title line already matched."""
+        other = reply("1", ":ship: *Shipped* — Thu 13 Aug · closes YEA-94", white_check_mark=[HUMAN])
+        assert relay.build_plan([other], ALLOWLIST)["counts"]["disclosure_posts"] == 0
+
+    def test_a_channel_message_reaches_the_disclosure_lane_and_no_other(self):
+        """The boundary the widened input is allowed to cross, and the one it is not.
+
+        Reading top-level messages is what lets a ✅ on a disclosure mean
+        something. It must not also let one mean `claude-implement`: a plain item
+        approval is gated on the leading `#<number>` alone — the label
+        confirmations guard `promote` and `campaign`, not this — so the only thing
+        between `#yeaboi-claude` and an unattended implement job is that the text
+        came from a thread the fleet posted. Anyone in a public channel can type
+        `#231 — <plausible title>`.
+        """
+        spoof = {**item(231, white_check_mark=[HUMAN]), relay.CHANNEL_LEVEL: True}
+        result = relay.build_plan([spoof], ALLOWLIST)
+        assert result["plan"] == [], "a top-level `#231` must never become a digest approval"
+        assert result["counts"]["item_replies"] == 0
+        assert result["counts"]["channel_ignored"] == 1, "ignored, but counted — silence would hide the widening"
+
+    def test_the_same_text_in_a_thread_is_still_an_approval(self):
+        """The guard is about where the message came from, not what it says."""
+        plan = relay.build_plan([item(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        assert [entry["verb"] for entry in plan] == ["approve"]
+
+    def test_load_replies_stamps_only_the_channel_key(self):
+        raw = json.dumps(
+            {
+                "messages": [item(231, white_check_mark=[HUMAN])],
+                "channel_messages": [disclosure("YEA-94", white_check_mark=[HUMAN])],
+            }
+        )
+        loaded = relay.load_replies(raw)
+        assert [message.get(relay.CHANNEL_LEVEL) for message in loaded] == [None, True]
+        counts = relay.build_plan(loaded, ALLOWLIST)["counts"]
+        assert (counts["item_replies"], counts["disclosure_posts"]) == (1, 1), "both lanes, from one payload"
+
+    def test_a_bare_array_is_still_all_thread_replies(self):
+        """The old input shape keeps its old meaning — nothing is stamped."""
+        loaded = relay.load_replies(json.dumps([item(231, white_check_mark=[HUMAN])]))
+        assert relay.CHANNEL_LEVEL not in loaded[0]
+        assert relay.build_plan(loaded, ALLOWLIST)["counts"]["item_replies"] == 1
+
+    def test_the_routine_file_shows_a_post_this_relay_can_read(self):
+        """The bug this prevents is the one that produced a useless digest: an
+        example in a routine file drifting out of step with the code reading it."""
+        text = (ROOT / "cowork" / "routines" / "cron" / "security-sweep.md").read_text(encoding="utf-8")
+        blocks = re.findall(r"```slack\n(.*?)```", text, re.S)
+        lines = [line.strip() for block in blocks for line in block.splitlines() if line.strip()]
+        shown = [line for line in lines if relay.DISCLOSURE_RE.match(line)]
+        assert shown, "security-sweep.md shows no disclosure post the relay would recognise"
+        for line in shown:
+            assert relay.TICKET_RE.search(line), f"no Linear ticket in the example: {line}"
+            assert "linear.app" in line, "the link is required — without it the reader cannot reach the finding"

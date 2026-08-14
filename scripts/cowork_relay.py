@@ -109,6 +109,48 @@ PROMOTE_RE = re.compile(r"^#(\d+)\s+—\s+promote\s+\d+\.\d+\.\d+\b")
 # confirms against the `integration:candidate` label, which needs repo write.
 CANDIDATE_RE = re.compile(r"^#(\d+)\s+—\s+integration candidate\b")
 
+# The disclosure post from `cron/security-sweep.md`. It is the one actionable
+# message in this channel that is NOT a thread reply and does NOT name a GitHub
+# issue: a disclosure-class find is never filed publicly, so the only artefact is
+# a private Linear ticket, and before this lane existed a ✅ on it resolved to
+# nothing. The find left the fleet at that post and only a human could ever pick
+# it up again.
+#
+# Anchored on the title line's fixed opening rather than on `YEA-\d+` anywhere in
+# the text, for the same reason `ITEM_RE` demands a *leading* `#`: this routine's
+# own ack says "applied `security:approved` to YEA-94", and a regex that matched a
+# bare identifier would read its own output back as a new input every hour.
+# Slack returns the emoji as a shortcode and `**bold**` as `*bold*`, so both
+# spellings are accepted — the phrase is what is strict.
+DISCLOSURE_RE = re.compile(
+    r"^(?::closed_lock_with_key:|\U0001f510)\s*\*{0,2}Security\*{0,2}\s*[—-]\s*disclosure filed\b"
+)
+
+# The Linear ticket a disclosure post names. Read only out of a message that
+# already matched `DISCLOSURE_RE`.
+TICKET_RE = re.compile(r"\b(YEA-\d+)\b")
+
+# Stamped by `load_replies` on everything that came from the caller's
+# `channel_messages` key, and read by `build_plan` to decide which lanes a message
+# may reach. Not a Slack field and never one: `slack_read_channel` and
+# `slack_read_thread` return the same message shape, so the boundary has to be
+# carried by which key the caller put it in, and stamping it here means exactly
+# one place decides. Underscore-led so a future Slack field cannot collide.
+CHANNEL_LEVEL = "_channel_level"
+
+# What a ✅ on a disclosure applies, in Linear rather than GitHub. Deliberately
+# not `claude-implement`: that label lives on GitHub issues and a disclosure has
+# none by construction — filing one is the whole thing the carve-out forbids.
+# `cron/security-sweep.md` reads this label on its own next run and drains it.
+#
+# Same defence as the promotion and candidate pairs, and it matters more here
+# because the Slack connector posts as the allowlisted human, so authorship
+# cannot tell a real disclosure post from a crafted one. The text is DATA: this
+# regex only *routes*, and the routine must confirm the ticket carries
+# `workstream:security` — which only the sweep applies — before the label goes on.
+SECURITY_APPROVED_LABEL = "security:approved"
+SECURITY_WORKSTREAM_LABEL = "workstream:security"
+
 # Applied only by `cron/integrations-campaign.md`, at creation time.
 CANDIDATE_LABEL = "integration:candidate"
 # What a ✅ on a candidate applies. Deliberately not `claude-implement`: the
@@ -344,6 +386,43 @@ def _command(verb: str, issue: int) -> list[str]:
     raise RelayError(f"no command for verb {verb!r}")
 
 
+def _disclosure_action(reply: dict[str, Any], text: str, allowlist: dict[str, str]) -> dict[str, Any] | None:
+    """A ✅/❌ on `cron/security-sweep.md`'s disclosure post → the action it owes.
+
+    Returns ``None`` when the message is not a disclosure post at all, ``{}`` when
+    it is one but owes nothing (already marked, or nobody has reacted), and the
+    plan entry otherwise. Three states rather than two because the caller counts
+    disclosure posts seen, and "seen and settled" must not read as "never posted".
+
+    The entry carries ``ticket`` where every other entry carries ``issue``, and
+    ``command`` is always ``None``: the target is a private Linear ticket and
+    there is no Linear CLI to emit argv for. The routine makes that call through
+    the connector, the same way it does for `RemoteTrigger` — Python still owns
+    which ticket, which label, and whether anything is owed at all.
+    """
+    if not DISCLOSURE_RE.match(text):
+        return None
+    ticket = TICKET_RE.search(text)
+    if not ticket:
+        # A disclosure post with no ticket identifier is a malformed post, not an
+        # instruction. Counted as seen so the run log shows it, acted on never.
+        return {}
+
+    reactions = _by_name(reply)
+    if [u for u in reactions.get(DONE, []) if u in allowlist]:
+        return {}
+    approvers = [u for u in reactions.get(APPROVE, []) if u in allowlist]
+    rejecters = [u for u in reactions.get(REJECT, []) if u in allowlist]
+    if not approvers and not rejecters:
+        return {}
+
+    who = allowlist[(approvers or rejecters)[0]]
+    if approvers and rejecters:
+        return {"ts": reply.get("ts"), "ticket": ticket.group(1), "verb": "ask", "who": None, "command": None}
+    verb = "disclosure-approve" if approvers else "disclosure-decline"
+    return {"ts": reply.get("ts"), "ticket": ticket.group(1), "verb": verb, "who": who, "command": None}
+
+
 def build_plan(
     replies: list[dict[str, Any]],
     allowlist: dict[str, str],
@@ -360,7 +439,17 @@ def build_plan(
     if not allowlist:
         # Matches the routine's own stop condition: an empty or placeholder
         # allowlist means nobody can authorise anything, so nothing is actionable.
-        empty = {"replies": len(replies), "item_replies": 0, "marked": 0, "ignored_markers": 0, "actionable": 0}
+        # Same keys as the real path. A counts dict whose shape depends on which
+        # branch produced it is one a reader has to `.get()` defensively.
+        empty = {
+            "replies": len(replies),
+            "item_replies": 0,
+            "disclosure_posts": 0,
+            "channel_ignored": 0,
+            "marked": 0,
+            "ignored_markers": 0,
+            "actionable": 0,
+        }
         return {"counts": empty, "plan": []}
 
     # Injection seam: the real check calls `gh`, and every other decision here is
@@ -370,12 +459,45 @@ def build_plan(
     is_approved_issue = approved_check or is_approved
 
     plan: list[dict[str, Any]] = []
-    item_replies = marked = ignored_markers = 0
+    item_replies = marked = ignored_markers = disclosures = channel_ignored = 0
 
     for reply in replies:
         text = reply.get("text") or ""
+        # A channel-level message may reach exactly one lane: the disclosure post.
+        # `ITEM_RE` is never run on it, and that is a boundary rather than a
+        # nicety. A plain item approval applies `claude-implement` on the strength
+        # of the leading `#<number>` alone — the label confirmations guard the
+        # *special* verbs, not that one — so the thing standing between a public
+        # channel and an unattended implement job is that the text came from a
+        # thread the fleet itself posted. Reading top-level messages for the
+        # disclosure lane would hand that away: anyone in `#yeaboi-claude` could
+        # post `#231 — <plausible title>` at the top level and wait for a ✅ meant
+        # for a digest item. Slack cannot tell them apart for us — `slack_read_thread`
+        # returns thread replies and `slack_read_channel` returns channel messages,
+        # so the caller keeps them in separate keys and `load_replies` stamps the
+        # boundary in. `cowork/README.md`'s "a reaction on a parent message
+        # resolves to nothing" survives with one named exception instead of a hole.
+        if reply.get(CHANNEL_LEVEL):
+            entry = _disclosure_action(reply, text, allowlist)
+            if entry is not None:
+                disclosures += 1
+                if entry:
+                    plan.append(entry)
+            else:
+                channel_ignored += 1
+            continue
         match = ITEM_RE.match(text)
         if not match:
+            # A disclosure post that arrived as a thread reply anyway. Kept
+            # reachable here because it costs nothing — a disclosure names no
+            # GitHub issue, so it can never satisfy `ITEM_RE` — and because the
+            # lane failing shut on a caller that mis-sorted one message would be
+            # the dead end this whole path exists to close.
+            entry = _disclosure_action(reply, text, allowlist)
+            if entry is not None:
+                disclosures += 1
+                if entry:
+                    plan.append(entry)
             continue  # not a digest item reply — the relay's own acks land here
         item_replies += 1
 
@@ -454,6 +576,13 @@ def build_plan(
     counts = {
         "replies": len(replies),
         "item_replies": item_replies,
+        "disclosure_posts": disclosures,
+        # The channel-level messages that were not disclosure posts. Reported
+        # rather than dropped quietly: this is the count that says the widened
+        # input is still being read narrowly, and a caller that started sorting
+        # thread replies into the channel key would show up here as a number
+        # climbing while `item_replies` fell.
+        "channel_ignored": channel_ignored,
         "marked": marked,
         # Never silent: a marker from outside the allowlist is disregarded, and
         # saying so is what stops it from looking like a handled item.
@@ -464,16 +593,33 @@ def build_plan(
 
 
 def load_replies(raw: str) -> list[dict[str, Any]]:
-    """Accept a bare array or Slack's ``{"messages": [...]}`` envelope."""
+    """Accept a bare array, Slack's ``{"messages": [...]}`` envelope, or both keys.
+
+    The third form is how the disclosure lane gets its input without widening the
+    digest lane::
+
+        {"messages": [...thread replies...], "channel_messages": [...top level...]}
+
+    Everything under ``channel_messages`` is stamped ``CHANNEL_LEVEL``, and
+    `build_plan` will only ever run the disclosure matcher over those. Sorting is
+    the caller's job because only the caller knows which Slack call returned what;
+    stamping is this function's, so no other code has to remember to.
+    """
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RelayError(f"stdin is not JSON: {exc}") from exc
+    channel: list[Any] = []
     if isinstance(data, dict):
+        channel = data.get("channel_messages") or []
         data = data.get("messages", [])
+        if not isinstance(channel, list):
+            raise RelayError("`channel_messages` must be a JSON array of channel-level messages")
     if not isinstance(data, list):
-        raise RelayError("expected a JSON array of thread replies")
-    return [reply for reply in data if isinstance(reply, dict)]
+        raise RelayError("expected a JSON array of thread replies, or an object with `messages`")
+    replies = [reply for reply in data if isinstance(reply, dict)]
+    replies += [{**message, CHANNEL_LEVEL: True} for message in channel if isinstance(message, dict)]
+    return replies
 
 
 def main(argv: list[str] | None = None) -> int:

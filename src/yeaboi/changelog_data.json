@@ -2,6 +2,31 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.12.0",
+      "date": "2026-08-14",
+      "summary": "The agent standup digest now reports what it actually measured instead of what it happened to find. When it runs somewhere with no access to your local agent history, it can be told to skip collecting sessions entirely rather than scanning and counting itself, and it says plainly that sessions were not collected. A digest with no sessions no longer prints a $0.00 total, which read as \u201cthe agents were free today\u201d when it meant \u201cthat is not what this run measured\u201d \u2014 the terminal, the shared file and the chat post now all lead with the same honest headline. Session highlights describe what an agent did rather than simply listing the most expensive session.",
+      "highlights": [
+        {
+          "text": "The agent standup can now skip local session collection, so a digest run away from your machine no longer counts itself as the day\u2019s only agent",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "A digest with no sessions reports what it did measure instead of a $0.00 total that read as free",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Session highlights now say what an agent worked on rather than ranking sessions by cost",
+          "areas": [
+            "agents"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.11.1",
       "date": "2026-08-12",
       "summary": "Fixed a silent data loss bug in the Notion integration where pages with more than 100 top-level blocks were truncated without notification. The tool now paginates through all child blocks until completion or a resource ceiling, and reports every partial read with a truncation marker so the LLM knows the document it read was incomplete.",

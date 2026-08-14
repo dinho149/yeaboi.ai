@@ -109,10 +109,16 @@ this system says must never land quietly, lands looking exactly like a Tuesday.
 Thread replies are a fourth thing, **ACK**, and they are exempt from everything below — they are
 parsed before they are read. See the two contracts at the end of this block.
 
-Not every message earns sections. Three are deliberately **degenerate — a title line and
-nothing else**: `cron/agents-standup.md`'s quiet day, its CLI-error line, and the security
-disclosure. A one-line message padded into four to satisfy a grammar is worse than the grammar
-being honest that some days have one line in them.
+Not every message earns sections. Two are deliberately **degenerate — a title line and
+nothing else**: `cron/agents-standup.md`'s quiet day and its CLI-error line. A one-line message
+padded into four to satisfy a grammar is worse than the grammar being honest that some days have
+one line in them.
+
+The security disclosure used to be a third. It is still one line, but it is no longer degenerate:
+it carries the Linear link and the decision being asked for, because a message whose whole job is
+to fetch a human is the last one that should end in a shrug. What it may not carry is enumerated
+in `cron/security-sweep.md`, and the four forbidden facts are named there rather than approximated
+by dropping a rule.
 
 Six rules, and every full message in `cowork/routines/` is built from them:
 
@@ -240,7 +246,13 @@ Nest under 🤙 yeaboi. Title pages so they sort usefully (`Draft — <subject> 
 - **Say what happened, not what you did.** "Practice signals now ignore service-hook comments" beats
   "I have successfully implemented the requested change".
 - **Never invent a number, a date, a quote, or a link.** If you do not have the Linear URL, say the
-  ticket was created and give its identifier.
+  ticket was created and give its identifier. That fallback holds on `cron/security-sweep.md`'s
+  disclosure post too, and the reason is worth stating: the URL is *required* there, but a missing
+  URL is not a reason to stay silent about a disclosure-class find — that would leave the human
+  never learning one exists, which is strictly worse than the useless message the link was added to
+  fix. Post it with the bare identifier, name the missing URL as a failure in the run log, and know
+  that the ✅ still routes: `cron/slack-relay.md` reads the ticket out of the text with `TICKET_RE`
+  and never needs the link.
 - **Partial failure is reported, not swallowed.** If Notion fails but Slack works, post the Slack
   message and name the failure in it.
 - **A missing connector is a full stop, not a puzzle.** If a Linear, Slack or Notion tool is not in

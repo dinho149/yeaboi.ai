@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, twenty-three routines, a
+``cowork/`` is a complete specification — fifteen charters, twenty-four routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
 registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
@@ -125,6 +125,11 @@ ALLOWED_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoW
 
 # The per-routine exceptions to ALLOWED_TOOLS, keyed by routine stem.
 TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
+    # day-ahead runs one script and posts one message. It needs Bash for the
+    # agenda, Read for the repo, and Task for the scribe — and nothing else: a
+    # routine that only reports the schedule has no business editing a file or
+    # searching the tree, and narrowing it says so where the grant is reviewed.
+    "day-ahead": ("Bash", "Read", "Task", "TodoWrite"),
     # shipped-standup reads a day of merged PRs and posts one message. Bash for
     # `gh` and the release script, Read for the repo, Task for the scribe — and
     # nothing else: a routine that only reports what already happened has no
@@ -576,6 +581,19 @@ def parse_workstreams() -> list[str]:
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
 
 
+# Labels that live on the Linear team rather than on GitHub. The workstream
+# dimension is derived from `workstreams/` and added by `/cowork deploy`; this is
+# the one label that is not a workstream and still has to exist there.
+#
+# It exists because a disclosure-class security find is the one item in the fleet
+# with no GitHub issue by construction — `cron/security-sweep.md` forbids filing
+# one — so the approval that starts the work cannot be `claude-implement` on an
+# issue. `cron/slack-relay.md` applies this to the Linear ticket when the human
+# reacts ✅, and the next security sweep drains it. Named here so the deploy
+# command creates it rather than a model remembering to.
+LINEAR_ONLY_LABELS = ("security:approved",)
+
+
 def expected_labels() -> list[Label]:
     """Every GitHub label the loop depends on.
 
@@ -905,8 +923,9 @@ def restricts_both_day_fields(cron: str) -> bool:
 # `make cowork-agenda` and `/cowork today` print what this computed instead of
 # interpreting twenty-one expressions by eye. A model that reads a cron field
 # correctly most of the time is a model that tells you the wrong morning, once.
-# Nothing posts this on a schedule any more — `cron/day-ahead.md` did, and the
-# fleet reports what it shipped now rather than what it is about to run.
+# `cron/day-ahead.md` posts the result of this at 05:45 UTC, before the earliest
+# sweep, and `make cowork-agenda` / `/cowork today` print the same string. The
+# routine composes nothing: it runs `--agenda` and posts the lines it is handed.
 
 
 # The zone the agenda *renders* in. UTC stays the source of truth — every cron in
@@ -921,20 +940,17 @@ DISPLAY_TZ = "Europe/London"
 # next hourly routine is handled without an edit here.
 BACKGROUND_AFTER = 3
 
-# The fleet's daily poster, left out of the *rendered* agenda. "Every day:
-# shipped-standup" is the one line in a four-line schedule that tells a reader
-# nothing they are not already holding — they got yesterday's, they will get
-# today's. It stays in the payload, because the payload is the fleet's schedule
-# and this is genuinely part of it; `/cowork status` is what audits whether it is
-# registered.
+# Nothing is held back from the rendered agenda. `shipped-standup` used to be —
+# on the reasoning that "every day: shipped-standup" tells a reader nothing they
+# are not already holding — and that was wrong for the question this message
+# exists to answer. "What runs today" is only half of it; the other half is *when
+# to expect something in Slack*, and the 18:00 post is one of the two things a
+# reader actually waits for. A daily routine is already lifted out of the
+# seven-day tail by `agenda()` and named once in the closing line, which is the
+# de-duplication that omission was reaching for.
 #
-# This used to be `day-ahead`, the routine that posted the agenda itself. That
-# routine is gone: announcing what is *about* to run is worth much less than
-# reporting what ran, and it was the one routine in the fleet forbidden from
-# staying quiet. `agenda_lines()` below outlived it — `make cowork-agenda` and
-# `/cowork today` still print it on demand, which is when a schedule is actually
-# wanted.
-DAILY_POSTER = "shipped-standup"
+# `day-ahead` — the routine that posts this — is itself daily, and lands in that
+# same closing line for the same reason.
 
 # One fixed emoji per section, which is `cron/digest.md`'s convention and the only
 # decoration `.claude/agents/cowork-scribe.md` permits: constant per section, so a
@@ -1213,7 +1229,7 @@ def agenda_lines(payload: dict) -> list[str]:
         lines.append(payload["note"])
     lines.append("")
 
-    listed = [entry for entry in payload["today"] if entry["name"] != DAILY_POSTER]
+    listed = payload["today"]
     if listed:
         for entry in listed:
             summary = f" — {entry['summary']}" if entry["summary"] else ""
@@ -1280,7 +1296,7 @@ def agenda_lines(payload: dict) -> list[str]:
         future = date.fromisoformat(entry["date"])
         # Only when it changes: "Tue 1" a week out is ambiguous, "Tue 1 Sep" is not.
         stamp = f"{entry['weekday']} {future.day}" + (f" {future:%b}" if future.month != shown else "")
-        names = [name for name in entry["names"] if name != DAILY_POSTER]
+        names = entry["names"]
         if names:
             upcoming_lines.append(f"**{stamp}** — " + ", ".join(names))
             shown = future.month
@@ -1301,7 +1317,7 @@ def agenda_lines(payload: dict) -> list[str]:
     closing = []
     if quiet:
         closing.append(f"{_joined(quiet)} {'is' if len(quiet) == 1 else 'are'} clear.")
-    daily = [name for name in payload["daily"] if name != DAILY_POSTER]
+    daily = payload["daily"]
     if daily:
         closing.append("Every day: " + ", ".join(daily) + ".")
     if closing:
@@ -2661,6 +2677,12 @@ def manifest() -> dict:
         "default_allowed_tools": list(ALLOWED_TOOLS),
         "targets": parse_targets(),
         "labels": [{"name": label.name, "description": label.description} for label in expected_labels()],
+        # Linear carries the workstream dimension plus `LINEAR_ONLY_LABELS`; the
+        # proposal queue's labels are GitHub-only and never reach it.
+        "linear_labels": sorted(
+            [label.name for label in expected_labels() if label.name.startswith("workstream:")]
+            + list(LINEAR_ONLY_LABELS)
+        ),
         "variables": parse_model_variables(),
         "routines": [
             {
@@ -2688,7 +2710,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across twenty-three routines is exactly
+# split is the point: comparing seven fields across twenty-four routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -2700,7 +2722,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering twenty-three routines that already exist.
+    propose registering twenty-four routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -2753,7 +2775,7 @@ def _walk(payload: object) -> _Read:
     by hand is often the bare array, and a fleet read in parts is an array of any
     of those. Guessing wrong on any of them reads as an empty account — which is
     the one wrong answer that would have this script propose registering
-    twenty-three routines that already exist.
+    twenty-four routines that already exist.
 
     A ``get`` proves nothing either way: it answers for one routine and says
     nothing about how many there are. Only a ``list`` page can close the
@@ -3610,7 +3632,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers twenty-three routines pointing at no repository — which looks like it
+    # registers twenty-four routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.postable_creates:
         if not repo_url:
