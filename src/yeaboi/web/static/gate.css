@@ -194,6 +194,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
+  /* The edge of the screen itself — the border a live board draws around the
+     whole viewport, the way the TUI draws one around the terminal. Deliberately
+     far brighter than `--line-strong`: every other rule in the app separates
+     two things *inside* the screen and should recede, while this one says where
+     the app stops, and at 14% it read as a rendering artifact rather than a
+     frame. Derived from `--text`, not a literal white, so the light themes get
+     a dark frame instead of an invisible one. */
+  --screen-frame: color-mix(in srgb, var(--text) 75%, transparent);
   --focus: var(--accent2);
 
   /* ── Jira-style status lozenges ─────────────────────────────────────
@@ -1021,7 +1029,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_jhrt2_17 {
+._appbar_fung8_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1033,13 +1041,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_jhrt2_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_jhrt2_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_fung8_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_fung8_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_jhrt2_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_jhrt2_35 {
+._brandTitle_fung8_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_fung8_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1048,13 +1056,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_jhrt2_44 { flex: 1; }
-._tools_jhrt2_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_fung8_44 { flex: 1; }
+._tools_fung8_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_jhrt2_50 {
+._btn_fung8_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1076,49 +1084,49 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_jhrt2_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_fung8_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_jhrt2_50:disabled { opacity: 0.45; cursor: default; }
+._btn_fung8_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_jhrt2_79 {
+._btnS_fung8_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_jhrt2_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_fung8_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_jhrt2_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_fung8_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_jhrt2_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_jhrt2_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_jhrt2_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_fung8_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_fung8_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_fung8_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_jhrt2_95 {
+._btnPill_fung8_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_jhrt2_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_fung8_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_jhrt2_107 {
+._btnBare_fung8_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_jhrt2_107:hover:not(:disabled), ._btnBare_jhrt2_107:focus-visible {
+._btnBare_fung8_107:hover:not(:disabled), ._btnBare_fung8_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
@@ -1130,15 +1138,15 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    which sat next to a ↩ it had become identical to. Two classes, so it beats
    `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
    where it happens to sit in the file. */
-._btnBare_jhrt2_107._btnDanger_jhrt2_91 { color: var(--danger); }
-._btnBare_jhrt2_107._btnDanger_jhrt2_91:hover:not(:disabled),
-._btnBare_jhrt2_107._btnDanger_jhrt2_91:focus-visible { color: var(--danger); border-color: transparent; }
+._btnBare_fung8_107._btnDanger_fung8_91 { color: var(--danger); }
+._btnBare_fung8_107._btnDanger_fung8_91:hover:not(:disabled),
+._btnBare_fung8_107._btnDanger_fung8_91:focus-visible { color: var(--danger); border-color: transparent; }
 
-._btnActive_jhrt2_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_fung8_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_jhrt2_107._btnActive_jhrt2_124 {
+._btnBare_fung8_107._btnActive_fung8_124 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1148,28 +1156,28 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The raised rendition of the delete confirmation. Three classes, because
    `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
    `--text` at the exact moment it is asking about a destructive action. */
-._btnBare_jhrt2_107._btnActive_jhrt2_124._btnDanger_jhrt2_91 { color: var(--danger); }
+._btnBare_fung8_107._btnActive_fung8_124._btnDanger_fung8_91 { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_jhrt2_148:not(:disabled) { animation: _btnPulse_jhrt2_1 1.6s ease-in-out infinite; }
-@keyframes _btnPulse_jhrt2_1 {
+._btnAttention_fung8_148:not(:disabled) { animation: _btnPulse_fung8_1 1.6s ease-in-out infinite; }
+@keyframes _btnPulse_fung8_1 {
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_jhrt2_153 { width: 100%; }
+._btnBlock_fung8_153 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_jhrt2_157 { opacity: 0.72; }
-._btnDim_jhrt2_157:hover, ._btnDim_jhrt2_157:focus-visible { opacity: 1; }
+._btnDim_fung8_157 { opacity: 0.72; }
+._btnDim_fung8_157:hover, ._btnDim_fung8_157:focus-visible { opacity: 1; }
 
-._iconGlyph_jhrt2_160 { font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_fung8_160 { font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._preset_jhrt2_165 { font-family: var(--font-mono); }
+._preset_fung8_165 { font-family: var(--font-mono); }
 
 /* ── Credit ───────────────────────────────────────────────────────
    The byline link. It inherits everything — colour, face, size, tracking —
@@ -1177,20 +1185,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    surface was already showing and becoming clickable should not make it louder.
    The underline is held back to hover for the same reason: on a slide deck's
    corner and a board's status strip it would read as a fifth rule line. */
-._credit_jhrt2_173 {
+._credit_fung8_173 {
   color: inherit;
   text-decoration: none;
 }
-._credit_jhrt2_173:hover,
-._credit_jhrt2_173:focus-visible {
+._credit_fung8_173:hover,
+._credit_fung8_173:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_jhrt2_184 { display: contents; }
-._popoverAnchor_jhrt2_185 { position: relative; display: inline-flex; }
-._tbtn_jhrt2_186 {
+._popoverGroup_fung8_184 { display: contents; }
+._popoverAnchor_fung8_185 { position: relative; display: inline-flex; }
+._tbtn_fung8_186 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1205,10 +1213,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_jhrt2_186:hover { border-color: var(--accent); }
-._tbtnOpen_jhrt2_202 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_fung8_186:hover { border-color: var(--accent); }
+._tbtnOpen_fung8_202 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_jhrt2_184 {
+._popover_fung8_184 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1224,21 +1232,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_jhrt2_220 { right: auto; left: 0; }
+._popoverLeft_fung8_220 { right: auto; left: 0; }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_jhrt2_223 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_jhrt2_184[hidden] { display: none; }
+._popoverAbove_fung8_223 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_fung8_184[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_jhrt2_227 {
+._fieldLabel_fung8_227 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_jhrt2_234, ._textInput_jhrt2_234, ._numberInput_jhrt2_234 {
+._select_fung8_234, ._textInput_fung8_234, ._numberInput_fung8_234 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1248,14 +1256,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_jhrt2_234 { flex: 1; min-width: 0; }
-._numberInput_jhrt2_234 { width: 5.5rem; font-family: var(--font-mono); }
-._range_jhrt2_246 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_fung8_234 { flex: 1; min-width: 0; }
+._numberInput_fung8_234 { width: 5.5rem; font-family: var(--font-mono); }
+._range_fung8_246 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_jhrt2_249 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_jhrt2_250 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_jhrt2_251 {
+._musicPanel_fung8_249 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_fung8_250 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_fung8_251 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1265,13 +1273,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_jhrt2_261 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_jhrt2_262 { opacity: 1; }
+._viz_fung8_261 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_fung8_262 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_jhrt2_265 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_jhrt2_266 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_jhrt2_267 {
+._timerPanel_fung8_265 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_fung8_266 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_fung8_267 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1281,9 +1289,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_jhrt2_277 { color: var(--danger); }
+._timerDone_fung8_277 { color: var(--danger); }
 
-._confetti_jhrt2_279 {
+._confetti_fung8_279 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1293,9 +1301,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_jhrt2_289 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_jhrt2_290 { display: flex; gap: var(--s2); }
-._swatch_jhrt2_290 {
+._themeSwitcher_fung8_289 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_fung8_290 { display: flex; gap: var(--s2); }
+._swatch_fung8_290 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -1304,8 +1312,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_jhrt2_300 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_jhrt2_301 {
+._swatchOn_fung8_300 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_fung8_301 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -1315,22 +1323,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_jhrt2_311 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_jhrt2_312 { display: inline-flex; align-items: center; }
-._stacked_jhrt2_313 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_jhrt2_313:first-child { margin-left: 0; }
-._presenceMore_jhrt2_315 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_jhrt2_316 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_fung8_311 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_fung8_312 { display: inline-flex; align-items: center; }
+._stacked_fung8_313 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_fung8_313:first-child { margin-left: 0; }
+._presenceMore_fung8_315 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_fung8_316 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_jhrt2_318 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_jhrt2_319 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_jhrt2_320 { flex: 1; }
-._rosterYou_jhrt2_321 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_jhrt2_322 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_fung8_318 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_fung8_319 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_fung8_320 { flex: 1; }
+._rosterYou_fung8_321 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_fung8_322 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_jhrt2_325 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_jhrt2_326 {
+._avatarGrid_fung8_325 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_fung8_326 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1340,23 +1348,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_jhrt2_336 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_fung8_336 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_jhrt2_339 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_jhrt2_340 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
-._inviteCode_jhrt2_341 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_jhrt2_342 {
+._invite_fung8_339 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_fung8_340 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_fung8_341 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_fung8_342 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_jhrt2_349 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_fung8_349 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_jhrt2_352 {
+._copyField_fung8_352 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1370,7 +1378,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_jhrt2_366 {
+._copyValue_fung8_366 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1378,10 +1386,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_jhrt2_374 { flex: none; }
+._copyBtn_fung8_374 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_jhrt2_377 {
+._toast_fung8_377 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1396,9 +1404,30 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_jhrt2_392 {
-  /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
-     Only the skin is ours. */
+/*
+ * `dialog.modal`, not `.modal`, and the element qualifier is load-bearing.
+ *
+ * A <dialog> is display:none until opened, and the UA stylesheet centres the
+ * open one with `margin: auto` against `inset: 0` — that is the entire
+ * mechanism, and two ordinary rules in this codebase were quietly disarming it.
+ *
+ * palette.css opens with `* { box-sizing: border-box; margin: 0; padding: 0 }`,
+ * which zeroes the UA margin outright: every modal on every surface rendered
+ * pinned to the top-left corner of the viewport. Restoring it here rather than
+ * exempting `dialog` from the reset — the reset is meant to be total, and this
+ * is the one element whose UA margin does work.
+ *
+ * The second one is why the specificity matters. Stacking idioms of the shape
+ * `.container > * + * { margin-top: … }` are everywhere (PageShell has one),
+ * and `*` matches a <dialog> like anything else. At equal specificity the
+ * winner is bundle order, so the same component centred on poker — where the
+ * modal happens to be the first child — and hung from the top edge on retro,
+ * where it is a later sibling. A top-layer dialog is not in flow and no
+ * flow-spacing rule should reach it; `dialog.modal` (0,1,1) outranks every
+ * `.x > * + *` (0,1,0) so none of them can, wherever a surface mounts it.
+ */
+dialog._modal_fung8_393 {
+  margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
@@ -1407,14 +1436,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_jhrt2_392::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_jhrt2_404 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_jhrt2_405 { font-size: var(--fs-l); margin: 0; }
-._modalActions_jhrt2_406 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_fung8_393::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_fung8_425 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_fung8_426 { font-size: var(--fs-l); margin: 0; }
+._modalActions_fung8_427 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_jhrt2_410 {
+._srOnly_fung8_431 {
   position: absolute;
   width: 1px;
   height: 1px;

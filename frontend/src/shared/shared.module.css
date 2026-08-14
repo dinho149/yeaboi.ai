@@ -389,9 +389,30 @@
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-.modal {
-  /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
-     Only the skin is ours. */
+/*
+ * `dialog.modal`, not `.modal`, and the element qualifier is load-bearing.
+ *
+ * A <dialog> is display:none until opened, and the UA stylesheet centres the
+ * open one with `margin: auto` against `inset: 0` — that is the entire
+ * mechanism, and two ordinary rules in this codebase were quietly disarming it.
+ *
+ * palette.css opens with `* { box-sizing: border-box; margin: 0; padding: 0 }`,
+ * which zeroes the UA margin outright: every modal on every surface rendered
+ * pinned to the top-left corner of the viewport. Restoring it here rather than
+ * exempting `dialog` from the reset — the reset is meant to be total, and this
+ * is the one element whose UA margin does work.
+ *
+ * The second one is why the specificity matters. Stacking idioms of the shape
+ * `.container > * + * { margin-top: … }` are everywhere (PageShell has one),
+ * and `*` matches a <dialog> like anything else. At equal specificity the
+ * winner is bundle order, so the same component centred on poker — where the
+ * modal happens to be the first child — and hung from the top edge on retro,
+ * where it is a later sibling. A top-layer dialog is not in flow and no
+ * flow-spacing rule should reach it; `dialog.modal` (0,1,1) outranks every
+ * `.x > * + *` (0,1,0) so none of them can, wherever a surface mounts it.
+ */
+dialog.modal {
+  margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);

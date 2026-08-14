@@ -20,29 +20,32 @@
  * `document` is the original: a centred column that grows with its content and
  * scrolls the window. Exports and any other page that is fundamentally a file.
  *
- * `app` is for the live boards. The masthead and the credit sit in the normal
- * document flow and **scroll away**; between them is a region that is exactly
- * one viewport tall, holding the sticky app bar and the board itself. So the
- * page opens on its identity, one flick of the wheel puts the board full-screen
- * with only the toolbar still pinned, and the chrome is still there when you
- * scroll back for it. See `.appRegion` for why that needs no measurement.
+ * `app` is for the live boards, and it is **one screen**: a fixed box inset
+ * from the window edge, framed in a curved border the way the TUI frames a
+ * terminal, holding the masthead strip, the sticky bar, the board and the
+ * credit. The window itself never scrolls — anything that has to scroll does
+ * it inside the board.
  *
- * It was a `100dvh` grid first, with the masthead and credit locked to the top
- * and bottom edges. Nothing was wrong with the mechanics and everything was
- * wrong with the result: a board is the one surface where a visitor is going to
- * be looking at the same page for forty minutes, and spending a permanent fifth
- * of the viewport on a wordmark they read once is a bad trade.
+ * It went through both alternatives first. A `100dvh` grid locked the masthead
+ * and credit to the top and bottom edges and spent a fifth of the viewport on
+ * a wordmark read once. Letting the masthead *scroll away* fixed that and
+ * bought a worse problem: a board is the one surface a visitor stares at for
+ * forty minutes, and one that answers a stray wheel-flick by sliding its own
+ * identity off the top — or worse, sliding the deck half out of view — is a
+ * board you have to keep re-aiming. So the masthead shrank instead of moving.
  *
  * ## Density
  *
  * The full masthead is around 260px — a hero on a desktop, and two thirds of a
- * phone. So `app` surfaces default to `density="auto"`, which drops to a
- * compact rendition below a large viewport: same window, same title, wordmark
- * in the two-row face instead of the six-row one, facts suppressed (a board's
- * facts already live in the toolbar subtitle).
+ * phone. `app` surfaces are therefore always `compact`: the wordmark drops to
+ * the two-row face and sits inline with the title on a single strip, and the
+ * facts are suppressed (a board's facts already live in the toolbar subtitle).
+ * There is no viewport that can pay 260px for a header on a page that must not
+ * scroll, so this is a constant rather than the `auto` media query it was.
  *
- * "Exactly like the export" holds wherever the viewport can pay for it. Compact
- * is the same masthead with the hero dropped — not a different header.
+ * `document` keeps the terminal window — traffic lights, `yeaboi — <mode>`
+ * title bar — because on a file that chrome is branding. On a live board it
+ * was a costume, and the primitive's own comment said so.
  */
 
 import type { ReactNode } from 'react';
@@ -69,9 +72,10 @@ export interface PageShellProps {
   variant?: 'document' | 'app';
   /**
    * `hero` is the full masthead, `compact` drops the six-row wordmark and the
-   * facts. `auto` picks per viewport and is the default for `app`; documents
-   * default to `hero`, because a file is read at whatever size it is read at
-   * and has no fixed height to protect.
+   * facts. `auto` picks per viewport. `app` defaults to `compact` — its screen
+   * does not scroll, so there is no viewport that can afford the hero — and
+   * documents default to `hero`, because a file is read at whatever size it is
+   * read at and has no fixed height to protect.
    */
   density?: 'hero' | 'compact' | 'auto';
   /**
@@ -102,7 +106,7 @@ export interface PageShellProps {
 export function PageShell({
   chrome,
   variant = 'document',
-  density = variant === 'app' ? 'auto' : 'hero',
+  density = variant === 'app' ? 'compact' : 'hero',
   themeSwitcher,
   bar,
   children,
@@ -153,36 +157,58 @@ export function PageShell({
     </footer>
   );
 
+  const head = (
+    <div className={cx(styles['head'], app && styles['headApp'])}>
+      <div className={cx(styles['headMain'], app && styles['headMainApp'])}>
+        <Wordmark
+          text={chrome.wordmark}
+          variant={hero ? 'shadow' : 'block'}
+          className={cx(styles['wordmark'], !hero && styles['wordmarkCompact'])}
+        />
+        <h1 className={cx(styles['title'], !hero && styles['titleCompact'])}>{chrome.title}</h1>
+        {hero && chrome.subtitle ? <p className={styles['subtitle']}>{chrome.subtitle}</p> : null}
+        {hero && (facts.length || badges.length) ? (
+          <div className={styles['facts']}>
+            {facts.map(([label, value]) => (
+              <Eyebrow key={label} value={value}>
+                {label}
+              </Eyebrow>
+            ))}
+            {badges.map((badge) => (
+              <Eyebrow key={badge} accent>
+                {badge}
+              </Eyebrow>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {themeSwitcher ? <div className={styles['themes']}>{themeSwitcher}</div> : null}
+    </div>
+  );
+
   return (
     <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
-      <TerminalFrame title={chrome.frame} className={styles['masthead']}>
-        <div className={styles['head']}>
-          <div className={styles['headMain']}>
-            <Wordmark
-              text={chrome.wordmark}
-              variant={hero ? 'shadow' : 'block'}
-              className={cx(styles['wordmark'], !hero && styles['wordmarkCompact'])}
-            />
-            <h1 className={cx(styles['title'], !hero && styles['titleCompact'])}>{chrome.title}</h1>
-            {hero && chrome.subtitle ? <p className={styles['subtitle']}>{chrome.subtitle}</p> : null}
-            {hero && (facts.length || badges.length) ? (
-              <div className={styles['facts']}>
-                {facts.map(([label, value]) => (
-                  <Eyebrow key={label} value={value}>
-                    {label}
-                  </Eyebrow>
-                ))}
-                {badges.map((badge) => (
-                  <Eyebrow key={badge} accent>
-                    {badge}
-                  </Eyebrow>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          {themeSwitcher ? <div className={styles['themes']}>{themeSwitcher}</div> : null}
-        </div>
-      </TerminalFrame>
+      {/* The board wears no window. `TerminalFrame`'s own comment reserves it
+          for "gate and export headers only — never a live board, where it would
+          be a costume", and the shell was the one caller ignoring that. What
+          the board gets instead is the frame around the *whole screen*, drawn
+          by `.shellApp` — the same device the TUI uses, at the size the TUI
+          uses it. Two chrome layers, an inner window inside an outer one, is
+          what made the first version read as a screenshot of an app rather
+          than the app. */}
+      {/* A div, not a <header>. `<header>` at the top level of a document is the
+          `banner` landmark, and a board already has one from the document
+          variant's own structure — two unlabelled banners is an axe
+          `landmark-unique` violation, which a11y.test.tsx caught on the first
+          attempt. The document variant's masthead is a div too (it is
+          TerminalFrame's root), so this is parity rather than a concession. */}
+      {app ? (
+        <div className={cx(styles['masthead'], styles['mastheadApp'])}>{head}</div>
+      ) : (
+        <TerminalFrame title={chrome.frame} className={styles['masthead']}>
+          {head}
+        </TerminalFrame>
+      )}
 
       {/* The credit joins the region on an app surface rather than trailing it.
           That is what makes the arithmetic come out: the document is then taller

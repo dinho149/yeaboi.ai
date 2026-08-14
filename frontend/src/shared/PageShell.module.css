@@ -20,14 +20,41 @@
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board in three parts: a masthead that scrolls away, a region exactly
-   one viewport tall holding the sticky bar and the board, and a credit under
-   it. The window scrolls; the region does not move within it.
+   A live board is one screen, framed: the masthead strip, the sticky bar, the
+   board and the credit, inside a curved border inset from the window edge.
+   Nothing here scrolls the window — the board scrolls inside itself.
 
-   The shell itself sets no height at all. Everything below depends on that. */
+   `position: fixed` with an `inset`, rather than `margin` + `100dvh` height.
+   Two reasons, and the second is the one that decided it. The height arithmetic
+   is the browser's either way, but a top margin on the first in-flow child
+   collapses out through `body`, so the margin box came to slightly more than
+   the viewport and the window scrolled by a few pixels — the exact bug this
+   variant exists to remove, reintroduced by the fix for it. And taking the
+   shell out of flow means the document has no scrollable content at all, so
+   there is no scrollbar to suppress on `body` and no surface-specific
+   `overflow: hidden` for a future page to forget.
+
+   `dvh` is therefore not needed here and `inset` is not `dvh`-aware anyway:
+   a fixed element's containing block is the *visual* viewport, which is what
+   iOS Safari's collapsing URL bar changes. The one place `100vh` would have
+   lied is the one place it is not being asked. */
 .shellApp {
   max-width: none;
   padding: 0;
+  position: fixed;
+  inset: var(--s2);
+  display: flex;
+  flex-direction: column;
+  /* The frame. Same device as the TUI's panel border, at the same weight —
+     a hairline in the text colour rather than the `--line` used for furniture
+     *inside* the screen, so the edge of the app reads as the edge of the app
+     and not as one more card. */
+  border: 1px solid var(--screen-frame);
+  border-radius: var(--r-l);
+  background: var(--bg);
+  /* The curve is only a curve if what is behind it is clipped to it — the
+     masthead's bottom rule and the credit's top rule both run to the edge. */
+  overflow: hidden;
 }
 
 /*
@@ -81,7 +108,19 @@
 .appRegion {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--app-inset-bottom, 0px));
+  /* Whatever the masthead strip above did not take. `min-height: 0` is what
+     lets it be *shorter* than its content, which is in turn what makes the
+     board's inner scrollers engage instead of the region growing past the
+     screen — the same requirement the old definite `100dvh` height satisfied,
+     now satisfied by a definite parent instead. */
+  flex: 1;
+  min-height: 0;
+  /* A surface with something `position: fixed` on the bottom edge — poker's
+     host console is a bottom sheet on a phone — stops the region short of it,
+     so anything sticky parked at the region's bottom (poker's card deck) is
+     not parked underneath the sheet. Margin, not the subtraction from a height
+     that no longer exists. */
+  margin-bottom: var(--app-inset-bottom, 0px);
 }
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
@@ -97,12 +136,16 @@
 .masthead {
   margin-bottom: var(--s5);
 }
-.shellApp .masthead {
-  /* The grid supplies the rhythm; a bottom margin here would double it and
-     round the frame's corners off against the bar below. */
+
+/* The board's masthead: a strip, not a window. One line — wordmark, then title
+   — closed by a rule, and never allowed to take height from the board below
+   it, which is what `flex: none` on a flex child of the screen guarantees. */
+.mastheadApp {
+  flex: none;
   margin-bottom: 0;
-  border-radius: 0;
-  border-width: 0 0 1px;
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .head {
@@ -112,9 +155,38 @@
   gap: var(--s5);
   flex-wrap: wrap;
 }
+.headApp {
+  align-items: center;
+  gap: var(--s3);
+  /* No wrapping: this row is two short items and a theme switcher, and a wrap
+     here would silently double the strip's height on a narrow window — which
+     the screen has no spare pixels to give it. Long titles ellipsize instead;
+     see `.headMainApp h1`. */
+  flex-wrap: nowrap;
+}
 .headMain {
   min-width: 0;
   flex: 1 1 320px;
+}
+/* The compact pair, side by side. `baseline` rather than `center`: the block
+   wordmark is a run of box-drawing rows whose optical bottom is its last row,
+   and centring it against the title floats it a couple of pixels high. */
+.headMainApp {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex: 1 1 auto;
+}
+/* Both carry stacking margins from the column rendition above. In a row they
+   are horizontal gap, and the gap already supplies it. */
+.headMainApp .wordmark {
+  margin-bottom: 0;
+}
+.headMainApp h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wordmark {
@@ -242,14 +314,27 @@
     max-width: none;
     padding: 0;
   }
-  /* An app surface printed is just a document — release the viewport height so
+  /* An app surface printed is just a document — release it from the viewport so
      the content flows onto as many sheets as it needs instead of being clipped
      to one, and let the bar print where it actually sits rather than once per
-     page. `auto`, not `0`: the region is a definite height on screen, so a
-     floor of zero would no longer release anything. */
+     page. A `position: fixed` box prints as a single clipped screen and its
+     `overflow: hidden` throws the rest away, so this is not cosmetic: without
+     it a printed board is page one and nothing else. The screen frame goes
+     with it — a rounded border around a sheet of paper is a box that says
+     nothing, the same reason the terminal window is dropped below. */
+  .shellApp {
+    position: static;
+    display: block;
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+    background: none;
+  }
   .appRegion {
+    flex: none;
     height: auto;
     display: block;
+    margin-bottom: 0;
   }
   .barSticky {
     position: static;
