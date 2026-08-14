@@ -56,14 +56,20 @@ export function Toolbar({ brand, mark, subtitle, children, tools, className }: T
         {subtitle ? <span className={styles['brandSub']}>{subtitle}</span> : null}
       </div>
 
+      {/* The spacer goes before the mode's own controls when there is no tool
+          cluster to push them away from — otherwise a bar whose tools have been
+          docked elsewhere bunches everything against the left edge. */}
+      {tools ? null : <div className={styles['spacer']} />}
+
       {children}
 
-      <div className={styles['spacer']} />
-
       {tools ? (
-        <div className={styles['tools']} role="toolbar" aria-label="Board tools">
-          <PopoverGroup>{tools}</PopoverGroup>
-        </div>
+        <>
+          <div className={styles['spacer']} />
+          <div className={styles['tools']} role="toolbar" aria-label="Board tools">
+            <PopoverGroup>{tools}</PopoverGroup>
+          </div>
+        </>
       ) : null}
     </header>
   );

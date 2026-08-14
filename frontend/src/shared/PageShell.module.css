@@ -68,17 +68,20 @@
    of a surface's own fixed bottom sheet. */
 .dockApp {
   position: absolute;
-  right: var(--s3);
-  bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
+  right: var(--s5);
+  /* Seated on the frame's bottom edge, open at the bottom, so the screen border
+     is the box's own fourth side — the way the TUI lets a strip into its
+     frame. */
+  bottom: var(--app-inset-bottom, 0px);
   z-index: var(--z-console);
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel);
-  box-shadow: var(--shadow-2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--screen-frame);
+  border-bottom: none;
+  border-radius: var(--r-m) var(--r-m) 0 0;
+  background: var(--bg);
 }
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
