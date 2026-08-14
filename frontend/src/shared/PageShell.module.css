@@ -104,13 +104,21 @@
   content: '';
   position: absolute;
   bottom: 0;
+  /* Overlaps the dock's own left border by 2px, so the ground below the arc
+     ends it rather than leaving a stub hanging past the curve. */
   right: calc(100% - 2px);
   width: calc(var(--r-m) + 2px);
   height: var(--r-m);
-  background: var(--bg);
-  border-top: 2px solid var(--screen-frame);
-  border-left: 2px solid var(--screen-frame);
-  border-top-left-radius: var(--r-m);
+  /* Centred on the fillet's centre — one radius in from each line, so the ring
+     is tangent to both. Inside it stays transparent (that side is the board),
+     the ring is the border, and everything outside is the ground that ends the
+     frame's straight run. */
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 0 calc(var(--r-m) - 2px),
+    var(--screen-frame) calc(var(--r-m) - 2px) var(--r-m),
+    var(--bg) var(--r-m)
+  );
   pointer-events: none;
 }
 
