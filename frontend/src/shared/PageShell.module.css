@@ -95,9 +95,31 @@
   background: var(--bg);
 }
 
+/* The inside corner where the dock's raised edge leaves the frame's bottom
+   line. `border-radius` only draws convex corners, so it is a separate square
+   whose own rounded corner is centred on the join: an opaque ground that ends
+   the straight border, and a two-sided arc that carries the line up into the
+   dock's edge. */
+.dockApp::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: calc(100% - 2px);
+  width: calc(var(--r-m) + 2px);
+  height: var(--r-m);
+  background: var(--bg);
+  border-top: 2px solid var(--screen-frame);
+  border-left: 2px solid var(--screen-frame);
+  border-top-left-radius: var(--r-m);
+  pointer-events: none;
+}
+
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
+  [data-host='true'] .dockApp::before {
+    display: none;
+  }
   [data-host='true'] .dockApp {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
