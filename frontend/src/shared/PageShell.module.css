@@ -63,6 +63,24 @@
   margin-bottom: var(--s5);
 }
 
+/* The tool cluster, docked over the bottom-right corner of the board — the
+   TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
+   of a surface's own fixed bottom sheet. */
+.dockApp {
+  position: absolute;
+  right: var(--s3);
+  bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
+  z-index: var(--z-console);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+}
+
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
 .chromeApp {

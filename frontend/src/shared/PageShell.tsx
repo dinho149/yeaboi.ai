@@ -21,6 +21,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
 import { Credit } from './Credit';
+import { PopoverGroup } from './Popover';
 import styles from './PageShell.module.css';
 
 /**
@@ -52,6 +53,14 @@ export interface PageShellProps {
   themeSwitcher?: ReactNode;
   /** The app bar, on surfaces that have one. Sits between masthead and content. */
   bar?: ReactNode;
+  /**
+   * The tool cluster, docked bottom-right over the board. `app` only.
+   *
+   * Popovers inside it are mutually exclusive and should be given
+   * `placement="above"` — a panel opening downward from the bottom edge is
+   * off-screen with no way to scroll to it.
+   */
+  dock?: ReactNode;
   /** The scrolling region. */
   children: ReactNode;
   className?: string | undefined;
@@ -73,6 +82,7 @@ export function PageShell({
   density = variant === 'app' ? 'compact' : 'hero',
   themeSwitcher,
   bar,
+  dock,
   children,
   className,
   data,
@@ -165,6 +175,12 @@ export function PageShell({
           {footer}
         </>
       )}
+
+      {app && dock ? (
+        <div className={styles['dockApp']} role="toolbar" aria-label="Board tools">
+          <PopoverGroup>{dock}</PopoverGroup>
+        </div>
+      ) : null}
     </div>
   );
 }

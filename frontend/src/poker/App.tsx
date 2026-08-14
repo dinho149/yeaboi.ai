@@ -331,6 +331,81 @@ export function App({ boot }: { boot: PokerBoot }) {
       variant="app"
       className={styles['app']}
       data={{ 'data-host': isHost ? 'true' : undefined }}
+      dock={
+        <>
+          <Visualizer playing={music.playing} />
+
+          <IconButton
+            icon="☰"
+            label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
+            active={railOpen}
+            className={styles['railToggle']}
+            onClick={() => setRailOpen(!railOpen)}
+          />
+
+          {isHost ? (
+            <IconButton
+              icon="🔒"
+              label={locked ? 'Unlock voting' : 'Lock voting'}
+              active={locked}
+              onClick={() => run(actions.setLocked(!locked))}
+            />
+          ) : null}
+
+          <Popover trigger={<span aria-hidden="true">♪</span>} label="Music" placement="above">
+            <MusicPlayer
+              music={music}
+              channels={boot.musicChannels}
+              footer={
+                isHost ? (
+                  <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
+                    <span aria-hidden="true">📣</span> Play for everyone
+                  </Button>
+                ) : null
+              }
+            />
+          </Popover>
+
+          <Popover
+            trigger={
+              <>
+                <span aria-hidden="true">⏱</span>
+                <TimerReadout remaining={remaining} />
+              </>
+            }
+            label="Timer"
+            placement="above"
+          >
+            {isHost ? (
+              <TimerControls
+                running={Boolean(snapshot?.timer.running)}
+                onStart={(seconds) => run(actions.startTimer(seconds))}
+                onStop={() => run(actions.stopTimer())}
+              />
+            ) : (
+              <p className={styles['popNote']}>The host controls the timer.</p>
+            )}
+          </Popover>
+
+          <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme" placement="above">
+            <ThemeSwitcher
+              value={theme}
+              onChange={chooseTheme}
+              footer={
+                isHost ? (
+                  <Button onClick={() => run(actions.castTheme(theme))}>
+                    <span aria-hidden="true">📣</span> Apply to everyone
+                  </Button>
+                ) : null
+              }
+            />
+          </Popover>
+
+          <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+            Invite
+          </IconButton>
+        </>
+      }
       bar={
         <Toolbar
         // No `brand`: the masthead above already sets the word in the six-row
@@ -341,80 +416,6 @@ export function App({ boot }: { boot: PokerBoot }) {
             {boot.scope ? `${boot.scope} · ` : ''}
             {ticketCount ? `${estimated}/${ticketCount} estimated` : 'no tickets'}
             {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
-          </>
-        }
-        tools={
-          <>
-            <Visualizer playing={music.playing} />
-
-            <IconButton
-              icon="☰"
-              label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
-              active={railOpen}
-              className={styles['railToggle']}
-              onClick={() => setRailOpen(!railOpen)}
-            />
-
-            {isHost ? (
-              <IconButton
-                icon="🔒"
-                label={locked ? 'Unlock voting' : 'Lock voting'}
-                active={locked}
-                onClick={() => run(actions.setLocked(!locked))}
-              />
-            ) : null}
-
-            <Popover trigger={<span aria-hidden="true">♪</span>} label="Music">
-              <MusicPlayer
-                music={music}
-                channels={boot.musicChannels}
-                footer={
-                  isHost ? (
-                    <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
-                      <span aria-hidden="true">📣</span> Play for everyone
-                    </Button>
-                  ) : null
-                }
-              />
-            </Popover>
-
-            <Popover
-              trigger={
-                <>
-                  <span aria-hidden="true">⏱</span>
-                  <TimerReadout remaining={remaining} />
-                </>
-              }
-              label="Timer"
-            >
-              {isHost ? (
-                <TimerControls
-                  running={Boolean(snapshot?.timer.running)}
-                  onStart={(seconds) => run(actions.startTimer(seconds))}
-                  onStop={() => run(actions.stopTimer())}
-                />
-              ) : (
-                <p className={styles['popNote']}>The host controls the timer.</p>
-              )}
-            </Popover>
-
-            <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme">
-              <ThemeSwitcher
-                value={theme}
-                onChange={chooseTheme}
-                footer={
-                  isHost ? (
-                    <Button onClick={() => run(actions.castTheme(theme))}>
-                      <span aria-hidden="true">📣</span> Apply to everyone
-                    </Button>
-                  ) : null
-                }
-              />
-            </Popover>
-
-            <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
-              Invite
-            </IconButton>
           </>
         }
       >
