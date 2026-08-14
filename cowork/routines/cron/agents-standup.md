@@ -101,6 +101,9 @@ lives in `yeaboi agents cost` and the TUI, on the machine that has the history.
    token, no owners configured, a tracker unreachable), **that note is the message** and the
    quiet line is wrong: nothing was scanned, so nothing being found is not a fact about agents.
 
+5. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - Do not run the engine twice; one `agents standup` invocation is the whole job.

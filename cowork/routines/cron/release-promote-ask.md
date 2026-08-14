@@ -116,6 +116,9 @@ entry, and the entry it drops is the one nobody then knows shipped.
    an allowlisted human on it is what applies `release:promote` and cuts the release. Any other
    shape is read as an ordinary proposal approval, so this line is a contract, not a style.
 
+6. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - **Nothing pending, or nothing new since the open ask → nothing posted.** Step 1 is the whole

@@ -484,6 +484,9 @@ The single decision point. It is the only routine that posts proposals to Slack.
    Report it weekly, on Mondays, not daily — an approval rate that moves by one issue a day is noise,
    and a number nobody can act on every morning is a number everybody stops reading.
 
+7. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - No open proposals, no open `feature-candidate` issues, **no open `integration:candidate` issues**

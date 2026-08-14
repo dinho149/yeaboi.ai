@@ -21,7 +21,10 @@ digest.
 1. `uv run python scripts/cowork_setup.py --agenda`.
 2. Hand the `lines` array to `cowork-scribe` and post it as **one channel-level message** to
    `#yeaboi-claude` (`C0BMADQQN1Z`), the lines joined by newlines, nothing added.
-3. Stop.
+3. **Check in.** Follow [check-in.md](../../check-in.md) — a reply to the message you have just
+   posted. This routine goes first on purpose: the 📅 message is the thread every other routine
+   checks in under, so the first reply under it is the one proving the thread exists.
+4. Stop.
 
 That is the whole run. It reads no issues, opens nothing, and reaches no tracker.
 

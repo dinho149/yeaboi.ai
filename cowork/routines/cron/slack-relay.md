@@ -158,6 +158,9 @@ announce who is unauthorized.
    allowlist, a renamed Slack tool, and a genuinely quiet week all read identically as silence, and
    the counts are what tell them apart.
 
+6. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Verb grammar
 
 - **✅ on a digest thread reply** (each leads with `#<issue-number>`) → `gh issue edit <n>
@@ -250,13 +253,22 @@ through `gh` and are unaffected.
 
 ## Stop conditions
 
-"Silently" below means nothing posted to Slack. The one-line run accounting (step 5) is the **last
-line of the session's own output**, read at claude.ai/code/routines — it is **never a Slack
-message**, and posting it is the one way this routine can break its own silence. A run that posts
-"_slack-relay run — read 51 messages, 0 new actions, exiting silently_" has announced, in the
+"Silently" below means **nothing posted to the channel**. The one-line run accounting (step 5) is
+the **last line of the session's own output**, read at claude.ai/code/routines — it is **never a
+Slack message**, and posting it is the one way this routine can break its own silence. A run that
+posts "_slack-relay run — read 51 messages, 0 new actions, exiting silently_" has announced, in the
 channel, that it had nothing to say; that message was observed in `#yeaboi-claude`, and a routine
 that fires seventeen times a day cannot afford it. If there is no plan, the channel learns nothing
 from this routine at all.
+
+**The check-in (step 6) is not that message, and this routine's rule for it is its own.** It is a
+thread reply under 📅, not a channel post, so it costs a reader nothing — but seventeen of them a
+day is still seventeen, and sixteen would say "nothing to relay" to somebody scrolling past the two
+that mattered. So the relay checks in **on its first fire of the day, and on any fire that acted or
+degraded** — never on a quiet fire that has already been preceded by one. One green line each
+morning is what proves the poller is alive, which is the whole reason no-ops check in anywhere; the
+sixteen repeats prove nothing the first did not. Find out which case you are in the same way you
+find the parent: today's 📅 thread already holds your earlier check-in, or it does not.
 
 - The allowlist is empty or still carries a placeholder: exit, silently.
 - Nothing unprocessed from an allowlisted human: exit, silently — the common case.

@@ -269,6 +269,9 @@ test has ever seen.
    exists when something actually changed — and a TELL names what it changed, so two of them are
    never the same message twice.
 
+8. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## If `RemoteTrigger` is unavailable
 
 The reconcile needs the `RemoteTrigger` tool, which this routine is granted and the sweeps are not.

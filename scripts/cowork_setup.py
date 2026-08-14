@@ -159,6 +159,12 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
         # grant as defence in depth, not as the lock.
         "Bash(gh issue close:*)",
         "Bash(uv run python scripts/release_channel.py:*)",
+        # Every routine checks in (`cowork/check-in.md`), and a scoped shell has to
+        # say so: the command is named in the shared contract, not in this file, so
+        # nothing here would otherwise reveal that the grant is missing. A run that
+        # cannot execute it posts nothing, and `shipped-standup` then reports it as
+        # a no-show — every hour, for a fault in a tuple.
+        "Bash(uv run python scripts/cowork_checkin.py:*)",
         "Glob",
         "Grep",
         "Read",
@@ -202,6 +208,12 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
         "Bash(gh pr list:*)",
         "Bash(uv run python scripts/cowork_relay.py:*)",
         "Bash(uv run python scripts/cowork_setup.py --json)",
+        # Every routine checks in (`cowork/check-in.md`), and a scoped shell has to
+        # say so: the command is named in the shared contract, not in this file, so
+        # nothing here would otherwise reveal that the grant is missing. A run that
+        # cannot execute it posts nothing, and `shipped-standup` then reports it as
+        # a no-show — every hour, for a fault in a tuple.
+        "Bash(uv run python scripts/cowork_checkin.py:*)",
         "Glob",
         "Grep",
         "Read",
@@ -1508,6 +1520,18 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
                 f"{routine.path} holds unscoped Bash",
                 "the relay must list the exact `gh` verbs it needs — see issue #172, where a bare "
                 "shell replaced an issue's label set while relaying a single reaction",
+            )
+        # A scoped shell must still be able to check in. The command is named in
+        # `cowork/check-in.md`, never in the routine's own file, so a scoped grant
+        # that omits it reads as complete right up until the run tries it — and the
+        # failure is silent by design (`check-in.md` says post nothing rather than
+        # improvise), which turns into `shipped-standup` reporting the routine as a
+        # no-show for as many times a day as it fires.
+        scoped = {tool for tool in tools if tool.startswith("Bash(")}
+        if scoped and not any(CHECK_IN_SCRIPT in tool for tool in scoped):
+            report.fail(
+                f"{routine.path} has a scoped shell that cannot run the check-in",
+                f"add a grant covering `{CHECK_IN_SCRIPT}` — every routine checks in",
             )
 
 
@@ -3751,6 +3775,89 @@ def recorded_triggers(text: str | None = None) -> dict[str, str]:
     return found
 
 
+def run_report(payloads: Sequence[object], *, name: str = "") -> dict:
+    """What actually fired, out of one or more ``RemoteTrigger list_runs`` responses.
+
+    The fleet reported on everything except itself. `list_runs` has always
+    returned the one thing nothing recorded — per-run status, timings and a
+    `claude.ai` link — and no verb ever asked for it, so "did Thursday's sweep
+    actually run" had no answer short of opening the routine page and counting.
+
+    Rendering lives here for the same reason every other comparison does: the
+    model makes the API calls and passes the responses through, rather than
+    reading twenty runs off a screen and summarising them from memory.
+
+    Runs are returned newest first, as the API gives them. ``name`` filters on
+    the routine name the run's title carries.
+    """
+    zone, zone_note = display_zone()
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for payload in payloads:
+        data = payload.get("data") if isinstance(payload, dict) else payload
+        for entry in data if isinstance(data, list) else []:
+            if not isinstance(entry, dict) or not entry.get("id"):
+                continue
+            # The same run reaches us twice when a caller saves one file per
+            # routine and a routine is asked for twice. Keyed on id, not on
+            # position, because the pages are independent reads.
+            if entry["id"] in seen:
+                continue
+            seen.add(entry["id"])
+            title = str(entry.get("title") or "")
+            routine = title.split("cowork:")[-1].strip() if "cowork:" in title else title.strip()
+            if name and routine != name:
+                continue
+            rows.append(
+                {
+                    "id": entry["id"],
+                    "routine": routine,
+                    "status": str(entry.get("status") or ""),
+                    "worker_status": str(entry.get("worker_status") or ""),
+                    "started": str(entry.get("created_at") or ""),
+                    "last_event": str(entry.get("last_event_at") or ""),
+                    "duration_seconds": _run_seconds(entry),
+                    "url": str(entry.get("url") or ""),
+                }
+            )
+    report = {"filter": name, "runs": rows, "note": zone_note or ""}
+    # The note rides in `lines`, not only in the JSON: `--runs --text` prints
+    # `lines` and nothing else, so a missing tz database would otherwise render
+    # every time in UTC with nothing on screen saying so.
+    report["lines"] = run_lines(rows, zone) + ([f"({zone_note})"] if zone_note else [])
+    return report
+
+
+def _run_seconds(entry: dict) -> int:
+    """Wall clock from the run's creation to its last event, or 0 when unreadable."""
+    try:
+        start = datetime.fromisoformat(str(entry.get("created_at") or "").replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(entry.get("last_event_at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    return max(0, int((end - start).total_seconds()))
+
+
+def run_lines(rows: Sequence[dict], zone: ZoneInfo | None) -> list[str]:
+    """One line per run, newest first — the finished output of ``--runs``."""
+    if not rows:
+        # A fire refused before a session existed leaves no row at all, so this is
+        # equally what a paused or never-deployed routine looks like.
+        return ["No runs — which is also how a paused or unregistered routine reads. Check `/cowork status`."]
+    lines = []
+    for row in rows:
+        try:
+            started = datetime.fromisoformat(row["started"].replace("Z", "+00:00"))
+        except ValueError:
+            stamp = "?"
+        else:
+            stamp = f"{started.astimezone(zone) if zone else started:%a %d %b %H:%M}"
+        span = row["duration_seconds"]
+        length = f"{span // 60}m" if span >= 60 else f"{span}s"
+        lines.append(f"{stamp}  {row['routine']}  {row['status']}  {length}  {row['url']}")
+    return lines
+
+
 def unregistered_routines(text: str | None = None) -> frozenset[str]:
     """Routine paths the README records no trigger id for.
 
@@ -3906,9 +4013,51 @@ def check_triggers(report: Report, paths: str | Path | Sequence[str | Path]) -> 
         report.notes.append(f"{len(plan.disabled)} routine(s) are paused: {', '.join(sorted(plan.disabled))}")
 
 
+CHECK_IN_DOC = "check-in.md"
+CHECK_IN_SCRIPT = "scripts/cowork_checkin.py"
+SWEEP_DOC = "sweep-procedure.md"
+
+
+def routines_without_check_in() -> list[str]:
+    """Routine files that neither check in nor inherit a step that does.
+
+    Every run closes with one (`cowork/check-in.md`), and a routine that quietly
+    stops is invisible at run time in the worst possible way: its check-in is the
+    thing that says it ran, so its absence reads as the routine having *failed*,
+    and `cron/shipped-standup.md` will name it as a no-show every evening for a
+    fault that is really a missing line in a markdown file.
+
+    A routine owns its steps or it delegates them, and the two are told apart by
+    the `## Run` heading: the thirteen sweeps have none and say "Follow
+    sweep-procedure.md" instead. Mentioning that file is *not* enough on its own —
+    `cron/digest.md` and `cron/integrations-campaign.md` both cite it while
+    running their own steps, and a rule that let a citation stand in for
+    delegation would have exempted them silently.
+    """
+    inherited = CHECK_IN_DOC in (COWORK / SWEEP_DOC).read_text(encoding="utf-8")
+    missing = []
+    for path in sorted(ROUTINES_DIR.rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        if CHECK_IN_DOC in text:
+            continue
+        # An exact match, not a prefix: a future `## Running notes` heading would
+        # otherwise flip a sweep out of the inherited-step exemption, silently.
+        owns_its_steps = any(line.strip() == "## Run" for line in text.splitlines())
+        if not owns_its_steps and SWEEP_DOC in text and inherited:
+            continue
+        missing.append(str(path.relative_to(ROUTINES_DIR)))
+    return missing
+
+
 def run_check(local_only: bool, triggers: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
+
+    for path in routines_without_check_in():
+        report.fail(
+            f"routine `{path}` never checks in",
+            f"add the final step: follow cowork/{CHECK_IN_DOC}",
+        )
 
     if triggers:
         check_triggers(report, triggers)
@@ -3993,7 +4142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="print whether an open issue already reports this standing fault "
         "(reported=null means the query failed — stay silent, do not post)",
     )
-    parser.add_argument("--text", action="store_true", help="with --agenda, print the rendered message, not JSON")
+    parser.add_argument("--text", action="store_true", help="with --agenda or --runs, print the lines, not JSON")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="with --agenda, the day to report on (default today)")
     parser.add_argument(
         "--triggers",
@@ -4003,6 +4152,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "Repeat it once the fleet outgrows a page: the list plus a `get` per recorded id",
     )
     parser.add_argument("--plan", action="store_true", help="with --triggers, print the reconcile plan as JSON")
+    parser.add_argument(
+        "--runs",
+        action="append",
+        metavar="FILE",
+        help="a saved `RemoteTrigger list_runs` response; repeatable, one per routine asked about",
+    )
+    parser.add_argument("--routine", default="", help="with --runs, only this routine's runs")
     parser.add_argument(
         "--environment",
         metavar="ID",
@@ -4096,6 +4252,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         # only job is to decide whether to speak.
         github_ready()
         return report_blocked(args.blocked_report)
+
+    if args.runs:
+        payloads = []
+        for path in args.runs:
+            try:
+                payloads.append(json.loads(Path(path).read_text(encoding="utf-8")))
+            except (OSError, ValueError) as exc:
+                fail(f"--runs `{path}` is not readable JSON: {exc}")
+                return 2
+        report = run_report(payloads, name=args.routine)
+        print("\n".join(report["lines"]) if args.text else json.dumps(report, indent=2))
+        return 0
 
     if args.agenda:
         try:

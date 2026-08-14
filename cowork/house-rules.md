@@ -329,8 +329,10 @@ become the route by which an exploit gets published.
   check is green. Arming it is allowed; clicking merge, bypassing a check, or pushing to `main`
   is not, and no widening of the auto lane changes that.
 - **One coherent change per run.** No grab-bags.
-- **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no Slack message. A routine
-  that always finds something is a routine inventing work.
+- **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no channel message. A
+  routine that always finds something is a routine inventing work. It still checks in
+  ([check-in.md](check-in.md)): a 🟢 thread reply saying `nothing to do` is the only thing that
+  separates a quiet run from one that never fired, and the fleet could not tell those apart at all.
 - **Label every PR** `cowork`, `workstream:<name>`, and the find's `type:<type>` — the daily
   standup takes its `[type]` tag from the PR's labels. The `cowork` label is also what guarantees
   `claude-review.yml` reviews it: that workflow skips `dependabot[bot]` and `github-actions[bot]`,

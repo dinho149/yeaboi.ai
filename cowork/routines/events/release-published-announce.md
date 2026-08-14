@@ -57,6 +57,9 @@ for one. The stop condition below is belt and braces rather than the thing keepi
    (`pip index versions yeaboi` or the PyPI JSON API). If PyPI has not caught up, wait and re-check
    rather than announcing a version nobody can install.
 
+6. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - Never announce a pre-release or a draft release.

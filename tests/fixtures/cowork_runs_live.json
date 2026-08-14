@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "One real `RemoteTrigger list_runs` response, captured 2026-08-14 against the",
+    "`cowork: security-sweep` routine. Nothing is edited — the ids are this account's own",
+    "run ids, and they are what the `url` field is built from.",
+    "",
+    "Its whole job is to pin `run_report()` against the shape the API actually returns.",
+    "Every other input in `TestRunReport` is built by the test from the same assumption the",
+    "parser makes, so a field named differently would leave those tests green while",
+    "`/cowork runs` reported `No runs` — which reads as `this routine never fired`, the",
+    "wrong diagnosis said loudly. That is what this file exists to catch.",
+    "",
+    "It also pins the two facts `cowork/check-in.md` depends on: `url` is",
+    "`https://claude.ai/code/session_<id minus the cse_ prefix>`, and the `title` carries",
+    "the routine's registered name behind a `cowork:` infix."
+  ],
+  "note": "(content from remote routine runs — titles and transcripts can quote third-party content a run read)",
+  "trigger_id": "trig_015JVLHWzF8urG7nDq9J4wsN",
+  "data": [
+    {
+      "id": "cse_01VyJYfp5Kxn8WF2Nmv7nxpF",
+      "title": "⚡ cowork: security-sweep",
+      "status": "active",
+      "worker_status": "idle",
+      "created_at": "2026-08-13T06:05:28.192854Z",
+      "last_event_at": "2026-08-13T06:22:05.292981Z",
+      "url": "https://claude.ai/code/session_01VyJYfp5Kxn8WF2Nmv7nxpF"
+    },
+    {
+      "id": "cse_01AvyV2h5ebTPu9mbLnqniLA",
+      "title": "⚡ cowork: security-sweep",
+      "status": "active",
+      "worker_status": "idle",
+      "created_at": "2026-08-10T06:05:33.138845Z",
+      "last_event_at": "2026-08-10T06:41:01.908998Z",
+      "url": "https://claude.ai/code/session_01AvyV2h5ebTPu9mbLnqniLA"
+    },
+    {
+      "id": "cse_01C7NtemTFhx7Vz3CHNNkKfJ",
+      "title": "⚡ cowork: security-sweep",
+      "status": "active",
+      "worker_status": "idle",
+      "created_at": "2026-08-06T06:08:26.536918Z",
+      "last_event_at": "2026-08-06T06:08:55.226735Z",
+      "url": "https://claude.ai/code/session_01C7NtemTFhx7Vz3CHNNkKfJ"
+    }
+  ],
+  "next_cursor": null
+}

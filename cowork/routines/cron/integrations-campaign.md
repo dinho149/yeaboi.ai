@@ -115,6 +115,9 @@ five weekdays already carry a `0 7` sweep, and `slack-relay` fires on the hour.
    Rotate to the provider whose cassette is oldest. This is ordinary auto-lane work and files
    ordinary proposals. Nothing found is a normal outcome: exit silently.
 
+6. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - **An open PR on `workstream:integrations`** → drive it, stop. One open PR per workstream holds
