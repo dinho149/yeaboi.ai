@@ -24,15 +24,13 @@
    board and the credit, inside a curved border inset from the window edge.
    Nothing here scrolls the window — the board scrolls inside itself.
 
-   `position: fixed` with an `inset`, rather than `margin` + `100dvh` height.
-   Two reasons, and the second is the one that decided it. The height arithmetic
-   is the browser's either way, but a top margin on the first in-flow child
-   collapses out through `body`, so the margin box came to slightly more than
-   the viewport and the window scrolled by a few pixels — the exact bug this
-   variant exists to remove, reintroduced by the fix for it. And taking the
-   shell out of flow means the document has no scrollable content at all, so
-   there is no scrollbar to suppress on `body` and no surface-specific
-   `overflow: hidden` for a future page to forget.
+   `position: fixed` with `inset: 0`, rather than a `100dvh` height in flow.
+   Taking the shell out of flow means the document has no scrollable content at
+   all, so there is no scrollbar to suppress on `body` and no surface-specific
+   `overflow: hidden` for a future page to forget. In flow it would also be one
+   stray margin away from scrolling again — a top margin on the first in-flow
+   child collapses out through `body`, which puts the margin box over the
+   viewport by exactly that much.
 
    `dvh` is therefore not needed here and `inset` is not `dvh`-aware anyway:
    a fixed element's containing block is the *visual* viewport, which is what
@@ -42,14 +40,19 @@
   max-width: none;
   padding: 0;
   position: fixed;
-  inset: var(--s2);
+  /* Flush to the window, not inset from it. The frame is the edge of the app,
+     and an app that stops a few pixels short of the glass reads as a window
+     floating on a desktop — which is the terminal-window costume this replaced,
+     rebuilt one layer out. */
+  inset: 0;
   display: flex;
   flex-direction: column;
-  /* The frame. Same device as the TUI's panel border, at the same weight —
-     a hairline in the text colour rather than the `--line` used for furniture
-     *inside* the screen, so the edge of the app reads as the edge of the app
-     and not as one more card. */
-  border: 1px solid var(--screen-frame);
+  /* The frame. Same device as the TUI's panel border: the text colour rather
+     than the `--line` used for furniture *inside* the screen, so the edge of
+     the app reads as the edge of the app and not as one more card. 2px rather
+     than a hairline — at the very edge of the glass, against a browser's own
+     chrome, 1px is a rendering artifact. */
+  border: 2px solid var(--screen-frame);
   border-radius: var(--r-l);
   background: var(--bg);
   /* The curve is only a curve if what is behind it is clipped to it — the
