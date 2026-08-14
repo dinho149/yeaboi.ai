@@ -94,24 +94,11 @@ def main() -> int:
     board.cast_vote("dev-ada", "3")
 
     server = PokerServer(board)
-    # Fixed credentials, overwritten before start() binds anything.
-    #
-    # A real board mints a fresh token, admin secret and join code per session,
-    # which is right — they are the access control. In development the server
-    # gets restarted every time the bundles are rebuilt, and a new token each
-    # time silently kills every tab that is already open: `loadSession` strips
-    # the credentials out of the address bar after boot, so a reload falls back
-    # to the token in sessionStorage, which the restart just invalidated. The
-    # board then polls forever against a 403, which the stream reports as
-    # `retrying` — an empty board reading "reconnecting…" with nothing to say
-    # that the session is over rather than the network down.
-    #
-    # Safe only because of what this script is: an in-memory board on a
-    # loopback socket with four fake tickets, never a real one, never tunnelled.
-    # S105 is right about the shape and wrong about the risk here — see above.
+    # Fixed credentials so a rebuild-and-restart does not invalidate the token
+    # already open tabs are holding. Dev only: in-memory board, loopback socket.
     server.token = "dev-token"  # noqa: S105
     server.admin_token = "dev-admin"  # noqa: S105
-    server.join_code = "DEVB-OARD"  # the XXXX-XXXX shape /api/join compares against
+    server.join_code = "DEVB-OARD"  # /api/join compares the XXXX-XXXX shape
     server.start()
 
     api = f"http://127.0.0.1:{server.port}"

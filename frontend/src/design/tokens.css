@@ -95,14 +95,11 @@
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
-  /* The edge of the screen itself — the border a live board draws around the
-     whole viewport, the way the TUI draws one around the terminal. Deliberately
-     far brighter than `--line-strong`: every other rule in the app separates
-     two things *inside* the screen and should recede, while this one says where
-     the app stops, and at 14% it read as a rendering artifact rather than a
-     frame. Derived from `--text`, not a literal white, so the light themes get
-     a dark frame instead of an invisible one. */
+  /* The border a live board draws around the whole viewport. Much brighter than
+     `--line-strong`, which is for furniture inside the screen. */
   --screen-frame: color-mix(in srgb, var(--text) 75%, transparent);
+  /* What shows outside that border, in the corners the radius leaves. */
+  --screen-void: #000;
   --focus: var(--accent2);
 
   /* ── Jira-style status lozenges ─────────────────────────────────────

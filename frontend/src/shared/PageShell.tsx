@@ -20,32 +20,15 @@
  * `document` is the original: a centred column that grows with its content and
  * scrolls the window. Exports and any other page that is fundamentally a file.
  *
- * `app` is for the live boards, and it is **one screen**: a fixed box inset
- * from the window edge, framed in a curved border the way the TUI frames a
- * terminal, holding the masthead strip, the sticky bar, the board and the
- * credit. The window itself never scrolls — anything that has to scroll does
- * it inside the board.
- *
- * It went through both alternatives first. A `100dvh` grid locked the masthead
- * and credit to the top and bottom edges and spent a fifth of the viewport on
- * a wordmark read once. Letting the masthead *scroll away* fixed that and
- * bought a worse problem: a board is the one surface a visitor stares at for
- * forty minutes, and one that answers a stray wheel-flick by sliding its own
- * identity off the top — or worse, sliding the deck half out of view — is a
- * board you have to keep re-aiming. So the masthead shrank instead of moving.
+ * `app` is for the live boards: one screen, fixed to the viewport inside a
+ * curved frame, holding the masthead strip, the sticky bar, the board and the
+ * credit. The window never scrolls; the board scrolls inside itself.
  *
  * ## Density
  *
- * The full masthead is around 260px — a hero on a desktop, and two thirds of a
- * phone. `app` surfaces are therefore always `compact`: the wordmark drops to
- * the two-row face and sits inline with the title on a single strip, and the
- * facts are suppressed (a board's facts already live in the toolbar subtitle).
- * There is no viewport that can pay 260px for a header on a page that must not
- * scroll, so this is a constant rather than the `auto` media query it was.
- *
- * `document` keeps the terminal window — traffic lights, `yeaboi — <mode>`
- * title bar — because on a file that chrome is branding. On a live board it
- * was a costume, and the primitive's own comment said so.
+ * The full masthead is ~260px, which a screen that must not scroll cannot pay
+ * for, so `app` is always `compact`: two-row wordmark inline with the title,
+ * no facts. Only `document` wears the terminal window.
  */
 
 import type { ReactNode } from 'react';
@@ -68,14 +51,12 @@ const HERO_VIEWPORT = '(min-width: 1100px) and (min-height: 800px)';
 
 export interface PageShellProps {
   chrome: PageChrome;
-  /** `document` grows and scrolls the window; `app` is a 100dvh grid. */
+  /** `document` grows and scrolls the window; `app` is one fixed screen. */
   variant?: 'document' | 'app';
   /**
    * `hero` is the full masthead, `compact` drops the six-row wordmark and the
-   * facts. `auto` picks per viewport. `app` defaults to `compact` — its screen
-   * does not scroll, so there is no viewport that can afford the hero — and
-   * documents default to `hero`, because a file is read at whatever size it is
-   * read at and has no fixed height to protect.
+   * facts, `auto` picks per viewport. `app` defaults to `compact`, `document`
+   * to `hero`.
    */
   density?: 'hero' | 'compact' | 'auto';
   /**
@@ -188,20 +169,8 @@ export function PageShell({
 
   return (
     <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
-      {/* The board wears no window. `TerminalFrame`'s own comment reserves it
-          for "gate and export headers only — never a live board, where it would
-          be a costume", and the shell was the one caller ignoring that. What
-          the board gets instead is the frame around the *whole screen*, drawn
-          by `.shellApp` — the same device the TUI uses, at the size the TUI
-          uses it. Two chrome layers, an inner window inside an outer one, is
-          what made the first version read as a screenshot of an app rather
-          than the app. */}
-      {/* A div, not a <header>. `<header>` at the top level of a document is the
-          `banner` landmark, and a board already has one from the document
-          variant's own structure — two unlabelled banners is an axe
-          `landmark-unique` violation, which a11y.test.tsx caught on the first
-          attempt. The document variant's masthead is a div too (it is
-          TerminalFrame's root), so this is parity rather than a concession. */}
+      {/* A div, not a <header>: a second unlabelled `banner` landmark is an axe
+          violation. */}
       {app ? (
         <div className={cx(styles['masthead'], styles['mastheadApp'])}>{head}</div>
       ) : (

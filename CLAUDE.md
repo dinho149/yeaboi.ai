@@ -210,12 +210,30 @@ deliberately, and say why, when the sidecar must not write behind it).
 - Imports sorted by ruff (isort rules: stdlib, third-party, local)
 - Tests in `tests/`, source in `src/yeaboi/`
 
+### Comments
+
+**Legible code first.** Before writing a comment, try to make it unnecessary: a
+clearer name, a smaller function, an extracted constant, an earlier return. A
+comment is what is left over when the code genuinely cannot say it itself.
+
+When one is needed:
+
+- **Short and concise** — a line or two, not a paragraph and not a section.
+- **Say what the code does**, or what a caller must know to use it safely.
+- **No war notes.** No history of the bug that was fixed, no record of what was
+  tried first, no reasoning about alternatives considered, no narration of the
+  problem being solved. That goes in the commit message or the PR.
+
+Much of the existing tree predates this and reads the other way. Match the rule,
+not the neighbours; trim a long comment when you are editing the code under it,
+but do not sweep files you are not otherwise touching.
+
 ## REQUIRED: Learning-First Development
 
 This is the developer's first AI agent. These are NOT optional — follow them on every implementation task.
 
 1. **ALWAYS add `# See docs: <section name>` comments** when introducing a LangGraph or LangChain concept for the first time in a file. Cross-reference the relevant page at https://yeaboi.ai/docs/ (or the local `docs/docs/` source) so the developer can look up the theory.
-2. **ALWAYS explain LangGraph/LangChain concepts in code comments** on first use — what a reducer does, why `add_messages` exists, what `StateGraph` expects, what `bind_tools` does, etc. Do NOT assume familiarity with these frameworks.
+2. **ALWAYS explain LangGraph/LangChain concepts in code comments** on first use — what a reducer does, why `add_messages` exists, what `StateGraph` expects, what `bind_tools` does, etc. Do NOT assume familiarity with these frameworks. This is the one carve-out from the comment rule above: a sentence naming the concept plus the `# See docs:` pointer, not a tutorial in the source.
 3. **ALWAYS explain architectural decisions** in your response — when choosing between approaches, state the trade-offs and why this approach was chosen.
 
 Key docs sections to reference:

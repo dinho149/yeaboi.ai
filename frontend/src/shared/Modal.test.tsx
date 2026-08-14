@@ -16,18 +16,9 @@ const dialog = (): HTMLDialogElement => document.querySelector('dialog') as HTML
 
 describe('Modal', () => {
   it('restores the auto margin the global reset takes away', () => {
-    // Centring a top-layer <dialog> is `margin: auto` against the UA's
-    // `inset: 0` and nothing else. palette.css opens with
-    // `* { box-sizing: border-box; margin: 0; padding: 0 }`, which zeroes it —
-    // so every modal on every surface rendered pinned to the top-left corner
-    // of the viewport. jsdom does not lay out or centre anything, so no
-    // behavioural test can see this; the declaration is the assertion.
-    //
-    // The `dialog` qualifier is asserted too, and is not cosmetic: without it
-    // the rule ties on specificity with every `.container > * + *` stacking
-    // idiom in the codebase, and loses or wins on bundle order — which is how
-    // the same modal came out centred on one board and flush to the top edge
-    // on the other.
+    // jsdom lays nothing out, so the declaration is the only thing to assert.
+    // The `dialog` qualifier matters: without it the rule ties on specificity
+    // with the `* { margin: 0 }` reset and every `.x > * + *` stacking rule.
     const block = /dialog\.modal\s*\{([^}]*)\}/.exec(sharedCss)?.[1] ?? '';
     expect(block, 'no `dialog.modal` rule in shared.module.css').toBeTruthy();
     expect(block).toMatch(/margin\s*:\s*auto/);

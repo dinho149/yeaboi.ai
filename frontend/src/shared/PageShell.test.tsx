@@ -80,10 +80,8 @@ describe('PageShell', () => {
   });
 
   it('wears the terminal window on a document and not on a board', () => {
-    // The frame title is the only part of TerminalFrame that renders text, so
-    // it stands in for the whole window — traffic lights included. A board's
-    // chrome is the border around the screen itself; an inner window inside
-    // that outer one is the costume the primitive's own comment rules out.
+    // The frame title is the only text TerminalFrame renders, so it stands in
+    // for the whole window.
     const { unmount } = render(
       <PageShell chrome={CHROME}>
         <p>report</p>
@@ -116,8 +114,7 @@ describe('PageShell', () => {
     });
 
     it('drops them when it cannot', () => {
-      // The masthead is ~250px hero. On a 375x667 phone that leaves two cards,
-      // so compact keeps the wordmark and the title and sheds the rest.
+      // Compact keeps the wordmark and the title and sheds the rest.
       render(
         <PageShell chrome={CHROME} variant="app" density="compact">
           <p>board</p>
@@ -132,9 +129,8 @@ describe('PageShell', () => {
     });
 
     it('an app surface is compact regardless of the viewport', () => {
-      // Its screen does not scroll, so there is no window big enough to buy a
-      // 260px header with. This was `auto` and resolved per viewport, which on
-      // a desktop rendered the hero and pushed the board off the bottom.
+      // Its screen does not scroll, so no window is big enough for a 260px
+      // header.
       restore = setRoomy(true);
       render(
         <PageShell chrome={CHROME} variant="app">
@@ -214,8 +210,10 @@ describe('PageShell', () => {
       </PageShell>
     );
 
+    // The masthead's title, not the frame title: a board renders no frame, and
+    // indexOf would return -1 and pass without asserting anything.
     const html = container.innerHTML;
-    expect(html.indexOf('yeaboi — retro')).toBeLessThan(html.indexOf('toolbar'));
+    expect(html.indexOf('Sprint Retro')).toBeLessThan(html.indexOf('toolbar'));
     expect(html.indexOf('toolbar')).toBeLessThan(html.indexOf('board'));
   });
 });
