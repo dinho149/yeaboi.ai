@@ -1972,7 +1972,7 @@ dialog._modal_6k8bd_392 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_1efe8_32 {
+._app_1dsoy_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -1982,7 +1982,7 @@ dialog._modal_6k8bd_392 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_1efe8_42 {
+._scroll_1dsoy_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -1992,7 +1992,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_1efe8_52 {
+._layout_1dsoy_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2004,7 +2004,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_1efe8_64 {
+._main_1dsoy_64 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2013,7 +2013,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_1efe8_52 {
+  ._layout_1dsoy_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2021,7 +2021,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 699px) {
-  ._layout_1efe8_52 {
+  ._layout_1dsoy_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2030,7 +2030,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_1efe8_90 {
+._rail_1dsoy_90 {
   position: sticky;
   top: var(--s3);
   /* dvh, not vh — see the header note. */
@@ -2042,11 +2042,11 @@ dialog._modal_6k8bd_392 {
   padding: var(--s3);
 }
 
-._railHead_1efe8_102 {
+._railHead_1dsoy_102 {
   margin-bottom: var(--s2);
 }
 
-._railList_1efe8_106 {
+._railList_1dsoy_106 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2055,7 +2055,7 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._railItem_1efe8_115 {
+._railItem_1dsoy_115 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2072,12 +2072,12 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._railItem_1efe8_115:hover {
+._railItem_1dsoy_115:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_1efe8_137 {
+._railDot_1dsoy_137 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2085,30 +2085,30 @@ dialog._modal_6k8bd_392 {
   background: var(--line-strong);
 }
 
-._railCurrent_1efe8_145 {
+._railCurrent_1dsoy_145 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_1efe8_145 ._railDot_1efe8_137 {
+._railCurrent_1dsoy_145 ._railDot_1dsoy_137 {
   background: var(--accent);
 }
 
-._railPeeking_1efe8_154 {
+._railPeeking_1dsoy_154 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_1efe8_159 ._railDot_1efe8_137 {
+._railDone_1dsoy_159 ._railDot_1dsoy_137 {
   background: var(--ok);
 }
 
-._railDone_1efe8_159 ._railText_1efe8_163 {
+._railDone_1dsoy_159 ._railText_1dsoy_163 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_1efe8_163 {
+._railText_1dsoy_163 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2116,29 +2116,29 @@ dialog._modal_6k8bd_392 {
   white-space: nowrap;
 }
 
-._railKey_1efe8_176 {
+._railKey_1dsoy_176 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_1efe8_182 {
+._railPts_1dsoy_182 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_1efe8_189 {
+._railToggle_1dsoy_189 {
   display: none;
 }
 
-._railBackdrop_1efe8_193 {
+._railBackdrop_1dsoy_193 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_1efe8_90 {
+  ._rail_1dsoy_90 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2152,15 +2152,15 @@ dialog._modal_6k8bd_392 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_1efe8_212 {
+  ._railOpen_1dsoy_212 {
     transform: translateX(0);
   }
 
-  ._railToggle_1efe8_189 {
+  ._railToggle_1dsoy_189 {
     display: inline-flex;
   }
 
-  ._railBackdrop_1efe8_193 {
+  ._railBackdrop_1dsoy_193 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2171,42 +2171,42 @@ dialog._modal_6k8bd_392 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_1efe8_231 {
+._ticket_1dsoy_231 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._ticketPeek_1efe8_238 {
+._ticketPeek_1dsoy_238 {
   border-style: dashed;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
-._tkrow_1efe8_243 {
+._tkrow_1dsoy_243 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_1efe8_250 {
+._key_1dsoy_250 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_1efe8_250 a {
+._key_1dsoy_250 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_1efe8_250 a:hover {
+._key_1dsoy_250 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_1efe8_266 {
+._phaseTag_1dsoy_266 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2217,37 +2217,37 @@ dialog._modal_6k8bd_392 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_1efe8_277 {
+._phaseTagOn_1dsoy_277 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_1efe8_283 {
+._phaseTagPeek_1dsoy_283 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_1efe8_288 {
+._tkSummary_1dsoy_288 {
   margin: var(--s2) 0 var(--s3);
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_1efe8_295 {
+._chips_1dsoy_295 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
 
-._bodyLabel_1efe8_302 {
+._bodyLabel_1dsoy_302 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_1efe8_307 {
+._desc_1dsoy_307 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2255,18 +2255,18 @@ dialog._modal_6k8bd_392 {
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against. */
-._descClipped_1efe8_315 {
+._descClipped_1dsoy_315 {
   max-height: 9em;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_1efe8_322 {
+._descFade_1dsoy_322 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_1efe8_326 {
+._descToggle_1dsoy_326 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2278,13 +2278,13 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._descEmpty_1efe8_338 {
+._descEmpty_1dsoy_338 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_1efe8_344 {
+._peekBanner_1dsoy_344 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2298,7 +2298,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._peekActions_1efe8_358 {
+._peekActions_1dsoy_358 {
   display: flex;
   gap: var(--s2);
 }
@@ -2306,14 +2306,14 @@ dialog._modal_6k8bd_392 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_1efe8_366 {
+._pkbtnGo_1dsoy_366 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_1efe8_373 {
+._results_1dsoy_373 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -2323,7 +2323,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._resultsHead_1efe8_383 {
+._resultsHead_1dsoy_383 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2331,18 +2331,18 @@ dialog._modal_6k8bd_392 {
   flex-wrap: wrap;
 }
 
-._resultsSum_1efe8_391 {
+._resultsSum_1dsoy_391 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_1efe8_391 b {
+._resultsSum_1dsoy_391 b {
   color: var(--accent);
 }
 
-._dist_1efe8_402 {
+._dist_1dsoy_402 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2351,7 +2351,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s1);
 }
 
-._drow_1efe8_411 {
+._drow_1dsoy_411 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2362,19 +2362,19 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._dval_1efe8_422 {
+._dval_1dsoy_422 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_1efe8_427 {
+._dtrack_1dsoy_427 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_1efe8_434 {
+._dbar_1dsoy_434 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2382,21 +2382,21 @@ dialog._modal_6k8bd_392 {
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_1efe8_442 ._dbar_1efe8_434 {
+._drowTop_1dsoy_442 ._dbar_1dsoy_434 {
   background: var(--accent);
 }
 
-._drowTop_1efe8_442 ._dval_1efe8_422 {
+._drowTop_1dsoy_442 ._dval_1dsoy_422 {
   color: var(--accent);
 }
 
-._dcount_1efe8_450 {
+._dcount_1dsoy_450 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_1efe8_456 {
+._ainote_1dsoy_456 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2404,7 +2404,7 @@ dialog._modal_6k8bd_392 {
   background: var(--panel-2);
 }
 
-._aiHead_1efe8_464 {
+._aiHead_1dsoy_464 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2415,57 +2415,57 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._aiBody_1efe8_475 {
+._aiBody_1dsoy_475 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_1efe8_481 {
+._conf_1dsoy_481 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_1efe8_488 {
+._conf-high_1dsoy_488 {
   color: var(--ok);
 }
 
-._conf-medium_1efe8_492 {
+._conf-medium_1dsoy_492 {
   color: var(--warn);
 }
 
-._conf-low_1efe8_496 {
+._conf-low_1dsoy_496 {
   color: var(--danger);
 }
 
-._ev_1efe8_500 {
+._ev_1dsoy_500 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1efe8_507 {
+._sug_1dsoy_507 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1efe8_507 b {
+._sug_1dsoy_507 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_1efe8_520 ._aiBody_1efe8_475::after {
+._ainotePending_1dsoy_520 ._aiBody_1dsoy_475::after {
   content: '…';
-  animation: _dots_1efe8_1 1.2s steps(4, end) infinite;
+  animation: _dots_1dsoy_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_1efe8_1 {
+@keyframes _dots_1dsoy_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2476,14 +2476,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_1efe8_536 {
+._duel_1dsoy_536 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_1efe8_543 {
+._duelHead_1dsoy_543 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2495,13 +2495,13 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._duelBody_1efe8_555 {
+._duelBody_1dsoy_555 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_1efe8_561 {
+._duelTranscript_1dsoy_561 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2510,41 +2510,41 @@ dialog._modal_6k8bd_392 {
   overflow-y: auto;
 }
 
-._recind_1efe8_570 {
+._recind_1dsoy_570 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_1efe8_577 {
+._recDot_1dsoy_577 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_1efe8_1 1.4s ease-in-out infinite;
+  animation: _recpulse_1dsoy_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_1efe8_1 {
+@keyframes _recpulse_1dsoy_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_1efe8_591 {
+._norec_1dsoy_591 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_1efe8_597 {
+._dualrow_1dsoy_597 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_1efe8_604 {
+._duelist_1dsoy_604 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2556,31 +2556,31 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._duelistSpeaking_1efe8_616 {
+._duelistSpeaking_1dsoy_616 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_1efe8_621 {
+._duelFace_1dsoy_621 {
   font-size: var(--fs-xl);
 }
 
-._duelName_1efe8_625 {
+._duelName_1dsoy_625 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_1efe8_630 {
+._duelValue_1dsoy_630 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_1efe8_630 b {
+._duelValue_1dsoy_630 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_1efe8_640 {
+._duelFloor_1dsoy_640 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2588,12 +2588,12 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._duelMic_1efe8_648 {
+._duelMic_1dsoy_648 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_1efe8_653 {
+._vs_1dsoy_653 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2601,7 +2601,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._youup_1efe8_661 {
+._youup_1dsoy_661 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2611,7 +2611,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._micRow_1efe8_671 {
+._micRow_1dsoy_671 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2619,7 +2619,7 @@ dialog._modal_6k8bd_392 {
   margin-top: var(--s3);
 }
 
-._micBtn_1efe8_679 {
+._micBtn_1dsoy_679 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2631,24 +2631,21 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._hint_1efe8_691 {
+._hint_1dsoy_691 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
 /* ── The table ───────────────────────────────────────────────────────── */
 
-/* The table and the deck sit together on the bottom of the column; the gap
-   opens above them. */
-._table_1efe8_700 {
+/* Sits on the bottom of the column, just above the deck. No panel of its own:
+   the seats read as part of the voting furniture, not as another card. */
+._table_1dsoy_700 {
   margin-top: auto;
-  background: var(--felt);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  padding: var(--s4);
+  padding: 0 var(--s1);
 }
 
-._tableHead_1efe8_708 {
+._tableHead_1dsoy_705 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2656,18 +2653,18 @@ dialog._modal_6k8bd_392 {
   margin-bottom: var(--s3);
 }
 
-._tableWait_1efe8_716 {
+._tableWait_1dsoy_713 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._vempty_1efe8_722 {
+._vempty_1dsoy_719 {
   color: var(--dim);
   font-size: var(--fs-s);
 }
 
-._vrow_1efe8_727 {
+._vrow_1dsoy_724 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2676,7 +2673,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._voter_1efe8_736 {
+._voter_1dsoy_733 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2684,7 +2681,7 @@ dialog._modal_6k8bd_392 {
   width: 68px;
 }
 
-._face_1efe8_744 {
+._face_1dsoy_741 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2696,7 +2693,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-l);
 }
 
-._tick_1efe8_231 {
+._tick_1dsoy_231 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2719,7 +2716,7 @@ dialog._modal_6k8bd_392 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_1efe8_779 {
+._vcard_1dsoy_776 {
   display: grid;
   place-items: center;
   width: 44px;
@@ -2731,18 +2728,18 @@ dialog._modal_6k8bd_392 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_1efe8_1 320ms var(--ease) both;
+  animation: _flip_1dsoy_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_1efe8_1 {
+@keyframes _flip_1dsoy_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_1efe8_802 {
+._nm_1dsoy_799 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2753,7 +2750,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_1efe8_813 {
+._deckZone_1dsoy_810 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2786,13 +2783,13 @@ dialog._modal_6k8bd_392 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_1efe8_32[data-host='true'] {
+  ._app_1dsoy_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_1efe8_852 {
+._deckStatus_1dsoy_849 {
   margin: 0 0 var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -2801,18 +2798,18 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._deckMine_1efe8_861 {
+._deckMine_1dsoy_858 {
   color: var(--accent);
 }
 
-._deck_1efe8_813 {
+._deck_1dsoy_810 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s2);
 }
 
-._pcard_1efe8_872 {
+._pcard_1dsoy_869 {
   position: relative;
   width: 52px;
   height: 74px;
@@ -2827,17 +2824,17 @@ dialog._modal_6k8bd_392 {
     border-color var(--dur-fast) var(--ease);
 }
 
-._pcard_1efe8_872:hover:not(:disabled) {
+._pcard_1dsoy_869:hover:not(:disabled) {
   transform: translateY(-4px);
   border-color: var(--accent);
 }
 
-._pcard_1efe8_872:disabled {
+._pcard_1dsoy_869:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-._pcardSel_1efe8_897 {
+._pcardSel_1dsoy_894 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--card));
   color: var(--accent);
@@ -2847,11 +2844,11 @@ dialog._modal_6k8bd_392 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_1efe8_907 {
+._pcardWait_1dsoy_904 {
   border-style: dashed;
 }
 
-._ci_1efe8_911 {
+._ci_1dsoy_908 {
   position: absolute;
   top: 4px;
   left: 5px;
@@ -2859,7 +2856,7 @@ dialog._modal_6k8bd_392 {
   opacity: 0.75;
 }
 
-._ciFlip_1efe8_919 {
+._ciFlip_1dsoy_916 {
   top: auto;
   left: auto;
   right: 5px;
@@ -2867,14 +2864,14 @@ dialog._modal_6k8bd_392 {
   transform: rotate(180deg);
 }
 
-._cv_1efe8_927 {
+._cv_1dsoy_924 {
   font-size: var(--fs-l);
   font-weight: 700;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_1efe8_934 {
+._console_1dsoy_931 {
   position: sticky;
   top: var(--s3);
   max-height: calc(100dvh - var(--s6) * 2);
@@ -2888,13 +2885,13 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._cbar_1efe8_948 {
+._cbar_1dsoy_945 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_1efe8_954 {
+._cphase_1dsoy_951 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2902,30 +2899,30 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._cbody_1efe8_962 {
+._cbody_1dsoy_959 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._cgroup_1efe8_968 {
+._cgroup_1dsoy_965 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_1efe8_974,
-._navrow_1efe8_975 {
+._crow_1dsoy_971,
+._navrow_1dsoy_972 {
   display: flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._duelSlot_1efe8_981 {
+._duelSlot_1dsoy_978 {
   min-height: var(--tap);
 }
 
-._duelInline_1efe8_985 {
+._duelInline_1dsoy_982 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -2934,12 +2931,12 @@ dialog._modal_6k8bd_392 {
   border-radius: var(--r-s);
 }
 
-._seg_1efe8_994 {
+._seg_1dsoy_991 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_1efe8_999 {
+._preset_1dsoy_996 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -2951,8 +2948,8 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._clabel_1efe8_1011,
-._finlab_1efe8_1012 {
+._clabel_1dsoy_1008,
+._finlab_1dsoy_1009 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2960,38 +2957,38 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._chint_1efe8_1020,
-._cnotice_1efe8_1021 {
+._chint_1dsoy_1017,
+._cnotice_1dsoy_1018 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_1efe8_1021 {
+._cnotice_1dsoy_1018 {
   color: var(--warn);
 }
 
-._readout_1efe8_1032 {
+._readout_1dsoy_1029 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_1efe8_1032 b {
+._readout_1dsoy_1029 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_1efe8_1044 {
+._finrow_1dsoy_1041 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_1efe8_1051 {
+._finInput_1dsoy_1048 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3003,12 +3000,12 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._finSrc_1efe8_1063 {
+._finSrc_1dsoy_1060 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_1efe8_1068 {
+._cpos_1dsoy_1065 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3018,7 +3015,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._console_1efe8_934 {
+  ._console_1dsoy_931 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3028,31 +3025,31 @@ dialog._modal_6k8bd_392 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_1efe8_948 {
+  ._cbar_1dsoy_945 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_1efe8_962 {
+  ._cbody_1dsoy_959 {
     display: none;
   }
 
-  ._consoleOpen_1efe8_1098 ._cbody_1efe8_962 {
+  ._consoleOpen_1dsoy_1095 ._cbody_1dsoy_959 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_1efe8_1105 {
+._identity_1dsoy_1102 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_1efe8_1112 {
+._meChip_1dsoy_1109 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3067,34 +3064,34 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._meName_1efe8_1127 {
+._meName_1dsoy_1124 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_1efe8_1134 {
+._pen_1dsoy_1131 {
   color: var(--dim);
 }
 
-._roomCount_1efe8_1138 {
+._roomCount_1dsoy_1135 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_1efe8_1143 {
+._offline_1dsoy_1140 {
   color: var(--warn);
 }
 
-._popNote_1efe8_1147 {
+._popNote_1dsoy_1144 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_1efe8_1153,
-._musicBanner_1efe8_1154 {
+._lockBanner_1dsoy_1150,
+._musicBanner_1dsoy_1151 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -3102,12 +3099,12 @@ dialog._modal_6k8bd_392 {
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_1efe8_1153 {
+._lockBanner_1dsoy_1150 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_1efe8_1154 {
+._musicBanner_1dsoy_1151 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3120,7 +3117,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_1efe8_1180 {
+._flabel_1dsoy_1177 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3130,7 +3127,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._field_1efe8_1190 {
+._field_1dsoy_1187 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3142,24 +3139,24 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-textarea._field_1efe8_1190 {
+textarea._field_1dsoy_1187 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_1efe8_1207 {
+._editWarn_1dsoy_1204 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_1efe8_1213 {
+._editNote_1dsoy_1210 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_1efe8_1219 {
+._editSave_1dsoy_1216 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3174,7 +3171,7 @@ textarea._field_1efe8_1190 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_1efe8_1234 {
+._srOnly_1dsoy_1231 {
   position: absolute;
   width: 1px;
   height: 1px;
