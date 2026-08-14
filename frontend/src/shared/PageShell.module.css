@@ -63,6 +63,21 @@
   margin-bottom: var(--s5);
 }
 
+/* Masthead and toolbar as one panel, floating clear of the screen edges. */
+.chromeApp {
+  flex: none;
+  margin: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+/* Inside the panel, the panel's edge is the closing rule. */
+.chromeApp > *:last-child {
+  border-bottom: none;
+}
+
 /* The board's masthead: a one-line strip, fixed height. */
 .mastheadApp {
   flex: none;

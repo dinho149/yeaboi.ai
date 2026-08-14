@@ -60,11 +60,13 @@
   align-items: start;
 }
 
+/* Full height, so the deck can be pushed to the bottom of it. */
 .main {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
   min-width: 0;
+  align-self: stretch;
 }
 
 @media (max-width: 1099px) {
@@ -309,12 +311,15 @@
   line-height: 1.6;
 }
 
+/* On whenever collapsed — it is what the overflow measurement reads against. */
 .descClipped {
   max-height: 9em;
   overflow: hidden;
-  /* Fades rather than cuts, so it is visibly clipped and not just ended.
-     A mask reads alpha only, so the colour is irrelevant — any opaque token
-     does, and using one keeps this out of the literal-colour guard's way. */
+}
+
+/* Only once the text really overruns the clamp. A mask reads alpha only, so
+   the token is for the literal-colour guard, not for the colour. */
+.descFade {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
@@ -803,6 +808,8 @@
 /* ── The deck ────────────────────────────────────────────────────────── */
 
 .deckZone {
+  /* Bottom of the column: content packs to the top, the gap opens above. */
+  margin-top: auto;
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);

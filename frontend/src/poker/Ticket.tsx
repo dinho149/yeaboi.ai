@@ -21,7 +21,7 @@
  * ticket's body scrolled to a paragraph nobody asked for.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Chip, Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
@@ -30,9 +30,6 @@ import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
 import { fmtPoints } from './points';
 import { Button } from '../shared';
 import styles from './poker.module.css';
-
-/** Longer than this and the body clips behind a toggle. */
-const CLIP_CHARS = 350;
 
 /** Live tickets and peeked ones share every display field. */
 type Displayable = PokerTicket | TicketView;
@@ -44,16 +41,36 @@ interface BodyProps {
 
 function Collapsible({ label, text }: { label?: string; text: string }) {
   const [open, setOpen] = useState(false);
+  const [clips, setClips] = useState(false);
+  const body = useRef<HTMLDivElement | null>(null);
+
   // Reset when the body changes — i.e. when the ticket does. Keyed on the text
   // rather than the key so a host edit that shortens a description also
   // re-collapses it, which is the same "this is new content" situation.
   useEffect(() => setOpen(false), [text]);
 
-  const clips = text.length > CLIP_CHARS;
+  // Does the body overrun its clamp? Not measured while open, where the clamp
+  // is off; `clips` keeps its collapsed answer.
+  useEffect(() => {
+    const el = body.current;
+    if (!el || open) return;
+    const measure = (): void => setClips(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver !== 'function') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, open]);
+
   return (
     <>
       {label ? <Eyebrow className={styles['bodyLabel']}>{label}</Eyebrow> : null}
-      <div className={cx(styles['desc'], clips && !open && styles['descClipped'])}>{text}</div>
+      <div
+        ref={body}
+        className={cx(styles['desc'], !open && styles['descClipped'], clips && !open && styles['descFade'])}
+      >
+        {text}
+      </div>
       {clips ? (
         <button type="button" className={styles['descToggle']} aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? 'Show less ▲' : 'Show more ▼'}

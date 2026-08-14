@@ -1,34 +1,17 @@
 /**
- * The masthead and footer every yeaboi surface wears.
+ * The masthead every yeaboi surface wears, in two variants.
  *
- * A window: traffic lights, a title bar reading `yeaboi — <mode>`, and inside it
- * the wordmark in the surface's own accent, the title, and a row of facts. Then
- * the page. Then a footer with the duck and the credit.
+ * `document` — a terminal window (traffic lights, `yeaboi — <mode>`) over the
+ * wordmark, title and a row of labelled facts, then the page, then a footer
+ * with the duck and the credit. Exports and anything else that is a file.
  *
- * This began life inside `export/Shell.tsx`, dressing static reports only. The
- * boards, the gate and the deck each had their own header, and they drifted the
- * way five copies of anything drift — different wordmark sizes, some with a
- * footer and some without, one with no accent at all. It lives here now, and
- * they all compose it.
+ * `app` — one screen for the live boards: a fixed, framed viewport holding a
+ * floating chrome panel (compact masthead + toolbar) above the board. No
+ * window, no footer, and the window itself never scrolls.
  *
- * The header carries **facts, not decoration**. Every entry is an eyebrow with
- * a label — SPRINT, SOURCE, ENGINEER — because a page read six months later is
- * exactly the document where "what is this number" is the first question.
- *
- * ## Two variants
- *
- * `document` is the original: a centred column that grows with its content and
- * scrolls the window. Exports and any other page that is fundamentally a file.
- *
- * `app` is for the live boards: one screen, fixed to the viewport inside a
- * curved frame, holding the masthead strip, the sticky bar, the board and the
- * credit. The window never scrolls; the board scrolls inside itself.
- *
- * ## Density
- *
- * The full masthead is ~260px, which a screen that must not scroll cannot pay
- * for, so `app` is always `compact`: two-row wordmark inline with the title,
- * no facts. Only `document` wears the terminal window.
+ * Density picks the masthead's size: `hero` is the full ~260px header,
+ * `compact` drops the six-row wordmark and the facts, `auto` reads the
+ * viewport. `app` is always compact — its screen cannot spend 260px.
  */
 
 import type { ReactNode } from 'react';
@@ -106,12 +89,8 @@ export function PageShell({
 
   const body = (
     <>
-      {/* Sticky only on an app surface, and only because the masthead above it
-          now leaves: the toolbar carries invite, theme, music and the timer,
-          and a board whose controls scrolled off the top would trade one
-          annoyance for a worse one. A document's contents nav does its own
-          sticking, below. */}
-      {app && bar ? <div className={styles['barSticky']}>{bar}</div> : bar}
+      {/* An app surface's bar rides in the floating chrome below, not here. */}
+      {app ? null : bar}
 
       {nav.length ? (
         <nav className={styles['toc']} aria-label="Contents">
@@ -127,13 +106,10 @@ export function PageShell({
     </>
   );
 
-  const footer = (
-    <footer className={cx(styles['footer'], app && styles['footerSlim'])}>
-      {/* The mascot, at rest. On an export a duck that reacted to something
-          would be lying: nothing in a file is live. On a board the reactive
-          duck already lives in the toolbar, and a second animated one in the
-          footer would compete with it. */}
-      <Duck size={app ? 24 : 40} />
+  // Documents only: a board spends every row of its screen on the board.
+  const footer = app ? null : (
+    <footer className={styles['footer']}>
+      <Duck size={40} />
       <Credit>{chrome.footer}</Credit>
     </footer>
   );
@@ -169,27 +145,20 @@ export function PageShell({
 
   return (
     <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
-      {/* A div, not a <header>: a second unlabelled `banner` landmark is an axe
-          violation. */}
+      {/* Divs, not <header>: a second unlabelled `banner` landmark fails axe. */}
       {app ? (
-        <div className={cx(styles['masthead'], styles['mastheadApp'])}>{head}</div>
+        <div className={styles['chromeApp']}>
+          <div className={cx(styles['masthead'], styles['mastheadApp'])}>{head}</div>
+          {bar}
+        </div>
       ) : (
         <TerminalFrame title={chrome.frame} className={styles['masthead']}>
           {head}
         </TerminalFrame>
       )}
 
-      {/* The credit joins the region on an app surface rather than trailing it.
-          That is what makes the arithmetic come out: the document is then taller
-          than the viewport by exactly the masthead, so scrolling to the end puts
-          the bar at the top and the credit on the bottom edge with nothing
-          hidden. Left outside, the last few pixels of scroll would slide the
-          board's column headings under the sticky bar. */}
       {app ? (
-        <div className={styles['appRegion']}>
-          {body}
-          {footer}
-        </div>
+        <div className={styles['appRegion']}>{body}</div>
       ) : (
         <>
           {body}
