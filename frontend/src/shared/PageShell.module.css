@@ -101,7 +101,6 @@
   align-items: center;
   margin-bottom: 0;
   padding: var(--s2) var(--s4);
-  border-right: 1px solid var(--line);
   background: var(--panel);
 }
 
@@ -122,10 +121,10 @@
   min-width: 0;
   flex: 1 1 320px;
 }
-/* Wordmark and title on one line, sharing a baseline. */
+/* Wordmark and title on one line, centred against each other. */
 .headMainApp {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
