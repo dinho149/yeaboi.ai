@@ -73,8 +73,11 @@
      does not make it a containing block for fixed descendants — so this can
      paint over the frame's bottom line and interrupt it. */
   position: fixed;
-  right: var(--s5);
-  bottom: var(--app-inset-bottom, 0px);
+  /* Flush into the frame's bottom-right corner, inside its 2px. Held off it,
+     the short run of border left over between the two reads as the corner
+     peeling away from the box. */
+  right: 2px;
+  bottom: calc(2px + var(--app-inset-bottom, 0px));
   z-index: var(--z-console);
   display: flex;
   align-items: center;
@@ -83,9 +86,13 @@
   /* Same weight and colour as the frame, open at the bottom, over an opaque
      ground: the screen's border reads as lifting up and over the dock rather
      than running behind a second box. */
+  /* Two sides only: the frame supplies the other two. The bottom-right radius
+     follows the inside of the frame's own corner, so the line curves once
+     rather than twice. */
   border: 2px solid var(--screen-frame);
+  border-right: none;
   border-bottom: none;
-  border-radius: var(--r-m) var(--r-m) 0 0;
+  border-radius: var(--r-m) 0 calc(var(--r-l) - 2px) 0;
   background: var(--bg);
 }
 

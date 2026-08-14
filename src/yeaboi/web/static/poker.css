@@ -1675,7 +1675,7 @@ dialog._modal_6k8bd_392 {
  * break across a page mid-card.
  */
 
-._page_s679g_16 {
+._page_2dxtt_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -1684,7 +1684,7 @@ dialog._modal_6k8bd_392 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_s679g_25 {
+._shellApp_2dxtt_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -1703,7 +1703,7 @@ dialog._modal_6k8bd_392 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_s679g_44 {
+._appRegion_2dxtt_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1713,7 +1713,7 @@ dialog._modal_6k8bd_392 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_s679g_54 {
+._barSticky_2dxtt_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1721,22 +1721,25 @@ dialog._modal_6k8bd_392 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_s679g_62 {
+._masthead_2dxtt_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_s679g_69 {
+._dockApp_2dxtt_69 {
   /* `fixed`, not `absolute`: an absolute child is clipped by `.shellApp`'s
      `overflow: hidden` at the inside of the frame, so it can only ever sit
      *on* the border. A fixed one is not — `.shellApp` is itself fixed, which
      does not make it a containing block for fixed descendants — so this can
      paint over the frame's bottom line and interrupt it. */
   position: fixed;
-  right: var(--s5);
-  bottom: var(--app-inset-bottom, 0px);
+  /* Flush into the frame's bottom-right corner, inside its 2px. Held off it,
+     the short run of border left over between the two reads as the corner
+     peeling away from the box. */
+  right: 2px;
+  bottom: calc(2px + var(--app-inset-bottom, 0px));
   z-index: var(--z-console);
   display: flex;
   align-items: center;
@@ -1745,15 +1748,19 @@ dialog._modal_6k8bd_392 {
   /* Same weight and colour as the frame, open at the bottom, over an opaque
      ground: the screen's border reads as lifting up and over the dock rather
      than running behind a second box. */
+  /* Two sides only: the frame supplies the other two. The bottom-right radius
+     follows the inside of the frame's own corner, so the line curves once
+     rather than twice. */
   border: 2px solid var(--screen-frame);
+  border-right: none;
   border-bottom: none;
-  border-radius: var(--r-m) var(--r-m) 0 0;
+  border-radius: var(--r-m) 0 calc(var(--r-l) - 2px) 0;
   background: var(--bg);
 }
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_s679g_94 {
+._chromeApp_2dxtt_101 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -1765,7 +1772,7 @@ dialog._modal_6k8bd_392 {
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_s679g_94 > *:last-child {
+._chromeApp_2dxtt_101 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -1774,16 +1781,16 @@ dialog._modal_6k8bd_392 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_s679g_115 h1 {
+  ._headMainApp_2dxtt_122 h1 {
     display: none;
   }
-  ._mastheadApp_s679g_118 {
+  ._mastheadApp_2dxtt_125 {
     padding: var(--s2) var(--s3);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_s679g_118 {
+._mastheadApp_2dxtt_125 {
   flex: none;
   display: flex;
   align-items: center;
@@ -1792,53 +1799,53 @@ dialog._modal_6k8bd_392 {
   background: var(--panel);
 }
 
-._head_s679g_115 {
+._head_2dxtt_122 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_s679g_140 {
+._headApp_2dxtt_147 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_s679g_115 {
+._headMain_2dxtt_122 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_s679g_115 {
+._headMainApp_2dxtt_122 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_s679g_115 ._wordmark_s679g_157 {
+._headMainApp_2dxtt_122 ._wordmark_2dxtt_164 {
   margin-bottom: 0;
 }
-._headMainApp_s679g_115 h1 {
+._headMainApp_2dxtt_122 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_s679g_157 {
+._wordmark_2dxtt_164 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_s679g_174 {
+._wordmarkCompact_2dxtt_181 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_s679g_179 {
+._title_2dxtt_186 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -1848,30 +1855,30 @@ dialog._modal_6k8bd_392 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_s679g_189 {
+._titleCompact_2dxtt_196 {
   font-size: var(--fs-l);
 }
 
-._subtitle_s679g_193 {
+._subtitle_2dxtt_200 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_s679g_199 {
+._facts_2dxtt_206 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_s679g_206 {
+._themes_2dxtt_213 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_s679g_212 {
+._toc_2dxtt_219 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1888,36 +1895,36 @@ dialog._modal_6k8bd_392 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_s679g_212 a {
+._toc_2dxtt_219 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_s679g_212 a:hover {
+._toc_2dxtt_219 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_s679g_239 > * + * {
+._container_2dxtt_246 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_s679g_246 {
+._containerApp_2dxtt_253 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_s679g_246 > * + * {
+._containerApp_2dxtt_253 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_s679g_258 {
+._footer_2dxtt_265 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -1933,7 +1940,7 @@ dialog._modal_6k8bd_392 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_s679g_274 {
+._footerSlim_2dxtt_281 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -1943,17 +1950,17 @@ dialog._modal_6k8bd_392 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_s679g_206,
-  ._toc_s679g_212 {
+  ._themes_2dxtt_213,
+  ._toc_2dxtt_219 {
     display: none;
   }
-  ._page_s679g_16 {
+  ._page_2dxtt_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_s679g_25 {
+  ._shellApp_2dxtt_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -1961,26 +1968,26 @@ dialog._modal_6k8bd_392 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_s679g_44 {
+  ._appRegion_2dxtt_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_s679g_54 {
+  ._barSticky_2dxtt_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_s679g_16 ._masthead_s679g_62 {
+  ._page_2dxtt_16 ._masthead_2dxtt_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_s679g_258 {
+  ._footer_2dxtt_265 {
     color: var(--muted);
   }
 }
@@ -2015,7 +2022,7 @@ dialog._modal_6k8bd_392 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_o7vj2_32 {
+._app_1dil7_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2025,7 +2032,7 @@ dialog._modal_6k8bd_392 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_o7vj2_42 {
+._scroll_1dil7_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2035,7 +2042,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_o7vj2_52 {
+._layout_1dil7_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2047,7 +2054,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_o7vj2_64 {
+._main_1dil7_64 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2056,7 +2063,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_o7vj2_52 {
+  ._layout_1dil7_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2064,7 +2071,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 699px) {
-  ._layout_o7vj2_52 {
+  ._layout_1dil7_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2073,7 +2080,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_o7vj2_90 {
+._rail_1dil7_90 {
   position: sticky;
   top: var(--s3);
   /* dvh, not vh — see the header note. */
@@ -2085,11 +2092,11 @@ dialog._modal_6k8bd_392 {
   padding: var(--s3);
 }
 
-._railHead_o7vj2_102 {
+._railHead_1dil7_102 {
   margin-bottom: var(--s2);
 }
 
-._railList_o7vj2_106 {
+._railList_1dil7_106 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2098,7 +2105,7 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._railItem_o7vj2_115 {
+._railItem_1dil7_115 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2115,12 +2122,12 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._railItem_o7vj2_115:hover {
+._railItem_1dil7_115:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_o7vj2_137 {
+._railDot_1dil7_137 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2128,30 +2135,30 @@ dialog._modal_6k8bd_392 {
   background: var(--line-strong);
 }
 
-._railCurrent_o7vj2_145 {
+._railCurrent_1dil7_145 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_o7vj2_145 ._railDot_o7vj2_137 {
+._railCurrent_1dil7_145 ._railDot_1dil7_137 {
   background: var(--accent);
 }
 
-._railPeeking_o7vj2_154 {
+._railPeeking_1dil7_154 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_o7vj2_159 ._railDot_o7vj2_137 {
+._railDone_1dil7_159 ._railDot_1dil7_137 {
   background: var(--ok);
 }
 
-._railDone_o7vj2_159 ._railText_o7vj2_163 {
+._railDone_1dil7_159 ._railText_1dil7_163 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_o7vj2_163 {
+._railText_1dil7_163 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2159,29 +2166,29 @@ dialog._modal_6k8bd_392 {
   white-space: nowrap;
 }
 
-._railKey_o7vj2_176 {
+._railKey_1dil7_176 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_o7vj2_182 {
+._railPts_1dil7_182 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_o7vj2_189 {
+._railToggle_1dil7_189 {
   display: none;
 }
 
-._railBackdrop_o7vj2_193 {
+._railBackdrop_1dil7_193 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_o7vj2_90 {
+  ._rail_1dil7_90 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2195,15 +2202,15 @@ dialog._modal_6k8bd_392 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_o7vj2_212 {
+  ._railOpen_1dil7_212 {
     transform: translateX(0);
   }
 
-  ._railToggle_o7vj2_189 {
+  ._railToggle_1dil7_189 {
     display: inline-flex;
   }
 
-  ._railBackdrop_o7vj2_193 {
+  ._railBackdrop_1dil7_193 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2216,45 +2223,47 @@ dialog._modal_6k8bd_392 {
 
 /* Takes the room the table and the deck leave, rather than letting a void open
    in the middle of the column. */
-._ticket_o7vj2_233 {
+._ticket_1dil7_233 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
+  /* No panel: the ticket is the column's content, not a card sitting in it.
+     Padded to the same edge as the table below. */
+  padding: 0 var(--s1);
+}
+
+/* A preview keeps its frame — it is the one state that has to look unlike the
+   live ticket at a glance. */
+._ticketPeek_1dil7_244 {
   padding: var(--s4);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--r-m);
 }
 
-._ticketPeek_o7vj2_243 {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-}
-
-._tkrow_o7vj2_248 {
+._tkrow_1dil7_250 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_o7vj2_255 {
+._key_1dil7_257 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_o7vj2_255 a {
+._key_1dil7_257 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_o7vj2_255 a:hover {
+._key_1dil7_257 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_o7vj2_271 {
+._phaseTag_1dil7_273 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2265,37 +2274,37 @@ dialog._modal_6k8bd_392 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_o7vj2_282 {
+._phaseTagOn_1dil7_284 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_o7vj2_288 {
+._phaseTagPeek_1dil7_290 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_o7vj2_293 {
+._tkSummary_1dil7_295 {
   margin: var(--s2) 0 var(--s3);
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_o7vj2_300 {
+._chips_1dil7_302 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
 
-._bodyLabel_o7vj2_307 {
+._bodyLabel_1dil7_309 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_o7vj2_312 {
+._desc_1dil7_314 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2303,18 +2312,18 @@ dialog._modal_6k8bd_392 {
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against. */
-._descClipped_o7vj2_320 {
+._descClipped_1dil7_322 {
   max-height: 9em;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_o7vj2_327 {
+._descFade_1dil7_329 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_o7vj2_331 {
+._descToggle_1dil7_333 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2326,13 +2335,13 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._descEmpty_o7vj2_343 {
+._descEmpty_1dil7_345 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_o7vj2_349 {
+._peekBanner_1dil7_351 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2346,7 +2355,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._peekActions_o7vj2_363 {
+._peekActions_1dil7_365 {
   display: flex;
   gap: var(--s2);
 }
@@ -2354,14 +2363,14 @@ dialog._modal_6k8bd_392 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_o7vj2_371 {
+._pkbtnGo_1dil7_373 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_o7vj2_378 {
+._results_1dil7_380 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -2371,7 +2380,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._resultsHead_o7vj2_388 {
+._resultsHead_1dil7_390 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2379,18 +2388,18 @@ dialog._modal_6k8bd_392 {
   flex-wrap: wrap;
 }
 
-._resultsSum_o7vj2_396 {
+._resultsSum_1dil7_398 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_o7vj2_396 b {
+._resultsSum_1dil7_398 b {
   color: var(--accent);
 }
 
-._dist_o7vj2_407 {
+._dist_1dil7_409 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2399,7 +2408,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s1);
 }
 
-._drow_o7vj2_416 {
+._drow_1dil7_418 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2410,19 +2419,19 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._dval_o7vj2_427 {
+._dval_1dil7_429 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_o7vj2_432 {
+._dtrack_1dil7_434 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_o7vj2_439 {
+._dbar_1dil7_441 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2430,21 +2439,21 @@ dialog._modal_6k8bd_392 {
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_o7vj2_447 ._dbar_o7vj2_439 {
+._drowTop_1dil7_449 ._dbar_1dil7_441 {
   background: var(--accent);
 }
 
-._drowTop_o7vj2_447 ._dval_o7vj2_427 {
+._drowTop_1dil7_449 ._dval_1dil7_429 {
   color: var(--accent);
 }
 
-._dcount_o7vj2_455 {
+._dcount_1dil7_457 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_o7vj2_461 {
+._ainote_1dil7_463 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2452,7 +2461,7 @@ dialog._modal_6k8bd_392 {
   background: var(--panel-2);
 }
 
-._aiHead_o7vj2_469 {
+._aiHead_1dil7_471 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2463,57 +2472,57 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._aiBody_o7vj2_480 {
+._aiBody_1dil7_482 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_o7vj2_486 {
+._conf_1dil7_488 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_o7vj2_493 {
+._conf-high_1dil7_495 {
   color: var(--ok);
 }
 
-._conf-medium_o7vj2_497 {
+._conf-medium_1dil7_499 {
   color: var(--warn);
 }
 
-._conf-low_o7vj2_501 {
+._conf-low_1dil7_503 {
   color: var(--danger);
 }
 
-._ev_o7vj2_505 {
+._ev_1dil7_507 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_o7vj2_512 {
+._sug_1dil7_514 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_o7vj2_512 b {
+._sug_1dil7_514 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_o7vj2_525 ._aiBody_o7vj2_480::after {
+._ainotePending_1dil7_527 ._aiBody_1dil7_482::after {
   content: '…';
-  animation: _dots_o7vj2_1 1.2s steps(4, end) infinite;
+  animation: _dots_1dil7_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_o7vj2_1 {
+@keyframes _dots_1dil7_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2524,14 +2533,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_o7vj2_541 {
+._duel_1dil7_543 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_o7vj2_548 {
+._duelHead_1dil7_550 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2543,13 +2552,13 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._duelBody_o7vj2_560 {
+._duelBody_1dil7_562 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_o7vj2_566 {
+._duelTranscript_1dil7_568 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2558,41 +2567,41 @@ dialog._modal_6k8bd_392 {
   overflow-y: auto;
 }
 
-._recind_o7vj2_575 {
+._recind_1dil7_577 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_o7vj2_582 {
+._recDot_1dil7_584 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_o7vj2_1 1.4s ease-in-out infinite;
+  animation: _recpulse_1dil7_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_o7vj2_1 {
+@keyframes _recpulse_1dil7_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_o7vj2_596 {
+._norec_1dil7_598 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_o7vj2_602 {
+._dualrow_1dil7_604 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_o7vj2_609 {
+._duelist_1dil7_611 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2604,31 +2613,31 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._duelistSpeaking_o7vj2_621 {
+._duelistSpeaking_1dil7_623 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_o7vj2_626 {
+._duelFace_1dil7_628 {
   font-size: var(--fs-xl);
 }
 
-._duelName_o7vj2_630 {
+._duelName_1dil7_632 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_o7vj2_635 {
+._duelValue_1dil7_637 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_o7vj2_635 b {
+._duelValue_1dil7_637 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_o7vj2_645 {
+._duelFloor_1dil7_647 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2636,12 +2645,12 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._duelMic_o7vj2_653 {
+._duelMic_1dil7_655 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_o7vj2_658 {
+._vs_1dil7_660 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2649,7 +2658,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._youup_o7vj2_666 {
+._youup_1dil7_668 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2659,7 +2668,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._micRow_o7vj2_676 {
+._micRow_1dil7_678 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2667,7 +2676,7 @@ dialog._modal_6k8bd_392 {
   margin-top: var(--s3);
 }
 
-._micBtn_o7vj2_684 {
+._micBtn_1dil7_686 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2679,7 +2688,7 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._hint_o7vj2_696 {
+._hint_1dil7_698 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -2688,12 +2697,12 @@ dialog._modal_6k8bd_392 {
 
 /* Sits on the bottom of the column, just above the deck. No panel of its own:
    the seats read as part of the voting furniture, not as another card. */
-._table_o7vj2_705 {
+._table_1dil7_707 {
   margin-top: auto;
   padding: 0 var(--s1);
 }
 
-._tableHead_o7vj2_710 {
+._tableHead_1dil7_712 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2701,18 +2710,18 @@ dialog._modal_6k8bd_392 {
   margin-bottom: var(--s3);
 }
 
-._tableWait_o7vj2_718 {
+._tableWait_1dil7_720 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._vempty_o7vj2_724 {
+._vempty_1dil7_726 {
   color: var(--dim);
   font-size: var(--fs-s);
 }
 
-._vrow_o7vj2_729 {
+._vrow_1dil7_731 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2721,7 +2730,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._voter_o7vj2_738 {
+._voter_1dil7_740 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2729,7 +2738,7 @@ dialog._modal_6k8bd_392 {
   width: 68px;
 }
 
-._face_o7vj2_746 {
+._face_1dil7_748 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2741,7 +2750,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-l);
 }
 
-._tick_o7vj2_233 {
+._tick_1dil7_233 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2764,7 +2773,7 @@ dialog._modal_6k8bd_392 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_o7vj2_781 {
+._vcard_1dil7_783 {
   display: grid;
   place-items: center;
   width: 44px;
@@ -2776,18 +2785,18 @@ dialog._modal_6k8bd_392 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_o7vj2_1 320ms var(--ease) both;
+  animation: _flip_1dil7_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_o7vj2_1 {
+@keyframes _flip_1dil7_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_o7vj2_804 {
+._nm_1dil7_806 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2798,7 +2807,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_o7vj2_815 {
+._deckZone_1dil7_817 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2831,13 +2840,13 @@ dialog._modal_6k8bd_392 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_o7vj2_32[data-host='true'] {
+  ._app_1dil7_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_o7vj2_854 {
+._deckStatus_1dil7_856 {
   margin: 0 0 var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -2846,18 +2855,18 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._deckMine_o7vj2_863 {
+._deckMine_1dil7_865 {
   color: var(--accent);
 }
 
-._deck_o7vj2_815 {
+._deck_1dil7_817 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s2);
 }
 
-._pcard_o7vj2_874 {
+._pcard_1dil7_876 {
   /* Set per band below; everything on the card tints off it. */
   --band: var(--muted);
   position: relative;
@@ -2875,7 +2884,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* The frame-within-a-frame every printed card has. */
-._pcard_o7vj2_874::before {
+._pcard_1dil7_876::before {
   content: '';
   position: absolute;
   inset: 4px;
@@ -2886,30 +2895,30 @@ dialog._modal_6k8bd_392 {
 
 /* Bands, not per-value colours: the deck's values come from a codegen and must
    not be respelled here. Deck.tsx maps a value to one of these. */
-._pcard_o7vj2_874[data-band='low'] {
+._pcard_1dil7_876[data-band='low'] {
   --band: var(--ok);
 }
-._pcard_o7vj2_874[data-band='mid'] {
+._pcard_1dil7_876[data-band='mid'] {
   --band: var(--warn);
 }
-._pcard_o7vj2_874[data-band='high'] {
+._pcard_1dil7_876[data-band='high'] {
   --band: var(--danger);
 }
-._pcard_o7vj2_874[data-band='wild'] {
+._pcard_1dil7_876[data-band='wild'] {
   --band: var(--accent2);
 }
 
-._pcard_o7vj2_874:hover:not(:disabled) {
+._pcard_1dil7_876:hover:not(:disabled) {
   transform: translateY(-4px);
   border-color: var(--accent);
 }
 
-._pcard_o7vj2_874:disabled {
+._pcard_1dil7_876:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-._pcardSel_o7vj2_926 {
+._pcardSel_1dil7_928 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--card));
   color: var(--accent);
@@ -2919,11 +2928,11 @@ dialog._modal_6k8bd_392 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_o7vj2_936 {
+._pcardWait_1dil7_938 {
   border-style: dashed;
 }
 
-._ci_o7vj2_940 {
+._ci_1dil7_942 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -2933,7 +2942,7 @@ dialog._modal_6k8bd_392 {
   opacity: 0.9;
 }
 
-._ciFlip_o7vj2_950 {
+._ciFlip_1dil7_952 {
   top: auto;
   left: auto;
   right: 8px;
@@ -2941,7 +2950,7 @@ dialog._modal_6k8bd_392 {
   transform: rotate(180deg);
 }
 
-._cv_o7vj2_958 {
+._cv_1dil7_960 {
   font-size: var(--fs-xl);
   font-weight: 700;
   color: color-mix(in srgb, var(--band) 55%, var(--text));
@@ -2949,7 +2958,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_o7vj2_966 {
+._console_1dil7_968 {
   position: sticky;
   top: var(--s3);
   max-height: calc(100dvh - var(--s6) * 2);
@@ -2963,13 +2972,13 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._cbar_o7vj2_980 {
+._cbar_1dil7_982 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_o7vj2_986 {
+._cphase_1dil7_988 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2977,30 +2986,30 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._cbody_o7vj2_994 {
+._cbody_1dil7_996 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._cgroup_o7vj2_1000 {
+._cgroup_1dil7_1002 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_o7vj2_1006,
-._navrow_o7vj2_1007 {
+._crow_1dil7_1008,
+._navrow_1dil7_1009 {
   display: flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._duelSlot_o7vj2_1013 {
+._duelSlot_1dil7_1015 {
   min-height: var(--tap);
 }
 
-._duelInline_o7vj2_1017 {
+._duelInline_1dil7_1019 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3009,12 +3018,12 @@ dialog._modal_6k8bd_392 {
   border-radius: var(--r-s);
 }
 
-._seg_o7vj2_1026 {
+._seg_1dil7_1028 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_o7vj2_1031 {
+._preset_1dil7_1033 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3026,8 +3035,8 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._clabel_o7vj2_1043,
-._finlab_o7vj2_1044 {
+._clabel_1dil7_1045,
+._finlab_1dil7_1046 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3035,38 +3044,38 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._chint_o7vj2_1052,
-._cnotice_o7vj2_1053 {
+._chint_1dil7_1054,
+._cnotice_1dil7_1055 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_o7vj2_1053 {
+._cnotice_1dil7_1055 {
   color: var(--warn);
 }
 
-._readout_o7vj2_1064 {
+._readout_1dil7_1066 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_o7vj2_1064 b {
+._readout_1dil7_1066 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_o7vj2_1076 {
+._finrow_1dil7_1078 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_o7vj2_1083 {
+._finInput_1dil7_1085 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3078,12 +3087,12 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._finSrc_o7vj2_1095 {
+._finSrc_1dil7_1097 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_o7vj2_1100 {
+._cpos_1dil7_1102 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3093,7 +3102,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._console_o7vj2_966 {
+  ._console_1dil7_968 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3103,31 +3112,31 @@ dialog._modal_6k8bd_392 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_o7vj2_980 {
+  ._cbar_1dil7_982 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_o7vj2_994 {
+  ._cbody_1dil7_996 {
     display: none;
   }
 
-  ._consoleOpen_o7vj2_1130 ._cbody_o7vj2_994 {
+  ._consoleOpen_1dil7_1132 ._cbody_1dil7_996 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_o7vj2_1137 {
+._identity_1dil7_1139 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_o7vj2_1144 {
+._meChip_1dil7_1146 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3142,34 +3151,34 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._meName_o7vj2_1159 {
+._meName_1dil7_1161 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_o7vj2_1166 {
+._pen_1dil7_1168 {
   color: var(--dim);
 }
 
-._roomCount_o7vj2_1170 {
+._roomCount_1dil7_1172 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_o7vj2_1175 {
+._offline_1dil7_1177 {
   color: var(--warn);
 }
 
-._popNote_o7vj2_1179 {
+._popNote_1dil7_1181 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_o7vj2_1185,
-._musicBanner_o7vj2_1186 {
+._lockBanner_1dil7_1187,
+._musicBanner_1dil7_1188 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -3177,12 +3186,12 @@ dialog._modal_6k8bd_392 {
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_o7vj2_1185 {
+._lockBanner_1dil7_1187 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_o7vj2_1186 {
+._musicBanner_1dil7_1188 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3195,7 +3204,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_o7vj2_1212 {
+._flabel_1dil7_1214 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3205,7 +3214,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._field_o7vj2_1222 {
+._field_1dil7_1224 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3217,24 +3226,24 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-textarea._field_o7vj2_1222 {
+textarea._field_1dil7_1224 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_o7vj2_1239 {
+._editWarn_1dil7_1241 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_o7vj2_1245 {
+._editNote_1dil7_1247 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_o7vj2_1251 {
+._editSave_1dil7_1253 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3249,7 +3258,7 @@ textarea._field_o7vj2_1222 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_o7vj2_1266 {
+._srOnly_1dil7_1268 {
   position: absolute;
   width: 1px;
   height: 1px;

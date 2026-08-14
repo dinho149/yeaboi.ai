@@ -234,15 +234,17 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  padding: var(--s4);
+  /* No panel: the ticket is the column's content, not a card sitting in it.
+     Padded to the same edge as the table below. */
+  padding: 0 var(--s1);
 }
 
+/* A preview keeps its frame — it is the one state that has to look unlike the
+   live ticket at a glance. */
 .ticketPeek {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  padding: var(--s4);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--r-m);
 }
 
 .tkrow {
