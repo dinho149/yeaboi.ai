@@ -217,6 +217,12 @@ workstream and any per-run focus; everything else is here.
 7. **Stop.** Do not follow interesting threads outside your charter. File them as proposals for the
    owning workstream and move on.
 
+8. **Check in.** Close the run by following [check-in.md](check-in.md). A sweep that filed nothing
+   still checks in, and reports `ok` with `nothing to do` — that green line is the only thing
+   separating a quiet charter from a sweep that never fired, and the fleet had no way to tell those
+   apart. It changes nothing else: a sweep still posts no channel message and still files only
+   GitHub issues.
+
 ## Stop conditions
 
 Abort the run and report if: `main` cannot be fetched; `make test` fails on a clean checkout (that is
@@ -225,8 +231,15 @@ is wrong with the charter's scope, and filing 10 issues would bury the digest).
 
 **A full proposal queue is not one of these.** `slots: 0` ends step 6 and nothing else: the auto
 lane in step 5 still runs, and a run that ships a PR and files no proposal is a good run. Exit
-quietly, the way step 2 does when a PR is already open — no issue, no Slack, no explanation posted
-anywhere. The digest is where the fleet's held workstreams are reported, once, in one place.
+quietly, the way step 2 does when a PR is already open — no issue, no channel message, no
+explanation posted anywhere. The digest is where the fleet's held workstreams are reported, once, in
+one place.
+
+"Quietly" has meant "nothing at all" since this file was written, and now means "nothing in the
+channel": step 8 still runs, because a sweep that exits early is exactly the run somebody needs to
+be able to tell apart from one that never started. It reports 🟢 with what it did and did not do —
+the check-in is a thread reply and says nothing about the queue, which stays the digest's to
+report.
 
 **And a queue with work in it is not one either.** `cowork:queued` items change what step 5 builds
 and nothing else: step 6 still files, and a run that ships a queued item *and* files a proposal is a

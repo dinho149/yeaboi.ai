@@ -52,9 +52,15 @@ standup for exactly this reason.
    the failure. The daily standup reads merged PRs from `gh`, not from this routine, so a failure
    here never hides the merge itself.
 
+5. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
-- **Never post to Slack.** The day's merges go out together in `cron/shipped-standup.md`; a message
-  here would duplicate a line the reader is getting anyway, and per-merge notifications are the
-  noise this fleet was reshaped to stop.
+- **Never post a Slack message.** The day's merges go out together in `cron/shipped-standup.md`; a
+  message here would duplicate a line the reader is getting anyway, and per-merge notifications are
+  the noise this fleet was reshaped to stop. The check-in in step 5 is not one: it is a thread reply
+  under 📅, and it is what the old per-merge ship note was replaced *by*, not a return of it. A
+  merge landing before 05:45 UTC has no 📅 thread yet and checks in to the run log alone — see
+  [check-in.md](../../check-in.md).
 - Never reopen, revert, or comment on the PR itself.

@@ -20,12 +20,21 @@ carries `model: inherit` so the caller decides.
 agent writes them all. Twenty routines each doing their own comms drift into twenty different
 ticket styles within a month.
 
-The one writer that is not the scribe is `routines/cron/slack-relay.md`, and the boundary is
-*authorship*: the scribe is the only agent that composes comms, while the relay writes nothing it
-composed — marker reactions, one-line acks, audit comments, and the label/close verbs a verified
-human asked for. Routing those through the scribe would not work anyway (the scribe is itself
-forbidden from applying `claude-implement`), and spawning a `standard`-tier agent from an hourly
-`fast` poller would defeat the relay's read-and-exit cost model.
+Two writers are not the scribe, and the boundary in both cases is *authorship*: the scribe is the
+only agent that **composes** comms.
+
+`routines/cron/slack-relay.md` writes nothing it composed — marker reactions, one-line acks, audit
+comments, and the label/close verbs a verified human asked for. Routing those through the scribe
+would not work anyway (the scribe is itself forbidden from applying `claude-implement`), and
+spawning a `standard`-tier agent from an hourly `fast` poller would defeat the relay's
+read-and-exit cost model.
+
+[check-in.md](check-in.md) is the second, and it is the same case one step further: the routine
+does not compose its check-in *at all*. `scripts/cowork_checkin.py` prints the finished two lines
+and the routine posts them verbatim, the way `cron/day-ahead.md` posts the lines `--agenda` hands
+it. There is no wording to keep consistent, so there is nothing for a single writer to protect —
+and the arithmetic runs the other way: every routine checks in, so routing it through the scribe
+would spawn a `standard`-tier agent twenty-odd times a day to retype two lines it was given.
 
 **Connector mechanics stay out of the builder's context**, where they would compete with the code.
 

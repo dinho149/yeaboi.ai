@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "What a cloud routine session knows about its own run. Captured 2026-08-14 from two",
+    "firings of a throwaway `probe: run-self` routine (trig_01Urf2pVhWjwXRfjbxFXjaFP,",
+    "disabled after; the routines API has no delete), whose name does not begin with",
+    "`cowork: ` and is therefore invisible to trigger_plan's orphan detection forever.",
+    "Reproduce with scripts/probe_run_self.py once the branch is on origin — the two",
+    "firings used inline prompts because the script post-dates the clone the sandbox got.",
+    "This file is why cowork/check-in.md can report tokens and link the exact run: both",
+    "were assumed impossible, because RemoteTrigger is absent from the routine runtime."
+  ],
+  "captured": "2026-08-14",
+  "trigger": "trig_01Urf2pVhWjwXRfjbxFXjaFP",
+  "session": {
+    "home": "/root",
+    "cwd": "/home/user/yeaboi.ai",
+    "uid": 0,
+    "uname": "Linux x86_64",
+    "self_identifying_tag": "no self-identifying tag",
+    "fired_marker": "[SCHEDULED TASK - AUTOMATED FIRING OF A CONFIGURED PROMPT] plus a system-reminder naming the fire time, neither carrying an id",
+    "run_session_id": "cse_01DBM5LwdWwgpUydtanGHuAt",
+    "run_url": "https://claude.ai/code/session_01DBM5LwdWwgpUydtanGHuAt",
+    "run_session_id_matches_list_runs": true
+  },
+  "env": [
+    { "name": "CLAUDE_CODE_REMOTE_SESSION_ID", "set": true, "note": "the cse_… run id, verbatim — identical to what RemoteTrigger `run` returned and what `list_runs` links" },
+    { "name": "CLAUDE_CODE_SESSION_ID", "set": true, "note": "a uuid, and the transcript's filename — not the run id" },
+    { "name": "CLAUDE_CODE_CONTAINER_ID", "set": true, "note": "container_…--claude_code_remote--…" },
+    { "name": "CLAUDE_CODE_ACCOUNT_UUID", "set": true },
+    { "name": "CLAUDE_CODE_ORGANIZATION_UUID", "set": true },
+    { "name": "ANTHROPIC_BASE_URL", "set": true },
+    { "name": "CCR_AGENT_PROXY_ENABLED", "set": true, "note": "the egress proxy recorded in cowork_github_access_live.json" },
+    { "name": "CCR_EGRESS_GATEWAY_ENABLED", "set": true }
+  ],
+  "transcripts": {
+    "root": "/root/.claude/projects",
+    "exists": true,
+    "layout": "/root/.claude/projects/-home-user-yeaboi-ai/<CLAUDE_CODE_SESSION_ID>.jsonl",
+    "files": 1,
+    "note": "Exactly one, and it is this run's. The sandbox is built fresh per firing, so every transcript in the tree belongs to the run reading it — which is what lets the check-in total be right without knowing its own session id.",
+    "usage_blocks_present": true,
+    "sidechain_lines": 0,
+    "sidechain_note": "0 because neither probe spawned a Task subagent, so whether a subagent's turns land in this file or beside it is still unmeasured. The check-in is indifferent: it scans the whole tree, so both layouts total the same.",
+    "measured": {
+      "distinct_models": ["claude-sonnet-5"],
+      "dedup_assistant_records": 3,
+      "input_tokens": 6,
+      "output_tokens": 5343,
+      "cache_read_input_tokens": 133272,
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 72133,
+      "total_tokens": 210754
+    }
+  }
+}

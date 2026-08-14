@@ -4365,3 +4365,177 @@ class TestTheAgentsExampleCannotBeCopied:
 
     def test_warnings_are_required_to_reach_the_post(self):
         assert "digest.warnings" in self.ROUTINE.read_text(encoding="utf-8")
+
+
+class TestEveryRunChecksIn:
+    """`cowork/check-in.md` is the last step of every routine, and a routine that
+    quietly stops carrying it fails in the most misleading way available: the
+    check-in is what says the run happened, so its absence reads as the run having
+    *died*, and `cron/shipped-standup.md` names it a no-show every evening for
+    what is really a missing line in a markdown file. Nothing at run time would
+    say otherwise, which is why the totality check is the feature.
+    """
+
+    def test_no_routine_is_missing_its_check_in(self):
+        missing = setup.routines_without_check_in()
+        assert missing == [], (
+            "these routines never check in — add the final step: "
+            f"follow cowork/{setup.CHECK_IN_DOC}. Missing: {missing}"
+        )
+
+    def test_a_routine_that_drops_the_step_is_caught(self, tmp_path, monkeypatch):
+        """The negative half. A check that cannot fail is not a check."""
+        routines = tmp_path / "routines" / "cron"
+        routines.mkdir(parents=True)
+        (routines / "made-up.md").write_text("# made up\n\n## Run\n\n1. Do a thing.\n", encoding="utf-8")
+        monkeypatch.setattr(setup, "ROUTINES_DIR", tmp_path / "routines")
+        assert setup.routines_without_check_in() == ["cron/made-up.md"]
+
+    def test_citing_the_sweep_procedure_is_not_delegating_to_it(self, tmp_path, monkeypatch):
+        """`cron/digest.md` and `cron/integrations-campaign.md` both mention
+        sweep-procedure.md while running their own steps. A rule that let a
+        citation stand in for delegation would exempt them, silently."""
+        routines = tmp_path / "routines" / "cron"
+        routines.mkdir(parents=True)
+        (routines / "citer.md").write_text(
+            "# citer\n\nUnlike sweep-procedure.md, this one is different.\n\n## Run\n\n1. Do a thing.\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(setup, "ROUTINES_DIR", tmp_path / "routines")
+        assert setup.routines_without_check_in() == ["cron/citer.md"]
+
+    def test_a_sweep_inherits_the_step_from_the_shared_procedure(self, tmp_path, monkeypatch):
+        """The thirteen sweeps have no `## Run` of their own — one step in
+        sweep-procedure.md covers all of them."""
+        routines = tmp_path / "routines" / "cron"
+        routines.mkdir(parents=True)
+        (routines / "x-sweep.md").write_text(
+            "# x sweep\n\nFollow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = x`.\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(setup, "ROUTINES_DIR", tmp_path / "routines")
+        assert setup.routines_without_check_in() == []
+
+    def test_the_shared_procedure_is_what_they_inherit(self):
+        """If sweep-procedure.md stops checking in, thirteen routines stop with it
+        and none of their own files changes."""
+        assert setup.CHECK_IN_DOC in (setup.COWORK / setup.SWEEP_DOC).read_text(encoding="utf-8")
+
+    def test_the_contract_it_points_at_exists(self):
+        assert (setup.COWORK / setup.CHECK_IN_DOC).exists()
+
+
+class TestRunReport:
+    """`--runs` renders a `RemoteTrigger list_runs` response. It is the only thing
+    in the fleet that reads *runs* rather than routines, and it is what answers
+    "did Thursday's sweep fire at all" — a question that had no answer before.
+    """
+
+    @staticmethod
+    def _run(run_id: str, routine: str = "security-sweep", **over) -> dict:
+        entry = {
+            "id": run_id,
+            "title": f"⚡ cowork: {routine}",
+            "status": "active",
+            "worker_status": "idle",
+            "created_at": "2026-08-13T06:05:28.192854Z",
+            "last_event_at": "2026-08-13T06:22:05.292981Z",
+            "url": f"https://claude.ai/code/session_{run_id[len('cse_') :]}",
+        }
+        entry.update(over)
+        return entry
+
+    def test_reads_a_real_recorded_response(self):
+        """The one input in this class the test did not invent.
+
+        Everything else here is built from the same assumption the parser makes,
+        so a field named differently in the real API would leave those green while
+        `/cowork runs` printed "No runs" — which reads as "this routine never
+        fired", the wrong diagnosis said loudly.
+        """
+        live = json.loads((ROOT / "tests" / "fixtures" / "cowork_runs_live.json").read_text())
+        report = setup.run_report([live])
+        assert len(report["runs"]) == 3
+        assert {row["routine"] for row in report["runs"]} == {"security-sweep"}
+        for row in report["runs"]:
+            assert row["url"] == f"https://claude.ai/code/session_{row['id'][len('cse_') :]}", (
+                "cowork/check-in.md builds this run's link from CLAUDE_CODE_REMOTE_SESSION_ID by "
+                "this exact rule — if the API stops agreeing, every check-in links nowhere"
+            )
+        # 06:05:28.192854 → 06:22:05.292981
+        assert report["runs"][0]["duration_seconds"] == 997
+
+    def test_reads_the_live_envelope(self):
+        report = setup.run_report([{"data": [self._run("cse_A")]}])
+        assert [row["routine"] for row in report["runs"]] == ["security-sweep"]
+        assert report["runs"][0]["duration_seconds"] == 997
+        assert report["runs"][0]["url"].endswith("session_A")
+
+    def test_dedupes_a_run_read_twice(self):
+        """A caller saves one file per routine, and asking for one twice is normal.
+
+        Keyed on run id, because the pages are independent reads and position
+        proves nothing about identity.
+        """
+        report = setup.run_report([{"data": [self._run("cse_A")]}, {"data": [self._run("cse_A")]}])
+        assert len(report["runs"]) == 1
+
+    def test_filters_to_one_routine(self):
+        payload = {"data": [self._run("cse_A"), self._run("cse_B", routine="poker-sweep")]}
+        assert [r["routine"] for r in setup.run_report([payload], name="poker-sweep")["runs"]] == ["poker-sweep"]
+
+    def test_an_empty_history_does_not_read_as_proof(self):
+        """A fire refused before a session existed leaves no row, so "no runs" is
+        equally what a paused or unregistered routine looks like. The line has to
+        say so — reporting it as "never ran" is the wrong diagnosis, loudly."""
+        lines = setup.run_report([{"data": []}])["lines"]
+        assert len(lines) == 1
+        assert "paused or unregistered" in lines[0]
+
+    def test_unreadable_timestamps_do_not_crash_the_report(self):
+        """A field this has never seen should read as unknown, not raise. A doctor
+        that dies on an unfamiliar payload reports nothing about the rest of it."""
+        report = setup.run_report([{"data": [self._run("cse_A", created_at="", last_event_at="")]}])
+        assert report["runs"][0]["duration_seconds"] == 0
+        assert report["lines"][0].startswith("?")
+
+    def test_a_bare_array_is_accepted_too(self):
+        assert len(setup.run_report([[self._run("cse_A")]])["runs"]) == 1
+
+    def test_times_render_in_the_display_zone(self):
+        """Same zone as the agenda: a run at 06:05 UTC is 07:05 in London in August,
+        and two renderings of one instant are two runs to anybody reading."""
+        line = setup.run_report([{"data": [self._run("cse_A")]}])["lines"][0]
+        assert "07:05" in line
+
+
+class TestAScopedShellCanStillCheckIn:
+    """The check-in command is named in `cowork/check-in.md`, never in a routine's
+    own file — so a scoped `Bash` grant that omits it reads as complete right up
+    until the run tries it, and `check-in.md` makes that failure silent by design.
+    `slack-relay` would have been reported as a no-show seventeen times a day for
+    a missing string in a tuple.
+    """
+
+    def test_every_scoped_routine_is_granted_the_check_in_script(self):
+        offenders = []
+        for routine in ROUTINES:
+            tools = set(setup.routine_tools(routine.name))
+            scoped = {tool for tool in tools if tool.startswith("Bash(")}
+            if scoped and not any(setup.CHECK_IN_SCRIPT in tool for tool in scoped):
+                offenders.append(routine.name)
+        assert offenders == [], f"scoped shells that cannot run the check-in: {offenders}"
+
+    def test_the_doctor_catches_one_that_is_not(self, monkeypatch):
+        """The negative half, against the real `check_grants`."""
+        monkeypatch.setitem(setup.TOOL_OVERRIDES, "slack-relay", ("Bash(gh issue view:*)", "Read"))
+        report = setup.Report()
+        setup.check_grants(report, [r for r in ROUTINES if r.name == "slack-relay"])
+        assert any("cannot run the check-in" in problem for problem in report.problems)
+
+    def test_a_bare_shell_needs_no_grant(self, monkeypatch):
+        """`Bash` already covers everything; only a scoped grant has to enumerate."""
+        monkeypatch.setitem(setup.TOOL_OVERRIDES, "cd-deploy", ("Bash", "Read"))
+        report = setup.Report()
+        setup.check_grants(report, [r for r in ROUTINES if r.name == "cd-deploy"])
+        assert not any("cannot run the check-in" in problem for problem in report.problems)

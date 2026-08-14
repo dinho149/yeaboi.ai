@@ -67,19 +67,33 @@ and always arrive; the rest are exceptions reporting themselves. Every message o
 title line carrying a fixed emoji, so a message is identifiable from its notification preview
 before it is opened.
 
+**Every run also checks in, and the budget above is unchanged, because a check-in is a reply.**
+Each routine closes with two lines under that morning's 📅 message — worked or not, what it did,
+what it spent, and a link to its log ([check-in.md](check-in.md)). That is eight to a dozen replies
+on a weekday: seven or eight timed runs, `cd-deploy` once per merge, whatever GitHub events fire,
+and one from `slack-relay`, which is the one routine that does *not* check in on every fire. It
+polls seventeen times a day, so it reports on its first fire and on any fire that acted — sixteen
+more lines saying "nothing to relay" would bury the two that mattered, and prove nothing the first
+did not.
+
+Any of those in the channel would mute the channel; under 📅 they cost a reader nothing and land
+where they mean the most, since 📅 already listed what would run today and each reply closes out one
+of its lines.
+
 | When | What arrives | Stays silent when |
 |---|---|---|
 | Daily 05:45 UTC | 📅 **Today** — what runs today and when, in local time | never — a schedule that goes quiet is a schedule you cannot trust |
 | Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
 | Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, plus ⏸️ **Held** and 🛠️ **Queued** — what the fleet owes you, which asks nothing | nothing is waiting, and neither fault fired |
-| Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release | nothing shipped, building or stuck |
+| Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release, and 🔴 which routines never ran | nothing shipped, building, stuck — and nothing missing |
 | Mondays 09:00 UTC | 🏷️ **Promote X.Y.Z?** — the weekly release ask | nothing is promotable |
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
 | A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
 | A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
 | A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
-| The 13 maintenance sweeps | **nothing, ever** | always — a sweep files a GitHub issue and exits |
+| The 13 maintenance sweeps | **nothing in the channel, ever** | always — a sweep files a GitHub issue and exits |
+| The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
 
 Three things follow from that table, and they are the whole design:
 
@@ -89,8 +103,9 @@ Three things follow from that table, and they are the whole design:
   channel is worse than no channel — the one day it matters, nobody looks. The two exceptions
   earn it by being the ones you *wait* for: silence from a findings routine means it found
   nothing, silence from a schedule is ambiguous.
-- **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and it
-  is the only one with a thread. ✅ and ❌ mean approve and reject, they are never decoration, and
+- **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and the
+  only one whose thread does — 📅's thread is the day's run ledger and asks nothing, which is why
+  check-ins carry none of the glyphs an answer is spelled with. ✅ and ❌ mean approve and reject, they are never decoration, and
   they work **on a thread reply** — a reaction on a parent message resolves to nothing, with one
   named exception: 🔐's disclosure post, which has no thread and no GitHub issue by construction,
   where ✅ applies `security:approved` in Linear and the next security sweep drains it. That is a
@@ -108,6 +123,7 @@ Three things follow from that table, and they are the whole design:
 | [house-rules.md](house-rules.md) | Guardrails + the closed auto-lane allowlist. |
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
+| [check-in.md](check-in.md) | How every run closes: one thread reply under 📅, composed by `scripts/cowork_checkin.py` and posted verbatim. |
 | [release-signoff.md](release-signoff.md) | The weekly human ritual: test a pre-release, promote it. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |

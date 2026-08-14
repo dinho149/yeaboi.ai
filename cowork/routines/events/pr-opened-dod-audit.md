@@ -70,6 +70,9 @@ exactly the PRs nobody watched being written. `claude-review.yml` carries the sa
 5. On `synchronized`, **edit the existing comment** rather than adding another. Find it by its
    `<!-- cowork-dod` marker.
 
+6. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md). It is the last thing you do.
+
 ## Stop conditions
 
 - This routine is advisory. Never request changes, never block, never fail a check, never merge.

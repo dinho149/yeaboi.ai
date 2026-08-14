@@ -738,3 +738,58 @@ class TestDisclosure:
         for line in shown:
             assert relay.TICKET_RE.search(line), f"no Linear ticket in the example: {line}"
             assert "linear.app" in line, "the link is required — without it the reader cannot reach the finding"
+
+
+class TestTheCheckInIsNotAnInput:
+    """Every run now replies in a thread (`cowork/check-in.md`), and the relay
+    reads threads. Twenty check-ins a day pass under its nose, so the one thing
+    that must stay true is that none of them is ever an instruction — otherwise
+    the fleet spends its mornings answering its own heartbeat.
+
+    It holds because a check-in cannot match `ITEM_RE`: it opens with a backtick
+    time, not `#<number> — `. These pin that rather than trusting it, since the
+    line's shape is composed in a different file by a different script.
+    """
+
+    @staticmethod
+    def _checkin(ts: str = "1", **reactions: list[str]) -> dict:
+        # The exact two lines `scripts/cowork_checkin.py` prints.
+        return reply(
+            ts,
+            "`07:00` **security-sweep** 🟢 4m · 1 PR (#261), 2 proposals filed\n"
+            "~263k tok ≈ $0.98 · [log](https://claude.ai/code/session_01DBM5LwdWwgpUydtanGHuAt)",
+            **reactions,
+        )
+
+    def test_a_check_in_is_no_action_at_all(self):
+        plan = relay.build_plan([self._checkin()], ALLOWLIST)
+        assert plan["plan"] == []
+        assert plan["counts"]["item_replies"] == 0
+
+    def test_a_check_in_naming_an_issue_is_still_not_an_item(self):
+        """`1 PR (#261)` puts an issue number in the text. The contract is the
+        *leading* `#<number> — `, and a note mentioning one is not that."""
+        plan = relay.build_plan([self._checkin()], ALLOWLIST)
+        assert plan["plan"] == []
+
+    def test_an_approval_reaction_on_a_check_in_resolves_to_nothing(self):
+        """A human ✅-ing a green line is thanking it, not approving anything. The
+        relay must find no issue to act on rather than the nearest number."""
+        plan = relay.build_plan([self._checkin(white_check_mark=[HUMAN])], ALLOWLIST)
+        assert plan["plan"] == []
+        assert plan["counts"]["actionable"] == 0
+
+    def test_check_ins_never_hide_a_real_item_beside_them(self):
+        """The 📅 thread carries only check-ins, but nothing stops a reader pasting
+        into it — the digest's own items must still parse when they share a thread."""
+        plan = relay.build_plan([self._checkin(ts="1"), item(88, ts="2", white_check_mark=[HUMAN])], ALLOWLIST)
+        assert [(entry["issue"], entry["verb"]) for entry in plan["plan"]] == [(88, "approve")]
+
+    def test_the_contract_file_shows_a_line_the_relay_ignores(self):
+        """`cowork/check-in.md` documents the shape; if somebody edits it into
+        something `ITEM_RE` matches, this fails here rather than in the channel."""
+        text = (ROOT / "cowork" / "check-in.md").read_text(encoding="utf-8")
+        example = [ln for ln in text.splitlines() if ln.startswith("`0") or ln.startswith("`1")]
+        assert example, "the contract must keep showing the finished line"
+        for line in example:
+            assert not relay.ITEM_RE.match(line), f"a check-in must never parse as an item: {line}"
