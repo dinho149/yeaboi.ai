@@ -695,7 +695,10 @@
 
 /* ── The table ───────────────────────────────────────────────────────── */
 
+/* The table and the deck sit together on the bottom of the column; the gap
+   opens above them. */
 .table {
+  margin-top: auto;
   background: var(--felt);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -808,8 +811,6 @@
 /* ── The deck ────────────────────────────────────────────────────────── */
 
 .deckZone {
-  /* Bottom of the column: content packs to the top, the gap opens above. */
-  margin-top: auto;
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
