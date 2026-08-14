@@ -867,18 +867,45 @@
 }
 
 .pcard {
+  /* Set per band below; everything on the card tints off it. */
+  --band: var(--muted);
   position: relative;
-  width: 52px;
-  height: 74px;
-  border-radius: var(--r-s);
+  width: 64px;
+  height: 92px;
+  border-radius: var(--r-m);
   border: 1px solid var(--line-strong);
-  background: var(--card);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--band) 20%, var(--card)), var(--card) 60%);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
+}
+
+/* The frame-within-a-frame every printed card has. */
+.pcard::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--band) 30%, transparent);
+  border-radius: var(--r-s);
+  pointer-events: none;
+}
+
+/* Bands, not per-value colours: the deck's values come from a codegen and must
+   not be respelled here. Deck.tsx maps a value to one of these. */
+.pcard[data-band='low'] {
+  --band: var(--ok);
+}
+.pcard[data-band='mid'] {
+  --band: var(--warn);
+}
+.pcard[data-band='high'] {
+  --band: var(--danger);
+}
+.pcard[data-band='wild'] {
+  --band: var(--accent2);
 }
 
 .pcard:hover:not(:disabled) {
@@ -907,23 +934,26 @@
 
 .ci {
   position: absolute;
-  top: 4px;
-  left: 5px;
+  top: 6px;
+  left: 8px;
   font-size: var(--fs-2xs);
-  opacity: 0.75;
+  font-weight: 700;
+  color: var(--band);
+  opacity: 0.9;
 }
 
 .ciFlip {
   top: auto;
   left: auto;
-  right: 5px;
-  bottom: 4px;
+  right: 8px;
+  bottom: 6px;
   transform: rotate(180deg);
 }
 
 .cv {
-  font-size: var(--fs-l);
+  font-size: var(--fs-xl);
   font-weight: 700;
+  color: color-mix(in srgb, var(--band) 55%, var(--text));
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
