@@ -3922,11 +3922,18 @@ class TestMigrateProposals:
         step 4 reclassifies in place on every run, and a carve-out that exists in
         one and not the other is a hole that opens a week later rather than never.
 
-        `codeql-triage.yml` dedupes by searching for the rule id, and once its
-        issue carries `cowork:queued` that search does not find it: next week's run
-        opens a second **public** issue re-asking a decision `triage-policy.yml`
-        already records. This is the one consumer for which the two labels being
-        mutually exclusive is a hazard rather than a convenience.
+        `codeql-triage.yml` dedupes per rule against the issues it fetches, and
+        once an issue carries `cowork:queued` a narrower label does not return it:
+        next week's run opens a second **public** issue re-asking a decision
+        `triage-policy.yml` already records. This is the one consumer for which
+        the two labels being mutually exclusive is a hazard rather than a
+        convenience.
+
+        The matching itself moved into `scripts/codeql_triage.py` when a
+        rejection stopped being rule-scoped, so what is asserted here is the
+        *fetch*: the broad label, and every state. Getting either wrong puts the
+        issue outside the classifier's reach, where no test of the classifier can
+        see the gap.
         """
         sweep = (setup.COWORK / "sweep-procedure.md").read_text(encoding="utf-8")
         rules = (setup.COWORK / "house-rules.md").read_text(encoding="utf-8")
@@ -3934,8 +3941,9 @@ class TestMigrateProposals:
         assert "codeql" in rules.lower()
         workflow = setup.REPO_ROOT / ".github" / "workflows" / "codeql-triage.yml"
         dedupe = workflow.read_text(encoding="utf-8")
-        assert "--label cowork --search" in dedupe, (
-            "the workflow still dedupes on cowork:proposal alone, which a reclassified issue escapes"
+        assert "gh issue list --label cowork --state all" in dedupe, (
+            "the workflow must fetch by the broad `cowork` label and every state — narrowing to "
+            "`cowork:proposal` loses a reclassified issue, and dropping `--state all` loses a decided one"
         )
 
     def test_a_codeql_proposal_is_held(self):
