@@ -63,9 +63,12 @@
   margin-bottom: var(--s5);
 }
 
-/* Masthead and toolbar as one panel, floating clear of the screen edges. */
+/* Identity and toolbar in one row, as a panel floating clear of the screen
+   edges. */
 .chromeApp {
   flex: none;
+  display: flex;
+  align-items: stretch;
   margin: var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -73,17 +76,32 @@
   box-shadow: var(--shadow-2);
   overflow: hidden;
 }
-/* Inside the panel, the panel's edge is the closing rule. */
+/* The bar takes the rest of the row, and the panel's edge is its closing rule. */
 .chromeApp > *:last-child {
+  flex: 1;
+  min-width: 0;
   border-bottom: none;
 }
 
-/* The board's masthead: a one-line strip, fixed height. */
+/* Below --bp-s one row cannot hold both, so the title goes and the wordmark
+   alone carries the identity. */
+@media (max-width: 699px) {
+  .headMainApp h1 {
+    display: none;
+  }
+  .mastheadApp {
+    padding: var(--s2) var(--s3);
+  }
+}
+
+/* The identity: wordmark and title, closed by a rule against the bar. */
 .mastheadApp {
   flex: none;
+  display: flex;
+  align-items: center;
   margin-bottom: 0;
   padding: var(--s2) var(--s4);
-  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   background: var(--panel);
 }
 
