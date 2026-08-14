@@ -91,7 +91,7 @@
      bottom-right curve carry on from the frame they replace. */
   border: 2px solid var(--screen-frame);
   border-bottom: none;
-  border-radius: var(--r-m) var(--r-m) var(--r-l) 0;
+  border-radius: var(--r-m) 0 var(--r-l) 0;
   background: var(--bg);
 }
 
@@ -122,10 +122,29 @@
   pointer-events: none;
 }
 
+/* The mirror of it at the other end of the lift, where the dock's top border
+   turns up into the frame's right edge. Same ring, a quarter-turn round. */
+.dockApp::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 2px);
+  width: var(--r-m);
+  height: calc(var(--r-m) + 2px);
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 0 calc(var(--r-m) - 2px),
+    var(--screen-frame) calc(var(--r-m) - 2px) var(--r-m),
+    var(--bg) var(--r-m)
+  );
+  pointer-events: none;
+}
+
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] .dockApp::before {
+  [data-host='true'] .dockApp::before,
+  [data-host='true'] .dockApp::after {
     display: none;
   }
   [data-host='true'] .dockApp {
@@ -133,6 +152,7 @@
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: 2px solid var(--screen-frame);
     border-radius: var(--r-m);
+    border-top-right-radius: var(--r-m);
   }
 }
 
