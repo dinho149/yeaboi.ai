@@ -228,7 +228,12 @@
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
+/* Takes the room the table and the deck leave, rather than letting a void open
+   in the middle of the column. */
 .ticket {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);

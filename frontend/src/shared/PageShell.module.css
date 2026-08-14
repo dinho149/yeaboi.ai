@@ -67,18 +67,23 @@
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
 .dockApp {
-  position: absolute;
+  /* `fixed`, not `absolute`: an absolute child is clipped by `.shellApp`'s
+     `overflow: hidden` at the inside of the frame, so it can only ever sit
+     *on* the border. A fixed one is not — `.shellApp` is itself fixed, which
+     does not make it a containing block for fixed descendants — so this can
+     paint over the frame's bottom line and interrupt it. */
+  position: fixed;
   right: var(--s5);
-  /* Seated on the frame's bottom edge, open at the bottom, so the screen border
-     is the box's own fourth side — the way the TUI lets a strip into its
-     frame. */
   bottom: var(--app-inset-bottom, 0px);
   z-index: var(--z-console);
   display: flex;
   align-items: center;
   gap: var(--s2);
   padding: var(--s2) var(--s3);
-  border: 1px solid var(--screen-frame);
+  /* Same weight and colour as the frame, open at the bottom, over an opaque
+     ground: the screen's border reads as lifting up and over the dock rather
+     than running behind a second box. */
+  border: 2px solid var(--screen-frame);
   border-bottom: none;
   border-radius: var(--r-m) var(--r-m) 0 0;
   background: var(--bg);
