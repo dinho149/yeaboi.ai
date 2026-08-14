@@ -30,15 +30,54 @@ auto:
       host.endswith("." + known)`. See `tools/local_git._known_git_host`.
 
 # Always proposed, with the reason recorded so nobody re-litigates it from
-# scratch each quarter. An entry here is a decision, not a backlog item.
+# scratch each quarter. An entry here is a decision, not a backlog item. When
+# that decision is accept-the-risk, the alerts get dismissed in the Security tab
+# as part of recording it — `codeql-triage.yml` may not dismiss one itself, so an
+# entry here without a dismissal leaves the tab reading red on something already
+# settled, which is how a real alert gets lost in the noise.
+#
+# `accepted:` is the scope of that decision — the paths it was made about, and
+# only those. `codeql-triage.yml` suppresses an alert on a listed path and files
+# one on any other path, so answering a rule here retires it where it was argued
+# rather than everywhere it could ever fire. Leave the key off and the rule still
+# proposes: writing down a reason and accepting a location are separate acts.
 propose:
   - id: actions/untrusted-checkout/medium
     why: >-
-      auto-version.yml checks out the PR head on purpose, and the file already
-      carries the reasoning plus the fine-grained-PAT requirement that bounds
-      it. Removing the checkout breaks the workflow_run chain that Claude
-      Review and Dependabot verify both depend on. Any change here is a
-      redesign of the release path, not an alert fix.
+      Two locations, both deliberate, both decided in #248 — alerts #26 and #65,
+      dismissed as accepted risk once that decision was recorded here.
+      auto-version.yml:60 checks out the PR head on purpose, and the file already
+      carries the reasoning plus the fine-grained-PAT requirement that bounds it.
+      Removing the checkout breaks the workflow_run chain that Claude Review and
+      Dependabot verify both depend on. publish.yml's `test` job checks out
+      `needs.check.outputs.sha` rather than main for the guarantee the whole file
+      exists for — the tested rc and the published final must be the same tree —
+      so the non-constant ref is the feature, not the defect. What bounds it:
+      reaching that job needs both `release:promote` and `release:promotion` on
+      the ask issue (repo write for either), the `<!-- tested: -->` marker is
+      filtered to an authorAssociation of OWNER/MEMBER/COLLABORATOR, and the ref
+      must resolve to a real refs/tags/beta/X.Y.ZrcN that only publish-beta.yml
+      pushes. Any change at either site is a redesign of the release path, not an
+      alert fix.
+    accepted:
+      - .github/workflows/auto-version.yml
+      - .github/workflows/publish.yml
+  - id: actions/cache-poisoning/poisonable-step
+    why: >-
+      Decided in #249 — alerts #63 and #64, dismissed as accepted risk once
+      recorded here. publish.yml's `test` job runs `make lint` and `make test` out
+      of the same non-constant-ref checkout as the entry above, in the
+      default-branch cache scope, with astral-sh/setup-uv v9 caching on its `auto`
+      default — so the query is describing a real chain, bounded by the same
+      two-label gate and author-association filter. It fails this file's admission
+      test ("can a wrong fix be caught by CI") in both directions: nothing under
+      test exercises the cache scope, and `enable-cache: false` would apply
+      verbatim to the `publish` job's setup-uv, which builds the artifact uploaded
+      to PyPI — so it is a decision about both jobs or neither. Revisit by moving
+      the rc's test run out of the privileged context, which is a release-path
+      redesign rather than an alert fix.
+    accepted:
+      - .github/workflows/publish.yml
 
 # Cap on how many alerts one run may fix. Past this the run fixes the first N,
 # reports the rest by number, and leaves them for the following week — a large

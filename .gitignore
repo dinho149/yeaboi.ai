@@ -83,6 +83,7 @@ SCRUM.md
 # `git add` of a file listing every open security alert is not a mistake worth
 # leaving available.
 /alerts-raw.json
+/issues-raw.json
 /codeql-auto.json
 /codeql-propose.json
 /bin/

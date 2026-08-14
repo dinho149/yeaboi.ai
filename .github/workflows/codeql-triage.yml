@@ -97,67 +97,22 @@ jobs:
           gh api "repos/$REPO/code-scanning/alerts?state=open&per_page=100" \
             --paginate --slurp > alerts-raw.json
 
-          uv run python - <<'PY'
-          import json
-          import os
-          import pathlib
+          # Every cowork-labelled issue, so the classifier can tell a rule
+          # nobody has ruled on from one that was answered — and, since 2026-08,
+          # from one answered about a DIFFERENT file. `--state all` because a
+          # closed issue is still a record; what it is no longer is a reason to
+          # stay quiet. `--label cowork` rather than `cowork:proposal`: that pair
+          # is mutually exclusive with `cowork:queued` (cowork/house-rules.md,
+          # **The queue**), and the narrow label would miss a reclassified issue.
+          gh issue list --label cowork --state all --limit 500 \
+            --json number,title,state > issues-raw.json
 
-          import yaml
-
-          policy = yaml.safe_load(pathlib.Path(".github/codeql/triage-policy.yml").read_text())
-          auto_rules = {e["id"] for e in policy["auto"]}
-          fixes = {e["id"]: e["fix"] for e in policy["auto"]}
-          max_batch = int(policy["max_batch"])
-
-          pages = json.loads(pathlib.Path("alerts-raw.json").read_text() or "[]")
-          alerts = [a for page in pages for a in page]
-
-          # Worst first, so a capped batch keeps the alerts that matter rather
-          # than whichever rule sorts earliest in the alphabet.
-          SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "error": 2, "warning": 3, "note": 4}
-
-          def slim(a):
-              inst = a.get("most_recent_instance") or {}
-              loc = inst.get("location") or {}
-              return {
-                  "number": a["number"],
-                  "rule": a["rule"]["id"],
-                  "severity": a["rule"].get("security_severity_level") or a["rule"].get("severity"),
-                  "path": loc.get("path"),
-                  "line": loc.get("start_line"),
-                  "message": (inst.get("message") or {}).get("text", ""),
-                  "url": a.get("html_url"),
-              }
-
-          auto = [slim(a) for a in alerts if a["rule"]["id"] in auto_rules]
-          propose = [slim(a) for a in alerts if a["rule"]["id"] not in auto_rules]
-
-          auto.sort(key=lambda x: (SEVERITY_ORDER.get(x["severity"], 9), x["rule"], x["path"] or "", x["line"] or 0))
-          dropped = []
-          if len(auto) > max_batch:
-              auto, dropped = auto[:max_batch], auto[max_batch:]
-
-          pathlib.Path("codeql-auto.json").write_text(json.dumps({"fixes": fixes, "alerts": auto}, indent=2))
-          pathlib.Path("codeql-propose.json").write_text(json.dumps(propose, indent=2))
-
-          print(f"open={len(alerts)} auto={len(auto)} propose={len(propose)} dropped={len(dropped)}")
-          for a in auto:
-              print(f"  AUTO    #{a['number']:>4} {a['rule']:<45} {a['path']}:{a['line']}")
-          for a in propose:
-              print(f"  PROPOSE #{a['number']:>4} {a['rule']:<45} {a['path']}:{a['line']}")
-
-          # Never let a cap read as full coverage.
-          if dropped:
-              nums = ", ".join(f"#{a['number']}" for a in dropped)
-              print(f"::warning::Batch capped at {max_batch}. Deferred to next week: {nums}")
-
-          with pathlib.Path(os.environ["GITHUB_OUTPUT"]).open("a") as fh:
-              fh.write(f"found={'true' if (auto or propose) else 'false'}\n")
-              fh.write(f"auto_count={len(auto)}\n")
-              fh.write(f"propose_count={len(propose)}\n")
-          if not auto and not propose:
-              print("::notice::No open code-scanning alerts. Nothing to triage.")
-          PY
+          # The classifier is scripts/codeql_triage.py, not a heredoc: it decides
+          # what is already accepted, what is a new location on a decided rule,
+          # and what nobody has dismissed — three comparisons that must be
+          # unit-tested, which a shell heredoc cannot be.
+          uv run python scripts/codeql_triage.py \
+            --alerts alerts-raw.json --issues issues-raw.json
 
           # `--auto` is only a gate if the ruleset actually requires the check we
           # are leaning on. `pr-feedback` is the one carrying DoD item 10 — Claude
@@ -199,8 +154,12 @@ jobs:
             - `codeql-auto.json` — `{"fixes": {<rule id>: <how to fix it>}, "alerts": [...]}`.
               Every alert here is on the auto allowlist in
               `.github/codeql/triage-policy.yml`. Fix ALL of them.
-            - `codeql-propose.json` — alerts whose rules are NOT on that
-              allowlist. File issues, never code.
+            - `codeql-propose.json` — a list of `{"rule", "action",
+              "existing_issue", "alerts"}` groups, one per rule NOT on that
+              allowlist and not already accepted for that path. File issues,
+              never code. Anything absent from both files was suppressed
+              deliberately and reported in the survey log; do not go looking for
+              it.
 
             Read `.github/codeql/triage-policy.yml` first. Its `fix` text for each
             rule is the prescribed remedy — follow it rather than inventing one,
@@ -251,26 +210,38 @@ jobs:
 
             ## The propose lane (for `codeql-propose.json`)
 
-            For each alert, one deduped issue per RULE — not per alert, or a
-            repeated rule floods the queue:
+            Already grouped and already deduped — one entry per rule, each with
+            an `action` the classifier chose and an `existing_issue`. Do NOT
+            re-search the issue list to second-guess it: whether a rule counts as
+            answered is a comparison against `triage-policy.yml`'s `accepted:`
+            paths, and doing it here by eye is what let a rejected rule go quiet
+            at a file nobody had ruled on. Act on the `action`:
 
-            1. `gh issue list --label cowork --search "<rule id>" --state all`.
-               `--state all` so a rule someone already rejected is not re-filed.
-               `--label cowork` rather than `cowork:proposal`: those two are
-               mutually exclusive with `cowork:queued` (`cowork/house-rules.md`,
-               **The queue**), so searching the narrower label would miss a rule
-               whose issue had been reclassified and open a second public issue
-               re-asking a decision `triage-policy.yml` already records. Both
-               labels sit beside `cowork`, so this sees either.
-               If an open issue covers the rule, add a short comment listing this
-               week's alert numbers instead of opening a duplicate.
-            2. Otherwise open `[security][security] codeql: <rule id>` labelled
-               `cowork:proposal`, `workstream:security`, `type:security`, with the
-               affected locations, why it is not auto-fixable, and what a fix
-               would have to decide. If `triage-policy.yml`'s `propose` section
-               already records a `why` for that rule, quote it and do not
-               re-argue it. End with:
-               `Approve by adding the ``claude-implement`` label. Reject by closing this issue.`
+            - `open` — no issue has ever covered this rule. Open
+              `[security][security] codeql: <rule id>` labelled `cowork:proposal`,
+              `workstream:security`, `type:security`, with the affected locations,
+              why it is not auto-fixable, and what a fix would have to decide.
+            - `comment` — `existing_issue` is open and covers the rule. Add a
+              short comment listing this week's alert numbers. Open nothing.
+            - `new-location` — `existing_issue` is CLOSED, so this rule was
+              answered once, but these alerts are at paths its `accepted:` list
+              does not cover. Open a NEW issue titled
+              `[security][security] codeql: <rule id> at <path>`. Name ONLY the
+              new locations, link the closed issue, and quote its decision rather
+              than re-arguing it — the question is whether that reasoning extends
+              here, which is a different question from the one it answered. Say
+              so in one line at the top.
+
+            If `triage-policy.yml`'s `propose` section records a `why` for the
+            rule, quote it and do not re-argue it. End every issue you open with:
+            `Approve by adding the ``claude-implement`` label. Reject by closing this issue.`
+
+            **Closing an issue is not the end of the loop.** A rejection is only
+            recorded once the rule's `accepted:` list in `triage-policy.yml` names
+            the paths it was made about and the alerts themselves are dismissed in
+            the Security tab. Say that in the issue, because you may do neither:
+            the `accepted:` edit is a human's (it is an approval gate in a file),
+            and dismissing an alert is forbidden to you outright.
 
             DISCLOSURE STOP: if an alert describes a path an outside attacker could
             actually exploit in a released version, do NOT open a public issue — a
