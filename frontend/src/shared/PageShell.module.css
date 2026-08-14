@@ -91,8 +91,19 @@
      bottom-right curve carry on from the frame they replace. */
   border: 2px solid var(--screen-frame);
   border-bottom: none;
-  border-radius: var(--r-m) 0 var(--r-l) 0;
+  border-radius: var(--r-m) var(--r-m) var(--r-l) 0;
   background: var(--bg);
+}
+
+/* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
+   the border and has to close itself. */
+@media (max-width: 1099px) {
+  [data-host='true'] .dockApp {
+    right: var(--s3);
+    bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
+    border-bottom: 2px solid var(--screen-frame);
+    border-radius: var(--r-m);
+  }
 }
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen

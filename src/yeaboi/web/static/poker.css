@@ -1675,7 +1675,7 @@ dialog._modal_6k8bd_392 {
  * break across a page mid-card.
  */
 
-._page_mnjn5_16 {
+._page_19zux_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -1684,7 +1684,7 @@ dialog._modal_6k8bd_392 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_mnjn5_25 {
+._shellApp_19zux_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -1703,7 +1703,7 @@ dialog._modal_6k8bd_392 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_mnjn5_44 {
+._appRegion_19zux_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1713,7 +1713,7 @@ dialog._modal_6k8bd_392 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_mnjn5_54 {
+._barSticky_19zux_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1721,14 +1721,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_mnjn5_62 {
+._masthead_19zux_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_mnjn5_69 {
+._dockApp_19zux_69 {
   /* `fixed`, not `absolute`: an absolute child is clipped by `.shellApp`'s
      `overflow: hidden` at the inside of the frame, so it can only ever sit
      *on* the border. A fixed one is not — `.shellApp` is itself fixed, which
@@ -1753,13 +1753,24 @@ dialog._modal_6k8bd_392 {
      bottom-right curve carry on from the frame they replace. */
   border: 2px solid var(--screen-frame);
   border-bottom: none;
-  border-radius: var(--r-m) 0 var(--r-l) 0;
+  border-radius: var(--r-m) var(--r-m) var(--r-l) 0;
   background: var(--bg);
+}
+
+/* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
+   the border and has to close itself. */
+@media (max-width: 1099px) {
+  [data-host='true'] ._dockApp_19zux_69 {
+    right: var(--s3);
+    bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
+    border-bottom: 2px solid var(--screen-frame);
+    border-radius: var(--r-m);
+  }
 }
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_mnjn5_100 {
+._chromeApp_19zux_111 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -1771,7 +1782,7 @@ dialog._modal_6k8bd_392 {
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_mnjn5_100 > *:last-child {
+._chromeApp_19zux_111 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -1780,16 +1791,16 @@ dialog._modal_6k8bd_392 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_mnjn5_121 h1 {
+  ._headMainApp_19zux_132 h1 {
     display: none;
   }
-  ._mastheadApp_mnjn5_124 {
+  ._mastheadApp_19zux_135 {
     padding: var(--s2) var(--s3);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_mnjn5_124 {
+._mastheadApp_19zux_135 {
   flex: none;
   display: flex;
   align-items: center;
@@ -1798,53 +1809,53 @@ dialog._modal_6k8bd_392 {
   background: var(--panel);
 }
 
-._head_mnjn5_121 {
+._head_19zux_132 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_mnjn5_146 {
+._headApp_19zux_157 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_mnjn5_121 {
+._headMain_19zux_132 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_mnjn5_121 {
+._headMainApp_19zux_132 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_mnjn5_121 ._wordmark_mnjn5_163 {
+._headMainApp_19zux_132 ._wordmark_19zux_174 {
   margin-bottom: 0;
 }
-._headMainApp_mnjn5_121 h1 {
+._headMainApp_19zux_132 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_mnjn5_163 {
+._wordmark_19zux_174 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_mnjn5_180 {
+._wordmarkCompact_19zux_191 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_mnjn5_185 {
+._title_19zux_196 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -1854,30 +1865,30 @@ dialog._modal_6k8bd_392 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_mnjn5_195 {
+._titleCompact_19zux_206 {
   font-size: var(--fs-l);
 }
 
-._subtitle_mnjn5_199 {
+._subtitle_19zux_210 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_mnjn5_205 {
+._facts_19zux_216 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_mnjn5_212 {
+._themes_19zux_223 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_mnjn5_218 {
+._toc_19zux_229 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1894,36 +1905,36 @@ dialog._modal_6k8bd_392 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_mnjn5_218 a {
+._toc_19zux_229 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_mnjn5_218 a:hover {
+._toc_19zux_229 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_mnjn5_245 > * + * {
+._container_19zux_256 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_mnjn5_252 {
+._containerApp_19zux_263 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_mnjn5_252 > * + * {
+._containerApp_19zux_263 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_mnjn5_264 {
+._footer_19zux_275 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -1939,7 +1950,7 @@ dialog._modal_6k8bd_392 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_mnjn5_280 {
+._footerSlim_19zux_291 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -1949,17 +1960,17 @@ dialog._modal_6k8bd_392 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_mnjn5_212,
-  ._toc_mnjn5_218 {
+  ._themes_19zux_223,
+  ._toc_19zux_229 {
     display: none;
   }
-  ._page_mnjn5_16 {
+  ._page_19zux_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_mnjn5_25 {
+  ._shellApp_19zux_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -1967,26 +1978,26 @@ dialog._modal_6k8bd_392 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_mnjn5_44 {
+  ._appRegion_19zux_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_mnjn5_54 {
+  ._barSticky_19zux_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_mnjn5_16 ._masthead_mnjn5_62 {
+  ._page_19zux_16 ._masthead_19zux_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_mnjn5_264 {
+  ._footer_19zux_275 {
     color: var(--muted);
   }
 }
