@@ -120,14 +120,6 @@
 .dockDragging {
   transition: none;
   cursor: grabbing;
-  border-radius: var(--lift);
-  border: var(--screen-frame-w) solid var(--screen-frame);
-  box-shadow: var(--shadow-2);
-}
-
-.dockDragging::before,
-.dockDragging::after {
-  display: none;
 }
 
 /* The one part of the dock that is ground rather than a control, so it is what
