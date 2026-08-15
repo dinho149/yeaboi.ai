@@ -486,7 +486,10 @@ export function App({ boot }: { boot: PokerBoot }) {
           estimated={estimated}
           scope={boot.scope}
           open={railOpen}
-          onPick={setPeekIndex}
+          // The host's click moves the room. Previewing is what a *guest* does
+          // with the rail — they cannot move it — and asking the one person who
+          // can to preview first and then confirm is a step for nothing.
+          onPick={(next) => (isHost ? run(actions.goto(next)) : setPeekIndex(next))}
           onClose={() => setRailOpen(false)}
         />
         {/* Tapping outside the drawer closes it. A div rather than a button

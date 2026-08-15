@@ -15,6 +15,20 @@
  * div. This is one of the few places where the platform primitive is strictly
  * better than anything worth writing.
  *
+ * ## Closing takes a beat
+ *
+ * A `<dialog>` leaves the box tree the moment it closes, so an exit keyframe
+ * never gets a frame to run in — which is why this used to vanish. The element
+ * is now held open for the length of the exit animation and closed after it, so
+ * the dialog and its backdrop can fade together.
+ *
+ * ## Closing takes a beat
+ *
+ * A `<dialog>` leaves the box tree the moment it closes, so an exit keyframe
+ * never gets a frame to run in — which is why this used to vanish. The element
+ * is held open for the length of the exit animation and closed after it, so the
+ * dialog and its backdrop can fade together.
+ *
  * ## The jsdom caveat
  *
  * `showModal` is a relatively recent jsdom addition. The fallback below opens
@@ -23,7 +37,7 @@
  * every browser yeaboi supports has the real thing.
  */
 
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { cx } from '../runtime/cx';
 import styles from './shared.module.css';
@@ -40,21 +54,35 @@ export interface ModalProps {
   className?: string | undefined;
 }
 
+/** How long the dialog is held open to fade. Matches `modalOut` in the CSS. */
+const EXIT_MS = 180;
+
 export function Modal({ open, onClose, title, hideTitle, children, actions, className }: ModalProps) {
   const ref = useRef<HTMLDialogElement | null>(null);
+  const [closing, setClosing] = useState(false);
   const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
+    const shut = (): void => {
+      if (typeof dialog.close === 'function') dialog.close();
+      else dialog.removeAttribute('open');
+    };
     if (open) {
+      setClosing(false);
       if (dialog.open) return;
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', ''); // jsdom / very old browsers
-    } else if (dialog.open) {
-      if (typeof dialog.close === 'function') dialog.close();
-      else dialog.removeAttribute('open');
+      return;
     }
+    if (!dialog.open) return;
+    setClosing(true);
+    const timer = setTimeout(() => {
+      setClosing(false);
+      shut();
+    }, EXIT_MS);
+    return () => clearTimeout(timer);
   }, [open]);
 
   useEffect(() => {
@@ -80,7 +108,7 @@ export function Modal({ open, onClose, title, hideTitle, children, actions, clas
   return (
     <dialog
       ref={ref}
-      className={cx(styles['modal'], className)}
+      className={cx(styles['modal'], closing && styles['modalOut'], className)}
       aria-labelledby={titleId}
       // Clicking the backdrop should dismiss. The click lands on the <dialog>
       // itself (the backdrop is its pseudo-element), so comparing target to

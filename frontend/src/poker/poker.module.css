@@ -1015,13 +1015,12 @@
 }
 
 .deckStatus {
-  /* A fixed line box: the locked line carries a glyph and the open one does
-     not, and without this the deck — and the table above it — shifted by the
-     difference every time the host turned the lock. */
+  /* A fixed line box, and deliberately NOT a flex one: the locked line carries
+     a glyph and the open one does not, so without a floor the deck — and the
+     table above it — moved every time the host turned the lock. Flex would
+     hold it too, at the cost of eating the spaces around `<b>` in
+     "Your vote: 5 — tap it again", because each run becomes an item. */
   min-height: 1.6em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);

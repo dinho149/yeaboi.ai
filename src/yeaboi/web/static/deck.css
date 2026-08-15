@@ -1271,7 +1271,7 @@ svg._wordmark_1yckr_223 {
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_16s5d_17 {
+._appbar_dkazm_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1283,13 +1283,13 @@ svg._wordmark_1yckr_223 {
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_16s5d_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_16s5d_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_dkazm_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_dkazm_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_16s5d_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_16s5d_35 {
+._brandTitle_dkazm_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_dkazm_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1298,13 +1298,13 @@ svg._wordmark_1yckr_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_16s5d_44 { flex: 1; }
-._tools_16s5d_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_dkazm_44 { flex: 1; }
+._tools_dkazm_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_16s5d_50 {
+._btn_dkazm_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1326,49 +1326,49 @@ svg._wordmark_1yckr_223 {
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_16s5d_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_dkazm_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_16s5d_50:disabled { opacity: 0.45; cursor: default; }
+._btn_dkazm_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_16s5d_79 {
+._btnS_dkazm_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_16s5d_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_dkazm_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_16s5d_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_dkazm_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_16s5d_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_16s5d_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_16s5d_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_dkazm_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_dkazm_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_dkazm_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_16s5d_95 {
+._btnPill_dkazm_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_16s5d_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_dkazm_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_16s5d_107 {
+._btnBare_dkazm_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_16s5d_107:hover:not(:disabled), ._btnBare_16s5d_107:focus-visible {
+._btnBare_dkazm_107:hover:not(:disabled), ._btnBare_dkazm_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
@@ -1380,15 +1380,15 @@ svg._wordmark_1yckr_223 {
    which sat next to a ↩ it had become identical to. Two classes, so it beats
    `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
    where it happens to sit in the file. */
-._btnBare_16s5d_107._btnDanger_16s5d_91 { color: var(--danger); }
-._btnBare_16s5d_107._btnDanger_16s5d_91:hover:not(:disabled),
-._btnBare_16s5d_107._btnDanger_16s5d_91:focus-visible { color: var(--danger); border-color: transparent; }
+._btnBare_dkazm_107._btnDanger_dkazm_91 { color: var(--danger); }
+._btnBare_dkazm_107._btnDanger_dkazm_91:hover:not(:disabled),
+._btnBare_dkazm_107._btnDanger_dkazm_91:focus-visible { color: var(--danger); border-color: transparent; }
 
-._btnActive_16s5d_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_dkazm_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_16s5d_107._btnActive_16s5d_124 {
+._btnBare_dkazm_107._btnActive_dkazm_124 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1398,34 +1398,34 @@ svg._wordmark_1yckr_223 {
 /* The raised rendition of the delete confirmation. Three classes, because
    `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
    `--text` at the exact moment it is asking about a destructive action. */
-._btnBare_16s5d_107._btnActive_16s5d_124._btnDanger_16s5d_91 { color: var(--danger); }
+._btnBare_dkazm_107._btnActive_dkazm_124._btnDanger_dkazm_91 { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_16s5d_148:not(:disabled) { animation: _btnPulse_16s5d_1 1.6s ease-in-out infinite; }
-@keyframes _btnPulse_16s5d_1 {
+._btnAttention_dkazm_148:not(:disabled) { animation: _btnPulse_dkazm_1 1.6s ease-in-out infinite; }
+@keyframes _btnPulse_dkazm_1 {
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_16s5d_153 { width: 100%; }
+._btnBlock_dkazm_153 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_16s5d_157 { opacity: 0.72; }
-._btnDim_16s5d_157:hover, ._btnDim_16s5d_157:focus-visible { opacity: 1; }
+._btnDim_dkazm_157 { opacity: 0.72; }
+._btnDim_dkazm_157:hover, ._btnDim_dkazm_157:focus-visible { opacity: 1; }
 
-._iconGlyph_16s5d_160 { font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_dkazm_160 { font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._presetRow_16s5d_165 {
+._presetRow_dkazm_165 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--s2);
 }
 
-._preset_16s5d_165 {
+._preset_dkazm_165 {
   min-height: var(--tap);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
@@ -1439,7 +1439,7 @@ svg._wordmark_1yckr_223 {
     background var(--dur-fast) var(--ease);
 }
 
-._preset_16s5d_165:hover {
+._preset_dkazm_165:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1450,20 +1450,20 @@ svg._wordmark_1yckr_223 {
    surface was already showing and becoming clickable should not make it louder.
    The underline is held back to hover for the same reason: on a slide deck's
    corner and a board's status strip it would read as a fifth rule line. */
-._credit_16s5d_196 {
+._credit_dkazm_196 {
   color: inherit;
   text-decoration: none;
 }
-._credit_16s5d_196:hover,
-._credit_16s5d_196:focus-visible {
+._credit_dkazm_196:hover,
+._credit_dkazm_196:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_16s5d_207 { display: contents; }
-._popoverAnchor_16s5d_208 { position: relative; display: inline-flex; }
-._tbtn_16s5d_209 {
+._popoverGroup_dkazm_207 { display: contents; }
+._popoverAnchor_dkazm_208 { position: relative; display: inline-flex; }
+._tbtn_dkazm_209 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1478,10 +1478,10 @@ svg._wordmark_1yckr_223 {
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_16s5d_209:hover { border-color: var(--accent); }
-._tbtnOpen_16s5d_225 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_dkazm_209:hover { border-color: var(--accent); }
+._tbtnOpen_dkazm_225 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_16s5d_207 {
+._popover_dkazm_207 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1497,11 +1497,11 @@ svg._wordmark_1yckr_223 {
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_16s5d_243 { right: auto; left: 0; }
+._popoverLeft_dkazm_243 { right: auto; left: 0; }
 
 /* Rendered into a host that already is a panel — the dock's drawer. It keeps
    only its padding: the ground, the border and the animation are the host's. */
-._popoverDocked_16s5d_247 {
+._popoverDocked_dkazm_247 {
   position: static;
   min-width: 240px;
   max-height: min(60vh, 420px);
@@ -1512,18 +1512,18 @@ svg._wordmark_1yckr_223 {
 }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_16s5d_258 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_16s5d_207[hidden] { display: none; }
+._popoverAbove_dkazm_258 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_dkazm_207[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_16s5d_262 {
+._fieldLabel_dkazm_262 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--dim);
 }
-._textInput_16s5d_269, ._numberInput_16s5d_269 {
+._textInput_dkazm_269, ._numberInput_dkazm_269 {
   min-width: 0;
   flex: 1;
   min-height: var(--tap);
@@ -1537,16 +1537,16 @@ svg._wordmark_1yckr_223 {
   transition: border-color var(--dur-fast) var(--ease);
 }
 
-._textInput_16s5d_269:focus-visible, ._numberInput_16s5d_269:focus-visible {
+._textInput_dkazm_269:focus-visible, ._numberInput_dkazm_269:focus-visible {
   outline: none;
   border-color: var(--accent);
 }
-._textInput_16s5d_269 { flex: 1; min-width: 0; }
-._numberInput_16s5d_269 { width: 5.5rem; font-family: var(--font-mono); }
+._textInput_dkazm_269 { flex: 1; min-width: 0; }
+._numberInput_dkazm_269 { width: 5.5rem; font-family: var(--font-mono); }
 /* Drawn rather than tinted: `accent-color` colours the thumb and leaves a
    grey groove, so the control shows where the handle is and not what the
    value is. `--fill` is set by the component from the value itself. */
-._range_16s5d_292 {
+._range_dkazm_292 {
   width: 100%;
   height: 20px;
   appearance: none;
@@ -1554,7 +1554,7 @@ svg._wordmark_1yckr_223 {
   cursor: pointer;
 }
 
-._range_16s5d_292::-webkit-slider-runnable-track {
+._range_dkazm_292::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1564,7 +1564,7 @@ svg._wordmark_1yckr_223 {
   );
 }
 
-._range_16s5d_292::-moz-range-track {
+._range_dkazm_292::-moz-range-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1574,7 +1574,7 @@ svg._wordmark_1yckr_223 {
   );
 }
 
-._range_16s5d_292::-webkit-slider-thumb {
+._range_dkazm_292::-webkit-slider-thumb {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -1585,7 +1585,7 @@ svg._wordmark_1yckr_223 {
   box-shadow: var(--shadow-1);
 }
 
-._range_16s5d_292::-moz-range-thumb {
+._range_dkazm_292::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: 0;
@@ -1599,13 +1599,13 @@ svg._wordmark_1yckr_223 {
    mono label above each control, one full-width action at the foot. The three
    panels were three layouts — a label beside a select, a bare row of buttons,
    a row of coloured squares — which is why they read as unrelated. */
-._panelForm_16s5d_345 {
+._panelForm_dkazm_345 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._field_16s5d_262 {
+._field_dkazm_262 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -1613,23 +1613,23 @@ svg._wordmark_1yckr_223 {
   flex: 1;
 }
 
-._inputRow_16s5d_359 {
+._inputRow_dkazm_359 {
   display: flex;
   gap: var(--s2);
 }
 
-._inputAction_16s5d_364 {
+._inputAction_dkazm_364 {
   flex: none;
 }
 
-._panelAction_16s5d_368 {
+._panelAction_dkazm_368 {
   width: 100%;
   justify-content: center;
 }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicHead_16s5d_374 { display: flex; align-items: flex-end; gap: var(--s3); }
-._musicPlay_16s5d_375 {
+._musicHead_dkazm_374 { display: flex; align-items: flex-end; gap: var(--s3); }
+._musicPlay_dkazm_375 {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1644,16 +1644,16 @@ svg._wordmark_1yckr_223 {
   transition: transform var(--dur-fast) var(--ease);
 }
 
-._musicPlay_16s5d_375:hover {
+._musicPlay_dkazm_375:hover {
   transform: scale(1.06);
 }
 
 /* Waiting on the stream. Suppressed by the global reduced-motion guard. */
-._musicPlayBusy_16s5d_395 {
-  animation: _musicWait_16s5d_1 1.1s ease-in-out infinite;
+._musicPlayBusy_dkazm_395 {
+  animation: _musicWait_dkazm_1 1.1s ease-in-out infinite;
 }
 
-@keyframes _musicWait_16s5d_1 {
+@keyframes _musicWait_dkazm_1 {
   50% {
     opacity: 0.55;
   }
@@ -1664,12 +1664,12 @@ svg._wordmark_1yckr_223 {
 /* A dock stood on end has no room for a word beside the glyph. Keyed on the
    attribute, not the class, because the dock's class is hashed into another
    module. */
-[data-edge='left'] ._iconLabel_16s5d_410,
-[data-edge='right'] ._iconLabel_16s5d_410 {
+[data-edge='left'] ._iconLabel_dkazm_410,
+[data-edge='right'] ._iconLabel_dkazm_410 {
   display: none;
 }
 
-._viz_16s5d_415 {
+._viz_dkazm_415 {
   flex: none;
   width: 0;
   height: 22px;
@@ -1682,26 +1682,35 @@ svg._wordmark_1yckr_223 {
     transform var(--dur-base) var(--ease);
 }
 
-._vizOn_16s5d_428 {
+._vizOn_dkazm_428 {
   width: 34px;
   opacity: 1;
   transform: none;
 }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerReadout_16s5d_435 {
+/* Unfolds like the visualiser does. Without it the dock's width snapped the
+   moment a timer started and then eased back into place — two motions where
+   there should be one. */
+._timerReadout_dkazm_438 {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 6ch;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: var(--accent);
-  min-width: 4.5ch;
   text-align: right;
+  animation: _readoutIn_dkazm_1 var(--dur-base) var(--ease) both;
 }
-/* Finished state is carried by colour AND the words "time's up", not by the
-   old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_16s5d_445 { color: var(--danger); }
 
-._confetti_16s5d_447 {
+@keyframes _readoutIn_dkazm_1 {
+  from {
+    max-width: 0;
+    opacity: 0;
+  }
+}
+._confetti_dkazm_456 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1713,13 +1722,13 @@ svg._wordmark_1yckr_223 {
 /* ── Themes ───────────────────────────────────────────────────────
    A theme is a ground and an accent, so a swatch shows both — and its own
    name, because "the dark blue one" is not how anyone asks for Solarized. */
-._swatches_16s5d_459 {
+._swatches_dkazm_468 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   gap: var(--s2);
 }
 
-._swatch_16s5d_459 {
+._swatch_dkazm_468 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1737,16 +1746,16 @@ svg._wordmark_1yckr_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._swatch_16s5d_459:hover {
+._swatch_dkazm_468:hover {
   transform: translateY(-1px);
 }
 
-._swatchOn_16s5d_487 {
+._swatchOn_dkazm_496 {
   border-color: var(--swatch-accent, var(--accent));
   box-shadow: 0 0 0 1px var(--swatch-accent, var(--accent));
 }
 
-._swatchName_16s5d_492 {
+._swatchName_dkazm_501 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: var(--track-label);
@@ -1754,36 +1763,64 @@ svg._wordmark_1yckr_223 {
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_16s5d_500 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_16s5d_501 { display: inline-flex; align-items: center; }
-._stacked_16s5d_502 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_16s5d_502:first-child { margin-left: 0; }
-._presenceMore_16s5d_504 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_16s5d_505 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_dkazm_509 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_dkazm_510 { display: inline-flex; align-items: center; }
+._stacked_dkazm_511 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_dkazm_511:first-child { margin-left: 0; }
+._presenceMore_dkazm_513 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_dkazm_514 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_16s5d_507 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_16s5d_508 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_16s5d_509 { flex: 1; }
-._rosterYou_16s5d_510 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_16s5d_511 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_dkazm_516 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_dkazm_517 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_dkazm_518 { flex: 1; }
+._rosterYou_dkazm_519 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_dkazm_520 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_16s5d_514 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_16s5d_515 {
-  width: 38px;
-  height: 38px;
+/* An even grid rather than a wrapping row: the last line of a wrap is short
+   and the block reads as ragged next to a full-width field above it. Eight
+   columns, square cells, the same gutter in both directions. */
+._avatarGrid_dkazm_526 {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: var(--s2);
+}
+
+._avatarChoice_dkazm_532 {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--r-s);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline-strong);
   background: var(--panel-2);
   cursor: pointer;
   font-size: var(--fs-l);
   line-height: 1;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
-._avatarChoiceOn_16s5d_525 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+._avatarChoice_dkazm_532:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+._avatarChoiceOn_dkazm_553 {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+@media (max-width: 480px) {
+  ._avatarGrid_dkazm_526 {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_16s5d_528 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
-._qr_16s5d_529 {
+._invite_dkazm_565 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
+._qr_dkazm_566 {
   width: 280px;
   height: 280px;
   max-width: 100%;
@@ -1792,18 +1829,18 @@ svg._wordmark_1yckr_223 {
   background: var(--paper);
   padding: var(--s3);
 }
-._inviteCode_16s5d_538 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_16s5d_539 {
+._inviteCode_dkazm_575 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_dkazm_576 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_16s5d_546 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_dkazm_583 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_16s5d_549 {
+._copyField_dkazm_586 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1817,7 +1854,7 @@ svg._wordmark_1yckr_223 {
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_16s5d_563 {
+._copyValue_dkazm_600 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1825,10 +1862,10 @@ svg._wordmark_1yckr_223 {
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_16s5d_571 { flex: none; }
+._copyBtn_dkazm_608 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_16s5d_574 {
+._toast_dkazm_611 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1840,13 +1877,38 @@ svg._wordmark_1yckr_223 {
   color: var(--text);
   font-size: var(--fs-2xs);
   text-align: center;
+  animation: _toastIn_dkazm_1 var(--dur-base) var(--ease) both;
+}
+
+@keyframes _toastIn_dkazm_1 {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Folds rather than blinks: the height and the margin go with the opacity, so
+   the panel closes the gap instead of jumping when it leaves. */
+._toastOut_dkazm_635 {
+  animation: _toastOut_dkazm_635 220ms var(--ease) forwards;
+}
+
+@keyframes _toastOut_dkazm_635 {
+  to {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
 /* `dialog.modal`, not `.modal`: the element qualifier outranks the global
    `* { margin: 0 }` reset and every `.x > * + *` stacking rule, both of which
    override the UA `margin: auto` that centres an open dialog. */
-dialog._modal_16s5d_589 {
+dialog._modal_dkazm_651 {
   margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
@@ -1856,36 +1918,48 @@ dialog._modal_16s5d_589 {
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_16s5d_589::backdrop {
+._modal_dkazm_651::backdrop {
   background: rgb(0 0 0 / 55%);
-  animation: _modalVeil_16s5d_1 var(--dur-base) var(--ease) both;
+  animation: _modalVeil_dkazm_1 var(--dur-base) var(--ease) both;
 }
 
-/* Opening only. A `<dialog>` is removed from the box tree the moment it closes,
-   so an exit keyframe never gets a frame to run in. */
-._modal_16s5d_589[open] {
-  animation: _modalIn_16s5d_1 var(--dur-base) var(--ease) both;
+._modal_dkazm_651[open] {
+  animation: _modalIn_dkazm_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _modalIn_16s5d_1 {
+/* Held open for this long by the component — a `<dialog>` that closes itself
+   leaves the box tree with no frame left to animate in. */
+._modalOut_dkazm_675[open],
+._modalOut_dkazm_675[open]::backdrop {
+  animation: _modalOut_dkazm_675 180ms var(--ease) forwards;
+}
+
+@keyframes _modalOut_dkazm_675 {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+@keyframes _modalIn_dkazm_1 {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
 
-@keyframes _modalVeil_16s5d_1 {
+@keyframes _modalVeil_dkazm_1 {
   from {
     opacity: 0;
   }
 }
-._modalBody_16s5d_625 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_16s5d_626 { font-size: var(--fs-l); margin: 0; }
-._modalActions_16s5d_627 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modalBody_dkazm_699 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_dkazm_700 { font-size: var(--fs-l); margin: 0; }
+._modalActions_dkazm_701 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_16s5d_631 {
+._srOnly_dkazm_705 {
   position: absolute;
   width: 1px;
   height: 1px;

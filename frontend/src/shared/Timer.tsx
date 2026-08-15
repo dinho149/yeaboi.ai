@@ -12,9 +12,9 @@
  *   participant has no idea the timebox is nearly up.
  * * `#timer-btn.done .rd` used to run `animation: blink 1s steps(2) infinite`
  *   with no `prefers-reduced-motion` guard anywhere in the retro stylesheet — a
- *   literal flashing element. The global guard in tokens.css now neutralises it,
- *   and the `done` state is carried by colour and text as well as motion, so
- *   nothing is conveyed by the flash alone.
+ *   literal flashing element. There is no finished state on the toolbar at all
+ *   now: the confetti and the alarm announce the end, and the readout simply
+ *   goes.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -34,20 +34,22 @@ export interface TimerReadoutProps {
 }
 
 export function TimerReadout({ remaining, className }: TimerReadoutProps) {
-  if (remaining === null) return null;
-  const done = remaining === 0;
+  // A finished timer says nothing here: the confetti and the alarm already
+  // said it, and a strip of type reading "time's up" stays on the toolbar long
+  // after the moment has passed.
+  if (remaining === null || remaining === 0) return null;
   // Announce at each whole minute and through the last ten seconds; stay quiet
   // in between. `aria-live` reads the region when its text changes, so the
   // switch between 'polite' and 'off' is what throttles it.
-  const announce = done || remaining <= 10 || remaining % 60 === 0;
+  const announce = remaining <= 10 || remaining % 60 === 0;
 
   return (
     <span
-      className={cx(styles['timerReadout'], done && styles['timerDone'], className)}
+      className={cx(styles['timerReadout'], className)}
       aria-live={announce ? 'polite' : 'off'}
       aria-atomic="true"
     >
-      {done ? "time's up" : fmtClock(remaining)}
+      {fmtClock(remaining)}
     </span>
   );
 }
