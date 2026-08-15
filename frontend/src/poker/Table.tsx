@@ -47,20 +47,23 @@ export function Table({ votes, revealed }: TableProps) {
         <ul className={styles['vrow']}>
           {votes.map((person, index) => (
             <li key={`${person.name}:${index}`} className={styles['voter']}>
-              {revealed ? (
-                <span className={styles['vcard']} style={{ '--i': index } as never}>
-                  {person.value}
-                </span>
-              ) : (
+              {/* The seat does not change on reveal — the vote arrives beside
+                  the name as a card, so the table stays the same table. */}
+              <span className={styles['seatFace']}>
                 <span className={styles['face']}>
                   <span aria-hidden="true">{person.avatar || <Icon name="user" size={16} />}</span>
-                  {person.voted ? (
+                  {!revealed && person.voted ? (
                     <span className={styles['tick']} aria-hidden="true">
                       <Icon name="check" size={11} strokeWidth={3} />
                     </span>
                   ) : null}
                 </span>
-              )}
+                {revealed ? (
+                  <span className={styles['vcard']} style={{ '--i': index } as never} aria-hidden="true">
+                    {person.value}
+                  </span>
+                ) : null}
+              </span>
               <span className={styles['nm']} title={person.name}>
                 {person.name}
               </span>

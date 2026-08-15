@@ -240,6 +240,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      color-mix keeps the five theme blocks to the handful of decisions a
      theme actually is; everything shaded off them is computed here once. */
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
   /* A surface on a dark ground is read from its lit edge, not from its fill —
      the separator every dark product UI in the reference set uses is white at
      5–14%, never a darker grey. Raised surfaces take `--hairline` plus

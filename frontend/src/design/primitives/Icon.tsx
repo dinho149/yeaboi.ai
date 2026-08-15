@@ -15,6 +15,8 @@
  * as a blob.
  */
 
+import { createElement, type ReactElement } from 'react';
+
 import { cx } from '../../runtime/cx';
 import styles from './primitives.module.css';
 
@@ -72,6 +74,32 @@ export interface IconProps {
   className?: string | undefined;
 }
 
+const SHAPE = /<(path|circle|line|polyline|polygon|rect|ellipse)\s+([^>]*?)\/>/g;
+const ATTR = /([a-zA-Z-]+)="([^"]*)"/g;
+
+const parsed = new Map<IconName, ReactElement[]>();
+
+/**
+ * The glyph body as real elements.
+ *
+ * These are vendored Lucide shapes — a fixed, author-controlled table, not
+ * content — but they are still parsed rather than injected: `innerHTML` is
+ * banned across this front end, and one exemption is how that rule stops being
+ * a rule. Parsed once per icon and cached.
+ */
+function shapes(name: IconName): ReactElement[] {
+  const cached = parsed.get(name);
+  if (cached) return cached;
+  const out: ReactElement[] = [];
+  for (const [, tag, attrs] of (PATHS[name] ?? '').matchAll(SHAPE)) {
+    const props: Record<string, string> = {};
+    for (const [, key, value] of attrs.matchAll(ATTR)) props[key] = value;
+    out.push(createElement(tag, { ...props, key: `${tag}${out.length}` }));
+  }
+  parsed.set(name, out);
+  return out;
+}
+
 /** Decorative by default: every icon here sits beside its own label. */
 export function Icon({ name, size = 16, strokeWidth, className }: IconProps) {
   return (
@@ -87,7 +115,8 @@ export function Icon({ name, size = 16, strokeWidth, className }: IconProps) {
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-      dangerouslySetInnerHTML={{ __html: PATHS[name] }}
-    />
+    >
+      {shapes(name)}
+    </svg>
   );
 }

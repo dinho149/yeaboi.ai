@@ -101,6 +101,12 @@ def main() -> int:
     server.join_code = "DEVB-OARD"  # /api/join compares the XXXX-XXXX shape
     server.start()
 
+    # Stands in for the tunnel. Without one `invite_url` is empty by contract and
+    # /api/qr answers 503, so the invite modal cannot be worked on locally.
+    # Through the setter, not the attribute: the request handler reads it off the
+    # httpd, which is where `set_public_url` also writes it.
+    server.set_public_url(f"http://127.0.0.1:{server.port}")
+
     api = f"http://127.0.0.1:{server.port}"
     print("\n  dev poker ready")
     print(f"    host       {server.url}")

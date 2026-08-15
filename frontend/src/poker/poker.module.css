@@ -99,7 +99,19 @@
 }
 
 .railHead {
-  margin-bottom: var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin-bottom: var(--s4);
+}
+
+/* The board's scope heads the list it scopes; the count sits under it. */
+.railScope {
+  margin: 0;
+  font-size: var(--fs-m);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .railList {
@@ -772,13 +784,25 @@
   gap: var(--s4);
 }
 
+/* The avatar and, once revealed, the card that was played — tucked against it
+   so the pair reads as one seat. */
+.seatFace {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.seatFace .vcard {
+  margin-left: -6px;
+}
+
 /* A seat: face over name. */
 .voter {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--s1);
-  width: 68px;
+  width: 84px;
 }
 
 .face {
@@ -820,16 +844,16 @@
 .vcard {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 62px;
-  border-radius: var(--r-m);
+  width: 22px;
+  height: 30px;
+  border-radius: var(--r-s);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 20%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 10%, var(--panel)) 55%);
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: var(--shadow-1);
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: var(--fs-l);
+  font-size: var(--fs-2xs);
   font-weight: 700;
   animation: flip 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);

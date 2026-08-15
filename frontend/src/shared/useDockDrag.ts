@@ -19,7 +19,7 @@
  * right wall. `edge` is derived from `t` and only drives orientation.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export type DockEdge = 'bottom' | 'left' | 'right';
 
@@ -133,8 +133,10 @@ export function useDockDrag(): DockDrag {
     el.setPointerCapture?.(event.pointerId);
   }, []);
 
-  // Rest at the bottom-right, where the dock has always sat.
-  useEffect(() => {
+  // Rest at the bottom-right, where the dock has always sat. Before paint, or
+  // the first frame renders it in the top-left corner and it visibly flies
+  // across the board on every load.
+  useLayoutEffect(() => {
     const b = box();
     if (!b || distance.current !== null) return;
     settle(b.h + b.w - GUTTER - b.dw / 2);

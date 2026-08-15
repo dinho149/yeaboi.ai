@@ -249,6 +249,12 @@
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
+
+/* The bar's corners are clipped by its children rather than by `overflow`,
+   which would also clip every popover opening out of it. */
+.chromeApp > * {
+  border-radius: inherit;
+}
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
 .chromeApp > *:last-child {
   flex: 1;
