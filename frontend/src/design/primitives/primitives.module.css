@@ -19,9 +19,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
-  background: var(--card);
+  background: var(--panel-2);
   color: var(--muted);
-  border: 1px solid var(--line);
 }
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —

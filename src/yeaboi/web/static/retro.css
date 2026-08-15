@@ -395,7 +395,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_1u2ig_13 {
+._chip_toa0n_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -404,29 +404,28 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
-  background: var(--card);
+  background: var(--panel-2);
   color: var(--muted);
-  border: 1px solid var(--line);
 }
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_1u2ig_29 { text-decoration: none; }
-._chipLink_1u2ig_29:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_toa0n_28 { text-decoration: none; }
+._chipLink_toa0n_28:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_1u2ig_33 {
+._statGrid_toa0n_32 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_1u2ig_33 {
+._stat_toa0n_32 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_1u2ig_44 {
+._statValue_toa0n_43 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -436,25 +435,25 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_1u2ig_54 {
+._statLabel_toa0n_53 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_1u2ig_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_toa0n_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_1u2ig_64 {
+._bar_toa0n_63 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_1u2ig_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_toa0n_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_1u2ig_72 {
+._segTrack_toa0n_71 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -462,10 +461,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_1u2ig_72 > i { display: block; height: 100%; }
+._segTrack_toa0n_71 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_1u2ig_83 {
+._legend_toa0n_82 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -473,14 +472,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_1u2ig_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_1u2ig_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_1u2ig_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_toa0n_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_toa0n_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_toa0n_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_1u2ig_96 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_1u2ig_96 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_1u2ig_98 {
+._sparkWrap_toa0n_95 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_toa0n_95 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_toa0n_97 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -490,7 +489,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_1u2ig_108 {
+._avatar_toa0n_107 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -504,13 +503,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_1u2ig_122 {
+._notice_toa0n_121 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_1u2ig_128 {
+._noticeTitle_toa0n_127 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -519,18 +518,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   align-items: center;
   gap: var(--s2);
 }
-._notice_1u2ig_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_toa0n_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_1u2ig_140 {
+._card_toa0n_139 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_1u2ig_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_1u2ig_148 {
+._cardHover_toa0n_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_toa0n_147 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -541,10 +540,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_1u2ig_159 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_toa0n_158 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_1u2ig_161 { margin-bottom: var(--s6); }
-._sectionTitle_1u2ig_162 {
+._section_toa0n_160 { margin-bottom: var(--s6); }
+._sectionTitle_toa0n_161 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -557,9 +556,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_1u2ig_175 { overflow-x: auto; }
-._table_1u2ig_175 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_1u2ig_175 th {
+._tableWrap_toa0n_174 { overflow-x: auto; }
+._table_toa0n_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_toa0n_174 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -570,23 +569,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_1u2ig_175 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_1u2ig_175 tr:last-child td { border-bottom: none; }
-._numeric_1u2ig_190 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_toa0n_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_toa0n_174 tr:last-child td { border-bottom: none; }
+._numeric_toa0n_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_1u2ig_193 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_toa0n_192 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_1u2ig_197 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_1u2ig_198 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_1u2ig_198 > li {
+._proseText_toa0n_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_toa0n_197 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_toa0n_197 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_1u2ig_198 > li::before {
+._proseList_toa0n_197 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -604,7 +603,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    `font-family` must resolve to a monospace with full block-drawing coverage
    (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
    rather than a face keeps that true if the stack changes. */
-._wordmark_1u2ig_222 {
+._wordmark_toa0n_221 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -622,7 +621,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_1u2ig_222::-webkit-scrollbar { display: none; }
+._wordmark_toa0n_221::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -633,7 +632,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_1u2ig_251 {
+._wordmarkFit_toa0n_250 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -642,7 +641,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   min-width: 0;
 }
 
-._wordmarkShadow_1u2ig_260 {
+._wordmarkShadow_toa0n_259 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -656,14 +655,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_1u2ig_274 {
+._wordmarkStroke_toa0n_273 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_1u2ig_280 {
+._eyebrow_toa0n_279 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -677,9 +676,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_1u2ig_295 { color: var(--accent); }
-._eyebrowDot_1u2ig_296 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_1u2ig_297 {
+._eyebrowAccent_toa0n_294 { color: var(--accent); }
+._eyebrowDot_toa0n_295 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_toa0n_296 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -688,14 +687,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_1u2ig_306 {
+._frame_toa0n_305 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
   box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_1u2ig_313 {
+._frameBar_toa0n_312 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -703,8 +702,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_1u2ig_321 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_1u2ig_321 i {
+._frameLights_toa0n_320 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_toa0n_320 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -712,10 +711,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_1u2ig_321 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_1u2ig_321 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_1u2ig_321 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_1u2ig_333 {
+._frameLights_toa0n_320 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_toa0n_320 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_toa0n_320 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_toa0n_332 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -728,13 +727,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_1u2ig_346 { padding: var(--s5); }
+._frameBody_toa0n_345 { padding: var(--s5); }
 
 /* ── Lozenge — Jira-style status tag ─────────────────────────────────
    Category classes only set the two custom properties; the base rule owns
    the shape. Colours come from the derived lozenge tokens in tokens.css,
    never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
-._lozenge_1u2ig_352 {
+._lozenge_toa0n_351 {
   display: inline-block;
   padding: 1px var(--s2);
   border-radius: var(--r-s);
@@ -748,16 +747,16 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--lozenge-fg, var(--muted));
   background: var(--lozenge-bg, var(--card));
 }
-._lozengeSmall_1u2ig_366 { padding: 0 var(--s1); font-weight: 600; }
-._lozengeTodo_1u2ig_367 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
-._lozengeProgress_1u2ig_368 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
-._lozengeDone_1u2ig_369 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
-._lozengeBlocked_1u2ig_370 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+._lozengeSmall_toa0n_365 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_toa0n_366 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_toa0n_367 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_toa0n_368 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_toa0n_369 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
 
 /* ── Icon ────────────────────────────────────────────────────────
    Sits on the text baseline rather than the line box, so a glyph beside a
    label lines up with it instead of riding high. */
-._icon_1u2ig_375 {
+._icon_toa0n_374 {
   display: inline-block;
   vertical-align: -0.15em;
   flex: none;

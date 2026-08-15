@@ -21,19 +21,6 @@ import { cx } from '../runtime/cx';
 import { POKER_DECK } from '../types/enums';
 import styles from './poker.module.css';
 
-/**
- * Which colour band a card wears. Derived from the value, never listed — the
- * deck's values come from `gen_web_types.py` and respelling them here is the
- * drift that codegen exists to stop. Anything non-numeric is a wild card.
- */
-function band(value: string): 'low' | 'mid' | 'high' | 'wild' {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 'wild';
-  if (n <= 3) return 'low';
-  if (n <= 8) return 'mid';
-  return 'high';
-}
-
 export interface DeckProps {
   /** Your current vote, `''` if you have not voted. */
   mine: string;
@@ -67,7 +54,6 @@ export function Deck({ mine, pending, disabled, reason, onVote }: DeckProps) {
             <button
               key={value}
               type="button"
-              data-band={band(value)}
               className={cx(styles['pcard'], selected && styles['pcardSel'], selected && pending && styles['pcardWait'])}
               disabled={disabled}
               // The label has to say what tapping does, and for the selected

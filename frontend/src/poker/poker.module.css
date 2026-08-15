@@ -96,7 +96,6 @@
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3);
 }
@@ -230,8 +229,6 @@
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-/* Takes the room the table and the deck leave, rather than letting a void open
-   in the middle of the column. */
 .ticket {
   flex: 1;
   min-height: 0;
@@ -305,6 +302,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
@@ -318,6 +319,12 @@
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.6;
+}
+
+/* Prose at a readable measure. Across a 1300px column the eye loses the line
+   it is on, which is most of why the body read as unformatted. */
+.desc {
+  max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against. */
@@ -704,42 +711,27 @@
 
 /* ── The table ───────────────────────────────────────────────────────── */
 
-/* Sits on the bottom of the column, just above the deck. No panel of its own:
-   the seats read as part of the voting furniture, not as another card. */
+/* No panel of its own: the seats read as part of the voting furniture, not as
+   another card. */
 .table {
   margin-top: auto;
   padding: 0 var(--s1);
-}
-
-.tableHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s3);
-}
-
-.tableWait {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  color: var(--dim);
-}
-
-.vempty {
-  color: var(--dim);
-  font-size: var(--fs-s);
 }
 
 .vrow {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s3);
+  position: absolute;
+  inset: 0;
 }
 
+/* A seat: placed at the angle the component computed, stacked name-under-face. */
 .voter {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -857,10 +849,8 @@
 
 .deckStatus {
   margin: 0 0 var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: var(--track-label);
-  color: var(--muted);
+  font-size: var(--fs-xs);
+  color: var(--dim);
   text-align: center;
 }
 
@@ -875,46 +865,25 @@
   gap: var(--s2);
 }
 
+/* A deck is one object in ten copies, not ten coloured objects. The bands went
+   because a rainbow of green/amber/red/purple across the loudest element on the
+   board is the single thing that read most like a toy — and the accent is
+   supposed to be the only chromatic thing on a working surface. What tells the
+   cards apart is the number, which is what you are reading anyway. */
 .pcard {
-  /* Set per band below; everything on the card tints off it. */
-  --band: var(--muted);
   position: relative;
-  width: 64px;
-  height: 92px;
-  border-radius: var(--r-m);
+  width: 60px;
+  height: 84px;
+  border-radius: var(--r-s);
   border: 1px solid var(--line-strong);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--band) 20%, var(--card)), var(--card) 60%);
+  background: var(--panel-2);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-}
-
-/* The frame-within-a-frame every printed card has. */
-.pcard::before {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px solid color-mix(in srgb, var(--band) 30%, transparent);
-  border-radius: var(--r-s);
-  pointer-events: none;
-}
-
-/* Bands, not per-value colours: the deck's values come from a codegen and must
-   not be respelled here. Deck.tsx maps a value to one of these. */
-.pcard[data-band='low'] {
-  --band: var(--ok);
-}
-.pcard[data-band='mid'] {
-  --band: var(--warn);
-}
-.pcard[data-band='high'] {
-  --band: var(--danger);
-}
-.pcard[data-band='wild'] {
-  --band: var(--accent2);
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
 
 .pcard:hover:not(:disabled) {
@@ -927,9 +896,10 @@
   cursor: default;
 }
 
+/* The one place the accent belongs on this row: the card you played. */
 .pcardSel {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--card));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
   color: var(--accent);
   transform: translateY(-6px);
 }
@@ -946,9 +916,8 @@
   top: 6px;
   left: 8px;
   font-size: var(--fs-2xs);
-  font-weight: 700;
-  color: var(--band);
-  opacity: 0.9;
+  font-weight: 500;
+  color: var(--dim);
 }
 
 .ciFlip {
@@ -960,9 +929,8 @@
 }
 
 .cv {
-  font-size: var(--fs-xl);
-  font-weight: 700;
-  color: color-mix(in srgb, var(--band) 55%, var(--text));
+  font-size: var(--fs-l);
+  font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
@@ -971,7 +939,6 @@
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3);
   display: flex;
