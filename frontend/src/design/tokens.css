@@ -97,7 +97,6 @@
      color-mix keeps the five theme blocks to the handful of decisions a
      theme actually is; everything shaded off them is computed here once. */
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
-  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */

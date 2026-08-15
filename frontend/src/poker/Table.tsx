@@ -1,5 +1,5 @@
 /**
- * The seats around the felt.
+ * The seats at the table.
  *
  * Two renderings of the same row, because pre- and post-reveal are different
  * questions. While voting the only fact is *whether* someone has voted, so the
@@ -29,7 +29,9 @@ export function Table({ votes, revealed }: TableProps) {
   return (
     <section className={styles['table']} aria-label="The table">
       <div className={styles['tableHead']}>
-        <Eyebrow value={votes.length || undefined}>The table</Eyebrow>
+        {/* The head carries one number, never two: while voting that is the
+            outstanding count, and only once revealed is it the headcount. */}
+        <Eyebrow value={revealed ? votes.length || undefined : undefined}>The table</Eyebrow>
         {!revealed && votes.length ? (
           <span className={styles['tableWait']}>
             {waiting === 0 ? 'everyone is in' : `${waiting} still to vote`}

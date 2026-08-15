@@ -718,20 +718,36 @@
   padding: 0 var(--s1);
 }
 
+.tableHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+
+.tableWait {
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Empty state, shared by the table and the ticket. */
+.vempty {
+  color: var(--muted);
+  font-size: var(--fs-s);
+  padding: var(--s4) 0;
+}
+
 .vrow {
   list-style: none;
   margin: 0;
   padding: 0;
-  position: absolute;
-  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
 }
 
-/* A seat: placed at the angle the component computed, stacked name-under-face. */
+/* A seat: face over name. */
 .voter {
-  position: absolute;
-  left: var(--x);
-  top: var(--y);
-  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
