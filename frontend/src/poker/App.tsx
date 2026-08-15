@@ -463,12 +463,6 @@ export function App({ boot }: { boot: PokerBoot }) {
           the bottom of this region rather than the viewport — which is where
           the credit begins, so the two no longer fight. */}
       <div className={styles['scroll']}>
-      {locked ? (
-        <p className={styles['lockBanner']} role="alert">
-          <Icon name="lock" /> The host locked voting.
-        </p>
-      ) : null}
-
       {musicBlocked ? (
         <button
           type="button"
@@ -534,6 +528,14 @@ export function App({ boot }: { boot: PokerBoot }) {
           {duel ? <Duel duel={duel} mic={mic} /> : null}
 
           <Table votes={votes} revealed={revealed} />
+
+          {/* Beside the cards it applies to, not across the top of the board:
+              the deck is where you find out you cannot vote. */}
+          {locked ? (
+            <p className={styles['lockBanner']} role="alert">
+              <Icon name="lock" /> The host locked voting.
+            </p>
+          ) : null}
 
           <Deck
             mine={vote.value}

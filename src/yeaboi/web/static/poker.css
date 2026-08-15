@@ -1921,26 +1921,26 @@ dialog._modal_sqcal_427 {
  * break across a page mid-card.
  */
 
-._page_b48wq_16 {
+._page_108we_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is one framed screen: masthead strip, sticky bar, board, credit.
+   A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_b48wq_25 {
+._shellApp_108we_25 {
   max-width: none;
   padding: 0;
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  border: var(--screen-frame-w) solid var(--screen-frame);
+  /* The screen's edge is its shape, not a line: the board's ground against the
+     void outside the curve is what draws the corner. */
   border-radius: var(--screen-radius);
   background: var(--bg);
-  /* Fills the four slivers the rounded corners leave uncovered. */
   box-shadow: 0 0 0 50vmax var(--screen-void);
   /* Clips the children to the curve. */
   overflow: hidden;
@@ -1949,7 +1949,7 @@ dialog._modal_sqcal_427 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_b48wq_44 {
+._appRegion_108we_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1959,7 +1959,7 @@ dialog._modal_sqcal_427 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_b48wq_54 {
+._barSticky_108we_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1967,14 +1967,14 @@ dialog._modal_sqcal_427 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_b48wq_62 {
+._masthead_108we_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_b48wq_69 {
+._dockApp_108we_69 {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
@@ -1982,8 +1982,8 @@ dialog._modal_sqcal_427 {
   align-items: center;
   gap: var(--s1);
   padding: var(--s1) var(--s2);
-  /* The frame's own weight and colour, open on the side it sits against — the
-     dock is where the border lifts, not a box parked under it. */
+  /* Its own outline, open on the side it sits against, so it reads as lifted
+     off the wall it is docked to. */
   border: var(--screen-frame-w) solid var(--screen-frame);
   background: var(--bg);
   box-shadow: var(--shadow-1);
@@ -2002,69 +2002,33 @@ dialog._modal_sqcal_427 {
   visibility: var(--dock-vis, hidden);
 }
 
-._dockPlaced_b48wq_97 {
+._dockPlaced_108we_97 {
   transition: transform var(--dur-base) var(--ease);
 }
 
-/* The wall only decides orientation now: which side is open, which corners are
-   round, and which way the controls run. */
-._dockApp_b48wq_69[data-edge='bottom'] {
+/* Open along the bottom, because that is the edge it is lifted out of. */
+._dockApp_108we_69[data-edge='bottom'] {
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
 }
 
-._dockApp_b48wq_69[data-edge='left'],
-._dockApp_b48wq_69[data-edge='right'] {
-  flex-direction: column;
-  padding: var(--s2) var(--s1);
-}
-
-/* Square on a side wall: the lift is a bottom-border idea, and the fillets
-   that sell it there read as loose curves stuck to a vertical strip. */
-._dockApp_b48wq_69[data-edge='left'] {
-  border-left: none;
-  border-radius: 0;
-}
-
-._dockApp_b48wq_69[data-edge='right'] {
-  border-right: none;
-  border-radius: 0;
-}
-
-._dockApp_b48wq_69[data-edge='left']::before,
-._dockApp_b48wq_69[data-edge='left']::after,
-._dockApp_b48wq_69[data-edge='right']::before,
-._dockApp_b48wq_69[data-edge='right']::after {
-  display: none;
-}
-
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_b48wq_136 {
+._dockDragging_108we_110 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
 }
 
-/* Except across a corner, which is a reorientation rather than a slide — the
-   one move worth easing, so it crawls onto the next wall. */
-._dockTurning_b48wq_144 {
-  transition: transform var(--dur-base) var(--ease);
-}
-
-/* The one part of the dock that is ground rather than a control, so it is what
-   says the whole thing can be moved. */
 /* The handle, and the only part of the dock that is not a control — so it
-   spans the dock's short axis rather than being a 3px mark. Standing on end
-   there is otherwise nothing left to grab. */
-/* A control's own box, so the split can measure how much wall it takes. */
-._dockItem_b48wq_154 {
+   spans the dock's height rather than being a 3px mark. */
+._dockItem_108we_118 {
   display: inline-flex;
   align-items: center;
 }
 
-._dockGrip_b48wq_159 {
+._dockGrip_108we_123 {
   flex: none;
   align-self: stretch;
   width: 14px;
@@ -2077,20 +2041,12 @@ dialog._modal_sqcal_427 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._dockApp_b48wq_69[data-edge='left'] ._dockGrip_b48wq_159,
-._dockApp_b48wq_69[data-edge='right'] ._dockGrip_b48wq_159 {
-  width: auto;
-  height: 14px;
-  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 15px 3px
-    no-repeat;
-}
-
-._dockGrip_b48wq_159:hover {
+._dockGrip_108we_123:hover {
   background-color: var(--panel-2);
 }
 
-._dockApp_b48wq_69:hover ._dockGrip_b48wq_159,
-._dockDragging_b48wq_136 ._dockGrip_b48wq_159 {
+._dockApp_108we_69:hover ._dockGrip_108we_123,
+._dockDragging_108we_110 ._dockGrip_108we_123 {
   opacity: 1;
 }
 
@@ -2099,129 +2055,64 @@ dialog._modal_sqcal_427 {
    fill off things like the play button, which is how it went invisible. */
 /* The one filled control in the notch is a pill, like the presence chip it
    sits opposite. */
-._dockApp_b48wq_69 [class*='btnPrimary'] {
+._dockApp_108we_69 [class*='btnPrimary'] {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
-._dockApp_b48wq_69 > [class*='dockItem'] > button:not([class*='btnPrimary']),
-._dockApp_b48wq_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockApp_108we_69 > [class*='dockItem'] > button:not([class*='btnPrimary']),
+._dockApp_108we_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
 
 /*
- * A panel opened from the notch is the notch, grown.
+ * A panel opened from the notch IS the notch, grown.
  *
- * It sits against the dock's edge, shares its ground and border weight, and
- * grows out of it on open. Closing is not animated: the panel is `hidden`, and
- * a `display: none` element has no frames to run in.
+ * It sits directly on the dock's top edge — overlapping it by the border width,
+ * so the two share one line — and carries the same ground and radius. Opening
+ * scales it out of the edge it is attached to on both axes, which is what makes
+ * it read as the box changing shape rather than a menu appearing over it.
+ * Closing is not animated: the panel is `hidden`, and a `display: none` element
+ * has no frames to run in.
  */
-._dockApp_b48wq_69 [role='group'][aria-label]:not([hidden]) {
+._dockApp_108we_69 [role='group'][aria-label]:not([hidden]) {
+  top: auto;
+  bottom: calc(100% - var(--screen-frame-w));
+  min-width: 240px;
   background: var(--bg);
   border-color: var(--screen-frame);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   box-shadow: var(--shadow-2);
-}
-
-._dockApp_b48wq_69[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
-  top: auto;
-  bottom: calc(100% + var(--s1));
-  min-width: 240px;
   transform-origin: bottom center;
-  animation: _dockGrowUp_b48wq_1 var(--dur-base) var(--ease) both;
+  animation: _dockMorph_108we_1 var(--dur-base) var(--ease) both;
 }
 
-._dockApp_b48wq_69[data-edge='left'] [role='group'][aria-label]:not([hidden]),
-._dockApp_b48wq_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
-  top: 50%;
-  bottom: auto;
-  translate: 0 -50%;
-  animation: _dockGrowSide_b48wq_1 var(--dur-base) var(--ease) both;
+/* Squared off where the panel meets it, so the seam between the two is one
+   straight line rather than four opposing curves. */
+._dockApp_108we_69:has([role='group'][aria-label]:not([hidden])) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
-._dockApp_b48wq_69[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
-  left: calc(100% + var(--s1));
-  right: auto;
-  transform-origin: left center;
-}
-
-._dockApp_b48wq_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
-  right: calc(100% + var(--s1));
-  left: auto;
-  transform-origin: right center;
-}
-
-@keyframes _dockGrowUp_b48wq_1 {
+@keyframes _dockMorph_108we_1 {
   from {
-    max-height: 0;
     opacity: 0;
-    transform: translateY(10px) scaleY(0.9);
+    transform: scale(0.72, 0.2);
   }
 }
 
-@keyframes _dockGrowSide_b48wq_1 {
-  from {
-    max-width: 0;
-    opacity: 0;
-    transform: scaleX(0.9);
-  }
-}
-
-._dockApp_b48wq_69 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockApp_b48wq_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockApp_108we_69 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockApp_108we_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
-}
-
-/*
- * The inside corners where the dock's raised edge rejoins the frame's line.
- *
- * `border-radius` only draws convex corners, so each fillet is a separate
- * square carrying a radial ring. A concave arc bulges toward the corner, so its
- * OUTER radius is tangent to the inner edge of the two lines it joins; centre
- * the ring on the box edge instead and the stroke runs parallel to the dock's
- * border rather than continuing it. Offsets are against the *padding* box,
- * which is what puts the centre one border-width inside the edge.
- */
-._dockApp_b48wq_69::before,
-._dockApp_b48wq_69::after {
-  content: '';
-  position: absolute;
-  width: var(--lift);
-  height: var(--lift);
-  pointer-events: none;
-}
-
-._dockApp_b48wq_69[data-edge='bottom']::before {
-  bottom: 0;
-  left: calc(var(--lift) * -1);
-  background: radial-gradient(
-    circle at 0 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-._dockApp_b48wq_69[data-edge='bottom']::after {
-  bottom: 0;
-  left: 100%;
-  background: radial-gradient(
-    circle at 100% 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
 }
 
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_b48wq_69::before,
-  [data-host='true'] ._dockApp_b48wq_69::after {
-    display: none;
-  }
-  [data-host='true'] ._dockApp_b48wq_69 {
+  [data-host='true'] ._dockApp_108we_69 {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: var(--screen-frame-w) solid var(--screen-frame);
@@ -2231,7 +2122,7 @@ dialog._modal_sqcal_427 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_b48wq_326 {
+._chromeApp_108we_217 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2249,11 +2140,11 @@ dialog._modal_sqcal_427 {
 
 /* The bar's corners are clipped by its children rather than by `overflow`,
    which would also clip every popover opening out of it. */
-._chromeApp_b48wq_326 > * {
+._chromeApp_108we_217 > * {
   border-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_b48wq_326 > *:last-child {
+._chromeApp_108we_217 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2262,16 +2153,16 @@ dialog._modal_sqcal_427 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_b48wq_357 h1 {
+  ._headMainApp_108we_248 h1 {
     display: none;
   }
-  ._mastheadApp_b48wq_360 {
+  ._mastheadApp_108we_251 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_b48wq_360 {
+._mastheadApp_108we_251 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2280,53 +2171,53 @@ dialog._modal_sqcal_427 {
   background: var(--panel);
 }
 
-._head_b48wq_357 {
+._head_108we_248 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_b48wq_382 {
+._headApp_108we_273 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_b48wq_357 {
+._headMain_108we_248 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_b48wq_357 {
+._headMainApp_108we_248 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_b48wq_357 ._wordmark_b48wq_399 {
+._headMainApp_108we_248 ._wordmark_108we_290 {
   margin-bottom: 0;
 }
-._headMainApp_b48wq_357 h1 {
+._headMainApp_108we_248 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_b48wq_399 {
+._wordmark_108we_290 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_b48wq_416 {
+._wordmarkCompact_108we_307 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_b48wq_421 {
+._title_108we_312 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2336,30 +2227,30 @@ dialog._modal_sqcal_427 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_b48wq_431 {
+._titleCompact_108we_322 {
   font-size: var(--fs-l);
 }
 
-._subtitle_b48wq_435 {
+._subtitle_108we_326 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_b48wq_441 {
+._facts_108we_332 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_b48wq_448 {
+._themes_108we_339 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_b48wq_454 {
+._toc_108we_345 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2376,36 +2267,36 @@ dialog._modal_sqcal_427 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_b48wq_454 a {
+._toc_108we_345 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_b48wq_454 a:hover {
+._toc_108we_345 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_b48wq_481 > * + * {
+._container_108we_372 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_b48wq_488 {
+._containerApp_108we_379 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_b48wq_488 > * + * {
+._containerApp_108we_379 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_b48wq_500 {
+._footer_108we_391 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2421,7 +2312,7 @@ dialog._modal_sqcal_427 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_b48wq_516 {
+._footerSlim_108we_407 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2431,17 +2322,17 @@ dialog._modal_sqcal_427 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_b48wq_448,
-  ._toc_b48wq_454 {
+  ._themes_108we_339,
+  ._toc_108we_345 {
     display: none;
   }
-  ._page_b48wq_16 {
+  ._page_108we_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_b48wq_25 {
+  ._shellApp_108we_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2449,26 +2340,26 @@ dialog._modal_sqcal_427 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_b48wq_44 {
+  ._appRegion_108we_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_b48wq_54 {
+  ._barSticky_108we_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_b48wq_16 ._masthead_b48wq_62 {
+  ._page_108we_16 ._masthead_108we_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_b48wq_500 {
+  ._footer_108we_391 {
     color: var(--muted);
   }
 }
@@ -2503,7 +2394,7 @@ dialog._modal_sqcal_427 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_zope1_32 {
+._app_133nw_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2513,7 +2404,7 @@ dialog._modal_sqcal_427 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_zope1_42 {
+._scroll_133nw_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2523,14 +2414,17 @@ dialog._modal_sqcal_427 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_zope1_52 {
+._layout_133nw_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
   gap: var(--s6);
-  padding: var(--s5) var(--s4);
-  padding-left: max(var(--s4), env(safe-area-inset-left));
-  padding-right: max(var(--s4), env(safe-area-inset-right));
+  /* Clear of the screen's edge on both sides — the board's shape is a rounded
+     rectangle now, and content run to the edge crowds the curve. The masthead
+     is exempt: it is its own inset panel. */
+  padding: var(--s5) var(--s6);
+  padding-left: max(var(--s6), env(safe-area-inset-left));
+  padding-right: max(var(--s6), env(safe-area-inset-right));
   /* Stretch, not start. Three columns that size to their own content are three
      cards floating in a screen-sized box, which is what made the board read as
      islands rather than one application. Each column now runs the full height
@@ -2540,7 +2434,7 @@ dialog._modal_sqcal_427 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_zope1_69 {
+._main_133nw_72 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2549,7 +2443,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_zope1_52 {
+  ._layout_133nw_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2557,7 +2451,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 699px) {
-  ._layout_zope1_52 {
+  ._layout_133nw_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2566,13 +2460,13 @@ dialog._modal_sqcal_427 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_zope1_95 {
+._rail_133nw_98 {
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--s2) 0 0;
 }
 
-._railHead_zope1_101 {
+._railHead_133nw_104 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2580,7 +2474,7 @@ dialog._modal_sqcal_427 {
 }
 
 /* The board's scope heads the list it scopes; the count sits under it. */
-._railScope_zope1_109 {
+._railScope_133nw_112 {
   margin: 0;
   font-size: var(--fs-m);
   font-weight: 600;
@@ -2588,7 +2482,7 @@ dialog._modal_sqcal_427 {
   color: var(--text);
 }
 
-._railList_zope1_117 {
+._railList_133nw_120 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2597,7 +2491,7 @@ dialog._modal_sqcal_427 {
   gap: 2px;
 }
 
-._railItem_zope1_126 {
+._railItem_133nw_129 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2614,12 +2508,12 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._railItem_zope1_126:hover {
+._railItem_133nw_129:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_zope1_148 {
+._railDot_133nw_151 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2627,30 +2521,30 @@ dialog._modal_sqcal_427 {
   background: var(--line-strong);
 }
 
-._railCurrent_zope1_156 {
+._railCurrent_133nw_159 {
   background: transparent;
   color: var(--accent);
 }
 
-._railCurrent_zope1_156 ._railDot_zope1_148 {
+._railCurrent_133nw_159 ._railDot_133nw_151 {
   background: var(--accent);
 }
 
-._railPeeking_zope1_165 {
+._railPeeking_133nw_168 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_zope1_170 ._railDot_zope1_148 {
+._railDone_133nw_173 ._railDot_133nw_151 {
   background: var(--ok);
 }
 
-._railDone_zope1_170 ._railText_zope1_174 {
+._railDone_133nw_173 ._railText_133nw_177 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_zope1_174 {
+._railText_133nw_177 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2658,29 +2552,29 @@ dialog._modal_sqcal_427 {
   white-space: nowrap;
 }
 
-._railKey_zope1_187 {
+._railKey_133nw_190 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_zope1_193 {
+._railPts_133nw_196 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_zope1_200 {
+._railToggle_133nw_203 {
   display: none;
 }
 
-._railBackdrop_zope1_204 {
+._railBackdrop_133nw_207 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_zope1_95 {
+  ._rail_133nw_98 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2694,15 +2588,15 @@ dialog._modal_sqcal_427 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_zope1_223 {
+  ._railOpen_133nw_226 {
     transform: translateX(0);
   }
 
-  ._railToggle_zope1_200 {
+  ._railToggle_133nw_203 {
     display: inline-flex;
   }
 
-  ._railBackdrop_zope1_204 {
+  ._railBackdrop_133nw_207 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2713,7 +2607,7 @@ dialog._modal_sqcal_427 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_zope1_242 {
+._ticket_133nw_245 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2724,13 +2618,13 @@ dialog._modal_sqcal_427 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_zope1_253 {
+._ticketPeek_133nw_256 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_zope1_259 {
+._tkrow_133nw_262 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2738,23 +2632,23 @@ dialog._modal_sqcal_427 {
   margin-bottom: var(--s2);
 }
 
-._key_zope1_267 {
+._key_133nw_270 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_zope1_267 a {
+._key_133nw_270 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_zope1_267 a:hover {
+._key_133nw_270 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_zope1_283 {
+._phaseTag_133nw_286 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2765,18 +2659,18 @@ dialog._modal_sqcal_427 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_zope1_294 {
+._phaseTagOn_133nw_297 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_zope1_300 {
+._phaseTagPeek_133nw_303 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_zope1_305 {
+._tkSummary_133nw_308 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -2787,20 +2681,9 @@ dialog._modal_sqcal_427 {
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-._editing_zope1_316 {
-  animation: _editIn_zope1_1 var(--dur-base) var(--ease) both;
-}
-
-@keyframes _editIn_zope1_1 {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
-._editTitle_zope1_327,
-._editBody_zope1_328,
-._editPoints_zope1_329 {
+._editTitle_133nw_319,
+._editBody_133nw_320,
+._editPoints_133nw_321 {
   width: 100%;
   background: none;
   border: 0;
@@ -2816,16 +2699,16 @@ dialog._modal_sqcal_427 {
   transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._editTitle_zope1_327:focus,
-._editBody_zope1_328:focus,
-._editPoints_zope1_329:focus {
+._editTitle_133nw_319:focus,
+._editBody_133nw_320:focus,
+._editPoints_133nw_321:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* Restates the display type rather than inheriting it: `font: inherit` above
    resets the size, and both classes sit on the same element. */
-._editTitle_zope1_327 {
+._editTitle_133nw_319 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -2835,7 +2718,7 @@ dialog._modal_sqcal_427 {
   overflow: hidden;
 }
 
-._editBody_zope1_328 {
+._editBody_133nw_320 {
   resize: none;
   min-height: 0;
   max-height: none;
@@ -2843,21 +2726,21 @@ dialog._modal_sqcal_427 {
   box-shadow: none;
 }
 
-._editBody_zope1_328:focus {
+._editBody_133nw_320:focus {
   box-shadow: none;
 }
 
-._editPoints_zope1_329 {
+._editPoints_133nw_321 {
   width: 4em;
 }
 
 /* Wide enough that a picker does not resize the row it sits in as the value
    changes — the properties keep their columns while being edited. */
-._propPick_zope1_382 {
+._propPick_133nw_374 {
   min-width: 9em;
 }
 
-._editNote_zope1_386 {
+._editNote_133nw_378 {
   margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
@@ -2865,7 +2748,7 @@ dialog._modal_sqcal_427 {
 
 /* Up in the identifying row, hard right — the ticket is saved from the row it
    is named in. */
-._editActions_zope1_394 {
+._editActions_133nw_386 {
   display: flex;
   gap: var(--s2);
   margin-left: auto;
@@ -2873,20 +2756,20 @@ dialog._modal_sqcal_427 {
 
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
-._props_zope1_402 {
+._props_133nw_394 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3) var(--s6);
   margin: var(--s4) 0 var(--s5);
 }
 
-._prop_zope1_382 {
+._prop_133nw_374 {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-._propLabel_zope1_415 {
+._propLabel_133nw_407 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2894,22 +2777,22 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._propValue_zope1_423 {
+._propValue_133nw_415 {
   margin: 0;
   font-size: var(--fs-s);
   color: var(--text);
 }
 
-._propOk_zope1_429 {
+._propOk_133nw_421 {
   color: var(--ok);
 }
 
-._bodyLabel_zope1_433 {
+._bodyLabel_133nw_425 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_zope1_438 {
+._desc_133nw_430 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2918,25 +2801,25 @@ dialog._modal_sqcal_427 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_zope1_438 {
+._desc_133nw_430 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_zope1_454 {
+._descClipped_133nw_446 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_zope1_461 {
+._descFade_133nw_453 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_zope1_465 {
+._descToggle_133nw_457 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2948,13 +2831,13 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._descEmpty_zope1_477 {
+._descEmpty_133nw_469 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_zope1_483 {
+._peekBanner_133nw_475 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2968,7 +2851,7 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._peekActions_zope1_497 {
+._peekActions_133nw_489 {
   display: flex;
   gap: var(--s2);
 }
@@ -2976,14 +2859,14 @@ dialog._modal_sqcal_427 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_zope1_505 {
+._pkbtnGo_133nw_497 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_zope1_512 {
+._results_133nw_504 {
   border-top: 1px solid var(--hairline);
   padding: var(--s4) var(--s1) 0;
   display: flex;
@@ -2991,7 +2874,7 @@ dialog._modal_sqcal_427 {
   gap: var(--s3);
 }
 
-._resultsHead_zope1_520 {
+._resultsHead_133nw_512 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2999,18 +2882,18 @@ dialog._modal_sqcal_427 {
   flex-wrap: wrap;
 }
 
-._resultsSum_zope1_528 {
+._resultsSum_133nw_520 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_zope1_528 b {
+._resultsSum_133nw_520 b {
   color: var(--accent);
 }
 
-._dist_zope1_539 {
+._dist_133nw_531 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3019,7 +2902,7 @@ dialog._modal_sqcal_427 {
   gap: var(--s1);
 }
 
-._drow_zope1_548 {
+._drow_133nw_540 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -3030,39 +2913,39 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._dval_zope1_559 {
+._dval_133nw_551 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_zope1_564 {
+._dtrack_133nw_556 {
   height: 4px;
   background: var(--hairline);
   overflow: hidden;
 }
 
-._dbar_zope1_570 {
+._dbar_133nw_562 {
   display: block;
   height: 100%;
   background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_zope1_577 ._dbar_zope1_570 {
+._drowTop_133nw_569 ._dbar_133nw_562 {
   background: var(--accent);
 }
 
-._drowTop_zope1_577 ._dval_zope1_559 {
+._drowTop_133nw_569 ._dval_133nw_551 {
   color: var(--accent);
 }
 
-._dcount_zope1_585 {
+._dcount_133nw_577 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_zope1_591 {
+._ainote_133nw_583 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -3070,7 +2953,7 @@ dialog._modal_sqcal_427 {
   background: var(--panel-2);
 }
 
-._aiHead_zope1_599 {
+._aiHead_133nw_591 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3081,57 +2964,57 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._aiBody_zope1_610 {
+._aiBody_133nw_602 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_zope1_616 {
+._conf_133nw_608 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_zope1_623 {
+._conf-high_133nw_615 {
   color: var(--ok);
 }
 
-._conf-medium_zope1_627 {
+._conf-medium_133nw_619 {
   color: var(--warn);
 }
 
-._conf-low_zope1_631 {
+._conf-low_133nw_623 {
   color: var(--danger);
 }
 
-._ev_zope1_635 {
+._ev_133nw_627 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_zope1_642 {
+._sug_133nw_634 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_zope1_642 b {
+._sug_133nw_634 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_zope1_655 ._aiBody_zope1_610::after {
+._ainotePending_133nw_647 ._aiBody_133nw_602::after {
   content: '…';
-  animation: _dots_zope1_1 1.2s steps(4, end) infinite;
+  animation: _dots_133nw_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_zope1_1 {
+@keyframes _dots_133nw_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -3142,14 +3025,14 @@ dialog._modal_sqcal_427 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_zope1_671 {
+._duel_133nw_663 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_zope1_678 {
+._duelHead_133nw_670 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3161,13 +3044,13 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._duelBody_zope1_690 {
+._duelBody_133nw_682 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_zope1_696 {
+._duelTranscript_133nw_688 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -3176,41 +3059,41 @@ dialog._modal_sqcal_427 {
   overflow-y: auto;
 }
 
-._recind_zope1_705 {
+._recind_133nw_697 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_zope1_712 {
+._recDot_133nw_704 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_zope1_1 1.4s ease-in-out infinite;
+  animation: _recpulse_133nw_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_zope1_1 {
+@keyframes _recpulse_133nw_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_zope1_726 {
+._norec_133nw_718 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_zope1_732 {
+._dualrow_133nw_724 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_zope1_739 {
+._duelist_133nw_731 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3222,31 +3105,31 @@ dialog._modal_sqcal_427 {
   text-align: center;
 }
 
-._duelistSpeaking_zope1_751 {
+._duelistSpeaking_133nw_743 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_zope1_756 {
+._duelFace_133nw_748 {
   font-size: var(--fs-xl);
 }
 
-._duelName_zope1_760 {
+._duelName_133nw_752 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_zope1_765 {
+._duelValue_133nw_757 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_zope1_765 b {
+._duelValue_133nw_757 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_zope1_775 {
+._duelFloor_133nw_767 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3254,12 +3137,12 @@ dialog._modal_sqcal_427 {
   color: var(--accent);
 }
 
-._duelMic_zope1_783 {
+._duelMic_133nw_775 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_zope1_788 {
+._vs_133nw_780 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -3267,7 +3150,7 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._youup_zope1_796 {
+._youup_133nw_788 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -3277,7 +3160,7 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-._micRow_zope1_806 {
+._micRow_133nw_798 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3285,7 +3168,7 @@ dialog._modal_sqcal_427 {
   margin-top: var(--s3);
 }
 
-._micBtn_zope1_814 {
+._micBtn_133nw_806 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -3297,7 +3180,7 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._hint_zope1_826 {
+._hint_133nw_818 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -3308,36 +3191,36 @@ dialog._modal_sqcal_427 {
    another card. */
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
-._main_zope1_69 {
+._main_133nw_72 {
   --deck-w: calc(10 * 72px + 9 * var(--s2));
 }
 
-._table_zope1_841 {
+._table_133nw_833 {
   margin-top: auto;
   width: min(100%, var(--deck-w));
   margin-inline: auto;
 }
 
-._tableHead_zope1_847 {
+._tableHead_133nw_839 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_zope1_854 {
+._tableWait_133nw_846 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_zope1_860 {
+._vempty_133nw_852 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_zope1_866 {
+._vrow_133nw_858 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3348,18 +3231,18 @@ dialog._modal_sqcal_427 {
 
 /* The avatar and, once revealed, the card that was played — tucked against it
    so the pair reads as one seat. */
-._seatFace_zope1_877 {
+._seatFace_133nw_869 {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-._seatFace_zope1_877 ._vcard_zope1_883 {
+._seatFace_133nw_869 ._vcard_133nw_875 {
   margin-left: -6px;
 }
 
 /* A seat: face over name. */
-._voter_zope1_888 {
+._voter_133nw_880 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3367,7 +3250,7 @@ dialog._modal_sqcal_427 {
   width: 84px;
 }
 
-._face_zope1_896 {
+._face_133nw_888 {
   position: relative;
   display: grid;
   place-items: center;
@@ -3380,7 +3263,7 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-l);
 }
 
-._tick_zope1_242 {
+._tick_133nw_245 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3403,7 +3286,7 @@ dialog._modal_sqcal_427 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_zope1_883 {
+._vcard_133nw_875 {
   display: grid;
   place-items: center;
   width: 22px;
@@ -3417,18 +3300,18 @@ dialog._modal_sqcal_427 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  animation: _flip_zope1_1 320ms var(--ease) both;
+  animation: _flip_133nw_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_zope1_1 {
+@keyframes _flip_133nw_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_zope1_957 {
+._nm_133nw_949 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3439,7 +3322,7 @@ dialog._modal_sqcal_427 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_zope1_968 {
+._deckZone_133nw_960 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -3471,24 +3354,24 @@ dialog._modal_sqcal_427 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_zope1_32[data-host='true'] {
+  ._app_133nw_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_zope1_1006 {
+._deckStatus_133nw_998 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_zope1_1013 {
+._deckMine_133nw_1005 {
   color: var(--accent);
 }
 
-._deck_zope1_968 {
+._deck_133nw_960 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3502,10 +3385,12 @@ dialog._modal_sqcal_427 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_zope1_1031 {
+._pcard_133nw_1023 {
   position: relative;
-  width: 72px;
-  height: 100px;
+  /* Ten cards and their gaps have to fit the middle column on one line at the
+     wide breakpoint — a hand that wraps reads as eleven cards. */
+  width: 68px;
+  height: 94px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
   background: var(--bg);
@@ -3520,19 +3405,19 @@ dialog._modal_sqcal_427 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_zope1_1031:hover:not(:disabled) {
+._pcard_133nw_1023:hover:not(:disabled) {
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
 }
 
-._pcard_zope1_1031:disabled {
+._pcard_133nw_1023:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_zope1_1061 {
+._pcardSel_133nw_1055 {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--accent);
@@ -3543,11 +3428,11 @@ dialog._modal_sqcal_427 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_zope1_1072 {
+._pcardWait_133nw_1066 {
   border-style: dashed;
 }
 
-._ci_zope1_1076 {
+._ci_133nw_1070 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3556,7 +3441,7 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._ciFlip_zope1_1085 {
+._ciFlip_133nw_1079 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3564,14 +3449,14 @@ dialog._modal_sqcal_427 {
   transform: rotate(180deg);
 }
 
-._cv_zope1_1093 {
+._cv_133nw_1087 {
   font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_zope1_1100 {
+._console_133nw_1094 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -3582,13 +3467,13 @@ dialog._modal_sqcal_427 {
   gap: var(--s3);
 }
 
-._cbar_zope1_1111 {
+._cbar_133nw_1105 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_zope1_1117 {
+._cphase_133nw_1111 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3596,20 +3481,20 @@ dialog._modal_sqcal_427 {
   color: var(--accent);
 }
 
-._cbody_zope1_1125 {
+._cbody_133nw_1119 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_zope1_1131 {
+._cgroup_133nw_1125 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_zope1_1137,
-._navrow_zope1_1138 {
+._crow_133nw_1131,
+._navrow_133nw_1132 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3618,11 +3503,11 @@ dialog._modal_sqcal_427 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_zope1_1147:not(:empty) {
+._duelSlot_133nw_1141:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_zope1_1151 {
+._duelInline_133nw_1145 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3631,12 +3516,12 @@ dialog._modal_sqcal_427 {
   border-radius: var(--r-s);
 }
 
-._seg_zope1_1160 {
+._seg_133nw_1154 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_zope1_1165 {
+._preset_133nw_1159 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3648,8 +3533,8 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._clabel_zope1_1177,
-._finlab_zope1_1178 {
+._clabel_133nw_1171,
+._finlab_133nw_1172 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3657,21 +3542,21 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._chint_zope1_1186,
-._cnotice_zope1_1187 {
+._chint_133nw_1180,
+._cnotice_133nw_1181 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_zope1_1187 {
+._cnotice_133nw_1181 {
   color: var(--warn);
 }
 
 /* Label left, value right — the three decision rows read as a column of
    numbers rather than three sentences of different lengths. */
-._readout_zope1_1200 {
+._readout_133nw_1194 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3681,20 +3566,20 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._readout_zope1_1200 b {
+._readout_133nw_1194 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_zope1_1216 {
+._finrow_133nw_1210 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
 }
 
-._finInput_zope1_1223 {
+._finInput_133nw_1217 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3706,12 +3591,12 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-._finSrc_zope1_1235 {
+._finSrc_133nw_1229 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_zope1_1240 {
+._cpos_133nw_1234 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3721,7 +3606,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 1099px) {
-  ._console_zope1_1100 {
+  ._console_133nw_1094 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3731,24 +3616,24 @@ dialog._modal_sqcal_427 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_zope1_1111 {
+  ._cbar_133nw_1105 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_zope1_1125 {
+  ._cbody_133nw_1119 {
     display: none;
   }
 
-  ._consoleOpen_zope1_1270 ._cbody_zope1_1125 {
+  ._consoleOpen_133nw_1264 ._cbody_133nw_1119 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_zope1_1277 {
+._identity_133nw_1271 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3757,7 +3642,7 @@ dialog._modal_sqcal_427 {
 
 /* Who you are, as one quiet control: the avatar carries the identity and the
    pencil only shows up when you go looking for it. */
-._meChip_zope1_1286 {
+._meChip_133nw_1280 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3776,12 +3661,12 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._meChip_zope1_1286:hover {
+._meChip_133nw_1280:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
 
-._meName_zope1_1310 {
+._meName_133nw_1304 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3789,37 +3674,37 @@ dialog._modal_sqcal_427 {
   font-weight: 500;
 }
 
-._pen_zope1_1318 {
+._pen_133nw_1312 {
   display: inline-flex;
   color: var(--dim);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._meChip_zope1_1286:hover ._pen_zope1_1318,
-._meChip_zope1_1286:focus-visible ._pen_zope1_1318 {
+._meChip_133nw_1280:hover ._pen_133nw_1312,
+._meChip_133nw_1280:focus-visible ._pen_133nw_1312 {
   opacity: 1;
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
-._presenceChip_zope1_1331 {
+._presenceChip_133nw_1325 {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
 /* The headcount is a number, so it is set as one. */
-._roomCount_zope1_1337 {
+._roomCount_133nw_1331 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   font-weight: 600;
 }
 
-._offline_zope1_1344 {
+._offline_133nw_1338 {
   color: var(--warn);
 }
 
-._popNote_zope1_1348 {
+._popNote_133nw_1342 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -3828,8 +3713,7 @@ dialog._modal_sqcal_427 {
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-._lockBanner_zope1_1357,
-._musicBanner_zope1_1358 {
+._musicBanner_133nw_1351 {
   margin: 0;
   width: 100%;
   padding: var(--s2) var(--s4);
@@ -3846,22 +3730,33 @@ dialog._modal_sqcal_427 {
   text-transform: uppercase;
 }
 
-._lockBanner_zope1_1357 {
+/* Sits with the deck, so it is a line of its own rather than a strip across
+   the board. */
+._lockBanner_133nw_1370 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   color: var(--warn);
 }
 
-._musicBanner_zope1_1358 {
+._musicBanner_133nw_1351 {
   color: var(--accent);
   cursor: pointer;
 }
 
-._musicBanner_zope1_1358:hover {
+._musicBanner_133nw_1351:hover {
   background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_zope1_1390 {
+._flabel_133nw_1394 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3871,7 +3766,7 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._field_zope1_1400 {
+._field_133nw_1404 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3883,24 +3778,24 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-textarea._field_zope1_1400 {
+textarea._field_133nw_1404 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_zope1_1417 {
+._editWarn_133nw_1421 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_zope1_386 {
+._editNote_133nw_378 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_zope1_1429 {
+._editSave_133nw_1433 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3915,7 +3810,7 @@ textarea._field_zope1_1400 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_zope1_1444 {
+._srOnly_133nw_1448 {
   position: absolute;
   width: 1px;
   height: 1px;

@@ -54,9 +54,12 @@
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
   gap: var(--s6);
-  padding: var(--s5) var(--s4);
-  padding-left: max(var(--s4), env(safe-area-inset-left));
-  padding-right: max(var(--s4), env(safe-area-inset-right));
+  /* Clear of the screen's edge on both sides — the board's shape is a rounded
+     rectangle now, and content run to the edge crowds the curve. The masthead
+     is exempt: it is its own inset panel. */
+  padding: var(--s5) var(--s6);
+  padding-left: max(var(--s6), env(safe-area-inset-left));
+  padding-right: max(var(--s6), env(safe-area-inset-right));
   /* Stretch, not start. Three columns that size to their own content are three
      cards floating in a screen-sized box, which is what made the board read as
      islands rather than one application. Each column now runs the full height
@@ -313,17 +316,6 @@
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-.editing {
-  animation: editIn var(--dur-base) var(--ease) both;
-}
-
-@keyframes editIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
 .editTitle,
 .editBody,
 .editPoints {
@@ -1030,8 +1022,10 @@
    cards apart is the number, which is what you are reading anyway. */
 .pcard {
   position: relative;
-  width: 72px;
-  height: 100px;
+  /* Ten cards and their gaps have to fit the middle column on one line at the
+     wide breakpoint — a hand that wraps reads as eleven cards. */
+  width: 68px;
+  height: 94px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
   background: var(--bg);
@@ -1354,7 +1348,6 @@
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-.lockBanner,
 .musicBanner {
   margin: 0;
   width: 100%;
@@ -1372,7 +1365,18 @@
   text-transform: uppercase;
 }
 
+/* Sits with the deck, so it is a line of its own rather than a strip across
+   the board. */
 .lockBanner {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   color: var(--warn);
 }
 

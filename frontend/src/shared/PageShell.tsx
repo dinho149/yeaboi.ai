@@ -14,7 +14,7 @@
  * viewport. `app` is always compact — its screen cannot spend 260px.
  */
 
-import { Children, Fragment, isValidElement, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -22,7 +22,7 @@ import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
 import { Credit } from './Credit';
 import { PopoverGroup } from './Popover';
-import { useDockDrag, type DockEdge } from './useDockDrag';
+import { useDockDrag } from './useDockDrag';
 import styles from './PageShell.module.css';
 
 /**
@@ -84,39 +84,6 @@ function dockItems(dock: ReactNode): ReactNode[] {
   return Children.toArray(dock);
 }
 
-/**
- * One control, measured along the wall it is on.
- *
- * Its extent is its width lying down and its height on end, which is what lets
- * the split know how many controls have turned the corner.
- */
-function DockItem({
-  index,
-  edge,
-  onMeasure,
-  children,
-}: {
-  index: number;
-  edge: DockEdge;
-  onMeasure: (index: number, extent: number) => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLSpanElement | null>(null);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const box = el.getBoundingClientRect();
-    onMeasure(index, edge === 'bottom' ? box.width : box.height);
-  });
-
-  return (
-    <span ref={ref} className={styles['dockItem']}>
-      {children}
-    </span>
-  );
-}
-
 export function PageShell({
   chrome,
   variant = 'document',
@@ -134,7 +101,7 @@ export function PageShell({
   // The controls, one by one: the dock splits across a corner, so it has to
   // know where each of them falls rather than laying out one row.
   const tools = dockItems(dock);
-  const drag = useDockDrag(tools.length);
+  const drag = useDockDrag();
   const hero = density === 'auto' ? roomy : density === 'hero';
 
   const facts = chrome.facts ?? [];
@@ -223,38 +190,32 @@ export function PageShell({
 
       {app && dock ? (
         <PopoverGroup>
-          {(drag.runs.length ? drag.runs : [{ ...drag.placement, items: tools.map((_, i) => i) }]).map(
-            (run, runIndex) => (
-              <div
-                key={run.edge + String(runIndex)}
-                {...(runIndex === 0 ? { ref: drag.ref } : {})}
-                className={cx(
-                  styles['dockApp'],
-                  drag.placed && styles['dockPlaced'],
-                  drag.dragging && styles['dockDragging'],
-                  drag.turning && styles['dockTurning'],
-                )}
-                data-edge={run.edge}
-                style={
-                  {
-                    '--dock-x': `${run.x}px`,
-                    '--dock-y': `${run.y}px`,
-                    '--dock-vis': drag.runs.length ? 'visible' : 'hidden',
-                  } as never
-                }
-                onPointerDown={drag.onPointerDown}
-                role={runIndex === 0 ? 'toolbar' : 'group'}
-                aria-label={runIndex === 0 ? 'Board tools' : 'Board tools, continued'}
-              >
-                {runIndex === 0 ? <span className={styles['dockGrip']} aria-hidden="true" /> : null}
-                {run.items.map((item) => (
-                  <DockItem key={item} index={item} edge={run.edge} onMeasure={drag.measure}>
-                    {tools[item]}
-                  </DockItem>
-                ))}
-              </div>
-            ),
-          )}
+          <div
+            ref={drag.ref}
+            className={cx(
+              styles['dockApp'],
+              drag.placed && styles['dockPlaced'],
+              drag.dragging && styles['dockDragging'],
+            )}
+            data-edge="bottom"
+            style={
+              {
+                '--dock-x': `${drag.x}px`,
+                '--dock-y': `${drag.y}px`,
+                '--dock-vis': drag.placed ? 'visible' : 'hidden',
+              } as never
+            }
+            onPointerDown={drag.onPointerDown}
+            role="toolbar"
+            aria-label="Board tools"
+          >
+            <span className={styles['dockGrip']} aria-hidden="true" />
+            {tools.map((tool, index) => (
+              <span key={index} className={styles['dockItem']}>
+                {tool}
+              </span>
+            ))}
+          </div>
         </PopoverGroup>
       ) : null}
     </div>

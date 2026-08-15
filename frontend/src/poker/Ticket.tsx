@@ -172,7 +172,7 @@ function TicketForm({
   };
 
   return (
-    <div className={styles['editing']}>
+    <div>
       {/* The controls sit where the Edit button was, so the row the ticket is
           identified by is also the row it is saved from. */}
       <div className={styles['tkrow']}>

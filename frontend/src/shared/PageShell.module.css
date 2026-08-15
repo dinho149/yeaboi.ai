@@ -20,7 +20,7 @@
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is one framed screen: masthead strip, sticky bar, board, credit.
+   A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
 .shellApp {
   max-width: none;
@@ -29,10 +29,10 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  border: var(--screen-frame-w) solid var(--screen-frame);
+  /* The screen's edge is its shape, not a line: the board's ground against the
+     void outside the curve is what draws the corner. */
   border-radius: var(--screen-radius);
   background: var(--bg);
-  /* Fills the four slivers the rounded corners leave uncovered. */
   box-shadow: 0 0 0 50vmax var(--screen-void);
   /* Clips the children to the curve. */
   overflow: hidden;
@@ -74,8 +74,8 @@
   align-items: center;
   gap: var(--s1);
   padding: var(--s1) var(--s2);
-  /* The frame's own weight and colour, open on the side it sits against — the
-     dock is where the border lifts, not a box parked under it. */
+  /* Its own outline, open on the side it sits against, so it reads as lifted
+     off the wall it is docked to. */
   border: var(--screen-frame-w) solid var(--screen-frame);
   background: var(--bg);
   box-shadow: var(--shadow-1);
@@ -98,37 +98,11 @@
   transition: transform var(--dur-base) var(--ease);
 }
 
-/* The wall only decides orientation now: which side is open, which corners are
-   round, and which way the controls run. */
+/* Open along the bottom, because that is the edge it is lifted out of. */
 .dockApp[data-edge='bottom'] {
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
-}
-
-.dockApp[data-edge='left'],
-.dockApp[data-edge='right'] {
-  flex-direction: column;
-  padding: var(--s2) var(--s1);
-}
-
-/* Square on a side wall: the lift is a bottom-border idea, and the fillets
-   that sell it there read as loose curves stuck to a vertical strip. */
-.dockApp[data-edge='left'] {
-  border-left: none;
-  border-radius: 0;
-}
-
-.dockApp[data-edge='right'] {
-  border-right: none;
-  border-radius: 0;
-}
-
-.dockApp[data-edge='left']::before,
-.dockApp[data-edge='left']::after,
-.dockApp[data-edge='right']::before,
-.dockApp[data-edge='right']::after {
-  display: none;
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
@@ -139,18 +113,8 @@
   box-shadow: var(--shadow-hover);
 }
 
-/* Except across a corner, which is a reorientation rather than a slide — the
-   one move worth easing, so it crawls onto the next wall. */
-.dockTurning {
-  transition: transform var(--dur-base) var(--ease);
-}
-
-/* The one part of the dock that is ground rather than a control, so it is what
-   says the whole thing can be moved. */
 /* The handle, and the only part of the dock that is not a control — so it
-   spans the dock's short axis rather than being a 3px mark. Standing on end
-   there is otherwise nothing left to grab. */
-/* A control's own box, so the split can measure how much wall it takes. */
+   spans the dock's height rather than being a 3px mark. */
 .dockItem {
   display: inline-flex;
   align-items: center;
@@ -167,14 +131,6 @@
   transition:
     opacity var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
-}
-
-.dockApp[data-edge='left'] .dockGrip,
-.dockApp[data-edge='right'] .dockGrip {
-  width: auto;
-  height: 14px;
-  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 15px 3px
-    no-repeat;
 }
 
 .dockGrip:hover {
@@ -203,59 +159,39 @@
 }
 
 /*
- * A panel opened from the notch is the notch, grown.
+ * A panel opened from the notch IS the notch, grown.
  *
- * It sits against the dock's edge, shares its ground and border weight, and
- * grows out of it on open. Closing is not animated: the panel is `hidden`, and
- * a `display: none` element has no frames to run in.
+ * It sits directly on the dock's top edge — overlapping it by the border width,
+ * so the two share one line — and carries the same ground and radius. Opening
+ * scales it out of the edge it is attached to on both axes, which is what makes
+ * it read as the box changing shape rather than a menu appearing over it.
+ * Closing is not animated: the panel is `hidden`, and a `display: none` element
+ * has no frames to run in.
  */
 .dockApp [role='group'][aria-label]:not([hidden]) {
+  top: auto;
+  bottom: calc(100% - var(--screen-frame-w));
+  min-width: 240px;
   background: var(--bg);
   border-color: var(--screen-frame);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   box-shadow: var(--shadow-2);
-}
-
-.dockApp[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
-  top: auto;
-  bottom: calc(100% + var(--s1));
-  min-width: 240px;
   transform-origin: bottom center;
-  animation: dockGrowUp var(--dur-base) var(--ease) both;
+  animation: dockMorph var(--dur-base) var(--ease) both;
 }
 
-.dockApp[data-edge='left'] [role='group'][aria-label]:not([hidden]),
-.dockApp[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
-  top: 50%;
-  bottom: auto;
-  translate: 0 -50%;
-  animation: dockGrowSide var(--dur-base) var(--ease) both;
+/* Squared off where the panel meets it, so the seam between the two is one
+   straight line rather than four opposing curves. */
+.dockApp:has([role='group'][aria-label]:not([hidden])) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
-.dockApp[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
-  left: calc(100% + var(--s1));
-  right: auto;
-  transform-origin: left center;
-}
-
-.dockApp[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
-  right: calc(100% + var(--s1));
-  left: auto;
-  transform-origin: right center;
-}
-
-@keyframes dockGrowUp {
+@keyframes dockMorph {
   from {
-    max-height: 0;
     opacity: 0;
-    transform: translateY(10px) scaleY(0.9);
-  }
-}
-
-@keyframes dockGrowSide {
-  from {
-    max-width: 0;
-    opacity: 0;
-    transform: scaleX(0.9);
+    transform: scale(0.72, 0.2);
   }
 }
 
@@ -265,54 +201,9 @@
   border-color: transparent;
 }
 
-/*
- * The inside corners where the dock's raised edge rejoins the frame's line.
- *
- * `border-radius` only draws convex corners, so each fillet is a separate
- * square carrying a radial ring. A concave arc bulges toward the corner, so its
- * OUTER radius is tangent to the inner edge of the two lines it joins; centre
- * the ring on the box edge instead and the stroke runs parallel to the dock's
- * border rather than continuing it. Offsets are against the *padding* box,
- * which is what puts the centre one border-width inside the edge.
- */
-.dockApp::before,
-.dockApp::after {
-  content: '';
-  position: absolute;
-  width: var(--lift);
-  height: var(--lift);
-  pointer-events: none;
-}
-
-.dockApp[data-edge='bottom']::before {
-  bottom: 0;
-  left: calc(var(--lift) * -1);
-  background: radial-gradient(
-    circle at 0 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-.dockApp[data-edge='bottom']::after {
-  bottom: 0;
-  left: 100%;
-  background: radial-gradient(
-    circle at 100% 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] .dockApp::before,
-  [data-host='true'] .dockApp::after {
-    display: none;
-  }
   [data-host='true'] .dockApp {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
