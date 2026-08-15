@@ -674,7 +674,9 @@ dialog.modal {
   background: var(--panel);
   color: var(--text);
   padding: 0;
-  max-width: min(92vw, 440px);
+  /* Wide enough for eight avatars to be pictures rather than stamps, and for
+     a line of prose not to wrap every four words. */
+  width: min(92vw, 520px);
   box-shadow: var(--shadow-2);
 }
 .modal::backdrop {
@@ -712,9 +714,20 @@ dialog.modal {
     opacity: 0;
   }
 }
-.modalBody { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+.modalBody { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
 .modalTitle { font-size: var(--fs-l); margin: 0; }
-.modalActions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+/* The dialog's action is the width of the dialog. Floated bottom-right it sat
+   in a corner of its own, with the content it applies to nowhere near it. */
+.modalActions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s1);
+}
+
+.modalActions > * {
+  flex: 1;
+  justify-content: center;
+}
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
