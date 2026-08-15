@@ -80,8 +80,19 @@ export function TimerControls({
 
   return (
     <div className={cx(styles['panelForm'], className)}>
+      {/* The state first, and its action with it — a bare Stop under the
+          starting controls read as a fourth way to start something. */}
+      {running ? (
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>Running</span>
+          <Button tone="danger" className={styles['panelAction']} onClick={onStop}>
+            Stop the timer
+          </Button>
+        </div>
+      ) : null}
+
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>Length</span>
+        <span className={styles['fieldLabel']}>{running ? 'Start another' : 'Length'}</span>
         <div className={styles['presetRow']} role="group" aria-label="Preset lengths">
           {presets.map((seconds) => (
             <button key={seconds} type="button" className={styles['preset']} onClick={() => onStart(seconds)}>
@@ -114,11 +125,6 @@ export function TimerControls({
         </div>
       </div>
 
-      {running ? (
-        <Button className={styles['panelAction']} onClick={onStop}>
-          Stop the timer
-        </Button>
-      ) : null}
     </div>
   );
 }

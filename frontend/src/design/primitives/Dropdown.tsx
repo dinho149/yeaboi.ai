@@ -8,9 +8,17 @@
  * The current value is always offered even when the caller's options do not
  * contain it — a tracker that answers with the transitions an issue can reach
  * leaves out the one it is already in.
+ *
+ * The menu is portalled to the body and positioned `fixed`. It has to be: the
+ * dock's drawer clips its contents (that is how the notch animates its own
+ * size), so a menu in flow is cut off at the panel's edge. Being out of the
+ * document flow, it also has to decide for itself whether it opens down or up
+ * — measured against the viewport, since a picker at the bottom of the screen
+ * has no room below it.
  */
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { cx } from '../../runtime/cx';
 import { Icon } from './Icon';
@@ -30,8 +38,10 @@ export interface DropdownProps {
 export function Dropdown({ label, value, options, onChange, placeholder = '—', className }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [rect, setRect] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const menu = useRef<HTMLUListElement | null>(null);
   const id = useId();
 
   const items = value && !options.includes(value) ? [value, ...options] : [...options];
@@ -40,11 +50,34 @@ export function Dropdown({ label, value, options, onChange, placeholder = '—',
     if (!open) return;
     setActive(Math.max(0, items.indexOf(value)));
     const away = (event: PointerEvent): void => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (root.current?.contains(target) || menu.current?.contains(target)) return;
+      setOpen(false);
     };
     window.addEventListener('pointerdown', away);
     return () => window.removeEventListener('pointerdown', away);
     // The menu's contents are fixed while it is open; reopening re-runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Placed against the viewport, before paint. Opening downward is preferred
+  // and only given up when the list would not fit.
+  useLayoutEffect(() => {
+    if (!open) {
+      setRect(null);
+      return;
+    }
+    const anchor = trigger.current?.getBoundingClientRect();
+    if (!anchor) return;
+    // Plus a margin, so "it just fits" does not mean flush against the edge.
+    const wanted = Math.min(240, items.length * 36 + 16) + 12;
+    const below = window.innerHeight - anchor.bottom;
+    const place = { left: anchor.left, width: anchor.width };
+    setRect(
+      below < wanted && anchor.top > below
+        ? { ...place, bottom: window.innerHeight - anchor.top + 6 }
+        : { ...place, top: anchor.bottom + 6 },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -97,8 +130,22 @@ export function Dropdown({ label, value, options, onChange, placeholder = '—',
         <Icon name="chevron-down" size={12} className={styles['ddCaret']} />
       </button>
 
-      {open ? (
-        <ul className={styles['ddMenu']} role="listbox" aria-label={label}>
+      {open && rect
+        ? createPortal(
+        <ul
+          ref={menu}
+          // The group that owns the surrounding popover closes on any
+          // pointerdown outside itself, and this menu is outside everything.
+          data-dropdown-menu=""
+          className={styles['ddMenu']}
+          role="listbox"
+          aria-label={label}
+          style={{
+            left: `${rect.left}px`,
+            minWidth: `${rect.width}px`,
+            ...(rect.top === undefined ? { bottom: `${rect.bottom}px` } : { top: `${rect.top}px` }),
+          }}
+        >
           {items.length === 0 ? (
             <li className={styles['ddNone']}>Nothing to pick from.</li>
           ) : (
@@ -121,8 +168,10 @@ export function Dropdown({ label, value, options, onChange, placeholder = '—',
               </li>
             ))
           )}
-        </ul>
-      ) : null}
+        </ul>,
+        document.body,
+      )
+        : null}
     </div>
   );
 }

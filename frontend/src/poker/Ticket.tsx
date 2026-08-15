@@ -447,19 +447,13 @@ export function TicketPanel({
   const nav =
     isHost && count > 1 ? (
       <span className={styles['tknav']}>
-        <Button size="s" shape="bare" aria-label="Previous ticket" disabled={index <= 0} onClick={() => onGoto(index - 1)}>
+        <Button size="s" aria-label="Previous ticket" disabled={index <= 0} onClick={() => onGoto(index - 1)}>
           <Icon name="chevron-left" size={14} />
         </Button>
         <span className={styles['tkpos']}>
           {index + 1} / {count}
         </span>
-        <Button
-          size="s"
-          shape="bare"
-          aria-label="Next ticket"
-          disabled={index >= count - 1}
-          onClick={() => onGoto(index + 1)}
-        >
+        <Button size="s" aria-label="Next ticket" disabled={index >= count - 1} onClick={() => onGoto(index + 1)}>
           <Icon name="chevron-right" size={14} />
         </Button>
       </span>

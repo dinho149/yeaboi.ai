@@ -442,11 +442,10 @@ svg.wordmark {
 }
 
 .ddMenu {
-  position: absolute;
-  z-index: var(--z-popover);
-  top: calc(100% + var(--s2));
-  left: 0;
-  min-width: 100%;
+  /* Fixed and portalled: see the note in Dropdown.tsx — an in-flow menu is
+     clipped by the dock drawer, which has to clip to animate its own size. */
+  position: fixed;
+  z-index: var(--z-modal);
   max-height: 240px;
   margin: 0;
   padding: var(--s1);
@@ -456,7 +455,6 @@ svg.wordmark {
   border-radius: var(--r-m);
   background: var(--panel);
   box-shadow: var(--shadow-2);
-  transform-origin: top left;
   animation: ddOpen var(--dur-fast) var(--ease) both;
 }
 

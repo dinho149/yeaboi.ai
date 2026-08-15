@@ -454,7 +454,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_10qlb_13 {
+._chip_1yckr_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -469,22 +469,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_10qlb_28 { text-decoration: none; }
-._chipLink_10qlb_28:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_1yckr_28 { text-decoration: none; }
+._chipLink_1yckr_28:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_10qlb_32 {
+._statGrid_1yckr_32 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_10qlb_32 {
+._stat_1yckr_32 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_10qlb_43 {
+._statValue_1yckr_43 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -494,25 +494,25 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_10qlb_53 {
+._statLabel_1yckr_53 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_10qlb_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_1yckr_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_10qlb_63 {
+._bar_1yckr_63 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_10qlb_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_1yckr_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_10qlb_71 {
+._segTrack_1yckr_71 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -520,10 +520,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_10qlb_71 > i { display: block; height: 100%; }
+._segTrack_1yckr_71 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_10qlb_82 {
+._legend_1yckr_82 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -531,14 +531,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_10qlb_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_10qlb_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_10qlb_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_1yckr_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_1yckr_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_1yckr_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_10qlb_95 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_10qlb_95 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_10qlb_97 {
+._sparkWrap_1yckr_95 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_1yckr_95 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_1yckr_97 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -548,7 +548,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_10qlb_107 {
+._avatar_1yckr_107 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -562,13 +562,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_10qlb_121 {
+._notice_1yckr_121 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_10qlb_127 {
+._noticeTitle_1yckr_127 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -577,18 +577,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   align-items: center;
   gap: var(--s2);
 }
-._notice_10qlb_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_1yckr_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_10qlb_139 {
+._card_1yckr_139 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_10qlb_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_10qlb_147 {
+._cardHover_1yckr_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_1yckr_147 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -599,10 +599,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_10qlb_158 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_1yckr_158 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_10qlb_160 { margin-bottom: var(--s6); }
-._sectionTitle_10qlb_161 {
+._section_1yckr_160 { margin-bottom: var(--s6); }
+._sectionTitle_1yckr_161 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -615,9 +615,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_10qlb_174 { overflow-x: auto; }
-._table_10qlb_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_10qlb_174 th {
+._tableWrap_1yckr_174 { overflow-x: auto; }
+._table_1yckr_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_1yckr_174 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -628,23 +628,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_10qlb_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_10qlb_174 tr:last-child td { border-bottom: none; }
-._numeric_10qlb_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_1yckr_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_1yckr_174 tr:last-child td { border-bottom: none; }
+._numeric_1yckr_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_10qlb_192 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_1yckr_192 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_10qlb_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_10qlb_197 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_10qlb_197 > li {
+._proseText_1yckr_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_1yckr_197 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_1yckr_197 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_10qlb_197 > li::before {
+._proseList_1yckr_197 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -664,14 +664,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    rather than a face keeps that true if the stack changes. */
 /* The block face is drawn, not typeset — sized off the same font-size so it
    still scales with the type scale. Four pixel rows, two rows of type. */
-svg._wordmark_10qlb_223 {
+svg._wordmark_1yckr_223 {
   display: block;
   width: auto;
   height: 2em;
   overflow: visible;
 }
 
-._wordmark_10qlb_223 {
+._wordmark_1yckr_223 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -689,7 +689,7 @@ svg._wordmark_10qlb_223 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_10qlb_223::-webkit-scrollbar { display: none; }
+._wordmark_1yckr_223::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -700,7 +700,7 @@ svg._wordmark_10qlb_223 {
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_10qlb_259 {
+._wordmarkFit_1yckr_259 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -709,7 +709,7 @@ svg._wordmark_10qlb_223 {
   min-width: 0;
 }
 
-._wordmarkShadow_10qlb_268 {
+._wordmarkShadow_1yckr_268 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -723,14 +723,14 @@ svg._wordmark_10qlb_223 {
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_10qlb_282 {
+._wordmarkStroke_1yckr_282 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_10qlb_288 {
+._eyebrow_1yckr_288 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -744,9 +744,9 @@ svg._wordmark_10qlb_223 {
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_10qlb_303 { color: var(--accent); }
-._eyebrowDot_10qlb_304 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_10qlb_305 {
+._eyebrowAccent_1yckr_303 { color: var(--accent); }
+._eyebrowDot_1yckr_304 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_1yckr_305 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -755,14 +755,14 @@ svg._wordmark_10qlb_223 {
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_10qlb_314 {
+._frame_1yckr_314 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
   box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_10qlb_321 {
+._frameBar_1yckr_321 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -770,8 +770,8 @@ svg._wordmark_10qlb_223 {
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_10qlb_329 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_10qlb_329 i {
+._frameLights_1yckr_329 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_1yckr_329 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -779,10 +779,10 @@ svg._wordmark_10qlb_223 {
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_10qlb_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_10qlb_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_10qlb_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_10qlb_341 {
+._frameLights_1yckr_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_1yckr_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_1yckr_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_1yckr_341 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -795,13 +795,13 @@ svg._wordmark_10qlb_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_10qlb_354 { padding: var(--s5); }
+._frameBody_1yckr_354 { padding: var(--s5); }
 
 /* ── Lozenge — Jira-style status tag ─────────────────────────────────
    Category classes only set the two custom properties; the base rule owns
    the shape. Colours come from the derived lozenge tokens in tokens.css,
    never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
-._lozenge_10qlb_360 {
+._lozenge_1yckr_360 {
   display: inline-block;
   padding: 1px var(--s2);
   border-radius: var(--r-s);
@@ -815,16 +815,16 @@ svg._wordmark_10qlb_223 {
   color: var(--lozenge-fg, var(--muted));
   background: var(--lozenge-bg, var(--card));
 }
-._lozengeSmall_10qlb_374 { padding: 0 var(--s1); font-weight: 600; }
-._lozengeTodo_10qlb_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
-._lozengeProgress_10qlb_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
-._lozengeDone_10qlb_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
-._lozengeBlocked_10qlb_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+._lozengeSmall_1yckr_374 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_1yckr_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_1yckr_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_1yckr_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_1yckr_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
 
 /* ── Icon ────────────────────────────────────────────────────────
    Sits on the text baseline rather than the line box, so a glyph beside a
    label lines up with it instead of riding high. */
-._icon_10qlb_383 {
+._icon_1yckr_383 {
   display: inline-block;
   vertical-align: -0.15em;
   flex: none;
@@ -834,12 +834,12 @@ svg._wordmark_10qlb_223 {
    Closed, it is the value and nothing else: the underline is the whole
    affordance, square-ended so it reads as a rule under text rather than a
    field. */
-._dd_10qlb_393 {
+._dd_1yckr_393 {
   position: relative;
   display: inline-block;
 }
 
-._ddTrigger_10qlb_398 {
+._ddTrigger_1yckr_398 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -858,39 +858,38 @@ svg._wordmark_10qlb_223 {
     color var(--dur-fast) var(--ease);
 }
 
-._ddTrigger_10qlb_398:hover,
-._ddTrigger_10qlb_398:focus-visible,
-._ddTriggerOpen_10qlb_419 {
+._ddTrigger_1yckr_398:hover,
+._ddTrigger_1yckr_398:focus-visible,
+._ddTriggerOpen_1yckr_419 {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
-._ddValue_10qlb_424 {
+._ddValue_1yckr_424 {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._ddEmpty_10qlb_431 {
+._ddEmpty_1yckr_431 {
   color: var(--dim);
 }
 
-._ddCaret_10qlb_435 {
+._ddCaret_1yckr_435 {
   color: var(--dim);
   transition: transform var(--dur-fast) var(--ease);
 }
 
-._ddTriggerOpen_10qlb_419 ._ddCaret_10qlb_435 {
+._ddTriggerOpen_1yckr_419 ._ddCaret_1yckr_435 {
   transform: rotate(180deg);
 }
 
-._ddMenu_10qlb_444 {
-  position: absolute;
-  z-index: var(--z-popover);
-  top: calc(100% + var(--s2));
-  left: 0;
-  min-width: 100%;
+._ddMenu_1yckr_444 {
+  /* Fixed and portalled: see the note in Dropdown.tsx — an in-flow menu is
+     clipped by the dock drawer, which has to clip to animate its own size. */
+  position: fixed;
+  z-index: var(--z-modal);
   max-height: 240px;
   margin: 0;
   padding: var(--s1);
@@ -900,18 +899,17 @@ svg._wordmark_10qlb_223 {
   border-radius: var(--r-m);
   background: var(--panel);
   box-shadow: var(--shadow-2);
-  transform-origin: top left;
-  animation: _ddOpen_10qlb_1 var(--dur-fast) var(--ease) both;
+  animation: _ddOpen_1yckr_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _ddOpen_10qlb_1 {
+@keyframes _ddOpen_1yckr_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
 }
 
-._ddOpt_10qlb_470 {
+._ddOpt_1yckr_468 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -924,11 +922,11 @@ svg._wordmark_10qlb_223 {
   transition: background var(--dur-fast) var(--ease);
 }
 
-._ddOptActive_10qlb_483 {
+._ddOptActive_1yckr_481 {
   background: var(--panel-2);
 }
 
-._ddNone_10qlb_487 {
+._ddNone_1yckr_485 {
   padding: var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
@@ -2590,7 +2588,7 @@ dialog._modal_16s5d_589 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_hzh3s_32 {
+._app_1lji0_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2600,7 +2598,7 @@ dialog._modal_16s5d_589 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_hzh3s_42 {
+._scroll_1lji0_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2610,7 +2608,7 @@ dialog._modal_16s5d_589 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_hzh3s_52 {
+._layout_1lji0_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2630,7 +2628,7 @@ dialog._modal_16s5d_589 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_hzh3s_72 {
+._main_1lji0_72 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2639,7 +2637,7 @@ dialog._modal_16s5d_589 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_hzh3s_52 {
+  ._layout_1lji0_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2647,7 +2645,7 @@ dialog._modal_16s5d_589 {
 }
 
 @media (max-width: 699px) {
-  ._layout_hzh3s_52 {
+  ._layout_1lji0_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2656,13 +2654,13 @@ dialog._modal_16s5d_589 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_hzh3s_98 {
+._rail_1lji0_98 {
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--s2) 0 0;
 }
 
-._railHead_hzh3s_104 {
+._railHead_1lji0_104 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2670,7 +2668,7 @@ dialog._modal_16s5d_589 {
 }
 
 /* The board's scope heads the list it scopes; the count sits under it. */
-._railScope_hzh3s_112 {
+._railScope_1lji0_112 {
   margin: 0;
   font-size: var(--fs-m);
   font-weight: 600;
@@ -2678,7 +2676,7 @@ dialog._modal_16s5d_589 {
   color: var(--text);
 }
 
-._railList_hzh3s_120 {
+._railList_1lji0_120 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2687,7 +2685,7 @@ dialog._modal_16s5d_589 {
   gap: 2px;
 }
 
-._railItem_hzh3s_129 {
+._railItem_1lji0_129 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2704,12 +2702,12 @@ dialog._modal_16s5d_589 {
   cursor: pointer;
 }
 
-._railItem_hzh3s_129:hover {
+._railItem_1lji0_129:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_hzh3s_151 {
+._railDot_1lji0_151 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2717,30 +2715,30 @@ dialog._modal_16s5d_589 {
   background: var(--line-strong);
 }
 
-._railCurrent_hzh3s_159 {
+._railCurrent_1lji0_159 {
   background: transparent;
   color: var(--accent);
 }
 
-._railCurrent_hzh3s_159 ._railDot_hzh3s_151 {
+._railCurrent_1lji0_159 ._railDot_1lji0_151 {
   background: var(--accent);
 }
 
-._railPeeking_hzh3s_168 {
+._railPeeking_1lji0_168 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_hzh3s_173 ._railDot_hzh3s_151 {
+._railDone_1lji0_173 ._railDot_1lji0_151 {
   background: var(--ok);
 }
 
-._railDone_hzh3s_173 ._railText_hzh3s_177 {
+._railDone_1lji0_173 ._railText_1lji0_177 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_hzh3s_177 {
+._railText_1lji0_177 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2748,29 +2746,29 @@ dialog._modal_16s5d_589 {
   white-space: nowrap;
 }
 
-._railKey_hzh3s_190 {
+._railKey_1lji0_190 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_hzh3s_196 {
+._railPts_1lji0_196 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_hzh3s_203 {
+._railToggle_1lji0_203 {
   display: none;
 }
 
-._railBackdrop_hzh3s_207 {
+._railBackdrop_1lji0_207 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_hzh3s_98 {
+  ._rail_1lji0_98 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2784,15 +2782,15 @@ dialog._modal_16s5d_589 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_hzh3s_226 {
+  ._railOpen_1lji0_226 {
     transform: translateX(0);
   }
 
-  ._railToggle_hzh3s_203 {
+  ._railToggle_1lji0_203 {
     display: inline-flex;
   }
 
-  ._railBackdrop_hzh3s_207 {
+  ._railBackdrop_1lji0_207 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2803,7 +2801,7 @@ dialog._modal_16s5d_589 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_hzh3s_245 {
+._ticket_1lji0_245 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2814,13 +2812,13 @@ dialog._modal_16s5d_589 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_hzh3s_256 {
+._ticketPeek_1lji0_256 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_hzh3s_262 {
+._tkrow_1lji0_262 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2828,23 +2826,23 @@ dialog._modal_16s5d_589 {
   margin-bottom: var(--s2);
 }
 
-._key_hzh3s_270 {
+._key_1lji0_270 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_hzh3s_270 a {
+._key_1lji0_270 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_hzh3s_270 a:hover {
+._key_1lji0_270 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_hzh3s_286 {
+._phaseTag_1lji0_286 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2855,33 +2853,37 @@ dialog._modal_16s5d_589 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_hzh3s_297 {
+._phaseTagOn_1lji0_297 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_hzh3s_303 {
+._phaseTagPeek_1lji0_303 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-/* The pager sits at the end of the key row, hard right. */
-._tknav_hzh3s_309 {
+/* The pager sits at the end of the key row, hard right. Bordered rather than
+   bare: it moves the whole room, which is not a thing to leave looking like
+   furniture. */
+._tknav_1lji0_311 {
   display: inline-flex;
   align-items: center;
-  gap: var(--s1);
+  gap: var(--s2);
   margin-left: auto;
 }
 
-._tkpos_hzh3s_316 {
+._tkpos_1lji0_318 {
+  min-width: 4ch;
+  text-align: center;
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  color: var(--dim);
+  color: var(--muted);
 }
 
-._tkSummary_hzh3s_323 {
+._tkSummary_1lji0_327 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -2892,9 +2894,9 @@ dialog._modal_16s5d_589 {
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-._editTitle_hzh3s_334,
-._editBody_hzh3s_335,
-._editPoints_hzh3s_336 {
+._editTitle_1lji0_338,
+._editBody_1lji0_339,
+._editPoints_1lji0_340 {
   width: 100%;
   background: none;
   border: 0;
@@ -2910,16 +2912,16 @@ dialog._modal_16s5d_589 {
   transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._editTitle_hzh3s_334:focus,
-._editBody_hzh3s_335:focus,
-._editPoints_hzh3s_336:focus {
+._editTitle_1lji0_338:focus,
+._editBody_1lji0_339:focus,
+._editPoints_1lji0_340:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* Restates the display type rather than inheriting it: `font: inherit` above
    resets the size, and both classes sit on the same element. */
-._editTitle_hzh3s_334 {
+._editTitle_1lji0_338 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -2929,7 +2931,7 @@ dialog._modal_16s5d_589 {
   overflow: hidden;
 }
 
-._editBody_hzh3s_335 {
+._editBody_1lji0_339 {
   resize: none;
   min-height: 0;
   max-height: none;
@@ -2937,21 +2939,21 @@ dialog._modal_16s5d_589 {
   box-shadow: none;
 }
 
-._editBody_hzh3s_335:focus {
+._editBody_1lji0_339:focus {
   box-shadow: none;
 }
 
-._editPoints_hzh3s_336 {
+._editPoints_1lji0_340 {
   width: 4em;
 }
 
 /* Wide enough that a picker does not resize the row it sits in as the value
    changes — the properties keep their columns while being edited. */
-._propPick_hzh3s_389 {
+._propPick_1lji0_393 {
   min-width: 9em;
 }
 
-._editNote_hzh3s_393 {
+._editNote_1lji0_397 {
   margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
@@ -2959,7 +2961,7 @@ dialog._modal_16s5d_589 {
 
 /* Up in the identifying row, hard right — the ticket is saved from the row it
    is named in. */
-._editActions_hzh3s_401 {
+._editActions_1lji0_405 {
   display: flex;
   gap: var(--s2);
   margin-left: auto;
@@ -2967,20 +2969,20 @@ dialog._modal_16s5d_589 {
 
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
-._props_hzh3s_409 {
+._props_1lji0_413 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3) var(--s6);
   margin: var(--s4) 0 var(--s5);
 }
 
-._prop_hzh3s_389 {
+._prop_1lji0_393 {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-._propLabel_hzh3s_422 {
+._propLabel_1lji0_426 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2988,22 +2990,22 @@ dialog._modal_16s5d_589 {
   color: var(--dim);
 }
 
-._propValue_hzh3s_430 {
+._propValue_1lji0_434 {
   margin: 0;
   font-size: var(--fs-s);
   color: var(--text);
 }
 
-._propOk_hzh3s_436 {
+._propOk_1lji0_440 {
   color: var(--ok);
 }
 
-._bodyLabel_hzh3s_440 {
+._bodyLabel_1lji0_444 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_hzh3s_445 {
+._desc_1lji0_449 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -3012,25 +3014,25 @@ dialog._modal_16s5d_589 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_hzh3s_445 {
+._desc_1lji0_449 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_hzh3s_461 {
+._descClipped_1lji0_465 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_hzh3s_468 {
+._descFade_1lji0_472 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_hzh3s_472 {
+._descToggle_1lji0_476 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -3042,13 +3044,13 @@ dialog._modal_16s5d_589 {
   cursor: pointer;
 }
 
-._descEmpty_hzh3s_484 {
+._descEmpty_1lji0_488 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_hzh3s_490 {
+._peekBanner_1lji0_494 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3062,7 +3064,7 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._peekActions_hzh3s_504 {
+._peekActions_1lji0_508 {
   display: flex;
   gap: var(--s2);
 }
@@ -3070,14 +3072,14 @@ dialog._modal_16s5d_589 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_hzh3s_512 {
+._pkbtnGo_1lji0_516 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_hzh3s_519 {
+._results_1lji0_523 {
   border-top: 1px solid var(--hairline);
   padding: var(--s4) var(--s1) 0;
   display: flex;
@@ -3085,7 +3087,7 @@ dialog._modal_16s5d_589 {
   gap: var(--s3);
 }
 
-._resultsHead_hzh3s_527 {
+._resultsHead_1lji0_531 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3093,18 +3095,18 @@ dialog._modal_16s5d_589 {
   flex-wrap: wrap;
 }
 
-._resultsSum_hzh3s_535 {
+._resultsSum_1lji0_539 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_hzh3s_535 b {
+._resultsSum_1lji0_539 b {
   color: var(--accent);
 }
 
-._dist_hzh3s_546 {
+._dist_1lji0_550 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3113,7 +3115,7 @@ dialog._modal_16s5d_589 {
   gap: var(--s1);
 }
 
-._drow_hzh3s_555 {
+._drow_1lji0_559 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -3124,39 +3126,39 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._dval_hzh3s_566 {
+._dval_1lji0_570 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_hzh3s_571 {
+._dtrack_1lji0_575 {
   height: 4px;
   background: var(--hairline);
   overflow: hidden;
 }
 
-._dbar_hzh3s_577 {
+._dbar_1lji0_581 {
   display: block;
   height: 100%;
   background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_hzh3s_584 ._dbar_hzh3s_577 {
+._drowTop_1lji0_588 ._dbar_1lji0_581 {
   background: var(--accent);
 }
 
-._drowTop_hzh3s_584 ._dval_hzh3s_566 {
+._drowTop_1lji0_588 ._dval_1lji0_570 {
   color: var(--accent);
 }
 
-._dcount_hzh3s_592 {
+._dcount_1lji0_596 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_hzh3s_598 {
+._ainote_1lji0_602 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -3164,7 +3166,7 @@ dialog._modal_16s5d_589 {
   background: var(--panel-2);
 }
 
-._aiHead_hzh3s_606 {
+._aiHead_1lji0_610 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3175,57 +3177,57 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._aiBody_hzh3s_617 {
+._aiBody_1lji0_621 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_hzh3s_623 {
+._conf_1lji0_627 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_hzh3s_630 {
+._conf-high_1lji0_634 {
   color: var(--ok);
 }
 
-._conf-medium_hzh3s_634 {
+._conf-medium_1lji0_638 {
   color: var(--warn);
 }
 
-._conf-low_hzh3s_638 {
+._conf-low_1lji0_642 {
   color: var(--danger);
 }
 
-._ev_hzh3s_642 {
+._ev_1lji0_646 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_hzh3s_649 {
+._sug_1lji0_653 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_hzh3s_649 b {
+._sug_1lji0_653 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_hzh3s_662 ._aiBody_hzh3s_617::after {
+._ainotePending_1lji0_666 ._aiBody_1lji0_621::after {
   content: '…';
-  animation: _dots_hzh3s_1 1.2s steps(4, end) infinite;
+  animation: _dots_1lji0_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_hzh3s_1 {
+@keyframes _dots_1lji0_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -3236,14 +3238,14 @@ dialog._modal_16s5d_589 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_hzh3s_678 {
+._duel_1lji0_682 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_hzh3s_685 {
+._duelHead_1lji0_689 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3255,13 +3257,13 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._duelBody_hzh3s_697 {
+._duelBody_1lji0_701 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_hzh3s_703 {
+._duelTranscript_1lji0_707 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -3270,41 +3272,41 @@ dialog._modal_16s5d_589 {
   overflow-y: auto;
 }
 
-._recind_hzh3s_712 {
+._recind_1lji0_716 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_hzh3s_719 {
+._recDot_1lji0_723 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_hzh3s_1 1.4s ease-in-out infinite;
+  animation: _recpulse_1lji0_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_hzh3s_1 {
+@keyframes _recpulse_1lji0_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_hzh3s_733 {
+._norec_1lji0_737 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_hzh3s_739 {
+._dualrow_1lji0_743 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_hzh3s_746 {
+._duelist_1lji0_750 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3316,31 +3318,31 @@ dialog._modal_16s5d_589 {
   text-align: center;
 }
 
-._duelistSpeaking_hzh3s_758 {
+._duelistSpeaking_1lji0_762 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_hzh3s_763 {
+._duelFace_1lji0_767 {
   font-size: var(--fs-xl);
 }
 
-._duelName_hzh3s_767 {
+._duelName_1lji0_771 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_hzh3s_772 {
+._duelValue_1lji0_776 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_hzh3s_772 b {
+._duelValue_1lji0_776 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_hzh3s_782 {
+._duelFloor_1lji0_786 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3348,12 +3350,12 @@ dialog._modal_16s5d_589 {
   color: var(--accent);
 }
 
-._duelMic_hzh3s_790 {
+._duelMic_1lji0_794 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_hzh3s_795 {
+._vs_1lji0_799 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -3361,7 +3363,7 @@ dialog._modal_16s5d_589 {
   color: var(--dim);
 }
 
-._youup_hzh3s_803 {
+._youup_1lji0_807 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -3371,7 +3373,7 @@ dialog._modal_16s5d_589 {
   font-size: var(--fs-s);
 }
 
-._micRow_hzh3s_813 {
+._micRow_1lji0_817 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3379,7 +3381,7 @@ dialog._modal_16s5d_589 {
   margin-top: var(--s3);
 }
 
-._micBtn_hzh3s_821 {
+._micBtn_1lji0_825 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -3391,7 +3393,7 @@ dialog._modal_16s5d_589 {
   cursor: pointer;
 }
 
-._hint_hzh3s_833 {
+._hint_1lji0_837 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -3402,36 +3404,36 @@ dialog._modal_16s5d_589 {
    another card. */
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
-._main_hzh3s_72 {
+._main_1lji0_72 {
   --deck-w: calc(10 * 72px + 9 * var(--s2));
 }
 
-._table_hzh3s_848 {
+._table_1lji0_852 {
   margin-top: auto;
   width: min(100%, var(--deck-w));
   margin-inline: auto;
 }
 
-._tableHead_hzh3s_854 {
+._tableHead_1lji0_858 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_hzh3s_861 {
+._tableWait_1lji0_865 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_hzh3s_867 {
+._vempty_1lji0_871 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_hzh3s_873 {
+._vrow_1lji0_877 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3442,18 +3444,18 @@ dialog._modal_16s5d_589 {
 
 /* The avatar and, once revealed, the card that was played — tucked against it
    so the pair reads as one seat. */
-._seatFace_hzh3s_884 {
+._seatFace_1lji0_888 {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-._seatFace_hzh3s_884 ._vcard_hzh3s_890 {
+._seatFace_1lji0_888 ._vcard_1lji0_894 {
   margin-left: -6px;
 }
 
 /* A seat: face over name. */
-._voter_hzh3s_895 {
+._voter_1lji0_899 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3461,7 +3463,7 @@ dialog._modal_16s5d_589 {
   width: 84px;
 }
 
-._face_hzh3s_903 {
+._face_1lji0_907 {
   position: relative;
   display: grid;
   place-items: center;
@@ -3474,7 +3476,7 @@ dialog._modal_16s5d_589 {
   font-size: var(--fs-l);
 }
 
-._tick_hzh3s_245 {
+._tick_1lji0_245 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3497,7 +3499,7 @@ dialog._modal_16s5d_589 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_hzh3s_890 {
+._vcard_1lji0_894 {
   display: grid;
   place-items: center;
   width: 22px;
@@ -3511,18 +3513,18 @@ dialog._modal_16s5d_589 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  animation: _flip_hzh3s_1 320ms var(--ease) both;
+  animation: _flip_1lji0_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_hzh3s_1 {
+@keyframes _flip_1lji0_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_hzh3s_964 {
+._nm_1lji0_968 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3533,7 +3535,7 @@ dialog._modal_16s5d_589 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_hzh3s_975 {
+._deckZone_1lji0_979 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -3565,24 +3567,24 @@ dialog._modal_16s5d_589 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_hzh3s_32[data-host='true'] {
+  ._app_1lji0_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_hzh3s_1013 {
+._deckStatus_1lji0_1017 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_hzh3s_1020 {
+._deckMine_1lji0_1024 {
   color: var(--accent);
 }
 
-._deck_hzh3s_975 {
+._deck_1lji0_979 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3596,7 +3598,7 @@ dialog._modal_16s5d_589 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_hzh3s_1038 {
+._pcard_1lji0_1042 {
   position: relative;
   /* Ten cards and their gaps have to fit the middle column on one line at the
      wide breakpoint — a hand that wraps reads as eleven cards. */
@@ -3616,19 +3618,19 @@ dialog._modal_16s5d_589 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_hzh3s_1038:hover:not(:disabled) {
+._pcard_1lji0_1042:hover:not(:disabled) {
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
 }
 
-._pcard_hzh3s_1038:disabled {
+._pcard_1lji0_1042:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_hzh3s_1070 {
+._pcardSel_1lji0_1074 {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--accent);
@@ -3639,11 +3641,11 @@ dialog._modal_16s5d_589 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_hzh3s_1081 {
+._pcardWait_1lji0_1085 {
   border-style: dashed;
 }
 
-._ci_hzh3s_1085 {
+._ci_1lji0_1089 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3652,7 +3654,7 @@ dialog._modal_16s5d_589 {
   color: var(--dim);
 }
 
-._ciFlip_hzh3s_1094 {
+._ciFlip_1lji0_1098 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3660,14 +3662,14 @@ dialog._modal_16s5d_589 {
   transform: rotate(180deg);
 }
 
-._cv_hzh3s_1102 {
+._cv_1lji0_1106 {
   font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_hzh3s_1109 {
+._console_1lji0_1113 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -3678,13 +3680,13 @@ dialog._modal_16s5d_589 {
   gap: var(--s3);
 }
 
-._cbar_hzh3s_1120 {
+._cbar_1lji0_1124 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_hzh3s_1126 {
+._cphase_1lji0_1130 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3692,20 +3694,20 @@ dialog._modal_16s5d_589 {
   color: var(--accent);
 }
 
-._cbody_hzh3s_1134 {
+._cbody_1lji0_1138 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_hzh3s_1140 {
+._cgroup_1lji0_1144 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_hzh3s_1146,
-._navrow_hzh3s_1147 {
+._crow_1lji0_1150,
+._navrow_1lji0_1151 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3714,11 +3716,11 @@ dialog._modal_16s5d_589 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_hzh3s_1156:not(:empty) {
+._duelSlot_1lji0_1160:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_hzh3s_1160 {
+._duelInline_1lji0_1164 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3727,12 +3729,12 @@ dialog._modal_16s5d_589 {
   border-radius: var(--r-s);
 }
 
-._seg_hzh3s_1169 {
+._seg_1lji0_1173 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_hzh3s_1174 {
+._preset_1lji0_1178 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3744,8 +3746,8 @@ dialog._modal_16s5d_589 {
   cursor: pointer;
 }
 
-._clabel_hzh3s_1186,
-._finlab_hzh3s_1187 {
+._clabel_1lji0_1190,
+._finlab_1lji0_1191 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3753,21 +3755,21 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._chint_hzh3s_1195,
-._cnotice_hzh3s_1196 {
+._chint_1lji0_1199,
+._cnotice_1lji0_1200 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_hzh3s_1196 {
+._cnotice_1lji0_1200 {
   color: var(--warn);
 }
 
 /* Label left, value right — the three decision rows read as a column of
    numbers rather than three sentences of different lengths. */
-._readout_hzh3s_1209 {
+._readout_1lji0_1213 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3777,20 +3779,20 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._readout_hzh3s_1209 b {
+._readout_1lji0_1213 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_hzh3s_1225 {
+._finrow_1lji0_1229 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
 }
 
-._finInput_hzh3s_1232 {
+._finInput_1lji0_1236 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3802,12 +3804,12 @@ dialog._modal_16s5d_589 {
   font-size: var(--fs-s);
 }
 
-._finSrc_hzh3s_1244 {
+._finSrc_1lji0_1248 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_hzh3s_1249 {
+._cpos_1lji0_1253 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3817,7 +3819,7 @@ dialog._modal_16s5d_589 {
 }
 
 @media (max-width: 1099px) {
-  ._console_hzh3s_1109 {
+  ._console_1lji0_1113 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3827,24 +3829,24 @@ dialog._modal_16s5d_589 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_hzh3s_1120 {
+  ._cbar_1lji0_1124 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_hzh3s_1134 {
+  ._cbody_1lji0_1138 {
     display: none;
   }
 
-  ._consoleOpen_hzh3s_1279 ._cbody_hzh3s_1134 {
+  ._consoleOpen_1lji0_1283 ._cbody_1lji0_1138 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_hzh3s_1286 {
+._identity_1lji0_1290 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3853,7 +3855,7 @@ dialog._modal_16s5d_589 {
 
 /* Who you are, as one quiet control: the avatar carries the identity and the
    pencil only shows up when you go looking for it. */
-._meChip_hzh3s_1295 {
+._meChip_1lji0_1299 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3872,12 +3874,12 @@ dialog._modal_16s5d_589 {
   cursor: pointer;
 }
 
-._meChip_hzh3s_1295:hover {
+._meChip_1lji0_1299:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
 
-._meName_hzh3s_1319 {
+._meName_1lji0_1323 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3885,37 +3887,37 @@ dialog._modal_16s5d_589 {
   font-weight: 500;
 }
 
-._pen_hzh3s_1327 {
+._pen_1lji0_1331 {
   display: inline-flex;
   color: var(--dim);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._meChip_hzh3s_1295:hover ._pen_hzh3s_1327,
-._meChip_hzh3s_1295:focus-visible ._pen_hzh3s_1327 {
+._meChip_1lji0_1299:hover ._pen_1lji0_1331,
+._meChip_1lji0_1299:focus-visible ._pen_1lji0_1331 {
   opacity: 1;
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
-._presenceChip_hzh3s_1340 {
+._presenceChip_1lji0_1344 {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
 /* The headcount is a number, so it is set as one. */
-._roomCount_hzh3s_1346 {
+._roomCount_1lji0_1350 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   font-weight: 600;
 }
 
-._offline_hzh3s_1353 {
+._offline_1lji0_1357 {
   color: var(--warn);
 }
 
-._popNote_hzh3s_1357 {
+._popNote_1lji0_1361 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -3924,7 +3926,7 @@ dialog._modal_16s5d_589 {
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-._musicBanner_hzh3s_1366 {
+._musicBanner_1lji0_1370 {
   margin: 0;
   width: 100%;
   padding: var(--s2) var(--s4);
@@ -3942,35 +3944,35 @@ dialog._modal_16s5d_589 {
 }
 
 /* The deck's own status line says it, in the colour of the thing that did it. */
-._deckStatusLocked_hzh3s_1384 {
+._deckStatusLocked_1lji0_1388 {
   color: var(--warn);
 }
 
 /* No robot, no panel: the model said nothing, so this is a note about that. */
-._aiFallback_hzh3s_1389 {
+._aiFallback_1lji0_1393 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._deckReason_hzh3s_1395 {
+._deckReason_1lji0_1399 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._musicBanner_hzh3s_1366 {
+._musicBanner_1lji0_1370 {
   color: var(--accent);
   cursor: pointer;
 }
 
-._musicBanner_hzh3s_1366:hover {
+._musicBanner_1lji0_1370:hover {
   background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_hzh3s_1412 {
+._flabel_1lji0_1416 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3980,7 +3982,7 @@ dialog._modal_16s5d_589 {
   color: var(--muted);
 }
 
-._field_hzh3s_1422 {
+._field_1lji0_1426 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3992,24 +3994,24 @@ dialog._modal_16s5d_589 {
   font-size: var(--fs-s);
 }
 
-textarea._field_hzh3s_1422 {
+textarea._field_1lji0_1426 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_hzh3s_1439 {
+._editWarn_1lji0_1443 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_hzh3s_393 {
+._editNote_1lji0_397 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_hzh3s_1451 {
+._editSave_1lji0_1455 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -4024,7 +4026,7 @@ textarea._field_hzh3s_1422 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_hzh3s_1466 {
+._srOnly_1lji0_1470 {
   position: absolute;
   width: 1px;
   height: 1px;

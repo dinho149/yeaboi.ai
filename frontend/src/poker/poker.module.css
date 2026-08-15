@@ -305,19 +305,23 @@
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-/* The pager sits at the end of the key row, hard right. */
+/* The pager sits at the end of the key row, hard right. Bordered rather than
+   bare: it moves the whole room, which is not a thing to leave looking like
+   furniture. */
 .tknav {
   display: inline-flex;
   align-items: center;
-  gap: var(--s1);
+  gap: var(--s2);
   margin-left: auto;
 }
 
 .tkpos {
+  min-width: 4ch;
+  text-align: center;
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  color: var(--dim);
+  color: var(--muted);
 }
 
 .tkSummary {

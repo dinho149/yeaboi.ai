@@ -68,7 +68,12 @@ export function PopoverGroup({ children, panelHost = null }: { children: ReactNo
     if (openId === null) return;
     const onPointerDown = (event: PointerEvent): void => {
       const root = rootRef.current;
-      if (root && event.target instanceof Node && !root.contains(event.target)) close();
+      if (!root || !(event.target instanceof Node)) return;
+      if (root.contains(event.target)) return;
+      // A Dropdown inside a panel portals its menu to the body — outside this
+      // root — so picking a station would otherwise close the panel it is in.
+      if ((event.target as Element).closest?.('[data-dropdown-menu]')) return;
+      close();
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close();
