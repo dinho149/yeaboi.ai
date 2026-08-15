@@ -281,7 +281,7 @@ export function Console({
               disabled={!hasTicket || dueling}
               onClick={onEdit}
             >
-              ✎
+              <Icon name="pencil" size={12} />
             </Button>
           </div>
 

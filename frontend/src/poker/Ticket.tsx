@@ -117,7 +117,7 @@ function TicketBody({ ticket, tag }: BodyProps) {
         </Chip>
           {ticket.estimated ? (
             <Chip tone="ok">
-              ✓ estimated <b>{fmtPoints(ticket.final_points)}</b>
+              <Icon name="check" size={12} /> estimated <b>{fmtPoints(ticket.final_points)}</b>
             </Chip>
           ) : null}
         </div>
@@ -188,7 +188,9 @@ export function TicketPanel({
           </span>
         </div>
         {peek ? (
-          <TicketBody ticket={peek} tag={<span className={cx(styles['phaseTag'], styles['phaseTagPeek'])}>👁 preview</span>} />
+          <TicketBody ticket={peek} tag={<span className={cx(styles['phaseTag'], styles['phaseTagPeek'])}>
+              <Icon name="eye" size={12} /> preview
+            </span>} />
         ) : (
           <p className={styles['descEmpty']}>Loading ticket…</p>
         )}
@@ -208,7 +210,9 @@ export function TicketPanel({
     phase === 'revealed' ? (
       <span className={cx(styles['phaseTag'], styles['phaseTagOn'])}>votes revealed</span>
     ) : phase === 'duel' ? (
-      <span className={cx(styles['phaseTag'], styles['phaseTagOn'])}>⚔ the floor is open</span>
+      <span className={cx(styles['phaseTag'], styles['phaseTagOn'])}>
+        <Icon name="swords" size={12} /> the floor is open
+      </span>
     ) : (
       <span className={styles['phaseTag']}>
         voting {index + 1}/{count}

@@ -13,7 +13,7 @@
  * than ten simultaneous flips — and the App announces it to assistive tech.
  */
 
-import { Eyebrow } from '../design/primitives';
+import { Eyebrow, Icon } from '../design/primitives';
 import type { PokerVote } from '../types/board';
 import styles from './poker.module.css';
 
@@ -53,10 +53,10 @@ export function Table({ votes, revealed }: TableProps) {
                 </span>
               ) : (
                 <span className={styles['face']}>
-                  <span aria-hidden="true">{person.avatar || '🙂'}</span>
+                  <span aria-hidden="true">{person.avatar || <Icon name="user" size={16} />}</span>
                   {person.voted ? (
                     <span className={styles['tick']} aria-hidden="true">
-                      ✓
+                      <Icon name="check" size={11} strokeWidth={3} />
                     </span>
                   ) : null}
                 </span>

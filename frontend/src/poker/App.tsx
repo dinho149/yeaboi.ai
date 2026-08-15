@@ -424,7 +424,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
             <span aria-hidden="true" className={styles['pen']}>
-              ✎
+              <Icon name="pencil" size={12} />
             </span>
           </button>
 

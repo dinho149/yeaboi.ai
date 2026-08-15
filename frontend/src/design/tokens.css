@@ -22,6 +22,7 @@
  * the guard is a blunt substring search on purpose.
  */
 @import './palette.css';
+@import './fonts.css';
 
 :root {
   /* ── Space ────────────────────────────────────────────────────────
@@ -113,7 +114,8 @@
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
   /* The border a live board draws around the whole viewport. Much brighter than
      `--line-strong`, which is for furniture inside the screen. */
-  --screen-frame: color-mix(in srgb, var(--text) 75%, transparent);
+  --screen-frame: color-mix(in srgb, var(--text) 30%, transparent);
+  --screen-frame-w: 1px;
   /* What shows outside that border, in the corners the radius leaves. */
   --screen-void: #000;
   --focus: var(--accent2);

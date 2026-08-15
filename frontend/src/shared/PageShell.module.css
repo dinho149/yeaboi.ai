@@ -29,7 +29,7 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  border: 2px solid var(--screen-frame);
+  border: var(--screen-frame-w) solid var(--screen-frame);
   border-radius: var(--r-l);
   background: var(--bg);
   /* Fills the four slivers the rounded corners leave uncovered. */
@@ -90,7 +90,7 @@
      than running behind a second box. */
   /* The frame's own weight and colour, open at the bottom — the dock is where
      the border lifts, not a box parked under it. */
-  border: 2px solid var(--screen-frame);
+  border: var(--screen-frame-w) solid var(--screen-frame);
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
   background: var(--bg);
@@ -134,8 +134,8 @@
      frame's straight run. */
   background: radial-gradient(
     circle at 0 0,
-    transparent 0 calc(var(--lift) - 2px),
-    var(--screen-frame) calc(var(--lift) - 2px) var(--lift),
+    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
+    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
     var(--bg) var(--lift)
   );
   pointer-events: none;
@@ -151,8 +151,8 @@
   height: var(--lift);
   background: radial-gradient(
     circle at 100% 0,
-    transparent 0 calc(var(--lift) - 2px),
-    var(--screen-frame) calc(var(--lift) - 2px) var(--lift),
+    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
+    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
     var(--bg) var(--lift)
   );
   pointer-events: none;
@@ -168,7 +168,7 @@
   [data-host='true'] .dockApp {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
-    border-bottom: 2px solid var(--screen-frame);
+    border-bottom: var(--screen-frame-w) solid var(--screen-frame);
     border-radius: var(--r-m);
   }
 }

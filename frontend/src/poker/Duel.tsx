@@ -38,7 +38,7 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   return (
     <div className={cx(styles['duelist'], speaking && styles['duelistSpeaking'])}>
       <span className={styles['duelFace']} aria-hidden="true">
-        {person.avatar || '🙂'}
+        {person.avatar || <Icon name="user" size={14} />}
       </span>
       <span className={styles['duelName']}>{person.name}</span>
       <span className={styles['duelValue']}>
@@ -58,7 +58,9 @@ export function Duel({ duel, mic }: DuelProps) {
   if (duel.status === 'transcribing') {
     return (
       <div className={styles['duel']} role="status">
-        <div className={styles['duelHead']}>⚔️ Duel</div>
+        <div className={styles['duelHead']}>
+          <Icon name="swords" /> Duel
+        </div>
         <p className={styles['duelBody']}>
           Transcribing the debate… (the first run may download the speech model)
         </p>
@@ -70,7 +72,7 @@ export function Duel({ duel, mic }: DuelProps) {
     return (
       <div className={styles['duel']}>
         <div className={styles['duelHead']}>
-          ⚔️ Duel — {duel.low.name} vs {duel.high.name}
+          <Icon name="swords" /> Duel — {duel.low.name} vs {duel.high.name}
         </div>
         <p className={styles['duelTranscript']}>{duel.transcript}</p>
       </div>
@@ -80,7 +82,9 @@ export function Duel({ duel, mic }: DuelProps) {
   if (duel.status !== 'live') {
     return (
       <div className={styles['duel']}>
-        <div className={styles['duelHead']}>⚔️ Duel</div>
+        <div className={styles['duelHead']}>
+          <Icon name="swords" /> Duel
+        </div>
         <p className={styles['duelBody']}>{duel.error || 'Recording failed.'}</p>
       </div>
     );
@@ -93,7 +97,7 @@ export function Duel({ duel, mic }: DuelProps) {
   return (
     <div className={styles['duel']}>
       <div className={styles['duelHead']}>
-        ⚔️ The floor is open
+        <Icon name="swords" /> The floor is open
         {anyRecording ? (
           <span className={styles['recind']}>
             <span className={styles['recDot']} aria-hidden="true" />

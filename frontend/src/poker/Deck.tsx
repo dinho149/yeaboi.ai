@@ -19,7 +19,7 @@
 
 import { cx } from '../runtime/cx';
 import { POKER_DECK } from '../types/enums';
-import { courtName, CourtDuck } from './CourtDuck';
+import { courtName } from './court';
 import styles from './poker.module.css';
 
 export interface DeckProps {
@@ -72,18 +72,14 @@ export function Deck({ mine, pending, disabled, reason, onVote }: DeckProps) {
               <span className={styles['ci']} aria-hidden="true">
                 {value}
               </span>
+              <span className={styles['cv']} aria-hidden="true">
+                {value}
+              </span>
               {court ? (
-                <>
-                  <CourtDuck value={value} />
-                  <span className={styles['courtName']} aria-hidden="true">
-                    {court}
-                  </span>
-                </>
-              ) : (
-                <span className={styles['cv']} aria-hidden="true">
-                  {value}
+                <span className={styles['courtName']} aria-hidden="true">
+                  {court}
                 </span>
-              )}
+              ) : null}
               <span className={cx(styles['ci'], styles['ciFlip'])} aria-hidden="true">
                 {value}
               </span>
