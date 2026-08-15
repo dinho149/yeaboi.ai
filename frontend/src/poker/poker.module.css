@@ -310,6 +310,49 @@
   letter-spacing: -0.02em;
 }
 
+/* ── Editing in place ─────────────────────────────────────────────────
+   The fields are the ticket: same face, same size, same position, so the
+   panel does not turn into a form sitting on top of what it edits. */
+.editTitle,
+.editBody,
+.editPoints {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-s);
+  color: inherit;
+  font: inherit;
+  padding: var(--s2);
+}
+
+.editTitle {
+  margin: 0;
+}
+
+.editBody {
+  resize: vertical;
+  min-height: 12em;
+  max-height: none;
+  overflow: auto;
+}
+
+.editPoints {
+  width: 5em;
+  padding: 2px var(--s1);
+}
+
+.editNote {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+}
+
+.editActions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
 .props {

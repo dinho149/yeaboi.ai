@@ -68,7 +68,6 @@ import type { PokerBoot } from './boot';
 import { Console } from './Console';
 import { Deck } from './Deck';
 import { Duel } from './Duel';
-import { EditTicketModal } from './EditTicketModal';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
@@ -427,9 +426,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
-            <span aria-hidden="true" className={styles['pen']}>
-              <Icon name="pencil" size={12} />
-            </span>
+
           </button>
 
           <PresenceRow people={presence.filter((person) => person.name !== name)} />
@@ -503,6 +500,9 @@ export function App({ boot }: { boot: PokerBoot }) {
             liveKey={tickets[ticketIndex]?.key ?? ''}
             isHost={isHost}
             onEdit={() => setEditOpen(true)}
+            editing={editOpen}
+            onSaveEdit={saveEdit}
+            onCancelEdit={() => setEditOpen(false)}
             onBackToLive={() => setPeekIndex(null)}
             onGotoPeek={() => {
               const target = peekIndex;
@@ -567,8 +567,6 @@ export function App({ boot }: { boot: PokerBoot }) {
         onClose={() => setProfileOpen(false)}
         required={!name}
       />
-
-      <EditTicketModal open={editOpen} ticket={ticket} onSave={saveEdit} onClose={() => setEditOpen(false)} />
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
         <Toast message={invite.notice} onDismiss={invite.dismiss} />

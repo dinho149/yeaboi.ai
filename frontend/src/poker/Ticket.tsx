@@ -27,6 +27,7 @@ import { Eyebrow, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
+import type { TicketEdit } from './actions';
 import { fmtPoints } from './points';
 import { Button } from '../shared';
 import styles from './poker.module.css';
@@ -39,6 +40,91 @@ interface BodyProps {
   tag: React.ReactNode;
   /** Host-only, and absent on a preview: editing applies to the live ticket. */
   onEdit?: (() => void) | undefined;
+}
+
+/**
+ * The ticket, editable in place.
+ *
+ * The fields are the ticket — the same type at the same size in the same
+ * position — so the panel does not become a form on top of what it is editing.
+ * Nothing changed is a cancel that went through Save: an empty edit still bumps
+ * the ticket's history on the tracker.
+ */
+function TicketForm({
+  ticket,
+  onSave,
+  onCancel,
+}: {
+  ticket: PokerTicket;
+  onSave(edit: TicketEdit): void;
+  onCancel(): void;
+}) {
+  const [summary, setSummary] = useState(ticket.summary);
+  const [description, setDescription] = useState(ticket.description_text);
+  const [points, setPoints] = useState(ticket.story_points === null ? '' : fmtPoints(ticket.story_points));
+
+  useEffect(() => {
+    setSummary(ticket.summary);
+    setDescription(ticket.description_text);
+    setPoints(ticket.story_points === null ? '' : fmtPoints(ticket.story_points));
+  }, [ticket.key, ticket.summary, ticket.description_text, ticket.story_points]);
+
+  const submit = (): void => {
+    const edit: TicketEdit = {};
+    const trimmed = summary.trim();
+    if (trimmed && trimmed !== ticket.summary) edit.summary = trimmed;
+    if (description !== ticket.description_text) edit.description = description;
+    const parsed = Number.parseFloat(points);
+    if (points.trim() !== '' && !Number.isNaN(parsed) && parsed !== ticket.story_points) edit.points = parsed;
+    onCancel();
+    if (Object.keys(edit).length) onSave(edit);
+  };
+
+  return (
+    <>
+      <input
+        className={cx(styles['tkSummary'], styles['editTitle'])}
+        aria-label="Summary"
+        value={summary}
+        onInput={(event) => setSummary((event.target as HTMLInputElement).value)}
+      />
+
+      <dl className={styles['props']}>
+        <Prop label="Type" value={ticket.type} />
+        <Prop label="Status" value={ticket.state} />
+        <Prop label="Assignee" value={ticket.assignee} />
+        <div className={styles['prop']}>
+          <dt className={styles['propLabel']}>Points</dt>
+          <dd className={styles['propValue']}>
+            <input
+              className={styles['editPoints']}
+              aria-label="Story points"
+              inputMode="decimal"
+              value={points}
+              onInput={(event) => setPoints((event.target as HTMLInputElement).value)}
+            />
+          </dd>
+        </div>
+      </dl>
+
+      <textarea
+        className={cx(styles['desc'], styles['editBody'])}
+        aria-label="Description"
+        rows={10}
+        value={description}
+        onInput={(event) => setDescription((event.target as HTMLTextAreaElement).value)}
+      />
+
+      <p className={styles['editNote']}>Saving writes to the tracker, not just this board.</p>
+
+      <div className={styles['editActions']}>
+        <Button tone="primary" onClick={submit}>
+          Save
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
+      </div>
+    </>
+  );
 }
 
 function Collapsible({ label, text }: { label?: string; text: string }) {
@@ -155,6 +241,10 @@ export interface TicketPanelProps {
   isHost: boolean;
   /** Host-only: open the ticket for editing. */
   onEdit(): void;
+  /** The ticket is open for editing in place. */
+  editing: boolean;
+  onSaveEdit(edit: TicketEdit): void;
+  onCancelEdit(): void;
   onBackToLive(): void;
   /** Host only: move the whole room to the ticket being previewed. */
   onGotoPeek(): void;
@@ -170,6 +260,9 @@ export function TicketPanel({
   liveKey,
   isHost,
   onEdit,
+  editing,
+  onSaveEdit,
+  onCancelEdit,
   onBackToLive,
   onGotoPeek,
 }: TicketPanelProps) {
@@ -228,7 +321,17 @@ export function TicketPanel({
 
   return (
     <section className={styles['ticket']} aria-label="Ticket">
-      <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />
+      {editing ? (
+        <>
+          <div className={styles['tkrow']}>
+            <span className={styles['key']}>{ticket.key}</span>
+            <span className={styles['phaseTag']}>editing</span>
+          </div>
+          <TicketForm ticket={ticket} onSave={onSaveEdit} onCancel={onCancelEdit} />
+        </>
+      ) : (
+        <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />
+      )}
     </section>
   );
 }

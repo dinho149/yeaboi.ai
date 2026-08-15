@@ -193,7 +193,7 @@ export function useDockDrag(count = 0): DockDrag {
   useLayoutEffect(() => {
     const b = box();
     if (!b || distance.current !== null) return;
-    settle(b.h + b.w - GUTTER - b.dw / 2);
+    settle(b.h + b.w - GUTTER - b.dw);
   }, [box, settle]);
 
   useEffect(() => {
