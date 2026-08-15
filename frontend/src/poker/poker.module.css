@@ -1365,19 +1365,15 @@
   text-transform: uppercase;
 }
 
-/* Sits with the deck, so it is a line of its own rather than a strip across
-   the board. */
-.lockBanner {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
+/* The deck's own status line says it, in the colour of the thing that did it. */
+.deckStatusLocked {
   color: var(--warn);
+}
+
+.deckReason {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
 }
 
 .musicBanner {

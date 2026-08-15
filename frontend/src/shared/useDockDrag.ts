@@ -8,7 +8,9 @@
  * each one fell — all of it to reach two positions nobody wanted a toolbar in.
  *
  * What is left is one number: `x`, the dock's distance from the left, clamped
- * so it never runs onto the screen's corner radius.
+ * so it never runs onto the screen's corner radius. The vertical went with it:
+ * the dock is pinned to the bottom in CSS, so it grows upward on its own when a
+ * panel opens inside it, with nothing to recompute.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -22,27 +24,24 @@ export interface DockDrag {
   /** False until the dock has been measured and placed. */
   placed: boolean;
   x: number;
-  y: number;
   onPointerDown(event: PointerEvent): void;
 }
 
 interface Box {
   w: number;
-  h: number;
   dw: number;
-  dh: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function place(x: number, { w, h, dw, dh }: Box): { x: number; y: number } {
-  return { x: clamp(x, GUTTER, Math.max(GUTTER, w - dw - GUTTER)), y: h - dh };
+function place(x: number, { w, dw }: Box): number {
+  return clamp(x, GUTTER, Math.max(GUTTER, w - dw - GUTTER));
 }
 
 export function useDockDrag(): DockDrag {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [x, setX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [placed, setPlaced] = useState(false);
   const placedRef = useRef(false);
@@ -59,15 +58,15 @@ export function useDockDrag(): DockDrag {
     const el = node.current;
     if (!el) return null;
     const host = (el.offsetParent as HTMLElement | null) ?? document.documentElement;
-    return { w: host.clientWidth, h: host.clientHeight, dw: el.offsetWidth, dh: el.offsetHeight };
+    return { w: host.clientWidth, dw: el.offsetWidth };
   }, []);
 
   const settle = useCallback(
-    (x: number) => {
+    (next: number) => {
       const b = box();
       if (!b) return;
-      left.current = x;
-      setPosition(place(x, b));
+      left.current = next;
+      setX(place(next, b));
       if (!placedRef.current) {
         placedRef.current = true;
         // Visible now, animated from the next frame. Enabling the transition in
@@ -111,15 +110,23 @@ export function useDockDrag(): DockDrag {
     };
   }, [dragging, settle]);
 
-  // A resized window can leave the dock parked past the end of its wall — and
-  // so can the dock's own height changing, which is what `y` is measured from.
+  // Two things can leave the dock hanging off the end of its wall: the window
+  // resizing, and the dock itself growing when a panel opens inside it. The
+  // second is why this observes the dock and not only the window — the clamp
+  // then slides it back in, on the same transition the growth runs on.
   useEffect(() => {
-    const onResize = (): void => {
+    const reclamp = (): void => {
       if (left.current !== null) settle(left.current);
     };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.addEventListener('resize', reclamp);
+    const el = node.current;
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(reclamp) : null;
+    if (el) observer?.observe(el);
+    return () => {
+      window.removeEventListener('resize', reclamp);
+      observer?.disconnect();
+    };
   }, [settle]);
 
-  return { ref, dragging, placed, x: position.x, y: position.y, onPointerDown };
+  return { ref, dragging, placed, x, onPointerDown };
 }

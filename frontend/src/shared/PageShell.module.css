@@ -63,34 +63,38 @@
   margin-bottom: var(--s5);
 }
 
-/* The tool cluster, docked over the bottom-right corner of the board — the
-   TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
-   of a surface's own fixed bottom sheet. */
+/*
+ * The tool cluster, docked against the bottom of the board — the TUI's bottom
+ * strip, in the same place, and made of the same material as the masthead so
+ * the two read as one set of furniture.
+ *
+ * Pinned to the bottom rather than translated onto it: opening a tool grows the
+ * dock upward, and an element anchored by its top would need its offset
+ * recomputed every frame of that growth.
+ */
 .dockApp {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
   display: flex;
-  align-items: center;
-  gap: var(--s1);
-  padding: var(--s1) var(--s2);
-  /* Its own outline, open on the side it sits against, so it reads as lifted
-     off the wall it is docked to. */
-  border: var(--screen-frame-w) solid var(--screen-frame);
-  background: var(--bg);
-  box-shadow: var(--shadow-1);
+  flex-direction: column;
+  align-items: stretch;
+  border: 1px solid var(--hairline);
+  border-bottom: none;
+  border-radius: var(--lift) var(--lift) 0 0;
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
   cursor: grab;
   touch-action: none;
-  /* Placed by one translation off the frame's top-left, so travelling between
-     walls interpolates instead of swapping which offsets are `auto`. */
   left: 0;
-  top: 0;
-  transform: translate3d(var(--dock-x, 0px), var(--dock-y, 0px), 0);
-  /* No transition, and nothing to see, until it has been measured onto a wall
-     — otherwise the first placement animates out of the top-left corner. */
+  bottom: var(--app-inset-bottom, 0px);
+  transform: translate3d(var(--dock-x, 0px), 0, 0);
+  /* No transition, and nothing to see, until it has been measured onto the wall
+     — otherwise the first placement animates out of the left-hand corner. */
   transition: none;
-  /* Hidden only until the very first measurement; `--dock-placed` is set by the
-     shell the moment a position exists, a frame before the transition. */
   visibility: var(--dock-vis, hidden);
 }
 
@@ -98,11 +102,40 @@
   transition: transform var(--dur-base) var(--ease);
 }
 
-/* Open along the bottom, because that is the edge it is lifted out of. */
-.dockApp[data-edge='bottom'] {
-  flex-direction: row;
-  border-bottom: none;
-  border-radius: var(--lift) var(--lift) 0 0;
+/* The controls themselves. */
+.dockRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) var(--s2);
+}
+
+/*
+ * Where an open tool renders — the notch's own content, not a panel over it.
+ *
+ * A `0fr` → `1fr` track on both axes is what makes the dock's *box* animate:
+ * the drawer is in flow, so the dock takes its size, and a fractional track
+ * interpolates where `height: auto` cannot. The panel inside clips while the
+ * track is short, which is why it needs `min-*: 0` and `overflow: hidden`.
+ */
+.dockDrawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  grid-template-columns: 0fr;
+  transition:
+    grid-template-rows var(--dur-base) var(--ease),
+    grid-template-columns var(--dur-base) var(--ease);
+}
+
+.dockDrawer:has(> *:not([hidden])) {
+  grid-template-rows: 1fr;
+  grid-template-columns: 1fr;
+}
+
+.dockDrawer > * {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
@@ -152,51 +185,14 @@
   border-color: transparent;
 }
 
-.dockApp > [class*='dockItem'] > button:not([class*='btnPrimary']),
-.dockApp > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+.dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']),
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
 
-/*
- * A panel opened from the notch IS the notch, grown.
- *
- * It sits directly on the dock's top edge — overlapping it by the border width,
- * so the two share one line — and carries the same ground and radius. Opening
- * scales it out of the edge it is attached to on both axes, which is what makes
- * it read as the box changing shape rather than a menu appearing over it.
- * Closing is not animated: the panel is `hidden`, and a `display: none` element
- * has no frames to run in.
- */
-.dockApp [role='group'][aria-label]:not([hidden]) {
-  top: auto;
-  bottom: calc(100% - var(--screen-frame-w));
-  min-width: 240px;
-  background: var(--bg);
-  border-color: var(--screen-frame);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  box-shadow: var(--shadow-2);
-  transform-origin: bottom center;
-  animation: dockMorph var(--dur-base) var(--ease) both;
-}
-
-/* Squared off where the panel meets it, so the seam between the two is one
-   straight line rather than four opposing curves. */
-.dockApp:has([role='group'][aria-label]:not([hidden])) {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-@keyframes dockMorph {
-  from {
-    opacity: 0;
-    transform: scale(0.72, 0.2);
-  }
-}
-
-.dockApp > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-.dockApp > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+.dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -205,9 +201,8 @@
    the border and has to close itself. */
 @media (max-width: 1099px) {
   [data-host='true'] .dockApp {
-    right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
-    border-bottom: var(--screen-frame-w) solid var(--screen-frame);
+    border-bottom: 1px solid var(--hairline);
     border-radius: var(--r-m);
   }
 }

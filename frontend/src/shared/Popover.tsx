@@ -16,6 +16,7 @@
  * dropped at the top of the document.
  */
 
+import { createPortal } from 'react-dom';
 import {
   createContext,
   useCallback,
@@ -36,6 +37,8 @@ interface PopoverGroupValue {
   openId: string | null;
   toggle(id: string): void;
   close(): void;
+  /** When set, panels render *into* this element instead of over the trigger. */
+  panelHost: HTMLElement | null;
 }
 
 const PopoverGroupContext = createContext<PopoverGroupValue | null>(null);
@@ -45,8 +48,13 @@ const PopoverGroupContext = createContext<PopoverGroupValue | null>(null);
  *
  * Also owns the two global dismissals — a pointer-down outside any panel, and
  * Escape — because both are properties of the *group*, not of any one popover.
+ *
+ * `panelHost` turns the group inside out: instead of each panel floating over
+ * its trigger, every panel renders into that one element. The dock uses it so
+ * that opening a tool grows the dock itself, which is something no absolutely
+ * positioned panel can do — an out-of-flow box cannot size its container.
  */
-export function PopoverGroup({ children }: { children: ReactNode }) {
+export function PopoverGroup({ children, panelHost = null }: { children: ReactNode; panelHost?: HTMLElement | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -73,7 +81,7 @@ export function PopoverGroup({ children }: { children: ReactNode }) {
     };
   }, [openId, close]);
 
-  const value = useMemo(() => ({ openId, toggle, close }), [openId, toggle, close]);
+  const value = useMemo(() => ({ openId, toggle, close, panelHost }), [openId, toggle, close, panelHost]);
 
   return (
     <PopoverGroupContext.Provider value={value}>
@@ -126,6 +134,7 @@ export function Popover({
   const [soloOpen, setSoloOpen] = useState(false);
 
   const open = group ? group.openId === id : soloOpen;
+  const host = group?.panelHost ?? null;
   const wasOpen = useRef(open);
 
   /*
@@ -137,7 +146,9 @@ export function Popover({
    * preference; this only overrides it when the preferred side does not fit.
    */
   useLayoutEffect(() => {
-    if (!open) {
+    // A docked panel is in flow inside its host, so there is no edge to flip
+    // against and nothing to measure.
+    if (!open || host) {
       setFit(null);
       return;
     }
@@ -154,7 +165,7 @@ export function Popover({
       ? anchor.left + width <= window.innerWidth || anchor.right - width < 0
       : anchor.right - width < 0;
     setFit({ above, left });
-  }, [open, placement, align]);
+  }, [open, placement, align, host]);
 
   useEffect(() => {
     // Returning focus to the trigger on close is the half of the interaction
@@ -169,6 +180,28 @@ export function Popover({
     else setSoloOpen((v) => !v);
   };
 
+  const panel = (
+    /* Kept in the DOM and hidden, rather than unmounted: `aria-controls`
+       pointing at a non-existent id is meaningless to a screen reader, and
+       `hidden` already removes it from the accessibility tree. */
+    <div
+      ref={panelRef}
+      id={id}
+      role="group"
+      aria-label={label}
+      hidden={!open}
+      className={cx(
+        styles['popover'],
+        host && styles['popoverDocked'],
+        !host && (fit ? fit.left : align === 'left') && styles['popoverLeft'],
+        !host && (fit ? fit.above : placement === 'above') && styles['popoverAbove'],
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+
   return (
     <div className={styles['popoverAnchor']}>
       <button
@@ -182,24 +215,7 @@ export function Popover({
       >
         {trigger}
       </button>
-      {/* Kept in the DOM and hidden, rather than unmounted: `aria-controls`
-          pointing at a non-existent id is meaningless to a screen reader, and
-          `hidden` already removes it from the accessibility tree. */}
-      <div
-        ref={panelRef}
-        id={id}
-        role="group"
-        aria-label={label}
-        hidden={!open}
-        className={cx(
-          styles['popover'],
-          (fit ? fit.left : align === 'left') && styles['popoverLeft'],
-          (fit ? fit.above : placement === 'above') && styles['popoverAbove'],
-          className,
-        )}
-      >
-        {children}
-      </div>
+      {host ? createPortal(panel, host) : panel}
     </div>
   );
 }

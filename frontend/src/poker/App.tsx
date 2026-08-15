@@ -529,19 +529,12 @@ export function App({ boot }: { boot: PokerBoot }) {
 
           <Table votes={votes} revealed={revealed} />
 
-          {/* Beside the cards it applies to, not across the top of the board:
-              the deck is where you find out you cannot vote. */}
-          {locked ? (
-            <p className={styles['lockBanner']} role="alert">
-              <Icon name="lock" /> The host locked voting.
-            </p>
-          ) : null}
-
           <Deck
             mine={vote.value}
             pending={vote.pending}
             disabled={deckClosed}
             reason={deckReason}
+            locked={locked}
             onVote={castVote}
           />
         </main>

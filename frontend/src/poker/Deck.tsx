@@ -15,8 +15,12 @@
  * "you are previewing a different ticket" — and the last of those is a trap,
  * because a vote always applies to the *live* ticket, never the one you are
  * reading. So the deck says which it is, every time.
+ *
+ * A lock is the one of those a person did on purpose and can undo, so it is the
+ * one that is coloured rather than stated.
  */
 
+import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { POKER_DECK } from '../types/enums';
 import styles from './poker.module.css';
@@ -29,15 +33,22 @@ export interface DeckProps {
   disabled: boolean;
   /** Why the deck is closed. Empty when it is open. */
   reason: string;
+  /** The host closed it deliberately — the one reason worth colouring. */
+  locked: boolean;
   onVote(value: string): void;
 }
 
-export function Deck({ mine, pending, disabled, reason, onVote }: DeckProps) {
+export function Deck({ mine, pending, disabled, reason, locked, onVote }: DeckProps) {
   return (
     <div className={styles['deckZone']} data-state={disabled ? 'closed' : 'open'}>
-      <p className={styles['deckStatus']} role="status">
+      <p className={cx(styles['deckStatus'], locked && styles['deckStatusLocked'])} role="status">
         {reason ? (
-          reason
+          /* One inline-flex run, so the glyph does not put a stray space in
+             front of the sentence a screen reader reads out. */
+          <span className={styles['deckReason']}>
+            {locked ? <Icon name="lock" size={12} /> : null}
+            {reason}
+          </span>
         ) : mine ? (
           <>
             Your vote: <b className={styles['deckMine']}>{mine}</b> — tap it again to withdraw

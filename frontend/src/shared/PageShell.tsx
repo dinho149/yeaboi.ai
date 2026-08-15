@@ -14,7 +14,7 @@
  * viewport. `app` is always compact — its screen cannot spend 260px.
  */
 
-import { Children, Fragment, isValidElement, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, useState, type ReactNode } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -102,6 +102,9 @@ export function PageShell({
   // know where each of them falls rather than laying out one row.
   const tools = dockItems(dock);
   const drag = useDockDrag();
+  // The dock's drawer, once it exists. Every dock popover renders into it, so
+  // opening one grows the dock itself rather than floating a panel over it.
+  const [drawer, setDrawer] = useState<HTMLDivElement | null>(null);
   const hero = density === 'auto' ? roomy : density === 'hero';
 
   const facts = chrome.facts ?? [];
@@ -189,7 +192,7 @@ export function PageShell({
       )}
 
       {app && dock ? (
-        <PopoverGroup>
+        <PopoverGroup panelHost={drawer}>
           <div
             ref={drag.ref}
             className={cx(
@@ -197,24 +200,18 @@ export function PageShell({
               drag.placed && styles['dockPlaced'],
               drag.dragging && styles['dockDragging'],
             )}
-            data-edge="bottom"
-            style={
-              {
-                '--dock-x': `${drag.x}px`,
-                '--dock-y': `${drag.y}px`,
-                '--dock-vis': drag.placed ? 'visible' : 'hidden',
-              } as never
-            }
+            style={{ '--dock-x': `${drag.x}px`, '--dock-vis': drag.placed ? 'visible' : 'hidden' } as never}
             onPointerDown={drag.onPointerDown}
-            role="toolbar"
-            aria-label="Board tools"
           >
-            <span className={styles['dockGrip']} aria-hidden="true" />
-            {tools.map((tool, index) => (
-              <span key={index} className={styles['dockItem']}>
-                {tool}
-              </span>
-            ))}
+            <div ref={setDrawer} className={styles['dockDrawer']} />
+            <div className={styles['dockRow']} role="toolbar" aria-label="Board tools">
+              <span className={styles['dockGrip']} aria-hidden="true" />
+              {tools.map((tool, index) => (
+                <span key={index} className={styles['dockItem']}>
+                  {tool}
+                </span>
+              ))}
+            </div>
           </div>
         </PopoverGroup>
       ) : null}
