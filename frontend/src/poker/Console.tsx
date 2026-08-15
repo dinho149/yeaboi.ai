@@ -26,7 +26,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Eyebrow } from '../design/primitives';
+import { Eyebrow, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { DuelSlice, PokerPhase, PokerState } from '../types/board';
 import { fmtPoints } from './points';
@@ -145,7 +145,7 @@ export function Console({
           aria-label={open ? 'Hide host controls' : 'Show host controls'}
           onClick={() => setOpen(!open)}
         >
-          <span aria-hidden="true">⌃</span>
+          <Icon name="chevron-up" />
         </Button>
       </div>
 
@@ -153,7 +153,7 @@ export function Console({
         <div className={styles['cgroup']}>
           <Eyebrow>Round</Eyebrow>
           <Button tone="primary" attention={allIn} disabled={!canReveal} onClick={onReveal}>
-            {revealed || dueling ? 'Revealed ✓' : 'Reveal votes'}
+            {revealed || dueling ? 'Revealed' : 'Reveal votes'}
           </Button>
           <Button disabled={!hasTicket || dueling} onClick={onRevote}>
             Re-vote
@@ -163,7 +163,7 @@ export function Console({
         <div className={styles['cgroup']}>
           <Eyebrow>Insight</Eyebrow>
           <Button disabled={!revealed || ai.pending} onClick={onAskAi}>
-            <span aria-hidden="true">🤖</span> AI perspective
+            <Icon name="sparkles" /> AI perspective
           </Button>
           <Button
             disabled={!revealed || duel?.status === 'live' || transcribing}
@@ -171,7 +171,7 @@ export function Console({
             title="Low vs high voter argue their estimates"
             onClick={() => setDuelOpen(!duelOpen)}
           >
-            <span aria-hidden="true">🎤</span> Open the floor
+            <Icon name="swords" /> Open the floor
           </Button>
 
           {/* One reserved slot: the preset picker and the live controls swap

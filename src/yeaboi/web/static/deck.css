@@ -133,9 +133,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   --s6: 32px;
 
   /* ── Radius ─────────────────────────────────────────────────────── */
-  --r-s: 6px;
-  --r-m: 10px;
-  --r-l: 16px;
+  /* Controls, containers, the screen. The category sits at 4-8 for a container
+     (Zed 2/4/6, Geist 4/6, Primer 6/8/12, Raycast 4/6/8); past about 8 on a
+     working surface it reads consumer rather than tool. */
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-l: 12px;
   --r-pill: 999px;
 
   /* ── Type ───────────────────────────────────────────────────────── */
@@ -181,9 +184,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   --track-label: 0.14em;
   --track-eyebrow: 0.16em;
 
-  /* ── Elevation ──────────────────────────────────────────────────── */
-  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
-  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+  /* ── Elevation ────────────────────────────────────────────────────
+     A raised surface catches light along its top edge; only the two things
+     that genuinely float get a blur. Read off Geist, shadcn, Zed and Supabase,
+     which ship no drop shadow at all, and Radix/Primer, which use a 1px edge —
+     a 40px blur reads as a card on a document rather than a panel in a tool. */
+  --edge: inset 0 1px 0 rgb(226 236 248 / 7%);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 45%);
 
   /* ── Derived surfaces ───────────────────────────────────────────────
      color-mix keeps the five theme blocks to the handful of decisions a
@@ -264,7 +271,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur-base: 200ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  /* The standard curve, which Geist, shadcn and Sentry all converge on. Ours
+     was (0.2, 0, 0.2, 1) — nearly this, different for no recorded reason. */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ── Touch targets ──────────────────────────────────────────────────
      WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
@@ -428,7 +437,7 @@ body {
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_1icrr_13 {
+._chip_1u2ig_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -444,22 +453,22 @@ body {
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_1icrr_29 { text-decoration: none; }
-._chipLink_1icrr_29:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_1u2ig_29 { text-decoration: none; }
+._chipLink_1u2ig_29:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_1icrr_33 {
+._statGrid_1u2ig_33 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_1icrr_33 {
+._stat_1u2ig_33 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_1icrr_44 {
+._statValue_1u2ig_44 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -469,25 +478,25 @@ body {
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_1icrr_54 {
+._statLabel_1u2ig_54 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_1icrr_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_1u2ig_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_1icrr_64 {
+._bar_1u2ig_64 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_1icrr_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_1u2ig_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_1icrr_72 {
+._segTrack_1u2ig_72 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -495,10 +504,10 @@ body {
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_1icrr_72 > i { display: block; height: 100%; }
+._segTrack_1u2ig_72 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_1icrr_83 {
+._legend_1u2ig_83 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -506,14 +515,14 @@ body {
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_1icrr_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_1icrr_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_1icrr_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_1u2ig_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_1u2ig_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_1u2ig_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_1icrr_96 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_1icrr_96 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_1icrr_98 {
+._sparkWrap_1u2ig_96 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_1u2ig_96 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_1u2ig_98 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -523,7 +532,7 @@ body {
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_1icrr_108 {
+._avatar_1u2ig_108 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -537,13 +546,13 @@ body {
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_1icrr_122 {
+._notice_1u2ig_122 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_1icrr_128 {
+._noticeTitle_1u2ig_128 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -552,18 +561,18 @@ body {
   align-items: center;
   gap: var(--s2);
 }
-._notice_1icrr_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_1u2ig_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_1icrr_140 {
+._card_1u2ig_140 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_1icrr_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_1icrr_148 {
+._cardHover_1u2ig_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_1u2ig_148 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -574,10 +583,10 @@ body {
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_1icrr_159 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_1u2ig_159 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_1icrr_161 { margin-bottom: var(--s6); }
-._sectionTitle_1icrr_162 {
+._section_1u2ig_161 { margin-bottom: var(--s6); }
+._sectionTitle_1u2ig_162 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -590,9 +599,9 @@ body {
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_1icrr_175 { overflow-x: auto; }
-._table_1icrr_175 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_1icrr_175 th {
+._tableWrap_1u2ig_175 { overflow-x: auto; }
+._table_1u2ig_175 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_1u2ig_175 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -603,23 +612,23 @@ body {
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_1icrr_175 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_1icrr_175 tr:last-child td { border-bottom: none; }
-._numeric_1icrr_190 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_1u2ig_175 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_1u2ig_175 tr:last-child td { border-bottom: none; }
+._numeric_1u2ig_190 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_1icrr_193 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_1u2ig_193 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_1icrr_197 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_1icrr_198 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_1icrr_198 > li {
+._proseText_1u2ig_197 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_1u2ig_198 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_1u2ig_198 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_1icrr_198 > li::before {
+._proseList_1u2ig_198 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -637,7 +646,7 @@ body {
    `font-family` must resolve to a monospace with full block-drawing coverage
    (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
    rather than a face keeps that true if the stack changes. */
-._wordmark_1icrr_222 {
+._wordmark_1u2ig_222 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -655,7 +664,7 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_1icrr_222::-webkit-scrollbar { display: none; }
+._wordmark_1u2ig_222::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -666,7 +675,7 @@ body {
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_1icrr_251 {
+._wordmarkFit_1u2ig_251 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -675,7 +684,7 @@ body {
   min-width: 0;
 }
 
-._wordmarkShadow_1icrr_260 {
+._wordmarkShadow_1u2ig_260 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -689,14 +698,14 @@ body {
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_1icrr_274 {
+._wordmarkStroke_1u2ig_274 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_1icrr_280 {
+._eyebrow_1u2ig_280 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -710,9 +719,9 @@ body {
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_1icrr_295 { color: var(--accent); }
-._eyebrowDot_1icrr_296 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_1icrr_297 {
+._eyebrowAccent_1u2ig_295 { color: var(--accent); }
+._eyebrowDot_1u2ig_296 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_1u2ig_297 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -721,14 +730,14 @@ body {
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_1icrr_306 {
+._frame_1u2ig_306 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, var(--shadow-2);
+  box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_1icrr_313 {
+._frameBar_1u2ig_313 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -736,8 +745,8 @@ body {
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_1icrr_321 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_1icrr_321 i {
+._frameLights_1u2ig_321 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_1u2ig_321 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -745,10 +754,10 @@ body {
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_1icrr_321 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_1icrr_321 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_1icrr_321 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_1icrr_333 {
+._frameLights_1u2ig_321 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_1u2ig_321 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_1u2ig_321 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_1u2ig_333 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -761,13 +770,13 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_1icrr_346 { padding: var(--s5); }
+._frameBody_1u2ig_346 { padding: var(--s5); }
 
 /* ── Lozenge — Jira-style status tag ─────────────────────────────────
    Category classes only set the two custom properties; the base rule owns
    the shape. Colours come from the derived lozenge tokens in tokens.css,
    never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
-._lozenge_1icrr_352 {
+._lozenge_1u2ig_352 {
   display: inline-block;
   padding: 1px var(--s2);
   border-radius: var(--r-s);
@@ -781,11 +790,20 @@ body {
   color: var(--lozenge-fg, var(--muted));
   background: var(--lozenge-bg, var(--card));
 }
-._lozengeSmall_1icrr_366 { padding: 0 var(--s1); font-weight: 600; }
-._lozengeTodo_1icrr_367 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
-._lozengeProgress_1icrr_368 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
-._lozengeDone_1icrr_369 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
-._lozengeBlocked_1icrr_370 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+._lozengeSmall_1u2ig_366 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_1u2ig_367 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_1u2ig_368 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_1u2ig_369 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_1u2ig_370 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+
+/* ── Icon ────────────────────────────────────────────────────────
+   Sits on the text baseline rather than the line box, so a glyph beside a
+   label lines up with it instead of riding high. */
+._icon_1u2ig_375 {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
+}
 /*
  * The duck rig.
  *

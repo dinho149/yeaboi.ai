@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react';
 
 import { cx } from '../../runtime/cx';
+import { Icon } from './Icon';
 import styles from './primitives.module.css';
 
 export interface NoticeBlockProps {
@@ -28,7 +29,7 @@ export function NoticeBlock({ title, items, live, className }: NoticeBlockProps)
   return (
     <div className={cx(styles['notice'], className)} {...(live ? { role: 'alert' } : {})}>
       <div className={styles['noticeTitle']}>
-        <span aria-hidden="true">⚠</span>
+        <Icon name="triangle-alert" />
         {title}
       </div>
       <ul>

@@ -25,6 +25,7 @@ import { cx } from '../runtime/cx';
 import type { DuelSlice } from '../types/board';
 import type { DuelMic } from './useDuelMic';
 import styles from './poker.module.css';
+import { Icon } from '../design/primitives';
 
 export interface DuelProps {
   duel: DuelSlice;
@@ -46,7 +47,7 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
       {speaking ? <span className={styles['duelFloor']}>has the floor</span> : null}
       {duel.recording[role] ? (
         <span className={styles['duelMic']}>
-          <span aria-hidden="true">🎙</span> mic on
+          <Icon name="mic" /> mic on
         </span>
       ) : null}
     </div>
@@ -124,7 +125,7 @@ export function Duel({ duel, mic }: DuelProps) {
           {mic.capable ? (
             <>
               <button type="button" className={styles['micBtn']} onClick={() => void mic.enable()}>
-                <span aria-hidden="true">🎙</span> Start my mic
+                <Icon name="mic" /> Start my mic
               </button>
               <span className={styles['hint']}>record your own turn — attributed to you in the transcript</span>
             </>

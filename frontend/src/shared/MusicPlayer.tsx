@@ -12,6 +12,7 @@ import { useId, type ReactNode } from 'react';
 import type { Channel, MusicApi } from '../hooks/useMusic';
 import { cx } from '../runtime/cx';
 import styles from './shared.module.css';
+import { Icon } from '../design/primitives';
 
 export interface MusicPlayerProps {
   music: MusicApi;
@@ -34,7 +35,7 @@ export function MusicPlayer({ music, channels, footer, className }: MusicPlayerP
           onClick={() => music.toggle()}
           aria-label={music.playing ? 'Pause music' : 'Play music'}
         >
-          <span aria-hidden="true">{music.playing ? '⏸' : '▶'}</span>
+          <Icon name={music.playing ? 'pause' : 'play'} />
         </button>
 
         <label className={styles['fieldLabel']} htmlFor={stationId}>

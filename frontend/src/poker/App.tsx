@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Duck, useDuckPulse, type DuckRest } from '../design/primitives';
+import { Duck, Icon, type DuckRest, useDuckPulse } from '../design/primitives';
 import { useAlarm } from '../hooks/useAlarm';
 import { useBoardStream } from '../hooks/useBoardStream';
 import { useConfetti } from '../hooks/useConfetti';
@@ -209,7 +209,7 @@ export function App({ boot }: { boot: PokerBoot }) {
     peekIndex !== null
       ? 'Previewing a ticket — “Back to live” to vote'
       : locked
-        ? '🔒 Voting locked by the host'
+        ? 'Voting locked by the host'
         : !ticket
           ? 'No tickets loaded'
           : phase !== 'voting'
@@ -336,7 +336,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           <Visualizer playing={music.playing} />
 
           <IconButton
-            icon="☰"
+            icon={<Icon name="menu" />}
             label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
             active={railOpen}
             className={styles['railToggle']}
@@ -345,21 +345,21 @@ export function App({ boot }: { boot: PokerBoot }) {
 
           {isHost ? (
             <IconButton
-              icon="🔒"
+              icon={<Icon name={locked ? 'lock' : 'lock-open'} />}
               label={locked ? 'Unlock voting' : 'Lock voting'}
               active={locked}
               onClick={() => run(actions.setLocked(!locked))}
             />
           ) : null}
 
-          <Popover trigger={<span aria-hidden="true">♪</span>} label="Music" placement="above">
+          <Popover trigger={<Icon name="music" />} label="Music" placement="above">
             <MusicPlayer
               music={music}
               channels={boot.musicChannels}
               footer={
                 isHost ? (
                   <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
-                    <span aria-hidden="true">📣</span> Play for everyone
+                    <Icon name="megaphone" /> Play for everyone
                   </Button>
                 ) : null
               }
@@ -369,7 +369,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           <Popover
             trigger={
               <>
-                <span aria-hidden="true">⏱</span>
+                <Icon name="timer" />
                 <TimerReadout remaining={remaining} />
               </>
             }
@@ -387,21 +387,21 @@ export function App({ boot }: { boot: PokerBoot }) {
             )}
           </Popover>
 
-          <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme" placement="above">
+          <Popover trigger={<Icon name="contrast" />} label="Theme" placement="above">
             <ThemeSwitcher
               value={theme}
               onChange={chooseTheme}
               footer={
                 isHost ? (
                   <Button onClick={() => run(actions.castTheme(theme))}>
-                    <span aria-hidden="true">📣</span> Apply to everyone
+                    <Icon name="megaphone" /> Apply to everyone
                   </Button>
                 ) : null
               }
             />
           </Popover>
 
-          <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+          <IconButton icon={<Icon name="mail" />} label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
             Invite
           </IconButton>
         </>
@@ -434,7 +434,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             align="left"
             trigger={
               <>
-                <span aria-hidden="true">👥</span>
+                <Icon name="users" />
                 <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
               </>
             }
@@ -453,7 +453,7 @@ export function App({ boot }: { boot: PokerBoot }) {
       <div className={styles['scroll']}>
       {locked ? (
         <p className={styles['lockBanner']} role="alert">
-          <span aria-hidden="true">🔒</span> The host locked voting.
+          <Icon name="lock" /> The host locked voting.
         </p>
       ) : null}
 
@@ -468,7 +468,7 @@ export function App({ boot }: { boot: PokerBoot }) {
               .catch(() => {})
           }
         >
-          <span aria-hidden="true">▶</span> The host started music — tap to listen
+          <Icon name="play" /> The host started music — tap to listen
         </button>
       ) : null}
 

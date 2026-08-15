@@ -19,6 +19,7 @@ import type { PokerTicket } from '../types/board';
 import type { TicketEdit } from './actions';
 import { fmtPoints } from './points';
 import styles from './poker.module.css';
+import { Icon } from '../design/primitives';
 
 export interface EditTicketModalProps {
   open: boolean;
@@ -95,7 +96,7 @@ export function EditTicketModal({ open, ticket, onSave, onClose }: EditTicketMod
 
       {ticket.source === 'azdevops' ? (
         <p className={styles['editWarn']} role="alert">
-          <span aria-hidden="true">⚠</span> Saving replaces this ticket&rsquo;s rich formatting on the board with plain
+          <Icon name="triangle-alert" /> Saving replaces this ticket&rsquo;s rich formatting on the board with plain
           text.
         </p>
       ) : null}

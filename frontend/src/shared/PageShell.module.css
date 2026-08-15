@@ -183,7 +183,8 @@
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
-  box-shadow: var(--shadow-2);
+  /* An edge, not a blur: this is fixed to the screen, not floating over it. */
+  box-shadow: var(--edge);
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */

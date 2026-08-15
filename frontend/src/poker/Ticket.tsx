@@ -23,7 +23,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { Chip, Eyebrow } from '../design/primitives';
+import { Chip, Eyebrow, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
@@ -73,7 +73,7 @@ function Collapsible({ label, text }: { label?: string; text: string }) {
       </div>
       {clips ? (
         <button type="button" className={styles['descToggle']} aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? 'Show less ▲' : 'Show more ▼'}
+          <Icon name={open ? 'chevron-up' : 'chevron-down'} /> {open ? 'Show less' : 'Show more'}
         </button>
       ) : null}
     </>
@@ -88,7 +88,7 @@ function TicketBody({ ticket, tag }: BodyProps) {
         <span className={styles['key']}>
           {href ? (
             <a href={href} target="_blank" rel="noopener noreferrer">
-              {ticket.key} ↗
+              {ticket.key} <Icon name="external-link" size={12} />
             </a>
           ) : (
             ticket.key
@@ -169,7 +169,7 @@ export function TicketPanel({
       <section className={cx(styles['ticket'], styles['ticketPeek'])} aria-label="Ticket preview">
         <div className={styles['peekBanner']}>
           <span>
-            <span aria-hidden="true">👁</span> Previewing <b>{peek?.key || `ticket ${peekIndex + 1}`}</b> — the team is
+            <Icon name="eye" /> Previewing <b>{peek?.key || `ticket ${peekIndex + 1}`}</b> — the team is
             voting on <b>{liveKey || `ticket ${index + 1}`}</b>
           </span>
           <span className={styles['peekActions']}>

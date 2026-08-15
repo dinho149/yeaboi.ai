@@ -18,6 +18,7 @@ import { randomName } from '../runtime/random';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import styles from './shared.module.css';
+import { Icon } from '../design/primitives';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -94,7 +95,7 @@ export function ProfileModal({
           title="Suggest a random name"
           onClick={() => setDraftName(randomName(adjectives, nouns))}
         >
-          <span aria-hidden="true">🎲</span>
+          <Icon name="dices" />
         </Button>
       </div>
 

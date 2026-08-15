@@ -34,9 +34,12 @@
   --s6: 32px;
 
   /* ── Radius ─────────────────────────────────────────────────────── */
-  --r-s: 6px;
-  --r-m: 10px;
-  --r-l: 16px;
+  /* Controls, containers, the screen. The category sits at 4-8 for a container
+     (Zed 2/4/6, Geist 4/6, Primer 6/8/12, Raycast 4/6/8); past about 8 on a
+     working surface it reads consumer rather than tool. */
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-l: 12px;
   --r-pill: 999px;
 
   /* ── Type ───────────────────────────────────────────────────────── */
@@ -82,9 +85,13 @@
   --track-label: 0.14em;
   --track-eyebrow: 0.16em;
 
-  /* ── Elevation ──────────────────────────────────────────────────── */
-  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
-  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+  /* ── Elevation ────────────────────────────────────────────────────
+     A raised surface catches light along its top edge; only the two things
+     that genuinely float get a blur. Read off Geist, shadcn, Zed and Supabase,
+     which ship no drop shadow at all, and Radix/Primer, which use a 1px edge —
+     a 40px blur reads as a card on a document rather than a panel in a tool. */
+  --edge: inset 0 1px 0 rgb(226 236 248 / 7%);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 45%);
 
   /* ── Derived surfaces ───────────────────────────────────────────────
      color-mix keeps the five theme blocks to the handful of decisions a
@@ -165,7 +172,9 @@
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur-base: 200ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  /* The standard curve, which Geist, shadcn and Sentry all converge on. Ours
+     was (0.2, 0, 0.2, 1) — nearly this, different for no recorded reason. */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ── Touch targets ──────────────────────────────────────────────────
      WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
