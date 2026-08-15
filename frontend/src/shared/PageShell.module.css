@@ -78,13 +78,13 @@
      bottom-right corner so that curve stays the frame's. Over the border
      rather than inside it: the raised line is the box's edge, and a second one
      running underneath is the same border drawn twice. */
-  right: calc(var(--s6) * 2);
+  right: calc(var(--s4) * 3);
   bottom: var(--app-inset-bottom, 0px);
   z-index: var(--z-console);
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
   /* Same weight and colour as the frame, open at the bottom, over an opaque
      ground: the screen's border reads as lifting up and over the dock rather
      than running behind a second box. */
@@ -94,6 +94,20 @@
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
   background: var(--bg);
+}
+
+/* Bare inside the notch: the dock is already a container, so a panel and a
+   border on each control reads as boxes inside a box. The tinted primary keeps
+   its fill — it is the one control here that is an invitation rather than a
+   setting, and the exclusion is by class substring because CSS Modules hashes
+   the name but keeps it. */
+.dockApp button:not([class*='btnPrimary']) {
+  background: none;
+  border-color: transparent;
+}
+.dockApp button:not([class*='btnPrimary']):hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: transparent;
 }
 
 /* The inside corner where the dock's raised edge leaves the frame's bottom
@@ -186,7 +200,7 @@
     display: none;
   }
   .mastheadApp {
-    padding: var(--s2) var(--s3);
+    padding: var(--s2) var(--s4);
   }
 }
 
@@ -286,7 +300,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--s4);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
   margin-bottom: var(--s5);
   background: var(--panel);
   border: 1px solid var(--line);

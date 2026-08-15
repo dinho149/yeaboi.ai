@@ -1675,7 +1675,7 @@ dialog._modal_6k8bd_392 {
  * break across a page mid-card.
  */
 
-._page_eaq9k_16 {
+._page_1ukuz_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -1684,7 +1684,7 @@ dialog._modal_6k8bd_392 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_eaq9k_25 {
+._shellApp_1ukuz_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -1703,7 +1703,7 @@ dialog._modal_6k8bd_392 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_eaq9k_44 {
+._appRegion_1ukuz_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1713,7 +1713,7 @@ dialog._modal_6k8bd_392 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_eaq9k_54 {
+._barSticky_1ukuz_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1721,14 +1721,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_eaq9k_62 {
+._masthead_1ukuz_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_eaq9k_69 {
+._dockApp_1ukuz_69 {
   --lift: var(--r-m);
   /* `fixed`, not `absolute`: an absolute child is clipped by `.shellApp`'s
      `overflow: hidden` at the inside of the frame, so it can only ever sit
@@ -1740,13 +1740,13 @@ dialog._modal_6k8bd_392 {
      bottom-right corner so that curve stays the frame's. Over the border
      rather than inside it: the raised line is the box's edge, and a second one
      running underneath is the same border drawn twice. */
-  right: calc(var(--s6) * 2);
+  right: calc(var(--s4) * 3);
   bottom: var(--app-inset-bottom, 0px);
   z-index: var(--z-console);
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
   /* Same weight and colour as the frame, open at the bottom, over an opaque
      ground: the screen's border reads as lifting up and over the dock rather
      than running behind a second box. */
@@ -1758,12 +1758,26 @@ dialog._modal_6k8bd_392 {
   background: var(--bg);
 }
 
+/* Bare inside the notch: the dock is already a container, so a panel and a
+   border on each control reads as boxes inside a box. The tinted primary keeps
+   its fill — it is the one control here that is an invitation rather than a
+   setting, and the exclusion is by class substring because CSS Modules hashes
+   the name but keeps it. */
+._dockApp_1ukuz_69 button:not([class*='btnPrimary']) {
+  background: none;
+  border-color: transparent;
+}
+._dockApp_1ukuz_69 button:not([class*='btnPrimary']):hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: transparent;
+}
+
 /* The inside corner where the dock's raised edge leaves the frame's bottom
    line. `border-radius` only draws convex corners, so it is a separate square
    whose own rounded corner is centred on the join: an opaque ground that ends
    the straight border, and a two-sided arc that carries the line up into the
    dock's edge. */
-._dockApp_eaq9k_69::before {
+._dockApp_1ukuz_69::before {
   content: '';
   position: absolute;
   bottom: 0;
@@ -1790,7 +1804,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* The mirror of it at the other end of the lift. Same ring, flipped. */
-._dockApp_eaq9k_69::after {
+._dockApp_1ukuz_69::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -1809,11 +1823,11 @@ dialog._modal_6k8bd_392 {
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_eaq9k_69::before,
-  [data-host='true'] ._dockApp_eaq9k_69::after {
+  [data-host='true'] ._dockApp_1ukuz_69::before,
+  [data-host='true'] ._dockApp_1ukuz_69::after {
     display: none;
   }
-  [data-host='true'] ._dockApp_eaq9k_69 {
+  [data-host='true'] ._dockApp_1ukuz_69 {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: 2px solid var(--screen-frame);
@@ -1823,7 +1837,7 @@ dialog._modal_6k8bd_392 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_eaq9k_164 {
+._chromeApp_1ukuz_178 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -1835,7 +1849,7 @@ dialog._modal_6k8bd_392 {
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_eaq9k_164 > *:last-child {
+._chromeApp_1ukuz_178 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -1844,16 +1858,16 @@ dialog._modal_6k8bd_392 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_eaq9k_185 h1 {
+  ._headMainApp_1ukuz_199 h1 {
     display: none;
   }
-  ._mastheadApp_eaq9k_188 {
-    padding: var(--s2) var(--s3);
+  ._mastheadApp_1ukuz_202 {
+    padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_eaq9k_188 {
+._mastheadApp_1ukuz_202 {
   flex: none;
   display: flex;
   align-items: center;
@@ -1862,53 +1876,53 @@ dialog._modal_6k8bd_392 {
   background: var(--panel);
 }
 
-._head_eaq9k_185 {
+._head_1ukuz_199 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_eaq9k_210 {
+._headApp_1ukuz_224 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_eaq9k_185 {
+._headMain_1ukuz_199 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_eaq9k_185 {
+._headMainApp_1ukuz_199 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_eaq9k_185 ._wordmark_eaq9k_227 {
+._headMainApp_1ukuz_199 ._wordmark_1ukuz_241 {
   margin-bottom: 0;
 }
-._headMainApp_eaq9k_185 h1 {
+._headMainApp_1ukuz_199 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_eaq9k_227 {
+._wordmark_1ukuz_241 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_eaq9k_244 {
+._wordmarkCompact_1ukuz_258 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_eaq9k_249 {
+._title_1ukuz_263 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -1918,37 +1932,37 @@ dialog._modal_6k8bd_392 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_eaq9k_259 {
+._titleCompact_1ukuz_273 {
   font-size: var(--fs-l);
 }
 
-._subtitle_eaq9k_263 {
+._subtitle_1ukuz_277 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_eaq9k_269 {
+._facts_1ukuz_283 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_eaq9k_276 {
+._themes_1ukuz_290 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_eaq9k_282 {
+._toc_1ukuz_296 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
   display: flex;
   flex-wrap: wrap;
   gap: var(--s4);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
   margin-bottom: var(--s5);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1958,36 +1972,36 @@ dialog._modal_6k8bd_392 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_eaq9k_282 a {
+._toc_1ukuz_296 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_eaq9k_282 a:hover {
+._toc_1ukuz_296 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_eaq9k_309 > * + * {
+._container_1ukuz_323 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_eaq9k_316 {
+._containerApp_1ukuz_330 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_eaq9k_316 > * + * {
+._containerApp_1ukuz_330 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_eaq9k_328 {
+._footer_1ukuz_342 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2003,7 +2017,7 @@ dialog._modal_6k8bd_392 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_eaq9k_344 {
+._footerSlim_1ukuz_358 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2013,17 +2027,17 @@ dialog._modal_6k8bd_392 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_eaq9k_276,
-  ._toc_eaq9k_282 {
+  ._themes_1ukuz_290,
+  ._toc_1ukuz_296 {
     display: none;
   }
-  ._page_eaq9k_16 {
+  ._page_1ukuz_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_eaq9k_25 {
+  ._shellApp_1ukuz_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2031,26 +2045,26 @@ dialog._modal_6k8bd_392 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_eaq9k_44 {
+  ._appRegion_1ukuz_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_eaq9k_54 {
+  ._barSticky_1ukuz_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_eaq9k_16 ._masthead_eaq9k_62 {
+  ._page_1ukuz_16 ._masthead_1ukuz_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_eaq9k_328 {
+  ._footer_1ukuz_342 {
     color: var(--muted);
   }
 }
