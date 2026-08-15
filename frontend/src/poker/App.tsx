@@ -433,6 +433,7 @@ export function App({ boot }: { boot: PokerBoot }) {
 
           <Popover
             align="left"
+            triggerClassName={styles['presenceChip']}
             trigger={
               <>
                 <Icon name="users" />

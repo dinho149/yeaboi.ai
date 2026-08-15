@@ -86,6 +86,15 @@
   left: 0;
   top: 0;
   transform: translate3d(var(--dock-x, 0px), var(--dock-y, 0px), 0);
+  /* No transition, and nothing to see, until it has been measured onto a wall
+     — otherwise the first placement animates out of the top-left corner. */
+  transition: none;
+  /* Hidden only until the very first measurement; `--dock-placed` is set by the
+     shell the moment a position exists, a frame before the transition. */
+  visibility: var(--dock-vis, hidden);
+}
+
+.dockPlaced {
   transition: transform var(--dur-base) var(--ease);
 }
 
@@ -180,6 +189,13 @@
 /* The dock's own controls only — its direct buttons and its popover triggers.
    A bare `.dockApp button` also reaches inside the open panels and strips the
    fill off things like the play button, which is how it went invisible. */
+/* The one filled control in the notch is a pill, like the presence chip it
+   sits opposite. */
+.dockApp [class*='btnPrimary'] {
+  border-radius: var(--r-pill);
+  border-color: transparent;
+}
+
 .dockApp > [class*='dockItem'] > button:not([class*='btnPrimary']),
 .dockApp > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;

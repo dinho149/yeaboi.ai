@@ -1171,7 +1171,13 @@
   color: var(--warn);
 }
 
+/* Label left, value right — the three decision rows read as a column of
+   numbers rather than three sentences of different lengths. */
 .readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -1186,8 +1192,8 @@
 .finrow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--s2);
-  flex-wrap: wrap;
 }
 
 .finInput {
@@ -1295,6 +1301,12 @@
 .meChip:hover .pen,
 .meChip:focus-visible .pen {
   opacity: 1;
+}
+
+/* The headcount sits opposite the notch's Invite, so it is the same shape. */
+.presenceChip {
+  border-radius: var(--r-pill);
+  border-color: transparent;
 }
 
 /* The headcount is a number, so it is set as one. */

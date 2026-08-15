@@ -43,6 +43,8 @@ export interface DockDrag {
   dragging: boolean;
   /** True for one eased beat while the dock changes wall. */
   turning: boolean;
+  /** False until the dock has been measured and put on a wall. */
+  placed: boolean;
   placement: DockPlacement;
   /**
    * The dock split by wall. One run while it lies along a single wall — the
@@ -131,6 +133,8 @@ export function useDockDrag(count = 0): DockDrag {
   const [placement, setPlacement] = useState<DockPlacement>({ edge: 'bottom', x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [turning, setTurning] = useState(false);
+  const [placed, setPlaced] = useState(false);
+  const placedRef = useRef(false);
   const node = useRef<HTMLElement | null>(null);
   const distance = useRef<number | null>(null);
   const extents = useRef<number[]>([]);
@@ -161,6 +165,13 @@ export function useDockDrag(count = 0): DockDrag {
       const wall = place(t, b, 0, 0).edge;
       const next = place(t, b, wall === 'bottom' ? b.dw : b.dh, wall === 'bottom' ? b.dh : b.dw);
       setRuns(split(t, b, count, extents.current));
+      if (!placedRef.current) {
+        placedRef.current = true;
+        // Visible now, animated from the next frame. Enabling the transition in
+        // the same commit that sets the first transform makes the browser
+        // animate out of the untranslated corner.
+        requestAnimationFrame(() => setPlaced(true));
+      }
       if (next.edge !== edgeRef.current) {
         edgeRef.current = next.edge;
         // Changing wall is a reorientation, not a slide, so it is the one move
@@ -228,5 +239,5 @@ export function useDockDrag(count = 0): DockDrag {
     if (distance.current !== null) settle(distance.current);
   }, [settle]);
 
-  return { ref, dragging, turning, placement, runs, measure, onPointerDown };
+  return { ref, dragging, turning, placed, placement, runs, measure, onPointerDown };
 }

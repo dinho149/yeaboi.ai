@@ -231,11 +231,18 @@ export function PageShell({
                 ref={runIndex === 0 ? drag.ref : undefined}
                 className={cx(
                   styles['dockApp'],
+                  drag.placed && styles['dockPlaced'],
                   drag.dragging && styles['dockDragging'],
                   drag.turning && styles['dockTurning'],
                 )}
                 data-edge={run.edge}
-                style={{ '--dock-x': `${run.x}px`, '--dock-y': `${run.y}px` } as never}
+                style={
+                  {
+                    '--dock-x': `${run.x}px`,
+                    '--dock-y': `${run.y}px`,
+                    '--dock-vis': drag.runs.length ? 'visible' : 'hidden',
+                  } as never
+                }
                 onPointerDown={drag.onPointerDown}
                 role={runIndex === 0 ? 'toolbar' : 'group'}
                 aria-label={runIndex === 0 ? 'Board tools' : 'Board tools, continued'}
