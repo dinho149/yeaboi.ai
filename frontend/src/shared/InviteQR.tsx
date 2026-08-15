@@ -28,10 +28,9 @@ export interface InviteQRProps {
    * `GET /api/invite` after the panel opens, not from the boot payload.
    */
   joinCode?: string | undefined;
-  /** The URL to share. Shown as text so it can be read aloud as well as copied. */
-  shareUrl?: string | undefined;
   /**
-   * The whole invite as one URL — `shareUrl` with the code in its fragment.
+   * The whole invite as one URL — the board's address with the code in its
+   * fragment.
    *
    * Built by `sharing.access.invite_url` and never re-derived here; this
    * component only renders what arrived.
@@ -40,7 +39,7 @@ export interface InviteQRProps {
   className?: string | undefined;
 }
 
-export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: InviteQRProps) {
+export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
 
   return (
@@ -66,8 +65,8 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: In
           `copyText` legitimately fails (insecure context, expired activation
           window) and the panel must still have a way out.
 
-          Link and Code stay below it, separately copyable, for the host who
-          wants to post the address in a channel and pass the code another way. */}
+          The code stays below it, separately copyable, for the host who wants
+          to read it out while the link goes in a channel. */}
       {inviteUrl ? <CopyField label="Invite link" value={inviteUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>

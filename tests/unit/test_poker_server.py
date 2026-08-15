@@ -311,6 +311,7 @@ class TestAdminGate:
             ("/api/admin/goto", {"index": 1}),
             ("/api/admin/finalize", {"points": 5}),
             ("/api/admin/ticket/edit", {"key": "T-0", "points": 5}),
+            ("/api/admin/ticket/options", {"key": "T-0"}),
             ("/api/admin/ai", {}),
             ("/api/admin/duel/open", {"seconds": 60}),
             ("/api/admin/duel/next", {}),
@@ -446,6 +447,33 @@ class TestTicketEdit:
         srv, _ = running_server
         with pytest.raises(urllib.error.HTTPError) as exc:
             _admin_post(srv, "/api/admin/ticket/edit", {"key": "T-0"})
+        assert exc.value.code == 400
+
+
+class TestTicketOptions:
+    def test_answers_what_the_tracker_accepts(self, running_server, monkeypatch):
+        srv, _ = running_server
+        seen = {}
+
+        def _options(source, ticket):
+            seen["source"] = source
+            seen["key"] = ticket["key"]
+            return {"states": ["To Do", "Done"]}
+
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", _options)
+        resp = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})
+        assert resp == {"ok": True, "options": {"states": ["To Do", "Done"]}}
+        assert seen["key"] == "T-1"
+
+    def test_empty_answer_is_not_an_error(self, running_server, monkeypatch):
+        srv, _ = running_server
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", lambda *a, **k: {})
+        assert _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"}) == {"ok": True, "options": {}}
+
+    def test_unknown_ticket(self, running_server):
+        srv, _ = running_server
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _admin_post(srv, "/api/admin/ticket/options", {"key": "NOPE"})
         assert exc.value.code == 400
 
 

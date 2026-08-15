@@ -141,27 +141,23 @@ describe('<Wordmark>', () => {
     expect(screen.getByRole('img', { name: 'Sprint retrospective' })).toBeTruthy();
   });
 
-  it('renders the glyphs as real selectable text', () => {
-    // The point of the block font over an image: it is characters, so it is
-    // selectable, findable and scales with the type scale. Shade cells are
-    // blanked for display (see below), so compare against that form.
-    const expected = (WORDMARK_SAMPLES['retro'] as readonly [string, string])
-      .map((row) => row.replace(/░/g, ' '))
-      .join('\n');
+  it('draws the compact face as one path, not a grid of characters', () => {
+    // The block characters were the seam: a <pre> renders one glyph per cell,
+    // so every letter boundary showed a hairline the accent could not cover.
+    // Merged rectangles in a single path have no boundaries to show.
     const { container } = render(<Wordmark text="retro" />);
-    expect(container.querySelector('pre')?.textContent).toBe(expected);
+    expect(container.querySelector('pre')).toBeNull();
+    const path = container.querySelector('svg path');
+    expect(path?.getAttribute('d')).toMatch(/^M/);
+    expect(container.textContent).not.toContain('█');
   });
 
-  it('blanks the shade cells but keeps the letter shape', () => {
-    // `░` is the font's background cell. A terminal draws it dim; a <pre>
-    // cannot, so it would paint at full accent weight and read as damage —
-    // and only on the letters that use it, which in "yeaboi" is the Y alone.
+  it('sizes the viewBox to the glyph grid, shades blanked', () => {
     const { container } = render(<Wordmark text="yeaboi" />);
-    const text = container.querySelector('pre')?.textContent ?? '';
-    expect(text).not.toContain('░');
-    // Same width, so the two rows still line up and the Y keeps its stem.
-    const [top, bottom] = text.split('\n');
-    expect(top?.length).toBe(WORDMARK_SAMPLES['yeaboi']?.[0].length);
-    expect(bottom).toContain('█');
+    const rows = WORDMARK_SAMPLES['yeaboi'] as readonly [string, string];
+    // Two character rows, four pixel rows: `▀` and `▄` are half cells, so each
+    // row of the face is two rows of the bitmap. `░` is the font's background
+    // cell — dim in a terminal, nothing at all here, so it is simply not drawn.
+    expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe(`0 0 ${rows[0].length} 4`);
   });
 });

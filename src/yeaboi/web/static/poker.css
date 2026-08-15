@@ -448,7 +448,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_132c4_13 {
+._chip_10qlb_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -463,22 +463,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_132c4_28 { text-decoration: none; }
-._chipLink_132c4_28:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_10qlb_28 { text-decoration: none; }
+._chipLink_10qlb_28:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_132c4_32 {
+._statGrid_10qlb_32 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_132c4_32 {
+._stat_10qlb_32 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_132c4_43 {
+._statValue_10qlb_43 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -488,25 +488,25 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_132c4_53 {
+._statLabel_10qlb_53 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_132c4_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_10qlb_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_132c4_63 {
+._bar_10qlb_63 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_132c4_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_10qlb_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_132c4_71 {
+._segTrack_10qlb_71 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -514,10 +514,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_132c4_71 > i { display: block; height: 100%; }
+._segTrack_10qlb_71 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_132c4_82 {
+._legend_10qlb_82 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -525,14 +525,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_132c4_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_132c4_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_132c4_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_10qlb_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_10qlb_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_10qlb_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_132c4_95 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_132c4_95 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_132c4_97 {
+._sparkWrap_10qlb_95 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_10qlb_95 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_10qlb_97 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -542,7 +542,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_132c4_107 {
+._avatar_10qlb_107 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -556,13 +556,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_132c4_121 {
+._notice_10qlb_121 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_132c4_127 {
+._noticeTitle_10qlb_127 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -571,18 +571,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   align-items: center;
   gap: var(--s2);
 }
-._notice_132c4_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_10qlb_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_132c4_139 {
+._card_10qlb_139 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_132c4_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_132c4_147 {
+._cardHover_10qlb_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_10qlb_147 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -593,10 +593,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_132c4_158 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_10qlb_158 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_132c4_160 { margin-bottom: var(--s6); }
-._sectionTitle_132c4_161 {
+._section_10qlb_160 { margin-bottom: var(--s6); }
+._sectionTitle_10qlb_161 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -609,9 +609,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_132c4_174 { overflow-x: auto; }
-._table_132c4_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_132c4_174 th {
+._tableWrap_10qlb_174 { overflow-x: auto; }
+._table_10qlb_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_10qlb_174 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -622,23 +622,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_132c4_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_132c4_174 tr:last-child td { border-bottom: none; }
-._numeric_132c4_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_10qlb_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_10qlb_174 tr:last-child td { border-bottom: none; }
+._numeric_10qlb_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_132c4_192 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_10qlb_192 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_132c4_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_132c4_197 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_132c4_197 > li {
+._proseText_10qlb_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_10qlb_197 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_10qlb_197 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_132c4_197 > li::before {
+._proseList_10qlb_197 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -658,14 +658,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    rather than a face keeps that true if the stack changes. */
 /* The block face is drawn, not typeset — sized off the same font-size so it
    still scales with the type scale. Four pixel rows, two rows of type. */
-svg._wordmark_132c4_223 {
+svg._wordmark_10qlb_223 {
   display: block;
   width: auto;
   height: 2em;
   overflow: visible;
 }
 
-._wordmark_132c4_223 {
+._wordmark_10qlb_223 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -683,7 +683,7 @@ svg._wordmark_132c4_223 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_132c4_223::-webkit-scrollbar { display: none; }
+._wordmark_10qlb_223::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -694,7 +694,7 @@ svg._wordmark_132c4_223 {
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_132c4_259 {
+._wordmarkFit_10qlb_259 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -703,7 +703,7 @@ svg._wordmark_132c4_223 {
   min-width: 0;
 }
 
-._wordmarkShadow_132c4_268 {
+._wordmarkShadow_10qlb_268 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -717,14 +717,14 @@ svg._wordmark_132c4_223 {
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_132c4_282 {
+._wordmarkStroke_10qlb_282 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_132c4_288 {
+._eyebrow_10qlb_288 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -738,9 +738,9 @@ svg._wordmark_132c4_223 {
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_132c4_303 { color: var(--accent); }
-._eyebrowDot_132c4_304 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_132c4_305 {
+._eyebrowAccent_10qlb_303 { color: var(--accent); }
+._eyebrowDot_10qlb_304 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_10qlb_305 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -749,14 +749,14 @@ svg._wordmark_132c4_223 {
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_132c4_314 {
+._frame_10qlb_314 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
   box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_132c4_321 {
+._frameBar_10qlb_321 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -764,8 +764,8 @@ svg._wordmark_132c4_223 {
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_132c4_329 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_132c4_329 i {
+._frameLights_10qlb_329 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_10qlb_329 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -773,10 +773,10 @@ svg._wordmark_132c4_223 {
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_132c4_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_132c4_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_132c4_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_132c4_341 {
+._frameLights_10qlb_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_10qlb_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_10qlb_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_10qlb_341 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -789,13 +789,13 @@ svg._wordmark_132c4_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_132c4_354 { padding: var(--s5); }
+._frameBody_10qlb_354 { padding: var(--s5); }
 
 /* ── Lozenge — Jira-style status tag ─────────────────────────────────
    Category classes only set the two custom properties; the base rule owns
    the shape. Colours come from the derived lozenge tokens in tokens.css,
    never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
-._lozenge_132c4_360 {
+._lozenge_10qlb_360 {
   display: inline-block;
   padding: 1px var(--s2);
   border-radius: var(--r-s);
@@ -809,19 +809,123 @@ svg._wordmark_132c4_223 {
   color: var(--lozenge-fg, var(--muted));
   background: var(--lozenge-bg, var(--card));
 }
-._lozengeSmall_132c4_374 { padding: 0 var(--s1); font-weight: 600; }
-._lozengeTodo_132c4_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
-._lozengeProgress_132c4_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
-._lozengeDone_132c4_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
-._lozengeBlocked_132c4_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+._lozengeSmall_10qlb_374 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_10qlb_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_10qlb_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_10qlb_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_10qlb_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
 
 /* ── Icon ────────────────────────────────────────────────────────
    Sits on the text baseline rather than the line box, so a glyph beside a
    label lines up with it instead of riding high. */
-._icon_132c4_383 {
+._icon_10qlb_383 {
   display: inline-block;
   vertical-align: -0.15em;
   flex: none;
+}
+
+/* ── Dropdown ────────────────────────────────────────────────────
+   Closed, it is the value and nothing else: the underline is the whole
+   affordance, square-ended so it reads as a rule under text rather than a
+   field. */
+._dd_10qlb_393 {
+  position: relative;
+  display: inline-block;
+}
+
+._ddTrigger_10qlb_398 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 0 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition:
+    box-shadow var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+._ddTrigger_10qlb_398:hover,
+._ddTrigger_10qlb_398:focus-visible,
+._ddTriggerOpen_10qlb_419 {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+
+._ddValue_10qlb_424 {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+._ddEmpty_10qlb_431 {
+  color: var(--dim);
+}
+
+._ddCaret_10qlb_435 {
+  color: var(--dim);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+._ddTriggerOpen_10qlb_419 ._ddCaret_10qlb_435 {
+  transform: rotate(180deg);
+}
+
+._ddMenu_10qlb_444 {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(100% + var(--s2));
+  left: 0;
+  min-width: 100%;
+  max-height: 240px;
+  margin: 0;
+  padding: var(--s1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  transform-origin: top left;
+  animation: _ddOpen_10qlb_1 var(--dur-fast) var(--ease) both;
+}
+
+@keyframes _ddOpen_10qlb_1 {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+._ddOpt_10qlb_470 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s2);
+  border-radius: var(--r-s);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+._ddOptActive_10qlb_483 {
+  background: var(--panel-2);
+}
+
+._ddNone_10qlb_487 {
+  padding: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--dim);
 }
 /*
  * The duck rig.
@@ -1811,35 +1915,30 @@ dialog._modal_sqcal_427 {
  * break across a page mid-card.
  */
 
-._page_189az_16 {
+._page_p20n0_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is one framed screen: masthead strip, sticky bar, board, credit.
+   A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_189az_25 {
+._shellApp_p20n0_25 {
   max-width: none;
   padding: 0;
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  border: var(--screen-frame-w) solid var(--screen-frame);
-  border-radius: var(--r-l);
   background: var(--bg);
-  /* Fills the four slivers the rounded corners leave uncovered. */
-  box-shadow: 0 0 0 50vmax var(--screen-void);
-  /* Clips the children to the curve. */
   overflow: hidden;
 }
 
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_189az_44 {
+._appRegion_p20n0_39 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1849,7 +1948,7 @@ dialog._modal_sqcal_427 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_189az_54 {
+._barSticky_p20n0_49 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1857,14 +1956,14 @@ dialog._modal_sqcal_427 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_189az_62 {
+._masthead_p20n0_57 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_189az_69 {
+._dockApp_p20n0_64 {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
@@ -1892,46 +1991,39 @@ dialog._modal_sqcal_427 {
   visibility: var(--dock-vis, hidden);
 }
 
-._dockPlaced_189az_97 {
+._dockPlaced_p20n0_92 {
   transition: transform var(--dur-base) var(--ease);
 }
 
 /* The wall only decides orientation now: which side is open, which corners are
    round, and which way the controls run. */
-._dockApp_189az_69[data-edge='bottom'] {
+._dockApp_p20n0_64[data-edge='bottom'] {
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
 }
 
-._dockApp_189az_69[data-edge='left'],
-._dockApp_189az_69[data-edge='right'] {
+._dockApp_p20n0_64[data-edge='left'],
+._dockApp_p20n0_64[data-edge='right'] {
   flex-direction: column;
   padding: var(--s2) var(--s1);
 }
 
-/* Square on a side wall: the lift is a bottom-border idea, and the fillets
-   that sell it there read as loose curves stuck to a vertical strip. */
-._dockApp_189az_69[data-edge='left'] {
+/* Square on a side wall: the lift is a bottom-border idea, and curves stuck to
+   a vertical strip read as loose rather than lifted. */
+._dockApp_p20n0_64[data-edge='left'] {
   border-left: none;
   border-radius: 0;
 }
 
-._dockApp_189az_69[data-edge='right'] {
+._dockApp_p20n0_64[data-edge='right'] {
   border-right: none;
   border-radius: 0;
 }
 
-._dockApp_189az_69[data-edge='left']::before,
-._dockApp_189az_69[data-edge='left']::after,
-._dockApp_189az_69[data-edge='right']::before,
-._dockApp_189az_69[data-edge='right']::after {
-  display: none;
-}
-
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_189az_136 {
+._dockDragging_p20n0_124 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
@@ -1939,7 +2031,7 @@ dialog._modal_sqcal_427 {
 
 /* Except across a corner, which is a reorientation rather than a slide — the
    one move worth easing, so it crawls onto the next wall. */
-._dockTurning_189az_144 {
+._dockTurning_p20n0_132 {
   transition: transform var(--dur-base) var(--ease);
 }
 
@@ -1949,12 +2041,12 @@ dialog._modal_sqcal_427 {
    spans the dock's short axis rather than being a 3px mark. Standing on end
    there is otherwise nothing left to grab. */
 /* A control's own box, so the split can measure how much wall it takes. */
-._dockItem_189az_154 {
+._dockItem_p20n0_142 {
   display: inline-flex;
   align-items: center;
 }
 
-._dockGrip_189az_159 {
+._dockGrip_p20n0_147 {
   flex: none;
   align-self: stretch;
   width: 14px;
@@ -1967,20 +2059,20 @@ dialog._modal_sqcal_427 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._dockApp_189az_69[data-edge='left'] ._dockGrip_189az_159,
-._dockApp_189az_69[data-edge='right'] ._dockGrip_189az_159 {
+._dockApp_p20n0_64[data-edge='left'] ._dockGrip_p20n0_147,
+._dockApp_p20n0_64[data-edge='right'] ._dockGrip_p20n0_147 {
   width: auto;
   height: 14px;
   background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 15px 3px
     no-repeat;
 }
 
-._dockGrip_189az_159:hover {
+._dockGrip_p20n0_147:hover {
   background-color: var(--panel-2);
 }
 
-._dockApp_189az_69:hover ._dockGrip_189az_159,
-._dockDragging_189az_136 ._dockGrip_189az_159 {
+._dockApp_p20n0_64:hover ._dockGrip_p20n0_147,
+._dockDragging_p20n0_124 ._dockGrip_p20n0_147 {
   opacity: 1;
 }
 
@@ -1989,13 +2081,13 @@ dialog._modal_sqcal_427 {
    fill off things like the play button, which is how it went invisible. */
 /* The one filled control in the notch is a pill, like the presence chip it
    sits opposite. */
-._dockApp_189az_69 [class*='btnPrimary'] {
+._dockApp_p20n0_64 [class*='btnPrimary'] {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
-._dockApp_189az_69 > [class*='dockItem'] > button:not([class*='btnPrimary']),
-._dockApp_189az_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockApp_p20n0_64 > [class*='dockItem'] > button:not([class*='btnPrimary']),
+._dockApp_p20n0_64 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
@@ -2007,41 +2099,41 @@ dialog._modal_sqcal_427 {
  * grows out of it on open. Closing is not animated: the panel is `hidden`, and
  * a `display: none` element has no frames to run in.
  */
-._dockApp_189az_69 [role='group'][aria-label]:not([hidden]) {
+._dockApp_p20n0_64 [role='group'][aria-label]:not([hidden]) {
   background: var(--bg);
   border-color: var(--screen-frame);
   box-shadow: var(--shadow-2);
 }
 
-._dockApp_189az_69[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_p20n0_64[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
   top: auto;
   bottom: calc(100% + var(--s1));
   min-width: 240px;
   transform-origin: bottom center;
-  animation: _dockGrowUp_189az_1 var(--dur-base) var(--ease) both;
+  animation: _dockGrowUp_p20n0_1 var(--dur-base) var(--ease) both;
 }
 
-._dockApp_189az_69[data-edge='left'] [role='group'][aria-label]:not([hidden]),
-._dockApp_189az_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_p20n0_64[data-edge='left'] [role='group'][aria-label]:not([hidden]),
+._dockApp_p20n0_64[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
   top: 50%;
   bottom: auto;
   translate: 0 -50%;
-  animation: _dockGrowSide_189az_1 var(--dur-base) var(--ease) both;
+  animation: _dockGrowSide_p20n0_1 var(--dur-base) var(--ease) both;
 }
 
-._dockApp_189az_69[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_p20n0_64[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
   left: calc(100% + var(--s1));
   right: auto;
   transform-origin: left center;
 }
 
-._dockApp_189az_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_p20n0_64[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
   right: calc(100% + var(--s1));
   left: auto;
   transform-origin: right center;
 }
 
-@keyframes _dockGrowUp_189az_1 {
+@keyframes _dockGrowUp_p20n0_1 {
   from {
     max-height: 0;
     opacity: 0;
@@ -2049,7 +2141,7 @@ dialog._modal_sqcal_427 {
   }
 }
 
-@keyframes _dockGrowSide_189az_1 {
+@keyframes _dockGrowSide_p20n0_1 {
   from {
     max-width: 0;
     opacity: 0;
@@ -2057,61 +2149,16 @@ dialog._modal_sqcal_427 {
   }
 }
 
-._dockApp_189az_69 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockApp_189az_69 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockApp_p20n0_64 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockApp_p20n0_64 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
-}
-
-/*
- * The inside corners where the dock's raised edge rejoins the frame's line.
- *
- * `border-radius` only draws convex corners, so each fillet is a separate
- * square carrying a radial ring. A concave arc bulges toward the corner, so its
- * OUTER radius is tangent to the inner edge of the two lines it joins; centre
- * the ring on the box edge instead and the stroke runs parallel to the dock's
- * border rather than continuing it. Offsets are against the *padding* box,
- * which is what puts the centre one border-width inside the edge.
- */
-._dockApp_189az_69::before,
-._dockApp_189az_69::after {
-  content: '';
-  position: absolute;
-  width: var(--lift);
-  height: var(--lift);
-  pointer-events: none;
-}
-
-._dockApp_189az_69[data-edge='bottom']::before {
-  bottom: 0;
-  left: calc(var(--lift) * -1);
-  background: radial-gradient(
-    circle at 0 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-._dockApp_189az_69[data-edge='bottom']::after {
-  bottom: 0;
-  left: 100%;
-  background: radial-gradient(
-    circle at 100% 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
 }
 
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_189az_69::before,
-  [data-host='true'] ._dockApp_189az_69::after {
-    display: none;
-  }
-  [data-host='true'] ._dockApp_189az_69 {
+  [data-host='true'] ._dockApp_p20n0_64 {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: var(--screen-frame-w) solid var(--screen-frame);
@@ -2121,7 +2168,7 @@ dialog._modal_sqcal_427 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_189az_326 {
+._chromeApp_p20n0_269 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2139,11 +2186,11 @@ dialog._modal_sqcal_427 {
 
 /* The bar's corners are clipped by its children rather than by `overflow`,
    which would also clip every popover opening out of it. */
-._chromeApp_189az_326 > * {
+._chromeApp_p20n0_269 > * {
   border-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_189az_326 > *:last-child {
+._chromeApp_p20n0_269 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2152,16 +2199,16 @@ dialog._modal_sqcal_427 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_189az_357 h1 {
+  ._headMainApp_p20n0_300 h1 {
     display: none;
   }
-  ._mastheadApp_189az_360 {
+  ._mastheadApp_p20n0_303 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_189az_360 {
+._mastheadApp_p20n0_303 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2170,53 +2217,53 @@ dialog._modal_sqcal_427 {
   background: var(--panel);
 }
 
-._head_189az_357 {
+._head_p20n0_300 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_189az_382 {
+._headApp_p20n0_325 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_189az_357 {
+._headMain_p20n0_300 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_189az_357 {
+._headMainApp_p20n0_300 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_189az_357 ._wordmark_189az_399 {
+._headMainApp_p20n0_300 ._wordmark_p20n0_342 {
   margin-bottom: 0;
 }
-._headMainApp_189az_357 h1 {
+._headMainApp_p20n0_300 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_189az_399 {
+._wordmark_p20n0_342 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_189az_416 {
+._wordmarkCompact_p20n0_359 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_189az_421 {
+._title_p20n0_364 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2226,30 +2273,30 @@ dialog._modal_sqcal_427 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_189az_431 {
+._titleCompact_p20n0_374 {
   font-size: var(--fs-l);
 }
 
-._subtitle_189az_435 {
+._subtitle_p20n0_378 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_189az_441 {
+._facts_p20n0_384 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_189az_448 {
+._themes_p20n0_391 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_189az_454 {
+._toc_p20n0_397 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2266,36 +2313,36 @@ dialog._modal_sqcal_427 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_189az_454 a {
+._toc_p20n0_397 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_189az_454 a:hover {
+._toc_p20n0_397 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_189az_481 > * + * {
+._container_p20n0_424 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_189az_488 {
+._containerApp_p20n0_431 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_189az_488 > * + * {
+._containerApp_p20n0_431 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_189az_500 {
+._footer_p20n0_443 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2311,7 +2358,7 @@ dialog._modal_sqcal_427 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_189az_516 {
+._footerSlim_p20n0_459 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2321,17 +2368,17 @@ dialog._modal_sqcal_427 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_189az_448,
-  ._toc_189az_454 {
+  ._themes_p20n0_391,
+  ._toc_p20n0_397 {
     display: none;
   }
-  ._page_189az_16 {
+  ._page_p20n0_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_189az_25 {
+  ._shellApp_p20n0_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2339,26 +2386,26 @@ dialog._modal_sqcal_427 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_189az_44 {
+  ._appRegion_p20n0_39 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_189az_54 {
+  ._barSticky_p20n0_49 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_189az_16 ._masthead_189az_62 {
+  ._page_p20n0_16 ._masthead_p20n0_57 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_189az_500 {
+  ._footer_p20n0_443 {
     color: var(--muted);
   }
 }
@@ -2393,7 +2440,7 @@ dialog._modal_sqcal_427 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_e89q3_32 {
+._app_zope1_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2403,7 +2450,7 @@ dialog._modal_sqcal_427 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_e89q3_42 {
+._scroll_zope1_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2413,7 +2460,7 @@ dialog._modal_sqcal_427 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_e89q3_52 {
+._layout_zope1_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2430,7 +2477,7 @@ dialog._modal_sqcal_427 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_e89q3_69 {
+._main_zope1_69 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2439,7 +2486,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_e89q3_52 {
+  ._layout_zope1_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2447,7 +2494,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 699px) {
-  ._layout_e89q3_52 {
+  ._layout_zope1_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2456,13 +2503,13 @@ dialog._modal_sqcal_427 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_e89q3_95 {
+._rail_zope1_95 {
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--s2) 0 0;
 }
 
-._railHead_e89q3_101 {
+._railHead_zope1_101 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2470,7 +2517,7 @@ dialog._modal_sqcal_427 {
 }
 
 /* The board's scope heads the list it scopes; the count sits under it. */
-._railScope_e89q3_109 {
+._railScope_zope1_109 {
   margin: 0;
   font-size: var(--fs-m);
   font-weight: 600;
@@ -2478,7 +2525,7 @@ dialog._modal_sqcal_427 {
   color: var(--text);
 }
 
-._railList_e89q3_117 {
+._railList_zope1_117 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2487,7 +2534,7 @@ dialog._modal_sqcal_427 {
   gap: 2px;
 }
 
-._railItem_e89q3_126 {
+._railItem_zope1_126 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2504,12 +2551,12 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._railItem_e89q3_126:hover {
+._railItem_zope1_126:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_e89q3_148 {
+._railDot_zope1_148 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2517,30 +2564,30 @@ dialog._modal_sqcal_427 {
   background: var(--line-strong);
 }
 
-._railCurrent_e89q3_156 {
+._railCurrent_zope1_156 {
   background: transparent;
   color: var(--accent);
 }
 
-._railCurrent_e89q3_156 ._railDot_e89q3_148 {
+._railCurrent_zope1_156 ._railDot_zope1_148 {
   background: var(--accent);
 }
 
-._railPeeking_e89q3_165 {
+._railPeeking_zope1_165 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_e89q3_170 ._railDot_e89q3_148 {
+._railDone_zope1_170 ._railDot_zope1_148 {
   background: var(--ok);
 }
 
-._railDone_e89q3_170 ._railText_e89q3_174 {
+._railDone_zope1_170 ._railText_zope1_174 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_e89q3_174 {
+._railText_zope1_174 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2548,29 +2595,29 @@ dialog._modal_sqcal_427 {
   white-space: nowrap;
 }
 
-._railKey_e89q3_187 {
+._railKey_zope1_187 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_e89q3_193 {
+._railPts_zope1_193 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_e89q3_200 {
+._railToggle_zope1_200 {
   display: none;
 }
 
-._railBackdrop_e89q3_204 {
+._railBackdrop_zope1_204 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_e89q3_95 {
+  ._rail_zope1_95 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2584,15 +2631,15 @@ dialog._modal_sqcal_427 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_e89q3_223 {
+  ._railOpen_zope1_223 {
     transform: translateX(0);
   }
 
-  ._railToggle_e89q3_200 {
+  ._railToggle_zope1_200 {
     display: inline-flex;
   }
 
-  ._railBackdrop_e89q3_204 {
+  ._railBackdrop_zope1_204 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2603,7 +2650,7 @@ dialog._modal_sqcal_427 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_e89q3_242 {
+._ticket_zope1_242 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2614,13 +2661,13 @@ dialog._modal_sqcal_427 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_e89q3_253 {
+._ticketPeek_zope1_253 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_e89q3_259 {
+._tkrow_zope1_259 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2628,23 +2675,23 @@ dialog._modal_sqcal_427 {
   margin-bottom: var(--s2);
 }
 
-._key_e89q3_267 {
+._key_zope1_267 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_e89q3_267 a {
+._key_zope1_267 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_e89q3_267 a:hover {
+._key_zope1_267 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_e89q3_283 {
+._phaseTag_zope1_283 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2655,18 +2702,18 @@ dialog._modal_sqcal_427 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_e89q3_294 {
+._phaseTagOn_zope1_294 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_e89q3_300 {
+._phaseTagPeek_zope1_300 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_e89q3_305 {
+._tkSummary_zope1_305 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -2677,39 +2724,55 @@ dialog._modal_sqcal_427 {
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-._editTitle_e89q3_316,
-._editBody_e89q3_317,
-._editPoints_e89q3_318 {
+._editing_zope1_316 {
+  animation: _editIn_zope1_1 var(--dur-base) var(--ease) both;
+}
+
+@keyframes _editIn_zope1_1 {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+._editTitle_zope1_327,
+._editBody_zope1_328,
+._editPoints_zope1_329 {
   width: 100%;
   background: none;
   border: 0;
-  border-radius: var(--r-s);
+  /* Square: a radius on a one-pixel underline curls its ends up and reads as a
+     collapsed input box. */
+  border-radius: 0;
   color: inherit;
   font: inherit;
-  padding: 0;
-  /* A dotted rule under the text is the only mark: enough to say the words are
-     live, not enough to turn the ticket into a form. */
+  padding: 0 0 2px;
+  /* A rule under the text is the only mark: enough to say the words are live,
+     not enough to turn the ticket into a form. */
   box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._editTitle_e89q3_316:focus,
-._editBody_e89q3_317:focus,
-._editPoints_e89q3_318:focus {
+._editTitle_zope1_327:focus,
+._editBody_zope1_328:focus,
+._editPoints_zope1_329:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* Restates the display type rather than inheriting it: `font: inherit` above
    resets the size, and both classes sit on the same element. */
-._editTitle_e89q3_316 {
+._editTitle_zope1_327 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
   font-weight: 600;
   letter-spacing: -0.02em;
+  resize: none;
+  overflow: hidden;
 }
 
-._editBody_e89q3_317 {
+._editBody_zope1_328 {
   resize: none;
   min-height: 0;
   max-height: none;
@@ -2717,59 +2780,50 @@ dialog._modal_sqcal_427 {
   box-shadow: none;
 }
 
-._editBody_e89q3_317:focus {
+._editBody_zope1_328:focus {
   box-shadow: none;
 }
 
-._editPoints_e89q3_318 {
+._editPoints_zope1_329 {
   width: 4em;
 }
 
-/* A picker reads as the value it replaces; the list is offered on focus. */
-._editPick_e89q3_365 {
-  width: 100%;
-  min-width: 6em;
-  background: none;
-  border: 0;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  box-shadow: 0 1px 0 0 var(--hairline-strong);
+/* Wide enough that a picker does not resize the row it sits in as the value
+   changes — the properties keep their columns while being edited. */
+._propPick_zope1_382 {
+  min-width: 9em;
 }
 
-._editPick_e89q3_365:focus {
-  outline: none;
-  box-shadow: 0 1px 0 0 var(--accent);
-}
-
-._editNote_e89q3_381 {
-  margin: var(--s2) 0 0;
+._editNote_zope1_386 {
+  margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editActions_e89q3_387 {
+/* Up in the identifying row, hard right — the ticket is saved from the row it
+   is named in. */
+._editActions_zope1_394 {
   display: flex;
   gap: var(--s2);
-  margin-top: var(--s3);
+  margin-left: auto;
 }
 
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
-._props_e89q3_395 {
+._props_zope1_402 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3) var(--s6);
   margin: var(--s4) 0 var(--s5);
 }
 
-._prop_e89q3_395 {
+._prop_zope1_382 {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-._propLabel_e89q3_408 {
+._propLabel_zope1_415 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2777,22 +2831,22 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._propValue_e89q3_416 {
+._propValue_zope1_423 {
   margin: 0;
   font-size: var(--fs-s);
   color: var(--text);
 }
 
-._propOk_e89q3_422 {
+._propOk_zope1_429 {
   color: var(--ok);
 }
 
-._bodyLabel_e89q3_426 {
+._bodyLabel_zope1_433 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_e89q3_431 {
+._desc_zope1_438 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2801,25 +2855,25 @@ dialog._modal_sqcal_427 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_e89q3_431 {
+._desc_zope1_438 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_e89q3_447 {
+._descClipped_zope1_454 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_e89q3_454 {
+._descFade_zope1_461 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_e89q3_458 {
+._descToggle_zope1_465 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2831,13 +2885,13 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._descEmpty_e89q3_470 {
+._descEmpty_zope1_477 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_e89q3_476 {
+._peekBanner_zope1_483 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2851,7 +2905,7 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._peekActions_e89q3_490 {
+._peekActions_zope1_497 {
   display: flex;
   gap: var(--s2);
 }
@@ -2859,14 +2913,14 @@ dialog._modal_sqcal_427 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_e89q3_498 {
+._pkbtnGo_zope1_505 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_e89q3_505 {
+._results_zope1_512 {
   border-top: 1px solid var(--hairline);
   padding: var(--s4) var(--s1) 0;
   display: flex;
@@ -2874,7 +2928,7 @@ dialog._modal_sqcal_427 {
   gap: var(--s3);
 }
 
-._resultsHead_e89q3_513 {
+._resultsHead_zope1_520 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2882,18 +2936,18 @@ dialog._modal_sqcal_427 {
   flex-wrap: wrap;
 }
 
-._resultsSum_e89q3_521 {
+._resultsSum_zope1_528 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_e89q3_521 b {
+._resultsSum_zope1_528 b {
   color: var(--accent);
 }
 
-._dist_e89q3_532 {
+._dist_zope1_539 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2902,7 +2956,7 @@ dialog._modal_sqcal_427 {
   gap: var(--s1);
 }
 
-._drow_e89q3_541 {
+._drow_zope1_548 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2913,39 +2967,39 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._dval_e89q3_552 {
+._dval_zope1_559 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_e89q3_557 {
+._dtrack_zope1_564 {
   height: 4px;
   background: var(--hairline);
   overflow: hidden;
 }
 
-._dbar_e89q3_563 {
+._dbar_zope1_570 {
   display: block;
   height: 100%;
   background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_e89q3_570 ._dbar_e89q3_563 {
+._drowTop_zope1_577 ._dbar_zope1_570 {
   background: var(--accent);
 }
 
-._drowTop_e89q3_570 ._dval_e89q3_552 {
+._drowTop_zope1_577 ._dval_zope1_559 {
   color: var(--accent);
 }
 
-._dcount_e89q3_578 {
+._dcount_zope1_585 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_e89q3_584 {
+._ainote_zope1_591 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2953,7 +3007,7 @@ dialog._modal_sqcal_427 {
   background: var(--panel-2);
 }
 
-._aiHead_e89q3_592 {
+._aiHead_zope1_599 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2964,57 +3018,57 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._aiBody_e89q3_603 {
+._aiBody_zope1_610 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_e89q3_609 {
+._conf_zope1_616 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_e89q3_616 {
+._conf-high_zope1_623 {
   color: var(--ok);
 }
 
-._conf-medium_e89q3_620 {
+._conf-medium_zope1_627 {
   color: var(--warn);
 }
 
-._conf-low_e89q3_624 {
+._conf-low_zope1_631 {
   color: var(--danger);
 }
 
-._ev_e89q3_628 {
+._ev_zope1_635 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_e89q3_635 {
+._sug_zope1_642 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_e89q3_635 b {
+._sug_zope1_642 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_e89q3_648 ._aiBody_e89q3_603::after {
+._ainotePending_zope1_655 ._aiBody_zope1_610::after {
   content: '…';
-  animation: _dots_e89q3_1 1.2s steps(4, end) infinite;
+  animation: _dots_zope1_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_e89q3_1 {
+@keyframes _dots_zope1_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -3025,14 +3079,14 @@ dialog._modal_sqcal_427 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_e89q3_664 {
+._duel_zope1_671 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_e89q3_671 {
+._duelHead_zope1_678 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3044,13 +3098,13 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._duelBody_e89q3_683 {
+._duelBody_zope1_690 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_e89q3_689 {
+._duelTranscript_zope1_696 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -3059,41 +3113,41 @@ dialog._modal_sqcal_427 {
   overflow-y: auto;
 }
 
-._recind_e89q3_698 {
+._recind_zope1_705 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_e89q3_705 {
+._recDot_zope1_712 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_e89q3_1 1.4s ease-in-out infinite;
+  animation: _recpulse_zope1_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_e89q3_1 {
+@keyframes _recpulse_zope1_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_e89q3_719 {
+._norec_zope1_726 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_e89q3_725 {
+._dualrow_zope1_732 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_e89q3_732 {
+._duelist_zope1_739 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3105,31 +3159,31 @@ dialog._modal_sqcal_427 {
   text-align: center;
 }
 
-._duelistSpeaking_e89q3_744 {
+._duelistSpeaking_zope1_751 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_e89q3_749 {
+._duelFace_zope1_756 {
   font-size: var(--fs-xl);
 }
 
-._duelName_e89q3_753 {
+._duelName_zope1_760 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_e89q3_758 {
+._duelValue_zope1_765 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_e89q3_758 b {
+._duelValue_zope1_765 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_e89q3_768 {
+._duelFloor_zope1_775 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3137,12 +3191,12 @@ dialog._modal_sqcal_427 {
   color: var(--accent);
 }
 
-._duelMic_e89q3_776 {
+._duelMic_zope1_783 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_e89q3_781 {
+._vs_zope1_788 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -3150,7 +3204,7 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._youup_e89q3_789 {
+._youup_zope1_796 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -3160,7 +3214,7 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-._micRow_e89q3_799 {
+._micRow_zope1_806 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3168,7 +3222,7 @@ dialog._modal_sqcal_427 {
   margin-top: var(--s3);
 }
 
-._micBtn_e89q3_807 {
+._micBtn_zope1_814 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -3180,7 +3234,7 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._hint_e89q3_819 {
+._hint_zope1_826 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -3191,36 +3245,36 @@ dialog._modal_sqcal_427 {
    another card. */
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
-._main_e89q3_69 {
+._main_zope1_69 {
   --deck-w: calc(10 * 72px + 9 * var(--s2));
 }
 
-._table_e89q3_834 {
+._table_zope1_841 {
   margin-top: auto;
   width: min(100%, var(--deck-w));
   margin-inline: auto;
 }
 
-._tableHead_e89q3_840 {
+._tableHead_zope1_847 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_e89q3_847 {
+._tableWait_zope1_854 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_e89q3_853 {
+._vempty_zope1_860 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_e89q3_859 {
+._vrow_zope1_866 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3231,18 +3285,18 @@ dialog._modal_sqcal_427 {
 
 /* The avatar and, once revealed, the card that was played — tucked against it
    so the pair reads as one seat. */
-._seatFace_e89q3_870 {
+._seatFace_zope1_877 {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-._seatFace_e89q3_870 ._vcard_e89q3_876 {
+._seatFace_zope1_877 ._vcard_zope1_883 {
   margin-left: -6px;
 }
 
 /* A seat: face over name. */
-._voter_e89q3_881 {
+._voter_zope1_888 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3250,7 +3304,7 @@ dialog._modal_sqcal_427 {
   width: 84px;
 }
 
-._face_e89q3_889 {
+._face_zope1_896 {
   position: relative;
   display: grid;
   place-items: center;
@@ -3263,7 +3317,7 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-l);
 }
 
-._tick_e89q3_242 {
+._tick_zope1_242 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3286,7 +3340,7 @@ dialog._modal_sqcal_427 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_e89q3_876 {
+._vcard_zope1_883 {
   display: grid;
   place-items: center;
   width: 22px;
@@ -3300,18 +3354,18 @@ dialog._modal_sqcal_427 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  animation: _flip_e89q3_1 320ms var(--ease) both;
+  animation: _flip_zope1_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_e89q3_1 {
+@keyframes _flip_zope1_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_e89q3_950 {
+._nm_zope1_957 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3322,7 +3376,7 @@ dialog._modal_sqcal_427 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_e89q3_961 {
+._deckZone_zope1_968 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -3354,24 +3408,24 @@ dialog._modal_sqcal_427 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_e89q3_32[data-host='true'] {
+  ._app_zope1_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_e89q3_999 {
+._deckStatus_zope1_1006 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_e89q3_1006 {
+._deckMine_zope1_1013 {
   color: var(--accent);
 }
 
-._deck_e89q3_961 {
+._deck_zope1_968 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3385,7 +3439,7 @@ dialog._modal_sqcal_427 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_e89q3_1024 {
+._pcard_zope1_1031 {
   position: relative;
   width: 72px;
   height: 100px;
@@ -3403,19 +3457,19 @@ dialog._modal_sqcal_427 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_e89q3_1024:hover:not(:disabled) {
+._pcard_zope1_1031:hover:not(:disabled) {
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
 }
 
-._pcard_e89q3_1024:disabled {
+._pcard_zope1_1031:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_e89q3_1054 {
+._pcardSel_zope1_1061 {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--accent);
@@ -3426,11 +3480,11 @@ dialog._modal_sqcal_427 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_e89q3_1065 {
+._pcardWait_zope1_1072 {
   border-style: dashed;
 }
 
-._ci_e89q3_1069 {
+._ci_zope1_1076 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3439,7 +3493,7 @@ dialog._modal_sqcal_427 {
   color: var(--dim);
 }
 
-._ciFlip_e89q3_1078 {
+._ciFlip_zope1_1085 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3447,14 +3501,14 @@ dialog._modal_sqcal_427 {
   transform: rotate(180deg);
 }
 
-._cv_e89q3_1086 {
+._cv_zope1_1093 {
   font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_e89q3_1093 {
+._console_zope1_1100 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -3465,13 +3519,13 @@ dialog._modal_sqcal_427 {
   gap: var(--s3);
 }
 
-._cbar_e89q3_1104 {
+._cbar_zope1_1111 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_e89q3_1110 {
+._cphase_zope1_1117 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3479,20 +3533,20 @@ dialog._modal_sqcal_427 {
   color: var(--accent);
 }
 
-._cbody_e89q3_1118 {
+._cbody_zope1_1125 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_e89q3_1124 {
+._cgroup_zope1_1131 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_e89q3_1130,
-._navrow_e89q3_1131 {
+._crow_zope1_1137,
+._navrow_zope1_1138 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3501,11 +3555,11 @@ dialog._modal_sqcal_427 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_e89q3_1140:not(:empty) {
+._duelSlot_zope1_1147:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_e89q3_1144 {
+._duelInline_zope1_1151 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3514,12 +3568,12 @@ dialog._modal_sqcal_427 {
   border-radius: var(--r-s);
 }
 
-._seg_e89q3_1153 {
+._seg_zope1_1160 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_e89q3_1158 {
+._preset_zope1_1165 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3531,8 +3585,8 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._clabel_e89q3_1170,
-._finlab_e89q3_1171 {
+._clabel_zope1_1177,
+._finlab_zope1_1178 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3540,21 +3594,21 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._chint_e89q3_1179,
-._cnotice_e89q3_1180 {
+._chint_zope1_1186,
+._cnotice_zope1_1187 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_e89q3_1180 {
+._cnotice_zope1_1187 {
   color: var(--warn);
 }
 
 /* Label left, value right — the three decision rows read as a column of
    numbers rather than three sentences of different lengths. */
-._readout_e89q3_1193 {
+._readout_zope1_1200 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3564,20 +3618,20 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._readout_e89q3_1193 b {
+._readout_zope1_1200 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_e89q3_1209 {
+._finrow_zope1_1216 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
 }
 
-._finInput_e89q3_1216 {
+._finInput_zope1_1223 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3589,12 +3643,12 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-._finSrc_e89q3_1228 {
+._finSrc_zope1_1235 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_e89q3_1233 {
+._cpos_zope1_1240 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3604,7 +3658,7 @@ dialog._modal_sqcal_427 {
 }
 
 @media (max-width: 1099px) {
-  ._console_e89q3_1093 {
+  ._console_zope1_1100 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3614,24 +3668,24 @@ dialog._modal_sqcal_427 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_e89q3_1104 {
+  ._cbar_zope1_1111 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_e89q3_1118 {
+  ._cbody_zope1_1125 {
     display: none;
   }
 
-  ._consoleOpen_e89q3_1263 ._cbody_e89q3_1118 {
+  ._consoleOpen_zope1_1270 ._cbody_zope1_1125 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_e89q3_1270 {
+._identity_zope1_1277 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3640,7 +3694,7 @@ dialog._modal_sqcal_427 {
 
 /* Who you are, as one quiet control: the avatar carries the identity and the
    pencil only shows up when you go looking for it. */
-._meChip_e89q3_1279 {
+._meChip_zope1_1286 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3659,12 +3713,12 @@ dialog._modal_sqcal_427 {
   cursor: pointer;
 }
 
-._meChip_e89q3_1279:hover {
+._meChip_zope1_1286:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
 
-._meName_e89q3_1303 {
+._meName_zope1_1310 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3672,37 +3726,37 @@ dialog._modal_sqcal_427 {
   font-weight: 500;
 }
 
-._pen_e89q3_1311 {
+._pen_zope1_1318 {
   display: inline-flex;
   color: var(--dim);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._meChip_e89q3_1279:hover ._pen_e89q3_1311,
-._meChip_e89q3_1279:focus-visible ._pen_e89q3_1311 {
+._meChip_zope1_1286:hover ._pen_zope1_1318,
+._meChip_zope1_1286:focus-visible ._pen_zope1_1318 {
   opacity: 1;
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
-._presenceChip_e89q3_1324 {
+._presenceChip_zope1_1331 {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
 /* The headcount is a number, so it is set as one. */
-._roomCount_e89q3_1330 {
+._roomCount_zope1_1337 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   font-weight: 600;
 }
 
-._offline_e89q3_1337 {
+._offline_zope1_1344 {
   color: var(--warn);
 }
 
-._popNote_e89q3_1341 {
+._popNote_zope1_1348 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -3711,8 +3765,8 @@ dialog._modal_sqcal_427 {
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-._lockBanner_e89q3_1350,
-._musicBanner_e89q3_1351 {
+._lockBanner_zope1_1357,
+._musicBanner_zope1_1358 {
   margin: 0;
   width: 100%;
   padding: var(--s2) var(--s4);
@@ -3729,22 +3783,22 @@ dialog._modal_sqcal_427 {
   text-transform: uppercase;
 }
 
-._lockBanner_e89q3_1350 {
+._lockBanner_zope1_1357 {
   color: var(--warn);
 }
 
-._musicBanner_e89q3_1351 {
+._musicBanner_zope1_1358 {
   color: var(--accent);
   cursor: pointer;
 }
 
-._musicBanner_e89q3_1351:hover {
+._musicBanner_zope1_1358:hover {
   background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_e89q3_1383 {
+._flabel_zope1_1390 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3754,7 +3808,7 @@ dialog._modal_sqcal_427 {
   color: var(--muted);
 }
 
-._field_e89q3_1393 {
+._field_zope1_1400 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3766,24 +3820,24 @@ dialog._modal_sqcal_427 {
   font-size: var(--fs-s);
 }
 
-textarea._field_e89q3_1393 {
+textarea._field_zope1_1400 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_e89q3_1410 {
+._editWarn_zope1_1417 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_e89q3_381 {
+._editNote_zope1_386 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_e89q3_1422 {
+._editSave_zope1_1429 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3798,7 +3852,7 @@ textarea._field_e89q3_1393 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_e89q3_1437 {
+._srOnly_zope1_1444 {
   position: absolute;
   width: 1px;
   height: 1px;

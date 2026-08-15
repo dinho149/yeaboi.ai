@@ -71,12 +71,10 @@ describe('<InviteQR>', () => {
       <InviteQR
         qrSrc="/api/qr?token=t"
         inviteUrl="https://x/#code=K3P9-2QXA"
-        shareUrl="https://x/"
         joinCode="K3P9-2QXA"
       />
     );
-    expect(screen.getByRole('button', { name: 'Copy Invite' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy Link' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy Invite link' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy Code' })).toBeTruthy();
   });
 

@@ -79,9 +79,8 @@ export interface PageShellProps {
 
 /** A dock's controls, whether handed over as a fragment or as a list. */
 function dockItems(dock: ReactNode): ReactNode[] {
-  if (isValidElement(dock) && dock.type === Fragment) {
-    return Children.toArray((dock.props as { children?: ReactNode }).children);
-  }
+  const element = isValidElement(dock) ? (dock as { type: unknown; props: { children?: ReactNode } }) : null;
+  if (element && element.type === Fragment) return Children.toArray(element.props.children);
   return Children.toArray(dock);
 }
 
@@ -228,7 +227,7 @@ export function PageShell({
             (run, runIndex) => (
               <div
                 key={run.edge + String(runIndex)}
-                ref={runIndex === 0 ? drag.ref : undefined}
+                {...(runIndex === 0 ? { ref: drag.ref } : {})}
                 className={cx(
                   styles['dockApp'],
                   drag.placed && styles['dockPlaced'],

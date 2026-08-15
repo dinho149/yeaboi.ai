@@ -54,7 +54,7 @@ export interface DockDrag {
   runs: DockRun[];
   /** Report a control's extent along the path, so the split knows where it falls. */
   measure(index: number, extent: number): void;
-  onPointerDown(event: React.PointerEvent): void;
+  onPointerDown(event: PointerEvent): void;
 }
 
 interface Box {
@@ -185,7 +185,7 @@ export function useDockDrag(count = 0): DockDrag {
     [box],
   );
 
-  const onPointerDown = useCallback((event: React.PointerEvent) => {
+  const onPointerDown = useCallback((event: PointerEvent) => {
     // Controls inside keep their click; only the dock's own ground is a handle.
     if ((event.target as HTMLElement).closest('button, a, input, select, [role="button"]')) return;
     const el = event.currentTarget as HTMLElement;

@@ -431,6 +431,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
             "/api/admin/goto",
             "/api/admin/finalize",
             "/api/admin/ticket/edit",
+            "/api/admin/ticket/options",
             "/api/admin/ai",
             "/api/admin/duel/open",
             "/api/admin/duel/next",
@@ -503,6 +504,10 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
         if path == "/api/admin/ticket/edit":
             self._ticket_edit(payload, pid)
+            return
+
+        if path == "/api/admin/ticket/options":
+            self._ticket_options(payload)
             return
 
         if path == "/api/admin/ai":
@@ -599,6 +604,20 @@ class _PokerHandler(BaseHTTPRequestHandler):
             200 if finalized else 400,
             {"ok": finalized, "state": self._board.state_snapshot(pid)},
         )
+
+    def _ticket_options(self, payload: dict) -> None:
+        """Answer the editor's pickers with what the tracker itself accepts.
+
+        A tracker round-trip, so it is asked for once when the editor opens
+        rather than carried on every state poll. An empty answer is not an
+        error: the editor falls back to the values the board already shows.
+        """
+        key = str(payload.get("key", ""))
+        ticket = next((t for t in self._board.tickets_snapshot() if t.get("key") == key), None)
+        if ticket is None:
+            self._send_json(400, {"ok": False, "error": "unknown ticket"})
+            return
+        self._send_json(200, {"ok": True, "options": tickets_mod.ticket_options(self._board.source, ticket)})
 
     def _ticket_edit(self, payload: dict, pid: str) -> None:
         """Push admin field edits to the tracker, then mirror them onto the board."""

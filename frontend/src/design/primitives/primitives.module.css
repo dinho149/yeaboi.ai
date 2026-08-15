@@ -385,3 +385,107 @@ svg.wordmark {
   vertical-align: -0.15em;
   flex: none;
 }
+
+/* ── Dropdown ────────────────────────────────────────────────────
+   Closed, it is the value and nothing else: the underline is the whole
+   affordance, square-ended so it reads as a rule under text rather than a
+   field. */
+.dd {
+  position: relative;
+  display: inline-block;
+}
+
+.ddTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 0 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition:
+    box-shadow var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.ddTrigger:hover,
+.ddTrigger:focus-visible,
+.ddTriggerOpen {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+
+.ddValue {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ddEmpty {
+  color: var(--dim);
+}
+
+.ddCaret {
+  color: var(--dim);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.ddTriggerOpen .ddCaret {
+  transform: rotate(180deg);
+}
+
+.ddMenu {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(100% + var(--s2));
+  left: 0;
+  min-width: 100%;
+  max-height: 240px;
+  margin: 0;
+  padding: var(--s1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  transform-origin: top left;
+  animation: ddOpen var(--dur-fast) var(--ease) both;
+}
+
+@keyframes ddOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.ddOpt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s2);
+  border-radius: var(--r-s);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ddOptActive {
+  background: var(--panel-2);
+}
+
+.ddNone {
+  padding: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}

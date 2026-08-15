@@ -102,7 +102,7 @@ export interface PopoverProps {
    */
   placement?: 'below' | 'above';
   /** Extra classes for the trigger button. */
-  triggerClassName?: string;
+  triggerClassName?: string | undefined;
   className?: string | undefined;
 }
 

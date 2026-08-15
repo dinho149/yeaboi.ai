@@ -313,19 +313,33 @@
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
+.editing {
+  animation: editIn var(--dur-base) var(--ease) both;
+}
+
+@keyframes editIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 .editTitle,
 .editBody,
 .editPoints {
   width: 100%;
   background: none;
   border: 0;
-  border-radius: var(--r-s);
+  /* Square: a radius on a one-pixel underline curls its ends up and reads as a
+     collapsed input box. */
+  border-radius: 0;
   color: inherit;
   font: inherit;
-  padding: 0;
-  /* A dotted rule under the text is the only mark: enough to say the words are
-     live, not enough to turn the ticket into a form. */
+  padding: 0 0 2px;
+  /* A rule under the text is the only mark: enough to say the words are live,
+     not enough to turn the ticket into a form. */
   box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition: box-shadow var(--dur-fast) var(--ease);
 }
 
 .editTitle:focus,
@@ -343,6 +357,8 @@
   line-height: 1.12;
   font-weight: 600;
   letter-spacing: -0.02em;
+  resize: none;
+  overflow: hidden;
 }
 
 .editBody {
@@ -361,33 +377,24 @@
   width: 4em;
 }
 
-/* A picker reads as the value it replaces; the list is offered on focus. */
-.editPick {
-  width: 100%;
-  min-width: 6em;
-  background: none;
-  border: 0;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  box-shadow: 0 1px 0 0 var(--hairline-strong);
-}
-
-.editPick:focus {
-  outline: none;
-  box-shadow: 0 1px 0 0 var(--accent);
+/* Wide enough that a picker does not resize the row it sits in as the value
+   changes — the properties keep their columns while being edited. */
+.propPick {
+  min-width: 9em;
 }
 
 .editNote {
-  margin: var(--s2) 0 0;
+  margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
+/* Up in the identifying row, hard right — the ticket is saved from the row it
+   is named in. */
 .editActions {
   display: flex;
   gap: var(--s2);
-  margin-top: var(--s3);
+  margin-left: auto;
 }
 
 /* The ticket's facts, under the title: a label and its value, not a pill.

@@ -63,7 +63,7 @@ import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
 import { AVATARS } from '../types/enums';
 import type { Participant, PokerVote, TicketMeta, TicketView } from '../types/board';
-import { createPokerActions, type TicketEdit } from './actions';
+import { createPokerActions, type TicketEdit, type TrackerOptions } from './actions';
 import type { PokerBoot } from './boot';
 import { Console } from './Console';
 import { Deck } from './Deck';
@@ -130,6 +130,9 @@ export function App({ boot }: { boot: PokerBoot }) {
   const invite = useInvite(session, inviteOpen);
   const [railOpen, setRailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // What the tracker itself accepts, asked for once when the editor opens —
+  // it is a round-trip to Jira, so it has no business on the state poll.
+  const [trackerOptions, setTrackerOptions] = useState<TrackerOptions>({});
   const [musicBlocked, setMusicBlocked] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -302,6 +305,13 @@ export function App({ boot }: { boot: PokerBoot }) {
     [actions, run, ticket]
   );
 
+  const openEdit = useCallback(() => {
+    setEditOpen(true);
+    setTrackerOptions({});
+    const key = ticket?.key;
+    if (key) void actions.trackerOptions(key).then(setTrackerOptions);
+  }, [actions, ticket]);
+
   // ── The gate ───────────────────────────────────────────────────────────
   if (!session.token) {
     return (
@@ -404,7 +414,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             icon={<Icon name="mail" size={14} />}
             label="Invite the team"
             tone="primary"
-            size="s"
+            compact
             onClick={() => setInviteOpen(true)}
           >
             Invite
@@ -500,9 +510,9 @@ export function App({ boot }: { boot: PokerBoot }) {
             peekIndex={peekIndex}
             liveKey={tickets[ticketIndex]?.key ?? ''}
             isHost={isHost}
-            onEdit={() => setEditOpen(true)}
+            onEdit={openEdit}
             editing={editOpen}
-            options={ticketOptions(tickets)}
+            options={ticketOptions(ticket ? [ticket] : [], trackerOptions)}
             onSaveEdit={saveEdit}
             onCancelEdit={() => setEditOpen(false)}
             onBackToLive={() => setPeekIndex(null)}
@@ -575,7 +585,6 @@ export function App({ boot }: { boot: PokerBoot }) {
         <InviteQR
           qrSrc={apiUrl(session, '/api/qr')}
           inviteUrl={invite.invite?.inviteUrl}
-          shareUrl={invite.invite?.shareUrl}
           joinCode={invite.invite?.joinCode}
         />
       </Modal>

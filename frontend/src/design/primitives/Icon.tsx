@@ -91,10 +91,13 @@ function shapes(name: IconName): ReactElement[] {
   const cached = parsed.get(name);
   if (cached) return cached;
   const out: ReactElement[] = [];
-  for (const [, tag, attrs] of (PATHS[name] ?? '').matchAll(SHAPE)) {
+  for (const shape of (PATHS[name] ?? '').matchAll(SHAPE)) {
+    const tag = shape[1] ?? '';
     const props: Record<string, string> = {};
-    for (const [, key, value] of attrs.matchAll(ATTR)) props[key] = value;
-    out.push(createElement(tag, { ...props, key: `${tag}${out.length}` }));
+    for (const attr of (shape[2] ?? '').matchAll(ATTR)) {
+      if (attr[1]) props[attr[1]] = attr[2] ?? '';
+    }
+    if (tag) out.push(createElement(tag, { ...props, key: `${tag}${out.length}` }));
   }
   parsed.set(name, out);
   return out;

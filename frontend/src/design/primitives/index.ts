@@ -5,6 +5,7 @@ export { SegmentBar, StatBar, type Segment, type SegmentBarProps, type StatBarPr
 export { Card, Section, type CardProps, type SectionProps } from './Card';
 export { Chip, type ChipProps } from './Chip';
 export { DataTable, type Column, type DataTableProps } from './DataTable';
+export { Dropdown, type DropdownProps } from './Dropdown';
 export { Duck, useDuckPulse, type DuckProps, type DuckPulse, type DuckRest, type DuckState } from './Duck';
 export { Eyebrow, type EyebrowProps } from './Eyebrow';
 export { Icon, type IconName, type IconProps } from './Icon';

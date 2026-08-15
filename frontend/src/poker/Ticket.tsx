@@ -23,11 +23,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { Eyebrow, Icon } from '../design/primitives';
+import { Dropdown, Eyebrow, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
-import type { TicketEdit } from './actions';
+import type { TicketEdit, TrackerOptions } from './actions';
 import { fmtPoints } from './points';
 import { Button } from '../shared';
 import styles from './poker.module.css';
@@ -52,22 +52,22 @@ export interface TicketOptions {
 /**
  * The choices a picker offers.
  *
- * Read off the tickets already loaded rather than from the tracker: a project's
- * real schema is per-instance and is not on the wire, and this is both true of
- * the board in front of you and free. It is therefore the observed set, not the
- * whole vocabulary — so each picker also accepts a typed value.
+ * The tracker's own answer wins wherever it gave one — those are the types,
+ * transitions and assignable people the write will actually be accepted for.
+ * What it did not answer falls back to the values the given tickets already
+ * carry, which is all the demo source and an unreachable tracker can offer.
  */
-export function ticketOptions(tickets: readonly { type: string; state: string; assignee: string }[]): TicketOptions {
-  const gather = (pick: (t: { type: string; state: string; assignee: string }) => string): string[] =>
+export function ticketOptions(tickets: readonly Displayable[], tracker: TrackerOptions = {}): TicketOptions {
+  const gather = (pick: (t: Displayable) => string): string[] =>
     [...new Set(tickets.map(pick).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   return {
-    types: gather((t) => t.type),
-    states: gather((t) => t.state),
-    assignees: gather((t) => t.assignee),
+    types: tracker.types ?? gather((t) => t.type),
+    states: tracker.states ?? gather((t) => t.state),
+    assignees: tracker.assignees ?? gather((t) => t.assignee),
   };
 }
 
-/** A property whose value is picked from what the board already uses. */
+/** A property whose value is picked rather than typed. */
 function PropPicker({
   label,
   value,
@@ -79,23 +79,18 @@ function PropPicker({
   options: readonly string[];
   onChange(next: string): void;
 }) {
-  const listId = `poker-opt-${label.toLowerCase()}`;
   return (
     <div className={styles['prop']}>
       <dt className={styles['propLabel']}>{label}</dt>
       <dd className={styles['propValue']}>
-        <input
-          className={styles['editPick']}
-          aria-label={label}
-          list={listId}
+        <Dropdown
+          className={styles['propPick']}
+          label={label}
           value={value}
-          onInput={(event) => onChange((event.target as HTMLInputElement).value)}
+          options={options}
+          onChange={onChange}
+          placeholder={label === 'Assignee' ? 'Unassigned' : '—'}
         />
-        <datalist id={listId}>
-          {options.map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
       </dd>
     </div>
   );
@@ -127,18 +122,19 @@ function TicketForm({
   const [state, setState] = useState(ticket.state);
   const [assignee, setAssignee] = useState(ticket.assignee);
   const [acceptance, setAcceptance] = useState(ticket.acceptance_text);
+  const title = useRef<HTMLTextAreaElement | null>(null);
   const body = useRef<HTMLTextAreaElement | null>(null);
   const criteria = useRef<HTMLTextAreaElement | null>(null);
 
   // No scrollbar inside the prose: the field is the paragraph, so it takes the
   // height the paragraph would have.
   useEffect(() => {
-    for (const el of [body.current, criteria.current]) {
+    for (const el of [title.current, body.current, criteria.current]) {
       if (!el) continue;
       el.style.height = 'auto';
       el.style.height = `${el.scrollHeight}px`;
     }
-  }, [description, acceptance]);
+  }, [summary, description, acceptance]);
 
   useEffect(() => {
     setSummary(ticket.summary);
@@ -149,6 +145,16 @@ function TicketForm({
     setAssignee(ticket.assignee);
     setAcceptance(ticket.acceptance_text);
   }, [ticket.key, ticket.summary, ticket.description_text, ticket.story_points, ticket.type, ticket.state, ticket.assignee, ticket.acceptance_text]);
+
+  // Escape leaves the editor from anywhere on the page. An open dropdown
+  // swallows its own Escape first, so the first press closes the menu.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
 
   const submit = (): void => {
     const edit: TicketEdit = {};
@@ -166,12 +172,31 @@ function TicketForm({
   };
 
   return (
-    <>
-      <input
+    <div className={styles['editing']}>
+      {/* The controls sit where the Edit button was, so the row the ticket is
+          identified by is also the row it is saved from. */}
+      <div className={styles['tkrow']}>
+        <span className={styles['key']}>{ticket.key}</span>
+        <span className={styles['phaseTag']}>editing</span>
+        <div className={styles['editActions']}>
+          <Button size="s" tone="primary" onClick={submit}>
+            Save
+          </Button>
+          <Button size="s" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+
+      {/* A textarea, not an input: the heading wraps at this size, and a
+          single-line field would scroll the title sideways instead. */}
+      <textarea
+        ref={title}
         className={cx(styles['tkSummary'], styles['editTitle'])}
         aria-label="Summary"
+        rows={1}
         value={summary}
-        onInput={(event) => setSummary((event.target as HTMLInputElement).value)}
+        onInput={(event) => setSummary((event.target as HTMLTextAreaElement).value)}
       />
 
       <dl className={styles['props']}>
@@ -211,15 +236,8 @@ function TicketForm({
         onInput={(event) => setAcceptance((event.target as HTMLTextAreaElement).value)}
       />
 
-      <p className={styles['editNote']}>Saving writes to the tracker, not just this board.</p>
-
-      <div className={styles['editActions']}>
-        <Button tone="primary" onClick={submit}>
-          Save
-        </Button>
-        <Button onClick={onCancel}>Cancel</Button>
-      </div>
-    </>
+      <p className={styles['editNote']}>Saving writes to the tracker, not just this board. Esc to leave.</p>
+    </div>
   );
 }
 
@@ -421,13 +439,7 @@ export function TicketPanel({
   return (
     <section className={styles['ticket']} aria-label="Ticket">
       {editing ? (
-        <>
-          <div className={styles['tkrow']}>
-            <span className={styles['key']}>{ticket.key}</span>
-            <span className={styles['phaseTag']}>editing</span>
-          </div>
-          <TicketForm ticket={ticket} options={options} onSave={onSaveEdit} onCancel={onCancelEdit} />
-        </>
+        <TicketForm ticket={ticket} options={options} onSave={onSaveEdit} onCancel={onCancelEdit} />
       ) : (
         <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />
       )}

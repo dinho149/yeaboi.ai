@@ -49,6 +49,7 @@ const noop = (): void => {};
 
 const music = {
   playing: false,
+  analyser: null,
   channel: 0,
   volume: 0.35,
   toggle: noop,
@@ -123,7 +124,7 @@ const CASES: [name: string, node: preact.ComponentChildren][] = [
   ['ProseBullets', <ProseBullets text="Shipped the API. Docs are behind; tests are green." />],
   ['RichText', <RichText runs={[{ s: 'See ' }, { s: 'AB-1', href: 'https://jira.example/AB-1' }]} />],
   ['IconButton', <IconButton icon="🔒" label="Lock the board" />],
-  ['InviteQR', <InviteQR qrSrc="/api/qr?token=x" joinCode="K3P9-2QXA" shareUrl="https://x.trycloudflare.com/" />],
+  ['InviteQR', <InviteQR qrSrc="/api/qr?token=x" joinCode="K3P9-2QXA" inviteUrl="https://x.trycloudflare.com/#code=K3P9-2QXA" />],
   ['JoinGate', <JoinGate />],
   ['MusicPlayer', <MusicPlayer music={music} channels={[{ name: 'Lofi', url: 'https://example/stream' }]} />],
   [

@@ -100,7 +100,8 @@ describe('Slide', () => {
     it('sets its title in the block-glyph face', () => {
       render(<Slide slide={{ type: 'thanks', title: 'Thank you', subtitle: 'Acme Portal' }} />);
       const mark = screen.getByRole('img', { name: 'Thank you' });
-      expect(mark.tagName).toBe('PRE');
+      // The compact face is one SVG path now, not a grid of block characters.
+      expect(mark.tagName).toBe('svg');
       expect(screen.getByText('Acme Portal')).toBeTruthy();
     });
 

@@ -547,7 +547,6 @@ export function App({ boot }: { boot: RetroBoot }) {
         <InviteQR
           qrSrc={apiUrl(session, '/api/qr')}
           inviteUrl={invite.invite?.inviteUrl}
-          shareUrl={invite.invite?.shareUrl}
           joinCode={invite.invite?.joinCode}
         />
       </Modal>

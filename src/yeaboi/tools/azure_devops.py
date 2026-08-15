@@ -2743,6 +2743,45 @@ def azdevops_backlog_issues(
         return []
 
 
+def azdevops_work_item_options(work_item_id: int, *, project: str = "") -> dict[str, list[str]]:
+    """The values this project will accept for one work item: states and assignees.
+
+    Types are deliberately absent — Azure DevOps cannot change a work item's
+    type in place, so offering the list would offer a change that cannot be
+    made. Each list is gathered independently; ``{}`` means nothing was read.
+    """
+    project = project or get_azure_devops_project() or ""
+    logger.info("azdevops_work_item_options: id=%s", log_safe(repr(work_item_id)))
+    options: dict[str, list[str]] = {}
+    try:
+        wit_client, _work_client = _make_azdo_clients()
+        item = wit_client.get_work_item(int(work_item_id), project=project or None)
+        type_name = str((getattr(item, "fields", None) or {}).get("System.WorkItemType") or "")
+    except Exception as e:
+        logger.warning("azdevops_work_item_options: cannot read %s: %s", log_safe(repr(work_item_id)), e)
+        return {}
+
+    try:
+        states = [
+            str(getattr(s, "name", "") or "").strip()
+            for s in (wit_client.get_work_item_type_states(project, type_name) or [])
+        ]
+        found = [name for name in states if name]
+        if found:
+            options["states"] = found
+    except Exception as e:
+        logger.warning("azdevops_work_item_options: states failed for %s: %s", log_safe(repr(type_name)), e)
+
+    try:
+        names = sorted({str(m.get("name") or "").strip() for m in azdevops_assignee_roster(project)})
+        found = [name for name in names if name]
+        if found:
+            options["assignees"] = found
+    except Exception as e:
+        logger.warning("azdevops_work_item_options: roster failed for %s: %s", log_safe(repr(project)), e)
+    return options
+
+
 def azdevops_update_work_item_fields(
     work_item_id: int,
     *,

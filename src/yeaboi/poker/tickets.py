@@ -247,6 +247,29 @@ def fetch_tickets(
         return []
 
 
+def ticket_options(source: str, ticket: dict) -> dict[str, list[str]]:
+    """What the tracker will accept for one ticket: {types, states, assignees}.
+
+    A missing key means "ask the board instead" — the editor falls back to the
+    values already in use across the loaded tickets, which is also all the demo
+    source can offer. Returns {} on any failure (logged).
+    """
+    key = str(ticket.get("key", ""))
+    logger.info("poker ticket_options: source=%s key=%s", log_safe(repr(source)), log_safe(repr(key)))
+    try:
+        if source == SOURCE_JIRA:
+            from yeaboi.tools.jira import jira_ticket_options
+
+            return jira_ticket_options(key)
+        if source == SOURCE_AZDO:
+            from yeaboi.tools.azure_devops import azdevops_work_item_options
+
+            return azdevops_work_item_options(int(key))
+    except Exception as e:
+        logger.warning("poker ticket_options failed for %s %s: %s", source, log_safe(key), e)
+    return {}
+
+
 def update_ticket(
     source: str,
     ticket: dict,
