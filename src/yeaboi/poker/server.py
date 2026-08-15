@@ -204,14 +204,20 @@ def _run_ai(board: PokerBoard) -> None:
             project_name=board.project_name,
             debate_transcript=board.current_duel_transcript(),
         )
-        note = result.get("note", "")
-        if result.get("warnings"):
-            note = f"{note}\n({result['warnings'][0]})" if note else result["warnings"][0]
+        # A fallback's note is the vote median in a sentence, and the decision
+        # row already shows the median — so only the reason it fell back is
+        # worth landing. Nothing pretends to be a perspective it is not.
+        from_llm = result.get("llm_mode") == "llm"
+        warning = (result.get("warnings") or [""])[0]
+        note = result.get("note", "") if from_llm else warning
+        if from_llm and warning:
+            note = f"{note}\n({warning})" if note else warning
         board.set_ai_note(
             note,
-            result.get("suggested_points"),
-            confidence=result.get("confidence", ""),
-            evidence=tuple(result.get("evidence") or ()),
+            result.get("suggested_points") if from_llm else None,
+            confidence=result.get("confidence", "") if from_llm else "",
+            evidence=tuple(result.get("evidence") or ()) if from_llm else (),
+            from_llm=from_llm,
         )
     except Exception as exc:  # engine never raises, but the thread must never die loudly
         logger.warning("poker: AI perspective worker failed: %s", exc)

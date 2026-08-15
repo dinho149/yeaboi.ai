@@ -204,23 +204,36 @@
   border-color: transparent;
 }
 
-/* A toggle that is on is coloured, not ringed: a ring around a borderless
-   control reads as focus. Same shape of selector as the rule above, or that
-   one's `background: none` wins on specificity and only the glyph changes. */
-.dockRow > [class*='dockItem'] > button[aria-pressed='true'],
-.dockRow > [class*='dockItem'] > button[aria-expanded='true'],
-.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+/*
+ * Two kinds of "on", and only one of them is a state.
+ *
+ * A toggle that is ON — the lock — is coloured, not ringed: a ring around a
+ * borderless control reads as focus. An OPEN PANEL is not a state of the board,
+ * it is where you are looking, so its trigger only lifts. Colouring both put
+ * three or four accent fills in a row beside the accent Invite pill, and the
+ * one that meant something was lost among them.
+ *
+ * Same shape of selector as the rule above, or that one's `background: none`
+ * wins on specificity and only the glyph changes.
+ */
+.dockRow > [class*='dockItem'] > button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   border-color: transparent;
   box-shadow: none;
   color: var(--accent);
 }
 
-.dockRow > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled),
-.dockRow > [class*='dockItem'] > button[aria-expanded='true']:hover:not(:disabled),
-.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true']:hover:not(:disabled) {
+.dockRow > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 34%, transparent);
   border-color: transparent;
+}
+
+.dockRow > [class*='dockItem'] > button[aria-expanded='true'],
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+  background: var(--panel-2);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text);
 }
 
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of

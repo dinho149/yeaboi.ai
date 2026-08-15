@@ -1215,7 +1215,7 @@ svg._wordmark_10qlb_223 {
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_10vab_17 {
+._appbar_vuzfu_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1227,13 +1227,13 @@ svg._wordmark_10qlb_223 {
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_10vab_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_10vab_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_vuzfu_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_vuzfu_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_10vab_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_10vab_35 {
+._brandTitle_vuzfu_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_vuzfu_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1242,13 +1242,13 @@ svg._wordmark_10qlb_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_10vab_44 { flex: 1; }
-._tools_10vab_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_vuzfu_44 { flex: 1; }
+._tools_vuzfu_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_10vab_50 {
+._btn_vuzfu_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1270,49 +1270,49 @@ svg._wordmark_10qlb_223 {
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_10vab_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_vuzfu_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_10vab_50:disabled { opacity: 0.45; cursor: default; }
+._btn_vuzfu_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_10vab_79 {
+._btnS_vuzfu_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_10vab_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_vuzfu_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_10vab_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_vuzfu_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_10vab_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_10vab_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_10vab_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_vuzfu_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_vuzfu_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_vuzfu_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_10vab_95 {
+._btnPill_vuzfu_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_10vab_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_vuzfu_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_10vab_107 {
+._btnBare_vuzfu_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_10vab_107:hover:not(:disabled), ._btnBare_10vab_107:focus-visible {
+._btnBare_vuzfu_107:hover:not(:disabled), ._btnBare_vuzfu_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
@@ -1324,15 +1324,15 @@ svg._wordmark_10qlb_223 {
    which sat next to a ↩ it had become identical to. Two classes, so it beats
    `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
    where it happens to sit in the file. */
-._btnBare_10vab_107._btnDanger_10vab_91 { color: var(--danger); }
-._btnBare_10vab_107._btnDanger_10vab_91:hover:not(:disabled),
-._btnBare_10vab_107._btnDanger_10vab_91:focus-visible { color: var(--danger); border-color: transparent; }
+._btnBare_vuzfu_107._btnDanger_vuzfu_91 { color: var(--danger); }
+._btnBare_vuzfu_107._btnDanger_vuzfu_91:hover:not(:disabled),
+._btnBare_vuzfu_107._btnDanger_vuzfu_91:focus-visible { color: var(--danger); border-color: transparent; }
 
-._btnActive_10vab_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_vuzfu_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_10vab_107._btnActive_10vab_124 {
+._btnBare_vuzfu_107._btnActive_vuzfu_124 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1342,28 +1342,51 @@ svg._wordmark_10qlb_223 {
 /* The raised rendition of the delete confirmation. Three classes, because
    `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
    `--text` at the exact moment it is asking about a destructive action. */
-._btnBare_10vab_107._btnActive_10vab_124._btnDanger_10vab_91 { color: var(--danger); }
+._btnBare_vuzfu_107._btnActive_vuzfu_124._btnDanger_vuzfu_91 { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_10vab_148:not(:disabled) { animation: _btnPulse_10vab_1 1.6s ease-in-out infinite; }
-@keyframes _btnPulse_10vab_1 {
+._btnAttention_vuzfu_148:not(:disabled) { animation: _btnPulse_vuzfu_1 1.6s ease-in-out infinite; }
+@keyframes _btnPulse_vuzfu_1 {
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_10vab_153 { width: 100%; }
+._btnBlock_vuzfu_153 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_10vab_157 { opacity: 0.72; }
-._btnDim_10vab_157:hover, ._btnDim_10vab_157:focus-visible { opacity: 1; }
+._btnDim_vuzfu_157 { opacity: 0.72; }
+._btnDim_vuzfu_157:hover, ._btnDim_vuzfu_157:focus-visible { opacity: 1; }
 
-._iconGlyph_10vab_160 { font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_vuzfu_160 { font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._preset_10vab_165 { font-family: var(--font-mono); }
+._presetRow_vuzfu_165 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s2);
+}
+
+._preset_vuzfu_165 {
+  min-height: var(--tap);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+._preset_vuzfu_165:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* ── Credit ───────────────────────────────────────────────────────
    The byline link. It inherits everything — colour, face, size, tracking —
@@ -1371,20 +1394,20 @@ svg._wordmark_10qlb_223 {
    surface was already showing and becoming clickable should not make it louder.
    The underline is held back to hover for the same reason: on a slide deck's
    corner and a board's status strip it would read as a fifth rule line. */
-._credit_10vab_173 {
+._credit_vuzfu_196 {
   color: inherit;
   text-decoration: none;
 }
-._credit_10vab_173:hover,
-._credit_10vab_173:focus-visible {
+._credit_vuzfu_196:hover,
+._credit_vuzfu_196:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_10vab_184 { display: contents; }
-._popoverAnchor_10vab_185 { position: relative; display: inline-flex; }
-._tbtn_10vab_186 {
+._popoverGroup_vuzfu_207 { display: contents; }
+._popoverAnchor_vuzfu_208 { position: relative; display: inline-flex; }
+._tbtn_vuzfu_209 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1399,10 +1422,10 @@ svg._wordmark_10qlb_223 {
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_10vab_186:hover { border-color: var(--accent); }
-._tbtnOpen_10vab_202 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_vuzfu_209:hover { border-color: var(--accent); }
+._tbtnOpen_vuzfu_225 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_10vab_184 {
+._popover_vuzfu_207 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1418,11 +1441,11 @@ svg._wordmark_10qlb_223 {
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_10vab_220 { right: auto; left: 0; }
+._popoverLeft_vuzfu_243 { right: auto; left: 0; }
 
 /* Rendered into a host that already is a panel — the dock's drawer. It keeps
    only its padding: the ground, the border and the animation are the host's. */
-._popoverDocked_10vab_224 {
+._popoverDocked_vuzfu_247 {
   position: static;
   min-width: 240px;
   max-height: min(60vh, 420px);
@@ -1433,43 +1456,140 @@ svg._wordmark_10qlb_223 {
 }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_10vab_235 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_10vab_184[hidden] { display: none; }
+._popoverAbove_vuzfu_258 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_vuzfu_207[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_10vab_239 {
+._fieldLabel_vuzfu_262 {
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-weight: 600;
+  letter-spacing: var(--track-label);
+  color: var(--dim);
 }
-._select_10vab_246, ._textInput_10vab_246, ._numberInput_10vab_246 {
+._textInput_vuzfu_269, ._numberInput_vuzfu_269 {
+  min-width: 0;
+  flex: 1;
   min-height: var(--tap);
-  padding: 0 var(--s2);
-  background: var(--bg);
+  padding: 0 var(--s3);
+  background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
+  transition: border-color var(--dur-fast) var(--ease);
 }
-._textInput_10vab_246 { flex: 1; min-width: 0; }
-._numberInput_10vab_246 { width: 5.5rem; font-family: var(--font-mono); }
-._range_10vab_258 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+
+._textInput_vuzfu_269:focus-visible, ._numberInput_vuzfu_269:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+._textInput_vuzfu_269 { flex: 1; min-width: 0; }
+._numberInput_vuzfu_269 { width: 5.5rem; font-family: var(--font-mono); }
+/* Drawn rather than tinted: `accent-color` colours the thumb and leaves a
+   grey groove, so the control shows where the handle is and not what the
+   value is. `--fill` is set by the component from the value itself. */
+._range_vuzfu_292 {
+  width: 100%;
+  height: 20px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+
+._range_vuzfu_292::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 50%),
+    var(--hairline-strong) var(--fill, 50%) 100%
+  );
+}
+
+._range_vuzfu_292::-moz-range-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 50%),
+    var(--hairline-strong) var(--fill, 50%) 100%
+  );
+}
+
+._range_vuzfu_292::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+._range_vuzfu_292::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+/* ── Panel forms ──────────────────────────────────────────────────
+   One grammar for everything that opens out of the notch: fields stacked, a
+   mono label above each control, one full-width action at the foot. The three
+   panels were three layouts — a label beside a select, a bare row of buttons,
+   a row of coloured squares — which is why they read as unrelated. */
+._panelForm_vuzfu_345 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+._field_vuzfu_262 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+  flex: 1;
+}
+
+._inputRow_vuzfu_359 {
+  display: flex;
+  gap: var(--s2);
+}
+
+._inputAction_vuzfu_364 {
+  flex: none;
+}
+
+._panelAction_vuzfu_368 {
+  width: 100%;
+  justify-content: center;
+}
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_10vab_261 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_10vab_262 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_10vab_263 {
-  min-width: var(--tap);
-  min-height: var(--tap);
+._musicHead_vuzfu_374 { display: flex; align-items: flex-end; gap: var(--s3); }
+._musicPlay_vuzfu_375 {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
   border-radius: var(--r-pill);
   background: var(--accent);
   color: var(--ink);
   border: none;
   cursor: pointer;
-  font-size: var(--fs-m);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+._musicPlay_vuzfu_375:hover {
+  transform: scale(1.06);
 }
 /* Silent, it occupies nothing; starting the music unfolds it from the left.
    Width is animated as well as opacity so the dock closes up behind it rather
@@ -1477,12 +1597,12 @@ svg._wordmark_10qlb_223 {
 /* A dock stood on end has no room for a word beside the glyph. Keyed on the
    attribute, not the class, because the dock's class is hashed into another
    module. */
-[data-edge='left'] ._iconLabel_10vab_279,
-[data-edge='right'] ._iconLabel_10vab_279 {
+[data-edge='left'] ._iconLabel_vuzfu_399,
+[data-edge='right'] ._iconLabel_vuzfu_399 {
   display: none;
 }
 
-._viz_10vab_284 {
+._viz_vuzfu_404 {
   flex: none;
   width: 0;
   height: 22px;
@@ -1495,16 +1615,14 @@ svg._wordmark_10qlb_223 {
     transform var(--dur-base) var(--ease);
 }
 
-._vizOn_10vab_297 {
+._vizOn_vuzfu_417 {
   width: 34px;
   opacity: 1;
   transform: none;
 }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_10vab_304 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_10vab_305 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_10vab_306 {
+._timerReadout_vuzfu_424 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1514,9 +1632,9 @@ svg._wordmark_10qlb_223 {
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_10vab_316 { color: var(--danger); }
+._timerDone_vuzfu_434 { color: var(--danger); }
 
-._confetti_10vab_318 {
+._confetti_vuzfu_436 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1525,45 +1643,66 @@ svg._wordmark_10qlb_223 {
   z-index: var(--z-confetti);
 }
 
-/* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_10vab_328 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_10vab_329 { display: flex; gap: var(--s2); }
-._swatch_10vab_329 {
-  position: relative;
-  width: var(--tap);
-  height: var(--tap);
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  padding: 0;
+/* ── Themes ───────────────────────────────────────────────────────
+   A theme is a ground and an accent, so a swatch shows both — and its own
+   name, because "the dark blue one" is not how anyone asks for Solarized. */
+._swatches_vuzfu_448 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: var(--s2);
 }
-._swatchOn_10vab_339 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_10vab_340 {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+
+._swatch_vuzfu_448 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-s);
+  border: 1px solid var(--hairline-strong);
+  /* Both come from the component, per theme — with fallbacks, which is how
+     a property set from TypeScript is depended on here. */
+  background: var(--swatch-bg, var(--panel));
+  color: var(--swatch-accent, var(--accent));
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+._swatch_vuzfu_448:hover {
+  transform: translateY(-1px);
+}
+
+._swatchOn_vuzfu_476 {
+  border-color: var(--swatch-accent, var(--accent));
+  box-shadow: 0 0 0 1px var(--swatch-accent, var(--accent));
+}
+
+._swatchName_vuzfu_481 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_10vab_350 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_10vab_351 { display: inline-flex; align-items: center; }
-._stacked_10vab_352 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_10vab_352:first-child { margin-left: 0; }
-._presenceMore_10vab_354 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_10vab_355 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_vuzfu_489 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_vuzfu_490 { display: inline-flex; align-items: center; }
+._stacked_vuzfu_491 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_vuzfu_491:first-child { margin-left: 0; }
+._presenceMore_vuzfu_493 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_vuzfu_494 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_10vab_357 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_10vab_358 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_10vab_359 { flex: 1; }
-._rosterYou_10vab_360 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_10vab_361 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_vuzfu_496 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_vuzfu_497 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_vuzfu_498 { flex: 1; }
+._rosterYou_vuzfu_499 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_vuzfu_500 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_10vab_364 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_10vab_365 {
+._avatarGrid_vuzfu_503 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_vuzfu_504 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1573,11 +1712,11 @@ svg._wordmark_10qlb_223 {
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_10vab_375 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_vuzfu_514 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_10vab_378 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
-._qr_10vab_379 {
+._invite_vuzfu_517 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
+._qr_vuzfu_518 {
   width: 280px;
   height: 280px;
   max-width: 100%;
@@ -1586,18 +1725,18 @@ svg._wordmark_10qlb_223 {
   background: var(--paper);
   padding: var(--s3);
 }
-._inviteCode_10vab_388 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_10vab_389 {
+._inviteCode_vuzfu_527 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_vuzfu_528 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_10vab_396 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_vuzfu_535 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_10vab_399 {
+._copyField_vuzfu_538 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1611,7 +1750,7 @@ svg._wordmark_10qlb_223 {
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_10vab_413 {
+._copyValue_vuzfu_552 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1619,10 +1758,10 @@ svg._wordmark_10qlb_223 {
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_10vab_421 { flex: none; }
+._copyBtn_vuzfu_560 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_10vab_424 {
+._toast_vuzfu_563 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1640,7 +1779,7 @@ svg._wordmark_10qlb_223 {
 /* `dialog.modal`, not `.modal`: the element qualifier outranks the global
    `* { margin: 0 }` reset and every `.x > * + *` stacking rule, both of which
    override the UA `margin: auto` that centres an open dialog. */
-dialog._modal_10vab_439 {
+dialog._modal_vuzfu_578 {
   margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
@@ -1650,36 +1789,36 @@ dialog._modal_10vab_439 {
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_10vab_439::backdrop {
+._modal_vuzfu_578::backdrop {
   background: rgb(0 0 0 / 55%);
-  animation: _modalVeil_10vab_1 var(--dur-base) var(--ease) both;
+  animation: _modalVeil_vuzfu_1 var(--dur-base) var(--ease) both;
 }
 
 /* Opening only. A `<dialog>` is removed from the box tree the moment it closes,
    so an exit keyframe never gets a frame to run in. */
-._modal_10vab_439[open] {
-  animation: _modalIn_10vab_1 var(--dur-base) var(--ease) both;
+._modal_vuzfu_578[open] {
+  animation: _modalIn_vuzfu_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _modalIn_10vab_1 {
+@keyframes _modalIn_vuzfu_1 {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
 
-@keyframes _modalVeil_10vab_1 {
+@keyframes _modalVeil_vuzfu_1 {
   from {
     opacity: 0;
   }
 }
-._modalBody_10vab_475 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_10vab_476 { font-size: var(--fs-l); margin: 0; }
-._modalActions_10vab_477 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modalBody_vuzfu_614 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_vuzfu_615 { font-size: var(--fs-l); margin: 0; }
+._modalActions_vuzfu_616 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_10vab_481 {
+._srOnly_vuzfu_620 {
   position: absolute;
   width: 1px;
   height: 1px;

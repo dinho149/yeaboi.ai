@@ -1370,6 +1370,13 @@
   color: var(--warn);
 }
 
+/* No robot, no panel: the model said nothing, so this is a note about that. */
+.aiFallback {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}
+
 .deckReason {
   display: inline-flex;
   align-items: center;

@@ -79,39 +79,46 @@ export function TimerControls({
   };
 
   return (
-    <div className={cx(styles['timerPanel'], className)}>
-      <div className={styles['presetRow']}>
-        {presets.map((seconds) => (
-          <Button key={seconds} className={styles['preset']} onClick={() => onStart(seconds)}>
-            {seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`}
-          </Button>
-        ))}
+    <div className={cx(styles['panelForm'], className)}>
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>Length</span>
+        <div className={styles['presetRow']} role="group" aria-label="Preset lengths">
+          {presets.map((seconds) => (
+            <button key={seconds} type="button" className={styles['preset']} onClick={() => onStart(seconds)}>
+              {seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className={styles['musicRow']}>
-        <input
-          type="number"
-          min="1"
-          max="120"
-          inputMode="numeric"
-          className={styles['numberInput']}
-          placeholder="min"
-          aria-label="Custom length in minutes"
-          value={custom}
-          onInput={(event) => setCustom((event.target as HTMLInputElement).value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') startCustom();
-          }}
-        />
-        <Button className={styles['preset']} onClick={startCustom}>
-          Start
-        </Button>
-        {running ? (
-          <Button className={styles['preset']} onClick={onStop}>
-            Stop
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>Or a number of minutes</span>
+        <div className={styles['inputRow']}>
+          <input
+            type="number"
+            min="1"
+            max="120"
+            inputMode="numeric"
+            className={styles['numberInput']}
+            placeholder="10"
+            aria-label="Custom length in minutes"
+            value={custom}
+            onInput={(event) => setCustom((event.target as HTMLInputElement).value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') startCustom();
+            }}
+          />
+          <Button tone="primary" className={styles['inputAction']} onClick={startCustom}>
+            Start
           </Button>
-        ) : null}
+        </div>
       </div>
+
+      {running ? (
+        <Button className={styles['panelAction']} onClick={onStop}>
+          Stop the timer
+        </Button>
+      ) : null}
     </div>
   );
 }

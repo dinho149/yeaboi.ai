@@ -91,6 +91,15 @@ function AiNote({ ai }: { ai: AiPerspective }) {
     );
   }
   if (!ai.note) return null;
+  // A fallback is the vote median in a sentence, and the decision row already
+  // shows the median — so what is worth saying is why there is no perspective.
+  if (!ai.from_llm) {
+    return (
+      <p className={styles['aiFallback']} role="status">
+        {ai.note}
+      </p>
+    );
+  }
 
   return (
     <div className={styles['ainote']}>

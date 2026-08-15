@@ -999,3 +999,41 @@ class TestGetLlmAnthropicSubscription:
         headers = self._headers(get_llm())
         assert headers.get("x-api-key") == "test-key-123"
         assert headers.get("authorization") is None
+
+    def test_the_system_prompt_identifies_as_claude_code(self, monkeypatch):
+        """Without this the API refuses the token — with a 429 whose body is
+        literally `"Error"` and which carries no rate-limit headers, so it reads
+        as a rate limit and is not one."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from yeaboi.agent.llm import CLAUDE_CODE_SYSTEM
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        payload = get_llm()._get_request_payload([SystemMessage("Be terse."), HumanMessage("hi")])
+        # Prepended, not replaced: the caller's own prompt still gets asked.
+        assert payload["system"] == [
+            {"type": "text", "text": CLAUDE_CODE_SYSTEM},
+            {"type": "text", "text": "Be terse."},
+        ]
+
+    def test_it_is_there_when_the_caller_sent_no_system_prompt(self, monkeypatch):
+        from langchain_core.messages import HumanMessage
+
+        from yeaboi.agent.llm import CLAUDE_CODE_SYSTEM
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        payload = get_llm()._get_request_payload([HumanMessage("hi")])
+        assert payload["system"] == [{"type": "text", "text": CLAUDE_CODE_SYSTEM}]
+
+    def test_key_auth_sends_the_callers_system_prompt_alone(self, monkeypatch):
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-123")
+        payload = get_llm()._get_request_payload([SystemMessage("Be terse."), HumanMessage("hi")])
+        assert payload["system"] == "Be terse."

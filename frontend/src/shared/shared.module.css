@@ -162,7 +162,30 @@
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-.preset { font-family: var(--font-mono); }
+.presetRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s2);
+}
+
+.preset {
+  min-height: var(--tap);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.preset:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* ── Credit ───────────────────────────────────────────────────────
    The byline link. It inherits everything — colour, face, size, tracking —
@@ -237,38 +260,135 @@
 
 /* ── Form controls ────────────────────────────────────────────── */
 .fieldLabel {
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-weight: 600;
+  letter-spacing: var(--track-label);
+  color: var(--dim);
 }
-.select, .textInput, .numberInput {
+.textInput, .numberInput {
+  min-width: 0;
+  flex: 1;
   min-height: var(--tap);
-  padding: 0 var(--s2);
-  background: var(--bg);
+  padding: 0 var(--s3);
+  background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.textInput:focus-visible, .numberInput:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 .textInput { flex: 1; min-width: 0; }
 .numberInput { width: 5.5rem; font-family: var(--font-mono); }
-.range { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+/* Drawn rather than tinted: `accent-color` colours the thumb and leaves a
+   grey groove, so the control shows where the handle is and not what the
+   value is. `--fill` is set by the component from the value itself. */
+.range {
+  width: 100%;
+  height: 20px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 50%),
+    var(--hairline-strong) var(--fill, 50%) 100%
+  );
+}
+
+.range::-moz-range-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 50%),
+    var(--hairline-strong) var(--fill, 50%) 100%
+  );
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+.range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+/* ── Panel forms ──────────────────────────────────────────────────
+   One grammar for everything that opens out of the notch: fields stacked, a
+   mono label above each control, one full-width action at the foot. The three
+   panels were three layouts — a label beside a select, a bare row of buttons,
+   a row of coloured squares — which is why they read as unrelated. */
+.panelForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+  flex: 1;
+}
+
+.inputRow {
+  display: flex;
+  gap: var(--s2);
+}
+
+.inputAction {
+  flex: none;
+}
+
+.panelAction {
+  width: 100%;
+  justify-content: center;
+}
 
 /* ── Music ────────────────────────────────────────────────────── */
-.musicPanel { display: flex; flex-direction: column; gap: var(--s3); }
-.musicRow { display: flex; align-items: center; gap: var(--s2); }
+.musicHead { display: flex; align-items: flex-end; gap: var(--s3); }
 .musicPlay {
-  min-width: var(--tap);
-  min-height: var(--tap);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
   border-radius: var(--r-pill);
   background: var(--accent);
   color: var(--ink);
   border: none;
   cursor: pointer;
-  font-size: var(--fs-m);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.musicPlay:hover {
+  transform: scale(1.06);
 }
 /* Silent, it occupies nothing; starting the music unfolds it from the left.
    Width is animated as well as opacity so the dock closes up behind it rather
@@ -301,8 +421,6 @@
 }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-.timerPanel { display: flex; flex-direction: column; gap: var(--s3); }
-.presetRow { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .timerReadout {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -324,26 +442,47 @@
   z-index: var(--z-confetti);
 }
 
-/* ── Themes ───────────────────────────────────────────────────── */
-.themeSwitcher { display: flex; flex-direction: column; gap: var(--s3); }
-.swatches { display: flex; gap: var(--s2); }
-.swatch {
-  position: relative;
-  width: var(--tap);
-  height: var(--tap);
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  padding: 0;
+/* ── Themes ───────────────────────────────────────────────────────
+   A theme is a ground and an accent, so a swatch shows both — and its own
+   name, because "the dark blue one" is not how anyone asks for Solarized. */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: var(--s2);
 }
-.swatchOn { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-.swatchDot {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+
+.swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-s);
+  border: 1px solid var(--hairline-strong);
+  /* Both come from the component, per theme — with fallbacks, which is how
+     a property set from TypeScript is depended on here. */
+  background: var(--swatch-bg, var(--panel));
+  color: var(--swatch-accent, var(--accent));
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.swatch:hover {
+  transform: translateY(-1px);
+}
+
+.swatchOn {
+  border-color: var(--swatch-accent, var(--accent));
+  box-shadow: 0 0 0 1px var(--swatch-accent, var(--accent));
+}
+
+.swatchName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */

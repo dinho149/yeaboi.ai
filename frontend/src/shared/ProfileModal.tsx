@@ -77,7 +77,7 @@ export function ProfileModal({
         </Button>
       }
     >
-      <div className={styles['musicRow']}>
+      <div className={styles['inputRow']}>
         <input
           className={styles['textInput']}
           value={draftName}
@@ -90,7 +90,7 @@ export function ProfileModal({
           }}
         />
         <Button
-          className={styles['preset']}
+          className={styles['inputAction']}
           aria-label="Suggest a random name"
           title="Suggest a random name"
           onClick={() => setDraftName(randomName(adjectives, nouns))}

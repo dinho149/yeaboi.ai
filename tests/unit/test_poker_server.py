@@ -484,6 +484,35 @@ class TestAiEndpoint:
             _admin_post(srv, "/api/admin/ai", {})
         assert exc.value.code == 400
 
+    def test_a_fallback_lands_only_its_reason(self, running_server, monkeypatch):
+        """A fallback note restates the median, which the decision row already
+        shows — so the board carries why there is no perspective, and nothing
+        that would render as one."""
+        srv, b = running_server
+
+        def _fallback(ticket, votes, **kwargs):
+            return {
+                "note": "Votes span 3-8; the median lands on 5.",
+                "suggested_points": 5.0,
+                "confidence": "",
+                "evidence": [],
+                "llm_mode": "fallback",
+                "warnings": ["AI is rate limited right now — try again shortly."],
+            }
+
+        monkeypatch.setattr("yeaboi.poker.engine.get_poker_perspective", _fallback)
+        _post(srv, "/api/vote", {"pid": "p1", "value": "5"})
+        _admin_post(srv, "/api/admin/reveal", {})
+        _admin_post(srv, "/api/admin/ai", {})
+        for _ in range(50):
+            ai = b.state_snapshot()["ai"]
+            if ai["note"]:
+                break
+            time.sleep(0.05)
+        assert ai["from_llm"] is False
+        assert ai["note"] == "AI is rate limited right now — try again shortly."
+        assert ai["suggested"] is None
+
     def test_spawns_worker_and_note_lands(self, running_server, monkeypatch):
         srv, b = running_server
         seen = {}
@@ -516,6 +545,7 @@ class TestAiEndpoint:
             "suggested": 5.0,
             "confidence": "high",
             "evidence": ["5-pt stories avg 4.2 days"],
+            "from_llm": True,
         }
         # The worker scopes the cross-mode history gather to this session's project.
         assert seen["project_name"] == b.project_name

@@ -261,6 +261,8 @@ export interface PokerVote {
 /** The AI's read on the current ticket. `pending` is what guards double-clicks. */
 export interface AiPerspective {
   pending: boolean;
+  /** False when the engine fell back — then `note` is only the reason why. */
+  from_llm: boolean;
   note: string;
   suggested: number | null;
   confidence: string;

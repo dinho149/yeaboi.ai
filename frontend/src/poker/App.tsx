@@ -521,7 +521,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             distribution={snapshot?.distribution ?? {}}
             median={snapshot?.median ?? null}
             suggestion={snapshot?.suggestion ?? null}
-            ai={snapshot?.ai ?? { pending: false, note: '', suggested: null, confidence: '', evidence: [] }}
+            ai={snapshot?.ai ?? { pending: false, from_llm: false, note: '', suggested: null, confidence: '', evidence: [] }}
             revealed={revealed}
           />
 

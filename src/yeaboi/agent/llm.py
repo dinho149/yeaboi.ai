@@ -276,6 +276,36 @@ def get_analysis_fast_model() -> str | None:
     return _ANALYSIS_FAST_MODELS.get(get_llm_provider())
 
 
+# The first system block a Claude subscription token is accepted with.
+#
+# A request carrying an OAuth bearer whose system prompt does not identify as
+# Claude Code is refused — with a 429 whose body is literally `"Error"`, and no
+# rate-limit headers, so it reads as a rate limit and is not one.
+CLAUDE_CODE_SYSTEM = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def _subscription_chat_anthropic(base):
+    """A ChatAnthropic that prepends the Claude Code system block to every call.
+
+    Prepends rather than replaces: the caller's own system prompt follows it as
+    a second block, so prompts are unchanged in what they ask for.
+    """
+
+    class SubscriptionChatAnthropic(base):  # type: ignore[valid-type,misc]
+        def _get_request_payload(self, input_, *, stop=None, **kwargs):
+            payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+            blocks: list[dict] = [{"type": "text", "text": CLAUDE_CODE_SYSTEM}]
+            system = payload.get("system")
+            if isinstance(system, str) and system.strip():
+                blocks.append({"type": "text", "text": system})
+            elif isinstance(system, list):
+                blocks.extend(system)
+            payload["system"] = blocks
+            return payload
+
+    return SubscriptionChatAnthropic
+
+
 def get_llm(
     model: str | None = None,
     temperature: float = 0.0,
@@ -349,7 +379,8 @@ def get_llm(
         # `auth_headers` merges key and bearer auth, so clearing `api_key` leaves
         # the bearer alone on the request.
         subscription = get_anthropic_subscription_token()
-        llm = ChatAnthropic(
+        model_class = _subscription_chat_anthropic(ChatAnthropic) if subscription else ChatAnthropic
+        llm = model_class(
             model=resolved_model,
             api_key="unused-see-bearer" if subscription else get_anthropic_api_key(),
             default_headers={"anthropic-beta": "oauth-2025-04-20"} if subscription else None,

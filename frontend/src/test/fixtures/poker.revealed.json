@@ -4,6 +4,7 @@
     "evidence": [
       "No SDK yet."
     ],
+    "from_llm": false,
     "note": "Two calls to an unfamiliar API.",
     "pending": false,
     "suggested": 5.0

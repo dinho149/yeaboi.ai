@@ -110,7 +110,7 @@ _DUEL_TURN_MAX = 600
 
 def _ai_idle() -> dict:
     """The AI-perspective state between rounds — one definition for every reset site."""
-    return {"pending": False, "note": "", "suggested": None, "confidence": "", "evidence": ()}
+    return {"pending": False, "note": "", "suggested": None, "confidence": "", "evidence": (), "from_llm": False}
 
 
 def _now_iso() -> str:
@@ -595,6 +595,7 @@ class PokerBoard:
         *,
         confidence: str = "",
         evidence: tuple[str, ...] = (),
+        from_llm: bool = False,
     ) -> None:
         """Land the AI's take (worker thread) — every client sees it next poll.
 
@@ -603,6 +604,10 @@ class PokerBoard:
         (calibration stats, delivered ticket keys, …). Both come from the
         engine already validated, but the board re-checks — it is the trust
         boundary for everything that goes on the wire.
+
+        ``from_llm`` is false when the engine fell back, and the board says so
+        rather than leaving the reader to guess: a deterministic note is the
+        median restated, which the decision row already shows.
         """
         if confidence not in _AI_CONFIDENCE_LEVELS:
             confidence = ""
@@ -615,6 +620,7 @@ class PokerBoard:
                 "suggested": suggested,
                 "confidence": confidence,
                 "evidence": clean_evidence,
+                "from_llm": bool(from_llm),
             }
             self._revision += 1
         logger.info(
