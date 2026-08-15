@@ -57,7 +57,12 @@
   padding: var(--s4);
   padding-left: max(var(--s4), env(safe-area-inset-left));
   padding-right: max(var(--s4), env(safe-area-inset-right));
-  align-items: start;
+  /* Stretch, not start. Three columns that size to their own content are three
+     cards floating in a screen-sized box, which is what made the board read as
+     islands rather than one application. Each column now runs the full height
+     and scrolls inside itself. */
+  align-items: stretch;
+  min-height: 0;
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
@@ -88,10 +93,7 @@
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
 .rail {
-  position: sticky;
-  top: var(--s3);
-  /* dvh, not vh — see the header note. */
-  max-height: calc(100dvh - var(--s6) * 2);
+  min-height: 0;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -966,9 +968,7 @@
 /* ── Host console ────────────────────────────────────────────────────── */
 
 .console {
-  position: sticky;
-  top: var(--s3);
-  max-height: calc(100dvh - var(--s6) * 2);
+  min-height: 0;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -996,7 +996,7 @@
 .cbody {
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
+  gap: var(--s5);
 }
 
 .cgroup {
@@ -1012,7 +1012,10 @@
   gap: var(--s2);
 }
 
-.duelSlot {
+/* Only reserves height once there is something to put in it — an empty slot
+   was holding a tap target's worth of nothing open in the middle of the
+   console. */
+.duelSlot:not(:empty) {
   min-height: var(--tap);
 }
 
