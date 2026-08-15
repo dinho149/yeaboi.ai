@@ -20,7 +20,7 @@
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is one screen: masthead strip, sticky bar, board, credit.
+   A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
 .shellApp {
   max-width: none;
@@ -29,7 +29,12 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+  border: var(--screen-frame-w) solid var(--screen-frame);
+  border-radius: var(--screen-radius);
   background: var(--bg);
+  /* Fills the four slivers the rounded corners leave uncovered. */
+  box-shadow: 0 0 0 50vmax var(--screen-void);
+  /* Clips the children to the curve. */
   overflow: hidden;
 }
 
@@ -107,8 +112,8 @@
   padding: var(--s2) var(--s1);
 }
 
-/* Square on a side wall: the lift is a bottom-border idea, and curves stuck to
-   a vertical strip read as loose rather than lifted. */
+/* Square on a side wall: the lift is a bottom-border idea, and the fillets
+   that sell it there read as loose curves stuck to a vertical strip. */
 .dockApp[data-edge='left'] {
   border-left: none;
   border-radius: 0;
@@ -117,6 +122,13 @@
 .dockApp[data-edge='right'] {
   border-right: none;
   border-radius: 0;
+}
+
+.dockApp[data-edge='left']::before,
+.dockApp[data-edge='left']::after,
+.dockApp[data-edge='right']::before,
+.dockApp[data-edge='right']::after {
+  display: none;
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
@@ -253,9 +265,54 @@
   border-color: transparent;
 }
 
+/*
+ * The inside corners where the dock's raised edge rejoins the frame's line.
+ *
+ * `border-radius` only draws convex corners, so each fillet is a separate
+ * square carrying a radial ring. A concave arc bulges toward the corner, so its
+ * OUTER radius is tangent to the inner edge of the two lines it joins; centre
+ * the ring on the box edge instead and the stroke runs parallel to the dock's
+ * border rather than continuing it. Offsets are against the *padding* box,
+ * which is what puts the centre one border-width inside the edge.
+ */
+.dockApp::before,
+.dockApp::after {
+  content: '';
+  position: absolute;
+  width: var(--lift);
+  height: var(--lift);
+  pointer-events: none;
+}
+
+.dockApp[data-edge='bottom']::before {
+  bottom: 0;
+  left: calc(var(--lift) * -1);
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
+    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
+    var(--bg) var(--lift)
+  );
+}
+
+.dockApp[data-edge='bottom']::after {
+  bottom: 0;
+  left: 100%;
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
+    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
+    var(--bg) var(--lift)
+  );
+}
+
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
+  [data-host='true'] .dockApp::before,
+  [data-host='true'] .dockApp::after {
+    display: none;
+  }
   [data-host='true'] .dockApp {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
