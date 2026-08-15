@@ -7,16 +7,23 @@
  * recognisable as the same product the host is running in their terminal, and
  * it is the one display treatment nothing else on the web has.
  *
- * It costs no bytes. There is no webfont: the glyphs are literal characters in
- * the shipped HTML, so they are selectable, searchable, translatable by the
- * browser's find-in-page, and they scale with the type scale rather than with a
- * raster asset. The table comes from `types/enums.ts`, generated out of
- * `ui/shared/_ascii_font.py` — see `scripts/gen_web_types.py`.
+ * It costs no bytes: there is no webfont, only the glyph table from
+ * `types/enums.ts`, generated out of `ui/shared/_ascii_font.py` — see
+ * `scripts/gen_web_types.py`.
  *
- * Two things are load-bearing in the CSS (`.wordmark` in primitives.module.css)
- * and will silently ruin it if changed: the font must be monospace, and
- * `letter-spacing` must be zero. The glyphs are drawn as a grid of cells, so any
- * tracking at all opens hairline gaps straight through the middle of a letter.
+ * ## Drawn, not typeset
+ *
+ * The compact face is emitted as one SVG path of merged rectangles. Set as
+ * text it cannot be made solid: a `<pre>` renders one glyph per cell and the
+ * seam between two cells is a rounding artefact, so every letter came out with
+ * hairline splits through it that no tracking setting removes. Merging the
+ * runs closes them by construction, and the word still scales with the type
+ * scale because the height is in `em`.
+ *
+ * The cost is that the glyphs are no longer literal characters, so they are
+ * not selectable or reachable by find-in-page; `aria-label` carries the word.
+ * The six-row `shadow` face is still typeset — it is used at sizes where the
+ * seams do not read.
  */
 
 import { cx } from '../../runtime/cx';
@@ -233,6 +240,48 @@ function tintShadows(row: string, keyPrefix: string) {
   );
 }
 
+/**
+ * The block face as a pixel grid.
+ *
+ * Each text row holds half-block characters, so one row is two pixel rows:
+ * `█` fills both, `▀` the upper, `▄` the lower, and a space or shade neither.
+ * Drawing it as merged rectangles rather than as text is what closes the
+ * hairlines — a `<pre>` renders one glyph per cell, and the seam between two
+ * cells is a rounding artefact no tracking can remove.
+ */
+function blockBitmap(rows: readonly string[]): boolean[][] {
+  const width = Math.max(...rows.map((row) => row.length), 0);
+  const grid: boolean[][] = [];
+  for (const row of rows) {
+    const upper: boolean[] = [];
+    const lower: boolean[] = [];
+    for (let x = 0; x < width; x += 1) {
+      const ch = row[x] ?? ' ';
+      upper.push(ch === '\u2588' || ch === '\u2580');
+      lower.push(ch === '\u2588' || ch === '\u2584');
+    }
+    grid.push(upper, lower);
+  }
+  return grid;
+}
+
+/** Horizontal runs of filled pixels, as one path. Adjacent runs share an edge. */
+function bitmapPath(grid: readonly boolean[][]): string {
+  let d = '';
+  grid.forEach((row, y) => {
+    let start = -1;
+    for (let x = 0; x <= row.length; x += 1) {
+      const on = row[x] === true;
+      if (on && start < 0) start = x;
+      if (!on && start >= 0) {
+        d += `M${start} ${y}h${x - start}v1h${start - x}z`;
+        start = -1;
+      }
+    }
+  });
+  return d;
+}
+
 export function Wordmark({ text, variant = 'block', label, size, className }: WordmarkProps) {
   // A shadow word that has no setting falls back rather than disappearing. The
   // known callers all pass words the face covers (there is a Python test listing
@@ -270,17 +319,21 @@ export function Wordmark({ text, variant = 'block', label, size, className }: Wo
     );
   }
 
-  const [top, bottom] = renderWordmark(text);
+  const rows = renderWordmark(text).map(blankShades);
+  const grid = blockBitmap(rows);
+  const width = grid[0]?.length ?? 1;
+  const height = grid.length;
   return (
-    <pre
+    <svg
       className={cx(styles['wordmark'], className)}
       style={size ? { fontSize: size } : undefined}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMinYMid meet"
+      shapeRendering="crispEdges"
       role="img"
       aria-label={label ?? text}
     >
-      {blankShades(top)}
-      {'\n'}
-      {blankShades(bottom)}
-    </pre>
+      <path fill="currentColor" d={bitmapPath(grid)} />
+    </svg>
   );
 }

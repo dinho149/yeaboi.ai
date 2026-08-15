@@ -218,6 +218,15 @@
    `font-family` must resolve to a monospace with full block-drawing coverage
    (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
    rather than a face keeps that true if the stack changes. */
+/* The block face is drawn, not typeset — sized off the same font-size so it
+   still scales with the type scale. Four pixel rows, two rows of type. */
+svg.wordmark {
+  display: block;
+  width: auto;
+  height: 2em;
+  overflow: visible;
+}
+
 .wordmark {
   font-family: var(--font-mono);
   font-size: var(--fs-l);

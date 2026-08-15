@@ -100,8 +100,12 @@ describe('<Wordmark variant="shadow">', () => {
     // An export picking a wordmark with a digit in it must degrade to the small
     // face, not to a blank masthead.
     const { container } = render(<Wordmark text="sprint 42" variant="shadow" />);
-    const rows = container.querySelector('pre')?.textContent?.split('\n') ?? [];
-    expect(rows).toHaveLength(2);
+    // The compact face is drawn rather than typeset, so what proves the
+    // fallback is an svg carrying the word — not a `<pre>` of six rows.
+    expect(container.querySelector('pre')).toBeNull();
+    const svg = container.querySelector('svg');
+    expect(svg?.getAttribute('aria-label')).toBe('sprint 42');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toBeTruthy();
   });
 
   it('wraps itself in a query container so the size can be derived', () => {
