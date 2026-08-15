@@ -191,12 +191,14 @@ export function Popover({
     // with Escape drops keyboard focus back to the document body.
     buttonRef.current?.focus();
     // A docked panel is what gives its host a height, so removing it on the
-    // same frame leaves nothing to animate — it stays for the collapse.
-    if (!host) return;
+    // same frame leaves nothing to animate — it stays for the collapse. Not
+    // when another panel in the group just opened, though: the host is not
+    // collapsing, and holding this one shows the old contents under the new.
+    if (!host || group?.openId) return;
     setClosing(true);
     const timer = setTimeout(() => setClosing(false), CLOSE_MS);
     return () => clearTimeout(timer);
-  }, [open, host]);
+  }, [open, host, group?.openId]);
 
   const onToggle = (): void => {
     if (group) group.toggle(id);

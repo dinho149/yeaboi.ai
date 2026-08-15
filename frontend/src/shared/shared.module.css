@@ -390,6 +390,17 @@
 .musicPlay:hover {
   transform: scale(1.06);
 }
+
+/* Waiting on the stream. Suppressed by the global reduced-motion guard. */
+.musicPlayBusy {
+  animation: musicWait 1.1s ease-in-out infinite;
+}
+
+@keyframes musicWait {
+  50% {
+    opacity: 0.55;
+  }
+}
 /* Silent, it occupies nothing; starting the music unfolds it from the left.
    Width is animated as well as opacity so the dock closes up behind it rather
    than holding an empty slot. */

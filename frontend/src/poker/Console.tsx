@@ -47,7 +47,6 @@ export interface ConsoleProps {
   onNextTurn(): void;
   onCloseDuel(): void;
   onFinalize(points: number): void;
-  onGoto(index: number): void;
   /** A refusal from the server, or a local validation message. */
   notice: string;
 }
@@ -68,10 +67,9 @@ export function Console({
   onNextTurn,
   onCloseDuel,
   onFinalize,
-  onGoto,
   notice,
 }: ConsoleProps) {
-  const { phase, duel, ai, ticket, ticket_index: index, ticket_count: count } = state;
+  const { phase, duel, ai, ticket, ticket_index: index } = state;
   const revealed = phase === 'revealed';
   const dueling = phase === 'duel';
   const transcribing = duel?.status === 'transcribing';
@@ -257,25 +255,6 @@ export function Console({
         </div>
 
         <div className={styles['cgroup']}>
-          <Eyebrow>Navigate</Eyebrow>
-          <div className={styles['navrow']}>
-            <Button
-              aria-label="Previous ticket"
-              disabled={!hasTicket || dueling || index <= 0}
-              onClick={() => onGoto(index - 1)}
-            >
-              ‹
-            </Button>
-            <span className={styles['cpos']}>{hasTicket ? `${index + 1} / ${count}` : '– / –'}</span>
-            <Button
-              aria-label="Next ticket"
-              disabled={!hasTicket || dueling || index >= count - 1}
-              onClick={() => onGoto(index + 1)}
-            >
-              ›
-            </Button>
-          </div>
-
           {/* Tracker write failures live here rather than in a toast: they are
               the kind of thing a host needs to still be able to read after they
               have finished the ticket that caused them. */}

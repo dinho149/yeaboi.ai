@@ -305,6 +305,21 @@
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
+/* The pager sits at the end of the key row, hard right. */
+.tknav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-left: auto;
+}
+
+.tkpos {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
 .tkSummary {
   margin: 0;
   font-size: var(--fs-display);

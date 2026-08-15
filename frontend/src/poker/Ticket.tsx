@@ -40,6 +40,8 @@ interface BodyProps {
   tag: React.ReactNode;
   /** Host-only, and absent on a preview: editing applies to the live ticket. */
   onEdit?: (() => void) | undefined;
+  /** Host-only: the prev/next pager, rendered at the end of the key row. */
+  nav?: React.ReactNode;
 }
 
 /** The values seen across the board's own tickets — see `ticketOptions`. */
@@ -293,7 +295,7 @@ function Prop({ label, value, tone }: { label: string; value?: string | null; to
   );
 }
 
-function TicketBody({ ticket, tag, onEdit }: BodyProps) {
+function TicketBody({ ticket, tag, onEdit, nav }: BodyProps) {
   const href = safeUrl(ticket.url);
   return (
     <>
@@ -313,6 +315,7 @@ function TicketBody({ ticket, tag, onEdit }: BodyProps) {
             <Icon name="pencil" size={12} /> Edit
           </Button>
         ) : null}
+        {nav}
       </div>
 
       <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
@@ -364,6 +367,8 @@ export interface TicketPanelProps {
   onBackToLive(): void;
   /** Host only: move the whole room to the ticket being previewed. */
   onGotoPeek(): void;
+  /** Host only: step the room to another ticket. */
+  onGoto(index: number): void;
 }
 
 export function TicketPanel({
@@ -382,6 +387,7 @@ export function TicketPanel({
   onCancelEdit,
   onBackToLive,
   onGotoPeek,
+  onGoto,
 }: TicketPanelProps) {
   if (peekIndex !== null) {
     return (
@@ -436,12 +442,35 @@ export function TicketPanel({
       </span>
     );
 
+  // Where the room is, beside what the room is looking at — the console is for
+  // the round, and which ticket is up is not part of a round.
+  const nav =
+    isHost && count > 1 ? (
+      <span className={styles['tknav']}>
+        <Button size="s" shape="bare" aria-label="Previous ticket" disabled={index <= 0} onClick={() => onGoto(index - 1)}>
+          <Icon name="chevron-left" size={14} />
+        </Button>
+        <span className={styles['tkpos']}>
+          {index + 1} / {count}
+        </span>
+        <Button
+          size="s"
+          shape="bare"
+          aria-label="Next ticket"
+          disabled={index >= count - 1}
+          onClick={() => onGoto(index + 1)}
+        >
+          <Icon name="chevron-right" size={14} />
+        </Button>
+      </span>
+    ) : null;
+
   return (
     <section className={styles['ticket']} aria-label="Ticket">
       {editing ? (
         <TicketForm ticket={ticket} options={options} onSave={onSaveEdit} onCancel={onCancelEdit} />
       ) : (
-        <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />
+        <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} nav={nav} />
       )}
     </section>
   );

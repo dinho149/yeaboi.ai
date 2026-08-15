@@ -49,6 +49,7 @@ const noop = (): void => {};
 
 const music = {
   playing: false,
+  connecting: false,
   analyser: null,
   channel: 0,
   volume: 0.35,

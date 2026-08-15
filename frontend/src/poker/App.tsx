@@ -509,6 +509,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             options={ticketOptions(ticket ? [ticket] : [], trackerOptions)}
             onSaveEdit={saveEdit}
             onCancelEdit={() => setEditOpen(false)}
+            onGoto={(next) => run(actions.goto(next))}
             onBackToLive={() => setPeekIndex(null)}
             onGotoPeek={() => {
               const target = peekIndex;
@@ -551,7 +552,6 @@ export function App({ boot }: { boot: PokerBoot }) {
             onNextTurn={() => run(actions.nextTurn())}
             onCloseDuel={() => run(actions.closeDuel())}
             onFinalize={(points) => run(actions.finalize(points))}
-            onGoto={(index) => run(actions.goto(index))}
           />
         ) : null}
       </div>

@@ -30,13 +30,15 @@ export function MusicPlayer({ music, channels, footer, className }: MusicPlayerP
   return (
     <div className={cx(styles['panelForm'], className)}>
       <div className={styles['musicHead']}>
+        {/* A stream takes seconds to arrive, and a button that does not move
+            in that window reads as one that did not register the click. */}
         <button
           type="button"
-          className={styles['musicPlay']}
+          className={cx(styles['musicPlay'], music.connecting && styles['musicPlayBusy'])}
           onClick={() => music.toggle()}
-          aria-label={music.playing ? 'Pause music' : 'Play music'}
+          aria-label={music.playing ? 'Pause music' : music.connecting ? 'Connecting' : 'Play music'}
         >
-          <Icon name={music.playing ? 'pause' : 'play'} size={18} />
+          <Icon name={music.playing || music.connecting ? 'pause' : 'play'} size={18} />
         </button>
         <div className={styles['field']}>
           <span className={styles['fieldLabel']}>Station</span>
