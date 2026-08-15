@@ -197,6 +197,25 @@
   border-color: transparent;
 }
 
+/* A toggle that is on is coloured, not ringed: a ring around a borderless
+   control reads as focus. Same shape of selector as the rule above, or that
+   one's `background: none` wins on specificity and only the glyph changes. */
+.dockRow > [class*='dockItem'] > button[aria-pressed='true'],
+.dockRow > [class*='dockItem'] > button[aria-expanded='true'],
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.dockRow > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled),
+.dockRow > [class*='dockItem'] > button[aria-expanded='true']:hover:not(:disabled),
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-color: transparent;
+}
+
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
