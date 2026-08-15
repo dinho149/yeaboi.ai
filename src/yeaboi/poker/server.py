@@ -615,15 +615,26 @@ class _PokerHandler(BaseHTTPRequestHandler):
         """Answer the editor's pickers with what the tracker itself accepts.
 
         A tracker round-trip, so it is asked for once when the editor opens
-        rather than carried on every state poll. An empty answer is not an
-        error: the editor falls back to the values the board already shows.
+        rather than carried on every state poll. Whatever the tracker does not
+        answer is filled from the board's own tickets — which is every value in
+        this batch, and the only vocabulary a demo board or an unreachable
+        tracker has. It is computed here rather than in the browser because the
+        rail's rows carry a key and a summary and nothing else.
         """
         key = str(payload.get("key", ""))
-        ticket = next((t for t in self._board.tickets_snapshot() if t.get("key") == key), None)
+        rows = self._board.tickets_snapshot()
+        ticket = next((t for t in rows if t.get("key") == key), None)
         if ticket is None:
             self._send_json(400, {"ok": False, "error": "unknown ticket"})
             return
-        self._send_json(200, {"ok": True, "options": tickets_mod.ticket_options(self._board.source, ticket)})
+        options = tickets_mod.ticket_options(self._board.source, ticket)
+        for name, field in (("types", "type"), ("states", "state"), ("assignees", "assignee")):
+            if options.get(name):
+                continue
+            seen = sorted({str(row.get(field, "")).strip() for row in rows if str(row.get(field, "")).strip()})
+            if seen:
+                options[name] = seen
+        self._send_json(200, {"ok": True, "options": options})
 
     def _ticket_edit(self, payload: dict, pid: str) -> None:
         """Push admin field edits to the tracker, then mirror them onto the board."""

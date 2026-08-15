@@ -38,6 +38,21 @@
   --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
 }
 /*
+ * Elevation on a light ground.
+ *
+ * The shadows above are cast on near-black, where 45% is what it takes to be
+ * seen at all. On white the same value is not a shadow but a smudge — and one
+ * with a visible edge where the blur stops, which is exactly what a menu over
+ * a light page showed. Same geometry, a third of the opacity.
+ */
+[data-theme="light"] {
+  --edge: inset 0 1px 0 rgb(255 255 255 / 60%);
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 6%), 0 4px 10px rgb(16 24 40 / 6%);
+  --shadow-hover: 0 2px 4px rgb(16 24 40 / 8%), 0 10px 22px rgb(16 24 40 / 8%);
+  --shadow-2: 0 4px 10px rgb(16 24 40 / 8%), 0 16px 36px rgb(16 24 40 / 12%);
+}
+
+/*
  * Solarized, lifted to WCAG AA.
  *
  * The canonical Solarized accents are tuned against base03 (#002b36) and only

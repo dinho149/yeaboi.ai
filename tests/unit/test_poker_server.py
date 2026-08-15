@@ -465,10 +465,26 @@ class TestTicketOptions:
         assert resp == {"ok": True, "options": {"states": ["To Do", "Done"]}}
         assert seen["key"] == "T-1"
 
-    def test_empty_answer_is_not_an_error(self, running_server, monkeypatch):
-        srv, _ = running_server
+    def test_the_board_fills_what_the_tracker_did_not(self, running_server, monkeypatch):
+        """A demo board and an unreachable tracker have the same vocabulary:
+        the values this batch of tickets already uses."""
+        srv, b = running_server
         monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", lambda *a, **k: {})
-        assert _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"}) == {"ok": True, "options": {}}
+        rows = b.tickets_snapshot()
+        b.apply_ticket_edit(rows[0]["key"], state="In Progress", issue_type="Bug", assignee="Ada")
+        b.apply_ticket_edit(rows[1]["key"], state="Done", issue_type="Story", assignee="Grace")
+        options = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})["options"]
+        # Every distinct value on the board, not only the two just set — the
+        # fixture's remaining tickets are still "To Do".
+        assert options["states"] == ["Done", "In Progress", "To Do"]
+        assert options["types"] == ["Bug", "Story"]
+        assert options["assignees"] == ["Ada", "Grace"]
+
+    def test_a_tracker_answer_is_not_overwritten(self, running_server, monkeypatch):
+        srv, _ = running_server
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", lambda *a, **k: {"states": ["Backlog"]})
+        options = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})["options"]
+        assert options["states"] == ["Backlog"]
 
     def test_unknown_ticket(self, running_server):
         srv, _ = running_server
