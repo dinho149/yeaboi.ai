@@ -97,9 +97,10 @@ function TicketBody({ ticket, tag }: BodyProps) {
         {tag}
       </div>
 
-      <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
+      <div className={styles['tkHead']}>
+        <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
 
-      <div className={styles['chips']}>
+        <div className={styles['chips']}>
         {ticket.type ? <Chip>{ticket.type}</Chip> : null}
         {ticket.state ? (
           <Chip>
@@ -114,11 +115,12 @@ function TicketBody({ ticket, tag }: BodyProps) {
         <Chip>
           points <b>{fmtPoints(ticket.story_points)}</b>
         </Chip>
-        {ticket.estimated ? (
-          <Chip tone="ok">
-            ✓ estimated <b>{fmtPoints(ticket.final_points)}</b>
-          </Chip>
-        ) : null}
+          {ticket.estimated ? (
+            <Chip tone="ok">
+              ✓ estimated <b>{fmtPoints(ticket.final_points)}</b>
+            </Chip>
+          ) : null}
+        </div>
       </div>
 
       {ticket.description_text ? (

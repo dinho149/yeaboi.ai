@@ -292,7 +292,7 @@
 }
 
 .tkSummary {
-  margin: var(--s2) 0 var(--s3);
+  margin: 0;
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
@@ -301,12 +301,18 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s2);
-  display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s3);
+  gap: var(--s2);
+}
+
+/* Title and its chips on one line, the chips wrapping under it when the
+   summary is long enough to take the row. */
+.tkHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s3);
+  margin: var(--s2) 0 var(--s3);
 }
 
 .bodyLabel {
