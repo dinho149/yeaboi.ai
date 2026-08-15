@@ -35,6 +35,8 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
 
   const max = entries.length ? Math.max(...entries.map(([, count]) => count)) : 0;
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  /* Null when the vote ties, so a split table is not drawn as two winners. */
+  const mode = entries.filter(([, count]) => count === max).length === 1 ? max : null;
 
   return (
     <section className={styles['results']} aria-label="Results">
@@ -56,10 +58,12 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
       {revealed && entries.length ? (
         <ul className={styles['dist']}>
           {entries.map(([value, count]) => (
-            <li key={value} className={cx(styles['drow'], count === max && styles['drowTop'])}>
+            <li key={value} className={cx(styles['drow'], count === mode && styles['drowTop'])}>
               <span className={styles['dval']}>{value}</span>
               <span className={styles['dtrack']}>
-                <span className={styles['dbar']} style={{ width: `${(count / max) * 100}%` }} />
+                {/* Share of the table, not of the tallest bar: normalising to
+                    the max draws every tie as a full bar. */}
+                <span className={styles['dbar']} style={{ width: `${(count / total) * 100}%` }} />
               </span>
               <span className={styles['dcount']}>{count}</span>
               {/* Pluralised on the total, not the count: "1 of 3 vote" is what

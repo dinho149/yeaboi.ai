@@ -327,9 +327,11 @@
   max-width: 74ch;
 }
 
-/* On whenever collapsed — it is what the overflow measurement reads against. */
+/* On whenever collapsed — it is what the overflow measurement reads against.
+   Half the viewport, so the body uses the room the column actually has and
+   only a description long enough to bury the acceptance criteria gets cut. */
 .descClipped {
-  max-height: 9em;
+  max-height: 50vh;
   overflow: hidden;
 }
 

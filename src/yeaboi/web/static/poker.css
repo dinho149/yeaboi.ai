@@ -2116,7 +2116,7 @@ dialog._modal_6k8bd_392 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_1a1fm_32 {
+._app_wwctt_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2126,7 +2126,7 @@ dialog._modal_6k8bd_392 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_1a1fm_42 {
+._scroll_wwctt_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2136,7 +2136,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_1a1fm_52 {
+._layout_wwctt_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2153,7 +2153,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_1a1fm_69 {
+._main_wwctt_69 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2162,7 +2162,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_1a1fm_52 {
+  ._layout_wwctt_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2170,7 +2170,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 699px) {
-  ._layout_1a1fm_52 {
+  ._layout_wwctt_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2179,7 +2179,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_1a1fm_95 {
+._rail_wwctt_95 {
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
@@ -2187,11 +2187,11 @@ dialog._modal_6k8bd_392 {
   padding: var(--s3);
 }
 
-._railHead_1a1fm_103 {
+._railHead_wwctt_103 {
   margin-bottom: var(--s2);
 }
 
-._railList_1a1fm_107 {
+._railList_wwctt_107 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2200,7 +2200,7 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._railItem_1a1fm_116 {
+._railItem_wwctt_116 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2217,12 +2217,12 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._railItem_1a1fm_116:hover {
+._railItem_wwctt_116:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_1a1fm_138 {
+._railDot_wwctt_138 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2230,30 +2230,30 @@ dialog._modal_6k8bd_392 {
   background: var(--line-strong);
 }
 
-._railCurrent_1a1fm_146 {
+._railCurrent_wwctt_146 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_1a1fm_146 ._railDot_1a1fm_138 {
+._railCurrent_wwctt_146 ._railDot_wwctt_138 {
   background: var(--accent);
 }
 
-._railPeeking_1a1fm_155 {
+._railPeeking_wwctt_155 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_1a1fm_160 ._railDot_1a1fm_138 {
+._railDone_wwctt_160 ._railDot_wwctt_138 {
   background: var(--ok);
 }
 
-._railDone_1a1fm_160 ._railText_1a1fm_164 {
+._railDone_wwctt_160 ._railText_wwctt_164 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_1a1fm_164 {
+._railText_wwctt_164 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2261,29 +2261,29 @@ dialog._modal_6k8bd_392 {
   white-space: nowrap;
 }
 
-._railKey_1a1fm_177 {
+._railKey_wwctt_177 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_1a1fm_183 {
+._railPts_wwctt_183 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_1a1fm_190 {
+._railToggle_wwctt_190 {
   display: none;
 }
 
-._railBackdrop_1a1fm_194 {
+._railBackdrop_wwctt_194 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_1a1fm_95 {
+  ._rail_wwctt_95 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2297,15 +2297,15 @@ dialog._modal_6k8bd_392 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_1a1fm_213 {
+  ._railOpen_wwctt_213 {
     transform: translateX(0);
   }
 
-  ._railToggle_1a1fm_190 {
+  ._railToggle_wwctt_190 {
     display: inline-flex;
   }
 
-  ._railBackdrop_1a1fm_194 {
+  ._railBackdrop_wwctt_194 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2316,7 +2316,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_1a1fm_232 {
+._ticket_wwctt_232 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2327,36 +2327,36 @@ dialog._modal_6k8bd_392 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_1a1fm_243 {
+._ticketPeek_wwctt_243 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_1a1fm_249 {
+._tkrow_wwctt_249 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_1a1fm_256 {
+._key_wwctt_256 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_1a1fm_256 a {
+._key_wwctt_256 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_1a1fm_256 a:hover {
+._key_wwctt_256 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_1a1fm_272 {
+._phaseTag_wwctt_272 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2367,25 +2367,25 @@ dialog._modal_6k8bd_392 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_1a1fm_283 {
+._phaseTagOn_wwctt_283 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_1a1fm_289 {
+._phaseTagPeek_wwctt_289 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_1a1fm_294 {
+._tkSummary_wwctt_294 {
   margin: var(--s2) 0 var(--s3);
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_1a1fm_301 {
+._chips_wwctt_301 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
@@ -2396,12 +2396,12 @@ dialog._modal_6k8bd_392 {
   margin-bottom: var(--s3);
 }
 
-._bodyLabel_1a1fm_312 {
+._bodyLabel_wwctt_312 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_1a1fm_317 {
+._desc_wwctt_317 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2410,23 +2410,25 @@ dialog._modal_6k8bd_392 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_1a1fm_317 {
+._desc_wwctt_317 {
   max-width: 74ch;
 }
 
-/* On whenever collapsed — it is what the overflow measurement reads against. */
-._descClipped_1a1fm_331 {
-  max-height: 9em;
+/* On whenever collapsed — it is what the overflow measurement reads against.
+   Half the viewport, so the body uses the room the column actually has and
+   only a description long enough to bury the acceptance criteria gets cut. */
+._descClipped_wwctt_333 {
+  max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_1a1fm_338 {
+._descFade_wwctt_340 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_1a1fm_342 {
+._descToggle_wwctt_344 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2438,13 +2440,13 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._descEmpty_1a1fm_354 {
+._descEmpty_wwctt_356 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_1a1fm_360 {
+._peekBanner_wwctt_362 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2458,7 +2460,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._peekActions_1a1fm_374 {
+._peekActions_wwctt_376 {
   display: flex;
   gap: var(--s2);
 }
@@ -2466,14 +2468,14 @@ dialog._modal_6k8bd_392 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_1a1fm_382 {
+._pkbtnGo_wwctt_384 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_1a1fm_389 {
+._results_wwctt_391 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -2483,7 +2485,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._resultsHead_1a1fm_399 {
+._resultsHead_wwctt_401 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2491,18 +2493,18 @@ dialog._modal_6k8bd_392 {
   flex-wrap: wrap;
 }
 
-._resultsSum_1a1fm_407 {
+._resultsSum_wwctt_409 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_1a1fm_407 b {
+._resultsSum_wwctt_409 b {
   color: var(--accent);
 }
 
-._dist_1a1fm_418 {
+._dist_wwctt_420 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2511,7 +2513,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s1);
 }
 
-._drow_1a1fm_427 {
+._drow_wwctt_429 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2522,19 +2524,19 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._dval_1a1fm_438 {
+._dval_wwctt_440 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_1a1fm_443 {
+._dtrack_wwctt_445 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_1a1fm_450 {
+._dbar_wwctt_452 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2542,21 +2544,21 @@ dialog._modal_6k8bd_392 {
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_1a1fm_458 ._dbar_1a1fm_450 {
+._drowTop_wwctt_460 ._dbar_wwctt_452 {
   background: var(--accent);
 }
 
-._drowTop_1a1fm_458 ._dval_1a1fm_438 {
+._drowTop_wwctt_460 ._dval_wwctt_440 {
   color: var(--accent);
 }
 
-._dcount_1a1fm_466 {
+._dcount_wwctt_468 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_1a1fm_472 {
+._ainote_wwctt_474 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2564,7 +2566,7 @@ dialog._modal_6k8bd_392 {
   background: var(--panel-2);
 }
 
-._aiHead_1a1fm_480 {
+._aiHead_wwctt_482 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2575,57 +2577,57 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._aiBody_1a1fm_491 {
+._aiBody_wwctt_493 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_1a1fm_497 {
+._conf_wwctt_499 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_1a1fm_504 {
+._conf-high_wwctt_506 {
   color: var(--ok);
 }
 
-._conf-medium_1a1fm_508 {
+._conf-medium_wwctt_510 {
   color: var(--warn);
 }
 
-._conf-low_1a1fm_512 {
+._conf-low_wwctt_514 {
   color: var(--danger);
 }
 
-._ev_1a1fm_516 {
+._ev_wwctt_518 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1a1fm_523 {
+._sug_wwctt_525 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1a1fm_523 b {
+._sug_wwctt_525 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_1a1fm_536 ._aiBody_1a1fm_491::after {
+._ainotePending_wwctt_538 ._aiBody_wwctt_493::after {
   content: '…';
-  animation: _dots_1a1fm_1 1.2s steps(4, end) infinite;
+  animation: _dots_wwctt_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_1a1fm_1 {
+@keyframes _dots_wwctt_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2636,14 +2638,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_1a1fm_552 {
+._duel_wwctt_554 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_1a1fm_559 {
+._duelHead_wwctt_561 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2655,13 +2657,13 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._duelBody_1a1fm_571 {
+._duelBody_wwctt_573 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_1a1fm_577 {
+._duelTranscript_wwctt_579 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2670,41 +2672,41 @@ dialog._modal_6k8bd_392 {
   overflow-y: auto;
 }
 
-._recind_1a1fm_586 {
+._recind_wwctt_588 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_1a1fm_593 {
+._recDot_wwctt_595 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_1a1fm_1 1.4s ease-in-out infinite;
+  animation: _recpulse_wwctt_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_1a1fm_1 {
+@keyframes _recpulse_wwctt_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_1a1fm_607 {
+._norec_wwctt_609 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_1a1fm_613 {
+._dualrow_wwctt_615 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_1a1fm_620 {
+._duelist_wwctt_622 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2716,31 +2718,31 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._duelistSpeaking_1a1fm_632 {
+._duelistSpeaking_wwctt_634 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_1a1fm_637 {
+._duelFace_wwctt_639 {
   font-size: var(--fs-xl);
 }
 
-._duelName_1a1fm_641 {
+._duelName_wwctt_643 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_1a1fm_646 {
+._duelValue_wwctt_648 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_1a1fm_646 b {
+._duelValue_wwctt_648 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_1a1fm_656 {
+._duelFloor_wwctt_658 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2748,12 +2750,12 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._duelMic_1a1fm_664 {
+._duelMic_wwctt_666 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_1a1fm_669 {
+._vs_wwctt_671 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2761,7 +2763,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._youup_1a1fm_677 {
+._youup_wwctt_679 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2771,7 +2773,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._micRow_1a1fm_687 {
+._micRow_wwctt_689 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2779,7 +2781,7 @@ dialog._modal_6k8bd_392 {
   margin-top: var(--s3);
 }
 
-._micBtn_1a1fm_695 {
+._micBtn_wwctt_697 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2791,7 +2793,7 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._hint_1a1fm_707 {
+._hint_wwctt_709 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -2800,31 +2802,31 @@ dialog._modal_6k8bd_392 {
 
 /* No panel of its own: the seats read as part of the voting furniture, not as
    another card. */
-._table_1a1fm_716 {
+._table_wwctt_718 {
   margin-top: auto;
   padding: 0 var(--s1);
 }
 
-._tableHead_1a1fm_721 {
+._tableHead_wwctt_723 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_1a1fm_728 {
+._tableWait_wwctt_730 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_1a1fm_734 {
+._vempty_wwctt_736 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_1a1fm_740 {
+._vrow_wwctt_742 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2834,7 +2836,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* A seat: face over name. */
-._voter_1a1fm_750 {
+._voter_wwctt_752 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2842,7 +2844,7 @@ dialog._modal_6k8bd_392 {
   width: 68px;
 }
 
-._face_1a1fm_758 {
+._face_wwctt_760 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2854,7 +2856,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-l);
 }
 
-._tick_1a1fm_232 {
+._tick_wwctt_232 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2877,7 +2879,7 @@ dialog._modal_6k8bd_392 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_1a1fm_793 {
+._vcard_wwctt_795 {
   display: grid;
   place-items: center;
   width: 44px;
@@ -2889,18 +2891,18 @@ dialog._modal_6k8bd_392 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_1a1fm_1 320ms var(--ease) both;
+  animation: _flip_wwctt_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_1a1fm_1 {
+@keyframes _flip_wwctt_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_1a1fm_816 {
+._nm_wwctt_818 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2911,7 +2913,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_1a1fm_827 {
+._deckZone_wwctt_829 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2944,24 +2946,24 @@ dialog._modal_6k8bd_392 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_1a1fm_32[data-host='true'] {
+  ._app_wwctt_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_1a1fm_866 {
+._deckStatus_wwctt_868 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_1a1fm_873 {
+._deckMine_wwctt_875 {
   color: var(--accent);
 }
 
-._deck_1a1fm_827 {
+._deck_wwctt_829 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -2973,7 +2975,7 @@ dialog._modal_6k8bd_392 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_1a1fm_889 {
+._pcard_wwctt_891 {
   position: relative;
   width: 60px;
   height: 84px;
@@ -2989,18 +2991,18 @@ dialog._modal_6k8bd_392 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_1a1fm_889:hover:not(:disabled) {
+._pcard_wwctt_891:hover:not(:disabled) {
   transform: translateY(-4px);
   border-color: var(--accent);
 }
 
-._pcard_1a1fm_889:disabled {
+._pcard_wwctt_891:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_1a1fm_916 {
+._pcardSel_wwctt_918 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
   color: var(--accent);
@@ -3010,11 +3012,11 @@ dialog._modal_6k8bd_392 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_1a1fm_926 {
+._pcardWait_wwctt_928 {
   border-style: dashed;
 }
 
-._ci_1a1fm_930 {
+._ci_wwctt_932 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3023,7 +3025,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._ciFlip_1a1fm_939 {
+._ciFlip_wwctt_941 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3031,14 +3033,14 @@ dialog._modal_6k8bd_392 {
   transform: rotate(180deg);
 }
 
-._cv_1a1fm_947 {
+._cv_wwctt_949 {
   font-size: var(--fs-l);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_1a1fm_954 {
+._console_wwctt_956 {
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
@@ -3049,13 +3051,13 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._cbar_1a1fm_965 {
+._cbar_wwctt_967 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_1a1fm_971 {
+._cphase_wwctt_973 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3063,20 +3065,20 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._cbody_1a1fm_979 {
+._cbody_wwctt_981 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_1a1fm_985 {
+._cgroup_wwctt_987 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_1a1fm_991,
-._navrow_1a1fm_992 {
+._crow_wwctt_993,
+._navrow_wwctt_994 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3085,11 +3087,11 @@ dialog._modal_6k8bd_392 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_1a1fm_1001:not(:empty) {
+._duelSlot_wwctt_1003:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_1a1fm_1005 {
+._duelInline_wwctt_1007 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3098,12 +3100,12 @@ dialog._modal_6k8bd_392 {
   border-radius: var(--r-s);
 }
 
-._seg_1a1fm_1014 {
+._seg_wwctt_1016 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_1a1fm_1019 {
+._preset_wwctt_1021 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3115,8 +3117,8 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._clabel_1a1fm_1031,
-._finlab_1a1fm_1032 {
+._clabel_wwctt_1033,
+._finlab_wwctt_1034 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3124,38 +3126,38 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._chint_1a1fm_1040,
-._cnotice_1a1fm_1041 {
+._chint_wwctt_1042,
+._cnotice_wwctt_1043 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_1a1fm_1041 {
+._cnotice_wwctt_1043 {
   color: var(--warn);
 }
 
-._readout_1a1fm_1052 {
+._readout_wwctt_1054 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_1a1fm_1052 b {
+._readout_wwctt_1054 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_1a1fm_1064 {
+._finrow_wwctt_1066 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_1a1fm_1071 {
+._finInput_wwctt_1073 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3167,12 +3169,12 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._finSrc_1a1fm_1083 {
+._finSrc_wwctt_1085 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_1a1fm_1088 {
+._cpos_wwctt_1090 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3182,7 +3184,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._console_1a1fm_954 {
+  ._console_wwctt_956 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3192,31 +3194,31 @@ dialog._modal_6k8bd_392 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_1a1fm_965 {
+  ._cbar_wwctt_967 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_1a1fm_979 {
+  ._cbody_wwctt_981 {
     display: none;
   }
 
-  ._consoleOpen_1a1fm_1118 ._cbody_1a1fm_979 {
+  ._consoleOpen_wwctt_1120 ._cbody_wwctt_981 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_1a1fm_1125 {
+._identity_wwctt_1127 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_1a1fm_1132 {
+._meChip_wwctt_1134 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3231,34 +3233,34 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._meName_1a1fm_1147 {
+._meName_wwctt_1149 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_1a1fm_1154 {
+._pen_wwctt_1156 {
   color: var(--dim);
 }
 
-._roomCount_1a1fm_1158 {
+._roomCount_wwctt_1160 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_1a1fm_1163 {
+._offline_wwctt_1165 {
   color: var(--warn);
 }
 
-._popNote_1a1fm_1167 {
+._popNote_wwctt_1169 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_1a1fm_1173,
-._musicBanner_1a1fm_1174 {
+._lockBanner_wwctt_1175,
+._musicBanner_wwctt_1176 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -3266,12 +3268,12 @@ dialog._modal_6k8bd_392 {
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_1a1fm_1173 {
+._lockBanner_wwctt_1175 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_1a1fm_1174 {
+._musicBanner_wwctt_1176 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3284,7 +3286,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_1a1fm_1200 {
+._flabel_wwctt_1202 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3294,7 +3296,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._field_1a1fm_1210 {
+._field_wwctt_1212 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3306,24 +3308,24 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-textarea._field_1a1fm_1210 {
+textarea._field_wwctt_1212 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_1a1fm_1227 {
+._editWarn_wwctt_1229 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_1a1fm_1233 {
+._editNote_wwctt_1235 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_1a1fm_1239 {
+._editSave_wwctt_1241 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3338,7 +3340,7 @@ textarea._field_1a1fm_1210 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_1a1fm_1254 {
+._srOnly_wwctt_1256 {
   position: absolute;
   width: 1px;
   height: 1px;
