@@ -203,7 +203,9 @@ ambient, copy-pasteable glyph in the one channel where reacting with it is a des
 a cost with no upside; Slack's reaction picker surfaces recently-seen emoji.
 
 Some text is **rendered rather than composed**: it arrives finished and you post it unchanged —
-not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, and, for
+not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, both modes
+of `scripts/migration_progress.py` (`--weekly` and `--wave-merged` — the Go-migration bar and
+every count around it), and, for
 `cron/release-promote-ask.md`, its **GitHub issue body** (`scripts/release_channel.py --manifest
 --markdown`) and its **thread reply**. Its *channel* message is composed by you from the same
 manifest, because no Slack renderer for it exists — so every number in it is copied from the

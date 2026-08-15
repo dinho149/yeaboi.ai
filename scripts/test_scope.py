@@ -318,11 +318,8 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/changelog.py",
             "src/yeaboi/changelog_data.json",
             "src/yeaboi/mcp/",
-            "src/yeaboi/gocore/",
             "claude-plugin/",
             "packaging/",
-            "go/",
-            "contracts/",
         ),
         tests=(
             "tests/unit/test_cli_*.py",
@@ -331,7 +328,23 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_update_*.py",
             "tests/unit/test_changelog*.py",
             "tests/unit/test_mcp_*.py",
+        ),
+    ),
+    # The seventeenth workstream: the Go rewrite program. The seam moved here
+    # from platform (cowork/workstreams/go-migration.md). `cowork/migration/`
+    # itself is INERT prose — a checkbox flip rides its wave PR's `go/` change,
+    # and the parity job's own triggers (JOBS below) already fire on `go/`.
+    Area(
+        "go-migration",
+        src=(
+            "src/yeaboi/gocore/",
+            "go/",
+            "contracts/",
+            "scripts/migration_progress.py",
+        ),
+        tests=(
             "tests/unit/test_gocore_*.py",
+            "tests/unit/test_migration_*.py",
         ),
     ),
     # The sixteenth workstream, and the only one whose subject is the fleet

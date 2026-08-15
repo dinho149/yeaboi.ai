@@ -180,10 +180,10 @@ class TestCalibrationIsTheOneThingReadBack:
         assert "Never delete or rewrite an existing" in RETUNE.read_text()
 
 
-class TestTheSixteenthWorkstreamIsRegistered:
+class TestTheFleetWorkstreamIsRegistered:
     def test_it_is_a_workstream(self):
         assert "fleet" in cowork_setup.parse_workstreams()
-        assert len(cowork_setup.parse_workstreams()) == 16
+        assert len(cowork_setup.parse_workstreams()) == 17
 
     def test_it_has_a_label(self):
         assert "workstream:fleet" in {label.name for label in cowork_setup.expected_labels()}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — sixteen charters, twenty-five routines, a
+``cowork/`` is a complete specification — seventeen charters, twenty-eight routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
 registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
@@ -233,6 +233,14 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # and this is the cheapest place to make sure it does not.
     "pr-opened-dod-audit": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
     "pr-merged-close-loop": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    # Fires on the same fork-controlled event as pr-merged-close-loop and holds
+    # the same connectors, so it gets the same shape: reads are queries, every
+    # outbound word goes through cowork-scribe (Task), Write/Edit absent.
+    "go-migration-wave-merged": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    # The weekly migration bar is day-ahead's contract — run one script, post
+    # what it printed — so it carries day-ahead's grant: no Write/Edit/Glob/Grep,
+    # a shell for the renderer and the check-in, and Task for the scribe.
+    "go-migration-progress": ("Bash", "Read", "Task", "TodoWrite"),
     # Not fork-controlled — a release is cut by a maintainer — but it writes
     # nothing itself either, and a routine that announces should not be able to
     # edit what it is announcing.
@@ -335,14 +343,15 @@ SCOUT_TYPES = ("bug", "chore", "docs", "security")
 #
 # The propose lane had no bound at all. A scout returns up to ten finds, the auto
 # lane consumes at most one, so a single sweep could legitimately open nine
-# issues — and sixteen workstreams run on overlapping crons. `digest.md`'s
+# issues — and seventeen workstreams run on overlapping crons. `digest.md`'s
 # 14-day age-out was the only pressure release, which means the queue drained on
 # a clock rather than on anybody deciding anything.
 #
 # Two is deliberate rather than tuned. One would mean a sweep that files
 # something scouts nothing for a fortnight; three starts to bury the digest
-# again. Sixteen workstreams at two is a fleet ceiling of thirty-two, which is a
-# list a human can still read in one sitting.
+# again. Seventeen workstreams at two is a fleet ceiling of thirty-four, which is
+# a list a human can still read in one sitting. (go-migration never files into it:
+# its lane's approval is the merged program of record, not a proposal.)
 #
 # `integration:candidate` issues are outside this cap on purpose: they carry
 # neither `cowork:proposal` nor a `type:` label, so `proposal_slots` does not see
@@ -599,7 +608,7 @@ def parse_scout_types(text: str | None = None) -> tuple[str, ...]:
 
 
 def parse_workstreams() -> list[str]:
-    """The sixteen workstream names, from the charter filenames."""
+    """The seventeen workstream names, from the charter filenames."""
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
 
 
@@ -1642,7 +1651,7 @@ def owned_modules() -> set[str]:
 def check_charter_coverage(report: Report) -> None:
     """Every top-level module belongs to a charter, or says why it does not.
 
-    The label check below proves the sixteen charters agree with the sixteen
+    The label check below proves the seventeen charters agree with the seventeen
     labels; nothing proved they covered the repo. Fourteen modules were claimed by
     nobody when this was written — a scout reads only the paths its charter
     declares, so an unclaimed file is one no routine will ever look at, and the
@@ -2185,7 +2194,7 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
     """How many proposals one workstream may still file, and what is holding it.
 
     The arithmetic lives here rather than in the routine prose for the reason the
-    `--triggers` reconcile does: a model asked to count sixteen queues by eye
+    `--triggers` reconcile does: a model asked to count seventeen queues by eye
     will eventually miscount one, and nothing downstream would notice. The sweep
     runs this and obeys the number.
 
@@ -2245,7 +2254,7 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
 
 
 def report_proposal_slots(workstream: str | None, now: datetime | None = None) -> int:
-    """Print the slots JSON for one workstream, or for all sixteen.
+    """Print the slots JSON for one workstream, or for all seventeen.
 
     One object for a named workstream because that is what a sweep asks; a list
     for the whole fleet because that is what `cron/digest.md`'s Held section is
@@ -2268,7 +2277,7 @@ def _queue_rank(issue: dict) -> tuple:
 
     Same key the auto lane has always sorted on — highest ``impact``, ties to
     lower ``risk`` — with age as the final tie-break so the queue drains oldest
-    first. A model asked to sort sixteen queues by eye will eventually get one
+    first. A model asked to sort seventeen queues by eye will eventually get one
     wrong and nothing downstream would notice, which is the argument this whole
     file is built on.
 
@@ -2371,7 +2380,7 @@ def queue_report(workstream: str, now: datetime | None = None) -> dict:
 
 
 def report_queued(workstream: str | None, now: datetime | None = None) -> int:
-    """Print the queue for one workstream, or for all sixteen.
+    """Print the queue for one workstream, or for all seventeen.
 
     One object for a named workstream because that is what a sweep asks; a list
     for the whole fleet because that is what `cron/digest.md`'s Queued section is
@@ -4184,7 +4193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="?",
         const="",
         metavar="WORKSTREAM",
-        help="print how many proposals a workstream may still file (omit the name for all sixteen)",
+        help="print how many proposals a workstream may still file (omit the name for all seventeen)",
     )
     parser.add_argument(
         "--queued",
@@ -4192,7 +4201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         const="",
         metavar="WORKSTREAM",
         help="print the open cowork:queued items a sweep should build, in build order "
-        "(omit the name for all sixteen; queued=null means the query failed)",
+        "(omit the name for all seventeen; queued=null means the query failed)",
     )
     parser.add_argument(
         "--migrate-proposals",
