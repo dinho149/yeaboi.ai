@@ -29,28 +29,9 @@
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-/*
- * The table.
- *
- * The board is a card table seen from above, so the ground is baize rather
- * than a fill: a woven grain at 4% over a centre-lit wash. Held under 5% on
- * purpose — past that procedural noise stops reading as nap and starts
- * reading as dirt.
- */
 .app {
-  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--text) 4%, var(--bg)) 0%, var(--bg) 60%);
+  background: var(--bg);
   color: var(--text);
-}
-
-/* The weave must not tint the colour, only disturb it. */
-.app::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.04;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* The board's own scroller, inside the shell's viewport-tall region. Poker
@@ -72,15 +53,15 @@
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
-  gap: var(--s4);
-  padding: var(--s4);
+  gap: var(--s6);
+  padding: var(--s5) var(--s4);
   padding-left: max(var(--s4), env(safe-area-inset-left));
   padding-right: max(var(--s4), env(safe-area-inset-right));
   /* Stretch, not start. Three columns that size to their own content are three
      cards floating in a screen-sized box, which is what made the board read as
      islands rather than one application. Each column now runs the full height
      and scrolls inside itself. */
-  align-items: stretch;
+  align-items: start;
   min-height: 0;
 }
 
@@ -114,11 +95,7 @@
 .rail {
   min-height: 0;
   overflow-y: auto;
-  background: var(--mat-face);
-  border: 1px solid var(--hairline);
-  box-shadow: var(--mat-rest);
-  border-radius: var(--r-m);
-  padding: var(--s3);
+  padding: 0 var(--s2) 0 0;
 }
 
 .railHead {
@@ -165,9 +142,8 @@
 }
 
 .railCurrent {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  box-shadow: var(--mat-well);
-  color: var(--text);
+  background: transparent;
+  color: var(--accent);
 }
 
 .railCurrent .railDot {
@@ -315,9 +291,10 @@
 
 .tkSummary {
   margin: 0;
-  font-size: var(--fs-xl);
-  line-height: 1.25;
+  font-size: var(--fs-display);
+  line-height: 1.12;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .chips {
@@ -417,11 +394,8 @@
 /* ── Results ─────────────────────────────────────────────────────────── */
 
 .results {
-  background: var(--mat-face);
-  border: 1px solid var(--hairline);
-  box-shadow: var(--mat-rest);
-  border-radius: var(--r-m);
-  padding: var(--s4);
+  border-top: 1px solid var(--hairline);
+  padding: var(--s4) var(--s1) 0;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
@@ -472,19 +446,15 @@
 }
 
 .dtrack {
-  height: 10px;
-  border-radius: var(--r-pill);
-  background: var(--bg);
-  box-shadow: var(--mat-well);
+  height: 4px;
+  background: var(--hairline);
   overflow: hidden;
 }
 
 .dbar {
   display: block;
   height: 100%;
-  border-radius: var(--r-pill);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--text) 12%, var(--line-strong)) 0%, var(--line-strong) 100%);
-  box-shadow: inset 0 1px 0 var(--lit);
+  background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
@@ -795,9 +765,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--mat-face);
+  background: transparent;
   border: 1px solid var(--hairline-strong);
-  box-shadow: var(--mat-rest);
   font-size: var(--fs-l);
 }
 
@@ -930,8 +899,7 @@
   height: 100px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
-  background: var(--mat-face);
-  box-shadow: var(--mat-rest);
+  background: transparent;
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
@@ -944,13 +912,7 @@
 
 .pcard:hover:not(:disabled) {
   transform: translateY(-6px);
-  box-shadow: var(--mat-raised);
-}
-
-/* Pressed: the card sits back into the felt, so the outer layers go. */
-.pcard:active:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: var(--mat-pressed);
+  border-color: var(--muted);
 }
 
 .pcard:disabled {
@@ -961,11 +923,9 @@
 /* The one place the accent belongs on this row: the card you played. */
 .pcardSel {
   border-color: var(--accent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 26%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 14%, var(--panel)) 45%, color-mix(in srgb, var(--accent) 6%, var(--panel)) 100%);
+  background: transparent;
   color: var(--accent);
   transform: translateY(-10px);
-  box-shadow: var(--mat-raised), 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says
@@ -993,9 +953,8 @@
 }
 
 .cv {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-2xl);
   font-weight: 600;
-  text-shadow: var(--letterpress);
 }
 
 /* ── The court ───────────────────────────────────────────────────────── */
@@ -1031,40 +990,10 @@
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-/* Controls are objects resting on the console: raised at rest, and they sit
-   back into their own well when pressed. */
-.console button,
-.cbar button {
-  box-shadow: var(--mat-rest);
-}
-
-.console button:not([class*='btnPrimary']),
-.cbar button:not([class*='btnPrimary']) {
-  background: var(--mat-face);
-  border-color: var(--hairline-strong);
-  text-shadow: var(--letterpress);
-}
-
-.console button:active:not(:disabled),
-.cbar button:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: var(--mat-pressed);
-}
-
-.console button:disabled,
-.cbar button:disabled {
-  box-shadow: none;
-  text-shadow: none;
-}
-
 .console {
   min-height: 0;
   overflow-y: auto;
-  background: var(--mat-face);
-  border: 1px solid var(--hairline);
-  box-shadow: var(--mat-rest);
-  border-radius: var(--r-m);
-  padding: var(--s3);
+  padding: 0 0 0 var(--s2);
   display: flex;
   flex-direction: column;
   gap: var(--s3);
@@ -1182,8 +1111,7 @@
   padding: var(--s1) var(--s2);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
-  background: var(--bg);
-  box-shadow: var(--mat-well);
+  background: transparent;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-s);
