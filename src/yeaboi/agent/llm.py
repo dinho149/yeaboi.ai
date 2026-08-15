@@ -340,15 +340,28 @@ def get_llm(
         # langchain-anthropic is a required dependency — always available.
         from langchain_anthropic import ChatAnthropic
 
-        from yeaboi.config import get_anthropic_api_key
+        from yeaboi.config import get_anthropic_api_key, get_anthropic_subscription_token
 
+        # A Claude subscription token is NOT an API key: the API takes it as
+        # `Authorization: Bearer` behind the oauth beta header, and rejects a
+        # request carrying both that and `x-api-key`. ChatAnthropic only builds
+        # key auth, so the bearer is set on the client it made — anthropic's own
+        # `auth_headers` merges key and bearer auth, so clearing `api_key` leaves
+        # the bearer alone on the request.
+        subscription = get_anthropic_subscription_token()
         llm = ChatAnthropic(
             model=resolved_model,
-            api_key=get_anthropic_api_key(),
+            api_key="unused-see-bearer" if subscription else get_anthropic_api_key(),
+            default_headers={"anthropic-beta": "oauth-2025-04-20"} if subscription else None,
             timeout=request_timeout,
             max_retries=0 if request_timeout is not None else 2,
             **_sampling,
         )
+        if subscription:
+            for _client in (llm._client, llm._async_client):
+                _client.api_key, _client.auth_token = None, subscription
+            logger.info("LLM ready: provider=anthropic (subscription), model=%s", resolved_model)
+            return llm
         logger.info("LLM ready: provider=anthropic, model=%s", resolved_model)
         return llm
 

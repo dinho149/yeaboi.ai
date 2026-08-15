@@ -90,6 +90,26 @@ from yeaboi.tools.risk import high_risk_tool_names
 logger = logging.getLogger(__name__)
 
 
+def _is_llm_rate_limited(exc: Exception) -> bool:
+    """Check whether an exception is the provider saying "too many requests".
+
+    Separate from the auth check because the remedy is: a rate limit clears on
+    its own, so the user is told to wait rather than to go and look at their
+    credentials.
+    """
+    for module, attr in (("anthropic", "RateLimitError"), ("openai", "RateLimitError")):
+        try:
+            provider = __import__(module)
+        except ImportError:
+            continue
+        error_class = getattr(provider, attr, None)
+        if error_class is not None and isinstance(exc, error_class):
+            return True
+    # Anything else that carries a 429, including providers with no class of
+    # their own for it.
+    return getattr(exc, "status_code", None) == 429
+
+
 def _is_llm_auth_or_billing_error(exc: Exception) -> bool:
     """Check whether an exception is an LLM authentication or billing error.
 

@@ -672,7 +672,9 @@ class TestStandupConfig:
 
         monkeypatch.setenv("LLM_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
-        assert is_llm_configured() == (True, "ANTHROPIC_API_KEY not set")
+        # Only the boolean is meaningful here: the message is what to say when
+        # it is False, and is carried alongside rather than conditionally built.
+        assert is_llm_configured()[0] is True
 
     def test_is_llm_configured_missing_key(self, monkeypatch):
         from yeaboi.config import is_llm_configured
@@ -1015,3 +1017,69 @@ class TestLastCategory:
         cfg.set_last_category("nonsense")
         assert cfg.get_last_category() == "humans"
         assert not (tmp_path / ".env").exists()
+
+
+class TestGetAnthropicSubscriptionToken:
+    """Both halves must agree before subscription auth engages.
+
+    Returning the token on its own presence would silently hijack a working API
+    key for anyone who happens to have the Claude Code CLI logged in.
+    """
+
+    def test_returns_the_token_when_the_mode_selects_it(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == "sk-ant-oat01-abc"
+
+    def test_empty_when_the_mode_is_api_key(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "api_key")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == ""
+
+    def test_empty_when_the_mode_is_unset(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == ""
+
+    def test_empty_when_selected_but_no_token_stored(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        assert get_anthropic_subscription_token() == ""
+
+    def test_mode_match_is_case_and_space_insensitive(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "  Subscription ")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "  sk-ant-oat01-abc  ")
+        assert get_anthropic_subscription_token() == "sk-ant-oat01-abc"
+
+    def test_a_subscription_counts_as_configured(self, monkeypatch):
+        """The gate every mode asks before offering an AI feature — poker's AI
+        perspective refused a signed-in subscription until it did."""
+        from yeaboi.config import is_llm_configured
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        ok, _why = is_llm_configured()
+        assert ok is True
+
+    def test_neither_credential_is_not_configured(self, monkeypatch):
+        from yeaboi.config import is_llm_configured
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        ok, why = is_llm_configured()
+        assert ok is False
+        assert "subscription" in why

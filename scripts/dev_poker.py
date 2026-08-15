@@ -10,17 +10,24 @@ The board is in-memory only. Nothing is written to ``~/.yeaboi``, so this is
 safe to run against a real install. The tickets are fake but shaped like real
 tracker rows: a long description, acceptance criteria, one already estimated,
 and one with nothing but a summary.
+
+The board's source is ``demo``, so finalizing an estimate and editing a ticket
+are no-op successes rather than writes to a tracker nobody configured — the
+rows are still shaped like Jira ones, which is what the UI renders. Point it at
+a real tracker with ``DEV_POKER_SOURCE=jira make dev-poker``.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from yeaboi.config import load_user_config  # noqa: E402
 from yeaboi.poker.board import PokerBoard  # noqa: E402
 from yeaboi.poker.server import PokerServer  # noqa: E402
 
@@ -73,8 +80,13 @@ SEED: list[dict] = [
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # The credentials, same as the CLI reads them. Without this the dev board is
+    # the one surface that cannot reach ~/.yeaboi/.env, so the AI perspective
+    # reports "no API key" on a machine that has one.
+    load_user_config()
 
-    board = PokerBoard("dev-poker", project_name="yeaboi", source="jira", scope_label="Sprint 42", tickets=SEED)
+    source = os.getenv("DEV_POKER_SOURCE", "demo")
+    board = PokerBoard("dev-poker", project_name="yeaboi", source=source, scope_label="Sprint 42", tickets=SEED)
     # One ticket already estimated, so the rail's done state and the progress
     # count are visible without having to run a round first. The full sequence
     # is required: `finalize_current` refuses outside the revealed phase, so a
@@ -109,6 +121,7 @@ def main() -> int:
 
     api = f"http://127.0.0.1:{server.port}"
     print("\n  dev poker ready")
+    print(f"    source     {source}{' (writes are no-ops)' if source == 'demo' else ''}")
     print(f"    host       {server.url}")
     print(f"    guest      {api}/?token={server.token}")
     print(f"    join code  {server.display_code}")

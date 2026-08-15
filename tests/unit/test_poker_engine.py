@@ -306,3 +306,38 @@ class TestDebateTranscript:
         # Content-free: the note reports that a transcript exists, never its words.
         assert "120-char duel transcript was recorded" in out["note"]
         assert "x" * 10 not in out["note"]
+
+
+class TestPerspectiveFailureMessages:
+    """What a failed AI perspective tells the host.
+
+    Each branch has a different remedy — wait, fix your key, start Ollama — so
+    each says which one it is rather than sending everyone to a log file.
+    """
+
+    def _run(self, monkeypatch, exc):
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
+
+        def _boom(prompt, **kwargs):
+            raise exc
+
+        monkeypatch.setattr("yeaboi.agent.llm.invoke_json", _boom)
+        return engine.get_poker_perspective(_ticket(), {"Alex": "3", "Sam": "8"})
+
+    def test_rate_limit_says_to_try_again(self, monkeypatch):
+        import anthropic
+        import httpx
+
+        exc = anthropic.RateLimitError(
+            "rate limited",
+            response=httpx.Response(429, request=httpx.Request("POST", "https://api.anthropic.com")),
+            body=None,
+        )
+        result = self._run(monkeypatch, exc)
+        assert result["llm_mode"] == "fallback"
+        assert "rate limited" in result["warnings"][0]
+
+    def test_an_unknown_failure_names_the_log_file(self, monkeypatch):
+        result = self._run(monkeypatch, RuntimeError("something else"))
+        assert "poker.log" in result["warnings"][0]
+        assert "see logs" not in result["warnings"][0]

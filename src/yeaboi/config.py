@@ -129,6 +129,19 @@ def get_anthropic_api_key() -> str:
     return key
 
 
+def get_anthropic_subscription_token() -> str:
+    """The Claude subscription token to authenticate with, or ``""`` for key auth.
+
+    Both halves must agree before this returns anything: the user has to have
+    picked subscription auth *and* have a token stored. Returning the token on
+    its own presence would silently hijack a working API key for anyone who
+    happens to have the Claude Code CLI logged in.
+    """
+    if os.getenv("ANTHROPIC_AUTH_MODE", "").strip().lower() != "subscription":
+        return ""
+    return os.getenv("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+
+
 def is_langsmith_enabled() -> bool:
     """Check whether LangSmith tracing is enabled."""
     return os.getenv("LANGSMITH_TRACING", "").lower() == "true" and bool(os.getenv("LANGSMITH_API_KEY"))
@@ -967,7 +980,10 @@ def is_llm_configured() -> tuple[bool, str]:
     """
     provider = get_llm_provider()
     if provider == "anthropic":
-        return (bool(os.getenv("ANTHROPIC_API_KEY")), "ANTHROPIC_API_KEY not set")
+        # Either credential counts: a subscription token authenticates as a
+        # bearer and needs no key at all (see get_llm).
+        ok = bool(os.getenv("ANTHROPIC_API_KEY") or get_anthropic_subscription_token())
+        return (ok, "ANTHROPIC_API_KEY not set, and no Claude subscription signed in")
     if provider == "openai":
         return (bool(get_openai_api_key()), "OPENAI_API_KEY not set")
     if provider == "google":
