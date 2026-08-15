@@ -42,6 +42,65 @@ interface BodyProps {
   onEdit?: (() => void) | undefined;
 }
 
+/** The values seen across the board's own tickets — see `ticketOptions`. */
+export interface TicketOptions {
+  types: string[];
+  states: string[];
+  assignees: string[];
+}
+
+/**
+ * The choices a picker offers.
+ *
+ * Read off the tickets already loaded rather than from the tracker: a project's
+ * real schema is per-instance and is not on the wire, and this is both true of
+ * the board in front of you and free. It is therefore the observed set, not the
+ * whole vocabulary — so each picker also accepts a typed value.
+ */
+export function ticketOptions(tickets: readonly { type: string; state: string; assignee: string }[]): TicketOptions {
+  const gather = (pick: (t: { type: string; state: string; assignee: string }) => string): string[] =>
+    [...new Set(tickets.map(pick).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return {
+    types: gather((t) => t.type),
+    states: gather((t) => t.state),
+    assignees: gather((t) => t.assignee),
+  };
+}
+
+/** A property whose value is picked from what the board already uses. */
+function PropPicker({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange(next: string): void;
+}) {
+  const listId = `poker-opt-${label.toLowerCase()}`;
+  return (
+    <div className={styles['prop']}>
+      <dt className={styles['propLabel']}>{label}</dt>
+      <dd className={styles['propValue']}>
+        <input
+          className={styles['editPick']}
+          aria-label={label}
+          list={listId}
+          value={value}
+          onInput={(event) => onChange((event.target as HTMLInputElement).value)}
+        />
+        <datalist id={listId}>
+          {options.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </dd>
+    </div>
+  );
+}
+
 /**
  * The ticket, editable in place.
  *
@@ -52,32 +111,44 @@ interface BodyProps {
  */
 function TicketForm({
   ticket,
+  options,
   onSave,
   onCancel,
 }: {
   ticket: PokerTicket;
+  options: TicketOptions;
   onSave(edit: TicketEdit): void;
   onCancel(): void;
 }) {
   const [summary, setSummary] = useState(ticket.summary);
   const [description, setDescription] = useState(ticket.description_text);
   const [points, setPoints] = useState(ticket.story_points === null ? '' : fmtPoints(ticket.story_points));
+  const [type, setType] = useState(ticket.type);
+  const [state, setState] = useState(ticket.state);
+  const [assignee, setAssignee] = useState(ticket.assignee);
+  const [acceptance, setAcceptance] = useState(ticket.acceptance_text);
   const body = useRef<HTMLTextAreaElement | null>(null);
+  const criteria = useRef<HTMLTextAreaElement | null>(null);
 
   // No scrollbar inside the prose: the field is the paragraph, so it takes the
   // height the paragraph would have.
   useEffect(() => {
-    const el = body.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [description]);
+    for (const el of [body.current, criteria.current]) {
+      if (!el) continue;
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [description, acceptance]);
 
   useEffect(() => {
     setSummary(ticket.summary);
     setDescription(ticket.description_text);
     setPoints(ticket.story_points === null ? '' : fmtPoints(ticket.story_points));
-  }, [ticket.key, ticket.summary, ticket.description_text, ticket.story_points]);
+    setType(ticket.type);
+    setState(ticket.state);
+    setAssignee(ticket.assignee);
+    setAcceptance(ticket.acceptance_text);
+  }, [ticket.key, ticket.summary, ticket.description_text, ticket.story_points, ticket.type, ticket.state, ticket.assignee, ticket.acceptance_text]);
 
   const submit = (): void => {
     const edit: TicketEdit = {};
@@ -86,6 +157,10 @@ function TicketForm({
     if (description !== ticket.description_text) edit.description = description;
     const parsed = Number.parseFloat(points);
     if (points.trim() !== '' && !Number.isNaN(parsed) && parsed !== ticket.story_points) edit.points = parsed;
+    if (type !== ticket.type) edit.type = type;
+    if (state !== ticket.state) edit.state = state;
+    if (assignee !== ticket.assignee) edit.assignee = assignee;
+    if (acceptance !== ticket.acceptance_text) edit.acceptance = acceptance;
     onCancel();
     if (Object.keys(edit).length) onSave(edit);
   };
@@ -100,9 +175,9 @@ function TicketForm({
       />
 
       <dl className={styles['props']}>
-        <Prop label="Type" value={ticket.type} />
-        <Prop label="Status" value={ticket.state} />
-        <Prop label="Assignee" value={ticket.assignee} />
+        <PropPicker label="Type" value={type} options={options.types} onChange={setType} />
+        <PropPicker label="Status" value={state} options={options.states} onChange={setState} />
+        <PropPicker label="Assignee" value={assignee} options={options.assignees} onChange={setAssignee} />
         <div className={styles['prop']}>
           <dt className={styles['propLabel']}>Points</dt>
           <dd className={styles['propValue']}>
@@ -124,6 +199,16 @@ function TicketForm({
         rows={1}
         value={description}
         onInput={(event) => setDescription((event.target as HTMLTextAreaElement).value)}
+      />
+
+      <Eyebrow className={styles['bodyLabel']}>Acceptance criteria</Eyebrow>
+      <textarea
+        ref={criteria}
+        className={cx(styles['desc'], styles['editBody'])}
+        aria-label="Acceptance criteria"
+        rows={1}
+        value={acceptance}
+        onInput={(event) => setAcceptance((event.target as HTMLTextAreaElement).value)}
       />
 
       <p className={styles['editNote']}>Saving writes to the tracker, not just this board.</p>
@@ -254,6 +339,8 @@ export interface TicketPanelProps {
   onEdit(): void;
   /** The ticket is open for editing in place. */
   editing: boolean;
+  /** Choices for the pickers, gathered from the board's tickets. */
+  options: TicketOptions;
   onSaveEdit(edit: TicketEdit): void;
   onCancelEdit(): void;
   onBackToLive(): void;
@@ -272,6 +359,7 @@ export function TicketPanel({
   isHost,
   onEdit,
   editing,
+  options,
   onSaveEdit,
   onCancelEdit,
   onBackToLive,
@@ -338,7 +426,7 @@ export function TicketPanel({
             <span className={styles['key']}>{ticket.key}</span>
             <span className={styles['phaseTag']}>editing</span>
           </div>
-          <TicketForm ticket={ticket} onSave={onSaveEdit} onCancel={onCancelEdit} />
+          <TicketForm ticket={ticket} options={options} onSave={onSaveEdit} onCancel={onCancelEdit} />
         </>
       ) : (
         <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />

@@ -369,6 +369,10 @@ class PokerBoard:
         summary: str | None = None,
         description: str | None = None,
         story_points: float | None = None,
+        state: str | None = None,
+        assignee: str | None = None,
+        issue_type: str | None = None,
+        acceptance: str | None = None,
     ) -> bool:
         """Mirror a successful tracker edit onto the live board.
 
@@ -391,6 +395,16 @@ class PokerBoard:
                     ticket["story_points"] = float(story_points)
                 except (TypeError, ValueError):
                     pass
+            if state is not None:
+                ticket["state"] = state.strip()[:_MAX_SUMMARY]
+            if assignee is not None:
+                ticket["assignee"] = assignee.strip()[:_MAX_SUMMARY]
+            if issue_type is not None:
+                ticket["type"] = issue_type.strip()[:_MAX_SUMMARY]
+            if acceptance is not None:
+                text = acceptance.strip()[:_MAX_TEXT]
+                ticket["acceptance"] = text
+                ticket["acceptance_text"] = text
             ticket["rev"] = int(ticket.get("rev", 0)) + 1  # content changed — invalidate peek caches
             self._revision += 1
         logger.info("poker board: ticket edited — key=%s", ticket_key)

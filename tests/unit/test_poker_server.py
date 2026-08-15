@@ -415,7 +415,15 @@ class TestTicketEdit:
             {"key": "T-1", "summary": "New title", "description": "New body", "points": 3},
         )
         assert resp["ok"]
-        assert calls == {"summary": "New title", "description": "New body", "story_points": 3.0}
+        assert calls == {
+            "summary": "New title",
+            "description": "New body",
+            "story_points": 3.0,
+            "state": None,
+            "assignee": None,
+            "issue_type": None,
+            "acceptance": None,
+        }
         t = b.tickets_snapshot()[1]
         assert t["summary"] == "New title"
         assert t["description_text"] == "New body"

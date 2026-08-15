@@ -386,7 +386,15 @@ class TestUpdateTicket:
         monkeypatch.setattr("yeaboi.tools.jira.jira_update_issue_fields", _update, raising=False)
         ok, _ = tickets.update_ticket("jira", {"key": "PROJ-1"}, description="plain text", story_points=8)
         assert ok is True
-        assert seen == {"key": "PROJ-1", "summary": None, "description": "plain text", "story_points": 8}
+        assert seen == {
+            "key": "PROJ-1",
+            "summary": None,
+            "description": "plain text",
+            "story_points": 8,
+            "issue_type": None,
+            "assignee": None,
+            "acceptance": None,
+        }
 
     def test_azdo_converts_description_to_html(self, monkeypatch):
         seen = {}

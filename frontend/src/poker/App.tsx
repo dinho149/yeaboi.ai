@@ -71,7 +71,7 @@ import { Duel } from './Duel';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
-import { TicketPanel } from './Ticket';
+import { ticketOptions, TicketPanel } from './Ticket';
 import { useDuelMic } from './useDuelMic';
 import styles from './poker.module.css';
 
@@ -502,6 +502,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             isHost={isHost}
             onEdit={() => setEditOpen(true)}
             editing={editOpen}
+            options={ticketOptions(tickets)}
             onSaveEdit={saveEdit}
             onCancelEdit={() => setEditOpen(false)}
             onBackToLive={() => setPeekIndex(null)}

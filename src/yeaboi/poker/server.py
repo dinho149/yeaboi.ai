@@ -605,8 +605,16 @@ class _PokerHandler(BaseHTTPRequestHandler):
         summary = payload.get("summary")
         description = payload.get("description")
         points = payload.get("points")
+        state = payload.get("state")
+        assignee = payload.get("assignee")
+        issue_type = payload.get("type")
+        acceptance = payload.get("acceptance")
         summary = str(summary).strip() if summary is not None else None
         description = str(description) if description is not None else None
+        state = str(state).strip() if state is not None else None
+        assignee = str(assignee).strip() if assignee is not None else None
+        issue_type = str(issue_type).strip() if issue_type is not None else None
+        acceptance = str(acceptance) if acceptance is not None else None
         if points is not None:
             try:
                 points = float(points)
@@ -615,7 +623,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
                     400, {"ok": False, "error": "bad points value", "state": self._board.state_snapshot(pid)}
                 )
                 return
-        if summary is None and description is None and points is None:
+        if all(v is None for v in (summary, description, points, state, assignee, issue_type, acceptance)):
             self._send_json(400, {"ok": False, "error": "nothing to update", "state": self._board.state_snapshot(pid)})
             return
         key = str(payload.get("key", ""))
@@ -624,14 +632,31 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"ok": False, "error": "unknown ticket", "state": self._board.state_snapshot(pid)})
             return
         ok, err = tickets_mod.update_ticket(
-            self._board.source, ticket, summary=summary, description=description, story_points=points
+            self._board.source,
+            ticket,
+            summary=summary,
+            description=description,
+            story_points=points,
+            state=state,
+            assignee=assignee,
+            issue_type=issue_type,
+            acceptance=acceptance,
         )
         if not ok:
             logger.warning("poker: ticket edit write-back failed for %s: %s", log_safe(key), log_safe(err))
             self._board.set_notice(err)
             self._send_json(200, {"ok": False, "error": err, "state": self._board.state_snapshot(pid)})
             return
-        self._board.apply_ticket_edit(key, summary=summary, description=description, story_points=points)
+        self._board.apply_ticket_edit(
+            key,
+            summary=summary,
+            description=description,
+            story_points=points,
+            state=state,
+            assignee=assignee,
+            issue_type=issue_type,
+            acceptance=acceptance,
+        )
         self._send_json(200, {"ok": True, "state": self._board.state_snapshot(pid)})
 
     # ── AI perspective (worker thread — see module docstring) ─────────────

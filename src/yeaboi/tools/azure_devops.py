@@ -2749,6 +2749,9 @@ def azdevops_update_work_item_fields(
     summary: str | None = None,
     description: str | None = None,
     story_points: float | None = None,
+    state: str | None = None,
+    assignee: str | None = None,
+    acceptance: str | None = None,
     project: str = "",
 ) -> tuple[bool, str]:
     """Update fields on an existing work item. Returns (ok, human_error).
@@ -2781,6 +2784,20 @@ def azdevops_update_work_item_fields(
                     op="add",
                     path="/fields/Microsoft.VSTS.Scheduling.StoryPoints",
                     value=float(story_points),
+                )
+            )
+        if state is not None and state.strip():
+            document.append(JsonPatchOperation(op="add", path="/fields/System.State", value=state.strip()))
+        if assignee is not None:
+            # An empty string is how AzDO unassigns; a name it cannot resolve is
+            # rejected by the service with a readable message of its own.
+            document.append(JsonPatchOperation(op="add", path="/fields/System.AssignedTo", value=assignee.strip()))
+        if acceptance is not None:
+            document.append(
+                JsonPatchOperation(
+                    op="add",
+                    path="/fields/Microsoft.VSTS.Common.AcceptanceCriteria",
+                    value=acceptance,
                 )
             )
         if not document:

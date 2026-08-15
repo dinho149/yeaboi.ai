@@ -361,6 +361,23 @@
   width: 4em;
 }
 
+/* A picker reads as the value it replaces; the list is offered on focus. */
+.editPick {
+  width: 100%;
+  min-width: 6em;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
+}
+
+.editPick:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+
 .editNote {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);

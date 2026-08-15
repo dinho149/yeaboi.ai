@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._pages import assert_self_contained, island
+from tests._pages import assert_self_contained, island, without_inline_payloads
 from yeaboi.poker.board import POKER_DECK, PokerBoard
 from yeaboi.poker.page import _document_title, board_config, build_poker_html
 from yeaboi.poker.server import PokerServer
@@ -34,8 +34,12 @@ class TestSelfContained:
 
     def test_no_external_resources(self, page: str):
         assert_self_contained(page)
-        assert 'src="http' not in page and 'href="http' not in page
-        assert "cdn" not in page.lower()
+        # Against the markup, not the inlined bytes: a base64 font contains any
+        # three-letter run by chance, and an external reference can only ever
+        # appear in markup anyway.
+        markup_only = without_inline_payloads(page)
+        assert 'src="http' not in markup_only and 'href="http' not in markup_only
+        assert "cdn" not in markup_only.lower()
 
     def test_bundle_is_not_a_module_script(self, page: str):
         assert '<script type="module"' not in page

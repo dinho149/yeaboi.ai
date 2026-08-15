@@ -35,6 +35,10 @@ export interface TicketEdit {
   summary?: string;
   description?: string;
   points?: number;
+  state?: string;
+  assignee?: string;
+  type?: string;
+  acceptance?: string;
 }
 
 /**

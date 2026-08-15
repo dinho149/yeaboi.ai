@@ -254,6 +254,10 @@ def update_ticket(
     summary: str | None = None,
     description: str | None = None,
     story_points: float | None = None,
+    state: str | None = None,
+    assignee: str | None = None,
+    issue_type: str | None = None,
+    acceptance: str | None = None,
 ) -> tuple[bool, str]:
     """Push field edits to the real board. Returns (ok, human_error) — never raises.
 
@@ -272,19 +276,51 @@ def update_ticket(
         description is not None,
         log_safe(repr(story_points)),
     )
+    logger.info(
+        "poker update_ticket meta: state=%s assignee=%s type=%s acceptance=%s",
+        log_safe(repr(state)),
+        log_safe(repr(assignee)),
+        log_safe(repr(issue_type)),
+        acceptance is not None,
+    )
     try:
         if source == SOURCE_DEMO:
             return True, ""
         if source == SOURCE_JIRA:
-            from yeaboi.tools.jira import jira_update_issue_fields
+            from yeaboi.tools.jira import jira_transition_issue, jira_update_issue_fields
 
-            return jira_update_issue_fields(key, summary=summary, description=description, story_points=story_points)
+            ok, err = jira_update_issue_fields(
+                key,
+                summary=summary,
+                description=description,
+                story_points=story_points,
+                issue_type=issue_type,
+                assignee=assignee,
+                acceptance=acceptance,
+            )
+            if not ok:
+                return ok, err
+            # Last, and separately: a status is a workflow transition rather than
+            # a field, and moving the issue first would leave a failed field
+            # write behind an already-changed status.
+            if state is not None and state.strip():
+                return jira_transition_issue(key, state)
+            return True, ""
         if source == SOURCE_AZDO:
             from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
 
+            if issue_type is not None and issue_type.strip():
+                return False, "Error: Azure DevOps cannot change a work item's type in place."
             azdo_description = _plain_text_to_azdo_html(description) if description is not None else None
+            azdo_acceptance = _plain_text_to_azdo_html(acceptance) if acceptance is not None else None
             return azdevops_update_work_item_fields(
-                int(key), summary=summary, description=azdo_description, story_points=story_points
+                int(key),
+                summary=summary,
+                description=azdo_description,
+                story_points=story_points,
+                state=state,
+                assignee=assignee,
+                acceptance=azdo_acceptance,
             )
         return False, f"Error: unknown ticket source {source!r}."
     except Exception as e:

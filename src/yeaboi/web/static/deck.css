@@ -126,9 +126,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  *
  * `--font-sans` and `--font-mono` have always named Geist and JetBrains Mono,
  * but nothing ever loaded them — every page fell through to the system stack,
- * so no one had seen a board in its own typeface. They cannot come from a CDN
- * (the tunnel CSP forbids it, and exports open over `file://`), so they are
- * subsetted here and inlined by Vite as data URIs.
+ * so no one had seen a board in its own typeface. They cannot be fetched from a
+ * content delivery network (the tunnel CSP forbids it, and exports open over
+ * `file://`), so they are subsetted here and inlined by Vite as data URIs.
  *
  * Subset to Latin-1 plus the punctuation, arrows and marks the boards render;
  * regenerate with `make web-fonts` after changing that set. Three faces, ~51 KB

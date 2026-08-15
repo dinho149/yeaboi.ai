@@ -1580,12 +1580,67 @@ def _discover_story_points_field(jira: JIRA) -> str:
     return ""
 
 
+def _assignee_value(jira: JIRA, name: str) -> dict | None:
+    """The shape this instance wants for an assignee, or None if nobody matches.
+
+    Cloud identifies a user by ``accountId`` and Server by ``name``; searching
+    first is what tells the two apart, because the search result carries
+    whichever identifier its instance uses.
+    """
+    if not name.strip():
+        return {"accountId": None}  # explicit unassign
+    try:
+        for user in jira.search_users(query=name, maxResults=5) or []:
+            account = getattr(user, "accountId", "")
+            if account:
+                return {"accountId": account}
+            legacy = getattr(user, "name", "")
+            if legacy:
+                return {"name": legacy}
+    except Exception as e:
+        logger.warning("_assignee_value lookup failed for %s: %s", log_safe(repr(name)), e)
+    return None
+
+
+def jira_transition_issue(key: str, status: str) -> tuple[bool, str]:
+    """Move an issue to ``status``. Returns (ok, human_error).
+
+    A status is not a writable field on a Jira issue — it is the result of a
+    workflow transition, and which transitions exist depends on the issue's
+    current state. Writing ``fields["status"]`` is rejected outright, which is
+    why this is a separate call.
+    """
+    logger.info("jira_transition_issue: key=%s status=%s", log_safe(repr(key)), log_safe(repr(status)))
+    jira = _make_jira_client()
+    if jira is None:
+        return False, _MISSING_CONFIG_MSG
+    try:
+        issue = jira.issue(key)
+        wanted = status.strip().lower()
+        for transition in jira.transitions(issue):
+            target = ((transition.get("to") or {}).get("name") or "").strip().lower()
+            if target == wanted or (transition.get("name") or "").strip().lower() == wanted:
+                jira.transition_issue(issue, transition["id"])
+                logger.info("jira_transition_issue: %s moved to %s", key, log_safe(repr(status)))
+                return True, ""
+        return False, f"Error: {key} cannot move to {status!r} from where it is."
+    except JIRAError as e:
+        logger.warning("jira_transition_issue failed: %s", _jira_error_msg(e))
+        return False, _jira_error_msg(e)
+    except Exception as e:
+        logger.warning("jira_transition_issue unexpected error: %s", e)
+        return False, f"Error: {e}"
+
+
 def jira_update_issue_fields(
     key: str,
     *,
     summary: str | None = None,
     description: str | None = None,
     story_points: float | None = None,
+    issue_type: str | None = None,
+    assignee: str | None = None,
+    acceptance: str | None = None,
 ) -> tuple[bool, str]:
     """Update fields on an existing issue. Returns (ok, human_error).
 
@@ -1614,6 +1669,20 @@ def jira_update_issue_fields(
         fields["description"] = description
     if story_points is not None:
         fields[pts_field] = float(story_points)
+    if issue_type is not None and issue_type.strip():
+        fields["issuetype"] = {"name": issue_type.strip()}
+    if assignee is not None:
+        value = _assignee_value(jira, assignee)
+        if value is None:
+            return False, f"Error: no Jira user matches {assignee!r}."
+        fields["assignee"] = value
+    if acceptance is not None:
+        # The same scan the standup and poker reads already use — one cache, and
+        # "" means scanned-and-absent rather than not-yet-scanned.
+        field_id, _dod = _discover_text_fields(jira)
+        if not field_id:
+            return False, "Error: this Jira has no acceptance-criteria field."
+        fields[field_id] = acceptance
     if not fields:
         return True, ""
     try:
