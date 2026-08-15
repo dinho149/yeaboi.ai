@@ -82,7 +82,7 @@ jobs:
 
       - name: Verify bump and enable auto-merge
         if: steps.pr.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1.0.191
         env:
           GH_TOKEN: ${{ github.token }}
         with:

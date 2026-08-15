@@ -247,7 +247,7 @@ jobs:
           # ✅/❌ footer must not become the public release page.
           python3 scripts/release_channel.py --manifest --release-notes > notes.md
           cat notes.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.lane.outputs.unattended != 'true'
         with:
           name: release-notes
@@ -374,7 +374,7 @@ jobs:
           # The tested tree, not main. Testing one commit and shipping another is
           # the whole failure this pinning exists to stop.
           ref: ${{ needs.check.outputs.sha }}
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
       - run: uv python install 3.12
       - run: uv sync --extra dev
       - run: make lint
@@ -392,7 +392,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.check.outputs.sha }}
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
       - run: uv python install 3.12
       # No stamping step: the final IS the version in pyproject.toml. That is the
       # whole reason the rc suffix never gets committed.
@@ -419,7 +419,7 @@ jobs:
           # `git log <tag>..` — the next batch, the announcement — would be wrong.
           ref: ${{ needs.check.outputs.sha }}
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-notes
           path: /tmp/notes
