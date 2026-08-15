@@ -141,6 +141,12 @@
 /* The handle, and the only part of the dock that is not a control — so it
    spans the dock's short axis rather than being a 3px mark. Standing on end
    there is otherwise nothing left to grab. */
+/* A control's own box, so the split can measure how much wall it takes. */
+.dockItem {
+  display: inline-flex;
+  align-items: center;
+}
+
 .dockGrip {
   flex: none;
   align-self: stretch;

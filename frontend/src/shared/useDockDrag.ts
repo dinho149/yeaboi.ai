@@ -32,12 +32,26 @@ export interface DockPlacement {
   y: number;
 }
 
+/** A stretch of the dock that lies on one wall. */
+export interface DockRun extends DockPlacement {
+  /** Indices of the controls in this stretch, in order. */
+  items: number[];
+}
+
 export interface DockDrag {
   ref: (node: HTMLElement | null) => void;
   dragging: boolean;
   /** True for one eased beat while the dock changes wall. */
   turning: boolean;
   placement: DockPlacement;
+  /**
+   * The dock split by wall. One run while it lies along a single wall — the
+   * usual case — and two while it is rounding a corner, so some controls have
+   * turned the corner and the rest have not.
+   */
+  runs: DockRun[];
+  /** Report a control's extent along the path, so the split knows where it falls. */
+  measure(index: number, extent: number): void;
   onPointerDown(event: React.PointerEvent): void;
 }
 
@@ -59,32 +73,68 @@ function project(px: number, py: number, { w, h }: Box): number {
   return h + w + (h - clamp(py, 0, h));
 }
 
-/** Where the dock sits for a perimeter distance, clamped to stay on one wall. */
-function place(t: number, box: Box): DockPlacement {
-  const { w, h, dw, dh } = box;
+/**
+ * Where a stretch of the dock sits for a perimeter distance.
+ *
+ * The stretch's *leading* edge goes at `t`, not its centre: a run that has
+ * turned a corner has to butt against the one behind it, and centring each on
+ * its own cursor overlaps them. `along` is the run's own extent — the whole
+ * dock's when there is only one.
+ */
+function place(t: number, box: Box, along: number, across: number): DockPlacement {
+  const { w, h } = box;
   if (t < h) {
-    const y = clamp(t - dh / 2, GUTTER, Math.max(GUTTER, h - dh - GUTTER));
-    return { edge: 'left', x: 0, y };
+    return { edge: 'left', x: 0, y: clamp(t, GUTTER, Math.max(GUTTER, h - along - GUTTER)) };
   }
   if (t < h + w) {
-    const x = clamp(t - h - dw / 2, GUTTER, Math.max(GUTTER, w - dw - GUTTER));
-    return { edge: 'bottom', x, y: h - dh };
+    return { edge: 'bottom', x: clamp(t - h, GUTTER, Math.max(GUTTER, w - along - GUTTER)), y: h - across };
   }
-  const along = h - (t - h - w);
-  const y = clamp(along - dh / 2, GUTTER, Math.max(GUTTER, h - dh - GUTTER));
-  return { edge: 'right', x: w - dw, y };
+  const up = h - (t - h - w) - along;
+  return { edge: 'right', x: w - across, y: clamp(up, GUTTER, Math.max(GUTTER, h - along - GUTTER)) };
+}
+
+/**
+ * Walk the controls along the path from `t`, cutting a new run each time the
+ * wall changes. With every control on one wall this returns a single run and
+ * the dock renders exactly as it always has.
+ */
+function split(t: number, box: Box, count: number, extents: readonly number[]): DockRun[] {
+  if (count <= 0) return [];
+  // Which wall each control lands on, walking the path from `t`.
+  const walls: DockEdge[] = [];
+  const starts: number[] = [];
+  let cursor = t;
+  for (let i = 0; i < count; i += 1) {
+    walls.push(place(cursor, box, 0, 0).edge);
+    starts.push(cursor);
+    cursor += extents[i] ?? 0;
+  }
+  const runs: DockRun[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const last = runs[runs.length - 1];
+    if (last && walls[i] === walls[last.items[0] as number]) last.items.push(i);
+    else runs.push({ edge: walls[i] as DockEdge, x: 0, y: 0, items: [i] });
+  }
+  // Placed once the run is whole, so it is measured by its own extent.
+  return runs.map((run) => {
+    const along = run.items.reduce((sum, i) => sum + (extents[i] ?? 0), 0);
+    const across = run.edge === 'bottom' ? box.dh : box.dw;
+    return { ...run, ...place(starts[run.items[0] as number] as number, box, along, across) };
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function useDockDrag(): DockDrag {
+export function useDockDrag(count = 0): DockDrag {
   const [placement, setPlacement] = useState<DockPlacement>({ edge: 'bottom', x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [turning, setTurning] = useState(false);
   const node = useRef<HTMLElement | null>(null);
   const distance = useRef<number | null>(null);
+  const extents = useRef<number[]>([]);
+  const [runs, setRuns] = useState<DockRun[]>([]);
   /** Where along the dock it was grabbed, so it does not snap under the cursor. */
   const grab = useRef(0);
   const edgeRef = useRef<DockEdge>('bottom');
@@ -106,7 +156,11 @@ export function useDockDrag(): DockDrag {
       const b = box();
       if (!b) return;
       distance.current = t;
-      const next = place(t, b);
+      // Two passes: which wall it lands on decides which of its dimensions runs
+      // along that wall.
+      const wall = place(t, b, 0, 0).edge;
+      const next = place(t, b, wall === 'bottom' ? b.dw : b.dh, wall === 'bottom' ? b.dh : b.dw);
+      setRuns(split(t, b, count, extents.current));
       if (next.edge !== edgeRef.current) {
         edgeRef.current = next.edge;
         // Changing wall is a reorientation, not a slide, so it is the one move
@@ -168,5 +222,11 @@ export function useDockDrag(): DockDrag {
     return () => window.removeEventListener('resize', onResize);
   }, [settle]);
 
-  return { ref, dragging, turning, placement, onPointerDown };
+  const measure = useCallback((index: number, extent: number) => {
+    if (extents.current[index] === extent) return;
+    extents.current[index] = extent;
+    if (distance.current !== null) settle(distance.current);
+  }, [settle]);
+
+  return { ref, dragging, turning, placement, runs, measure, onPointerDown };
 }
