@@ -234,7 +234,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | — |
+| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01EPy41L2yD7YLKzuRXVfxw1 |
 | `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | https://claude.ai/code/routines/trig_019w6RJqz8aWJ13TkXmPUgtX |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
 | `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` | https://claude.ai/code/routines/trig_0118jEhPuaKrCaUWCYQtVgEv |
@@ -242,7 +242,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` | https://claude.ai/code/routines/trig_01G4TuU1wYY7GXJ1cEXZUNSu |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
-| `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | — |
+| `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | https://claude.ai/code/routines/trig_01KYYfRyy1kKCYXq8EFn6ac6 |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
 | `events/release-published-announce.md` | Release published | — | `standard` | https://claude.ai/code/routines/trig_01VXdR2FbPJUsMqVWghA7C5T |
