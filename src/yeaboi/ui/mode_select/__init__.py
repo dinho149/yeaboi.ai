@@ -12124,9 +12124,10 @@ def _run_category_screen(
         _CATEGORY_CARDS,
         _build_category_screen,
         category_at_pos,
+        category_index,
     )
 
-    selected = next((i for i, c in enumerate(_CATEGORY_CARDS) if c["key"] == preselected), 0)
+    selected = category_index(preselected)
     start = time.monotonic()
     logger.info("category screen shown (preselected: %s)", preselected)
     while True:
@@ -12170,6 +12171,25 @@ def _run_category_screen(
                 logger.info("category click-chosen: %s", chosen)
                 return chosen
             selected = hit
+
+
+def _landing_first_frame(category: str, *, width: int, height: int):
+    """The frame ``select_mode``'s Live is seeded with.
+
+    Rich paints the seed on entry, before any loop body runs, so it has to be the
+    opening frame of whatever the loop shows first — Phase 0, the landing split,
+    at intro 0. Seed the *menu* instead and its hint row and music pocket flash
+    over the tail of the splash for a frame.
+    """
+    from yeaboi.ui.mode_select.screens._screens_category import _build_category_screen, category_index
+
+    return _build_category_screen(
+        category_index(category),
+        width=width,
+        height=height,
+        shimmer_tick=0.0,
+        intro=0.0,
+    )
 
 
 def select_mode(
@@ -12233,24 +12253,13 @@ def select_mode(
     # shimmer, the cross-fading tip, the idle duck, the music equalizer), so in
     # inline mode Rich rewrites scattered lines across the full height every frame
     # — the visible "reprint"/flicker. Alt-screen swaps composite frames cleanly.
-    # A single, brief flash at the splash→menu boundary is the accepted trade for
-    # a flicker-free steady state. 60fps keeps the shimmer/duck/tip motion smooth
-    # (the input loop already polls at _FRAME_TIME = 1/60, so the Live refresh cap
-    # was the bottleneck); alt-screen double-buffering means the higher rate costs
-    # redraw work but never flickers.
+    # 60fps keeps the shimmer/duck/tip motion smooth (the input loop already polls
+    # at _FRAME_TIME = 1/60, so the Live refresh cap was the bottleneck);
+    # alt-screen double-buffering means the higher rate costs redraw work but
+    # never flickers.
+    #
     with make_live(
-        # Seed the first frame with NOTHING revealed (sweep front at 0) so the
-        # diagonal intro wipes titles in from an empty screen — otherwise every
-        # item flashes in for one frame before animating.
-        _build_mode_screen(
-            selected,
-            width=w,
-            height=h,
-            shimmer_tick=0.0,
-            desc_reveal=0,
-            sweep_front=0.0,
-            companion_intro=0.0,  # duck stays off-screen until it slides in post-wipe
-        ),
+        _landing_first_frame(category, width=w, height=h),
         console=console,
         refresh_per_second=60,
         screen=True,

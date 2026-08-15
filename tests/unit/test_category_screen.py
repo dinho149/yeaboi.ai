@@ -316,3 +316,51 @@ class TestChromeOptOuts:
         panel = _build_category_screen(0, width=110, height=32)
         assert getattr(panel, "_no_companion_duck", False) is True
         assert getattr(panel, "_no_back_hint", False) is True
+
+
+class TestSeedFrame:
+    """The frame Rich paints when select_mode's Live starts.
+
+    Live refreshes its seed renderable on entry, before the loop body runs, so a
+    seed that is not the first screen shown gets one visible frame of its own.
+    Seeding the mode menu here put its version/hints row and music pocket over
+    the tail of the splash — the flicker at the splash → landing-split boundary.
+    """
+
+    def _seed(self, category="humans", width=110, height=40):
+        from yeaboi.ui.mode_select import _landing_first_frame
+
+        return _landing_first_frame(category, width=width, height=height)
+
+    def test_it_is_the_landing_split(self):
+        console = Console(width=110, height=40, force_terminal=False)
+        rows = console.render_lines(self._seed(), console.options.update(height=40), pad=True)
+        text = "\n".join("".join(seg.text for seg in row) for row in rows)
+        assert "switch" in text and "choose" in text  # the split's own hint row
+
+    def test_it_is_not_the_mode_menu(self):
+        # The row that flashed. If the seed ever goes back to _build_mode_screen
+        # this is what reappears, so name it rather than assert a shape.
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+
+        console = Console(width=185, height=40, force_terminal=False)
+
+        def _flat(renderable):
+            rows = console.render_lines(renderable, console.options.update(height=40), pad=True)
+            return "\n".join("".join(seg.text for seg in row) for row in rows)
+
+        menu = _flat(
+            _build_mode_screen(
+                0, width=185, height=40, shimmer_tick=0.0, desc_reveal=0, sweep_front=0.0, companion_intro=0.0
+            )
+        )
+        assert "changelog" in menu, "premise: the menu's hint row is what used to flash"
+        assert "changelog" not in _flat(self._seed(width=185, height=40))
+
+    def test_it_opens_on_the_remembered_category(self):
+        from yeaboi.ui.mode_select.screens._screens_category import category_index
+
+        assert category_index("humans") == 0
+        assert category_index("agents") == 1
+        # An unknown key must not raise — a hand-edited config lands on Humans.
+        assert category_index("nonsense") == 0

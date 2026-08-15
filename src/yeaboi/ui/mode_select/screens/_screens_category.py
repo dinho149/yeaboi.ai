@@ -98,6 +98,11 @@ def reset_category_walk() -> None:
     _WALK.clear()
 
 
+def category_index(key: str) -> int:
+    """Position of the category *key* in the cards, 0 for an unknown one."""
+    return next((i for i, card in enumerate(_CATEGORY_CARDS) if card["key"] == key), 0)
+
+
 def _shaded_rows(cells, level: float) -> list[Text]:
     """The sprite's cells as Texts, its colours dimmed toward the page.
 
