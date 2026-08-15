@@ -196,6 +196,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      color-mix keeps the five theme blocks to the handful of decisions a
      theme actually is; everything shaded off them is computed here once. */
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  /* A surface on a dark ground is read from its lit edge, not from its fill —
+     the separator every dark product UI in the reference set uses is white at
+     5–14%, never a darker grey. Raised surfaces take `--hairline` plus
+     `--edge`; anything that has to hold its own against a panel takes the
+     strong one. */
+  --hairline: color-mix(in srgb, var(--text) 7%, transparent);
+  --hairline-strong: color-mix(in srgb, var(--text) 13%, transparent);
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */

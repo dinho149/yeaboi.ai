@@ -196,6 +196,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      color-mix keeps the five theme blocks to the handful of decisions a
      theme actually is; everything shaded off them is computed here once. */
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  /* A surface on a dark ground is read from its lit edge, not from its fill —
+     the separator every dark product UI in the reference set uses is white at
+     5–14%, never a darker grey. Raised surfaces take `--hairline` plus
+     `--edge`; anything that has to hold its own against a panel takes the
+     strong one. */
+  --hairline: color-mix(in srgb, var(--text) 7%, transparent);
+  --hairline-strong: color-mix(in srgb, var(--text) 13%, transparent);
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
@@ -2116,7 +2123,7 @@ dialog._modal_6k8bd_392 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_1vgqf_32 {
+._app_yletb_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2126,7 +2133,7 @@ dialog._modal_6k8bd_392 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_1vgqf_42 {
+._scroll_yletb_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2136,7 +2143,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_1vgqf_52 {
+._layout_yletb_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2153,7 +2160,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_1vgqf_69 {
+._main_yletb_69 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2162,7 +2169,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_1vgqf_52 {
+  ._layout_yletb_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2170,7 +2177,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 699px) {
-  ._layout_1vgqf_52 {
+  ._layout_yletb_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2179,19 +2186,21 @@ dialog._modal_6k8bd_392 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_1vgqf_95 {
+._rail_yletb_95 {
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s3);
 }
 
-._railHead_1vgqf_103 {
+._railHead_yletb_105 {
   margin-bottom: var(--s2);
 }
 
-._railList_1vgqf_107 {
+._railList_yletb_109 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2200,7 +2209,7 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._railItem_1vgqf_116 {
+._railItem_yletb_118 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2217,12 +2226,12 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._railItem_1vgqf_116:hover {
+._railItem_yletb_118:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_1vgqf_138 {
+._railDot_yletb_140 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2230,30 +2239,30 @@ dialog._modal_6k8bd_392 {
   background: var(--line-strong);
 }
 
-._railCurrent_1vgqf_146 {
+._railCurrent_yletb_148 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_1vgqf_146 ._railDot_1vgqf_138 {
+._railCurrent_yletb_148 ._railDot_yletb_140 {
   background: var(--accent);
 }
 
-._railPeeking_1vgqf_155 {
+._railPeeking_yletb_157 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_1vgqf_160 ._railDot_1vgqf_138 {
+._railDone_yletb_162 ._railDot_yletb_140 {
   background: var(--ok);
 }
 
-._railDone_1vgqf_160 ._railText_1vgqf_164 {
+._railDone_yletb_162 ._railText_yletb_166 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_1vgqf_164 {
+._railText_yletb_166 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2261,29 +2270,29 @@ dialog._modal_6k8bd_392 {
   white-space: nowrap;
 }
 
-._railKey_1vgqf_177 {
+._railKey_yletb_179 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_1vgqf_183 {
+._railPts_yletb_185 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_1vgqf_190 {
+._railToggle_yletb_192 {
   display: none;
 }
 
-._railBackdrop_1vgqf_194 {
+._railBackdrop_yletb_196 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_1vgqf_95 {
+  ._rail_yletb_95 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2297,15 +2306,15 @@ dialog._modal_6k8bd_392 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_1vgqf_213 {
+  ._railOpen_yletb_215 {
     transform: translateX(0);
   }
 
-  ._railToggle_1vgqf_190 {
+  ._railToggle_yletb_192 {
     display: inline-flex;
   }
 
-  ._railBackdrop_1vgqf_194 {
+  ._railBackdrop_yletb_196 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2316,7 +2325,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_1vgqf_232 {
+._ticket_yletb_234 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2327,36 +2336,36 @@ dialog._modal_6k8bd_392 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_1vgqf_243 {
+._ticketPeek_yletb_245 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_1vgqf_249 {
+._tkrow_yletb_251 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_1vgqf_256 {
+._key_yletb_258 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_1vgqf_256 a {
+._key_yletb_258 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_1vgqf_256 a:hover {
+._key_yletb_258 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_1vgqf_272 {
+._phaseTag_yletb_274 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2367,25 +2376,25 @@ dialog._modal_6k8bd_392 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_1vgqf_283 {
+._phaseTagOn_yletb_285 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_1vgqf_289 {
+._phaseTagPeek_yletb_291 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_1vgqf_294 {
+._tkSummary_yletb_296 {
   margin: 0;
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_1vgqf_301 {
+._chips_yletb_303 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2394,7 +2403,7 @@ dialog._modal_6k8bd_392 {
 
 /* Title and its chips on one line, the chips wrapping under it when the
    summary is long enough to take the row. */
-._tkHead_1vgqf_310 {
+._tkHead_yletb_312 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2402,12 +2411,12 @@ dialog._modal_6k8bd_392 {
   margin: var(--s2) 0 var(--s3);
 }
 
-._bodyLabel_1vgqf_318 {
+._bodyLabel_yletb_320 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_1vgqf_323 {
+._desc_yletb_325 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2416,25 +2425,25 @@ dialog._modal_6k8bd_392 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_1vgqf_323 {
+._desc_yletb_325 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_1vgqf_339 {
+._descClipped_yletb_341 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_1vgqf_346 {
+._descFade_yletb_348 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_1vgqf_350 {
+._descToggle_yletb_352 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2446,13 +2455,13 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._descEmpty_1vgqf_362 {
+._descEmpty_yletb_364 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_1vgqf_368 {
+._peekBanner_yletb_370 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2466,7 +2475,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._peekActions_1vgqf_382 {
+._peekActions_yletb_384 {
   display: flex;
   gap: var(--s2);
 }
@@ -2474,16 +2483,17 @@ dialog._modal_6k8bd_392 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_1vgqf_390 {
+._pkbtnGo_yletb_392 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_1vgqf_397 {
+._results_yletb_399 {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s4);
   display: flex;
@@ -2491,7 +2501,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._resultsHead_1vgqf_407 {
+._resultsHead_yletb_410 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2499,18 +2509,18 @@ dialog._modal_6k8bd_392 {
   flex-wrap: wrap;
 }
 
-._resultsSum_1vgqf_415 {
+._resultsSum_yletb_418 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_1vgqf_415 b {
+._resultsSum_yletb_418 b {
   color: var(--accent);
 }
 
-._dist_1vgqf_426 {
+._dist_yletb_429 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2519,7 +2529,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s1);
 }
 
-._drow_1vgqf_435 {
+._drow_yletb_438 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2530,19 +2540,19 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._dval_1vgqf_446 {
+._dval_yletb_449 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_1vgqf_451 {
+._dtrack_yletb_454 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_1vgqf_458 {
+._dbar_yletb_461 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2550,21 +2560,21 @@ dialog._modal_6k8bd_392 {
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_1vgqf_466 ._dbar_1vgqf_458 {
+._drowTop_yletb_469 ._dbar_yletb_461 {
   background: var(--accent);
 }
 
-._drowTop_1vgqf_466 ._dval_1vgqf_446 {
+._drowTop_yletb_469 ._dval_yletb_449 {
   color: var(--accent);
 }
 
-._dcount_1vgqf_474 {
+._dcount_yletb_477 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_1vgqf_480 {
+._ainote_yletb_483 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2572,7 +2582,7 @@ dialog._modal_6k8bd_392 {
   background: var(--panel-2);
 }
 
-._aiHead_1vgqf_488 {
+._aiHead_yletb_491 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2583,57 +2593,57 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._aiBody_1vgqf_499 {
+._aiBody_yletb_502 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_1vgqf_505 {
+._conf_yletb_508 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_1vgqf_512 {
+._conf-high_yletb_515 {
   color: var(--ok);
 }
 
-._conf-medium_1vgqf_516 {
+._conf-medium_yletb_519 {
   color: var(--warn);
 }
 
-._conf-low_1vgqf_520 {
+._conf-low_yletb_523 {
   color: var(--danger);
 }
 
-._ev_1vgqf_524 {
+._ev_yletb_527 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1vgqf_531 {
+._sug_yletb_534 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_1vgqf_531 b {
+._sug_yletb_534 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_1vgqf_544 ._aiBody_1vgqf_499::after {
+._ainotePending_yletb_547 ._aiBody_yletb_502::after {
   content: '…';
-  animation: _dots_1vgqf_1 1.2s steps(4, end) infinite;
+  animation: _dots_yletb_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_1vgqf_1 {
+@keyframes _dots_yletb_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2644,14 +2654,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_1vgqf_560 {
+._duel_yletb_563 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_1vgqf_567 {
+._duelHead_yletb_570 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2663,13 +2673,13 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._duelBody_1vgqf_579 {
+._duelBody_yletb_582 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_1vgqf_585 {
+._duelTranscript_yletb_588 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2678,41 +2688,41 @@ dialog._modal_6k8bd_392 {
   overflow-y: auto;
 }
 
-._recind_1vgqf_594 {
+._recind_yletb_597 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_1vgqf_601 {
+._recDot_yletb_604 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_1vgqf_1 1.4s ease-in-out infinite;
+  animation: _recpulse_yletb_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_1vgqf_1 {
+@keyframes _recpulse_yletb_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_1vgqf_615 {
+._norec_yletb_618 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_1vgqf_621 {
+._dualrow_yletb_624 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_1vgqf_628 {
+._duelist_yletb_631 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2724,31 +2734,31 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._duelistSpeaking_1vgqf_640 {
+._duelistSpeaking_yletb_643 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_1vgqf_645 {
+._duelFace_yletb_648 {
   font-size: var(--fs-xl);
 }
 
-._duelName_1vgqf_649 {
+._duelName_yletb_652 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_1vgqf_654 {
+._duelValue_yletb_657 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_1vgqf_654 b {
+._duelValue_yletb_657 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_1vgqf_664 {
+._duelFloor_yletb_667 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2756,12 +2766,12 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._duelMic_1vgqf_672 {
+._duelMic_yletb_675 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_1vgqf_677 {
+._vs_yletb_680 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2769,7 +2779,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._youup_1vgqf_685 {
+._youup_yletb_688 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2779,7 +2789,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._micRow_1vgqf_695 {
+._micRow_yletb_698 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2787,7 +2797,7 @@ dialog._modal_6k8bd_392 {
   margin-top: var(--s3);
 }
 
-._micBtn_1vgqf_703 {
+._micBtn_yletb_706 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2799,7 +2809,7 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._hint_1vgqf_715 {
+._hint_yletb_718 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -2808,31 +2818,31 @@ dialog._modal_6k8bd_392 {
 
 /* No panel of its own: the seats read as part of the voting furniture, not as
    another card. */
-._table_1vgqf_724 {
+._table_yletb_727 {
   margin-top: auto;
   padding: 0 var(--s1);
 }
 
-._tableHead_1vgqf_729 {
+._tableHead_yletb_732 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_1vgqf_736 {
+._tableWait_yletb_739 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_1vgqf_742 {
+._vempty_yletb_745 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_1vgqf_748 {
+._vrow_yletb_751 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2842,7 +2852,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* A seat: face over name. */
-._voter_1vgqf_758 {
+._voter_yletb_761 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2850,7 +2860,7 @@ dialog._modal_6k8bd_392 {
   width: 68px;
 }
 
-._face_1vgqf_766 {
+._face_yletb_769 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2858,11 +2868,12 @@ dialog._modal_6k8bd_392 {
   height: 44px;
   border-radius: 50%;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   font-size: var(--fs-l);
 }
 
-._tick_1vgqf_232 {
+._tick_yletb_234 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2885,30 +2896,34 @@ dialog._modal_6k8bd_392 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_1vgqf_801 {
+._vcard_yletb_805 {
   display: grid;
   place-items: center;
   width: 44px;
   height: 62px;
-  border-radius: var(--r-s);
-  background: var(--card);
-  border: 1px solid var(--accent);
+  border-radius: var(--r-m);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 20%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 10%, var(--panel)) 55%);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    var(--edge),
+    0 4px 10px rgb(0 0 0 / 40%);
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_1vgqf_1 320ms var(--ease) both;
+  animation: _flip_yletb_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_1vgqf_1 {
+@keyframes _flip_yletb_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_1vgqf_824 {
+._nm_yletb_832 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2919,7 +2934,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_1vgqf_835 {
+._deckZone_yletb_843 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2952,24 +2967,24 @@ dialog._modal_6k8bd_392 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_1vgqf_32[data-host='true'] {
+  ._app_yletb_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_1vgqf_874 {
+._deckStatus_yletb_882 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_1vgqf_881 {
+._deckMine_yletb_889 {
   color: var(--accent);
 }
 
-._deck_1vgqf_835 {
+._deck_yletb_843 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -2981,48 +2996,63 @@ dialog._modal_6k8bd_392 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_1vgqf_897 {
+._pcard_yletb_905 {
   position: relative;
   width: 60px;
   height: 84px;
-  border-radius: var(--r-s);
-  border: 1px solid var(--line-strong);
-  background: var(--panel-2);
+  border-radius: var(--r-m);
+  border: 1px solid var(--hairline-strong);
+  /* Lit from above, so the card reads as a face catching light rather than a
+     filled rectangle. */
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 7%, var(--panel)) 0%, var(--panel) 55%);
+  box-shadow:
+    var(--edge),
+    0 1px 2px rgb(0 0 0 / 40%);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_1vgqf_897:hover:not(:disabled) {
-  transform: translateY(-4px);
-  border-color: var(--accent);
+._pcard_yletb_905:hover:not(:disabled) {
+  transform: translateY(-6px);
+  border-color: var(--hairline-strong);
+  box-shadow:
+    var(--edge),
+    0 8px 16px rgb(0 0 0 / 45%);
 }
 
-._pcard_1vgqf_897:disabled {
+._pcard_yletb_905:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_1vgqf_924 {
+._pcardSel_yletb_942 {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 12%, var(--panel)) 55%);
   color: var(--accent);
-  transform: translateY(-6px);
+  transform: translateY(-10px);
+  box-shadow:
+    var(--edge),
+    0 10px 20px rgb(0 0 0 / 50%),
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_1vgqf_934 {
+._pcardWait_yletb_957 {
   border-style: dashed;
 }
 
-._ci_1vgqf_938 {
+._ci_yletb_961 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3031,7 +3061,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._ciFlip_1vgqf_947 {
+._ciFlip_yletb_970 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3039,17 +3069,19 @@ dialog._modal_6k8bd_392 {
   transform: rotate(180deg);
 }
 
-._cv_1vgqf_955 {
+._cv_yletb_978 {
   font-size: var(--fs-l);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_1vgqf_962 {
+._console_yletb_985 {
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s3);
   display: flex;
@@ -3057,13 +3089,13 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._cbar_1vgqf_973 {
+._cbar_yletb_998 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_1vgqf_979 {
+._cphase_yletb_1004 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3071,20 +3103,20 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._cbody_1vgqf_987 {
+._cbody_yletb_1012 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_1vgqf_993 {
+._cgroup_yletb_1018 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_1vgqf_999,
-._navrow_1vgqf_1000 {
+._crow_yletb_1024,
+._navrow_yletb_1025 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3093,11 +3125,11 @@ dialog._modal_6k8bd_392 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_1vgqf_1009:not(:empty) {
+._duelSlot_yletb_1034:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_1vgqf_1013 {
+._duelInline_yletb_1038 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3106,12 +3138,12 @@ dialog._modal_6k8bd_392 {
   border-radius: var(--r-s);
 }
 
-._seg_1vgqf_1022 {
+._seg_yletb_1047 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_1vgqf_1027 {
+._preset_yletb_1052 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3123,8 +3155,8 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._clabel_1vgqf_1039,
-._finlab_1vgqf_1040 {
+._clabel_yletb_1064,
+._finlab_yletb_1065 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3132,38 +3164,38 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._chint_1vgqf_1048,
-._cnotice_1vgqf_1049 {
+._chint_yletb_1073,
+._cnotice_yletb_1074 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_1vgqf_1049 {
+._cnotice_yletb_1074 {
   color: var(--warn);
 }
 
-._readout_1vgqf_1060 {
+._readout_yletb_1085 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_1vgqf_1060 b {
+._readout_yletb_1085 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_1vgqf_1072 {
+._finrow_yletb_1097 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_1vgqf_1079 {
+._finInput_yletb_1104 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3175,12 +3207,12 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._finSrc_1vgqf_1091 {
+._finSrc_yletb_1116 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_1vgqf_1096 {
+._cpos_yletb_1121 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3190,7 +3222,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._console_1vgqf_962 {
+  ._console_yletb_985 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3200,31 +3232,31 @@ dialog._modal_6k8bd_392 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_1vgqf_973 {
+  ._cbar_yletb_998 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_1vgqf_987 {
+  ._cbody_yletb_1012 {
     display: none;
   }
 
-  ._consoleOpen_1vgqf_1126 ._cbody_1vgqf_987 {
+  ._consoleOpen_yletb_1151 ._cbody_yletb_1012 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_1vgqf_1133 {
+._identity_yletb_1158 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_1vgqf_1140 {
+._meChip_yletb_1165 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3239,34 +3271,34 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._meName_1vgqf_1155 {
+._meName_yletb_1180 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_1vgqf_1162 {
+._pen_yletb_1187 {
   color: var(--dim);
 }
 
-._roomCount_1vgqf_1166 {
+._roomCount_yletb_1191 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_1vgqf_1171 {
+._offline_yletb_1196 {
   color: var(--warn);
 }
 
-._popNote_1vgqf_1175 {
+._popNote_yletb_1200 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_1vgqf_1181,
-._musicBanner_1vgqf_1182 {
+._lockBanner_yletb_1206,
+._musicBanner_yletb_1207 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -3274,12 +3306,12 @@ dialog._modal_6k8bd_392 {
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_1vgqf_1181 {
+._lockBanner_yletb_1206 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_1vgqf_1182 {
+._musicBanner_yletb_1207 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3292,7 +3324,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_1vgqf_1208 {
+._flabel_yletb_1233 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3302,7 +3334,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._field_1vgqf_1218 {
+._field_yletb_1243 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3314,24 +3346,24 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-textarea._field_1vgqf_1218 {
+textarea._field_yletb_1243 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_1vgqf_1235 {
+._editWarn_yletb_1260 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_1vgqf_1241 {
+._editNote_yletb_1266 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_1vgqf_1247 {
+._editSave_yletb_1272 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3346,7 +3378,7 @@ textarea._field_1vgqf_1218 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_1vgqf_1262 {
+._srOnly_yletb_1287 {
   position: absolute;
   width: 1px;
   height: 1px;

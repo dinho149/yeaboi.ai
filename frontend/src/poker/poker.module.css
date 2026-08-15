@@ -96,6 +96,8 @@
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s3);
 }
@@ -396,7 +398,8 @@
 
 .results {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s4);
   display: flex;
@@ -771,7 +774,8 @@
   height: 44px;
   border-radius: 50%;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   font-size: var(--fs-l);
 }
 
@@ -803,9 +807,13 @@
   place-items: center;
   width: 44px;
   height: 62px;
-  border-radius: var(--r-s);
-  background: var(--card);
-  border: 1px solid var(--accent);
+  border-radius: var(--r-m);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 20%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 10%, var(--panel)) 55%);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    var(--edge),
+    0 4px 10px rgb(0 0 0 / 40%);
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-l);
@@ -898,21 +906,31 @@
   position: relative;
   width: 60px;
   height: 84px;
-  border-radius: var(--r-s);
-  border: 1px solid var(--line-strong);
-  background: var(--panel-2);
+  border-radius: var(--r-m);
+  border: 1px solid var(--hairline-strong);
+  /* Lit from above, so the card reads as a face catching light rather than a
+     filled rectangle. */
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 7%, var(--panel)) 0%, var(--panel) 55%);
+  box-shadow:
+    var(--edge),
+    0 1px 2px rgb(0 0 0 / 40%);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
 
 .pcard:hover:not(:disabled) {
-  transform: translateY(-4px);
-  border-color: var(--accent);
+  transform: translateY(-6px);
+  border-color: var(--hairline-strong);
+  box-shadow:
+    var(--edge),
+    0 8px 16px rgb(0 0 0 / 45%);
 }
 
 .pcard:disabled {
@@ -923,9 +941,14 @@
 /* The one place the accent belongs on this row: the card you played. */
 .pcardSel {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 12%, var(--panel)) 55%);
   color: var(--accent);
-  transform: translateY(-6px);
+  transform: translateY(-10px);
+  box-shadow:
+    var(--edge),
+    0 10px 20px rgb(0 0 0 / 50%),
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says
@@ -963,6 +986,8 @@
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--edge);
   border-radius: var(--r-m);
   padding: var(--s3);
   display: flex;
