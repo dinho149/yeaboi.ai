@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, twenty-four routines, a
+``cowork/`` is a complete specification — sixteen charters, twenty-five routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
 registered at claude.ai. Doing that by hand is 29 labels, 4 variables and 24 web
@@ -287,6 +287,12 @@ DEPLOY_ROUTINE = "cd-deploy"
 # ``publish.yml`` fires on the second landing on an issue that already carries the
 # first, so a teardown that deleted either would disarm the only path that can cut
 # an official release, and nothing would say so.
+# One issue per month, holding one comment per run. Deliberately outside the
+# `cowork:*` family: those names are the queue, and this is a record. Nothing in
+# the fleet reads it — see `scripts/cowork_checkin.py` for why that is the whole
+# safety property rather than an oversight.
+LEDGER_LABEL = "fleet-ledger"
+
 KEEP_LABELS = frozenset(
     {
         "claude-implement",
@@ -299,6 +305,10 @@ KEEP_LABELS = frozenset(
         "release:promotion",
         "release:promote",
         "integration:approved",
+        # Teardown stops the fleet; it does not erase what the fleet did. Deleting
+        # this label leaves every monthly ledger issue intact and unfindable, which
+        # is the worst of both — the history survives and nothing can read it.
+        LEDGER_LABEL,
     }
 )
 
@@ -325,13 +335,13 @@ SCOUT_TYPES = ("bug", "chore", "docs", "security")
 #
 # The propose lane had no bound at all. A scout returns up to ten finds, the auto
 # lane consumes at most one, so a single sweep could legitimately open nine
-# issues — and fifteen workstreams run on overlapping crons. `digest.md`'s
+# issues — and sixteen workstreams run on overlapping crons. `digest.md`'s
 # 14-day age-out was the only pressure release, which means the queue drained on
 # a clock rather than on anybody deciding anything.
 #
 # Two is deliberate rather than tuned. One would mean a sweep that files
 # something scouts nothing for a fortnight; three starts to bury the digest
-# again. Fifteen workstreams at two is a fleet ceiling of thirty, which is a
+# again. Sixteen workstreams at two is a fleet ceiling of thirty-two, which is a
 # list a human can still read in one sitting.
 #
 # `integration:candidate` issues are outside this cap on purpose: they carry
@@ -589,7 +599,7 @@ def parse_scout_types(text: str | None = None) -> tuple[str, ...]:
 
 
 def parse_workstreams() -> list[str]:
-    """The fifteen workstream names, from the charter filenames."""
+    """The sixteen workstream names, from the charter filenames."""
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
 
 
@@ -665,6 +675,13 @@ def expected_labels() -> list[Label]:
         # the only durable record that a merge was capped, and applying a label
         # that does not exist silently does nothing.
         Label("review-capped", "fbca04", "Merged with review findings recorded but not fixed"),
+        # The month's run ledger, written by `scripts/cowork_checkin.py --record`.
+        # It carries none of the labels above — not `cowork`, not `cowork:proposal`,
+        # not a `workstream:` — precisely so it is invisible to every query that
+        # already exists: `digest.md`'s fourteen-day age-out would close it, and
+        # `codeql-triage.yml` reads `--label cowork --state all --limit 500` as its
+        # dedupe corpus. Its own label is the only thing that finds it.
+        Label(LEDGER_LABEL, "ededed", "The month's fleet run ledger — written by check-ins, read by cowork_metrics"),
     ]
     labels += [Label(f"workstream:{name}", "1d76db", f"cowork workstream: {name}") for name in parse_workstreams()]
     labels += [Label(f"type:{kind}", _TYPE_COLORS[kind], f"issue type: {kind}") for kind in PROPOSAL_TYPES]
@@ -1535,6 +1552,53 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
             )
 
 
+# --- the constitution --------------------------------------------------------
+
+# The files no charter may own, `fleet`'s included. A fleet that can edit the
+# rules constraining it has no rules, and the point of naming them here rather
+# than trusting `fleet.md`'s prose is that `tests/unit/test_cowork_retune.py`
+# checks the **resolved paths** against this tuple — so an edit that reworded the
+# exclusion, or widened an `**Owns**` glob past it, fails rather than reads fine.
+#
+# The three crew agents are on the list for the same reason as the four docs:
+# `cowork-scout.md` is where the type vocabulary and the ten-find cap live, and
+# `cowork-builder.md` is what decides what an unattended build may touch.
+CONSTITUTION: tuple[str, ...] = (
+    "cowork/house-rules.md",
+    "cowork/definition-of-done.md",
+    "cowork/sweep-procedure.md",
+    "cowork/models.md",
+    "cowork/crew.md",
+    ".claude/agents/cowork-scout.md",
+    ".claude/agents/cowork-scribe.md",
+    ".claude/agents/cowork-builder.md",
+)
+
+# And the tests that enforce it. `fleet` owns `tests/unit/test_cowork_*.py`, which
+# quietly included the guards over the constitution itself: `test_cowork_models.py`
+# is what makes `models.md` the only file naming a model, and `test_cowork_retune.py`
+# is what asserts this very tuple against the resolved charter paths. Excluding the
+# documents while leaving their guards in reach makes the structural claim stronger
+# than what is enforced — the auto lane is two append-only files, so the practical
+# risk was low, but "no charter may own the constitution" should not have an
+# asterisk on it.
+CONSTITUTION_GUARDS: tuple[str, ...] = (
+    "tests/unit/test_cowork_models.py",
+    "tests/unit/test_cowork_retune.py",
+)
+
+# The only two files a `fleet` run may edit unattended, and both are append-only
+# accumulations of things that already went wrong. This is the whole of the
+# tighten half of `workstreams/fleet.md`'s asymmetry — *a routine may tighten
+# itself unattended; only a human may loosen it* — written down where a test can
+# read it. Adding a third entry here is a decision about what a machine may do to
+# its own instructions, which is why the list is short enough to hold in mind.
+AUTO_LANE_SITES: tuple[str, ...] = (
+    "cowork/calibration.md",
+    ".github/hygiene/lens-policy.yml",
+)
+
+
 # --- charter coverage --------------------------------------------------------
 
 # Modules deliberately claimed by no charter, each with the reason. Keep this
@@ -1578,7 +1642,7 @@ def owned_modules() -> set[str]:
 def check_charter_coverage(report: Report) -> None:
     """Every top-level module belongs to a charter, or says why it does not.
 
-    The label check below proves the fifteen charters agree with the fifteen
+    The label check below proves the sixteen charters agree with the sixteen
     labels; nothing proved they covered the repo. Fourteen modules were claimed by
     nobody when this was written — a scout reads only the paths its charter
     declares, so an unclaimed file is one no routine will ever look at, and the
@@ -2121,7 +2185,7 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
     """How many proposals one workstream may still file, and what is holding it.
 
     The arithmetic lives here rather than in the routine prose for the reason the
-    `--triggers` reconcile does: a model asked to count fifteen queues by eye
+    `--triggers` reconcile does: a model asked to count sixteen queues by eye
     will eventually miscount one, and nothing downstream would notice. The sweep
     runs this and obeys the number.
 
@@ -2181,7 +2245,7 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
 
 
 def report_proposal_slots(workstream: str | None, now: datetime | None = None) -> int:
-    """Print the slots JSON for one workstream, or for all fifteen.
+    """Print the slots JSON for one workstream, or for all sixteen.
 
     One object for a named workstream because that is what a sweep asks; a list
     for the whole fleet because that is what `cron/digest.md`'s Held section is
@@ -2204,7 +2268,7 @@ def _queue_rank(issue: dict) -> tuple:
 
     Same key the auto lane has always sorted on — highest ``impact``, ties to
     lower ``risk`` — with age as the final tie-break so the queue drains oldest
-    first. A model asked to sort fifteen queues by eye will eventually get one
+    first. A model asked to sort sixteen queues by eye will eventually get one
     wrong and nothing downstream would notice, which is the argument this whole
     file is built on.
 
@@ -2307,7 +2371,7 @@ def queue_report(workstream: str, now: datetime | None = None) -> dict:
 
 
 def report_queued(workstream: str | None, now: datetime | None = None) -> int:
-    """Print the queue for one workstream, or for all fifteen.
+    """Print the queue for one workstream, or for all sixteen.
 
     One object for a named workstream because that is what a sweep asks; a list
     for the whole fleet because that is what `cron/digest.md`'s Queued section is
@@ -4120,7 +4184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="?",
         const="",
         metavar="WORKSTREAM",
-        help="print how many proposals a workstream may still file (omit the name for all fifteen)",
+        help="print how many proposals a workstream may still file (omit the name for all sixteen)",
     )
     parser.add_argument(
         "--queued",
@@ -4128,7 +4192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         const="",
         metavar="WORKSTREAM",
         help="print the open cowork:queued items a sweep should build, in build order "
-        "(omit the name for all fifteen; queued=null means the query failed)",
+        "(omit the name for all sixteen; queued=null means the query failed)",
     )
     parser.add_argument(
         "--migrate-proposals",

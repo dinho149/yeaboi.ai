@@ -6,6 +6,15 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = roadmap`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering`
+
 ## Focus
 
 This is a monthly sweep over 1.2k LOC, so the code itself will rarely have something new. **The

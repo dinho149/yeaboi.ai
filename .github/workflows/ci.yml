@@ -283,7 +283,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
-      - run: uv run ruff format --check src/ tests/
+      - run: make format-check
 
   # ── Front end ────────────────────────────────────────────────────────────
   # The bundles in src/yeaboi/web/static are COMMITTED so that installing
@@ -337,29 +337,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
-      - run: uv build
-      - name: Assert bundles are packaged
-        run: |
-          python - <<'PY'
-          import pathlib, sys, tarfile, zipfile
-
-          required = {"yeaboi/web/static/export.js", "yeaboi/web/static/export.css"}
-
-          wheel = next(pathlib.Path("dist").glob("*.whl"))
-          names = set(zipfile.ZipFile(wheel).namelist())
-          missing = {n for n in required if n not in names}
-          if missing:
-              sys.exit(f"wheel {wheel.name} is missing {sorted(missing)}")
-
-          sdist = next(pathlib.Path("dist").glob("*.tar.gz"))
-          with tarfile.open(sdist) as tf:
-              members = {m.name.split("/", 1)[1] for m in tf.getmembers() if "/" in m.name}
-          # The sdist carries the TS sources too, so a release is reproducible.
-          for want in {"src/" + n for n in required} | {"frontend/package.json"}:
-              if want not in members:
-                  sys.exit(f"sdist {sdist.name} is missing {want}")
-          print(f"✓ {wheel.name} and {sdist.name} carry the bundles")
-          PY
+      # The assertion lives in scripts/check_wheel_bundles.py so `make package-check`
+      # runs the identical check locally — inline here, the only way to fail it was
+      # to open the PR.
+      - run: make package-check
 
   # ── Security ─────────────────────────────────────────────────────────────
   # SAST (ruff flake8-bandit "S" rules) + dependency CVE audit (pip-audit

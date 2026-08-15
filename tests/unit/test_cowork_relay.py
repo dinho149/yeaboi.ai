@@ -793,3 +793,91 @@ class TestTheCheckInIsNotAnInput:
         assert example, "the contract must keep showing the finished line"
         for line in example:
             assert not relay.ITEM_RE.match(line), f"a check-in must never parse as an item: {line}"
+
+
+class TestTheAuditComment:
+    """The audit trail the routine used to improvise, and the reason it now records.
+
+    Two separate failures meet here. #172 carries two identical ``approved via
+    Slack ✅`` comments because step 4 of ``slack-relay.md`` was a sentence asking
+    for a comment rather than an argv to run. And a ❌ was a bare
+    ``gh issue close`` — so the fleet recorded *that* a proposal died and never
+    *why*, which is the whole input a calibration loop needs.
+    """
+
+    def test_a_rejection_records_why_it_died(self) -> None:
+        argv = relay._audit("reject", 231, "someone", "1723.45")
+        assert argv is not None
+        assert argv[:4] == ["gh", "issue", "comment", "231"]
+        assert "<!-- rejected: reason=slack-veto by=someone ts=1723.45 -->" in argv[-1]
+
+    def test_every_approving_verb_says_what_it_did_in_english(self) -> None:
+        # "campaign" + "d" is "campaignd". The map exists because deriving the
+        # past tense was wrong for the one verb that is not a regular English one.
+        for verb in ("approve", "promote", "campaign"):
+            body = relay._audit(verb, 7, "who", "1.0")[-1]
+            assert f"<!-- relayed: verb={verb} by=who ts=1.0 -->" in body
+            assert "campaignd" not in body
+
+    def test_the_two_verbs_that_need_no_comment_get_none(self) -> None:
+        # `refire` already IS a comment, and `ask` performed no action to audit.
+        # A second comment on either is the duplicate this class exists to stop.
+        assert relay._audit("refire", 1, "who", "1.0") is None
+        assert relay._audit("ask", 1, "who", "1.0") is None
+
+    def test_every_actionable_entry_carries_its_own_audit(self) -> None:
+        replies = [reply("1.0", "#231 — [bug][tui-ux] something", x=[HUMAN])]
+        plan = relay.build_plan(replies, ALLOWLIST)["plan"]
+        assert [entry["verb"] for entry in plan] == ["reject"]
+        assert plan[0]["audit"][:3] == ["gh", "issue", "comment"]
+
+    def test_the_audit_never_spells_the_label_replacing_call(self) -> None:
+        # The same prohibition `_command` carries: `gh api -X PUT .../labels`
+        # replaced #172's whole label set. An audit comment is a write too.
+        for verb in ("approve", "promote", "campaign", "reject"):
+            argv = relay._audit(verb, 9, "who", "1.0")
+            assert "api" not in argv
+            assert not any("PUT" in part for part in argv)
+
+
+class TestTheReasonVocabularyIsClosed:
+    """The docs are the source; these tuples are the assertion.
+
+    Same shape as ``SCOUT_TYPES``, and for the same reason: the file a model
+    actually reads is the contract, so a reason invented in prose must fail here
+    rather than reach a reader that silently drops it. A marker nobody matches is
+    worse than no marker — it reads as a rejection that never happened.
+    """
+
+    MARKER = re.compile(r"<!--\s*(rejected|bounced):\s*reason=([a-z-]+)")
+
+    def _documented(self, kind: str) -> set[str]:
+        found: set[str] = set()
+        for path in (ROOT / "cowork").rglob("*.md"):
+            for match in self.MARKER.finditer(path.read_text(encoding="utf-8")):
+                if match.group(1) == kind and not match.group(2).startswith("<"):
+                    found.add(match.group(2))
+        return found
+
+    def test_every_documented_rejection_reason_is_in_the_tuple(self) -> None:
+        assert self._documented("rejected") <= set(relay.REJECTION_REASONS)
+
+    def test_every_rejection_reason_is_documented_somewhere(self) -> None:
+        # The other direction, which is the one that catches a reason nothing
+        # ever writes: a vocabulary entry no site emits is a metric that will
+        # read zero forever and look like good news.
+        assert set(relay.REJECTION_REASONS) == self._documented("rejected")
+
+    def test_the_bounce_reasons_mirror_the_allowlist_conditions(self) -> None:
+        # Not a second taxonomy: a find fails on exactly the conditions it had to
+        # clear, so these are house-rules' conditions and drift from them is a bug.
+        procedure = (ROOT / "cowork" / "sweep-procedure.md").read_text(encoding="utf-8")
+        for reason in relay.BOUNCE_REASONS:
+            assert f"`{reason}`" in procedure
+
+    def test_the_relay_only_emits_the_one_reason_it_owns(self) -> None:
+        # The other reasons belong to the sweeps and the digest. This script
+        # writing one of theirs would be it guessing at a judgement it never made.
+        source = _MODULE_PATH.read_text(encoding="utf-8")
+        emitted = {m.group(2) for m in self.MARKER.finditer(source)}
+        assert emitted == {"slack-veto"}

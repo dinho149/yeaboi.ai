@@ -34,7 +34,15 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   `pr-merged-close-loop` verifies that transition and repairs it when the magic word missed — a
   ticket lingering in In Review after its PR merged is a bug in the loop, not a cosmetic detail.
 - Items 2–7 are the *gate*: they block the PR. A PR that cannot pass them is not opened; the finding
-  is filed as a proposal instead.
+  is filed as a proposal instead. **`make ship-gate` runs all of them in one invocation** — `lint`,
+  `format-check`, `test`, `security`, then `preflight`, which runs the optional CI jobs this diff
+  needs and names the ones it skipped. The per-item cells above stay accurate; the composite exists
+  because `make test` proves the Python suite and nothing else, and the eight other things CI checks
+  were being discovered after the PR was already open.
+- **The gate runs on a rebased branch, not the branch you have.** `/ship` commits and rebases onto
+  `origin/main` before it verifies anything. A green gate on a base that has moved is evidence about
+  a tree that will never exist, and the `main-branch` ruleset does not require a branch to be up to
+  date before merging — so nothing downstream catches it either.
 - **Item 10 gates the merge, not the open** — it is the one item that cannot be satisfied before the
   PR exists. `claude-review.yml` fires on `workflow_run` after CI succeeds, so its review arrives
   minutes after `/ship` has already exited, and a human's comment can arrive days later. Answering it

@@ -188,7 +188,7 @@ mostly express nervousness, and the honest answer to nervousness here is the gat
 
 **That sentence was about merges, and it was read as being about everything.** The propose lane had
 no bound at all: a scout returns up to ten finds, the auto lane consumes at most one, so a single
-sweep could open nine issues, and fifteen workstreams run on overlapping crons. Nothing looked at
+sweep could open nine issues, and sixteen workstreams run on overlapping crons. Nothing looked at
 how many were already open — only whether *this* find restated one. The queue drained on a
 fortnightly clock instead of on anybody deciding anything, and the digest, whose whole job is to put
 a short list in front of a human, had forty-one items behind it. Nine issues filed in one morning is
@@ -208,7 +208,7 @@ reports the depth separately as `queued`. See **The queue** below.
 
 Do not count them by eye. `uv run python scripts/cowork_setup.py --proposal-slots <workstream>`
 returns the number, the same way `--triggers` returns the reconcile plan: a model asked to count
-fifteen queues will eventually miscount one, and nothing downstream would notice.
+sixteen queues will eventually miscount one, and nothing downstream would notice.
 
 Three consequences, all deliberate:
 
@@ -219,7 +219,7 @@ Three consequences, all deliberate:
 - **A full queue is a quiet outcome, not an abort.** It reads exactly like the one-open-PR guard:
   the run did its work, there was nowhere to put it, and it exits saying nothing. `cron/digest.md`
   reports which workstreams are held and which issues are holding them, so the silence is legible
-  in one place rather than fifteen.
+  in one place rather than sixteen.
 - **An unreadable count is zero slots, never two.** `--proposal-slots` answers `slots: null` when
   the query failed rather than guessing, and a failed query is never spoken as a clean answer —
   the same rule `cron/digest.md` applies to a PR it could not read.

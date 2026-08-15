@@ -1,0 +1,355 @@
+# What each hygiene lens looks for, and everything it must never flag.
+#
+# `scripts/hygiene_lens.py` is the detector; this file is the judgement. The
+# split is deliberate and copied from `.github/codeql/triage-policy.yml`: a
+# detector that carries its own exclusions inline is one nobody re-reads, and
+# every entry below is a decision somebody made once and should not have to
+# make again. `tests/unit/test_hygiene_lens.py` fails when an entry here has no
+# `why`, because an exclusion without a reason is indistinguishable from a bug
+# that was easier to silence than to fix.
+#
+# **A lens finds; it never decides.** The output is evidence handed to
+# `cowork-scout`, which classifies it against `cowork/house-rules.md` like any
+# other find. `lane:` below is the *ceiling* — the best a find from this lens
+# can be — not a grant. The scout may still call it `propose`, and does
+# whenever it is arguing with itself.
+#
+# The governing rule for every lens is in `cowork/hygiene-lenses.md`:
+# **survey narrow, confirm wide, change narrow.** A lens looks only inside one
+# charter's `Owns` paths, but it may read the whole repo to *confirm* what it
+# found there — proving a negative is a read, and a read changes nothing about
+# who may edit.
+
+lenses:
+
+  # ---------------------------------------------------------------------------
+  dead-code:
+    type: chore
+    lane: auto
+    # One find per run listing up to this many symbols. `house-rules.md` grants
+    # three same-type `chore` items in one PR; six one-line deletions reviewed
+    # together is still one reading, and filing them separately would trip the
+    # scout's "more than 10 finds means the charter's scope is wrong" stop
+    # condition on a charter whose scope is fine.
+    max_batch: 6
+    summary: >-
+      Module-level functions and classes in this charter's paths whose name
+      appears nowhere else in the repository — not in Python, Go, TypeScript,
+      markdown, YAML or JSON.
+    excludes:
+      - id: mcp-surface
+        paths: ["src/yeaboi/mcp/"]
+        why: >-
+          A tool handler is reached by name over the wire, so it is unreferenced
+          in the repo by construction. Deleting one is capability removal, which
+          `test_surface_parity.py` treats as a registry edit and the auto lane
+          forbids outright.
+      - id: go-twin
+        paths: ["src/yeaboi/gocore/", "src/yeaboi/agentwatch/", "src/yeaboi/standup/", "src/yeaboi/analysis/"]
+        why: >-
+          These four are mirrored line-for-line in `go/internal/` and gated by
+          `make parity`. The repo-wide scan reads `go/` too, so a twin that
+          names the symbol already protects it — but the failure mode if it does
+          not is a green `make test` and a broken sidecar, which is the one
+          silent one. Excluded by path as well as by reference.
+      - id: registry-decorated
+        decorators: ["tool", "fixture", "pytest.fixture", "app.route", "server.tool"]
+        why: >-
+          A decorator is a registration. The function is called by the framework
+          holding the registry and by nothing that greps like a call site.
+      - id: framework-discovered
+        base_classes: ["BuildHookInterface"]
+        why: >-
+          Hatchling finds a build hook by scanning the module for a subclass of
+          its interface, so `CoreBinaryHook` has no caller anywhere and never
+          will. Deleting it merges green and stops producing the `yeaboi-core`
+          wheel — a capability lost with nothing red to show for it, which is
+          the exact failure this lens has to be incapable of.
+      - id: provider-modules
+        paths: ["src/yeaboi/paths.py", "src/yeaboi/config.py"]
+        why: >-
+          Both exist to be depended on: CLAUDE.md makes `paths.py` the single
+          source of every filesystem path and `config.py` the choke point for
+          every credential. An export with no caller there is **unadopted, not
+          dead** — seven `get_*_log_dir` helpers have none today, and the fix is
+          to route those modes' logging through them, which is what the
+          Observability rule already requires. A lens that cannot tell those two
+          apart deletes the convention instead of the drift.
+      - id: entrypoints
+        names: ["main", "build_parser"]
+        why: >-
+          Reached from `[project.scripts]` and from `cli.py`'s argparse wiring.
+          `main` in particular is a common enough word that the scan would not
+          flag it anyway; naming it here means that stays true on purpose.
+      - id: dunder
+        name_patterns: ["^__.*__$"]
+        why: >-
+          Called by the interpreter, never by name.
+      - id: langgraph-nodes
+        name_patterns: ["_node$"]
+        why: >-
+          Graph nodes are wired into `StateGraph` by string name
+          (`add_node("plan", plan_node)`), and a rename in one half without the
+          other is exactly the kind of break a deletion here would cause
+          silently. See docs: Architecture — the agent graph.
+
+  # ---------------------------------------------------------------------------
+  assertion-free-tests:
+    type: chore
+    lane: auto
+    max_batch: 6
+    summary: >-
+      `test_*` functions in this charter's test files whose body contains no
+      `assert`, no `pytest.raises`, and no call to a recognised assertion
+      helper. A test that asserts nothing passes whatever the code does.
+    # Calls that count as an assertion even though there is no `assert`
+    # statement. Anything matching `assert*` on the attribute (`mock.
+    # assert_called_once`, `assert_self_contained`) counts without being listed.
+    # Phrases that carry an assertion no syntax can. `# must not raise` appears
+    # at 23 sites in the suite already — it is the established way this repo
+    # writes "the assertion is that this line completed", and a detector that
+    # does not read it is measuring the convention rather than the tests.
+    intent_comments:
+      - "must not raise"
+      - "does not raise"
+      - "not raised"
+      - "must not crash"
+    assertion_helpers:
+      - "raises"
+      - "warns"
+      - "deprecated_call"
+      - "fail"
+      - "approx"
+    excludes:
+      - id: repl-integration
+        paths: ["tests/integration/test_repl.py"]
+        why: >-
+          CLAUDE.md forbids modifying this file at all — it monkeypatches ten
+          names and is uniquely coupled to the REPL wiring. A find nobody may
+          act on is noise.
+      - id: skipped
+        decorators: ["pytest.mark.skip", "pytest.mark.skipif", "pytest.mark.xfail"]
+        why: >-
+          A skipped test's body does not run, so whether it asserts is not a
+          fact about today. Fix the skip or delete the test — either is a
+          judgement call, not a mechanical one.
+      - id: smoke
+        paths: ["tests/smoke/"]
+        why: >-
+          A smoke test's assertion is often "it did not crash", which is carried
+          by the absence of an exception rather than by a statement. That is a
+          real assertion with no syntax the detector can see.
+
+  # ---------------------------------------------------------------------------
+  layering:
+    type: chore
+    # Auto **only when the fix is an import swap** — replacing a call with the
+    # helper named in `instead`, nothing else. A violation that needs the code
+    # restructured around it proposes, whatever this line says.
+    lane: auto
+    max_batch: 10
+    summary: >-
+      Boundaries a charter owns, expressed as a pattern that must not appear
+      inside its paths and the helper that should be there instead.
+    # Each invariant belongs to exactly one workstream — the one whose charter
+    # states the boundary in prose. A workstream with no mechanical boundary
+    # declares none, and that is a normal state rather than a gap: a lens with
+    # nothing to say on a surface must say nothing.
+    invariants:
+      - id: paths-through-paths-py
+        # Declared by platform, which owns `paths.py`, but broken by anyone —
+        # so it is scanned inside every charter's own files and each answers
+        # for its own side of the line. `ui/mode_select/__init__.py` is
+        # tui-ux's find, not platform's.
+        workstream: platform
+        applies_to: "*"
+        # Not the test suite: `test_paths.py` asserting what `DEFAULT_ROOT_DIR`
+        # equals is the test doing its job.
+        scope: src
+        forbid: 'Path\.home\(\)\s*/\s*["'']\.yeaboi'
+        instead: "a helper in `src/yeaboi/paths.py`"
+        exempt: ["src/yeaboi/paths.py"]
+        why: >-
+          CLAUDE.md makes `paths.py` the single source of every filesystem path
+          ("never hardcode `Path.home() / '.yeaboi'`"). A second spelling of the
+          home directory is invisible until someone sets `YEABOI_HOME` and half
+          the app follows it.
+      - id: tui-does-not-import-web
+        workstream: tui-ux
+        forbid: '^\s*(?:from\s+(?:yeaboi\.)?web[\s.]|from\s+\.\.web\s|import\s+yeaboi\.web\b)'
+        instead: "nothing — the browser surfaces belong to **web-ux**"
+        exempt: []
+        why: >-
+          `tui-ux.md`'s Out of scope is "browser surfaces of any kind
+          (**web-ux**)". An import across that line is how a terminal screen
+          starts depending on a committed bundle, which is the one thing
+          `pip install yeaboi` with no Node has to keep working.
+
+  # ---------------------------------------------------------------------------
+  stale-flags:
+    type: chore
+    lane: auto
+    max_batch: 6
+    # A flag is stale once it has shipped in this many official `vX.Y.Z`
+    # releases. Two, because `tui-ux.md` has said "more than two releases ago"
+    # in prose since it was written and this is that sentence made mechanical —
+    # not a new judgement, an existing one that finally has a command behind it.
+    releases_stale: 2
+    # Keyword arguments whose `True` is a badge with an expiry date. `is_beta`
+    # is deliberately absent: `beta-labelling-convention` makes it a claim about
+    # whether the output is *verified*, not about how recently it shipped, so it
+    # does not age out and clearing it on a timer would be a lie about the
+    # feature rather than a tidy-up.
+    flags: ["is_new"]
+    summary: >-
+      A `NEW` badge still set on a feature that shipped two or more releases
+      ago, dated by blaming the line and counting the release tags that contain
+      the commit.
+    excludes:
+      - id: unreleased
+        why: >-
+          Structural rather than listed: a line git cannot date — uncommitted,
+          or on a shallow clone with no tags to answer `--contains` — counts as
+          zero releases and is never a find. The whole lens goes silent in CI
+          for that reason, which is the safe direction. A badge left on too long
+          is a papercut; a badge cleared off a feature that shipped yesterday is
+          the fleet undoing somebody's work.
+
+  # ---------------------------------------------------------------------------
+  duplication:
+    type: chore
+    # **Propose only.** Two blocks being identical is a fact; whether they
+    # should be one block is a design question with a real wrong answer — the
+    # repo deliberately duplicates the Go sidecar line-for-line, and
+    # `_gh_transport.py` keeps two spellings of one request on purpose. A lens
+    # cannot tell those from an accident, so it hands the reading to a human.
+    lane: propose
+    # Lower than the auto lenses': each of these costs one of a workstream's two
+    # proposal slots, so five is already more than a week can absorb.
+    max_batch: 5
+    min_tokens: 70
+    min_lines: 8
+    # A window has to contain this much distinct vocabulary before it counts.
+    # A literal table normalises to a periodic run — `( #str , #str ) ,` over
+    # and over — and matches itself at every period; requiring real vocabulary
+    # is what separates a copied block from a long list of strings. It is a
+    # floor on how much a window has to *say*, not on how long it is.
+    #
+    # Fifteen, calibrated from both ends rather than picked: the two literal
+    # tables that motivated it carry four and seven, and a block of repetitive
+    # but real code — ten assignments that differ only in an index — carries
+    # nineteen. Twenty sat inside that gap and suppressed the second along with
+    # the first.
+    min_distinct_tokens: 15
+    # Tests repeat their setup on purpose and a parametrised-looking test is
+    # often clearer written out. Turning this on for one charter is a policy
+    # edit somebody has to argue for.
+    include_tests: false
+    summary: >-
+      Two or more blocks of at least 70 tokens and 8 lines that are identical
+      once numbers and strings are normalised, both inside this charter's own
+      paths.
+    excludes:
+      - id: generated
+        paths: ["frontend/src/types/enums.ts", "src/yeaboi/web/static/"]
+        why: >-
+          Generated output. `scripts/gen_web_types.py` writes the first and
+          `make web` the second; duplication there is a property of the
+          generator, and the fix is never in the file the lens is pointing at.
+      - id: contracts
+        paths: ["contracts/v1/"]
+        why: >-
+          A versioned contract is supposed to repeat its predecessor. That is
+          what makes it a contract.
+      - id: static-through-assets
+        workstream: web-ux
+        applies_to: "*"
+        scope: src
+        forbid: 'web\s*/\s*["'']static|STATIC_DIR\s*/'
+        instead: "`read_asset` / `render_page` from `src/yeaboi/web/assets.py`"
+        exempt: ["src/yeaboi/web/assets.py"]
+        why: >-
+          CLAUDE.md: "Python reaches the bundles only through
+          `src/yeaboi/web/assets.py`. Never read from `static/` directly."
+          `read_asset` is `lru_cache`d and every path into the committed bundles
+          is meant to share that cache; a second reader is how `make web` starts
+          serving a stale file to one surface and a fresh one to the next.
+      - id: headers-through-security
+        workstream: web-ux
+        applies_to: "*"
+        scope: src
+        forbid: 'send_header\s*\(\s*["'']Content-Security-Policy|["'']Content-Security-Policy["'']\s*:'
+        instead: "`send_document` and a policy constant from `src/yeaboi/web/security.py`"
+        exempt: ["src/yeaboi/web/security.py"]
+        why: >-
+          "No request handler writes its own headers" — `web/security.py` is
+          the only place a served document's headers and CSPs come from. A CSP
+          spelled a second time is invisible on localhost and on a LAN, and
+          shows up only for the remote teammate, which is the failure mode
+          `test_web_assets.py` exists to make impossible statically.
+      - id: chrome-through-brand
+        workstream: web-ux
+        applies_to: "*"
+        scope: src
+        forbid: '^\s*DEFAULT_FOOTER\s*=|def\s+(?:build_chrome|frame_title|accent_mode)\b'
+        instead: "`build_chrome` / `frame_title` / `accent_mode` from `src/yeaboi/web/brand.py`"
+        exempt: ["src/yeaboi/web/brand.py"]
+        why: >-
+          `web/brand.py` is the only place that builds a masthead payload,
+          spells the terminal-frame title, maps a mode to its accent or names
+          the byline. A surface that re-implements one of those is exactly the
+          drift the leaf-module layout exists to stop, and it drifts silently —
+          two mastheads that disagree both render fine.
+
+  # ---------------------------------------------------------------------------
+  crash-fuzz:
+    type: bug
+    # `house-rules.md` admits a bug to the auto lane only on a regression test
+    # that fails before the fix and passes after. A seed is exactly that: the
+    # key sequence is the test, and `--seed N` is how it is run. A **hang** is
+    # not — there is no mechanical reproduction of "it stopped repainting" that
+    # a builder can turn into a failing test, so the scout proposes those. The
+    # lane below is the ceiling for both, and the evidence line says which.
+    lane: auto
+    max_batch: 4
+    # The two charters that own a screen. Everyone else's crash is still
+    # *found* by these runs — the fuzzer drives one process and a keystroke
+    # goes where the app takes it — and reported as `outside-owns`, because the
+    # charter that owns the file owns the crash.
+    workstreams: ["tui-ux", "planning"]
+    seeds: 6
+    steps: 120
+    hang_seconds: 6.0
+    boot_seconds: 12.0
+    # A hard ceiling on one seed, on top of every per-wait budget. A pty write
+    # blocks forever once the child stops reading, which is what a wedged screen
+    # looks like — so without this the fuzzer waits on a hang instead of
+    # reporting one, and a sweep never finishes.
+    wall_seconds: 90.0
+    summary: >-
+      A traceback or a wedged screen reached by seeded keystrokes against the
+      live TUI in a pty, under `--dry-run` with the network closed, whose
+      deepest frame in our own tree is inside this charter's paths.
+    excludes:
+      - id: network-unreachable
+        name_patterns:
+          - "ConnectionError"
+          - "ConnectError"
+          - "APIConnectionError"
+          - "ProxyError"
+          - "AuthenticationError"
+          - "socket.gaierror"
+          - "URLError"
+        why: >-
+          The fuzzer points `HTTPS_PROXY` at a port nothing listens on, so a
+          mode that does not thread `--dry-run` fails to connect rather than
+          spending money. That is the fuzzer's containment working, not a bug
+          in the app — and it is the same error path a user with no network
+          takes, which is worth exercising and not worth filing.
+      - id: keyboard-interrupt
+        name_patterns: ["KeyboardInterrupt", "SystemExit"]
+        why: >-
+          `Ctrl-C` is in the alphabet on purpose — cooperative cancel is a real
+          surface with real bugs. Reaching the interpreter as an unhandled
+          `KeyboardInterrupt` at the top of an exiting process is what the flag
+          is supposed to do.

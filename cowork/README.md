@@ -123,11 +123,13 @@ Three things follow from that table, and they are the whole design:
 | [house-rules.md](house-rules.md) | Guardrails + the closed auto-lane allowlist. |
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
+| [calibration.md](calibration.md) | What each workstream keeps getting wrong. Appended by `cron/retune.md`, **read by every scout before it surveys**. The only file the fleet writes for its own future runs. |
+| [hygiene-lenses.md](hygiene-lenses.md) | The six standing detectors a sweep runs before scouting, each with a command behind it. Their exclusions live in `.github/hygiene/lens-policy.yml`; `crash-fuzz` is driven by `scripts/tui_fuzz.py`. |
 | [check-in.md](check-in.md) | How every run closes: one thread reply under 📅, composed by `scripts/cowork_checkin.py` and posted verbatim. |
 | [release-signoff.md](release-signoff.md) | The weekly human ritual: test a pre-release, promote it. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
-| `workstreams/*.md` | Fifteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
+| `workstreams/*.md` | Sixteen charters — fifteen over the code, plus **fleet** over `cowork/` itself: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one of the fifteen; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
 
@@ -240,6 +242,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` | https://claude.ai/code/routines/trig_01G4TuU1wYY7GXJ1cEXZUNSu |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
+| `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | — |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
 | `events/release-published-announce.md` | Release published | — | `standard` | https://claude.ai/code/routines/trig_01VXdR2FbPJUsMqVWghA7C5T |
@@ -340,10 +343,10 @@ was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this b
 `cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
 `release:promotion`/`release:promote`
 pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
-campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
+campaign lane fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-five routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

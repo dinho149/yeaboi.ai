@@ -4,7 +4,10 @@ The shared run shape for all thirteen maintenance sweep routines. Your routine f
 workstream and any per-run focus; everything else is here.
 
 1. **Read** [house-rules.md](house-rules.md), [models.md](models.md), your charter in
-   `workstreams/<name>.md`, and the `.claude/skills/*/SKILL.md` your charter names.
+   `workstreams/<name>.md`, and the `.claude/skills/*/SKILL.md` your charter names. **Then read your
+   section of [calibration.md](calibration.md)** — what this workstream keeps getting wrong, with
+   the evidence behind it, so you do not spend this run re-making a mistake somebody already paid
+   for. No heading for your workstream means nothing is recorded, which is the normal state.
 
 2. **Check for work in flight** — `gh pr list --label "workstream:<name>" --state open --json
    number,createdAt,url`. If a PR is open: drive it to green and **stop**. That is the whole run.
@@ -34,7 +37,29 @@ workstream and any per-run focus; everything else is here.
    workstream plus a weekly cadence means an unmerged PR stops this workstream indefinitely, and
    without that comment the digest would report the silence as if the scout had found nothing.
 
-3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
+3. **Run your lenses, then scout.** If your routine file has a `## Lenses` section, run each one
+   named there first and hand the output to the scout as evidence:
+
+   ```bash
+   uv run python scripts/hygiene_lens.py --lens <lens> --workstream <name> --json
+   ```
+
+   A lens is a standing thing to look for with a command behind it — see
+   [hygiene-lenses.md](hygiene-lenses.md). Its output is *evidence*, never a verdict: the `lane`
+   it reports is the ceiling for a find from that lens, and the scout still classifies it against
+   [house-rules.md](house-rules.md) like anything else. **A lens result of nothing is a result.**
+
+   Each lens returns **one** find listing up to `max_batch` instances, not one per instance —
+   house-rules already grants three same-`type` `chore` items in one PR, and six one-line
+   deletions read together is one review. Anything over the cap comes back as `held` and is
+   reported, never dropped.
+
+   **Survey narrow, confirm wide, change narrow.** A lens finds only inside your `**Owns**` paths,
+   but confirming a find may read the whole repository — proving a negative is a read, and a read
+   changes nothing about who may edit. The find stays yours: the symbol lives in your paths, and
+   only your builder may touch it.
+
+   Then spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
    charter's paths. If your charter declares a `**Reads**` paragraph, pass those paths too — the
    scout may look there, and no builder may ever edit there. It returns ranked finds, each
    classified `auto` or `propose` against the allowlist in house-rules, and each typed from a
@@ -135,10 +160,21 @@ workstream and any per-run focus; everything else is here.
      `gh issue edit <n> --add-label cowork:proposal --remove-label cowork:queued`, comment one line
      naming the condition that failed, and move to the next item on the list. A wrongly-queued item
      costs one comment; it never costs a merge.
+
+     **End that comment with the marker**, on its own line:
+     `<!-- bounced: reason=<condition> -->`, where `<condition>` is one of exactly five —
+     `no-repro`, `user-facing-wording`, `outside-owns`, `public-api`, `needs-judgement`. They are
+     the auto-lane conditions from [house-rules.md](house-rules.md) rather than a second taxonomy,
+     because the axes a find fails on are exactly the conditions it had to clear. The sentence is
+     for whoever reads the issue; the marker is for `scripts/cowork_metrics.py`, which counts how
+     often each workstream misclassifies — a scout that bounces on `no-repro` every week is calling
+     things `auto` it cannot prove, and that is a fact about the charter, not about the week.
    - **the evidence no longer reproduces** — the `**Evidence**` line points at code that has
-     changed or a command that now passes → **close it** with `no longer reproduces at <sha>`, and
-     move on. That is the correct terminal state for a stale find, and closing is what stops it
-     coming back.
+     changed or a command that now passes → **close it** with `no longer reproduces at <sha>`
+     followed by `<!-- rejected: reason=no-longer-reproduces sha=<sha> -->`, and move on. That is
+     the correct terminal state for a stale find, and closing is what stops it coming back. It is a
+     *different* fault from a bounce and carries a different marker: a bounce means the find was
+     misclassified, a stale close means it was real and nobody got to it in time.
 
    A `type: bug` find carries one extra obligation, and it is the admission ticket rather than a
    nicety: **a regression test that fails before the fix and passes after.** Run it both ways and

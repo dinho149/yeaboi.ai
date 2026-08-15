@@ -25,6 +25,11 @@ mode cards, **`usage` and `settings`**.
 - **Feature tips** — every capability needs a `FeatureTip` in `_tips.py` keyed by capability name,
   with a `mode_key` when it owns a `_MODE_CARDS` card. `TestTips` enforces it both ways.
 - **Never log per frame.** See `.claude/skills/logging/SKILL.md`.
+- **`ui/` never imports `web/`.** Out of scope below says browser surfaces belong to **web-ux**;
+  this is that line made mechanical, as the `tui-does-not-import-web` layering invariant your
+  sweep runs as a lens (`cowork/hygiene-lenses.md`). An import across it is how a terminal
+  screen starts depending on a committed bundle, which `pip install yeaboi` with no Node has
+  to keep working without.
 
 ## The two utility pages
 

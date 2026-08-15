@@ -13,7 +13,9 @@ around those two codepoints meaning exactly one thing.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -259,3 +261,128 @@ class TestTheProbeAgreesWithTheReader:
         assert walked["cache_read_input_tokens"] == measured["cache_read"]
         assert walked["cache_creation_5m"] == measured["cache_write_5m"]
         assert walked["cache_creation_1h"] == measured["cache_write_1h"]
+
+
+class TestTheLedger:
+    """``--record``: the half that makes a measured run survive the run.
+
+    Everything above this class measures one run and prints it. Until now that
+    was the end of it — two lines to Slack and the rest dropped, with no way to
+    pull it back afterwards because ``agentwatch.collector`` reads a filesystem
+    and a routine's sandbox dies with the container.
+    """
+
+    def _transport(self, monkeypatch, calls: list, issues: list | None = None):
+        monkeypatch.setenv(checkin.RUN_SESSION_ENV, "cse_test")
+        """Stub both REST verbs. Never reaches ``transport._urlopen``, which
+        ``tests/conftest.py`` blocks anyway — belt and braces, because a test that
+        asserts on writes is exactly the test that makes them when a seam moves."""
+        monkeypatch.setattr(checkin.transport, "resolve_slug", lambda *a, **k: "o/r")
+        monkeypatch.setattr(
+            checkin.transport, "api_paged", lambda path, key=None: checkin.transport.ApiResult(True, issues or [])
+        )
+
+        def _api(method, path, body=None):
+            calls.append((method, path, body))
+            return checkin.transport.ApiResult(True, {"number": 42})
+
+        monkeypatch.setattr(checkin.transport, "api", _api)
+
+    def test_recording_outside_a_routine_refuses_rather_than_writing_the_machine(self, monkeypatch):
+        """The trap the first live run walked into.
+
+        ``usage_report`` reads all of ``~/.claude/projects``. In a routine sandbox
+        that is one run; on a laptop it is everything you have ever done. The
+        first real ``--record`` wrote a row claiming one check-in took 800 hours
+        and cost $8,699 — which is not a run's cost measured badly, it is a
+        different quantity, so there is nothing to clamp and the write is refused.
+        """
+        monkeypatch.delenv(checkin.RUN_SESSION_ENV, raising=False)
+        monkeypatch.setattr(
+            checkin.transport, "resolve_slug", lambda *a, **k: pytest.fail("must not reach the network")
+        )
+        wrote, error = checkin.record({"name": "x", "status": "ok"}, {"cost_usd": 8699.74})
+        assert wrote is False
+        assert "not a routine run" in error
+
+    def test_a_run_becomes_one_comment_on_the_months_issue(self, monkeypatch):
+        calls: list = []
+        self._transport(monkeypatch, calls, issues=[{"number": 7, "title": "fleet ledger 2026-08"}])
+        wrote, error = checkin.record(
+            {"name": "security-sweep", "status": "ok", "note": "1 PR"},
+            {"cost_usd": 0.98, "total_tokens": 263000, "duration_seconds": 244, "available": True},
+            now=datetime(2026, 8, 14, tzinfo=UTC),
+        )
+        assert (wrote, error) == (True, "")
+        assert [c[:2] for c in calls] == [("POST", "/repos/o/r/issues/7/comments")]
+        assert "security-sweep" in calls[0][2]["body"]
+
+    def test_the_months_issue_is_created_when_it_is_the_months_first_run(self, monkeypatch):
+        # `day-ahead` opens it at 05:45, but four routines fire before then —
+        # `cd-deploy` at 04:00 and the three event routines — so on the first of
+        # the month they would otherwise have nowhere to write.
+        calls: list = []
+        self._transport(monkeypatch, calls, issues=[])
+        assert checkin.record({"name": "cd-deploy", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=UTC))[0]
+        assert calls[0][0:2] == ("POST", "/repos/o/r/issues")
+        assert calls[0][2]["title"] == "fleet ledger 2026-09"
+        assert calls[1][1] == "/repos/o/r/issues/42/comments"
+
+    def test_the_ledger_issue_carries_no_label_any_other_query_looks_for(self, monkeypatch):
+        # `digest.md` closes an unanswered `cowork:proposal` after fourteen days,
+        # and `codeql-triage.yml` reads `--label cowork --state all --limit 500` as
+        # its dedupe corpus. Either would swallow this issue whole.
+        calls: list = []
+        self._transport(monkeypatch, calls, issues=[])
+        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=UTC))
+        assert calls[0][2]["labels"] == ["fleet-ledger"]
+
+    def test_a_pull_request_is_never_mistaken_for_the_ledger(self, monkeypatch):
+        # `/issues` answers with pull requests too. One titled like the ledger
+        # would otherwise collect every run's telemetry as review comments.
+        calls: list = []
+        self._transport(
+            monkeypatch, calls, issues=[{"number": 9, "title": "fleet ledger 2026-08", "pull_request": {"url": "…"}}]
+        )
+        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 8, 2, tzinfo=UTC))
+        assert calls[0][0:2] == ("POST", "/repos/o/r/issues")
+
+    def test_an_unreachable_ledger_is_reported_and_never_raises(self, monkeypatch):
+        monkeypatch.setenv(checkin.RUN_SESSION_ENV, "cse_test")
+        monkeypatch.setattr(checkin.transport, "resolve_slug", lambda *a, **k: None)
+        assert checkin.record({"name": "x", "status": "ok"}, {}) == (False, "could not resolve the repository slug")
+
+    def test_a_ledger_failure_never_costs_the_check_in(self, monkeypatch, capsys):
+        # The line is what a human is waiting for; the ledger is what a report
+        # reads next month. `check-in.md` tells a routine to key off this exit
+        # code, so failing the run over the second trades the urgent for the
+        # eventual.
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "record", lambda *a, **k: (False, "egress refused"))
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"name": "x", "status": "ok", "note": "n"})))
+        assert checkin.main(["--line", "--record"]) == 0
+        captured = capsys.readouterr()
+        assert "**x**" in captured.out
+        assert "egress refused" in captured.err
+
+    def test_dry_run_writes_nothing_and_prints_valid_json(self, monkeypatch, capsys):
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "record", lambda *a, **k: pytest.fail("--dry-run must not reach the write path"))
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"name": "x", "status": "ok", "note": "n"})))
+        assert checkin.main(["--record", "--dry-run"]) == 0
+        body = capsys.readouterr().out
+        assert checkin.LEDGER_MARKER in body
+        assert json.loads(body.split("```json")[1].split("```")[0])["name"] == "x"
+
+    def test_no_routine_reads_the_ledger(self) -> None:
+        """The safety property, asserted rather than promised.
+
+        The fleet is stateless because no run's behaviour depends on another
+        run's state. Appending to a record nobody consults does not touch that;
+        a routine that *read* this would have quietly given the fleet a memory,
+        and the failure mode of that is a run whose decision nobody can reproduce.
+        """
+        for path in (ROOT / "cowork" / "routines").rglob("*.md"):
+            text = path.read_text(encoding="utf-8")
+            assert "fleet-ledger" not in text, f"{path.name} reads the ledger"
+            assert "fleet ledger" not in text, f"{path.name} reads the ledger"

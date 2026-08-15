@@ -6,6 +6,16 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = analysis`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — `analysis/` proper is excluded (Go twin); this reads `tools/`, the exporters and the
+  wizard path.
+- `assertion-free-tests`
+- `layering`
+
 ## Focus
 
 - **Marker precision** — read the AI-usage detectors (Codex / agent / branch markers) and look for

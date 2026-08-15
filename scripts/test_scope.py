@@ -334,6 +334,23 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_gocore_*.py",
         ),
     ),
+    # The sixteenth workstream, and the only one whose subject is the fleet
+    # rather than the product. `cowork/` itself is deliberately absent: it is
+    # `INERT` below, and safe to be so precisely because these tests are in
+    # `ALWAYS` and run whatever changed.
+    Area(
+        "fleet",
+        src=(
+            "scripts/cowork_*.py",
+            "scripts/hygiene_lens.py",
+            "scripts/tui_fuzz.py",
+            ".github/hygiene/",
+        ),
+        tests=(
+            "tests/unit/test_cowork_*.py",
+            "tests/unit/test_hygiene_lens.py",
+        ),
+    ),
 )
 
 # --- always, whatever changed -------------------------------------------------
@@ -382,8 +399,16 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
     "tests/unit/test_cowork_*.py",
+    # The hygiene lenses read the charters, the policy file and the whole tree;
+    # nothing about a changed module implies them, and a lens that has quietly
+    # stopped finding anything looks exactly like a clean repo.
+    "tests/unit/test_hygiene_lens.py",
     "tests/unit/test_wt_script.py",
     "tests/unit/test_wt_issue_script.py",
+    # The ship gate reads the Makefile, the slash commands and this file. Nothing
+    # about a changed module implies it, and its whole subject is the machinery
+    # that decides what a scoped run covers — so it has to run on every one.
+    "tests/unit/test_ship_gate.py",
     "tests/unit/test_record_demo.py",
     # version / release lockstep
     "tests/unit/test_gocore_packaging.py",

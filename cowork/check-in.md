@@ -3,7 +3,7 @@
 How every run in the fleet closes, written once. Your routine supplies three facts; everything
 else is measured here. It is the last thing a run does, and no routine is exempt.
 
-The fleet ran twenty-four routines a day and reported nothing about its own running. On
+The fleet ran two dozen routines a day and reported nothing about its own running. On
 2026-08-06 the security sweep died on `Authentication error` after one turn; nothing said so, in
 Slack or anywhere else, and the next thing anybody knew was the following Thursday. That is not a
 gap in the reporting — it is what the reporting was *for*: [README.md](README.md) makes silence
@@ -23,7 +23,8 @@ schedule becomes the ledger, and "did everything run" is answered by reading one
 
 ## Run
 
-1. **Compose it.** `.venv/bin/python scripts/cowork_checkin.py --line`, with the facts on stdin:
+1. **Compose it.** `.venv/bin/python scripts/cowork_checkin.py --line --record`, with the facts on
+   stdin:
 
    ```json
    {"name": "security-sweep", "status": "ok", "note": "1 PR (#261), 2 proposals filed"}
@@ -35,6 +36,21 @@ schedule becomes the ledger, and "did everything run" is answered by reading one
    describing effort: *"nothing to do"*, *"1 PR (#261), 2 proposals filed"*, *"digest posted"*,
    *"blocked at step 3"*. `url` is optional and you will not need it — the script finds this run's
    own log link by itself.
+
+   **`--record` also appends this run to the month's ledger** — one GitHub issue labelled
+   `fleet-ledger`, one comment per run, carrying what the Slack line shows plus the numbers it has
+   no room for. It is what lets `make cowork-metrics` answer "what did the fleet cost, and which
+   routines are failing" a month later; without it those numbers exist for the length of one run and
+   then do not. Nothing in the fleet reads that issue — it is a record, not a queue — so recording
+   to it changes no routine's behaviour, including yours. **A ledger failure never fails your
+   check-in**: the script prints the line first, reports the ledger problem on stderr, and exits on
+   the strength of the line. Post the line either way.
+
+   Running this on a laptop refuses the ledger write and says so, which is correct rather than a
+   fault to work around. The token figure comes from every transcript under `~/.claude/projects`,
+   and that is this run only inside a sandbox built fresh per firing — on a real machine it is
+   everything you have ever done. The first live test recorded one check-in as 800 hours and
+   $8,699. There is no honest local number to write, so there is nothing to force.
 
    Use `uv run` unless your run already built a venv, in which case
    `./.venv/bin/python` does the same thing and leaves `uv.lock` alone. Either is fine
