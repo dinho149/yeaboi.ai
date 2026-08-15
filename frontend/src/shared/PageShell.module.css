@@ -146,12 +146,17 @@
   opacity: 1;
 }
 
-.dockApp button:not([class*='btnPrimary']) {
+/* The dock's own controls only — its direct buttons and its popover triggers.
+   A bare `.dockApp button` also reaches inside the open panels and strips the
+   fill off things like the play button, which is how it went invisible. */
+.dockApp > [class*='popoverGroup'] > button:not([class*='btnPrimary']),
+.dockApp > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
 
-.dockApp button:not([class*='btnPrimary']):hover:not(:disabled) {
+.dockApp > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+.dockApp > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
