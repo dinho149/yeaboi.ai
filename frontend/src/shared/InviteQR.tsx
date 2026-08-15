@@ -49,8 +49,8 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: In
         <img
           className={styles['qr']}
           src={src}
-          width={200}
-          height={200}
+          width={280}
+          height={280}
           alt="QR code linking to this board"
         />
       ) : null}
@@ -68,8 +68,7 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: In
 
           Link and Code stay below it, separately copyable, for the host who
           wants to post the address in a channel and pass the code another way. */}
-      {inviteUrl ? <CopyField label="Invite" value={inviteUrl} /> : null}
-      {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
+      {inviteUrl ? <CopyField label="Invite link" value={inviteUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>
   );

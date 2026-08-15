@@ -1187,35 +1187,58 @@
   min-width: 0;
 }
 
+/* Who you are, as one quiet control: the avatar carries the identity and the
+   pencil only shows up when you go looking for it. */
 .meChip {
   display: inline-flex;
   align-items: center;
-  gap: var(--s1);
+  gap: var(--s2);
   min-height: var(--tap);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--line);
+  padding: var(--s1) var(--s2) var(--s1) var(--s1);
+  border: 1px solid transparent;
   border-radius: var(--r-pill);
-  background: var(--panel-2);
+  background: none;
   color: var(--text);
   font: inherit;
+  font-size: var(--fs-xs);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
   font-size: var(--fs-xs);
   cursor: pointer;
 }
 
+.meChip:hover {
+  background: var(--panel-2);
+  border-color: var(--hairline);
+}
+
 .meName {
-  max-width: 12ch;
+  max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 .pen {
+  display: inline-flex;
   color: var(--dim);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
 }
 
+.meChip:hover .pen,
+.meChip:focus-visible .pen {
+  opacity: 1;
+}
+
+/* The headcount is a number, so it is set as one. */
 .roomCount {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: var(--fs-s);
+  font-weight: 600;
 }
 
 .offline {

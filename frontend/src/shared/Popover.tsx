@@ -22,6 +22,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -117,12 +118,43 @@ export function Popover({
   const group = useContext(PopoverGroupContext);
   const id = useId();
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // What the panel actually resolved to once measured against the viewport.
+  const [fit, setFit] = useState<{ above: boolean; left: boolean } | null>(null);
   // Standalone fallback so a Popover still works outside a group — used in
   // tests and wherever exactly one popover exists.
   const [soloOpen, setSoloOpen] = useState(false);
 
   const open = group ? group.openId === id : soloOpen;
   const wasOpen = useRef(open);
+
+  /*
+   * Flip against whichever edge it would otherwise run off.
+   *
+   * Measured on open rather than assumed from the prop: the same control moves
+   * — the dock travels three walls — so a placement that is right at the
+   * bottom-right is wrong once it is at the top-left. The prop stays as the
+   * preference; this only overrides it when the preferred side does not fit.
+   */
+  useLayoutEffect(() => {
+    if (!open) {
+      setFit(null);
+      return;
+    }
+    const panel = panelRef.current;
+    const button = buttonRef.current;
+    if (!panel || !button) return;
+    const anchor = button.getBoundingClientRect();
+    const { width, height } = panel.getBoundingClientRect();
+    const room = { above: anchor.top, below: window.innerHeight - anchor.bottom };
+    const wantAbove = placement === 'above';
+    const above = wantAbove ? room.above >= height || room.above >= room.below : room.below < height && room.above > room.below;
+    const wantLeft = align === 'left';
+    const left = wantLeft
+      ? anchor.left + width <= window.innerWidth || anchor.right - width < 0
+      : anchor.right - width < 0;
+    setFit({ above, left });
+  }, [open, placement, align]);
 
   useEffect(() => {
     // Returning focus to the trigger on close is the half of the interaction
@@ -154,14 +186,15 @@ export function Popover({
           pointing at a non-existent id is meaningless to a screen reader, and
           `hidden` already removes it from the accessibility tree. */}
       <div
+        ref={panelRef}
         id={id}
         role="group"
         aria-label={label}
         hidden={!open}
         className={cx(
           styles['popover'],
-          align === 'left' && styles['popoverLeft'],
-          placement === 'above' && styles['popoverAbove'],
+          (fit ? fit.left : align === 'left') && styles['popoverLeft'],
+          (fit ? fit.above : placement === 'above') && styles['popoverAbove'],
           className,
         )}
       >

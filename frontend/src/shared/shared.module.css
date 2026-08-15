@@ -363,8 +363,16 @@
 .avatarChoiceOn { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-.invite { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-.qr { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+.invite { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
+.qr {
+  width: 280px;
+  height: 280px;
+  max-width: 100%;
+  align-self: center;
+  border-radius: var(--r-m);
+  background: var(--paper);
+  padding: var(--s3);
+}
 .inviteCode { display: flex; align-items: center; gap: var(--s2); margin: 0; }
 .codeValue {
   font-family: var(--font-mono);
@@ -429,7 +437,29 @@ dialog.modal {
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-.modal::backdrop { background: rgb(0 0 0 / 55%); }
+.modal::backdrop {
+  background: rgb(0 0 0 / 55%);
+  animation: modalVeil var(--dur-base) var(--ease) both;
+}
+
+/* Opening only. A `<dialog>` is removed from the box tree the moment it closes,
+   so an exit keyframe never gets a frame to run in. */
+.modal[open] {
+  animation: modalIn var(--dur-base) var(--ease) both;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes modalVeil {
+  from {
+    opacity: 0;
+  }
+}
 .modalBody { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
 .modalTitle { font-size: var(--fs-l); margin: 0; }
 .modalActions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }

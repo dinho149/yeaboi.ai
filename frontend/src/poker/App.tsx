@@ -571,10 +571,6 @@ export function App({ boot }: { boot: PokerBoot }) {
       <EditTicketModal open={editOpen} ticket={ticket} onSave={saveEdit} onClose={() => setEditOpen(false)} />
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
-        <p className={styles['popNote']}>
-          Send the invite link — it carries the share code, so they land straight on the board.
-          Scanning the QR does the same. Keep both off anywhere public.
-        </p>
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
         <InviteQR
           qrSrc={apiUrl(session, '/api/qr')}
