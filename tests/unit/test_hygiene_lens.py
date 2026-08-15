@@ -510,7 +510,19 @@ class TestStaleFlags:
         assert [f["line"] for f in report["finds"]] == [9, 10]
 
     def test_the_real_tips_file_is_where_it_finds_them(self):
-        """The seven `is_new=True` this lens was written for, against the real tree."""
+        """The seven `is_new=True` this lens was written for, against the real tree.
+
+        Needs real history: the lens ages a flag by blaming its line and counting
+        the release tags containing that commit. `actions/checkout` takes
+        `fetch-depth: 1` and no tags, so in CI every flag blames to a grafted
+        commit contained in zero releases and the lens correctly finds nothing —
+        it errs toward silence by design. Asserting a count there asserts a fact
+        about the checkout, not about the tree, so skip rather than pretend.
+        `make ship-gate` cannot catch this class: locally the history is present.
+        The aging logic itself is covered by the monkeypatched tests below.
+        """
+        if not lens._git("tag", "--list", "v*"):
+            pytest.skip("shallow checkout with no release tags — the lens has nothing to age against")
         report = lens.run("stale-flags", "tui-ux", policy=POLICY, index=lens.Index())
         assert len(report["finds"]) + report["held"] >= 1
         assert all(f["file"].endswith("_tips.py") for f in report["finds"])
