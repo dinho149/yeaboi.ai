@@ -1887,3 +1887,110 @@ class TestADismissalIsNeverAnAccount:
         """The refusal is about the applicant holding the key, not about the shape."""
         reply = account(fixed=0, answered=3, author=MAINTAINER)
         assert prf.classify(snapshot(comments=(*self._superseded(), reply)), NOW).state == "success"
+
+
+class TestTheParityHold:
+    """The migration lane's gate: a `workstream:go-migration` PR may not go
+    green while ci.yml's `Go core` and `Python ↔ Go parity` checks are absent,
+    skipped, red, or unreadable on its head SHA — on either lane. Those two jobs
+    are deliberately not required ruleset contexts (a skip is free), so this
+    status is the only thing standing between a skipped byte-parity gate and an
+    unattended merge. See cowork/house-rules.md, **The migration lane**.
+    """
+
+    GREEN = (("Go core", "success"), ("Python ↔ Go parity", "success"), ("Unit tests", "success"))
+
+    def _snap(self, **overrides):
+        base = dict(labels=("cowork", prf.PARITY_GATED_LABEL), comments=(review(0),), check_runs=self.GREEN)
+        base.update(overrides)
+        return snapshot(**base)
+
+    def test_both_checks_green_passes(self):
+        assert prf.classify(self._snap(), NOW).state == "success"
+
+    def test_an_absent_check_blocks_and_names_itself(self):
+        runs = (("Go core", "success"), ("Unit tests", "success"))
+        verdict = prf.classify(self._snap(check_runs=runs), NOW)
+        assert verdict.state == "failure"
+        assert any(item.kind == "parity" and "Python ↔ Go parity" in item.detail for item in verdict.items)
+        assert "never ran" in verdict.items[0].detail
+
+    def test_a_skipped_check_blocks(self):
+        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
+        verdict = prf.classify(self._snap(check_runs=runs), NOW)
+        assert verdict.state == "failure"
+        assert len([item for item in verdict.items if item.kind == "parity"]) == 2
+
+    def test_a_red_check_blocks(self):
+        runs = (("Go core", "success"), ("Python ↔ Go parity", "failure"))
+        verdict = prf.classify(self._snap(check_runs=runs), NOW)
+        assert verdict.state == "failure"
+        assert "concluded failure" in verdict.items[0].detail
+
+    def test_a_running_check_is_pending_not_red(self):
+        runs = (("Go core", "success"), ("Python ↔ Go parity", None))
+        verdict = prf.classify(self._snap(check_runs=runs), NOW)
+        assert verdict.state == "pending"
+        assert "still running" in verdict.description
+
+    def test_an_unreadable_read_fails_closed(self):
+        # None means the check-runs read failed. A gate that could not look must
+        # never be mistaken for a gate that found nothing.
+        verdict = prf.classify(self._snap(check_runs=None), NOW)
+        assert verdict.state == "failure"
+        assert "could not read the check runs" in verdict.items[0].detail
+
+    def test_an_unlabelled_pr_is_untouched(self):
+        # check_runs=None is also every unlabelled PR's steady state — the fetch
+        # is never made — and must mean nothing without the label.
+        verdict = prf.classify(snapshot(comments=(review(0),), check_runs=None), NOW)
+        assert verdict.state == "success"
+
+    def test_the_hold_reaches_the_local_lane_too(self):
+        # A human hand-opening a wave PR does not get to merge past a skipped
+        # gate either; the label is the opt-in and a human can remove it.
+        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
+        snap = self._snap(head_ref="feature/nice-thing", check_runs=runs)
+        assert prf.classify(snap, NOW).state == "failure"
+
+    def test_the_local_lane_waits_on_a_running_gate(self):
+        runs = (("Go core", "success"), ("Python ↔ Go parity", None))
+        snap = self._snap(head_ref="feature/nice-thing", check_runs=runs)
+        assert prf.classify(snap, NOW).state == "pending"
+
+    def test_the_override_label_still_clears_it(self):
+        # The escape hatch the lane keeps: a human other than the author.
+        runs = (("Go core", "skipped"),)
+        snap = self._snap(
+            labels=("cowork", prf.PARITY_GATED_LABEL, prf.OVERRIDE_LABEL),
+            check_runs=runs,
+            override_actor="a-different-human",
+        )
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_the_blocking_cap_never_clears_the_gate(self):
+        # Three review rounds exhaust the cap; the parity items are not the
+        # review's findings and must keep blocking past it.
+        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
+        rounds = (review(2, minutes_ago=90, ident=1), review(1, minutes_ago=60, ident=2), account(fixed=2))
+        verdict = prf.classify(self._snap(check_runs=runs, comments=rounds), NOW)
+        assert verdict.state == "failure"
+        assert any(item.kind == "parity" for item in verdict.items)
+
+
+class TestFetchCheckRuns:
+    def test_parses_names_and_conclusions(self, monkeypatch):
+        payload = {
+            "total_count": 2,
+            "check_runs": [
+                {"name": "Go core", "conclusion": "success"},
+                {"name": "Python ↔ Go parity", "conclusion": None},
+            ],
+        }
+        monkeypatch.setattr(prf, "_read", lambda path: payload)
+        assert prf.fetch_check_runs("o/r", "abc1234") == (("Go core", "success"), ("Python ↔ Go parity", None))
+
+    def test_a_failed_read_is_none(self, monkeypatch):
+        monkeypatch.setattr(prf, "_read", lambda path: None)
+        assert prf.fetch_check_runs("o/r", "abc1234") is None
+        assert prf.fetch_check_runs("o/r", "") is None
