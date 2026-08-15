@@ -69,7 +69,7 @@ export function Console({
   onFinalize,
   notice,
 }: ConsoleProps) {
-  const { phase, duel, ai, ticket, ticket_index: index } = state;
+  const { phase, duel, ai, ticket, votes, ticket_index: index } = state;
   const revealed = phase === 'revealed';
   const dueling = phase === 'duel';
   const transcribing = duel?.status === 'transcribing';
@@ -104,7 +104,10 @@ export function Console({
     if (dueling) setDuelOpen(false);
   }, [dueling]);
 
-  const canReveal = hasTicket && !revealed && !dueling;
+  // Nobody has voted yet: there is nothing to reveal, and revealing anyway
+  // ends the round on an empty table and needs a re-vote to undo.
+  const anyVotes = votes.some((seat) => seat.voted);
+  const canReveal = hasTicket && !revealed && !dueling && anyVotes;
   const finalizeReady = revealed && !transcribing;
 
   const submitFinalize = (): void => {

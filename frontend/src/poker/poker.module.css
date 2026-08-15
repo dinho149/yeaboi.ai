@@ -1015,6 +1015,13 @@
 }
 
 .deckStatus {
+  /* A fixed line box: the locked line carries a glyph and the open one does
+     not, and without this the deck — and the table above it — shifted by the
+     difference every time the host turned the lock. */
+  min-height: 1.6em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);

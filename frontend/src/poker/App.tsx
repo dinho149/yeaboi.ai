@@ -576,12 +576,14 @@ export function App({ boot }: { boot: PokerBoot }) {
       />
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
+        {/* No join code here: the link carries it, and the QR is the link. A
+            code to read out is a third way to say the same thing. */}
+        <p className={styles['popNote']}>
+          Send the link, or let them scan it — either one lands them straight on the board. Keep both off
+          anywhere public.
+        </p>
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
-        <InviteQR
-          qrSrc={apiUrl(session, '/api/qr')}
-          inviteUrl={invite.invite?.inviteUrl}
-          joinCode={invite.invite?.joinCode}
-        />
+        <InviteQR qrSrc={apiUrl(session, '/api/qr')} inviteUrl={invite.invite?.inviteUrl} />
       </Modal>
       </div>
     </PageShell>
