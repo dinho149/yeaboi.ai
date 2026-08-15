@@ -181,7 +181,9 @@ def _is_wave(data: dict) -> bool:
     the false post the README's "non-wave merges say nothing here" forbids.
     """
     head = ((data.get("head") or {}).get("ref")) or ""
-    return head.startswith(WAVE_BRANCH_PREFIX) or data.get("number") == WAVE6_PR
+    # Prefix plus a digit, so `cowork/migration-workflow-fix` is not a wave but
+    # `cowork/migration-w18b` (the one wave the program allows to split) is.
+    return bool(re.match(rf"{re.escape(WAVE_BRANCH_PREFIX)}\d", head)) or data.get("number") == WAVE6_PR
 
 
 def _open_wave_prs() -> list[dict] | None:
@@ -199,6 +201,12 @@ def _open_wave_prs() -> list[dict] | None:
     owner, name = slug.split("/")
     data = _get(f"/repos/{transport.segment(owner)}/{transport.segment(name)}/pulls?state=open&per_page=100")
     if not isinstance(data, list):
+        return None
+    # The page bound is the REPO's open-PR count, not the lane's — the label
+    # filter runs client-side below. A full page is provably not the whole
+    # answer, and a wave PR that fell off it would render as an empty queue
+    # rather than as blindness — the exact guess this module forbids.
+    if len(data) >= 100:
         return None
     found = []
     for item in data:

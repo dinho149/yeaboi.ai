@@ -2,17 +2,19 @@
 
 **Trigger** — GitHub event, pull request `closed`
 **Summary** — on a merged migration wave PR: post the wave's Slack line with the new bar
-**Filters** — merged `workstream:go-migration` PRs only; everything else exits silently — and
-**step 1 is the only thing that enforces it**, see below.
+**Filters** — merged wave PRs only; everything else exits silently. Step 1 is the cheap gate;
+the renderer is the strict one — `merged_pr_facts` refuses a non-wave (label without the
+`cowork/migration-w<N>` branch, bar the sanctioned #224) by exiting non-zero, and the stop
+condition below catches that.
 **Workstream** — [`workstreams/go-migration.md`](../../workstreams/go-migration.md)
 **Model** — `fast` ([models.md](../../models.md)) — it reads two fields, runs one script, and
 posts what it printed
 
 **The registered webhook (declared at the end of this file) cannot express "merged", and cannot
 filter by label.** The API's filter speaks actions only, so this fires for every closed PR in
-the repo, most of which are not waves. That is fine — the run is a read and an exit — but it
-means step 1 is the whole gate: getting it wrong posts a 🌊 announcement for an abandoned PR,
-or for a dependabot bump.
+the repo, most of which are not waves. That is fine — the run is a read and an exit. Step 1
+filters the obvious cases cheaply; the renderer independently refuses anything that is not a
+merged wave, so getting step 1 wrong costs a wasted script run, never a false 🌊 announcement.
 
 ## Run
 

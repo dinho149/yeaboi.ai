@@ -964,12 +964,17 @@ def describe(items: Sequence[OpenItem]) -> str:
 
 def parity_gated(snapshot: Snapshot) -> bool:
     """Whether this PR is a migration wave — the label AND the campaign's branch
-    prefix, per the constants' comment. `startswith`, so `cowork/migration-w18b`
-    (the one wave the program allows to split) still gates. The one branch-less
-    wave, the #224 rescue, is gated by number."""
+    prefix, per the constants' comment. Prefix plus a digit, so
+    `cowork/migration-w18b` (the one wave the program allows to split) still
+    gates while `cowork/migration-workflow-fix` does not — holding a PR behind
+    checks its diff never schedules is the asymmetric mistake, on a lane
+    forbidden from applying the override. The one branch-less wave, the #224
+    rescue, is gated by number."""
     if PARITY_GATED_LABEL not in snapshot.labels:
         return False
-    return snapshot.head_ref.startswith(PARITY_BRANCH_PREFIX) or snapshot.number in PARITY_GATED_PRS
+    if snapshot.number in PARITY_GATED_PRS:
+        return True
+    return bool(re.match(rf"{re.escape(PARITY_BRANCH_PREFIX)}\d", snapshot.head_ref))
 
 
 def parity_items(snapshot: Snapshot) -> tuple[list[OpenItem], str | None]:

@@ -1966,10 +1966,15 @@ class TestTheParityHold:
         # The exact case the branch half of `parity_gated` exists for: fleet
         # convention labels every PR of a workstream, and a renderer bugfix or a
         # program-doc edit never schedules the Go jobs. Label without the
-        # `cowork/migration-w` prefix must not hold.
+        # `cowork/migration-w` prefix must not hold — and the prefix needs a
+        # digit, so `cowork/migration-workflow-fix` does not gate while the
+        # split wave `cowork/migration-w18b` still does.
         runs = (("Unit tests", "success"),)
-        snap = self._snap(head_ref="cowork/go-migration-renderer-fix", check_runs=runs)
-        assert prf.classify(snap, NOW).state == "success"
+        for branch in ("cowork/go-migration-renderer-fix", "cowork/migration-workflow-fix"):
+            snap = self._snap(head_ref=branch, check_runs=runs)
+            assert prf.classify(snap, NOW).state == "success", branch
+        split = self._snap(head_ref="cowork/migration-w18b", check_runs=runs)
+        assert prf.classify(split, NOW).state == "failure"
 
     def test_an_absent_check_while_ci_runs_is_pending(self):
         # The parity job cannot start until `go` finishes, so an absent check

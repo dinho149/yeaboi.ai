@@ -378,6 +378,19 @@ class TestHelpers:
         monkeypatch.setattr(progress, "_get", lambda path: None)
         assert progress._open_wave_prs() is None
 
+    def test_a_full_page_is_blindness_not_an_empty_queue(self, monkeypatch):
+        # The page bound is the repo's open-PR count, not the lane's: past 100
+        # open PRs the wave PR falls off page 1 and would render as "nothing in
+        # flight" with the blind marker suppressed — a guess, not a fact.
+        monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
+        full_page = [{"number": n, "labels": [], "head": {"ref": "x"}} for n in range(100)]
+        monkeypatch.setattr(progress, "_get", lambda path: full_page)
+        assert progress._open_wave_prs() is None
+
+    def test_a_wave_needs_a_digit_after_the_prefix(self):
+        assert progress._is_wave({"number": 1, "head": {"ref": "cowork/migration-w18b"}})
+        assert not progress._is_wave({"number": 1, "head": {"ref": "cowork/migration-workflow-fix"}})
+
 
 class TestMain:
     def test_weekly_prints_payload_and_lines(self, monkeypatch, capsys):
