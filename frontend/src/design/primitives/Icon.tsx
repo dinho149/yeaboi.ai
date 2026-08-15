@@ -75,7 +75,7 @@ export interface IconProps {
 }
 
 const SHAPE = /<(path|circle|line|polyline|polygon|rect|ellipse)\s+([^>]*?)\/>/g;
-const ATTR = /([a-zA-Z-]+)="([^"]*)"/g;
+const ATTR = /([a-zA-Z][\w-]*)="([^"]*)"/g;
 
 const parsed = new Map<IconName, ReactElement[]>();
 

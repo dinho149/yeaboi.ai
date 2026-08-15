@@ -170,6 +170,63 @@
   border-color: transparent;
 }
 
+/*
+ * A panel opened from the notch is the notch, grown.
+ *
+ * It sits against the dock's edge, shares its ground and border weight, and
+ * grows out of it on open. Closing is not animated: the panel is `hidden`, and
+ * a `display: none` element has no frames to run in.
+ */
+.dockApp [role='group'][aria-label]:not([hidden]) {
+  background: var(--bg);
+  border-color: var(--screen-frame);
+  box-shadow: var(--shadow-2);
+}
+
+.dockApp[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
+  top: auto;
+  bottom: calc(100% + var(--s1));
+  min-width: 240px;
+  transform-origin: bottom center;
+  animation: dockGrowUp var(--dur-base) var(--ease) both;
+}
+
+.dockApp[data-edge='left'] [role='group'][aria-label]:not([hidden]),
+.dockApp[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+  top: 50%;
+  bottom: auto;
+  translate: 0 -50%;
+  animation: dockGrowSide var(--dur-base) var(--ease) both;
+}
+
+.dockApp[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
+  left: calc(100% + var(--s1));
+  right: auto;
+  transform-origin: left center;
+}
+
+.dockApp[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+  right: calc(100% + var(--s1));
+  left: auto;
+  transform-origin: right center;
+}
+
+@keyframes dockGrowUp {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(10px) scaleY(0.9);
+  }
+}
+
+@keyframes dockGrowSide {
+  from {
+    max-width: 0;
+    opacity: 0;
+    transform: scaleX(0.9);
+  }
+}
+
 .dockApp > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
 .dockApp > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
