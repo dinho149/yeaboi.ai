@@ -1402,10 +1402,15 @@
   color: var(--dim);
 }
 
+/* `vertical-align: top` and an inherited line height: an inline-flex run sits
+   on its own baseline otherwise, which made the locked line 1.13px taller than
+   the open one and moved the deck — and the table above it — on every lock. */
 .deckReason {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
+  vertical-align: top;
+  line-height: 1.6;
 }
 
 .musicBanner {
