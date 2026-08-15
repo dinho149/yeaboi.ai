@@ -837,7 +837,6 @@
   z-index: var(--z-deck);
   background: var(--bg);
   padding: var(--s3) 0 max(var(--s3), env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
 }
 
 /*
@@ -1178,29 +1177,38 @@
   color: var(--muted);
 }
 
+/* A notice is a line of type under a rule, not a tinted band across the board.
+   The semantic colour stays on the words, where it is legible in every theme —
+   a 16% mix against `--panel` lands on cream in the light one. */
 .lockBanner,
 .musicBanner {
   margin: 0;
+  width: 100%;
   padding: var(--s2) var(--s4);
-  text-align: center;
-  font-size: var(--fs-xs);
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
 }
 
 .lockBanner {
-  background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
 .musicBanner {
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
-  font: inherit;
-  font-size: var(--fs-xs);
   cursor: pointer;
+}
+
+.musicBanner:hover {
+  background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
