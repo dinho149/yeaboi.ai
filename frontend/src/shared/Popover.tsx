@@ -43,6 +43,9 @@ interface PopoverGroupValue {
 
 const PopoverGroupContext = createContext<PopoverGroupValue | null>(null);
 
+/** How long a docked panel stays rendered after closing, so it can collapse. */
+const CLOSE_MS = 220;
+
 /**
  * Wraps a toolbar so its popovers are mutually exclusive.
  *
@@ -80,6 +83,13 @@ export function PopoverGroup({ children, panelHost = null }: { children: ReactNo
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [openId, close]);
+
+  // The host's own open state, written straight onto it: it is the element the
+  // *collapse* animates on, and it has to flip the moment the panel closes —
+  // before the panel itself goes, which is what there is left to collapse.
+  useLayoutEffect(() => {
+    if (panelHost) panelHost.dataset['open'] = openId ? 'true' : 'false';
+  }, [panelHost, openId]);
 
   const value = useMemo(() => ({ openId, toggle, close, panelHost }), [openId, toggle, close, panelHost]);
 
@@ -132,6 +142,8 @@ export function Popover({
   // Standalone fallback so a Popover still works outside a group — used in
   // tests and wherever exactly one popover exists.
   const [soloOpen, setSoloOpen] = useState(false);
+  /** Docked only: kept in the layout for one beat so the host can collapse. */
+  const [closing, setClosing] = useState(false);
 
   const open = group ? group.openId === id : soloOpen;
   const host = group?.panelHost ?? null;
@@ -167,13 +179,24 @@ export function Popover({
     setFit({ above, left });
   }, [open, placement, align, host]);
 
-  useEffect(() => {
+  // Layout, not effect: an ordinary effect runs after paint, so the browser
+  // would show one frame with the panel already gone — the box snapping shut
+  // and then reappearing to animate down.
+  useLayoutEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = open;
+    if (!was || open) return;
     // Returning focus to the trigger on close is the half of the interaction
     // people notice only when it is missing: without it, dismissing a panel
     // with Escape drops keyboard focus back to the document body.
-    if (wasOpen.current && !open) buttonRef.current?.focus();
-    wasOpen.current = open;
-  }, [open]);
+    buttonRef.current?.focus();
+    // A docked panel is what gives its host a height, so removing it on the
+    // same frame leaves nothing to animate — it stays for the collapse.
+    if (!host) return;
+    setClosing(true);
+    const timer = setTimeout(() => setClosing(false), CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [open, host]);
 
   const onToggle = (): void => {
     if (group) group.toggle(id);
@@ -189,7 +212,7 @@ export function Popover({
       id={id}
       role="group"
       aria-label={label}
-      hidden={!open}
+      hidden={!open && !closing}
       className={cx(
         styles['popover'],
         host && styles['popoverDocked'],
