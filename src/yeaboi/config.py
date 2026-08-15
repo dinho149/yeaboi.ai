@@ -40,7 +40,7 @@ def get_config_dir() -> Path:
     first (done at the top of ``cli.main``) so a pre-rebrand ~/.scrum-agent tree
     is moved over before this mkdir creates an empty ~/.yeaboi.
     """
-    d = Path.home() / ".yeaboi"
+    d = Path.home() / ".yeaboi"  # lens-exempt: paths-through-paths-py — see the docstring above
     d.mkdir(exist_ok=True)
     # Repair perms on every call (cheap): the dir holds .env + sessions.db, both secret-bearing.
     restrict_permissions(d, mode=0o700)

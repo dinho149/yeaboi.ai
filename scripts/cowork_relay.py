@@ -70,6 +70,40 @@ DONE = "robot_face"
 APPROVE = "white_check_mark"
 REJECT = "x"
 
+# Why a fleet item ended without shipping. A closed vocabulary, because the whole
+# point is to count these: `scripts/cowork_metrics.py` reads the markers below out
+# of issue comments, and a free-text reason is one nobody can aggregate. The fleet
+# already knew every one of these facts and wrote none of them down — a ❌ was a
+# bare `gh issue close`, and the human's reason stayed in Slack.
+#
+# `slack-veto` is the only one this script emits; the rest are written by the
+# sweeps and the digest, and live here because this is the module the reader
+# imports. `cowork/sweep-procedure.md` and `cron/digest.md` spell the same set,
+# and `tests/unit/test_cowork_relay.py` asserts the docs and this tuple agree —
+# the doc is the source, because it is what a model actually reads.
+# What each verb did, in the past tense a human reads. Spelled out because
+# deriving it was wrong the moment a verb was not a regular English one:
+# `campaign` + "d" is "campaignd". Keys are exactly the verbs `_command` answers
+# to, minus the two `_audit` returns ``None`` for.
+AUDIT_VERB = {"approve": "approved", "promote": "promoted", "campaign": "approved as a campaign"}
+
+REJECTION_REASONS = (
+    "slack-veto",  # a human reacted ❌ in the channel
+    "aged-out",  # digest.md step 4 closed an unanswered proposal after 14 days
+    "no-longer-reproduces",  # the evidence stopped being true before anyone built it
+)
+
+# Why a queued item went back to being a question. These mirror the auto-lane
+# conditions in `cowork/house-rules.md` rather than inventing a second taxonomy:
+# the axes a find fails on are exactly the conditions it had to clear.
+BOUNCE_REASONS = (
+    "no-repro",  # a `bug` with no regression test that fails before and passes after
+    "user-facing-wording",  # behaviour may change, copy may not
+    "outside-owns",  # the paths fall outside the charter
+    "public-api",  # an API, schema or state-field change
+    "needs-judgement",  # arguing with yourself about it means it proposes
+)
+
 APPROVAL_LABEL = "claude-implement"
 PROMOTE_LABEL = "release:promote"
 # Applied only by `cron/release-promote-ask.md`, at creation time, as the
@@ -386,6 +420,39 @@ def _command(verb: str, issue: int) -> list[str]:
     raise RelayError(f"no command for verb {verb!r}")
 
 
+def _audit(verb: str, issue: int, who: str, ts: str) -> list[str] | None:
+    """The comment that records a Slack decision on the GitHub item it moved.
+
+    This used to be the routine's job — `slack-relay.md` told it to leave
+    ``approved via Slack ✅ by <who> — <permalink>`` and trusted it to do so once.
+    #172 carries two identical ones, because "leave a comment" is a sentence and
+    not an argv. Emitting it here makes it diffable and makes it exactly once, the
+    same reason `_command` emits argv instead of a format string.
+
+    The trailing marker is the part that is actually load-bearing. A ❌ was a bare
+    ``gh issue close``: the fact survived in GitHub and the *reason* stayed in
+    Slack, so nothing could ever count why the fleet's proposals died. Now a
+    rejection says so in a form `scripts/cowork_metrics.py` can read.
+
+    ``None`` for the two verbs that need no comment: ``refire`` is already a
+    comment, and ``ask`` has no command to audit. Callers treat that as "nothing
+    to post" rather than as a failure.
+    """
+    if verb in ("refire", "ask"):
+        return None
+    if verb == "reject":
+        body = (
+            f"closed via Slack ❌ by {who} — message `{ts}` in the channel.\n\n"
+            f"<!-- rejected: reason=slack-veto by={who} ts={ts} -->"
+        )
+    else:
+        body = (
+            f"{AUDIT_VERB[verb]} via Slack ✅ by {who} — message `{ts}` in the channel.\n\n"
+            f"<!-- relayed: verb={verb} by={who} ts={ts} -->"
+        )
+    return ["gh", "issue", "comment", str(issue), "--body", body]
+
+
 def _disclosure_action(reply: dict[str, Any], text: str, allowlist: dict[str, str]) -> dict[str, Any] | None:
     """A ✅/❌ on `cron/security-sweep.md`'s disclosure post → the action it owes.
 
@@ -567,10 +634,22 @@ def build_plan(
                 # `claude-implement`, which starts an implementation run against
                 # the release ask, or against a week-long campaign plan. Ask a
                 # human; that is the verb.
-                plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None})
+                plan.append(
+                    {"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None, "audit": None}
+                )
                 continue
             verb = label_verb if confirmed else "approve"
-        plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
+        ts = str(reply.get("ts") or "")
+        plan.append(
+            {
+                "ts": reply.get("ts"),
+                "issue": issue,
+                "verb": verb,
+                "who": who,
+                "command": _command(verb, issue),
+                "audit": _audit(verb, issue, who, ts),
+            }
+        )
 
     plan.sort(key=lambda item: str(item["ts"]))
     counts = {

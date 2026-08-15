@@ -6,6 +6,25 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = platform`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — `paths.py` and `config.py` are excluded by policy and that exclusion is the
+  interesting one: an export there with no caller is a mode that has not adopted the convention,
+  and the fix is at the caller. If you want to file that, it is a `docs` or `chore` proposal
+  against the owning workstream, not a deletion here.
+- `assertion-free-tests` — `tests/parity/` is the byte-parity gate; a parity test that asserts
+  nothing is a gate that has silently stopped being one.
+- `layering` — this charter *declares* `paths-through-paths-py`, and every other sweep now runs it
+  over its own files. What you see here is only the boundary crossed inside `platform`'s own paths,
+  and `paths.py` itself is exempt because it *is* the boundary. Silence here with a find in
+  **tui-ux** is the invariant working, not the lens missing something.
+- `duplication` — propose only. `cli.py` is where two subcommands get written from one another, and
+  the lens has no opinion on whether they should be one function; that is the reading you are being
+  handed.
+
 ## Focus
 
 - **Surface parity audit** — this is the run that catches what everyone else shipped TUI-only. Diff

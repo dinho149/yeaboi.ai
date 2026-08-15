@@ -158,6 +158,7 @@ class TestFilesAgreeWithTheTable:
                 "cron/cd-deploy.md",
                 "cron/integrations-campaign.md",
                 "cron/release-promote-ask.md",
+                "cron/retune.md",
                 "cron/shipped-standup.md",
                 "cron/slack-relay.md",
                 "events/pr-merged-close-loop.md",
@@ -540,28 +541,31 @@ class TestAgenda:
     def test_a_quiet_day_does_not_spend_the_month_marker(self):
         """The marker belongs to the day that shows it, not to the day that has it.
 
-        1 Nov 2026 is a Sunday and the fleet is quiet on Sundays, so the day that
-        changes month is the one folded away — and advancing on every day walked
-        rather than on every day rendered leaves `**Sat 31**` followed by a bare
-        `**Mon 2**`, with November announced only in an aside below it. That is
-        the ambiguity the marker exists to prevent, and it recurs every month
-        whose 1st falls on a Sunday.
+        1 Aug 2026 is a Saturday and Saturday is the fleet's one quiet weekday, so
+        the day that changes month is the one folded away — and advancing on every
+        day walked rather than on every day rendered leaves `**Fri 31**` followed
+        by a bare `**Sun 2**`, with August announced only in an aside below it.
+        That is the ambiguity the marker exists to prevent, and it recurs every
+        month whose 1st falls on a quiet day.
+
+        The fixture was a Sunday until `cron/retune.md` started firing at 08:00 on
+        Sundays. Which day is quiet is a property of the schedule, and the
+        schedule is what everything else in this class is testing.
         """
-        lines = setup.agenda(date(2026, 10, 26))["lines"]
-        assert any(line.startswith("**Mon 2 Nov** —") for line in lines), lines
-        assert not any(line.startswith("**Sun 1") for line in lines), lines
+        lines = setup.agenda(date(2026, 7, 27))["lines"]
+        assert any(line.startswith("**Sun 2 Aug** —") for line in lines), lines
+        assert not any(line.startswith("**Sat 1") for line in lines), lines
         # Matched in two parts, like the sibling test above: how many quiet days
-        # the closing sentence lists depends on the cadence, so "Sun 1 Nov is
-        # clear" became "Sat 31 and Sun 1 Nov are clear" the day the Saturday
-        # routine was retired. The fact under test is that Sunday's month is
-        # named there and nowhere else, which is exactly these two substrings.
-        assert any("Sun 1 Nov" in line and "clear" in line for line in lines), lines
+        # the closing sentence lists depends on the cadence. The fact under test
+        # is that the quiet day's month is named there and nowhere else, which is
+        # exactly these two substrings.
+        assert any("Sat 1 Aug" in line and "clear" in line for line in lines), lines
 
     def test_a_collapsed_quiet_day_does_not_take_a_rendered_month_with_it(self):
-        """The other half: Sun 30 Aug is folded away and Tue 1 Sep still says Sep."""
-        lines = setup.agenda(date(2026, 8, 29))["lines"]
-        assert any(line.startswith("**Tue 1 Sep** —") for line in lines), lines
-        assert not any(line.startswith("**Sun 30**") for line in lines), lines
+        """The other half: Sat 31 Oct is folded away and Sun 1 Nov still says Nov."""
+        lines = setup.agenda(date(2026, 10, 26))["lines"]
+        assert any(line.startswith("**Sun 1 Nov** —") for line in lines), lines
+        assert not any(line.startswith("**Sat 31**") for line in lines), lines
 
     def test_every_anchor_is_a_single_codepoint(self):
         """No variation sequences. A trailing U+FE0F that one client needs and
@@ -576,8 +580,8 @@ def _message_payload(**overrides) -> dict:
 
     Built by hand rather than taken from ``agenda()`` because several of the
     renderer's branches do not occur in any one week of the real schedule — the
-    fleet is quiet on Sundays and never quiet for seven days running, and it has
-    exactly one background routine — so they would go unexercised until the day
+    fleet's one quiet weekday is Saturday and it is never quiet for seven days
+    running, and it has exactly one background routine — so they would go unexercised until the day
     they were wrong.
     """
     base = {
@@ -819,6 +823,7 @@ class TestLabels:
                 "integration:candidate",
                 "integration:approved",
                 "review-capped",
+                "fleet-ledger",
             }
             | {f"workstream:{w}" for w in WORKSTREAMS}
             | {f"type:{t}" for t in setup.PROPOSAL_TYPES}
@@ -1000,13 +1005,17 @@ class TestLabels:
                 f"digest.md never heads the {section} section with {rows[section]!r}"
             )
 
-    def test_there_are_fifteen_workstreams(self):
+    def test_there_are_sixteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
         # health check all spell it out in prose, and none of them is derived.
         # Thirteen maintain a surface, `security` scouts twice a week, and
         # `integrations` is the one that builds — `marketing` went with the
-        # opportunity lane, because it fed neither hand-test track.
-        assert len(WORKSTREAMS) == 15
+        # opportunity lane, because it fed neither hand-test track. The sixteenth
+        # is `fleet`, whose subject is `cowork/` rather than any of the code: it
+        # is the only charter that owns the instructions the others run under,
+        # and the only one bounded by a list of files no charter may reach
+        # (`setup.CONSTITUTION`, asserted in `test_cowork_retune.py`).
+        assert len(WORKSTREAMS) == 16
 
     def test_every_workstream_owns_at_least_one_routine(self):
         owned = {r.workstream for r in ROUTINES if r.workstream}
@@ -2225,6 +2234,11 @@ class TestTeardown:
         both strips that record off every issue and restarts the loop.
         Removing any of them with the fleet would break a live gate, and the
         breakage is silent: applying a label that does not exist does nothing.
+
+        ``fleet-ledger`` is the one entry here that gates nothing. It is kept for
+        the opposite reason: teardown stops the fleet, and deleting this label
+        would leave every monthly run ledger intact and unfindable — the history
+        surviving with nothing able to read it.
         """
         assert setup.KEEP_LABELS == {
             "claude-implement",
@@ -2233,6 +2247,7 @@ class TestTeardown:
             "release:promotion",
             "release:promote",
             "integration:approved",
+            "fleet-ledger",
         }
         assert not (setup.KEEP_LABELS & {label.name for label in setup.teardown_labels()})
 

@@ -9,14 +9,18 @@ Terminal-based AI Scrum Master agent built with LangGraph, LangChain, and Anthro
 ## Commands
 
 ```bash
-make test                 # Unit + integration + contract tests (full suite, no API keys needed)
+make ship-gate            # The full local gate /ship runs: lint + format-check + test + security + preflight
+make test                 # Unit + integration + contract tests (parallel unit lane, then the serial slow lane)
 make test-fast            # The whole unit lane, in parallel (~50s)
 make test-scoped          # Only the areas the working tree touches + the always-run guards
 make test-slow            # Integration + contract only — what CI's second test job runs
 make test-v               # Full suite verbose
 make test-all             # Everything including golden evaluators
 make lint                 # Lint with ruff
-make format               # Format with ruff
+make format               # Format with ruff (writes)
+make format-check         # What CI's required "Format check (ruff)" job runs (asserts)
+make preflight            # Run only the optional CI jobs this branch's diff needs (BASE=origin/main)
+make package-check        # uv build + assert the wheel and sdist carry the committed bundles
 make run                  # Run the CLI (ARGS="--flag" to pass arguments)
 make run-dry              # Run TUI with fake delays, no LLM calls
 make eval                 # Run golden dataset evaluators
@@ -73,7 +77,13 @@ Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a sessi
 ### Verification loop
 
 - **Every turn (automatic)**: a Stop hook runs `make lint` + `make test-scoped` whenever a turn ends with dirty `.py` files, and a PostToolUse hook ruff-formats every edited `.py` file. Hook scripts live in `scripts/claude-hooks/`; wiring is in `.claude/settings.json`.
-- **At ship time (`/ship`)**: an independent fresh-context agent reviews the diff against the task (spec-fit + conventions), then the full `make test` + `make lint` gate runs before commit/push/PR.
+- **At ship time (`/ship`)**: the branch is **committed and rebased onto `origin/main` first** — a gate
+  run on a stale base proves something about a tree that will never exist — and then an independent
+  fresh-context agent reviews `git diff origin/main...HEAD` (spec-fit + conventions) **concurrently**
+  with `make ship-gate`. The gate is `lint` → `format-check` → `test` → `security` → `preflight`;
+  `preflight` runs the optional CI jobs the diff needs (bundles, docs site, Go, parity, evaluators,
+  wheel, actionlint), chosen by `scripts/test_scope.py`, so CI has nothing left to discover that was
+  knowable locally. `tests/unit/test_ship_gate.py` guards the shape of all of it.
 - **In CI**: `claude-review.yml` posts an async code + security review once the full CI suite has passed on a PR (non-blocking; `ci.yml` remains the merge gate).
 
 ### Orchestration conventions
@@ -82,10 +92,63 @@ When driving multiple features at once, work as an **orchestrator**: one main se
 
 ## Cowork (`cowork/`)
 
-**The fleet does exactly two things: it maintains what exists, and it builds one provider integration at a time.** Fifteen standing workstreams. Thirteen are *maintenance* sweeps — one per mode: **planning** (`agent/` + `prompts/` + `ui/session/`), standup, analysis, reporting, poker, retro, performance, roadmap, artifacts-sharing, **agents** (the agentwatch family + `pricing.py`; its daily routine posts the agent standup digest rather than sweeping), plus tui-ux (including the `usage` and `settings` pages), web-ux and platform — and they may only return `bug`, `chore`, `docs` or `security`. `security` sweeps twice weekly. **`integrations` is the one that builds**, weekdays, as a week-long campaign. Sweep cadence is tiered to surface size: weekly for large, fortnightly for mid, monthly for small. Routines are **account-scoped, not repo files**; `cowork/` is the versioned source of truth their prompts point at. Start at `cowork/README.md`.
+**The fleet does exactly two things: it maintains what exists, and it builds one provider integration at a time — and a sixteenth workstream watches it do both.** Sixteen standing workstreams. Thirteen are *maintenance* sweeps — one per mode: **planning** (`agent/` + `prompts/` + `ui/session/`), standup, analysis, reporting, poker, retro, performance, roadmap, artifacts-sharing, **agents** (the agentwatch family + `pricing.py`; its daily routine posts the agent standup digest rather than sweeping), plus tui-ux (including the `usage` and `settings` pages), web-ux and platform — and they may only return `bug`, `chore`, `docs` or `security`. `security` sweeps twice weekly. **`integrations` is the one that builds**, weekdays, as a week-long campaign. Sweep cadence is tiered to surface size: weekly for large, fortnightly for mid, monthly for small. Routines are **account-scoped, not repo files**; `cowork/` is the versioned source of truth their prompts point at. Start at `cowork/README.md`.
 
 - **`cowork/definition-of-done.md` is the one contract**, binding on routines *and* on `/ship`: Linear ticket, tests, lint, security, surface parity, observability, web bundles, Notion page, Slack post, review feedback. Items 2–7 gate the PR opening; item 10 gates the *merge* — the `pr-feedback` commit status stays red while a blocker/should-fix finding or an unresolved review thread is unanswered, which is the one part of the contract nothing used to enforce.
 - **`cowork/house-rules.md`** holds the closed auto-lane allowlist and, beside it, **the campaign lane**. Everything not on either becomes a `cowork:proposal` GitHub issue; a human approves by adding `claude-implement`, which the existing `claude.yml` job then implements. GitHub issues are the queue — there is no other shared state between runs. A workstream may hold **two open proposals** (`PROPOSAL_CAP`, counted by `--proposal-slots` / `make cowork-slots`, never by eye), and an unreadable count is zero slots rather than two: a sweep that cannot see the queue files nothing, because the alternative is a backlog nobody can read filed by a fleet that never stops.
+- **The sixteenth workstream's subject is the fleet.** `cowork/workstreams/fleet.md` owns `cowork/`
+  (**except the constitution**), `scripts/cowork_*.py`, `scripts/hygiene_lens.py` and
+  `.github/hygiene/`; `cron/retune.md` runs it on Sundays. It exists because the fleet threw away
+  every failure *reason* it produced — the fact was durable in GitHub, the reason was free text —
+  and `cron/digest.md` has reported "this workstream keeps getting rejected, its charter is pointed
+  at the wrong thing" every Monday with nothing acting on it. The rule that makes self-modification
+  safe is an asymmetry, not a promise: **a routine may tighten itself unattended; only a human may
+  loosen it.** Tightening is exactly two append-only operations — a row in `cowork/calibration.md`
+  recording a rejection with its issue numbers, and a `lens-policy.yml` exclusion quoting the false
+  positive — and both can only make the fleet *quieter*, so nothing points at gaming them.
+  Everything that changes judgement or increases output proposes, charter re-aims above all. **The
+  constitution is outside every charter**: `house-rules.md`, `definition-of-done.md`,
+  `sweep-procedure.md`, `models.md`, `crew.md` and the three crew agents, asserted against the
+  *resolved paths* rather than the prose. `calibration.md` is read by every scout at survey time —
+  that is the whole self-healing mechanism, and it is deliberately lighter than rewriting a prompt:
+  accumulated failures become context, and the file can only ever add constraints. **No routine
+  reads the run ledger**, and that stayed absolute rather than becoming nuanced: outcomes are
+  durable records of decisions, but run telemetry is what the fleet *spent*, and a routine deciding
+  from it makes the fleet's behaviour a function of its own resource consumption. `retune` and the
+  digest both pass `--no-runs`; cost lives on a human's terminal in `make cowork-metrics`.
+- **A sweep now looks for things, not just at things.** `cowork/hygiene-lenses.md` holds the standing
+  detectors a routine runs *before* scouting, each with a command behind it —
+  `scripts/hygiene_lens.py --lens <lens> --workstream <name>`, exclusions in
+  `.github/hygiene/lens-policy.yml` with a `why` per entry. **Six**, on all thirteen sweeps:
+  `dead-code`, `assertion-free-tests`, `layering`, `stale-flags`, `duplication` and `crash-fuzz` —
+  the first three piloted on **tui-ux**, **platform** and **retro** as a control, the rest added
+  once that pilot had a fortnight behind it. Retro still returns nothing on every lens it runs,
+  which is the only evidence anyone has that these are detectors rather than work generators.
+  **No new category and no new type**: every lens lands in an auto-lane category house-rules
+  already permits, and the fleet had simply never been told to look. The rule that lets
+  a per-charter scout prove a repo-wide negative is **survey narrow, confirm wide, change narrow** —
+  a lens finds only inside `**Owns**`, may read the entire tree to *confirm*, and the find stays
+  yours. A lens's `lane` is a **ceiling, not a grant**; the scout classifies it like anything else,
+  and one lens returns **one** find listing up to `max_batch` instances rather than one per
+  instance, with the remainder reported as `held` and never silently dropped. The exclusions are
+  where the judgement lives, and the two that matter most both look like clean wins: a hatchling
+  build hook has no caller *by construction*, and `paths.py`/`config.py` exports with no caller are
+  **unadopted, not dead** — deleting the seven `get_*_log_dir` helpers would merge green and remove
+  the API the Observability rule requires every mode to log through. Two lenses meet that rule in a
+  shape worth reading twice, and both are it working rather than an exception to it. **`crash-fuzz`
+  runs wide and finds narrow**: `scripts/tui_fuzz.py` drives the live TUI in a pty under
+  `--dry-run` with `HTTPS_PROXY` pointed at a dead port, a temp `HOME` and PATH shims over
+  `ffplay`/`open`/`cloudflared`, and a fuzzer cannot be confined to one charter's screens — so the
+  run reads everything and the *find* is the deepest frame we own, which makes a crash tui-ux
+  reaches in `agent/nodes.py` **planning's**, reported `outside-owns` and never filed. It is also
+  the only lens returning a `bug`, admissible unattended because **the seed is the regression
+  test** — and a **hang** proposes, because "it stopped repainting" has no mechanical
+  reproduction. And a **`layering` invariant may be declared by one charter and answered by all of
+  them** (`applies_to: "*"`): web-ux writes down once that headers come from `web/security.py`, and
+  a second CSP spelled in `standup/` is standup's find — declaring a boundary is not claiming the
+  file. `duplication` is the one **propose-only** lens and is deliberately withheld from tui-ux,
+  where almost everything it finds is `ui/mode_select/__init__.py` duplicating itself: an answered
+  question re-filed weekly under a new name is how a lens stops being read.
 - Three crew agents in `.claude/agents/`: `cowork-scout` (read-only survey), `cowork-scribe` (**the only author of outbound comms to Linear/Slack/Notion/issues** — the `slack-relay` routine's acks and human-verb relays are the one other writer), `cowork-builder` (implements one item in its charter's paths).
 - **`cowork/models.md` is the only file that names a model.** Everything else — routines, agents, `/ship`, `/migrate`, `/babysit-prs` — names a *tier* (`heavy`/`deep`/`standard`/`fast`/`inherit`); every agent stays `model: inherit` so the caller decides. The `.github/workflows/*.yml` jobs can't read a markdown table, so they read `vars.YEABOI_MODEL_*` repo variables with a `||` fallback pinned to prior behaviour. `tests/unit/test_cowork_models.py` fails if a model id is hardcoded anywhere else — including in `.claude/commands/` and `scripts/cowork_setup.py`.
 - **The fleet bookends the day: what is about to run, then what ran.** `cron/day-ahead.md` posts the schedule at 05:45 UTC, before the earliest sweep, and `cron/shipped-standup.md` posts at 18:00 UTC — the day's merged PRs with the trace behind each (what proved it, the review verdict, the merge time), what is still building, what is stuck, and the pre-release it all landed in. The evening post also replaced the per-PR ship note that `pr-merged-close-loop.md` used to fire once per merge with batching explicitly forbidden. `day-ahead` was itself deleted once, on the reasoning that announcing what is *about* to run is worth less than reporting what ran; it came back because the question it answers is not "what will the fleet do" but **when to expect something in Slack**, which nothing else says. It is the one routine exempt from "nothing to do is a valid outcome, exit quietly" — silence from a findings routine means it found nothing, silence from a *schedule* routine is ambiguous. It composes nothing: `scripts/cowork_setup.py --agenda` matches every cron against the date, converts to `DISPLAY_TZ` (UTC stays the source of truth and rides along in brackets), and the routine posts the `lines` it is handed; `make cowork-agenda` / `/cowork today` print the same string. Nothing is held back from it — the evening post is named too, because a schedule that omits half of what you are waiting for is not one. Every routine file still carries a `**Summary**` line capped at 90 characters.
@@ -233,6 +296,9 @@ Key docs sections to reference:
 After every code change, ALWAYS run:
 1. `make test` — all tests must pass
 2. `make lint` — must be clean
+
+At ship time run `make ship-gate` instead: same two, plus `format-check` (a *required* CI check with
+no other local twin), `security`, and the `preflight` jobs this diff needs.
 
 Do NOT commit until both pass.
 

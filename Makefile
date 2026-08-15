@@ -4,7 +4,12 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate
+# `test` and `ship-gate` order their prerequisites deliberately (cheap checks
+# first, unit before integration). `make -j` would run them concurrently, and
+# two pytest processes in one worktree invent failures.
+.NOTPARALLEL:
+
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -48,8 +53,13 @@ test-slow: ## Integration + contract only — the half `test-fast` does not cove
 	$(UV) run pytest $(SLOW_LANE) --tb=short
 	@echo "✓ Integration & contract tests passed"
 
-test: ## Unit + integration + contract tests — full suite, no API keys needed
-	$(UV) run pytest $(UNIT_LANE) $(SLOW_LANE) --tb=short
+# One pytest process for 10,383 unit tests plus 562 integration ones took 408s,
+# of which 310s was the unit half run serially — the same tests `test-fast`
+# finishes in ~50s with `-n auto`. Expressed as prerequisites rather than two
+# copied recipe lines so the paths and flags cannot drift from UNIT_LANE /
+# SLOW_LANE / PYTEST_PARALLEL, which is the whole reason those variables exist.
+# Same tests, same order, same split as CI's two test jobs.
+test: test-fast test-slow ## Unit + integration + contract tests — full suite, no API keys needed
 	@echo "✓ All tests passed"
 
 # `python3`, not `$(UV) run`: scripts/test_scope.py imports the standard library
@@ -72,18 +82,56 @@ test-all: ## Everything including golden evaluators (requires make eval separate
 	$(UV) run pytest --ignore=tests/smoke --tb=short
 	@echo "✓ Full test suite passed"
 
+# `scripts/` is in the paths deliberately. It was not, and CI's required
+# "Lint (ruff)" job runs this target — so a lint error in a script was caught by
+# pre-commit and by nothing else, on a repo where the fleet, the release channel
+# and the test selector all live in scripts/. Found the honest way: this very
+# change tripped it.
 lint: ## Lint with ruff
-	$(UV) run ruff check src/ tests/
+	$(UV) run ruff check src/ tests/ scripts/
 
 format: ## Format with ruff
-	$(UV) run ruff format src/ tests/
+	$(UV) run ruff format src/ tests/ scripts/
 
-security: ## Security scan — bandit (ruff S) SAST + dependency CVE audit
-	@echo "→ SAST (ruff incl. flake8-bandit S rules; respects pyproject ignores)"
-	$(UV) run ruff check src/ tests/
+# `make format` writes; this one asserts. CI's "Format check (ruff)" is a
+# required status check and had no Makefile target, so the only way to fail it
+# was to open the PR.
+format-check: ## What CI's "Format check (ruff)" job runs — asserts, never writes
+	$(UV) run ruff format --check src/ tests/ scripts/
+
+# `security: lint`, not a second copy of `ruff check src/ tests/` — the SAST half
+# of this target WAS that command, byte for byte, so `make lint security` linted
+# twice. As a prerequisite it still runs standalone and make resolves it once.
+security: lint ## Security scan — bandit (ruff S) SAST + dependency CVE audit
+	@echo '→ SAST (ruff incl. flake8-bandit S rules; respects pyproject ignores) — ran above as make lint'
 	@echo "→ Dependency CVE audit (pip-audit against the synced environment)"
 	$(UV) run --with pip-audit pip-audit
 	@echo "✓ Security scan passed"
+
+# ── The ship gate ───────────────────────────────────────────────────────────
+# `make test` proves the Python suite. It does not prove the eight other things
+# CI checks — the format check above, the front-end bundles, the docs site, the
+# Go sidecar, the parity suite unskipped, the golden evaluators and the wheel's
+# contents. Those used to be discovered after the PR was already open.
+#
+# `preflight` runs only the ones this branch's diff actually needs, decided by
+# scripts/test_scope.py — the same selector CI's `scope` job uses, whose third
+# rule is that anything it cannot classify runs everything.
+
+package-check: ## What CI's "Wheel contains the bundles" job runs (uv build + assert)
+	$(UV) build
+	python3 scripts/check_wheel_bundles.py
+
+preflight: ## Run only the optional CI jobs this branch's diff needs (BASE=origin/main)
+	python3 scripts/preflight.py --base $(BASE)
+
+BASE ?= origin/main
+
+# Fail-fast order: seconds-long checks first, then the suite, then the network
+# audit, then the heavy optional jobs. This is what /ship runs, as ONE make
+# invocation, so `lint` resolves once for both itself and `security`.
+ship-gate: lint format-check test security preflight ## The full local gate /ship runs — everything CI will check
+	@echo "✓ ship gate passed"
 
 pre-commit: ## Install pre-commit hooks
 	$(UV) run pre-commit install
@@ -301,6 +349,20 @@ cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=n
 
 cowork-queue: ## Show what each workstream's sweep should build next (WORKSTREAM=name for one)
 	@$(UV) run python scripts/cowork_setup.py --queued $(WORKSTREAM)
+
+cowork-lens: ## Run one hygiene lens over one workstream (LENS=dead-code WS=tui-ux, JSON=1)
+	@$(UV) run python scripts/hygiene_lens.py --lens $(or $(LENS),dead-code) --workstream $(WS) $(if $(JSON),--json,)
+
+.PHONY: cowork-fuzz
+cowork-fuzz: ## Fuzz the live TUI in a pty (SEEDS=6 STEPS=120, or SEED=41 to replay one)
+	@$(UV) run python scripts/tui_fuzz.py $(if $(SEED),--seed $(SEED),--seeds $(or $(SEEDS),6)) --steps $(or $(STEPS),120)
+
+cowork-metrics: ## What the fleet merged, found, fixed and cost (WINDOW=30, JSON=1 for the raw report)
+# The token is borrowed from `gh` when the environment has none. The script itself
+# stays honest about needing one — this is the developer-on-a-laptop case, where
+# `gh auth login` has already happened and exporting GH_TOKEN by hand is the only
+# thing standing between a logged-in machine and a report.
+	@GH_TOKEN=$${GH_TOKEN:-$$(gh auth token 2>/dev/null)} 		$(UV) run python scripts/cowork_metrics.py --window $(or $(WINDOW),30) $(if $(JSON),--json,)
 
 cowork-migrate: ## One-off: reclassify auto-lane proposals as cowork:queued (add YES=1 to apply)
 	@$(UV) run python scripts/cowork_setup.py --migrate-proposals $(if $(YES),--yes,)

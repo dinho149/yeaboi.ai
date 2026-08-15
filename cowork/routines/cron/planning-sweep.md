@@ -6,6 +6,24 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = planning`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — the prompt factories and node helpers a chat refactor left behind. `prompts/` is
+  additive by habit and nothing here is imported by name from a screen.
+- `assertion-free-tests` — `tests/unit/nodes/` and `tests/golden/` are this charter's, and a golden
+  test that renders without comparing is the shape this lens exists for.
+- `layering` — every invariant that applies everywhere; `agent/` is where a hardcoded path is most
+  likely to be written by hand.
+- `crash-fuzz` — `ui/session/` is this charter's, and the planning composer is where the paste and
+  control-key handling lives. A find outside `Owns` belongs to whoever owns the file it names; report
+  it and move on.
+
+**A crash lands in the auto lane on its seed and nothing else.** A **hang** proposes — there is no
+mechanical regression test for "it stopped repainting", so somebody has to read it.
+
 ## Focus
 
 - **State audit** — every field on `ScrumState` must have a frozen-dataclass default and a

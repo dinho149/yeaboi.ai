@@ -58,6 +58,7 @@ tier belongs in one place. The rest do model-worthy work in their own session an
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
 | `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
 | `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
+| `cron/retune.md` | `standard` | Reads a month of failure markers and decides whether three of a kind is a pattern or a coincidence — bounded judgement over a known input, and the one routine whose output edits `cowork/` |
 | `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
 | `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done and write a Notion page from a merged PR; the daily standup carries the Slack line |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |

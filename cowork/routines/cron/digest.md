@@ -4,7 +4,7 @@
 shortlist, filed 55 minutes earlier by `integrations-campaign.md` — which posts nothing itself,
 precisely so this stays the only routine that puts a decision in the channel.
 **Summary** — the open proposals and this week's integration shortlist, waiting on your approval
-**Workstream** — none; this routine spans all fifteen.
+**Workstream** — none; this routine spans all sixteen.
 **Model** — `standard` ([models.md](../../models.md))
 
 The single decision point. It is the only routine that posts proposals to Slack.
@@ -327,8 +327,15 @@ The single decision point. It is the only routine that posts proposals to Slack.
    have fixed it, and the digest asked about forty-two of them.
 
 4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
-   "closed unapproved after 14 days — re-file if still relevant". Never touch an issue that carries
+   "closed unapproved after 14 days — re-file if still relevant", ending with the marker
+   `<!-- rejected: reason=aged-out -->` on its own line. Never touch an issue that carries
    `claude-implement`, and **never touch one that carries `cowork:queued`.**
+
+   The marker is what separates the two ways a proposal dies. A human closing one is a *decision*;
+   this clock running out is an *absence* of one, and counting them together would report a
+   workstream nobody had time to read as a workstream pointed at the wrong thing. Step 6's
+   calibration rate is the number that would be wrong, and `scripts/cowork_metrics.py` splits them
+   on this marker.
 
    A queued item is work waiting on the fleet, not a question waiting on a human, so a fourteen-day
    clock is measuring the wrong thing on it — and closing it would be worse than pointless. Both
@@ -399,7 +406,7 @@ The single decision point. It is the only routine that posts proposals to Slack.
      <title>](<pr url>)`; line two is `— ` and what is actually holding that PR up, from the
      `pr_feedback.py` run below (red CI, or *n* unanswered findings).
    - **Held** — a workstream at its proposal cap. `uv run python scripts/cowork_setup.py
-     --proposal-slots` with no argument answers for all fifteen at once; list every row with
+     --proposal-slots` with no argument answers for all sixteen at once; list every row with
      `slots` of 0. Line one is `**<workstream>**` and the count, `— <n> open proposals, cap 2`;
      line two is `— ` and the oldest blocking issues by number and age, from the row's `blocking`
      list, e.g. `— holding on #146 (7d), #152 (6d)`. Those are the issues to answer, and answering
@@ -415,7 +422,7 @@ The single decision point. It is the only routine that posts proposals to Slack.
      unreadable` — and never as zero open or as a healthy queue, for the same reason a
      `pr_feedback.py` that exits 2 is never reported as a clean PR.
    - **Queued** — a workstream with `cowork:queued` items waiting to be built.
-     `uv run python scripts/cowork_setup.py --queued` with no argument answers for all fifteen at
+     `uv run python scripts/cowork_setup.py --queued` with no argument answers for all sixteen at
      once; list every row with a non-zero count. Line one is `**<workstream>**` and the count,
      `— <n> queued, oldest <k>d`; line two is `— ` and the top item by build order, so a reader can
      see what is coming.
@@ -474,6 +481,28 @@ The single decision point. It is the only routine that posts proposals to Slack.
    per workstream — pass the limit, because `gh` defaults to 30 and a truncated set makes a
    90-day rate the routine has no way to know is wrong. No new state, nothing stored between runs. Name any workstream sitting at **0
    approvals across 10 or more proposals**, and any at **100% across 5 or more**.
+
+   **Then add the two numbers a rate cannot carry**, from one command:
+
+   ```bash
+   uv run python scripts/cowork_metrics.py --window 30 --no-runs --no-branches --json
+   ```
+
+   - the **merge rate** — `merged` ÷ `identified` over 30 days, one line;
+   - **why work did not ship, by workstream** — `reasons_by_workstream`, listing only charters
+     with something in it. A `bounced` count is a *misclassification* (a scout called something
+     `auto` it could not carry); a `rejected` count is a find that was real and unwanted. They
+     have different fixes and must not be added together.
+
+   **`--no-runs` is required and is not a performance flag.** It skips the fleet's monthly run-ledger issues.
+   No routine reads the run ledger — cost, duration and token counts are read by
+   `make cowork-metrics` on a human's terminal, and a routine that reads what the fleet *spent*
+   makes the fleet's behaviour a function of its own resource consumption. That is why the "no new
+   state" sentence above is still true, and a test asserts no file under `routines/` names the
+   ledger at all. `--no-branches` skips a per-PR read this section does not use.
+
+   Acting on any of it is [`cron/retune.md`](retune.md)'s, not yours. This section reports; that
+   routine records. Say nothing here about what should change.
 
    Everything else in this system measures whether a routine *filed* something. This is the only
    thing that asks whether what it filed was worth filing. A workstream rejected twenty times running

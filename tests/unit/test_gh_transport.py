@@ -5,7 +5,7 @@ a convenience: the cloud routine session the fleet runs in has a token and no
 CLI, and until this existed every script that touched GitHub from there failed —
 `cd-deploy` loudly, because it runs under ``--strict``, and the rest silently.
 
-Nothing here opens a socket. `urlopen` is the seam for the REST half and the
+Nothing here opens a socket. `_urlopen` is the seam for the REST half and the
 `subprocess` call is the seam for the CLI half, and an autouse fixture clears
 both token variables so a developer who exports one does not turn a unit test
 into a live call against their own repository.
@@ -51,7 +51,7 @@ class TestApiRequests:
 
     Everything else stubs it, so without this nothing covers the URL, the header
     set, or the promise in its docstring that it never raises and never logs the
-    token. `urlopen` is the seam here; no socket is opened.
+    token. `transport._urlopen` is the seam here; no socket is opened.
     """
 
     @pytest.fixture
@@ -77,7 +77,7 @@ class TestApiRequests:
                 raise outcome["raise"]
             return _Response()
 
-        monkeypatch.setattr(transport.urllib.request, "urlopen", fake)
+        monkeypatch.setattr(transport, "_urlopen", fake)
         monkeypatch.setenv("GH_TOKEN", "ghp_notarealtoken")
         return type("U", (), {"sent": sent, "outcome": outcome})()
 
@@ -105,7 +105,7 @@ class TestApiRequests:
 
     def test_no_token_never_reaches_the_socket(self, monkeypatch):
         opened = []
-        monkeypatch.setattr(transport.urllib.request, "urlopen", lambda *a, **k: opened.append(a))
+        monkeypatch.setattr(transport, "_urlopen", lambda *a, **k: opened.append(a))
         result = transport.api("GET", "/repos/o/r/labels")
         assert result.ok is False and "GH_TOKEN" in result.error
         assert opened == []

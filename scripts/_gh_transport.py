@@ -114,6 +114,15 @@ def github_token() -> str | None:
     return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
 
 
+# This module's HTTP seam, and the exact counterpart of `_run` above: every
+# request in this file goes through it, which is what lets a guard replace one
+# name and be total. `_run` was named for this reason after a test suite ran real
+# `gh` writes against the real repository; the REST branch had the identical
+# exposure and no seam to block, so `tests/conftest.py` could guard the CLI half
+# and nothing at all of the half that a routine session actually uses.
+_urlopen = urllib.request.urlopen
+
+
 def api(method: str, path: str, body: dict | None = None) -> ApiResult:
     """One REST call against `GITHUB_API`. Never raises; never logs the token.
 
@@ -138,7 +147,7 @@ def api(method: str, path: str, body: dict | None = None) -> ApiResult:
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:  # noqa: S310 - see above
+        with _urlopen(request, timeout=_TIMEOUT) as response:  # noqa: S310 - see above
             raw = response.read().decode()
         parsed = json.loads(raw) if raw.strip() else None
     except urllib.error.HTTPError as error:

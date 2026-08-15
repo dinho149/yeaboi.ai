@@ -55,7 +55,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cowork_setup import display_zone  # noqa: E402 - after the sys.path line that makes it importable
+import _gh_transport as transport  # noqa: E402 - after the sys.path line that makes it importable
+from cowork_setup import LEDGER_LABEL, display_zone  # noqa: E402 - same
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -309,6 +310,158 @@ def check_in_line(facts: dict, usage: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+# --- the ledger --------------------------------------------------------------
+#
+# Everything above measures one run and prints it. This half is what makes the
+# measurement survive the run.
+#
+# The fleet is stateless on purpose — `cowork/README.md`: "GitHub issues **are**
+# the queue — there is no other shared state between routine runs." That holds
+# for *outcomes*: a PR, a proposal, an approval and a merge are all in GitHub with
+# timestamps, so nothing needs recording and only counting. It does not hold for
+# runs. This script already knows what a run cost, how long it took, whether it
+# worked and where its log is, and until now it printed two lines of that to Slack
+# and dropped the rest. Nothing could pull it back either: `agentwatch.collector`
+# reads the filesystem, and a routine's sandbox dies with the container.
+#
+# So a run pushes. One issue per month, one comment per run, a fenced JSON block
+# each.
+#
+# **The ledger is write-only, and that is the whole safety property.** No routine
+# reads it, nothing branches on it, and `scripts/cowork_metrics.py` — which does
+# read it — is a human's command and not part of any run. The statelessness that
+# matters is that no run's behaviour depends on another run's state, and appending
+# to a record nobody consults does not touch it. A routine that started reading
+# this would have quietly given the fleet a memory, so `tests/unit/test_cowork_checkin.py`
+# asserts no file under `cowork/routines/` names it.
+#
+# It is also invisible to every query that already exists, by carrying none of
+# their labels: `digest.md`'s fourteen-day age-out would otherwise close it every
+# month, and `codeql-triage.yml` reads `--label cowork --state all --limit 500` as
+# its dedupe corpus.
+
+# The marker that makes a comment findable as a ledger row rather than as prose
+# somebody left on the issue. Read by `cowork_metrics.py`; a comment without it
+# is skipped rather than parsed, so a human answering in the thread cannot become
+# a run that never happened.
+LEDGER_MARKER = "<!-- fleet-run -->"
+
+
+def ledger_title(now: datetime | None = None) -> str:
+    """The month's issue title. Monthly rather than one-forever because a year of
+    twenty-four-a-day check-ins is nine thousand comments on one issue, and
+    monthly rather than daily because the reader would then page thirty issues to
+    answer one question."""
+    return f"fleet ledger {(now or datetime.now(UTC)).strftime('%Y-%m')}"
+
+
+def ledger_body(facts: dict, usage: dict) -> str:
+    """One comment: a human-readable first line, then the row a reader parses.
+
+    Both halves on purpose. The line is for whoever opens the issue wondering what
+    this is; the JSON is the contract. Nothing is derived from the line — the
+    reader never looks at it — so it can be reworded without breaking anything,
+    which is the opposite of the markers in `cowork_relay.py`.
+    """
+    row = {
+        "name": str(facts.get("name") or ""),
+        "status": str(facts.get("status") or ""),
+        "note": clean_note(str(facts.get("note") or "")),
+        "url": str(facts.get("url") or usage.get("run_url") or ""),
+        "started_at": usage.get("started_at") or "",
+        "ended_at": usage.get("ended_at") or "",
+        "duration_seconds": usage.get("duration_seconds") or 0,
+        "total_tokens": usage.get("total_tokens") or 0,
+        "cost_usd": usage.get("cost_usd") or 0.0,
+        "models": usage.get("models") or [],
+        # Carried so a reader can tell "this run spent nothing" from "this run
+        # could not measure what it spent" — the same distinction `--proposal-slots`
+        # draws between zero slots and an unreadable count.
+        "available": bool(usage.get("available")),
+        "pricing_as_of": usage.get("pricing_as_of") or "",
+    }
+    glyph = STATUS_GLYPH.get(row["status"], "")
+    headline = f"`{row['name']}` {glyph} {duration(int(row['duration_seconds']))} · {row['note']}".rstrip(" ·")
+    return f"{headline}\n\n```json\n{json.dumps(row, indent=2, sort_keys=True)}\n```\n\n{LEDGER_MARKER}"
+
+
+def _ledger_issue(slug: str, title: str) -> tuple[int | None, str]:
+    """The month's issue number, creating it if this is the month's first run.
+
+    Whichever run fires first in a month opens that month's issue, and every run
+    after it finds one. Deliberately not pre-created by a scheduled routine: that
+    would put a write on the calendar to save a write that already happens, and it
+    would still need this branch anyway — `cd-deploy` fires at 04:00 and the three
+    event routines fire on a webhook, all of them ahead of any 05:45 opener on the
+    first of the month.
+
+    Two runs racing on the first of the month leaves two issues for it. That is
+    tolerated rather than prevented: `cowork_metrics.py` reads *every* ledger issue
+    covering the window rather than the newest, so two partial months are still the
+    whole month — and de-duplicating a create needs a lock nothing here has.
+    """
+    found = transport.api_paged(f"/repos/{slug}/issues?labels={transport.segment(LEDGER_LABEL)}&state=open")
+    if not found.ok:
+        return None, found.error
+    for issue in found.data if isinstance(found.data, list) else []:
+        # `/issues` answers with pull requests too, and a PR is never a ledger.
+        if isinstance(issue, dict) and issue.get("title") == title and "pull_request" not in issue:
+            return int(issue["number"]), ""
+    made = transport.api(
+        "POST",
+        f"/repos/{slug}/issues",
+        {
+            "title": title,
+            "labels": [LEDGER_LABEL],
+            "body": (
+                "One comment per routine run: what ran, whether it worked, how long it took and what "
+                "it spent. Written by `scripts/cowork_checkin.py --record`, read by "
+                "`scripts/cowork_metrics.py`.\n\n"
+                "**Nothing in the fleet reads this issue.** It is a record, not a queue — no routine "
+                "branches on it, which is what keeps the fleet stateless while still leaving a trail. "
+                "Do not add `cowork` or `workstream:` labels: they would put it in front of every "
+                "query that looks for work, and `digest.md` would close it after fourteen days.\n\n"
+                "Closing this issue is safe at any time — next month opens a new one."
+            ),
+        },
+    )
+    if not made.ok:
+        return None, made.error
+    return int(made.data["number"]), ""
+
+
+def record(facts: dict, usage: dict, *, now: datetime | None = None) -> tuple[bool, str]:
+    """Append this run to the month's ledger. Returns ``(wrote, error)``.
+
+    Never raises and never blocks the check-in: a run that cannot reach GitHub has
+    still done its work, and the Slack line is the part a human is waiting for.
+    The caller reports a failure here on stderr and still exits on the strength of
+    the line.
+    """
+    if not os.environ.get(RUN_SESSION_ENV, "").strip():
+        # Outside a routine sandbox this measures the *machine*, not the run.
+        # `usage_report` reads all of `~/.claude/projects`, which holds exactly
+        # one run in a container built fresh per firing and holds everything you
+        # have ever done on a laptop. The first live test of this path wrote a
+        # row claiming one check-in took 800 hours and cost $8,699 — a number
+        # that would have sat in the ledger looking like a fact, and that
+        # `cost_per_merged_pr` would have divided by four.
+        #
+        # Refusing rather than clamping, because there is no honest local number
+        # to write: the reading is not a run's cost that happens to be too big,
+        # it is a different quantity. The Slack line is unaffected — it is
+        # explicitly a floor and says so with `~`.
+        return False, f"not a routine run ({RUN_SESSION_ENV} unset) — the measurement would be this machine, not a run"
+    slug = transport.resolve_slug(ROOT)
+    if not slug:
+        return False, "could not resolve the repository slug"
+    number, error = _ledger_issue(slug, ledger_title(now))
+    if number is None:
+        return False, error
+    posted = transport.api("POST", f"/repos/{slug}/issues/{number}/comments", {"body": ledger_body(facts, usage)})
+    return (True, "") if posted.ok else (False, posted.error)
+
+
 def _read_facts(path: Path | None) -> dict:
     raw = path.read_text(encoding="utf-8") if path else sys.stdin.read()
     facts = json.loads(raw)
@@ -323,19 +476,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--line", action="store_true", help="print the finished Slack reply")
     parser.add_argument("--facts", type=Path, help="with --line: the facts JSON file (default: stdin)")
     parser.add_argument("--root", type=Path, help="transcript directory to measure (default: ~/.claude/projects)")
+    parser.add_argument("--record", action="store_true", help="also append this run to the month's fleet ledger")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="with --record: print what would be posted, write nothing"
+    )
     args = parser.parse_args(argv)
 
-    if not args.usage and not args.line:
-        parser.error("pass --usage or --line")
+    if not args.usage and not args.line and not args.record:
+        parser.error("pass --usage, --line or --record")
 
     usage = usage_report(args.root)
-    if args.usage and not args.line:
+    if args.usage and not args.line and not args.record:
         print(json.dumps(usage, indent=2))
         return 0
 
     try:
         facts = _read_facts(args.facts)
-        print(check_in_line(facts, usage))
+        if args.line:
+            print(check_in_line(facts, usage))
     except (ValueError, OSError) as exc:
         # Non-zero on purpose, and it is the *signal*, not a verdict on the run:
         # `cowork/check-in.md` reads a failure here as "post nothing rather than
@@ -343,6 +501,20 @@ def main(argv: list[str] | None = None) -> int:
         # It is the last step, so nothing downstream reads this exit code.
         print(f"[checkin] {exc}", file=sys.stderr)
         return 1
+
+    if args.record:
+        if args.dry_run:
+            print(ledger_body(facts, usage))
+        else:
+            wrote, error = record(facts, usage)
+            if not wrote:
+                # Reported, never fatal, and deliberately *after* the line is
+                # already on stdout. The check-in is what a human is waiting for;
+                # the ledger is what a report reads next month. Failing the run
+                # over the second would trade a thing somebody needs now for a
+                # thing nobody needs yet, and `--line`'s exit code is the only
+                # signal `check-in.md` tells a routine to look at.
+                print(f"[checkin] ledger: {error}", file=sys.stderr)
     return 0
 
 
