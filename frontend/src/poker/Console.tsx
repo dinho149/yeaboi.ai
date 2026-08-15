@@ -48,7 +48,6 @@ export interface ConsoleProps {
   onCloseDuel(): void;
   onFinalize(points: number): void;
   onGoto(index: number): void;
-  onEdit(): void;
   /** A refusal from the server, or a local validation message. */
   notice: string;
 }
@@ -70,7 +69,6 @@ export function Console({
   onCloseDuel,
   onFinalize,
   onGoto,
-  onEdit,
   notice,
 }: ConsoleProps) {
   const { phase, duel, ai, ticket, ticket_index: index, ticket_count: count } = state;
@@ -275,13 +273,6 @@ export function Console({
               onClick={() => onGoto(index + 1)}
             >
               ›
-            </Button>
-            <Button
-              aria-label="Edit the ticket on the board"
-              disabled={!hasTicket || dueling}
-              onClick={onEdit}
-            >
-              <Icon name="pencil" size={12} />
             </Button>
           </div>
 

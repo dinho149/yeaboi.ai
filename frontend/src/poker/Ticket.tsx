@@ -37,6 +37,8 @@ type Displayable = PokerTicket | TicketView;
 interface BodyProps {
   ticket: Displayable;
   tag: React.ReactNode;
+  /** Host-only, and absent on a preview: editing applies to the live ticket. */
+  onEdit?: (() => void) | undefined;
 }
 
 function Collapsible({ label, text }: { label?: string; text: string }) {
@@ -91,7 +93,7 @@ function Prop({ label, value, tone }: { label: string; value?: string | null; to
   );
 }
 
-function TicketBody({ ticket, tag }: BodyProps) {
+function TicketBody({ ticket, tag, onEdit }: BodyProps) {
   const href = safeUrl(ticket.url);
   return (
     <>
@@ -106,6 +108,11 @@ function TicketBody({ ticket, tag }: BodyProps) {
           )}
         </span>
         {tag}
+        {onEdit ? (
+          <Button size="s" shape="bare" aria-label="Edit this ticket" onClick={onEdit}>
+            <Icon name="pencil" size={12} /> Edit
+          </Button>
+        ) : null}
       </div>
 
       <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
@@ -146,6 +153,8 @@ export interface TicketPanelProps {
   /** Key of the live ticket, for the "the team is voting on X" line. */
   liveKey: string;
   isHost: boolean;
+  /** Host-only: open the ticket for editing. */
+  onEdit(): void;
   onBackToLive(): void;
   /** Host only: move the whole room to the ticket being previewed. */
   onGotoPeek(): void;
@@ -160,6 +169,7 @@ export function TicketPanel({
   peekIndex,
   liveKey,
   isHost,
+  onEdit,
   onBackToLive,
   onGotoPeek,
 }: TicketPanelProps) {
@@ -218,7 +228,7 @@ export function TicketPanel({
 
   return (
     <section className={styles['ticket']} aria-label="Ticket">
-      <TicketBody ticket={ticket} tag={tag} />
+      <TicketBody ticket={ticket} tag={tag} onEdit={isHost ? onEdit : undefined} />
     </section>
   );
 }

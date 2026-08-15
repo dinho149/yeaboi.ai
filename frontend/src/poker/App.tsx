@@ -502,6 +502,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             peekIndex={peekIndex}
             liveKey={tickets[ticketIndex]?.key ?? ''}
             isHost={isHost}
+            onEdit={() => setEditOpen(true)}
             onBackToLive={() => setPeekIndex(null)}
             onGotoPeek={() => {
               const target = peekIndex;
@@ -544,7 +545,6 @@ export function App({ boot }: { boot: PokerBoot }) {
             onCloseDuel={() => run(actions.closeDuel())}
             onFinalize={(points) => run(actions.finalize(points))}
             onGoto={(index) => run(actions.goto(index))}
-            onEdit={() => setEditOpen(true)}
           />
         ) : null}
       </div>
