@@ -451,6 +451,21 @@
   from {
     max-width: 0;
     opacity: 0;
+    margin-left: calc(var(--s2) * -1);
+  }
+}
+
+/* And back out the same way, including the flex gap its parent holds for it —
+   which is a gap around nothing once the text is gone. */
+.readoutOut {
+  animation: readoutOut 200ms var(--ease) forwards;
+}
+
+@keyframes readoutOut {
+  to {
+    max-width: 0;
+    opacity: 0;
+    margin-left: calc(var(--s2) * -1);
   }
 }
 .confetti {

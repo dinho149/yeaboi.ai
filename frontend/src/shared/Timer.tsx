@@ -17,7 +17,7 @@
  *   goes.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { fmtClock } from '../runtime/format';
 import { cx } from '../runtime/cx';
@@ -33,23 +33,47 @@ export interface TimerReadoutProps {
   className?: string | undefined;
 }
 
+/** How long the readout is held to fold away. Matches `readoutOut` in the CSS. */
+const READOUT_EXIT_MS = 200;
+
 export function TimerReadout({ remaining, className }: TimerReadoutProps) {
-  // A finished timer says nothing here: the confetti and the alarm already
-  // said it, and a strip of type reading "time's up" stays on the toolbar long
-  // after the moment has passed.
-  if (remaining === null || remaining === 0) return null;
+  // A finished timer says nothing here: the confetti and the alarm already said
+  // it, and a strip of type reading "time's up" stays on the toolbar long after
+  // the moment has passed.
+  const live = remaining !== null && remaining > 0;
+  const [shown, setShown] = useState<number | null>(live ? remaining : null);
+  const [leaving, setLeaving] = useState(false);
+
+  // Held for one beat on the way out, and folded — the readout is part of the
+  // dock's width, so dropping it on the same frame snaps the whole dock in.
+  useEffect(() => {
+    if (live) {
+      setShown(remaining);
+      setLeaving(false);
+      return;
+    }
+    if (shown === null) return;
+    setLeaving(true);
+    const timer = setTimeout(() => {
+      setShown(null);
+      setLeaving(false);
+    }, READOUT_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [live, remaining, shown]);
+
+  if (shown === null) return null;
   // Announce at each whole minute and through the last ten seconds; stay quiet
   // in between. `aria-live` reads the region when its text changes, so the
   // switch between 'polite' and 'off' is what throttles it.
-  const announce = remaining <= 10 || remaining % 60 === 0;
+  const announce = shown <= 10 || shown % 60 === 0;
 
   return (
     <span
-      className={cx(styles['timerReadout'], className)}
-      aria-live={announce ? 'polite' : 'off'}
+      className={cx(styles['timerReadout'], leaving && styles['readoutOut'], className)}
+      aria-live={leaving ? 'off' : announce ? 'polite' : 'off'}
       aria-atomic="true"
     >
-      {fmtClock(remaining)}
+      {fmtClock(shown)}
     </span>
   );
 }
