@@ -317,28 +317,48 @@
 .editBody,
 .editPoints {
   width: 100%;
-  background: var(--panel);
-  border: 1px solid var(--hairline-strong);
+  background: none;
+  border: 0;
   border-radius: var(--r-s);
   color: inherit;
   font: inherit;
-  padding: var(--s2);
+  padding: 0;
+  /* A dotted rule under the text is the only mark: enough to say the words are
+     live, not enough to turn the ticket into a form. */
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
 }
 
+.editTitle:focus,
+.editBody:focus,
+.editPoints:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+
+/* Restates the display type rather than inheriting it: `font: inherit` above
+   resets the size, and both classes sit on the same element. */
 .editTitle {
   margin: 0;
+  font-size: var(--fs-display);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .editBody {
-  resize: vertical;
-  min-height: 12em;
+  resize: none;
+  min-height: 0;
   max-height: none;
-  overflow: auto;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.editBody:focus {
+  box-shadow: none;
 }
 
 .editPoints {
-  width: 5em;
-  padding: 2px var(--s1);
+  width: 4em;
 }
 
 .editNote {

@@ -62,6 +62,16 @@ function TicketForm({
   const [summary, setSummary] = useState(ticket.summary);
   const [description, setDescription] = useState(ticket.description_text);
   const [points, setPoints] = useState(ticket.story_points === null ? '' : fmtPoints(ticket.story_points));
+  const body = useRef<HTMLTextAreaElement | null>(null);
+
+  // No scrollbar inside the prose: the field is the paragraph, so it takes the
+  // height the paragraph would have.
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [description]);
 
   useEffect(() => {
     setSummary(ticket.summary);
@@ -108,9 +118,10 @@ function TicketForm({
       </dl>
 
       <textarea
+        ref={body}
         className={cx(styles['desc'], styles['editBody'])}
         aria-label="Description"
-        rows={10}
+        rows={1}
         value={description}
         onInput={(event) => setDescription((event.target as HTMLTextAreaElement).value)}
       />
