@@ -1885,7 +1885,7 @@ dialog._modal_qyr38_419 {
  * break across a page mid-card.
  */
 
-._page_1lktx_16 {
+._page_1appb_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -1894,7 +1894,7 @@ dialog._modal_qyr38_419 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_1lktx_25 {
+._shellApp_1appb_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -1913,7 +1913,7 @@ dialog._modal_qyr38_419 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_1lktx_44 {
+._appRegion_1appb_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1923,7 +1923,7 @@ dialog._modal_qyr38_419 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_1lktx_54 {
+._barSticky_1appb_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1931,14 +1931,14 @@ dialog._modal_qyr38_419 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_1lktx_62 {
+._masthead_1appb_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_1lktx_69 {
+._dockApp_1appb_69 {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
@@ -1962,40 +1962,44 @@ dialog._modal_qyr38_419 {
 
 /* The wall only decides orientation now: which side is open, which corners are
    round, and which way the controls run. */
-._dockApp_1lktx_69[data-edge='bottom'] {
+._dockApp_1appb_69[data-edge='bottom'] {
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
 }
 
-._dockApp_1lktx_69[data-edge='left'],
-._dockApp_1lktx_69[data-edge='right'] {
+._dockApp_1appb_69[data-edge='left'],
+._dockApp_1appb_69[data-edge='right'] {
   flex-direction: column;
   padding: var(--s2) var(--s1);
 }
 
-._dockApp_1lktx_69[data-edge='left'] {
+._dockApp_1appb_69[data-edge='left'] {
   border-left: none;
   border-radius: 0 var(--lift) var(--lift) 0;
 }
 
-._dockApp_1lktx_69[data-edge='right'] {
+._dockApp_1appb_69[data-edge='right'] {
   border-right: none;
   border-radius: var(--lift) 0 0 var(--lift);
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
-/* Kept eased while held rather than switched off. Along a wall the lag is a
-   frame or two; at a corner it is what turns a 200px reorientation into a
-   crawl onto the next wall instead of a jump. */
-._dockDragging_1lktx_119 {
-  transition: transform var(--dur-fast) var(--ease);
+/* Held: exact tracking, because easing a pointer drag reads as lag. */
+._dockDragging_1appb_117 {
+  transition: none;
   cursor: grabbing;
+}
+
+/* Except across a corner, which is a reorientation rather than a slide — the
+   one move worth easing, so it crawls onto the next wall. */
+._dockTurning_1appb_124 {
+  transition: transform var(--dur-base) var(--ease);
 }
 
 /* The one part of the dock that is ground rather than a control, so it is what
    says the whole thing can be moved. */
-._dockGrip_1lktx_126 {
+._dockGrip_1appb_130 {
   flex: none;
   width: 3px;
   height: 15px;
@@ -2006,29 +2010,29 @@ dialog._modal_qyr38_419 {
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._dockApp_1lktx_69[data-edge='left'] ._dockGrip_1lktx_126,
-._dockApp_1lktx_69[data-edge='right'] ._dockGrip_1lktx_126 {
+._dockApp_1appb_69[data-edge='left'] ._dockGrip_1appb_130,
+._dockApp_1appb_69[data-edge='right'] ._dockGrip_1appb_130 {
   width: 15px;
   height: 3px;
   background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 4px);
 }
 
-._dockApp_1lktx_69:hover ._dockGrip_1lktx_126,
-._dockDragging_1lktx_119 ._dockGrip_1lktx_126 {
+._dockApp_1appb_69:hover ._dockGrip_1appb_130,
+._dockDragging_1appb_117 ._dockGrip_1appb_130 {
   opacity: 1;
 }
 
 /* The dock's own controls only — its direct buttons and its popover triggers.
    A bare `.dockApp button` also reaches inside the open panels and strips the
    fill off things like the play button, which is how it went invisible. */
-._dockApp_1lktx_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']),
-._dockApp_1lktx_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockApp_1appb_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']),
+._dockApp_1appb_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
 
-._dockApp_1lktx_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockApp_1lktx_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockApp_1appb_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockApp_1appb_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -2043,8 +2047,8 @@ dialog._modal_qyr38_419 {
  * border rather than continuing it. Offsets are against the *padding* box,
  * which is what puts the centre one border-width inside the edge.
  */
-._dockApp_1lktx_69::before,
-._dockApp_1lktx_69::after {
+._dockApp_1appb_69::before,
+._dockApp_1appb_69::after {
   content: '';
   position: absolute;
   width: var(--lift);
@@ -2052,7 +2056,7 @@ dialog._modal_qyr38_419 {
   pointer-events: none;
 }
 
-._dockApp_1lktx_69[data-edge='bottom']::before {
+._dockApp_1appb_69[data-edge='bottom']::before {
   bottom: 0;
   left: calc(var(--lift) * -1);
   background: radial-gradient(
@@ -2063,7 +2067,7 @@ dialog._modal_qyr38_419 {
   );
 }
 
-._dockApp_1lktx_69[data-edge='bottom']::after {
+._dockApp_1appb_69[data-edge='bottom']::after {
   bottom: 0;
   left: 100%;
   background: radial-gradient(
@@ -2074,7 +2078,7 @@ dialog._modal_qyr38_419 {
   );
 }
 
-._dockApp_1lktx_69[data-edge='left']::before {
+._dockApp_1appb_69[data-edge='left']::before {
   left: 0;
   top: calc(var(--lift) * -1);
   background: radial-gradient(
@@ -2085,7 +2089,7 @@ dialog._modal_qyr38_419 {
   );
 }
 
-._dockApp_1lktx_69[data-edge='left']::after {
+._dockApp_1appb_69[data-edge='left']::after {
   left: 0;
   top: 100%;
   background: radial-gradient(
@@ -2096,7 +2100,7 @@ dialog._modal_qyr38_419 {
   );
 }
 
-._dockApp_1lktx_69[data-edge='right']::before {
+._dockApp_1appb_69[data-edge='right']::before {
   right: 0;
   top: calc(var(--lift) * -1);
   background: radial-gradient(
@@ -2107,7 +2111,7 @@ dialog._modal_qyr38_419 {
   );
 }
 
-._dockApp_1lktx_69[data-edge='right']::after {
+._dockApp_1appb_69[data-edge='right']::after {
   right: 0;
   top: 100%;
   background: radial-gradient(
@@ -2121,11 +2125,11 @@ dialog._modal_qyr38_419 {
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_1lktx_69::before,
-  [data-host='true'] ._dockApp_1lktx_69::after {
+  [data-host='true'] ._dockApp_1appb_69::before,
+  [data-host='true'] ._dockApp_1appb_69::after {
     display: none;
   }
-  [data-host='true'] ._dockApp_1lktx_69 {
+  [data-host='true'] ._dockApp_1appb_69 {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: var(--screen-frame-w) solid var(--screen-frame);
@@ -2135,7 +2139,7 @@ dialog._modal_qyr38_419 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_1lktx_266 {
+._chromeApp_1appb_270 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2148,7 +2152,7 @@ dialog._modal_qyr38_419 {
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_1lktx_266 > *:last-child {
+._chromeApp_1appb_270 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2157,16 +2161,16 @@ dialog._modal_qyr38_419 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_1lktx_288 h1 {
+  ._headMainApp_1appb_292 h1 {
     display: none;
   }
-  ._mastheadApp_1lktx_291 {
+  ._mastheadApp_1appb_295 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_1lktx_291 {
+._mastheadApp_1appb_295 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2175,53 +2179,53 @@ dialog._modal_qyr38_419 {
   background: var(--panel);
 }
 
-._head_1lktx_288 {
+._head_1appb_292 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_1lktx_313 {
+._headApp_1appb_317 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_1lktx_288 {
+._headMain_1appb_292 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_1lktx_288 {
+._headMainApp_1appb_292 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_1lktx_288 ._wordmark_1lktx_330 {
+._headMainApp_1appb_292 ._wordmark_1appb_334 {
   margin-bottom: 0;
 }
-._headMainApp_1lktx_288 h1 {
+._headMainApp_1appb_292 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_1lktx_330 {
+._wordmark_1appb_334 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_1lktx_347 {
+._wordmarkCompact_1appb_351 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_1lktx_352 {
+._title_1appb_356 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2231,30 +2235,30 @@ dialog._modal_qyr38_419 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_1lktx_362 {
+._titleCompact_1appb_366 {
   font-size: var(--fs-l);
 }
 
-._subtitle_1lktx_366 {
+._subtitle_1appb_370 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_1lktx_372 {
+._facts_1appb_376 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_1lktx_379 {
+._themes_1appb_383 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_1lktx_385 {
+._toc_1appb_389 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2271,36 +2275,36 @@ dialog._modal_qyr38_419 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_1lktx_385 a {
+._toc_1appb_389 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_1lktx_385 a:hover {
+._toc_1appb_389 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_1lktx_412 > * + * {
+._container_1appb_416 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_1lktx_419 {
+._containerApp_1appb_423 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_1lktx_419 > * + * {
+._containerApp_1appb_423 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_1lktx_431 {
+._footer_1appb_435 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2316,7 +2320,7 @@ dialog._modal_qyr38_419 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_1lktx_447 {
+._footerSlim_1appb_451 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2326,17 +2330,17 @@ dialog._modal_qyr38_419 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_1lktx_379,
-  ._toc_1lktx_385 {
+  ._themes_1appb_383,
+  ._toc_1appb_389 {
     display: none;
   }
-  ._page_1lktx_16 {
+  ._page_1appb_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_1lktx_25 {
+  ._shellApp_1appb_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2344,26 +2348,26 @@ dialog._modal_qyr38_419 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_1lktx_44 {
+  ._appRegion_1appb_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_1lktx_54 {
+  ._barSticky_1appb_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_1lktx_16 ._masthead_1lktx_62 {
+  ._page_1appb_16 ._masthead_1appb_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_1lktx_431 {
+  ._footer_1appb_435 {
     color: var(--muted);
   }
 }

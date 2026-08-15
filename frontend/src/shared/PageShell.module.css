@@ -113,12 +113,16 @@
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
-/* Kept eased while held rather than switched off. Along a wall the lag is a
-   frame or two; at a corner it is what turns a 200px reorientation into a
-   crawl onto the next wall instead of a jump. */
+/* Held: exact tracking, because easing a pointer drag reads as lag. */
 .dockDragging {
-  transition: transform var(--dur-fast) var(--ease);
+  transition: none;
   cursor: grabbing;
+}
+
+/* Except across a corner, which is a reorientation rather than a slide — the
+   one move worth easing, so it crawls onto the next wall. */
+.dockTurning {
+  transition: transform var(--dur-base) var(--ease);
 }
 
 /* The one part of the dock that is ground rather than a control, so it is what

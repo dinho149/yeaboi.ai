@@ -181,7 +181,7 @@ export function PageShell({
       {app && dock ? (
         <div
           ref={drag.ref}
-          className={cx(styles['dockApp'], drag.dragging && styles['dockDragging'])}
+          className={cx(styles['dockApp'], drag.dragging && styles['dockDragging'], drag.turning && styles['dockTurning'])}
           data-edge={drag.placement.edge}
           style={{ '--dock-x': `${drag.placement.x}px`, '--dock-y': `${drag.placement.y}px` } as never}
           onPointerDown={drag.onPointerDown}
