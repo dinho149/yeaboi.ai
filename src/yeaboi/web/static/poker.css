@@ -203,6 +203,32 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      strong one. */
   --hairline: color-mix(in srgb, var(--text) 7%, transparent);
   --hairline-strong: color-mix(in srgb, var(--text) 13%, transparent);
+
+  /*
+   * Material.
+   *
+   * One light source, above. A surface is four layers — contact and ambient
+   * below it, a lit top bevel and a shaded underside within it. On a dark
+   * ground the inset that reads is the *highlight*: a dark inset simply
+   * vanishes.
+   */
+  --lit: color-mix(in srgb, var(--text) 16%, transparent);
+  --unlit: rgb(0 0 0 / 45%);
+
+  --mat-rest:
+    0 1px 2px rgb(0 0 0 / 30%), 0 4px 10px rgb(0 0 0 / 18%), inset 0 1px 0 var(--lit),
+    inset 0 -2px 3px rgb(0 0 0 / 22%);
+  --mat-raised:
+    0 2px 4px rgb(0 0 0 / 32%), 0 12px 24px rgb(0 0 0 / 30%), inset 0 1px 0 var(--lit),
+    inset 0 -2px 3px rgb(0 0 0 / 22%);
+  /* Pressed: the outer layers go, so the surface sits back in its own well. */
+  --mat-pressed: inset 0 2px 5px rgb(0 0 0 / 40%), inset 0 1px 1px rgb(0 0 0 / 30%);
+
+  /* Three stops, ~15% luminance across the face. */
+  --mat-face: linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, var(--panel)) 0%, var(--panel) 45%, color-mix(in srgb, #000 12%, var(--panel)) 100%);
+
+  /* Cut into the type, not out of it — the ground is darker than the label. */
+  --letterpress: 0 1px 0 rgb(0 0 0 / 55%);
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
@@ -2123,9 +2149,28 @@ dialog._modal_6k8bd_392 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_41evg_32 {
-  background: var(--bg);
+/*
+ * The table.
+ *
+ * The board is a card table seen from above, so the ground is baize rather
+ * than a fill: a woven grain at 4% over a centre-lit wash. Held under 5% on
+ * purpose — past that procedural noise stops reading as nap and starts
+ * reading as dirt.
+ */
+._app_1fyp5_40 {
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--text) 4%, var(--bg)) 0%, var(--bg) 60%);
   color: var(--text);
+}
+
+/* The weave must not tint the colour, only disturb it. */
+._app_1fyp5_40::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* The board's own scroller, inside the shell's viewport-tall region. Poker
@@ -2133,7 +2178,7 @@ dialog._modal_6k8bd_392 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_41evg_42 {
+._scroll_1fyp5_61 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2143,7 +2188,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_41evg_52 {
+._layout_1fyp5_71 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2160,7 +2205,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_41evg_69 {
+._main_1fyp5_88 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2169,7 +2214,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_41evg_52 {
+  ._layout_1fyp5_71 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2177,7 +2222,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 699px) {
-  ._layout_41evg_52 {
+  ._layout_1fyp5_71 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2186,21 +2231,21 @@ dialog._modal_6k8bd_392 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_41evg_95 {
+._rail_1fyp5_114 {
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s3);
 }
 
-._railHead_41evg_105 {
+._railHead_1fyp5_124 {
   margin-bottom: var(--s2);
 }
 
-._railList_41evg_109 {
+._railList_1fyp5_128 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2209,7 +2254,7 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._railItem_41evg_118 {
+._railItem_1fyp5_137 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2226,12 +2271,12 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._railItem_41evg_118:hover {
+._railItem_1fyp5_137:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_41evg_140 {
+._railDot_1fyp5_159 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2239,30 +2284,30 @@ dialog._modal_6k8bd_392 {
   background: var(--line-strong);
 }
 
-._railCurrent_41evg_148 {
+._railCurrent_1fyp5_167 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_41evg_148 ._railDot_41evg_140 {
+._railCurrent_1fyp5_167 ._railDot_1fyp5_159 {
   background: var(--accent);
 }
 
-._railPeeking_41evg_157 {
+._railPeeking_1fyp5_176 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_41evg_162 ._railDot_41evg_140 {
+._railDone_1fyp5_181 ._railDot_1fyp5_159 {
   background: var(--ok);
 }
 
-._railDone_41evg_162 ._railText_41evg_166 {
+._railDone_1fyp5_181 ._railText_1fyp5_185 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_41evg_166 {
+._railText_1fyp5_185 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2270,29 +2315,29 @@ dialog._modal_6k8bd_392 {
   white-space: nowrap;
 }
 
-._railKey_41evg_179 {
+._railKey_1fyp5_198 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_41evg_185 {
+._railPts_1fyp5_204 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_41evg_192 {
+._railToggle_1fyp5_211 {
   display: none;
 }
 
-._railBackdrop_41evg_196 {
+._railBackdrop_1fyp5_215 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_41evg_95 {
+  ._rail_1fyp5_114 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2306,15 +2351,15 @@ dialog._modal_6k8bd_392 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_41evg_215 {
+  ._railOpen_1fyp5_234 {
     transform: translateX(0);
   }
 
-  ._railToggle_41evg_192 {
+  ._railToggle_1fyp5_211 {
     display: inline-flex;
   }
 
-  ._railBackdrop_41evg_196 {
+  ._railBackdrop_1fyp5_215 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2325,7 +2370,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_41evg_234 {
+._ticket_1fyp5_253 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2336,36 +2381,36 @@ dialog._modal_6k8bd_392 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_41evg_245 {
+._ticketPeek_1fyp5_264 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_41evg_251 {
+._tkrow_1fyp5_270 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_41evg_258 {
+._key_1fyp5_277 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_41evg_258 a {
+._key_1fyp5_277 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_41evg_258 a:hover {
+._key_1fyp5_277 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_41evg_274 {
+._phaseTag_1fyp5_293 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2376,25 +2421,25 @@ dialog._modal_6k8bd_392 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_41evg_285 {
+._phaseTagOn_1fyp5_304 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_41evg_291 {
+._phaseTagPeek_1fyp5_310 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_41evg_296 {
+._tkSummary_1fyp5_315 {
   margin: 0;
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_41evg_303 {
+._chips_1fyp5_322 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2403,7 +2448,7 @@ dialog._modal_6k8bd_392 {
 
 /* Title and its chips on one line, the chips wrapping under it when the
    summary is long enough to take the row. */
-._tkHead_41evg_312 {
+._tkHead_1fyp5_331 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2411,12 +2456,12 @@ dialog._modal_6k8bd_392 {
   margin: var(--s2) 0 var(--s3);
 }
 
-._bodyLabel_41evg_320 {
+._bodyLabel_1fyp5_339 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_41evg_325 {
+._desc_1fyp5_344 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -2425,25 +2470,25 @@ dialog._modal_6k8bd_392 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_41evg_325 {
+._desc_1fyp5_344 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_41evg_341 {
+._descClipped_1fyp5_360 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_41evg_348 {
+._descFade_1fyp5_367 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_41evg_352 {
+._descToggle_1fyp5_371 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2455,13 +2500,13 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._descEmpty_41evg_364 {
+._descEmpty_1fyp5_383 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_41evg_370 {
+._peekBanner_1fyp5_389 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2475,7 +2520,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._peekActions_41evg_384 {
+._peekActions_1fyp5_403 {
   display: flex;
   gap: var(--s2);
 }
@@ -2483,17 +2528,17 @@ dialog._modal_6k8bd_392 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_41evg_392 {
+._pkbtnGo_1fyp5_411 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_41evg_399 {
-  background: var(--panel);
+._results_1fyp5_418 {
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s4);
   display: flex;
@@ -2501,7 +2546,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._resultsHead_41evg_410 {
+._resultsHead_1fyp5_429 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2509,18 +2554,18 @@ dialog._modal_6k8bd_392 {
   flex-wrap: wrap;
 }
 
-._resultsSum_41evg_418 {
+._resultsSum_1fyp5_437 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_41evg_418 b {
+._resultsSum_1fyp5_437 b {
   color: var(--accent);
 }
 
-._dist_41evg_429 {
+._dist_1fyp5_448 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2529,7 +2574,7 @@ dialog._modal_6k8bd_392 {
   gap: var(--s1);
 }
 
-._drow_41evg_438 {
+._drow_1fyp5_457 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2540,19 +2585,19 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._dval_41evg_449 {
+._dval_1fyp5_468 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_41evg_454 {
+._dtrack_1fyp5_473 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_41evg_461 {
+._dbar_1fyp5_480 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2560,21 +2605,21 @@ dialog._modal_6k8bd_392 {
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_41evg_469 ._dbar_41evg_461 {
+._drowTop_1fyp5_488 ._dbar_1fyp5_480 {
   background: var(--accent);
 }
 
-._drowTop_41evg_469 ._dval_41evg_449 {
+._drowTop_1fyp5_488 ._dval_1fyp5_468 {
   color: var(--accent);
 }
 
-._dcount_41evg_477 {
+._dcount_1fyp5_496 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_41evg_483 {
+._ainote_1fyp5_502 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2582,7 +2627,7 @@ dialog._modal_6k8bd_392 {
   background: var(--panel-2);
 }
 
-._aiHead_41evg_491 {
+._aiHead_1fyp5_510 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2593,57 +2638,57 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._aiBody_41evg_502 {
+._aiBody_1fyp5_521 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_41evg_508 {
+._conf_1fyp5_527 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_41evg_515 {
+._conf-high_1fyp5_534 {
   color: var(--ok);
 }
 
-._conf-medium_41evg_519 {
+._conf-medium_1fyp5_538 {
   color: var(--warn);
 }
 
-._conf-low_41evg_523 {
+._conf-low_1fyp5_542 {
   color: var(--danger);
 }
 
-._ev_41evg_527 {
+._ev_1fyp5_546 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_41evg_534 {
+._sug_1fyp5_553 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_41evg_534 b {
+._sug_1fyp5_553 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_41evg_547 ._aiBody_41evg_502::after {
+._ainotePending_1fyp5_566 ._aiBody_1fyp5_521::after {
   content: '…';
-  animation: _dots_41evg_1 1.2s steps(4, end) infinite;
+  animation: _dots_1fyp5_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_41evg_1 {
+@keyframes _dots_1fyp5_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2654,14 +2699,14 @@ dialog._modal_6k8bd_392 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_41evg_563 {
+._duel_1fyp5_582 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_41evg_570 {
+._duelHead_1fyp5_589 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2673,13 +2718,13 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._duelBody_41evg_582 {
+._duelBody_1fyp5_601 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_41evg_588 {
+._duelTranscript_1fyp5_607 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2688,41 +2733,41 @@ dialog._modal_6k8bd_392 {
   overflow-y: auto;
 }
 
-._recind_41evg_597 {
+._recind_1fyp5_616 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_41evg_604 {
+._recDot_1fyp5_623 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_41evg_1 1.4s ease-in-out infinite;
+  animation: _recpulse_1fyp5_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_41evg_1 {
+@keyframes _recpulse_1fyp5_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_41evg_618 {
+._norec_1fyp5_637 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_41evg_624 {
+._dualrow_1fyp5_643 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_41evg_631 {
+._duelist_1fyp5_650 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2734,31 +2779,31 @@ dialog._modal_6k8bd_392 {
   text-align: center;
 }
 
-._duelistSpeaking_41evg_643 {
+._duelistSpeaking_1fyp5_662 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_41evg_648 {
+._duelFace_1fyp5_667 {
   font-size: var(--fs-xl);
 }
 
-._duelName_41evg_652 {
+._duelName_1fyp5_671 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_41evg_657 {
+._duelValue_1fyp5_676 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_41evg_657 b {
+._duelValue_1fyp5_676 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_41evg_667 {
+._duelFloor_1fyp5_686 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2766,12 +2811,12 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._duelMic_41evg_675 {
+._duelMic_1fyp5_694 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_41evg_680 {
+._vs_1fyp5_699 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2779,7 +2824,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._youup_41evg_688 {
+._youup_1fyp5_707 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2789,7 +2834,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._micRow_41evg_698 {
+._micRow_1fyp5_717 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2797,7 +2842,7 @@ dialog._modal_6k8bd_392 {
   margin-top: var(--s3);
 }
 
-._micBtn_41evg_706 {
+._micBtn_1fyp5_725 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2809,7 +2854,7 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._hint_41evg_718 {
+._hint_1fyp5_737 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -2818,31 +2863,31 @@ dialog._modal_6k8bd_392 {
 
 /* No panel of its own: the seats read as part of the voting furniture, not as
    another card. */
-._table_41evg_727 {
+._table_1fyp5_746 {
   margin-top: auto;
   padding: 0 var(--s1);
 }
 
-._tableHead_41evg_732 {
+._tableHead_1fyp5_751 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_41evg_739 {
+._tableWait_1fyp5_758 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_41evg_745 {
+._vempty_1fyp5_764 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_41evg_751 {
+._vrow_1fyp5_770 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2852,7 +2897,7 @@ dialog._modal_6k8bd_392 {
 }
 
 /* A seat: face over name. */
-._voter_41evg_761 {
+._voter_1fyp5_780 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2860,7 +2905,7 @@ dialog._modal_6k8bd_392 {
   width: 68px;
 }
 
-._face_41evg_769 {
+._face_1fyp5_788 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2873,7 +2918,7 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-l);
 }
 
-._tick_41evg_234 {
+._tick_1fyp5_253 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2896,7 +2941,7 @@ dialog._modal_6k8bd_392 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_41evg_805 {
+._vcard_1fyp5_824 {
   display: grid;
   place-items: center;
   width: 44px;
@@ -2912,18 +2957,18 @@ dialog._modal_6k8bd_392 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_41evg_1 320ms var(--ease) both;
+  animation: _flip_1fyp5_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_41evg_1 {
+@keyframes _flip_1fyp5_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_41evg_832 {
+._nm_1fyp5_851 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2934,7 +2979,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_41evg_843 {
+._deckZone_1fyp5_862 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2967,24 +3012,24 @@ dialog._modal_6k8bd_392 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_41evg_32[data-host='true'] {
+  ._app_1fyp5_40[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_41evg_882 {
+._deckStatus_1fyp5_901 {
   margin: 0 0 var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
   text-align: center;
 }
 
-._deckMine_41evg_889 {
+._deckMine_1fyp5_908 {
   color: var(--accent);
 }
 
-._deck_41evg_843 {
+._deck_1fyp5_862 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -2996,19 +3041,14 @@ dialog._modal_6k8bd_392 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_41evg_905 {
+._pcard_1fyp5_924 {
   position: relative;
   width: 72px;
   height: 100px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
-  /* Lit from above, so the card reads as a face catching light rather than a
-     filled rectangle. */
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text) 7%, var(--panel)) 0%, var(--panel) 55%);
-  box-shadow:
-    var(--edge),
-    0 1px 2px rgb(0 0 0 / 40%);
+  background: var(--mat-face);
+  box-shadow: var(--mat-rest);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
@@ -3019,40 +3059,40 @@ dialog._modal_6k8bd_392 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_41evg_905:hover:not(:disabled) {
+._pcard_1fyp5_924:hover:not(:disabled) {
   transform: translateY(-6px);
-  border-color: var(--hairline-strong);
-  box-shadow:
-    var(--edge),
-    0 8px 16px rgb(0 0 0 / 45%);
+  box-shadow: var(--mat-raised);
 }
 
-._pcard_41evg_905:disabled {
+/* Pressed: the card sits back into the felt, so the outer layers go. */
+._pcard_1fyp5_924:active:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--mat-pressed);
+}
+
+._pcard_1fyp5_924:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_41evg_942 {
+._pcardSel_1fyp5_959 {
   border-color: var(--accent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 12%, var(--panel)) 55%);
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 26%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 14%, var(--panel)) 45%, color-mix(in srgb, var(--accent) 6%, var(--panel)) 100%);
   color: var(--accent);
   transform: translateY(-10px);
-  box-shadow:
-    var(--edge),
-    0 10px 20px rgb(0 0 0 / 50%),
-    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--mat-raised), 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_41evg_957 {
+._pcardWait_1fyp5_971 {
   border-style: dashed;
 }
 
-._ci_41evg_961 {
+._ci_1fyp5_975 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3061,7 +3101,7 @@ dialog._modal_6k8bd_392 {
   color: var(--dim);
 }
 
-._ciFlip_41evg_970 {
+._ciFlip_1fyp5_984 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3069,16 +3109,17 @@ dialog._modal_6k8bd_392 {
   transform: rotate(180deg);
 }
 
-._cv_41evg_978 {
+._cv_1fyp5_992 {
   font-size: var(--fs-xl);
   font-weight: 600;
+  text-shadow: var(--letterpress);
 }
 
 /* ── The court ───────────────────────────────────────────────────────── */
 
 /* 13, 21, ? and ☕ are the cards that mean something other than a number, so
    they are the ones that get a face. */
-._pcardCourt_41evg_987 {
+._pcardCourt_1fyp5_1002 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3086,14 +3127,14 @@ dialog._modal_6k8bd_392 {
   gap: 2px;
 }
 
-._court_41evg_995 {
+._court_1fyp5_1010 {
   width: 42px;
   height: auto;
   /* Pixel art: never smooth it, and never let a half-pixel blur the outline. */
   image-rendering: pixelated;
 }
 
-._courtName_41evg_1002 {
+._courtName_1fyp5_1017 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: var(--track-label);
@@ -3101,18 +3142,18 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._pcardSel_41evg_942 ._courtName_41evg_1002 {
+._pcardSel_1fyp5_959 ._courtName_1fyp5_1017 {
   color: var(--accent);
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_41evg_1016 {
+._console_1fyp5_1031 {
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s3);
   display: flex;
@@ -3120,13 +3161,13 @@ dialog._modal_6k8bd_392 {
   gap: var(--s3);
 }
 
-._cbar_41evg_1029 {
+._cbar_1fyp5_1044 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_41evg_1035 {
+._cphase_1fyp5_1050 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3134,20 +3175,20 @@ dialog._modal_6k8bd_392 {
   color: var(--accent);
 }
 
-._cbody_41evg_1043 {
+._cbody_1fyp5_1058 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_41evg_1049 {
+._cgroup_1fyp5_1064 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_41evg_1055,
-._navrow_41evg_1056 {
+._crow_1fyp5_1070,
+._navrow_1fyp5_1071 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3156,11 +3197,11 @@ dialog._modal_6k8bd_392 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_41evg_1065:not(:empty) {
+._duelSlot_1fyp5_1080:not(:empty) {
   min-height: var(--tap);
 }
 
-._duelInline_41evg_1069 {
+._duelInline_1fyp5_1084 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3169,12 +3210,12 @@ dialog._modal_6k8bd_392 {
   border-radius: var(--r-s);
 }
 
-._seg_41evg_1078 {
+._seg_1fyp5_1093 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_41evg_1083 {
+._preset_1fyp5_1098 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3186,8 +3227,8 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._clabel_41evg_1095,
-._finlab_41evg_1096 {
+._clabel_1fyp5_1110,
+._finlab_1fyp5_1111 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3195,38 +3236,38 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._chint_41evg_1104,
-._cnotice_41evg_1105 {
+._chint_1fyp5_1119,
+._cnotice_1fyp5_1120 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_41evg_1105 {
+._cnotice_1fyp5_1120 {
   color: var(--warn);
 }
 
-._readout_41evg_1116 {
+._readout_1fyp5_1131 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_41evg_1116 b {
+._readout_1fyp5_1131 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_41evg_1128 {
+._finrow_1fyp5_1143 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_41evg_1135 {
+._finInput_1fyp5_1150 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3238,12 +3279,12 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-._finSrc_41evg_1147 {
+._finSrc_1fyp5_1162 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_41evg_1152 {
+._cpos_1fyp5_1167 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3253,7 +3294,7 @@ dialog._modal_6k8bd_392 {
 }
 
 @media (max-width: 1099px) {
-  ._console_41evg_1016 {
+  ._console_1fyp5_1031 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3263,31 +3304,31 @@ dialog._modal_6k8bd_392 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_41evg_1029 {
+  ._cbar_1fyp5_1044 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_41evg_1043 {
+  ._cbody_1fyp5_1058 {
     display: none;
   }
 
-  ._consoleOpen_41evg_1182 ._cbody_41evg_1043 {
+  ._consoleOpen_1fyp5_1197 ._cbody_1fyp5_1058 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_41evg_1189 {
+._identity_1fyp5_1204 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_41evg_1196 {
+._meChip_1fyp5_1211 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3302,34 +3343,34 @@ dialog._modal_6k8bd_392 {
   cursor: pointer;
 }
 
-._meName_41evg_1211 {
+._meName_1fyp5_1226 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_41evg_1218 {
+._pen_1fyp5_1233 {
   color: var(--dim);
 }
 
-._roomCount_41evg_1222 {
+._roomCount_1fyp5_1237 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_41evg_1227 {
+._offline_1fyp5_1242 {
   color: var(--warn);
 }
 
-._popNote_41evg_1231 {
+._popNote_1fyp5_1246 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_41evg_1237,
-._musicBanner_41evg_1238 {
+._lockBanner_1fyp5_1252,
+._musicBanner_1fyp5_1253 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -3337,12 +3378,12 @@ dialog._modal_6k8bd_392 {
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_41evg_1237 {
+._lockBanner_1fyp5_1252 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_41evg_1238 {
+._musicBanner_1fyp5_1253 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -3355,7 +3396,7 @@ dialog._modal_6k8bd_392 {
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_41evg_1264 {
+._flabel_1fyp5_1279 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -3365,7 +3406,7 @@ dialog._modal_6k8bd_392 {
   color: var(--muted);
 }
 
-._field_41evg_1274 {
+._field_1fyp5_1289 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -3377,24 +3418,24 @@ dialog._modal_6k8bd_392 {
   font-size: var(--fs-s);
 }
 
-textarea._field_41evg_1274 {
+textarea._field_1fyp5_1289 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_41evg_1291 {
+._editWarn_1fyp5_1306 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_41evg_1297 {
+._editNote_1fyp5_1312 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_41evg_1303 {
+._editSave_1fyp5_1318 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3409,7 +3450,7 @@ textarea._field_41evg_1274 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_41evg_1318 {
+._srOnly_1fyp5_1333 {
   position: absolute;
   width: 1px;
   height: 1px;

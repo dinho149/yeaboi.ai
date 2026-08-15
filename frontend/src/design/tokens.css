@@ -104,6 +104,32 @@
      strong one. */
   --hairline: color-mix(in srgb, var(--text) 7%, transparent);
   --hairline-strong: color-mix(in srgb, var(--text) 13%, transparent);
+
+  /*
+   * Material.
+   *
+   * One light source, above. A surface is four layers — contact and ambient
+   * below it, a lit top bevel and a shaded underside within it. On a dark
+   * ground the inset that reads is the *highlight*: a dark inset simply
+   * vanishes.
+   */
+  --lit: color-mix(in srgb, var(--text) 16%, transparent);
+  --unlit: rgb(0 0 0 / 45%);
+
+  --mat-rest:
+    0 1px 2px rgb(0 0 0 / 30%), 0 4px 10px rgb(0 0 0 / 18%), inset 0 1px 0 var(--lit),
+    inset 0 -2px 3px rgb(0 0 0 / 22%);
+  --mat-raised:
+    0 2px 4px rgb(0 0 0 / 32%), 0 12px 24px rgb(0 0 0 / 30%), inset 0 1px 0 var(--lit),
+    inset 0 -2px 3px rgb(0 0 0 / 22%);
+  /* Pressed: the outer layers go, so the surface sits back in its own well. */
+  --mat-pressed: inset 0 2px 5px rgb(0 0 0 / 40%), inset 0 1px 1px rgb(0 0 0 / 30%);
+
+  /* Three stops, ~15% luminance across the face. */
+  --mat-face: linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, var(--panel)) 0%, var(--panel) 45%, color-mix(in srgb, #000 12%, var(--panel)) 100%);
+
+  /* Cut into the type, not out of it — the ground is darker than the label. */
+  --letterpress: 0 1px 0 rgb(0 0 0 / 55%);
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */

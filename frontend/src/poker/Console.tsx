@@ -162,18 +162,17 @@ export function Console({
           >
             {revealed || dueling ? 'Revealed' : 'Reveal votes'}
           </Button>
-          <Button shape="bare" disabled={!hasTicket || dueling} onClick={onRevote}>
+          <Button disabled={!hasTicket || dueling} onClick={onRevote}>
             Re-vote
           </Button>
         </div>
 
         <div className={styles['cgroup']}>
           <Eyebrow>Insight</Eyebrow>
-          <Button shape="bare" disabled={!revealed || ai.pending} onClick={onAskAi}>
+          <Button disabled={!revealed || ai.pending} onClick={onAskAi}>
             <Icon name="sparkles" /> AI perspective
           </Button>
           <Button
-            shape="bare"
             disabled={!revealed || duel?.status === 'live' || transcribing}
             aria-expanded={duelOpen}
             title="Low vs high voter argue their estimates"

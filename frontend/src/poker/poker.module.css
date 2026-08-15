@@ -29,9 +29,28 @@
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
+/*
+ * The table.
+ *
+ * The board is a card table seen from above, so the ground is baize rather
+ * than a fill: a woven grain at 4% over a centre-lit wash. Held under 5% on
+ * purpose — past that procedural noise stops reading as nap and starts
+ * reading as dirt.
+ */
 .app {
-  background: var(--bg);
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--text) 4%, var(--bg)) 0%, var(--bg) 60%);
   color: var(--text);
+}
+
+/* The weave must not tint the colour, only disturb it. */
+.app::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* The board's own scroller, inside the shell's viewport-tall region. Poker
@@ -95,9 +114,9 @@
 .rail {
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s3);
 }
@@ -397,9 +416,9 @@
 /* ── Results ─────────────────────────────────────────────────────────── */
 
 .results {
-  background: var(--panel);
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s4);
   display: flex;
@@ -908,13 +927,8 @@
   height: 100px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
-  /* Lit from above, so the card reads as a face catching light rather than a
-     filled rectangle. */
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text) 7%, var(--panel)) 0%, var(--panel) 55%);
-  box-shadow:
-    var(--edge),
-    0 1px 2px rgb(0 0 0 / 40%);
+  background: var(--mat-face);
+  box-shadow: var(--mat-rest);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
@@ -927,10 +941,13 @@
 
 .pcard:hover:not(:disabled) {
   transform: translateY(-6px);
-  border-color: var(--hairline-strong);
-  box-shadow:
-    var(--edge),
-    0 8px 16px rgb(0 0 0 / 45%);
+  box-shadow: var(--mat-raised);
+}
+
+/* Pressed: the card sits back into the felt, so the outer layers go. */
+.pcard:active:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--mat-pressed);
 }
 
 .pcard:disabled {
@@ -942,13 +959,10 @@
 .pcardSel {
   border-color: var(--accent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 12%, var(--panel)) 55%);
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 26%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 14%, var(--panel)) 45%, color-mix(in srgb, var(--accent) 6%, var(--panel)) 100%);
   color: var(--accent);
   transform: translateY(-10px);
-  box-shadow:
-    var(--edge),
-    0 10px 20px rgb(0 0 0 / 50%),
-    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--mat-raised), 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says
@@ -978,6 +992,7 @@
 .cv {
   font-size: var(--fs-xl);
   font-weight: 600;
+  text-shadow: var(--letterpress);
 }
 
 /* ── The court ───────────────────────────────────────────────────────── */
@@ -1016,9 +1031,9 @@
 .console {
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
+  background: var(--mat-face);
   border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  box-shadow: var(--mat-rest);
   border-radius: var(--r-m);
   padding: var(--s3);
   display: flex;
