@@ -1811,7 +1811,7 @@ dialog._modal_sqcal_427 {
  * break across a page mid-card.
  */
 
-._page_ivp8i_16 {
+._page_50h8u_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -1820,7 +1820,7 @@ dialog._modal_sqcal_427 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one framed screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_ivp8i_25 {
+._shellApp_50h8u_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -1839,7 +1839,7 @@ dialog._modal_sqcal_427 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_ivp8i_44 {
+._appRegion_50h8u_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1849,7 +1849,7 @@ dialog._modal_sqcal_427 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_ivp8i_54 {
+._barSticky_50h8u_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -1857,14 +1857,14 @@ dialog._modal_sqcal_427 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_ivp8i_62 {
+._masthead_50h8u_62 {
   margin-bottom: var(--s5);
 }
 
 /* The tool cluster, docked over the bottom-right corner of the board — the
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
-._dockApp_ivp8i_69 {
+._dockApp_50h8u_69 {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
@@ -1889,40 +1889,40 @@ dialog._modal_sqcal_427 {
 
 /* The wall only decides orientation now: which side is open, which corners are
    round, and which way the controls run. */
-._dockApp_ivp8i_69[data-edge='bottom'] {
+._dockApp_50h8u_69[data-edge='bottom'] {
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
 }
 
-._dockApp_ivp8i_69[data-edge='left'],
-._dockApp_ivp8i_69[data-edge='right'] {
+._dockApp_50h8u_69[data-edge='left'],
+._dockApp_50h8u_69[data-edge='right'] {
   flex-direction: column;
   padding: var(--s2) var(--s1);
 }
 
 /* Square on a side wall: the lift is a bottom-border idea, and the fillets
    that sell it there read as loose curves stuck to a vertical strip. */
-._dockApp_ivp8i_69[data-edge='left'] {
+._dockApp_50h8u_69[data-edge='left'] {
   border-left: none;
   border-radius: 0;
 }
 
-._dockApp_ivp8i_69[data-edge='right'] {
+._dockApp_50h8u_69[data-edge='right'] {
   border-right: none;
   border-radius: 0;
 }
 
-._dockApp_ivp8i_69[data-edge='left']::before,
-._dockApp_ivp8i_69[data-edge='left']::after,
-._dockApp_ivp8i_69[data-edge='right']::before,
-._dockApp_ivp8i_69[data-edge='right']::after {
+._dockApp_50h8u_69[data-edge='left']::before,
+._dockApp_50h8u_69[data-edge='left']::after,
+._dockApp_50h8u_69[data-edge='right']::before,
+._dockApp_50h8u_69[data-edge='right']::after {
   display: none;
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_ivp8i_127 {
+._dockDragging_50h8u_127 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
@@ -1930,40 +1930,50 @@ dialog._modal_sqcal_427 {
 
 /* Except across a corner, which is a reorientation rather than a slide — the
    one move worth easing, so it crawls onto the next wall. */
-._dockTurning_ivp8i_135 {
+._dockTurning_50h8u_135 {
   transition: transform var(--dur-base) var(--ease);
 }
 
 /* The one part of the dock that is ground rather than a control, so it is what
    says the whole thing can be moved. */
-._dockGrip_ivp8i_141 {
+/* The handle, and the only part of the dock that is not a control — so it
+   spans the dock's short axis rather than being a 3px mark. Standing on end
+   there is otherwise nothing left to grab. */
+._dockGrip_50h8u_144 {
   flex: none;
-  width: 3px;
-  height: 15px;
-  margin: 0;
-  border-radius: var(--r-pill);
-  background: repeating-linear-gradient(180deg, var(--screen-frame) 0 2px, transparent 2px 4px);
-  opacity: 0.55;
-  transition: opacity var(--dur-fast) var(--ease);
+  align-self: stretch;
+  width: 14px;
+  border-radius: var(--r-s);
+  background: repeating-linear-gradient(180deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 3px 15px
+    no-repeat;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
 
-._dockApp_ivp8i_69[data-edge='left'] ._dockGrip_ivp8i_141,
-._dockApp_ivp8i_69[data-edge='right'] ._dockGrip_ivp8i_141 {
-  width: 15px;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 4px);
+._dockApp_50h8u_69[data-edge='left'] ._dockGrip_50h8u_144,
+._dockApp_50h8u_69[data-edge='right'] ._dockGrip_50h8u_144 {
+  width: auto;
+  height: 14px;
+  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 15px 3px
+    no-repeat;
 }
 
-._dockApp_ivp8i_69:hover ._dockGrip_ivp8i_141,
-._dockDragging_ivp8i_127 ._dockGrip_ivp8i_141 {
+._dockGrip_50h8u_144:hover {
+  background-color: var(--panel-2);
+}
+
+._dockApp_50h8u_69:hover ._dockGrip_50h8u_144,
+._dockDragging_50h8u_127 ._dockGrip_50h8u_144 {
   opacity: 1;
 }
 
 /* The dock's own controls only — its direct buttons and its popover triggers.
    A bare `.dockApp button` also reaches inside the open panels and strips the
    fill off things like the play button, which is how it went invisible. */
-._dockApp_ivp8i_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']),
-._dockApp_ivp8i_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockApp_50h8u_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']),
+._dockApp_50h8u_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
@@ -1975,41 +1985,41 @@ dialog._modal_sqcal_427 {
  * grows out of it on open. Closing is not animated: the panel is `hidden`, and
  * a `display: none` element has no frames to run in.
  */
-._dockApp_ivp8i_69 [role='group'][aria-label]:not([hidden]) {
+._dockApp_50h8u_69 [role='group'][aria-label]:not([hidden]) {
   background: var(--bg);
   border-color: var(--screen-frame);
   box-shadow: var(--shadow-2);
 }
 
-._dockApp_ivp8i_69[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_50h8u_69[data-edge='bottom'] [role='group'][aria-label]:not([hidden]) {
   top: auto;
   bottom: calc(100% + var(--s1));
   min-width: 240px;
   transform-origin: bottom center;
-  animation: _dockGrowUp_ivp8i_1 var(--dur-base) var(--ease) both;
+  animation: _dockGrowUp_50h8u_1 var(--dur-base) var(--ease) both;
 }
 
-._dockApp_ivp8i_69[data-edge='left'] [role='group'][aria-label]:not([hidden]),
-._dockApp_ivp8i_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_50h8u_69[data-edge='left'] [role='group'][aria-label]:not([hidden]),
+._dockApp_50h8u_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
   top: 50%;
   bottom: auto;
   translate: 0 -50%;
-  animation: _dockGrowSide_ivp8i_1 var(--dur-base) var(--ease) both;
+  animation: _dockGrowSide_50h8u_1 var(--dur-base) var(--ease) both;
 }
 
-._dockApp_ivp8i_69[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_50h8u_69[data-edge='left'] [role='group'][aria-label]:not([hidden]) {
   left: calc(100% + var(--s1));
   right: auto;
   transform-origin: left center;
 }
 
-._dockApp_ivp8i_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
+._dockApp_50h8u_69[data-edge='right'] [role='group'][aria-label]:not([hidden]) {
   right: calc(100% + var(--s1));
   left: auto;
   transform-origin: right center;
 }
 
-@keyframes _dockGrowUp_ivp8i_1 {
+@keyframes _dockGrowUp_50h8u_1 {
   from {
     max-height: 0;
     opacity: 0;
@@ -2017,7 +2027,7 @@ dialog._modal_sqcal_427 {
   }
 }
 
-@keyframes _dockGrowSide_ivp8i_1 {
+@keyframes _dockGrowSide_50h8u_1 {
   from {
     max-width: 0;
     opacity: 0;
@@ -2025,8 +2035,8 @@ dialog._modal_sqcal_427 {
   }
 }
 
-._dockApp_ivp8i_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockApp_ivp8i_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockApp_50h8u_69 > [class*='popoverGroup'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockApp_50h8u_69 > [class*='popoverGroup'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -2041,8 +2051,8 @@ dialog._modal_sqcal_427 {
  * border rather than continuing it. Offsets are against the *padding* box,
  * which is what puts the centre one border-width inside the edge.
  */
-._dockApp_ivp8i_69::before,
-._dockApp_ivp8i_69::after {
+._dockApp_50h8u_69::before,
+._dockApp_50h8u_69::after {
   content: '';
   position: absolute;
   width: var(--lift);
@@ -2050,7 +2060,7 @@ dialog._modal_sqcal_427 {
   pointer-events: none;
 }
 
-._dockApp_ivp8i_69[data-edge='bottom']::before {
+._dockApp_50h8u_69[data-edge='bottom']::before {
   bottom: 0;
   left: calc(var(--lift) * -1);
   background: radial-gradient(
@@ -2061,7 +2071,7 @@ dialog._modal_sqcal_427 {
   );
 }
 
-._dockApp_ivp8i_69[data-edge='bottom']::after {
+._dockApp_50h8u_69[data-edge='bottom']::after {
   bottom: 0;
   left: 100%;
   background: radial-gradient(
@@ -2075,11 +2085,11 @@ dialog._modal_sqcal_427 {
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_ivp8i_69::before,
-  [data-host='true'] ._dockApp_ivp8i_69::after {
+  [data-host='true'] ._dockApp_50h8u_69::before,
+  [data-host='true'] ._dockApp_50h8u_69::after {
     display: none;
   }
-  [data-host='true'] ._dockApp_ivp8i_69 {
+  [data-host='true'] ._dockApp_50h8u_69 {
     right: var(--s3);
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: var(--screen-frame-w) solid var(--screen-frame);
@@ -2089,7 +2099,7 @@ dialog._modal_sqcal_427 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_ivp8i_294 {
+._chromeApp_50h8u_304 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2107,11 +2117,11 @@ dialog._modal_sqcal_427 {
 
 /* The bar's corners are clipped by its children rather than by `overflow`,
    which would also clip every popover opening out of it. */
-._chromeApp_ivp8i_294 > * {
+._chromeApp_50h8u_304 > * {
   border-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_ivp8i_294 > *:last-child {
+._chromeApp_50h8u_304 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2120,16 +2130,16 @@ dialog._modal_sqcal_427 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_ivp8i_325 h1 {
+  ._headMainApp_50h8u_335 h1 {
     display: none;
   }
-  ._mastheadApp_ivp8i_328 {
+  ._mastheadApp_50h8u_338 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_ivp8i_328 {
+._mastheadApp_50h8u_338 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2138,53 +2148,53 @@ dialog._modal_sqcal_427 {
   background: var(--panel);
 }
 
-._head_ivp8i_325 {
+._head_50h8u_335 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_ivp8i_350 {
+._headApp_50h8u_360 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_ivp8i_325 {
+._headMain_50h8u_335 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_ivp8i_325 {
+._headMainApp_50h8u_335 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_ivp8i_325 ._wordmark_ivp8i_367 {
+._headMainApp_50h8u_335 ._wordmark_50h8u_377 {
   margin-bottom: 0;
 }
-._headMainApp_ivp8i_325 h1 {
+._headMainApp_50h8u_335 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_ivp8i_367 {
+._wordmark_50h8u_377 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_ivp8i_384 {
+._wordmarkCompact_50h8u_394 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_ivp8i_389 {
+._title_50h8u_399 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2194,30 +2204,30 @@ dialog._modal_sqcal_427 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_ivp8i_399 {
+._titleCompact_50h8u_409 {
   font-size: var(--fs-l);
 }
 
-._subtitle_ivp8i_403 {
+._subtitle_50h8u_413 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_ivp8i_409 {
+._facts_50h8u_419 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_ivp8i_416 {
+._themes_50h8u_426 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_ivp8i_422 {
+._toc_50h8u_432 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2234,36 +2244,36 @@ dialog._modal_sqcal_427 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_ivp8i_422 a {
+._toc_50h8u_432 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_ivp8i_422 a:hover {
+._toc_50h8u_432 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_ivp8i_449 > * + * {
+._container_50h8u_459 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_ivp8i_456 {
+._containerApp_50h8u_466 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_ivp8i_456 > * + * {
+._containerApp_50h8u_466 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_ivp8i_468 {
+._footer_50h8u_478 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2279,7 +2289,7 @@ dialog._modal_sqcal_427 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_ivp8i_484 {
+._footerSlim_50h8u_494 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2289,17 +2299,17 @@ dialog._modal_sqcal_427 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_ivp8i_416,
-  ._toc_ivp8i_422 {
+  ._themes_50h8u_426,
+  ._toc_50h8u_432 {
     display: none;
   }
-  ._page_ivp8i_16 {
+  ._page_50h8u_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_ivp8i_25 {
+  ._shellApp_50h8u_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2307,26 +2317,26 @@ dialog._modal_sqcal_427 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_ivp8i_44 {
+  ._appRegion_50h8u_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_ivp8i_54 {
+  ._barSticky_50h8u_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_ivp8i_16 ._masthead_ivp8i_62 {
+  ._page_50h8u_16 ._masthead_50h8u_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_ivp8i_468 {
+  ._footer_50h8u_478 {
     color: var(--muted);
   }
 }

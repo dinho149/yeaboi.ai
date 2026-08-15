@@ -138,22 +138,32 @@
 
 /* The one part of the dock that is ground rather than a control, so it is what
    says the whole thing can be moved. */
+/* The handle, and the only part of the dock that is not a control — so it
+   spans the dock's short axis rather than being a 3px mark. Standing on end
+   there is otherwise nothing left to grab. */
 .dockGrip {
   flex: none;
-  width: 3px;
-  height: 15px;
-  margin: 0;
-  border-radius: var(--r-pill);
-  background: repeating-linear-gradient(180deg, var(--screen-frame) 0 2px, transparent 2px 4px);
-  opacity: 0.55;
-  transition: opacity var(--dur-fast) var(--ease);
+  align-self: stretch;
+  width: 14px;
+  border-radius: var(--r-s);
+  background: repeating-linear-gradient(180deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 3px 15px
+    no-repeat;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
 
 .dockApp[data-edge='left'] .dockGrip,
 .dockApp[data-edge='right'] .dockGrip {
-  width: 15px;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 4px);
+  width: auto;
+  height: 14px;
+  background: repeating-linear-gradient(90deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 15px 3px
+    no-repeat;
+}
+
+.dockGrip:hover {
+  background-color: var(--panel-2);
 }
 
 .dockApp:hover .dockGrip,
