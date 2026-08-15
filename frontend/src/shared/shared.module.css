@@ -258,8 +258,27 @@
   cursor: pointer;
   font-size: var(--fs-m);
 }
-.viz { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-.vizOn { opacity: 1; }
+/* Silent, it occupies nothing; starting the music unfolds it from the left.
+   Width is animated as well as opacity so the dock closes up behind it rather
+   than holding an empty slot. */
+.viz {
+  flex: none;
+  width: 0;
+  height: 22px;
+  opacity: 0;
+  transform: scaleX(0.7);
+  transform-origin: left center;
+  transition:
+    width var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease),
+    transform var(--dur-base) var(--ease);
+}
+
+.vizOn {
+  width: 34px;
+  opacity: 1;
+  transform: none;
+}
 
 /* ── Timer ────────────────────────────────────────────────────── */
 .timerPanel { display: flex; flex-direction: column; gap: var(--s3); }

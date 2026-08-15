@@ -19,7 +19,6 @@
 
 import { cx } from '../runtime/cx';
 import { POKER_DECK } from '../types/enums';
-import { courtName } from './court';
 import styles from './poker.module.css';
 
 export interface DeckProps {
@@ -51,17 +50,11 @@ export function Deck({ mine, pending, disabled, reason, onVote }: DeckProps) {
       <div className={styles['deck']} role="group" aria-label="Your hand">
         {POKER_DECK.map((value) => {
           const selected = value === mine;
-          const court = courtName(value);
           return (
             <button
               key={value}
               type="button"
-              className={cx(
-                styles['pcard'],
-                court && styles['pcardCourt'],
-                selected && styles['pcardSel'],
-                selected && pending && styles['pcardWait'],
-              )}
+              className={cx(styles['pcard'], selected && styles['pcardSel'], selected && pending && styles['pcardWait'])}
               disabled={disabled}
               // The label has to say what tapping does, and for the selected
               // card that is the opposite of what it does for every other one.
@@ -75,11 +68,6 @@ export function Deck({ mine, pending, disabled, reason, onVote }: DeckProps) {
               <span className={styles['cv']} aria-hidden="true">
                 {value}
               </span>
-              {court ? (
-                <span className={styles['courtName']} aria-hidden="true">
-                  {court}
-                </span>
-              ) : null}
               <span className={cx(styles['ci'], styles['ciFlip'])} aria-hidden="true">
                 {value}
               </span>

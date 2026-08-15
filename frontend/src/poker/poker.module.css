@@ -957,37 +957,6 @@
   font-weight: 600;
 }
 
-/* ── The court ───────────────────────────────────────────────────────── */
-
-/* 13, 21, ? and ☕ are the cards that mean something other than a number, so
-   they are the ones that get a face. */
-.pcardCourt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-}
-
-.court {
-  width: 42px;
-  height: auto;
-  /* Pixel art: never smooth it, and never let a half-pixel blur the outline. */
-  image-rendering: pixelated;
-}
-
-.courtName {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.pcardSel .courtName {
-  color: var(--accent);
-}
-
 /* ── Host console ────────────────────────────────────────────────────── */
 
 .console {

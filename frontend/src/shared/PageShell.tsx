@@ -22,6 +22,7 @@ import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
 import { Credit } from './Credit';
 import { PopoverGroup } from './Popover';
+import { useDockDrag } from './useDockDrag';
 import styles from './PageShell.module.css';
 
 /**
@@ -90,6 +91,7 @@ export function PageShell({
   // Subscribed unconditionally — hooks cannot be conditional — but only
   // consulted when density is 'auto'. The listener is one matchMedia per page.
   const roomy = useMediaQuery(HERO_VIEWPORT);
+  const drag = useDockDrag();
   const hero = density === 'auto' ? roomy : density === 'hero';
 
   const facts = chrome.facts ?? [];
@@ -177,7 +179,20 @@ export function PageShell({
       )}
 
       {app && dock ? (
-        <div className={styles['dockApp']} role="toolbar" aria-label="Board tools">
+        <div
+          ref={drag.ref}
+          className={cx(styles['dockApp'], drag.dragging && styles['dockDragging'])}
+          data-edge={drag.edge}
+          style={
+            (drag.free
+              ? { left: `${drag.free.x}px`, top: `${drag.free.y}px`, right: 'auto', bottom: 'auto' }
+              : { '--dock-offset': `${drag.offset}px` }) as never
+          }
+          onPointerDown={drag.onPointerDown}
+          role="toolbar"
+          aria-label="Board tools"
+        >
+          <span className={styles['dockGrip']} aria-hidden="true" />
           <PopoverGroup>{dock}</PopoverGroup>
         </div>
       ) : null}
