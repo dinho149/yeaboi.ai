@@ -67,6 +67,7 @@
    TUI's bottom strip, in the same place. `--app-inset-bottom` lifts it clear
    of a surface's own fixed bottom sheet. */
 .dockApp {
+  --lift: var(--r-m);
   /* `fixed`, not `absolute`: an absolute child is clipped by `.shellApp`'s
      `overflow: hidden` at the inside of the frame, so it can only ever sit
      *on* the border. A fixed one is not — `.shellApp` is itself fixed, which
@@ -91,7 +92,7 @@
      the border lifts, not a box parked under it. */
   border: 2px solid var(--screen-frame);
   border-bottom: none;
-  border-radius: var(--r-m) var(--r-m) 0 0;
+  border-radius: var(--lift) var(--lift) 0 0;
   background: var(--bg);
 }
 
@@ -104,21 +105,24 @@
   content: '';
   position: absolute;
   bottom: 0;
-  /* Offsets are against the dock's *padding* box, so the 2px border is added
-     back by hand. Overlapping it is deliberate: the ground below the arc ends
-     the dock's left edge rather than leaving a stub hanging past the curve. */
-  left: calc(-2px - var(--r-m));
-  width: calc(var(--r-m) + 2px);
-  height: var(--r-m);
+  /* Offsets are against the dock's *padding* box, which is what puts the ring's
+     centre one border-width inside the box's edge — exactly where it belongs. A
+     concave arc bulges toward the corner, so its OUTER radius is tangent to the
+     inner edge of the two lines it joins and its inner radius to their outer
+     edge. Centre it on the box edges instead and the stroke comes out running
+     parallel to the dock's border rather than continuing it. */
+  left: calc(var(--lift) * -1);
+  width: var(--lift);
+  height: var(--lift);
   /* Centred on the fillet's centre — one radius in from each line, so the ring
      is tangent to both. Inside it stays transparent (that side is the board),
      the ring is the border, and everything outside is the ground that ends the
      frame's straight run. */
   background: radial-gradient(
     circle at 0 0,
-    transparent 0 calc(var(--r-m) - 2px),
-    var(--screen-frame) calc(var(--r-m) - 2px) var(--r-m),
-    var(--bg) var(--r-m)
+    transparent 0 calc(var(--lift) - 2px),
+    var(--screen-frame) calc(var(--lift) - 2px) var(--lift),
+    var(--bg) var(--lift)
   );
   pointer-events: none;
 }
@@ -129,13 +133,13 @@
   position: absolute;
   bottom: 0;
   left: 100%;
-  width: calc(var(--r-m) + 2px);
-  height: var(--r-m);
+  width: var(--lift);
+  height: var(--lift);
   background: radial-gradient(
     circle at 100% 0,
-    transparent 0 calc(var(--r-m) - 2px),
-    var(--screen-frame) calc(var(--r-m) - 2px) var(--r-m),
-    var(--bg) var(--r-m)
+    transparent 0 calc(var(--lift) - 2px),
+    var(--screen-frame) calc(var(--lift) - 2px) var(--lift),
+    var(--bg) var(--lift)
   );
   pointer-events: none;
 }
