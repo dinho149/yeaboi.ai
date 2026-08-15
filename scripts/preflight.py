@@ -51,6 +51,14 @@ JOB_TARGETS: dict[str, tuple[str, ...]] = {
     "eval": ("eval",),
 }
 
+# The binary each job needs before it can run at all. A job whose toolchain is
+# absent is reported and skipped, not failed — see the module docstring.
+JOB_TOOLCHAIN: dict[str, str] = {
+    "go": "go",
+    "parity": "go",
+    "web": "npm",
+}
+
 # actionlint is not one of test_scope.py's jobs — CI runs it unconditionally and
 # it has no Makefile target — so it is keyed off the diff directly.
 WORKFLOW_PREFIX = ".github/workflows/"
@@ -80,15 +88,24 @@ def changed_paths(base: str) -> list[str]:
     return paths
 
 
-def decide(base: str) -> tuple[dict[str, bool], str]:
-    """Ask test_scope.py which optional jobs this diff needs.
+def decide(changed: list[str]) -> tuple[dict[str, bool], str]:
+    """Ask test_scope.py which optional jobs these paths need.
+
+    Takes the path list rather than a ref, and feeds it over `--changed-files -`.
+    `--base` would have been the obvious call and is wrong here: in
+    `test_scope.main` the source arguments are a mutually-exclusive group, so
+    `--base` is a *committed-only* merge-base diff. `cowork-builder` runs this
+    gate before it commits, and a partially-committed branch would then skip
+    `web`/`go`/`parity`/`package` for anything living only in the working tree —
+    a gate passing on work it never saw.
 
     Returns (jobs, note). A selector that cannot be read returns every job true
     and says why, rather than an empty selection that would look like a pass.
     """
     result = subprocess.run(
-        [sys.executable, str(SCOPE), "--base", base, "--jobs"],
+        [sys.executable, str(SCOPE), "--changed-files", "-", "--jobs"],
         cwd=ROOT,
+        input="\n".join(changed),
         capture_output=True,
         text=True,
     )
@@ -129,19 +146,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true", help="report the plan and exit without running anything")
     args = parser.parse_args(argv)
 
-    jobs, note = decide(args.base)
     changed = changed_paths(args.base)
+    jobs, note = decide(changed)
     if note:
         print(f"[preflight] {note}")
 
-    needed = [name for name in JOB_TARGETS if jobs.get(name)]
-    skipped = [name for name in JOB_TARGETS if not jobs.get(name)]
+    needed, skipped = [], []
+    for name in JOB_TARGETS:
+        if not jobs.get(name):
+            skipped.append((name, "the diff touches none of its paths"))
+        elif (tool := JOB_TOOLCHAIN.get(name)) and shutil.which(tool) is None:
+            skipped.append((name, f"{tool} is not on PATH — CI's `{name}` job will check it"))
+        else:
+            needed.append(name)
 
     print(f"[preflight] base {args.base} · {len(changed)} changed path(s)")
     if needed:
         print(f"[preflight] running: {', '.join(needed)}")
-    for name in skipped:
-        print(f"[preflight] skipped {name} — the diff touches none of its paths")
+    for name, why in skipped:
+        print(f"[preflight] skipped {name} — {why}")
 
     if args.list:
         return 0

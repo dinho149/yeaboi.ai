@@ -285,8 +285,10 @@ class TestEveryShapeAnAssertionTakes:
         tree = ast.parse(body)
         node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
         helpers = frozenset(LENSES["assertion-free-tests"]["assertion_helpers"])
-        lens._INTENT_PHRASES = tuple(LENSES["assertion-free-tests"]["intent_comments"])
-        return not lens._asserts(node, helpers, body)
+        # Threaded, not set on the module: a global meant a second run in the same
+        # process inherited the previous policy's allowances.
+        intent = tuple(LENSES["assertion-free-tests"]["intent_comments"])
+        return not lens._asserts(node, helpers, body, intent)
 
     def test_a_statement_counts(self):
         assert not self._flags("def test_x():\n    assert 1\n")

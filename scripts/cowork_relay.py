@@ -70,6 +70,12 @@ DONE = "robot_face"
 APPROVE = "white_check_mark"
 REJECT = "x"
 
+# What each verb did, in the past tense a human reads. Spelled out because
+# deriving it was wrong the moment a verb was not a regular English one:
+# `campaign` + "d" is "campaignd". Keys are exactly the verbs `_command` answers
+# to, minus the two `_audit` returns ``None`` for.
+AUDIT_VERB = {"approve": "approved", "promote": "promoted", "campaign": "approved as a campaign"}
+
 # Why a fleet item ended without shipping. A closed vocabulary, because the whole
 # point is to count these: `scripts/cowork_metrics.py` reads the markers below out
 # of issue comments, and a free-text reason is one nobody can aggregate. The fleet
@@ -81,12 +87,6 @@ REJECT = "x"
 # imports. `cowork/sweep-procedure.md` and `cron/digest.md` spell the same set,
 # and `tests/unit/test_cowork_relay.py` asserts the docs and this tuple agree —
 # the doc is the source, because it is what a model actually reads.
-# What each verb did, in the past tense a human reads. Spelled out because
-# deriving it was wrong the moment a verb was not a regular English one:
-# `campaign` + "d" is "campaignd". Keys are exactly the verbs `_command` answers
-# to, minus the two `_audit` returns ``None`` for.
-AUDIT_VERB = {"approve": "approved", "promote": "promoted", "campaign": "approved as a campaign"}
-
 REJECTION_REASONS = (
     "slack-veto",  # a human reacted ❌ in the channel
     "aged-out",  # digest.md step 4 closed an unanswered proposal after 14 days
@@ -590,7 +590,9 @@ def build_plan(
         issue = int(match.group(1))
         if approvers and rejecters:
             # The routine's rule: never guess between two verbs from a human.
-            plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": None, "command": None})
+            plan.append(
+                {"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": None, "command": None, "audit": None}
+            )
             continue
 
         # ❌ on a promotion ask is still `reject`, i.e. `gh issue close` — "not

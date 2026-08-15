@@ -350,6 +350,7 @@ cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=n
 cowork-queue: ## Show what each workstream's sweep should build next (WORKSTREAM=name for one)
 	@$(UV) run python scripts/cowork_setup.py --queued $(WORKSTREAM)
 
+.PHONY: cowork-lens
 cowork-lens: ## Run one hygiene lens over one workstream (LENS=dead-code WS=tui-ux, JSON=1)
 	@$(UV) run python scripts/hygiene_lens.py --lens $(or $(LENS),dead-code) --workstream $(WS) $(if $(JSON),--json,)
 

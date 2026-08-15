@@ -19,13 +19,22 @@ Three of these encode a bug that actually shipped:
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _preflight():
+    """Import scripts/preflight.py. `scripts/` is not a package; this is the seam."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import preflight  # noqa: PLC0415
+
+    return preflight
+
+
 MAKEFILE = ROOT / "Makefile"
 COMMANDS = sorted((ROOT / ".claude" / "commands").glob("*.md"))
 AGENTS = sorted((ROOT / ".claude" / "agents").glob("*.md"))
@@ -128,16 +137,62 @@ class TestPreflightCoversEveryJob:
                     f"preflight maps job {job!r} to `make {target}`, which the Makefile does not define"
                 )
 
-    def test_preflight_reports_what_it_skipped(self):
-        """Never silently narrow — a run that says nothing reads as 'covered everything'."""
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "preflight.py"), "--base", "HEAD", "--list"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
+    def test_preflight_names_every_job_it_skipped(self, monkeypatch, capsys):
+        """Never silently narrow — a run that says nothing reads as 'covered everything'.
+
+        This asserted only that the string "[preflight]" appeared, which the
+        unconditional `base … · N changed path(s)` header prints. Deleting the
+        entire skip loop left it green — an assertion-free test of exactly the kind
+        this branch's `assertion-free-tests` lens exists to find.
+        """
+        preflight = _preflight()
+        monkeypatch.setattr(
+            preflight,
+            "decide",
+            lambda changed: (
+                {"go": False, "parity": False, "web": False, "site": True, "package": False, "eval": False},
+                "",
+            ),
         )
-        assert result.returncode == 0, result.stderr
-        assert "[preflight]" in result.stdout
+        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["docs/index.html"])
+
+        assert preflight.main(["--base", "origin/main", "--list"]) == 0
+        out = capsys.readouterr().out
+        assert "running: site" in out
+        for job in ("go", "parity", "web", "package", "eval"):
+            assert f"skipped {job} —" in out, f"preflight ran without {job} and never said so"
+
+    def test_a_missing_toolchain_is_reported_not_failed(self, monkeypatch, capsys):
+        """cowork-builder's sandbox has no Go and no Node, and a standup fix needs `go`.
+
+        Failing the unattended lane on an environment fact rather than on the diff
+        is an outage, not a gate. CI has the toolchains.
+        """
+        preflight = _preflight()
+        monkeypatch.setattr(
+            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"go": True}, "")
+        )
+        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["src/yeaboi/standup/aggregate.py"])
+        monkeypatch.setattr(preflight.shutil, "which", lambda name: None)
+
+        assert preflight.main(["--base", "origin/main", "--list"]) == 0
+        out = capsys.readouterr().out
+        assert "skipped go — go is not on PATH" in out
+
+    def test_job_selection_sees_uncommitted_work(self):
+        """`--base` in test_scope.py is committed-only; the ship gate runs before the commit.
+
+        The source arguments there are a mutually-exclusive group, so a `--base`
+        call cannot also read the working tree. preflight passes the union over
+        `--changed-files -` instead; a partially-committed branch would otherwise
+        skip web/go/parity/package for anything living only in the working tree.
+        """
+        source = (ROOT / "scripts" / "preflight.py").read_text()
+        assert '"--changed-files", "-"' in source, (
+            "preflight must hand test_scope.py the path list it computed, not a --base ref — "
+            "--base cannot see uncommitted work, and the gate runs before the commit"
+        )
+        assert '"--base", base' not in source
 
     def test_an_unreadable_scope_runs_everything(self, monkeypatch):
         sys.path.insert(0, str(ROOT / "scripts"))

@@ -133,6 +133,13 @@ def lane_of(pr: dict) -> str:
     if workstream_of(pr) == CAMPAIGN_WORKSTREAM:
         return "campaign"
     ref = str(pr.get("head_ref") or "")
+    if not ref:
+        # No ref read at all — under `--no-branches`, or a fetch that failed. That
+        # is not the same as a ref that matched no prefix, and calling it "human"
+        # printed `by the fleet 0 — the rest is people building cowork` as a fact
+        # about a lane nobody looked up. `fetch_pr_branches`, `collect`'s warning
+        # and `--no-branches`' own help all already promised "other".
+        return "other"
     for prefix, lane in LANE_BY_PREFIX.items():
         if ref.startswith(prefix):
             return lane

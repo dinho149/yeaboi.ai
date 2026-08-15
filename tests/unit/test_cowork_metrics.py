@@ -149,6 +149,17 @@ class TestLanes:
         # the prefix alone files a week of provider work as one auto find.
         assert metrics.lane_of(pr(4, "integrations", ref="cowork/int-notion")) == "campaign"
 
+    def test_a_ref_nobody_read_is_not_filed_as_a_persons(self) -> None:
+        """`--no-branches` (which the digest passes) leaves every head_ref empty.
+
+        Calling that "human" printed `by the fleet 0 — the rest is people building
+        cowork` as a fact about a lane nothing had looked up, and sent
+        `cost_per_merged_pr` to None. A ref that matched no prefix is a person's; a
+        ref nobody read is not the same claim.
+        """
+        assert metrics.lane_of(pr(5, "platform", ref="")) == "other"
+        assert metrics.lane_of(pr(6, "platform", ref="some-persons-branch")) == "human"
+
     def test_every_unattended_prefix_pr_feedback_knows_has_a_lane_here(self) -> None:
         """The two lists must not drift.
 

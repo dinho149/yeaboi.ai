@@ -42,6 +42,23 @@ def fleet() -> lens.Charter:
 
 
 class TestTheConstitutionIsOutsideEveryCharter:
+    @pytest.mark.parametrize("path", cowork_setup.CONSTITUTION_GUARDS)
+    def test_the_guards_over_the_constitution_are_out_of_reach_too(self, path: str) -> None:
+        """Excluding a rule while leaving its enforcement editable is not an exclusion.
+
+        `fleet` owns `tests/unit/test_cowork_*.py`, which swept in
+        `test_cowork_models.py` (what makes `models.md` the only file naming a
+        model) and `test_cowork_retune.py` (what asserts CONSTITUTION against the
+        resolved charter paths — this file). Both are now subtracted in
+        `fleet.md`'s **Owns**, and this asserts the resolved paths rather than the
+        prose, the same way the documents themselves are asserted.
+        """
+        spec = lens.charter("fleet")
+        assert not spec.covers(REPO_ROOT / path), (
+            f"{path} guards the constitution and resolves inside fleet's Owns — a fleet run could "
+            "edit the test that stops it editing the rules"
+        )
+
     @pytest.mark.parametrize("path", cowork_setup.CONSTITUTION)
     def test_it_exists(self, path):
         """A guard over a path that moved is a guard that passes on nothing."""

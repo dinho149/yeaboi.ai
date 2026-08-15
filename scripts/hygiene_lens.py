@@ -14,7 +14,7 @@ find it reads the whole repository — proving a negative is a read, and a read
 changes nothing about who may edit. What stays scoped is the find itself: the
 symbol lives in your paths, and only your builder may delete it.
 
-Three lenses, all deterministic:
+Six lenses. Five are deterministic — same tree, same finds:
 
 ``dead-code``
     Module-level functions and classes whose name occurs nowhere else in the
@@ -24,7 +24,20 @@ Three lenses, all deterministic:
     to a recognised assertion helper.
 ``layering``
     A pattern a charter has declared must not appear inside its own paths,
-    together with the helper that should be there instead.
+    together with the helper that should be there instead. An invariant may be
+    declared by one charter and answered by all of them (``applies_to: "*"``).
+``stale-flags``
+    Feature flags and env switches whose branch has had one value for long
+    enough that the other side is no longer exercised.
+``duplication``
+    Near-identical blocks inside one charter's paths. Propose-only: what it
+    finds is a judgement call about which copy is the real one.
+``crash-fuzz``
+    The one that is **not** deterministic in the same sense — ``tui_fuzz.py``
+    drives the live TUI in a pty under ``--dry-run`` and finds what a seed
+    reaches. The seed is carried on the find, which is what makes a crash
+    admissible unattended: the seed is the regression test. A *hang* proposes,
+    because "it stopped repainting" has no mechanical reproduction.
 
 **Every heuristic here errs toward finding nothing.** The dead-code scan counts
 bare identifier tokens rather than resolving call graphs, so a symbol mentioned
@@ -260,11 +273,6 @@ _SCAN_SUFFIXES = frozenset(
 # a copy's definitions as references is how a live symbol reads as dead.
 _SKIP_PREFIXES = (".claude/worktrees",)
 
-# Phrases a test uses to say "the assertion is that nothing was raised". Filled
-# from the policy on every run; the default is empty so a caller that hands in a
-# policy without them gets the strict reading rather than a silent allowance.
-_INTENT_PHRASES: tuple[str, ...] = ()
-
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _DEFSITE = re.compile(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
 
@@ -438,7 +446,7 @@ def dead_code(spec: Charter, policy: dict, index: Index) -> tuple[list[Find], li
     return finds, skipped
 
 
-def _asserts(node: ast.AST, helpers: frozenset[str], source: str) -> bool:
+def _asserts(node: ast.AST, helpers: frozenset[str], source: str, intent: tuple[str, ...]) -> bool:
     """Does this test assert anything — by statement, by helper, or by intent?
 
     Three ways, because the repo genuinely uses all three. The leading
@@ -465,15 +473,18 @@ def _asserts(node: ast.AST, helpers: frozenset[str], source: str) -> bool:
     # at the node's last column and so cuts off the trailing comment on the
     # final statement — which is exactly where `# must not raise` is written.
     body = "\n".join(source.splitlines()[node.lineno - 1 : node.end_lineno])
-    return any(phrase in body for phrase in _INTENT_PHRASES)
+    # `intent` is threaded rather than held in a module global: the phrases come
+    # from the policy, and a global meant a second run in the same process
+    # inherited the previous policy's allowances. Empty is the strict reading, so
+    # a caller that hands in a policy without them gets no silent allowance.
+    return any(phrase in body for phrase in intent)
 
 
 def assertion_free_tests(spec: Charter, policy: dict, index: Index) -> tuple[list[Find], list[dict]]:
     del index  # this lens confirms nothing outside the file it reads
     rules = policy["excludes"]
     helpers = frozenset(policy.get("assertion_helpers", ()))
-    global _INTENT_PHRASES
-    _INTENT_PHRASES = tuple(policy.get("intent_comments", ()))
+    intent = tuple(policy.get("intent_comments", ()))
     finds: list[Find] = []
     skipped: list[dict] = []
     for path in python_files(spec, tests=True):
@@ -492,7 +503,7 @@ def assertion_free_tests(spec: Charter, policy: dict, index: Index) -> tuple[lis
             if rule:
                 skipped.append({"symbol": node.name, "file": _relative(path), "rule": rule})
                 continue
-            if _asserts(node, helpers, source):
+            if _asserts(node, helpers, source, intent):
                 continue
             finds.append(
                 Find(

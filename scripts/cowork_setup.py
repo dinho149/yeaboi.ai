@@ -1574,6 +1574,19 @@ CONSTITUTION: tuple[str, ...] = (
     ".claude/agents/cowork-builder.md",
 )
 
+# And the tests that enforce it. `fleet` owns `tests/unit/test_cowork_*.py`, which
+# quietly included the guards over the constitution itself: `test_cowork_models.py`
+# is what makes `models.md` the only file naming a model, and `test_cowork_retune.py`
+# is what asserts this very tuple against the resolved charter paths. Excluding the
+# documents while leaving their guards in reach makes the structural claim stronger
+# than what is enforced — the auto lane is two append-only files, so the practical
+# risk was low, but "no charter may own the constitution" should not have an
+# asterisk on it.
+CONSTITUTION_GUARDS: tuple[str, ...] = (
+    "tests/unit/test_cowork_models.py",
+    "tests/unit/test_cowork_retune.py",
+)
+
 # The only two files a `fleet` run may edit unattended, and both are append-only
 # accumulations of things that already went wrong. This is the whole of the
 # tighten half of `workstreams/fleet.md`'s asymmetry — *a routine may tighten

@@ -3,7 +3,8 @@
 **Owns** — `cowork/` **except the constitution: `cowork/house-rules.md`,
 `cowork/definition-of-done.md`, `cowork/sweep-procedure.md`, `cowork/models.md` and
 `cowork/crew.md`** — plus `scripts/cowork_*.py`, `scripts/hygiene_lens.py`, `scripts/tui_fuzz.py`,
-`.github/hygiene/`, `tests/unit/test_cowork_*.py` and
+`.github/hygiene/`, `tests/unit/test_cowork_*.py` **except the guards over the constitution:
+`tests/unit/test_cowork_models.py` and `tests/unit/test_cowork_retune.py`** and
 `tests/unit/test_hygiene_lens.py`
 
 **Skills** — none; this charter's subject is `cowork/` itself

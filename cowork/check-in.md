@@ -3,7 +3,7 @@
 How every run in the fleet closes, written once. Your routine supplies three facts; everything
 else is measured here. It is the last thing a run does, and no routine is exempt.
 
-The fleet ran twenty-four routines a day and reported nothing about its own running. On
+The fleet ran two dozen routines a day and reported nothing about its own running. On
 2026-08-06 the security sweep died on `Authentication error` after one turn; nothing said so, in
 Slack or anywhere else, and the next thing anybody knew was the following Thursday. That is not a
 gap in the reporting — it is what the reporting was *for*: [README.md](README.md) makes silence

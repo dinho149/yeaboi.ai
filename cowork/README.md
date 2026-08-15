@@ -346,7 +346,7 @@ pair the promotion path fires on, the `integration:candidate`/`integration:appro
 campaign lane fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-five routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 
