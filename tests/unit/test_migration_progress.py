@@ -219,14 +219,48 @@ class TestMergedPrFacts:
             "_pr",
             lambda number: {
                 "merged": True,
+                "number": progress.WAVE6_PR,
                 "title": "move doc-quality scoring behind the go sidecar",
                 "html_url": "https://github.com/o/r/pull/224",
                 "merged_at": "2026-08-20T10:00:00Z",
+                "head": {"ref": "go-docs-score"},
                 "labels": [{"name": "cowork"}, {"name": progress.LABEL}],
             },
         )
         facts = progress.merged_pr_facts(progress.WAVE6_PR)
         assert facts is not None and facts["wave"] == 6
+
+    def test_the_wave_number_falls_back_to_the_branch(self, monkeypatch):
+        monkeypatch.setattr(
+            progress,
+            "_pr",
+            lambda number: {
+                "merged": True,
+                "title": "an off-convention title",
+                "html_url": "https://github.com/o/r/pull/300",
+                "merged_at": "2026-09-01T10:00:00Z",
+                "head": {"ref": "cowork/migration-w9"},
+                "labels": [{"name": progress.LABEL}],
+            },
+        )
+        facts = progress.merged_pr_facts(300)
+        assert facts is not None and facts["wave"] == 9
+
+    def test_a_labelled_maintenance_merge_is_refused(self, monkeypatch):
+        # Merged, labelled — and not a wave. The 🌊 post must never fire for a
+        # PR whose parity checks were skipped by design.
+        monkeypatch.setattr(
+            progress,
+            "_pr",
+            lambda number: {
+                "merged": True,
+                "title": "fix the renderer's stalled arithmetic",
+                "html_url": "https://github.com/o/r/pull/301",
+                "head": {"ref": "cowork/go-migration-renderer-fix"},
+                "labels": [{"name": "cowork"}, {"name": progress.LABEL}],
+            },
+        )
+        assert progress.merged_pr_facts(301) is None
 
     def test_an_unlabelled_or_unmerged_pr_is_refused(self, monkeypatch):
         monkeypatch.setattr(progress, "_pr", lambda number: {"merged": False, "labels": []})
@@ -253,7 +287,7 @@ class TestBuildPayload:
         doc.write_text(PROGRAM_TEXT, encoding="utf-8")
         monkeypatch.setattr(progress, "PROGRAM_DOC", doc)
         monkeypatch.setattr(progress, "_wave6_merged", lambda: wave6)
-        monkeypatch.setattr(progress, "_labeled_prs", lambda state: prs)
+        monkeypatch.setattr(progress, "_open_wave_prs", lambda: prs)
         monkeypatch.setattr(progress, "core_version", lambda: "0.5.0")
         monkeypatch.setattr(progress, "parity_test_count", lambda: 36)
         monkeypatch.setattr(
@@ -326,17 +360,23 @@ class TestHelpers:
         monkeypatch.setattr(progress.subprocess, "run", boom)
         assert progress.parity_test_count() is None
 
-    def test_labeled_prs_keeps_only_pull_requests(self, monkeypatch):
+    def test_open_wave_prs_filter_label_and_wave_both(self, monkeypatch):
+        # The label alone is not a wave: a renderer bugfix under the label must
+        # not render under 🚧 In flight (nor age into "stalled — see the wave's
+        # Linear ticket" for a ticket that does not exist).
         monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
+        wave_label = [{"name": progress.LABEL}]
         rows = [
-            {"number": 1, "pull_request": {}, "title": "a pr"},
-            {"number": 2, "title": "a plain issue"},
+            {"number": 1, "labels": wave_label, "head": {"ref": "cowork/migration-w7"}},
+            {"number": 2, "labels": wave_label, "head": {"ref": "cowork/go-migration-renderer-fix"}},
+            {"number": 3, "labels": [{"name": "cowork"}], "head": {"ref": "cowork/migration-w8"}},
+            {"number": progress.WAVE6_PR, "labels": wave_label, "head": {"ref": "go-docs-score"}},
         ]
         monkeypatch.setattr(progress, "_get", lambda path: rows)
-        found = progress._labeled_prs("open")
-        assert [item["number"] for item in found] == [1]
+        found = progress._open_wave_prs()
+        assert [item["number"] for item in found] == [1, progress.WAVE6_PR]
         monkeypatch.setattr(progress, "_get", lambda path: None)
-        assert progress._labeled_prs("open") is None
+        assert progress._open_wave_prs() is None
 
 
 class TestMain:

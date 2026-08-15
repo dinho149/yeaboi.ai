@@ -23,7 +23,10 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
    this workstream. If it is open and unlabelled, label it `cowork` +
    `workstream:go-migration` + `type:chore`, rebase it on `origin/main`, repair its failed
    auto-version run (a wave PR bumps **minor** — see
-   `.claude/skills/ci-and-release/SKILL.md`), and drive it exactly as above.
+   `.claude/skills/ci-and-release/SKILL.md`), and drive it exactly as above. Its branch does
+   not carry the wave prefix, so the parity hold covers it **by number** instead
+   (`PARITY_GATED_PRS` in `scripts/pr_feedback.py`) — the label is what arms that, so apply
+   it before anything else.
 
 2. **Which wave?** Read the program doc's §3 table. The next wave is the first unchecked row
    whose ordering dependencies (§3, **Ordering**) are all checked. Never infer progress from

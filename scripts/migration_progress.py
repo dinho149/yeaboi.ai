@@ -55,6 +55,11 @@ PILOT_WAVES_MERGED = 5
 WAVE6_PR = 224
 PILOT_WAVES = 6
 
+# The campaign's wave-branch prefix — the mirror of PARITY_BRANCH_PREFIX in
+# scripts/pr_feedback.py, and the other half of "labelled is not the same as
+# being a wave" (see _is_wave).
+WAVE_BRANCH_PREFIX = "cowork/migration-w"
+
 # One glyph per wave, so the bar *is* the count. ▰/▱ are the product's own
 # meter glyphs (`build_meter`, src/yeaboi/ui/shared/_components.py) and carry
 # their own carve-out in TestSlackTemplates' emoji lint.
@@ -165,28 +170,44 @@ def _get(path: str) -> object | None:
     return result.data if result.ok else None
 
 
-def _labeled_prs(state: str) -> list[dict] | None:
-    """Issues carrying the workstream label, or None when the read failed.
+def _is_wave(data: dict) -> bool:
+    """Whether a labelled PR is actually a *wave* — the campaign's branch
+    prefix, or the sanctioned Wave 6 rescue PR.
 
-    The issues endpoint rather than pulls: it filters by label server-side, and
-    a PR is an issue with a ``pull_request`` key. One page of 100 is deliberate
-    rather than lazy — the lane holds one open PR at a time and the program is
-    thirteen waves, so the label can never carry more than a couple of dozen.
-    None is never an empty list — a queue reported empty when it could not be
-    asked is a migration that looks idle rather than blind.
+    The same predicate as `parity_gated` in ``scripts/pr_feedback.py``, for the
+    same reason: fleet convention labels every PR of a workstream, and a
+    renderer bugfix under the label is not a wave. A 🌊 announcement for a docs
+    chore — claiming a parity gate its diff deliberately skipped — is exactly
+    the false post the README's "non-wave merges say nothing here" forbids.
+    """
+    head = ((data.get("head") or {}).get("ref")) or ""
+    return head.startswith(WAVE_BRANCH_PREFIX) or data.get("number") == WAVE6_PR
+
+
+def _open_wave_prs() -> list[dict] | None:
+    """The open wave PRs, or None when the read failed.
+
+    The pulls endpoint rather than issues, because only it carries the head
+    ref `_is_wave` filters on. One page of 100 is deliberate rather than lazy —
+    the lane holds one open PR at a time. None is never an empty list — a queue
+    reported empty when it could not be asked is a migration that looks idle
+    rather than blind.
     """
     slug = transport.resolve_slug(REPO_ROOT)
     if not slug:
         return None
     owner, name = slug.split("/")
-    path = (
-        f"/repos/{transport.segment(owner)}/{transport.segment(name)}/issues"
-        f"?labels={transport.segment(LABEL)}&state={state}&per_page=100"
-    )
-    data = _get(path)
+    data = _get(f"/repos/{transport.segment(owner)}/{transport.segment(name)}/pulls?state=open&per_page=100")
     if not isinstance(data, list):
         return None
-    return [item for item in data if isinstance(item, dict) and "pull_request" in item]
+    found = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        labels = {label.get("name") for label in item.get("labels", []) if isinstance(label, dict)}
+        if LABEL in labels and _is_wave(item):
+            found.append(item)
+    return found
 
 
 def _wave6_merged() -> bool | None:
@@ -233,7 +254,7 @@ def build_payload(now: datetime | None = None) -> dict:
     waves = parse_program(PROGRAM_DOC.read_text(encoding="utf-8"))
     program_done = sum(1 for wave in waves if wave.done)
     wave6 = _wave6_merged()
-    open_prs = _labeled_prs("open")
+    open_prs = _open_wave_prs()
 
     in_flight = None
     if open_prs is not None:
@@ -347,15 +368,21 @@ def wave_merged_lines(payload: dict, merged: dict) -> list[str]:
 
 
 def merged_pr_facts(number: int) -> dict | None:
-    """The merged PR's title/url/wave, or None when it is not a merged wave PR."""
+    """The merged PR's title/url/wave, or None when it is not a merged wave PR.
+
+    None for a merged *maintenance* PR under the same label — `_is_wave` is the
+    gate, so the 🌊 announcement can never fire for a PR whose parity checks
+    were skipped by design.
+    """
     data = _pr(number)
     if not data or not data.get("merged"):
         return None
     labels = {label.get("name") for label in data.get("labels", []) if isinstance(label, dict)}
-    if LABEL not in labels:
+    if LABEL not in labels or not _is_wave(data):
         return None
     title = data.get("title", "")
-    match = _WAVE_TITLE.match(title)
+    head = ((data.get("head") or {}).get("ref")) or ""
+    match = _WAVE_TITLE.match(title) or re.match(rf"{re.escape(WAVE_BRANCH_PREFIX)}(?P<wave>\d+)", head)
     wave = int(match.group("wave")) if match else (6 if number == WAVE6_PR else None)
     return {
         "title": title,

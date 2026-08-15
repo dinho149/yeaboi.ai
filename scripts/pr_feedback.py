@@ -126,6 +126,11 @@ CI_WORKFLOW_NAME = "CI"
 # as load-bearing.
 PARITY_GATED_LABEL = "workstream:go-migration"
 PARITY_BRANCH_PREFIX = "cowork/migration-w"
+# The Wave 6 rescue: PR #224 predates the branch convention (branch
+# `go-docs-score`), and a PR's head ref cannot be renamed — so the first wave
+# the lane merges is gated by number instead. Expires on its own the day #224
+# merges; delete at will after.
+PARITY_GATED_PRS = (224,)
 PARITY_CHECK_NAMES = ("Go core", "Python ↔ Go parity")
 
 # GitHub truncates a status description past 140 characters.
@@ -960,8 +965,11 @@ def describe(items: Sequence[OpenItem]) -> str:
 def parity_gated(snapshot: Snapshot) -> bool:
     """Whether this PR is a migration wave — the label AND the campaign's branch
     prefix, per the constants' comment. `startswith`, so `cowork/migration-w18b`
-    (the one wave the program allows to split) still gates."""
-    return PARITY_GATED_LABEL in snapshot.labels and snapshot.head_ref.startswith(PARITY_BRANCH_PREFIX)
+    (the one wave the program allows to split) still gates. The one branch-less
+    wave, the #224 rescue, is gated by number."""
+    if PARITY_GATED_LABEL not in snapshot.labels:
+        return False
+    return snapshot.head_ref.startswith(PARITY_BRANCH_PREFIX) or snapshot.number in PARITY_GATED_PRS
 
 
 def parity_items(snapshot: Snapshot) -> tuple[list[OpenItem], str | None]:
