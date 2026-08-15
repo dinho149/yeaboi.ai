@@ -103,14 +103,23 @@
   padding: var(--s2) var(--s1);
 }
 
+/* Square on a side wall: the lift is a bottom-border idea, and the fillets
+   that sell it there read as loose curves stuck to a vertical strip. */
 .dockApp[data-edge='left'] {
   border-left: none;
-  border-radius: 0 var(--lift) var(--lift) 0;
+  border-radius: 0;
 }
 
 .dockApp[data-edge='right'] {
   border-right: none;
-  border-radius: var(--lift) 0 0 var(--lift);
+  border-radius: 0;
+}
+
+.dockApp[data-edge='left']::before,
+.dockApp[data-edge='left']::after,
+.dockApp[data-edge='right']::before,
+.dockApp[data-edge='right']::after {
+  display: none;
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
@@ -208,50 +217,6 @@
   );
 }
 
-.dockApp[data-edge='left']::before {
-  left: 0;
-  top: calc(var(--lift) * -1);
-  background: radial-gradient(
-    circle at 0 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-.dockApp[data-edge='left']::after {
-  left: 0;
-  top: 100%;
-  background: radial-gradient(
-    circle at 0 100%,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-.dockApp[data-edge='right']::before {
-  right: 0;
-  top: calc(var(--lift) * -1);
-  background: radial-gradient(
-    circle at 100% 0,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
-.dockApp[data-edge='right']::after {
-  right: 0;
-  top: 100%;
-  background: radial-gradient(
-    circle at 100% 100%,
-    transparent 0 calc(var(--lift) - var(--screen-frame-w)),
-    var(--screen-frame) calc(var(--lift) - var(--screen-frame-w)) var(--lift),
-    var(--bg) var(--lift)
-  );
-}
-
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
@@ -277,12 +242,12 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-m);
   background: var(--panel);
-  /* It sits over the board and the board scrolls under it, so it casts. */
+  /* It sits over the board and the board scrolls under it, so it casts — but
+     only just: it is fixed furniture, not something floating. */
   box-shadow:
     var(--edge),
-    0 1px 2px rgb(0 0 0 / 22%),
-    0 8px 20px rgb(0 0 0 / 22%);
-  overflow: hidden;
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
 .chromeApp > *:last-child {

@@ -23,7 +23,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { Chip, Eyebrow, Icon } from '../design/primitives';
+import { Eyebrow, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
@@ -80,6 +80,17 @@ function Collapsible({ label, text }: { label?: string; text: string }) {
   );
 }
 
+/** One labelled fact about the ticket. Omitted entirely when it has no value. */
+function Prop({ label, value, tone }: { label: string; value?: string | null; tone?: 'ok' }) {
+  if (!value) return null;
+  return (
+    <div className={styles['prop']}>
+      <dt className={styles['propLabel']}>{label}</dt>
+      <dd className={cx(styles['propValue'], tone === 'ok' && styles['propOk'])}>{value}</dd>
+    </div>
+  );
+}
+
 function TicketBody({ ticket, tag }: BodyProps) {
   const href = safeUrl(ticket.url);
   return (
@@ -97,31 +108,17 @@ function TicketBody({ ticket, tag }: BodyProps) {
         {tag}
       </div>
 
-      <div className={styles['tkHead']}>
-        <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
+      <h1 className={styles['tkSummary']}>{ticket.summary}</h1>
 
-        <div className={styles['chips']}>
-        {ticket.type ? <Chip>{ticket.type}</Chip> : null}
-        {ticket.state ? (
-          <Chip>
-            status <b>{ticket.state}</b>
-          </Chip>
+      <dl className={styles['props']}>
+        <Prop label="Type" value={ticket.type} />
+        <Prop label="Status" value={ticket.state} />
+        <Prop label="Assignee" value={ticket.assignee} />
+        <Prop label="Points" value={fmtPoints(ticket.story_points)} />
+        {ticket.estimated ? (
+          <Prop label="Estimated" value={fmtPoints(ticket.final_points)} tone="ok" />
         ) : null}
-        {ticket.assignee ? (
-          <Chip>
-            assignee <b>{ticket.assignee}</b>
-          </Chip>
-        ) : null}
-        <Chip>
-          points <b>{fmtPoints(ticket.story_points)}</b>
-        </Chip>
-          {ticket.estimated ? (
-            <Chip tone="ok">
-              <Icon name="check" size={12} /> estimated <b>{fmtPoints(ticket.final_points)}</b>
-            </Chip>
-          ) : null}
-        </div>
-      </div>
+      </dl>
 
       {ticket.description_text ? (
         <Collapsible text={ticket.description_text} />

@@ -25,12 +25,14 @@ export interface RailProps {
   peeking: number | null;
   estimated: number;
   /** Narrow screens: the rail is a drawer. */
+  /** The board's scope — the sprint or batch these tickets came from. */
+  scope: string;
   open: boolean;
   onPick(index: number): void;
   onClose(): void;
 }
 
-export function Rail({ tickets, current, peeking, estimated, open, onPick, onClose }: RailProps) {
+export function Rail({ tickets, current, peeking, estimated, scope, open, onPick, onClose }: RailProps) {
   return (
     <aside
       className={cx(styles['rail'], open && styles['railOpen'])}
@@ -39,6 +41,7 @@ export function Rail({ tickets, current, peeking, estimated, open, onPick, onClo
       aria-hidden={open ? undefined : 'true'}
     >
       <div className={styles['railHead']}>
+        {scope ? <p className={styles['railScope']}>{scope}</p> : null}
         <Eyebrow value={`${estimated}/${tickets.length}`}>Tickets</Eyebrow>
       </div>
 

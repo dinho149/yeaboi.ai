@@ -297,21 +297,37 @@
   letter-spacing: -0.02em;
 }
 
-.chips {
+/* The ticket's facts, under the title: a label and its value, not a pill.
+   Each is a property with a value, so it is set as one. */
+.props {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2);
+  gap: var(--s3) var(--s6);
+  margin: var(--s4) 0 var(--s5);
 }
 
-/* Title and its chips on one line, the chips wrapping under it when the
-   summary is long enough to take the row. */
-.tkHead {
+.prop {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2) var(--s3);
-  margin: var(--s2) 0 var(--s3);
+  flex-direction: column;
+  gap: 2px;
+}
+
+.propLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--dim);
+}
+
+.propValue {
+  margin: 0;
+  font-size: var(--fs-s);
+  color: var(--text);
+}
+
+.propOk {
+  color: var(--ok);
 }
 
 .bodyLabel {
@@ -716,9 +732,16 @@
 
 /* No panel of its own: the seats read as part of the voting furniture, not as
    another card. */
+/* Ten cards and the nine gaps between them — the deck's own width, so the
+   table above it lines up rather than floating at the column's edge. */
+.main {
+  --deck-w: calc(10 * 72px + 9 * var(--s2));
+}
+
 .table {
   margin-top: auto;
-  padding: 0 var(--s1);
+  width: min(100%, var(--deck-w));
+  margin-inline: auto;
 }
 
 .tableHead {
@@ -884,6 +907,8 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s2);
+  width: min(100%, var(--deck-w));
+  margin-inline: auto;
 }
 
 /* A deck is one object in ten copies, not ten coloured objects. The bands went

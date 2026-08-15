@@ -419,9 +419,7 @@ export function App({ boot }: { boot: PokerBoot }) {
         mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
-            {boot.scope ? `${boot.scope} · ` : ''}
-            {ticketCount ? `${estimated}/${ticketCount} estimated` : 'no tickets'}
-            {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
+            {status === 'retrying' ? <span className={styles['offline']}>reconnecting…</span> : null}
           </>
         }
       >
@@ -484,6 +482,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           current={ticketIndex}
           peeking={peekIndex}
           estimated={estimated}
+          scope={boot.scope}
           open={railOpen}
           onPick={setPeekIndex}
           onClose={() => setRailOpen(false)}
