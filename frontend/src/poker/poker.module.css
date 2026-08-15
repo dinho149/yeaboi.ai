@@ -765,8 +765,9 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: transparent;
+  background: var(--bg);
   border: 1px solid var(--hairline-strong);
+  box-shadow: var(--shadow-1);
   font-size: var(--fs-l);
 }
 
@@ -802,9 +803,7 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 20%, var(--panel)) 0%, color-mix(in srgb, var(--accent) 10%, var(--panel)) 55%);
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  box-shadow:
-    var(--edge),
-    0 4px 10px rgb(0 0 0 / 40%);
+  box-shadow: var(--shadow-1);
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-l);
@@ -898,7 +897,8 @@
   height: 100px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
-  background: transparent;
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
@@ -912,6 +912,7 @@
 .pcard:hover:not(:disabled) {
   transform: translateY(-6px);
   border-color: var(--muted);
+  box-shadow: var(--shadow-hover);
 }
 
 .pcard:disabled {
@@ -922,9 +923,10 @@
 /* The one place the accent belongs on this row: the card you played. */
 .pcardSel {
   border-color: var(--accent);
-  background: transparent;
+  background: var(--bg);
   color: var(--accent);
   transform: translateY(-10px);
+  box-shadow: var(--shadow-hover);
 }
 
 /* Your tap is committed locally before the server confirms it. The dash says

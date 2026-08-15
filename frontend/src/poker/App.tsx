@@ -333,7 +333,7 @@ export function App({ boot }: { boot: PokerBoot }) {
       data={{ 'data-host': isHost ? 'true' : undefined }}
       dock={
         <>
-          <Visualizer playing={music.playing} />
+          <Visualizer playing={music.playing} analyser={music.analyser} />
 
           <IconButton
             icon={<Icon name="menu" size={15} />}

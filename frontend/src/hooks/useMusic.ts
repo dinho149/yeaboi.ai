@@ -16,9 +16,18 @@
  * board can offer a "tap to hear the music" banner, which is the only thing
  * that can legally start playback for them.
  *
- * `crossOrigin = 'anonymous'` is set because these are third-party stream URLs;
- * it is what would let a real frequency-analyser read the samples. The
- * visualiser deliberately does not (see Visualizer.tsx).
+ * ## The analyser
+ *
+ * `crossOrigin = 'anonymous'` is what lets a real frequency analyser read the
+ * samples, and the stations do send `Access-Control-Allow-Origin: *`, so the
+ * visualiser is driven by the actual signal rather than a synthesised one.
+ *
+ * The graph is built on the first play, because an `AudioContext` created
+ * before a user gesture starts suspended. Two rules it is easy to get wrong:
+ * `createMediaElementSource` may be called **once** per element, and once an
+ * element is routed through the graph its audio reaches the speakers *only*
+ * via that graph — so failing to connect through to the destination is silence
+ * with every other sign of playing.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -39,12 +48,17 @@ export interface MusicApi {
   setVolume(value: number): void;
   /** Apply a host command. Rejects when autoplay blocked a play request. */
   cast(index: number, on: boolean): Promise<void>;
+  /** Live frequency data, once the graph exists. Null before the first play. */
+  analyser: AnalyserNode | null;
 }
 
 const DEFAULT_VOLUME = 0.35;
 
 export function useMusic(channels: readonly Channel[]): MusicApi {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [playing, setPlaying] = useState(false);
   const [channel, setChannelState] = useState(0);
   const [volume, setVolumeState] = useState(DEFAULT_VOLUME);
@@ -75,6 +89,9 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
       audio.removeAttribute('src');
       audio.load();
       audioRef.current = null;
+      void ctxRef.current?.close();
+      ctxRef.current = null;
+      sourceRef.current = null;
     };
   }, []);
 
@@ -90,12 +107,42 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
     [channels]
   );
 
+  /** Build the graph once, on a gesture. Silent failure leaves audio direct. */
+  const connect = useCallback((audio: HTMLAudioElement): void => {
+    if (sourceRef.current) {
+      void ctxRef.current?.resume();
+      return;
+    }
+    const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    try {
+      const ctx = new Ctor();
+      const source = ctx.createMediaElementSource(audio);
+      const node = ctx.createAnalyser();
+      node.fftSize = 128;
+      node.smoothingTimeConstant = 0.75;
+      source.connect(node);
+      node.connect(ctx.destination);
+      ctxRef.current = ctx;
+      sourceRef.current = source;
+      setAnalyser(node);
+      void ctx.resume();
+    } catch {
+      // A tainted stream or a blocked context: keep plain playback rather than
+      // routing the element into a graph that cannot reach the speakers.
+      ctxRef.current = null;
+      sourceRef.current = null;
+      setAnalyser(null);
+    }
+  }, []);
+
   const play = useCallback(async (): Promise<void> => {
     const audio = audioRef.current;
     if (!audio) return;
     if (!audio.src) load(channel);
+    connect(audio);
     await audio.play();
-  }, [channel, load]);
+  }, [channel, load, connect]);
 
   const stop = useCallback((): void => {
     audioRef.current?.pause();
@@ -106,6 +153,7 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
       playing,
       channel,
       volume,
+      analyser,
       toggle() {
         if (playing) stop();
         else void play().catch(() => setPlaying(false));
@@ -140,7 +188,7 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
         await audioRef.current?.play();
       },
     }),
-    [playing, channel, volume, play, stop, load]
+    [playing, channel, volume, analyser, play, stop, load]
   );
 
   return api;

@@ -94,6 +94,10 @@
      which ship no drop shadow at all, and Radix/Primer, which use a 1px edge —
      a 40px blur reads as a card on a document rather than a panel in a tool. */
   --edge: inset 0 1px 0 rgb(226 236 248 / 7%);
+  /* Resting lift, for something sitting on the board rather than over it. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 22%), 0 4px 10px rgb(0 0 0 / 18%);
+  /* Picked up: a card under the cursor, a dock being carried. */
+  --shadow-hover: 0 2px 4px rgb(0 0 0 / 25%), 0 10px 22px rgb(0 0 0 / 28%);
   --shadow-2: 0 12px 32px rgb(0 0 0 / 45%);
 
   /* ── Derived surfaces ───────────────────────────────────────────────

@@ -78,6 +78,7 @@
      dock is where the border lifts, not a box parked under it. */
   border: var(--screen-frame-w) solid var(--screen-frame);
   background: var(--bg);
+  box-shadow: var(--shadow-1);
   cursor: grab;
   touch-action: none;
   /* Placed by one translation off the frame's top-left, so travelling between
@@ -117,6 +118,7 @@
 .dockDragging {
   transition: none;
   cursor: grabbing;
+  box-shadow: var(--shadow-hover);
 }
 
 /* Except across a corner, which is a reorientation rather than a slide — the
@@ -272,11 +274,14 @@
   display: flex;
   align-items: stretch;
   margin: var(--s3);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
   border-radius: var(--r-m);
   background: var(--panel);
-  /* An edge, not a blur: this is fixed to the screen, not floating over it. */
-  box-shadow: var(--edge);
+  /* It sits over the board and the board scrolls under it, so it casts. */
+  box-shadow:
+    var(--edge),
+    0 1px 2px rgb(0 0 0 / 22%),
+    0 8px 20px rgb(0 0 0 / 22%);
   overflow: hidden;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
