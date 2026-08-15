@@ -166,6 +166,7 @@
 
 .railCurrent {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: var(--mat-well);
   color: var(--text);
 }
 
@@ -471,9 +472,10 @@
 }
 
 .dtrack {
-  height: 8px;
+  height: 10px;
   border-radius: var(--r-pill);
-  background: var(--panel-2);
+  background: var(--bg);
+  box-shadow: var(--mat-well);
   overflow: hidden;
 }
 
@@ -481,7 +483,8 @@
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
-  background: var(--line-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--text) 12%, var(--line-strong)) 0%, var(--line-strong) 100%);
+  box-shadow: inset 0 1px 0 var(--lit);
   transition: width var(--dur-base) var(--ease);
 }
 
@@ -792,9 +795,9 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  box-shadow: var(--edge);
+  background: var(--mat-face);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--mat-rest);
   font-size: var(--fs-l);
 }
 
@@ -1028,6 +1031,32 @@
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
+/* Controls are objects resting on the console: raised at rest, and they sit
+   back into their own well when pressed. */
+.console button,
+.cbar button {
+  box-shadow: var(--mat-rest);
+}
+
+.console button:not([class*='btnPrimary']),
+.cbar button:not([class*='btnPrimary']) {
+  background: var(--mat-face);
+  border-color: var(--hairline-strong);
+  text-shadow: var(--letterpress);
+}
+
+.console button:active:not(:disabled),
+.cbar button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--mat-pressed);
+}
+
+.console button:disabled,
+.cbar button:disabled {
+  box-shadow: none;
+  text-shadow: none;
+}
+
 .console {
   min-height: 0;
   overflow-y: auto;
@@ -1151,9 +1180,10 @@
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
   background: var(--bg);
+  box-shadow: var(--mat-well);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-s);

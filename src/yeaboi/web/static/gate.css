@@ -223,6 +223,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     inset 0 -2px 3px rgb(0 0 0 / 22%);
   /* Pressed: the outer layers go, so the surface sits back in its own well. */
   --mat-pressed: inset 0 2px 5px rgb(0 0 0 / 40%), inset 0 1px 1px rgb(0 0 0 / 30%);
+  /* Cut into the surface: dark under the top lip, lit along the bottom one. */
+  --mat-well: inset 0 2px 4px rgb(0 0 0 / 45%), inset 0 -1px 0 var(--lit);
 
   /* Three stops, ~15% luminance across the face. */
   --mat-face: linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, var(--panel)) 0%, var(--panel) 45%, color-mix(in srgb, #000 12%, var(--panel)) 100%);
