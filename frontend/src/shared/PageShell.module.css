@@ -80,45 +80,44 @@
   background: var(--bg);
   cursor: grab;
   touch-action: none;
-  transition:
-    left var(--dur-base) var(--ease),
-    top var(--dur-base) var(--ease),
-    right var(--dur-base) var(--ease),
-    bottom var(--dur-base) var(--ease);
+  /* Placed by one translation off the frame's top-left, so travelling between
+     walls interpolates instead of swapping which offsets are `auto`. */
+  left: 0;
+  top: 0;
+  transform: translate3d(var(--dock-x, 0px), var(--dock-y, 0px), 0);
+  transition: transform var(--dur-base) var(--ease);
 }
 
-/* Along the bottom: a row, open underneath. */
+/* The wall only decides orientation now: which side is open, which corners are
+   round, and which way the controls run. */
 .dockApp[data-edge='bottom'] {
-  left: var(--dock-offset, 60%);
-  bottom: var(--app-inset-bottom, 0px);
   flex-direction: row;
   border-bottom: none;
   border-radius: var(--lift) var(--lift) 0 0;
 }
 
-/* Up a side: a column, open against that side. */
 .dockApp[data-edge='left'],
 .dockApp[data-edge='right'] {
-  top: var(--dock-offset, 50%);
   flex-direction: column;
   padding: var(--s2) var(--s1);
 }
 
 .dockApp[data-edge='left'] {
-  left: 0;
   border-left: none;
   border-radius: 0 var(--lift) var(--lift) 0;
 }
 
 .dockApp[data-edge='right'] {
-  right: 0;
   border-right: none;
   border-radius: var(--lift) 0 0 var(--lift);
 }
 
 /* Free of the edge while held, so it follows the pointer exactly. */
+/* Kept eased while held rather than switched off. Along a wall the lag is a
+   frame or two; at a corner it is what turns a 200px reorientation into a
+   crawl onto the next wall instead of a jump. */
 .dockDragging {
-  transition: none;
+  transition: transform var(--dur-fast) var(--ease);
   cursor: grabbing;
 }
 

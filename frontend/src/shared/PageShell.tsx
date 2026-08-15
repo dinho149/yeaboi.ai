@@ -182,8 +182,8 @@ export function PageShell({
         <div
           ref={drag.ref}
           className={cx(styles['dockApp'], drag.dragging && styles['dockDragging'])}
-          data-edge={drag.edge}
-          style={{ '--dock-offset': `${drag.offset}px` } as never}
+          data-edge={drag.placement.edge}
+          style={{ '--dock-x': `${drag.placement.x}px`, '--dock-y': `${drag.placement.y}px` } as never}
           onPointerDown={drag.onPointerDown}
           role="toolbar"
           aria-label="Board tools"

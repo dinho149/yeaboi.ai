@@ -261,6 +261,14 @@
 /* Silent, it occupies nothing; starting the music unfolds it from the left.
    Width is animated as well as opacity so the dock closes up behind it rather
    than holding an empty slot. */
+/* A dock stood on end has no room for a word beside the glyph. Keyed on the
+   attribute, not the class, because the dock's class is hashed into another
+   module. */
+[data-edge='left'] .iconLabel,
+[data-edge='right'] .iconLabel {
+  display: none;
+}
+
 .viz {
   flex: none;
   width: 0;
