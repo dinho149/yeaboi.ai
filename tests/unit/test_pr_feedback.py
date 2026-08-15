@@ -1901,7 +1901,15 @@ class TestTheParityHold:
     GREEN = (("Go core", "success"), ("Python ↔ Go parity", "success"), ("Unit tests", "success"))
 
     def _snap(self, **overrides):
-        base = dict(labels=("cowork", prf.PARITY_GATED_LABEL), comments=(review(0),), check_runs=self.GREEN)
+        # A wave PR is the label AND the campaign's branch prefix — the checks
+        # this hold demands are path-triggered, and the label alone also lands
+        # on the workstream's maintenance PRs, whose diffs skip them.
+        base = dict(
+            labels=("cowork", prf.PARITY_GATED_LABEL),
+            head_ref="cowork/migration-w7",
+            comments=(review(0),),
+            check_runs=self.GREEN,
+        )
         base.update(overrides)
         return snapshot(**base)
 
@@ -1946,17 +1954,31 @@ class TestTheParityHold:
         verdict = prf.classify(snapshot(comments=(review(0),), check_runs=None), NOW)
         assert verdict.state == "success"
 
-    def test_the_hold_reaches_the_local_lane_too(self):
-        # A human hand-opening a wave PR does not get to merge past a skipped
-        # gate either; the label is the opt-in and a human can remove it.
-        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
-        snap = self._snap(head_ref="feature/nice-thing", check_runs=runs)
-        assert prf.classify(snap, NOW).state == "failure"
+    def test_a_labelled_pr_off_the_wave_branch_is_untouched(self):
+        # The exact case the branch half of `parity_gated` exists for: fleet
+        # convention labels every PR of a workstream, and a renderer bugfix or a
+        # program-doc edit never schedules the Go jobs. Label without the
+        # `cowork/migration-w` prefix must not hold.
+        runs = (("Unit tests", "success"),)
+        snap = self._snap(head_ref="cowork/go-migration-renderer-fix", check_runs=runs)
+        assert prf.classify(snap, NOW).state == "success"
 
-    def test_the_local_lane_waits_on_a_running_gate(self):
-        runs = (("Go core", "success"), ("Python ↔ Go parity", None))
-        snap = self._snap(head_ref="feature/nice-thing", check_runs=runs)
-        assert prf.classify(snap, NOW).state == "pending"
+    def test_an_absent_check_while_ci_runs_is_pending(self):
+        # The parity job cannot start until `go` finishes, so an absent check
+        # run during a live CI run is "not yet", never "never" — the first
+        # status on every wave push must not be a red one.
+        runs = (("Go core", "success"),)
+        snap = self._snap(check_runs=runs, ci=prf.CIState(None, None))
+        verdict = prf.classify(snap, NOW)
+        assert verdict.state == "pending"
+        assert "CI is still running" in verdict.description
+
+    def test_the_sticky_comment_says_no_reply_clears_parity(self):
+        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
+        snap = self._snap(check_runs=runs)
+        verdict = prf.classify(snap, NOW)
+        body = prf.sticky_body(snap, verdict)
+        assert "no reply clears them" in body
 
     def test_the_override_label_still_clears_it(self):
         # The escape hatch the lane keeps: a human other than the author.
@@ -1994,3 +2016,10 @@ class TestFetchCheckRuns:
         monkeypatch.setattr(prf, "_read", lambda path: None)
         assert prf.fetch_check_runs("o/r", "abc1234") is None
         assert prf.fetch_check_runs("o/r", "") is None
+
+    def test_a_truncated_page_is_unreadable_not_empty(self, monkeypatch):
+        # 150 runs with 1 returned would report the parity checks as never-ran
+        # — the wrong reason for the right outcome. Provably-partial is None.
+        payload = {"total_count": 150, "check_runs": [{"name": "Go core", "conclusion": "success"}]}
+        monkeypatch.setattr(prf, "_read", lambda path: payload)
+        assert prf.fetch_check_runs("o/r", "abc1234") is None

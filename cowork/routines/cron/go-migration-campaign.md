@@ -36,10 +36,14 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
    stops. Code starts next run, against a spec that exists.
 
 4. **Advance one phase.** On branch `cowork/migration-w<N>` (one branch per wave, kept for the
-   wave's whole life): implement the next phase commit from the wave's spec section. Every
+   wave's whole life — **the prefix is load-bearing**: `scripts/pr_feedback.py`'s parity hold
+   keys on `cowork/migration-w` plus the workstream label, so a wave built on any other branch
+   name merges without its gate enforced): implement the next phase commit from the wave's
+   spec section. Every
    phase ends green on the verification the spec names (`make go-test && make go-lint &&
    make parity && make test && make lint`, as applicable). When the last phase is done: flip
-   the wave's checkbox and add the previous wave's freeze-table entry on the same branch,
+   the wave's checkbox — `☐` becomes `✔`, exactly that glyph, per the program doc's own edit
+   note — and add the previous wave's freeze-table entry on the same branch,
    spawn an independent `code-reviewer` at `deep` (the builder never reviews its own work),
    fix every blocker and should-fix, then open the PR titled
    `migration(w<N>): <the row's contents clause>`, labelled `cowork`,

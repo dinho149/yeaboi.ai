@@ -4,7 +4,7 @@
 shortlist, filed 55 minutes earlier by `integrations-campaign.md` — which posts nothing itself,
 precisely so this stays the only routine that puts a decision in the channel.
 **Summary** — the open proposals and this week's integration shortlist, waiting on your approval
-**Workstream** — none; this routine spans all sixteen.
+**Workstream** — none; this routine spans all seventeen.
 **Model** — `standard` ([models.md](../../models.md))
 
 The single decision point. It is the only routine that posts proposals to Slack.
@@ -406,7 +406,7 @@ The single decision point. It is the only routine that posts proposals to Slack.
      <title>](<pr url>)`; line two is `— ` and what is actually holding that PR up, from the
      `pr_feedback.py` run below (red CI, or *n* unanswered findings).
    - **Held** — a workstream at its proposal cap. `uv run python scripts/cowork_setup.py
-     --proposal-slots` with no argument answers for all sixteen at once; list every row with
+     --proposal-slots` with no argument answers for all seventeen at once; list every row with
      `slots` of 0. Line one is `**<workstream>**` and the count, `— <n> open proposals, cap 2`;
      line two is `— ` and the oldest blocking issues by number and age, from the row's `blocking`
      list, e.g. `— holding on #146 (7d), #152 (6d)`. Those are the issues to answer, and answering
@@ -422,7 +422,7 @@ The single decision point. It is the only routine that posts proposals to Slack.
      unreadable` — and never as zero open or as a healthy queue, for the same reason a
      `pr_feedback.py` that exits 2 is never reported as a clean PR.
    - **Queued** — a workstream with `cowork:queued` items waiting to be built.
-     `uv run python scripts/cowork_setup.py --queued` with no argument answers for all sixteen at
+     `uv run python scripts/cowork_setup.py --queued` with no argument answers for all seventeen at
      once; list every row with a non-zero count. Line one is `**<workstream>**` and the count,
      `— <n> queued, oldest <k>d`; line two is `— ` and the top item by build order, so a reader can
      see what is coming.

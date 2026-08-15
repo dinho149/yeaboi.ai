@@ -23,7 +23,7 @@ import sys
 
 import pytest
 
-SPAWNERS = ("cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff")
+SPAWNERS = ("cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff", "migration_progress")
 
 
 def _loaded_transports() -> dict[str, object]:

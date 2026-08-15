@@ -1777,7 +1777,7 @@ def existing_labels() -> set[str] | None:
     None rather than an empty set, and the same for the variables below: they are
     different facts and the difference matters. A ready transport does not mean
     the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all thirty-one labels
+    and an empty set read as truth makes the doctor report all thirty-three labels
     missing and ``apply_labels`` try to create every one of them.
     """
     if TRANSPORT == "gh":

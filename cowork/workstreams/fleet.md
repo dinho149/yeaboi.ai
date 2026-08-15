@@ -13,7 +13,7 @@ workstream's)** — plus `scripts/cowork_*.py`, `scripts/hygiene_lens.py`, `scri
 **Cadence** — Sun 08:00 UTC, weekly ([`cron/retune.md`](../routines/cron/retune.md)). Not a sweep —
 it surveys the fleet's *outcomes* rather than a surface of code.
 
-The sixteenth workstream, and the only one whose subject is the fleet. Every other charter asks
+The workstream whose subject is the fleet itself, and the only one. Every other charter asks
 "is this code right"; this one asks **"was what the fleet filed last week worth filing"**. That
 question has been reported since `cron/digest.md` was written and acted on by nothing.
 

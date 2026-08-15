@@ -7,6 +7,9 @@ precedent PRs #102/#107), each gated by a parity/golden harness.
 > **Who edits this file.** Status-checkbox flips in §3 and per-wave `## PR N — Wave X` spec
 > sections (§5, *Wave specs*) are appended by the go-migration campaign
 > (`cowork/house-rules.md`, **The migration lane**); every other edit to this file is a human's.
+> A checkbox flip writes `✔` — exactly that glyph: `scripts/migration_progress.py` parses the
+> box as `[☐✔xX]`, so a `☑`, `✅` or `[x]` makes the row vanish from the progress bar with
+> nothing failing anywhere.
 
 ---
 

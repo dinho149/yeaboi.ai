@@ -20,11 +20,15 @@ or for a dependabot bump.
    non-null **and** the labels include `workstream:go-migration`.
    [`events/pr-merged-close-loop.md`](pr-merged-close-loop.md) fires on the same event and
    owns Linear and Notion; this routine owns exactly one Slack message and nothing else.
-2. `uv run python scripts/migration_progress.py --wave-merged --pr <n>`.
-3. Hand the `lines` array to `cowork-scribe` and post it as **one channel-level message** to
+2. `git fetch origin main && git reset --hard FETCH_HEAD` — the bar is rendered from this
+   tree's program doc, and the checkbox this merge flipped is on `origin/main`, not
+   necessarily in the checkout this session was handed. A stale tree announces "Wave 7
+   merged" above a bar that does not include wave 7.
+3. `uv run python scripts/migration_progress.py --wave-merged --pr <n>`.
+4. Hand the `lines` array to `cowork-scribe` and post it as **one channel-level message** to
    `#yeaboi-claude` (`C0BMADQQN1Z`), the lines joined by newlines, verbatim — the contract is
    [`cron/day-ahead.md`](../cron/day-ahead.md)'s: rendered, not composed.
-4. **Check in.** Follow [check-in.md](../../check-in.md). It is the last thing you do.
+5. **Check in.** Follow [check-in.md](../../check-in.md). It is the last thing you do.
 
 The message it posts (the numbers are the renderer's, never yours):
 

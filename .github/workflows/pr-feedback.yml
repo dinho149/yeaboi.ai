@@ -86,8 +86,14 @@ on:
   # Claude Review posts minutes after CI goes green, long after `pull_request`
   # fired. Without this trigger the status would sit `pending` until the next
   # push — i.e. the gate would be waiting for a comment that had already arrived.
+  #
+  # `CI` is here for the migration lane's parity hold: it reads check runs, and
+  # Claude Review fires only on CI concluding *success* — so a red or re-run
+  # parity job would otherwise leave the last-posted status stale with nothing
+  # left to recompute it. CI completing, whatever its conclusion, is the event
+  # that changes that answer.
   workflow_run:
-    workflows: [Claude Review]
+    workflows: [Claude Review, CI]
     types: [completed]
 
 permissions:

@@ -13,11 +13,15 @@ correction typed into a Slack message.
 
 ## Run
 
-1. `uv run python scripts/migration_progress.py --weekly`.
-2. Hand the `lines` array to `cowork-scribe` and post it as **one channel-level message** to
+1. `git fetch origin main && git reset --hard FETCH_HEAD` — the same first step as
+   `cron/cd-deploy.md`, for the same reason: the bar is rendered from this tree's program doc
+   and core version, and a checkout that predates the latest merge posts last week's numbers
+   with total confidence.
+2. `uv run python scripts/migration_progress.py --weekly`.
+3. Hand the `lines` array to `cowork-scribe` and post it as **one channel-level message** to
    `#yeaboi-claude` (`C0BMADQQN1Z`), the lines joined by newlines, nothing added, nothing
    re-worded, nothing re-counted.
-3. **Check in.** Follow [check-in.md](../../check-in.md). It is the last thing you do.
+4. **Check in.** Follow [check-in.md](../../check-in.md). It is the last thing you do.
 
 The message it posts (the numbers are the renderer's, never yours):
 

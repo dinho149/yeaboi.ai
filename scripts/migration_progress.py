@@ -85,7 +85,15 @@ class Wave:
 
 def parse_program(text: str) -> list[Wave]:
     """The §3 table rows, in order. The checkbox column is the program's own
-    record of what merged — each wave PR flips its box in the same PR."""
+    record of what merged — each wave PR flips its box in the same PR.
+
+    Bounded to the §3 section rather than the whole document: the per-wave spec
+    sections the campaign appends follow the §6/§7 template and may quote a
+    table row — a quoted `| ☐ | 2 | W8 | …` elsewhere must not inflate the bar.
+    """
+    section = re.search(r"^## 3\..*?(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    if section:
+        text = section.group(0)
     waves = []
     for line in text.splitlines():
         match = _ROW.match(line.strip())
@@ -181,10 +189,17 @@ def _labeled_prs(state: str) -> list[dict] | None:
     return [item for item in data if isinstance(item, dict) and "pull_request" in item]
 
 
-def _wave6_merged() -> bool:
-    """Whether the pilot's last PR merged. Read live, never remembered."""
+def _wave6_merged() -> bool | None:
+    """Whether the pilot's last PR merged — or None when the read failed.
+
+    None, never False, on a failed read: a guess rendered as a hard number in
+    the title is exactly the "degrades to blindness, never guesses" failure the
+    module docstring forbids. The caller folds None into the blind marker.
+    """
     data = _pr(WAVE6_PR)
-    return bool(data and data.get("merged"))
+    if data is None:
+        return None
+    return bool(data.get("merged"))
 
 
 def _pr(number: int) -> dict | None:
@@ -245,9 +260,15 @@ def build_payload(now: datetime | None = None) -> dict:
     return {
         "today": f"{moment:%a} {moment.day} {moment:%b}",
         "waves_total": PILOT_WAVES + len(waves),
+        # An unknown wave 6 counts as unshipped, and `blind` below is what keeps
+        # that from reading as a fact — the bar may undercount while blind, and
+        # the ⚠ line says so; it never overcounts.
         "waves_shipped": PILOT_WAVES_MERGED + (1 if wave6 else 0) + program_done,
         "program_total": len(waves),
         "program_done": program_done,
+        # Any GitHub read failing makes the whole post blind: the counts came
+        # from a mix of repo facts and a queue that could not be asked.
+        "blind": in_flight is None or wave6 is None,
         "in_flight": in_flight,  # None = the read failed, [] = genuinely nothing open
         "next_wave": {"wave": next_wave.wave, "contents": next_wave.contents} if next_wave else None,
         "core_version": core_version(),
@@ -258,7 +279,7 @@ def build_payload(now: datetime | None = None) -> dict:
 
 def _bar_line(payload: dict) -> str:
     shipped, total = payload["waves_shipped"], payload["waves_total"]
-    done = payload["program_done"] if payload["in_flight"] is not None else "?"
+    done = "?" if payload["blind"] else payload["program_done"]
     return (
         f"{meter(shipped, total)} {shipped}/{total} waves · {done}/{payload['program_total']} program wave-PRs merged"
     )
@@ -280,9 +301,9 @@ def weekly_lines(payload: dict) -> list[str]:
         "",
     ]
     in_flight = payload["in_flight"]
-    if in_flight is None:
-        lines += ["⚠️ could not read the PR queue — the in-flight and merged counts above are blind", ""]
-    elif in_flight:
+    if payload["blind"]:
+        lines += ["⚠️ could not fully read GitHub — the counts above may undercount, never trust them this week", ""]
+    if in_flight:
         lines += [f"🚧 **In flight** ({len(in_flight)})", ""]
         for position, item in enumerate(in_flight, start=1):
             clause = f"open since {item['opened']}" if item["opened"] else "open"

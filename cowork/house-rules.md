@@ -159,10 +159,12 @@ table in §3 — is the standing approval, given once, by the human who committe
 ✅, no proposal issue, no `claude-implement`: the decisions a wave asks were all made when the
 program merged, and re-asking them thirteen times is the campaign lane's
 three-approvals-a-week problem at triple the length. What replaces the per-wave approval is
-the gate: a wave PR labelled `workstream:go-migration` cannot go `pr-feedback`-green until the
-`Go core` and `Python ↔ Go parity` checks ran unskipped and passed on its head commit
-(`scripts/pr_feedback.py` enforces it), on top of everything **The gate** below already
-requires.
+the gate: a wave PR — the campaign's `cowork/migration-w<N>` branch, labelled
+`workstream:go-migration`; both halves, because the label alone also lands on this
+workstream's ordinary maintenance PRs, whose diffs never schedule the Go jobs — cannot go
+`pr-feedback`-green until the `Go core` and `Python ↔ Go parity` checks ran unskipped and
+passed on its head commit (`scripts/pr_feedback.py` enforces it), on top of everything
+**The gate** below already requires.
 
 **The safety asymmetry**, same shape as fleet's *tighten unattended, loosen by hand*:
 
@@ -234,7 +236,7 @@ mostly express nervousness, and the honest answer to nervousness here is the gat
 
 **That sentence was about merges, and it was read as being about everything.** The propose lane had
 no bound at all: a scout returns up to ten finds, the auto lane consumes at most one, so a single
-sweep could open nine issues, and sixteen workstreams run on overlapping crons. Nothing looked at
+sweep could open nine issues, and seventeen workstreams run on overlapping crons. Nothing looked at
 how many were already open — only whether *this* find restated one. The queue drained on a
 fortnightly clock instead of on anybody deciding anything, and the digest, whose whole job is to put
 a short list in front of a human, had forty-one items behind it. Nine issues filed in one morning is
@@ -254,7 +256,7 @@ reports the depth separately as `queued`. See **The queue** below.
 
 Do not count them by eye. `uv run python scripts/cowork_setup.py --proposal-slots <workstream>`
 returns the number, the same way `--triggers` returns the reconcile plan: a model asked to count
-sixteen queues will eventually miscount one, and nothing downstream would notice.
+seventeen queues will eventually miscount one, and nothing downstream would notice.
 
 Three consequences, all deliberate:
 
@@ -265,7 +267,7 @@ Three consequences, all deliberate:
 - **A full queue is a quiet outcome, not an abort.** It reads exactly like the one-open-PR guard:
   the run did its work, there was nowhere to put it, and it exits saying nothing. `cron/digest.md`
   reports which workstreams are held and which issues are holding them, so the silence is legible
-  in one place rather than sixteen.
+  in one place rather than seventeen.
 - **An unreadable count is zero slots, never two.** `--proposal-slots` answers `slots: null` when
   the query failed rather than guessing, and a failed query is never spoken as a clean answer —
   the same rule `cron/digest.md` applies to a PR it could not read.

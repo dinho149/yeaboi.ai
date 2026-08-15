@@ -36,8 +36,8 @@ at these sites is a proposal for platform.
 - **The gate is the review.** A wave is reviewable because the byte-diff against Python is
   empty, not because someone read 8K lines of Go. A wave whose gate is skipped, weakened, or
   green-by-vacancy is the one finding that outranks all progress; `scripts/pr_feedback.py`
-  holds `workstream:go-migration` PRs red until `Go core` and `Python ↔ Go parity` ran and
-  passed on the head commit.
+  holds wave PRs (`cowork/migration-w*` + the workstream label) red until `Go core` and
+  `Python ↔ Go parity` ran and passed on the head commit.
 - **The program doc is the queue.** Progress is recomputed from its §3 checkbox table, merged
   PRs by label, and parity counts — never from memory between runs
   (`scripts/migration_progress.py` is the only renderer).
