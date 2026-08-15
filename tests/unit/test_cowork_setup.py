@@ -131,9 +131,9 @@ class TestFilesAgreeWithTheTable:
 
     @pytest.mark.parametrize("routine", ROUTINES, ids=_routine_ids)
     def test_a_declared_model_line_matches_the_table(self, routine):
-        """The six non-sweeps carry their own ``**Model**`` line; it must agree.
+        """The non-sweeps carry their own ``**Model**`` line; it must agree.
 
-        The fourteen sweeps deliberately have none — they take their tier from
+        The sweeps deliberately have none — they take their tier from
         ``sweep-procedure.md`` — so this asserts agreement where a line exists
         rather than requiring one.
         """
@@ -156,11 +156,14 @@ class TestFilesAgreeWithTheTable:
                 "cron/day-ahead.md",
                 "cron/digest.md",
                 "cron/cd-deploy.md",
+                "cron/go-migration-campaign.md",
+                "cron/go-migration-progress.md",
                 "cron/integrations-campaign.md",
                 "cron/release-promote-ask.md",
                 "cron/retune.md",
                 "cron/shipped-standup.md",
                 "cron/slack-relay.md",
+                "events/go-migration-wave-merged.md",
                 "events/pr-merged-close-loop.md",
                 "events/pr-opened-dod-audit.md",
                 "events/release-published-announce.md",
@@ -898,6 +901,24 @@ class TestLabels:
         # The file the rule was written for is outside the grant, on every angle.
         assert "mode_select/__init__.py" not in block
 
+    def test_the_migration_extends_grant_is_declared_on_both_sides(self):
+        # The migration lane carries the same grant shape: a wave PR moves the
+        # version lockstep and the dual-maintenance record in platform's files,
+        # by site and by operation. Same pairing rule as the campaign's above —
+        # a grant written down only where it is used is one the owner can delete
+        # half of without noticing.
+        charter = (setup.WORKSTREAMS_DIR / "go-migration.md").read_text(encoding="utf-8")
+        _, sep, tail = charter.partition("\n**Extends**")
+        assert sep, "go-migration.md no longer declares an Extends paragraph"
+        block = tail.split("\n\n", 1)[0]
+        owners = set(re.findall(r"— \*\*([a-z-]+)\*\*", block))
+        assert owners == {"platform"}, f"the migration lockstep sites belong to platform, not {owners}"
+        body = (setup.WORKSTREAMS_DIR / "platform.md").read_text(encoding="utf-8")
+        assert "**Extends**" in body, "platform.md never acknowledges the migration's Extends grant"
+        assert "go-migration" in body, "platform.md acknowledges Extends without naming who holds it"
+        # The repo's worst merge surface stays outside this grant too.
+        assert "mode_select/__init__.py" not in block
+
     def test_the_digest_declares_a_section_for_every_scout_proposal_type(self):
         # The digest lists proposals in one section per type, so a type missing
         # from its section order is a kind of work that gets filed and then
@@ -1005,7 +1026,7 @@ class TestLabels:
                 f"digest.md never heads the {section} section with {rows[section]!r}"
             )
 
-    def test_there_are_sixteen_workstreams(self):
+    def test_there_are_seventeen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
         # health check all spell it out in prose, and none of them is derived.
         # Thirteen maintain a surface, `security` scouts twice a week, and
@@ -1014,8 +1035,11 @@ class TestLabels:
         # is `fleet`, whose subject is `cowork/` rather than any of the code: it
         # is the only charter that owns the instructions the others run under,
         # and the only one bounded by a list of files no charter may reach
-        # (`setup.CONSTITUTION`, asserted in `test_cowork_retune.py`).
-        assert len(WORKSTREAMS) == 16
+        # (`setup.CONSTITUTION`, asserted in `test_cowork_retune.py`). The
+        # seventeenth is `go-migration`, the second builder — its approval is
+        # the merged program of record rather than a weekly ✅
+        # (`house-rules.md`, **The migration lane**).
+        assert len(WORKSTREAMS) == 17
 
     def test_every_workstream_owns_at_least_one_routine(self):
         owned = {r.workstream for r in ROUTINES if r.workstream}
@@ -3240,7 +3264,9 @@ class TestSlackTemplates:
             "cron/release-promote-ask.md",
             "cron/cd-deploy.md",
             "cron/security-sweep.md",
+            "cron/go-migration-progress.md",
             "events/release-published-announce.md",
+            "events/go-migration-wave-merged.md",
         }
         have = {key.split("#")[0] for key in self._blocks("slack")}
         assert posters <= have, f"these routines post to Slack with no template: {sorted(posters - have)}"
@@ -3280,8 +3306,12 @@ class TestSlackTemplates:
                 # ✅/❌ are verbs, not anchors, and a footer that instructs
                 # carries both on one line by design. They have their own rule
                 # in `test_the_approval_verbs_never_head_anything`.
+                # ▰/▱ are the migration meter's track — a bar, not an
+                # anchor, the same ruling as the all-─ divider above.
                 symbols = [
-                    char for char in line if unicodedata.category(char) == "So" and char not in {"\u2705", "\u274c"}
+                    char
+                    for char in line
+                    if unicodedata.category(char) == "So" and char not in {"\u2705", "\u274c", "\u25b0", "\u25b1"}
                 ]
                 if not symbols:
                     continue

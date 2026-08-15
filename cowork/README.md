@@ -92,6 +92,8 @@ of its lines.
 | A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
 | A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
+| Tuesdays 08:30 UTC | 🐹 **Go Migration** — the weekly bar: waves merged, in flight, blocked | never — a bar that only appears when it grows cannot be trusted |
+| A migration wave merges | 🌊 **Go Migration** — the wave, the new bar, the core version shipped | non-wave merges say nothing here |
 | The 13 maintenance sweeps | **nothing in the channel, ever** | always — a sweep files a GitHub issue and exits |
 | The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
 
@@ -129,7 +131,7 @@ Three things follow from that table, and they are the whole design:
 | [release-signoff.md](release-signoff.md) | The weekly human ritual: test a pre-release, promote it. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
-| `workstreams/*.md` | Sixteen charters — fifteen over the code, plus **fleet** over `cowork/` itself: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one of the fifteen; ownership never overlaps. |
+| `workstreams/*.md` | Seventeen charters — fifteen over the code, **go-migration** over the Go rewrite program, plus **fleet** over `cowork/` itself: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one of the fifteen; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
 
@@ -243,9 +245,12 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` | https://claude.ai/code/routines/trig_01G4TuU1wYY7GXJ1cEXZUNSu |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
 | `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | https://claude.ai/code/routines/trig_01KYYfRyy1kKCYXq8EFn6ac6 |
+| `cron/go-migration-campaign.md` | `40 7 * * 1-5` weekdays | go-migration | `heavy` | |
+| `cron/go-migration-progress.md` | `30 8 * * 2` Tue | go-migration | `fast` | |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
 | `events/release-published-announce.md` | Release published | — | `standard` | https://claude.ai/code/routines/trig_01VXdR2FbPJUsMqVWghA7C5T |
+| `events/go-migration-wave-merged.md` | PR closed (merged wave) | go-migration | `fast` | |
 
 > **Cron trap.** The fortnightly and monthly slots restrict **day-of-month only**. Standard cron
 > *ORs* day-of-month with day-of-week when both are restricted, so `30 7 1-7,15-21 * 2` fires every
@@ -339,14 +344,14 @@ The labels half, by contrast, is genuinely repaired by the REST path: `gh label 
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the thirty-two GitHub labels (`cowork`,
+**What each command covers.** `make cowork-setup` does the thirty-three GitHub labels (`cowork`,
 `cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
 `release:promotion`/`release:promote`
 pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
-campaign lane fires on, `workstream:<name>` for each of the sixteen, and the seven `type:*` labels
+campaign lane fires on, `workstream:<name>` for each of the seventeen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-five routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-eight routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

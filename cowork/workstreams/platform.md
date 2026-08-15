@@ -4,9 +4,7 @@
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
-`scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`, and the Go sidecar seam —
-`go/` (the `yeaboi-core` binary and its `internal/` twins of Python engines), `contracts/v1/`,
-`src/yeaboi/gocore/`, `tests/parity/` (the byte-parity gate between the twins)
+`scripts/pr_feedback.py` and `tests/unit/test_surface_parity.py`
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 
@@ -68,3 +66,11 @@ increases output still proposes to a human. The constitution — `house-rules.md
 **integrations** may append a provider's credential getters to `config.py` from a campaign run
 (`house-rules.md`, **Extends**) — that site and that operation only; everything else in the file is
 yours.
+
+The Go seam — `go/`, `contracts/`, `src/yeaboi/gocore/`, `tests/parity/`,
+`tests/unit/test_migration_freeze.py` — belongs to **go-migration** now. **go-migration** may
+edit the lockstep sites named in its charter's `**Extends**` paragraph — the version line in
+`packaging/yeaboi-core/pyproject.toml`, the root `core` extra pin in `pyproject.toml`, appending
+dual-maintenance bullets in `CLAUDE.md`, the `go-*`/`parity` `Makefile` targets, ci.yml's parity
+scope, and (at W19 only) adding `release-binaries.yml` — that operation at those sites only;
+everything else in those files is yours.

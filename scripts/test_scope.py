@@ -318,11 +318,8 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/changelog.py",
             "src/yeaboi/changelog_data.json",
             "src/yeaboi/mcp/",
-            "src/yeaboi/gocore/",
             "claude-plugin/",
             "packaging/",
-            "go/",
-            "contracts/",
         ),
         tests=(
             "tests/unit/test_cli_*.py",
@@ -331,10 +328,26 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_update_*.py",
             "tests/unit/test_changelog*.py",
             "tests/unit/test_mcp_*.py",
-            "tests/unit/test_gocore_*.py",
         ),
     ),
-    # The sixteenth workstream, and the only one whose subject is the fleet
+    # The seventeenth workstream: the Go rewrite program. The seam moved here
+    # from platform (cowork/workstreams/go-migration.md). `cowork/migration/`
+    # itself is INERT prose — a checkbox flip rides its wave PR's `go/` change,
+    # and the parity job's own triggers (JOBS below) already fire on `go/`.
+    Area(
+        "go-migration",
+        src=(
+            "src/yeaboi/gocore/",
+            "go/",
+            "contracts/",
+            "scripts/migration_progress.py",
+        ),
+        tests=(
+            "tests/unit/test_gocore_*.py",
+            "tests/unit/test_migration_*.py",
+        ),
+    ),
+    # The fleet workstream, the only one whose subject is the fleet
     # rather than the product. `cowork/` itself is deliberately absent: it is
     # `INERT` below, and safe to be so precisely because these tests are in
     # `ALWAYS` and run whatever changed.
@@ -365,6 +378,12 @@ AREAS: tuple[Area, ...] = (
 ALWAYS: tuple[str, ...] = (
     "tests/unit/test_surface_parity.py",
     "tests/unit/test_tips.py",
+    # Guards the migration bar against the file it renders from:
+    # `cowork/migration/program.md` is INERT (prose), so a checkbox flip or a
+    # table reword is exactly the change that would otherwise run no test at
+    # all — and a §3 table that stops parsing renders a bar stuck at the pilot
+    # baseline with nothing failing anywhere.
+    "tests/unit/test_migration_progress.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
     # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and

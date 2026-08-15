@@ -280,7 +280,7 @@ def _no_real_gh_calls(monkeypatch):
     import sys as _sys
 
     reachable = []
-    for name in ("_gh_transport", "cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff"):
+    for name in ("_gh_transport", "cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff", "migration_progress"):
         module = _sys.modules.get(name)
         if module is None:
             continue

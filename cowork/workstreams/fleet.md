@@ -2,7 +2,8 @@
 
 **Owns** — `cowork/` **except the constitution: `cowork/house-rules.md`,
 `cowork/definition-of-done.md`, `cowork/sweep-procedure.md`, `cowork/models.md` and
-`cowork/crew.md`** — plus `scripts/cowork_*.py`, `scripts/hygiene_lens.py`, `scripts/tui_fuzz.py`,
+`cowork/crew.md`, and except `cowork/migration/` (the go-migration program of record — that
+workstream's)** — plus `scripts/cowork_*.py`, `scripts/hygiene_lens.py`, `scripts/tui_fuzz.py`,
 `.github/hygiene/`, `tests/unit/test_cowork_*.py` **except the guards over the constitution:
 `tests/unit/test_cowork_models.py` and `tests/unit/test_cowork_retune.py`** and
 `tests/unit/test_hygiene_lens.py`
@@ -12,7 +13,7 @@
 **Cadence** — Sun 08:00 UTC, weekly ([`cron/retune.md`](../routines/cron/retune.md)). Not a sweep —
 it surveys the fleet's *outcomes* rather than a surface of code.
 
-The sixteenth workstream, and the only one whose subject is the fleet. Every other charter asks
+The workstream whose subject is the fleet itself, and the only one. Every other charter asks
 "is this code right"; this one asks **"was what the fleet filed last week worth filing"**. That
 question has been reported since `cron/digest.md` was written and acted on by nothing.
 
@@ -81,7 +82,8 @@ routine, and touching anything under `scripts/`.
 
 ## Out of scope
 
-The constitution above. `.claude/agents/` — `cowork-scout.md` holds the type vocabulary and the
+The constitution above. `cowork/migration/` — the Go rewrite's program of record
+(**go-migration**). `.claude/agents/` — `cowork-scout.md` holds the type vocabulary and the
 ten-find cap, `cowork-builder.md` decides what an unattended build may touch, and `cowork-scribe.md`
 is the only writer of outbound comms. Anything under `src/yeaboi/`
 (**every other charter**). `.github/workflows/` (**platform**) and `.github/codeql/`
