@@ -904,8 +904,8 @@
    cards apart is the number, which is what you are reading anyway. */
 .pcard {
   position: relative;
-  width: 60px;
-  height: 84px;
+  width: 72px;
+  height: 100px;
   border-radius: var(--r-m);
   border: 1px solid var(--hairline-strong);
   /* Lit from above, so the card reads as a face catching light rather than a
@@ -976,8 +976,39 @@
 }
 
 .cv {
-  font-size: var(--fs-l);
+  font-size: var(--fs-xl);
   font-weight: 600;
+}
+
+/* ── The court ───────────────────────────────────────────────────────── */
+
+/* 13, 21, ? and ☕ are the cards that mean something other than a number, so
+   they are the ones that get a face. */
+.pcardCourt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.court {
+  width: 42px;
+  height: auto;
+  /* Pixel art: never smooth it, and never let a half-pixel blur the outline. */
+  image-rendering: pixelated;
+}
+
+.courtName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pcardSel .courtName {
+  color: var(--accent);
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */

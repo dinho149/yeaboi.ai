@@ -152,20 +152,28 @@ export function Console({
       <div className={styles['cbody']}>
         <div className={styles['cgroup']}>
           <Eyebrow>Round</Eyebrow>
-          <Button tone="primary" attention={allIn} disabled={!canReveal} onClick={onReveal}>
+          {/* One primary per view: once the votes are up, the round's live
+              action is Save & next, and this becomes a spent status. */}
+          <Button
+            tone={revealed || dueling ? 'default' : 'primary'}
+            attention={allIn && !revealed}
+            disabled={!canReveal}
+            onClick={onReveal}
+          >
             {revealed || dueling ? 'Revealed' : 'Reveal votes'}
           </Button>
-          <Button disabled={!hasTicket || dueling} onClick={onRevote}>
+          <Button shape="bare" disabled={!hasTicket || dueling} onClick={onRevote}>
             Re-vote
           </Button>
         </div>
 
         <div className={styles['cgroup']}>
           <Eyebrow>Insight</Eyebrow>
-          <Button disabled={!revealed || ai.pending} onClick={onAskAi}>
+          <Button shape="bare" disabled={!revealed || ai.pending} onClick={onAskAi}>
             <Icon name="sparkles" /> AI perspective
           </Button>
           <Button
+            shape="bare"
             disabled={!revealed || duel?.status === 'live' || transcribing}
             aria-expanded={duelOpen}
             title="Low vs high voter argue their estimates"
