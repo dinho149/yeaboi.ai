@@ -7,6 +7,7 @@ export { Chip, type ChipProps } from './Chip';
 export { DataTable, type Column, type DataTableProps } from './DataTable';
 export { Duck, useDuckPulse, type DuckProps, type DuckPulse, type DuckRest, type DuckState } from './Duck';
 export { Eyebrow, type EyebrowProps } from './Eyebrow';
+export { Icon, type IconName, type IconProps } from './Icon';
 export { countedSegments, Legend, type LegendItem } from './Legend';
 export { Lozenge, LOZENGE_CATEGORIES, type LozengeCategory, type LozengeProps } from './Lozenge';
 export { NoticeBlock, type NoticeBlockProps } from './NoticeBlock';

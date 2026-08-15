@@ -368,3 +368,12 @@
 .lozengeProgress { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
 .lozengeDone { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
 .lozengeBlocked { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+
+/* ── Icon ────────────────────────────────────────────────────────
+   Sits on the text baseline rather than the line box, so a glyph beside a
+   label lines up with it instead of riding high. */
+.icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
+}
