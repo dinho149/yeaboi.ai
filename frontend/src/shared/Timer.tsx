@@ -80,19 +80,8 @@ export function TimerControls({
 
   return (
     <div className={cx(styles['panelForm'], className)}>
-      {/* The state first, and its action with it — a bare Stop under the
-          starting controls read as a fourth way to start something. */}
-      {running ? (
-        <div className={styles['field']}>
-          <span className={styles['fieldLabel']}>Running</span>
-          <Button tone="danger" className={styles['panelAction']} onClick={onStop}>
-            Stop the timer
-          </Button>
-        </div>
-      ) : null}
-
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{running ? 'Start another' : 'Length'}</span>
+        <span className={styles['fieldLabel']}>Length</span>
         <div className={styles['presetRow']} role="group" aria-label="Preset lengths">
           {presets.map((seconds) => (
             <button key={seconds} type="button" className={styles['preset']} onClick={() => onStart(seconds)}>
@@ -119,9 +108,17 @@ export function TimerControls({
               if (event.key === 'Enter') startCustom();
             }}
           />
-          <Button tone="primary" className={styles['inputAction']} onClick={startCustom}>
-            Start
-          </Button>
+          {/* One action, and it is whichever one there is to take: a Stop
+              elsewhere on the panel is a second thing to find. */}
+          {running ? (
+            <Button tone="danger" className={styles['inputAction']} onClick={onStop}>
+              Stop
+            </Button>
+          ) : (
+            <Button tone="primary" className={styles['inputAction']} onClick={startCustom}>
+              Start
+            </Button>
+          )}
         </div>
       </div>
 
