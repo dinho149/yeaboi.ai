@@ -73,10 +73,11 @@
      does not make it a containing block for fixed descendants — so this can
      paint over the frame's bottom line and interrupt it. */
   position: fixed;
-  /* Flush into the frame's bottom-right corner, over its border rather than
-     inside it: the raised line is the box's edge, so a second one running
-     underneath is the same border drawn twice. */
-  right: 0;
+  /* A lifted section of the bottom border, held clear of the frame's own
+     bottom-right corner so that curve stays the frame's. Over the border
+     rather than inside it: the raised line is the box's edge, and a second one
+     running underneath is the same border drawn twice. */
+  right: calc(var(--s6) * 2);
   bottom: var(--app-inset-bottom, 0px);
   z-index: var(--z-console);
   display: flex;
@@ -87,11 +88,10 @@
      ground: the screen's border reads as lifting up and over the dock rather
      than running behind a second box. */
   /* The frame's own weight and colour, open at the bottom — the dock is where
-     the border lifts, not a box parked under it. The right side and the
-     bottom-right curve carry on from the frame they replace. */
+     the border lifts, not a box parked under it. */
   border: 2px solid var(--screen-frame);
   border-bottom: none;
-  border-radius: var(--r-m) 0 var(--r-l) 0;
+  border-radius: var(--r-m) var(--r-m) 0 0;
   background: var(--bg);
 }
 
@@ -104,9 +104,10 @@
   content: '';
   position: absolute;
   bottom: 0;
-  /* Overlaps the dock's own left border by 2px, so the ground below the arc
-     ends it rather than leaving a stub hanging past the curve. */
-  right: calc(100% - 2px);
+  /* Offsets are against the dock's *padding* box, so the 2px border is added
+     back by hand. Overlapping it is deliberate: the ground below the arc ends
+     the dock's left edge rather than leaving a stub hanging past the curve. */
+  left: calc(-2px - var(--r-m));
   width: calc(var(--r-m) + 2px);
   height: var(--r-m);
   /* Centred on the fillet's centre — one radius in from each line, so the ring
@@ -122,17 +123,16 @@
   pointer-events: none;
 }
 
-/* The mirror of it at the other end of the lift, where the dock's top border
-   turns up into the frame's right edge. Same ring, a quarter-turn round. */
+/* The mirror of it at the other end of the lift. Same ring, flipped. */
 .dockApp::after {
   content: '';
   position: absolute;
-  right: 0;
-  bottom: calc(100% - 2px);
-  width: var(--r-m);
-  height: calc(var(--r-m) + 2px);
+  bottom: 0;
+  left: 100%;
+  width: calc(var(--r-m) + 2px);
+  height: var(--r-m);
   background: radial-gradient(
-    circle at 0 0,
+    circle at 100% 0,
     transparent 0 calc(var(--r-m) - 2px),
     var(--screen-frame) calc(var(--r-m) - 2px) var(--r-m),
     var(--bg) var(--r-m)
@@ -152,7 +152,6 @@
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: 2px solid var(--screen-frame);
     border-radius: var(--r-m);
-    border-top-right-radius: var(--r-m);
   }
 }
 
