@@ -521,7 +521,6 @@
 /* ── Results ─────────────────────────────────────────────────────────── */
 
 .results {
-  border-top: 1px solid var(--hairline);
   padding: var(--s4) var(--s1) 0;
   display: flex;
   flex-direction: column;
