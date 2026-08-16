@@ -9,7 +9,7 @@ CODE ?= code
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -349,6 +349,17 @@ cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=n
 
 cowork-queue: ## Show what each workstream's sweep should build next (WORKSTREAM=name for one)
 	@$(UV) run python scripts/cowork_setup.py --queued $(WORKSTREAM)
+
+cowork-lapsed: ## Show the lapsed questions and which are due to close (WORKSTREAM=name for one)
+	@$(UV) run python scripts/cowork_setup.py --lapsed $(WORKSTREAM)
+
+# FILE, not PATH: `make cowork-owner PATH=…` would override the shell's PATH for
+# the recipe and nothing would resolve.
+cowork-owner: ## Which workstream's charter claims a path (FILE=src/yeaboi/retro/engine.py)
+	@$(UV) run python scripts/cowork_setup.py --owner $(FILE)
+
+cowork-glyphs: ## Show each workstream's Slack area glyph
+	@$(UV) run python scripts/cowork_setup.py --glyphs
 
 .PHONY: cowork-lens
 cowork-lens: ## Run one hygiene lens over one workstream (LENS=dead-code WS=tui-ux, JSON=1)

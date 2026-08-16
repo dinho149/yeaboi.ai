@@ -89,9 +89,27 @@ AUDIT_VERB = {"approve": "approved", "promote": "promoted", "campaign": "approve
 # the doc is the source, because it is what a model actually reads.
 REJECTION_REASONS = (
     "slack-veto",  # a human reacted ❌ in the channel
-    "aged-out",  # digest.md step 4 closed an unanswered proposal after 14 days
+    "aged-out",  # digest.md step 4 closed a proposal that had already lapsed for 30 days
     "no-longer-reproduces",  # the evidence stopped being true before anyone built it
 )
+
+# Why a question stopped being asked without anybody answering it. The third
+# family, and the one the first two were quietly absorbing.
+#
+# `cron/digest.md` step 4 used to *close* a proposal at fourteen days. But both
+# dedupe passes — `sweep-procedure.md` step 4 and `cowork-scout.md` step 5 —
+# read a closed issue as `A closing is a rejection and a rejection is durable.
+# Do not re-file rejected ideas.` They read **state**, not comments; the
+# `aged-out` marker that was supposed to tell the two apart is written into a
+# comment, and `scripts/cowork_metrics.py` is the only reader of those and runs
+# on a human's terminal. So a find nobody had time to look at was suppressed
+# permanently, by a timer, and the one record of the difference sat where no
+# routine could see it.
+#
+# A lapse removes `cowork:proposal` and leaves the issue **open**. The slot
+# reopens with no arithmetic changing — `open_proposals` filters by label — and
+# because nothing closed, no dedupe pass reads a rejection nobody made.
+LAPSE_REASONS = ("unanswered",)  # digest.md step 4 — fourteen days with no human verb
 
 # Why a queued item went back to being a question. These mirror the auto-lane
 # conditions in `cowork/house-rules.md` rather than inventing a second taxonomy:

@@ -262,7 +262,11 @@ The single decision point. It is the only routine that posts proposals to Slack.
      📊 **Calibration** from step 6 under a divider of its own.
    - last, under a final divider, the reminder that approval is ✅ on an item's thread reply
      (relayed within the hour — or `/cowork run slack-relay` for right now) or adding
-     `claude-implement` on GitHub, and rejection is ❌ or closing the issue. Its own divider because
+     `claude-implement` on GitHub, and rejection is ❌ or closing the issue — **and the third
+     outcome, which is what happens if neither verb arrives: after 14 days the question lapses,
+     the issue stays open, and the find returns only if a sweep still sees it.** Silence is an
+     outcome a reader is choosing, and a list of verbs that omits the default one lets them choose
+     it without knowing. Its own divider because
      it is instructions rather than content, and it should not read as one more section of backlog.
      The digest still names the verbs, because a reader who has forgotten them has nowhere else to
      look.
@@ -326,41 +330,96 @@ The single decision point. It is the only routine that posts proposals to Slack.
    was lane-blind, so an unanswered proposal about a bug *suppressed* the auto-lane find that would
    have fixed it, and the digest asked about forty-two of them.
 
-4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
-   "closed unapproved after 14 days — re-file if still relevant", ending with the marker
-   `<!-- rejected: reason=aged-out -->` on its own line. Never touch an issue that carries
-   `claude-implement`, and **never touch one that carries `cowork:queued`.**
+4. **Lapse, then age out** — two steps, because a clock may release a *slot* and may never make a
+   *decision*.
 
-   The marker is what separates the two ways a proposal dies. A human closing one is a *decision*;
-   this clock running out is an *absence* of one, and counting them together would report a
-   workstream nobody had time to read as a workstream pointed at the wrong thing. Step 6's
-   calibration rate is the number that would be wrong, and `scripts/cowork_metrics.py` splits them
-   on this marker.
-
-   A queued item is work waiting on the fleet, not a question waiting on a human, so a fourteen-day
-   clock is measuring the wrong thing on it — and closing it would be worse than pointless. Both
-   dedupe passes read a closing as "a human said no", so the find would be suppressed permanently
-   *and* the write-up would be gone. Nothing must produce that signal on the fleet's behalf.
-
-   **And age a bounced proposal from when it came back, not from when it was filed.** A proposal
-   that was queued and then bounced (`sweep-procedure.md` step 5) keeps its original `createdAt`,
-   so an eight-day-old issue returning to the queue would have six days to be answered. Take the
-   age from the most recent `cowork:proposal` labelling event when there is one, the same way
-   ⏳ **Approved, no PR yet** takes its age from the label rather than the filing:
+   **At 14 days, lapse it — and do not work out which those are.** `--proposal-slots` already
+   answers it, off the right clock, for all seventeen workstreams at once:
 
    ```bash
-   gh api repos/{owner}/{repo}/issues/<n>/timeline \
-     --jq '[.[] | select(.event == "labeled" and .label.name == "cowork:proposal")] | last | .created_at'
+   uv run python scripts/cowork_setup.py --proposal-slots
    ```
+
+   Every row's `blocking` list carries `number`, `age_days` and `lapses_on` per open proposal.
+   **Lapse the entries whose `age_days` is at or past 14, and nothing else.** A row whose `slots`
+   is `null` could not be read: lapse nothing for that workstream and say so in the run log, the
+   same rule the thirty-day half follows below.
+
+   For each one:
+
+   ```bash
+   gh issue edit <n> --remove-label cowork:proposal
+   gh issue comment <n> --body "lapsed after 14 days unanswered — still open, and the find returns if the next sweep still sees it"
+   ```
+
+   ending that comment with `<!-- lapsed: reason=unanswered -->` on its own line. **Do not close
+   it.** The issue leaves step 1's query so it stops filling the digest; `open_proposals` filters
+   by label so the slot reopens with no arithmetic anywhere changing; and because nothing closed,
+   no dedupe pass reads a rejection nobody made.
+
+   **That last clause is the whole reason this step is shaped this way.** Closing was never the
+   neutral act it looked like. Both dedupe passes — `sweep-procedure.md` step 4 and
+   `cowork-scout.md` step 5 — say *a closing is a rejection and a rejection is durable; do not
+   re-file rejected ideas*, and they read an issue's **state**, not its comments. The
+   `<!-- rejected: reason=aged-out -->` marker that was supposed to tell the two apart lives in a
+   comment, and `scripts/cowork_metrics.py` is its only reader and runs on a human's terminal. So a
+   find nobody had time to look at was destroyed by a timer, permanently and unrecoverably, and the
+   fleet recorded the difference in the one place nothing it runs can see.
+
+   **At 30 days lapsed, close it** — same comment shape, ending
+   `<!-- rejected: reason=aged-out -->`, the marker unchanged and now honestly earned. By then the
+   owning workstream's scout has surveyed that surface at least once more and did not bring the
+   find back, which is the fleet saying it stopped mattering. That is a decision made on evidence
+   rather than on silence, and it is the only thing that may spend the rejection marker.
+
+   **A lapsed issue is not in step 1's collection, so ask for it by name.** Step 1 collects by
+   `cowork:proposal`, and a lapse takes exactly that label off — so nothing above enumerates these
+   and this half could never fire on anything:
+
+   ```bash
+   uv run python scripts/cowork_setup.py --lapsed
+   ```
+
+   Each row is one workstream with `lapsed`, `due`, and an `items` list carrying `number`,
+   `lapsed_at` and `days_lapsed`. **Close the `items` whose `days_lapsed` is at or past
+   `close_days`, and nothing else** — the comparison is arithmetic there rather than a date read
+   off a comment, for the same reason `slots` is not counted by eye. `lapsed: null` is an
+   unreadable query: **close nothing that run and say so in the run log.** The command already
+   withholds anything carrying `cowork:queued`, `claude-implement` or a `codeql:` prefix, so the
+   never-touch rules above are enforced by the query rather than by remembering them.
+
+   Never lapse and never close an issue carrying `claude-implement`, and **never touch one carrying
+   `cowork:queued`.** A queued item is work waiting on the fleet, not a question waiting on a human,
+   so a fourteen-day clock is measuring the wrong thing on it.
+
+   **Never lapse a `codeql:` issue either.** `codeql-triage.yml` dedupes by searching for the rule
+   id among issues it can see; a lapsed one is a security question that silently stops being asked
+   and then gets re-opened next week under a new number. Those close on the human's verb or not at
+   all.
+
+   **A bounced proposal ages from when it came back, not from when it was filed — and
+   `--proposal-slots` already does that for you.** A proposal that was queued and then bounced
+   (`sweep-procedure.md` step 5) keeps its original `createdAt`, so an eight-day-old issue
+   returning to the queue would have six days to be answered. `age_days` and `lapses_on` are both
+   taken from the most recent `cowork:proposal` labelling event when there is one, falling back to
+   the filing date when there is not — which is the right answer for every proposal that never
+   bounced, i.e. nearly all of them.
+
+   **Do not go and read the label event yourself.** The obvious command for it is
+   `gh api repos/{owner}/{repo}/issues/<n>/timeline`, and `/timeline` is **not** on the probed
+   allowlist — `tests/fixtures/cowork_github_access_live.json` records
+   `GET /repos/{slug}/issues/{n}/events` and not it. In an unattended routine session that call is
+   refused, and a refusal handled by falling back to `createdAt` lapses a bounced proposal up to
+   eight days early, silently. `proposal_clock()` reads `/events` for exactly this reason.
 
    A human comment does **not** exempt an issue. Commenting "not now" is the natural way to say no,
    and exempting commented issues would make every explicit rejection immortal while silence — the
-   weaker signal — was the only thing that worked. Closing is the rejection; both dedup passes then
-   suppress the find permanently.
+   weaker signal — was the only thing that worked. Closing is the rejection, and it is a human's to
+   make.
 
-   **Never age out a `feature-candidate` issue.** Those were written by a person about their own
-   experience, not generated by a scout, and closing someone's bug report on a timer is not triage.
-   They stay open until a human acts.
+   **Never lapse or age out a `feature-candidate` issue.** Those were written by a person about
+   their own experience, not generated by a scout, and putting someone's bug report on a timer is
+   not triage. They stay open until a human acts.
 
 5. **Report the health lines** — if any workstream has filed nothing in 21 days, say so in the
    digest. A silent scout is usually a broken scout, not a clean codebase.
@@ -381,13 +440,18 @@ The single decision point. It is the only routine that posts proposals to Slack.
      they fail differently: nothing started, versus a run truncated between its push and its
      `gh pr create`.
 
-     **`<k>` is days since the label landed, not since the issue was filed.** Only the timeline
-     carries that:
-     `gh api repos/{owner}/{repo}/issues/<n>/timeline --jq '[.[] | select(.event == "labeled" and
+     **`<k>` is days since the label landed, not since the issue was filed.** Only the label
+     events carry that:
+     `gh api repos/{owner}/{repo}/issues/<n>/events --jq '[.[] | select(.event == "labeled" and
      .label.name == "claude-implement")] | last | .created_at'`. `createdAt` from `gh issue list` is
      the filing date, which for a proposal approved after a fortnight in the queue overstates the
      delay by that fortnight — and the "more than a day is a broken lane" reading below depends on
      the number meaning what it says.
+
+     **`/events`, not `/timeline`.** Both carry `labeled`, and only the first is on the probed
+     allowlist (`tests/fixtures/cowork_github_access_live.json`). `/timeline` is refused in a cloud
+     routine session, and a refusal here degrades to the filing date — the exact overstatement this
+     paragraph exists to prevent, arriving silently.
 
      This is the only section here about an issue rather than a workstream, and it exists because
      that window had no owner. The approval is the moment a proposal stops being a question, and
@@ -408,9 +472,21 @@ The single decision point. It is the only routine that posts proposals to Slack.
    - **Held** — a workstream at its proposal cap. `uv run python scripts/cowork_setup.py
      --proposal-slots` with no argument answers for all seventeen at once; list every row with
      `slots` of 0. Line one is `**<workstream>**` and the count, `— <n> open proposals, cap 2`;
-     line two is `— ` and the oldest blocking issues by number and age, from the row's `blocking`
-     list, e.g. `— holding on #146 (7d), #152 (6d)`. Those are the issues to answer, and answering
-     one is what reopens the slot.
+     line two is `— ` and the oldest blocking issues, one per entry in the row's `blocking` list,
+     each rendered `#<number> (<age_days>d, lapses <lapses_on>)` — e.g. `— holding on #146 (7d,
+     lapses 23 Aug), #152 (6d, lapses 24 Aug)`. **All three fields are read off the row; none of
+     them is computed here.** `lapses_on` exists because this line used to ask for a lapse date the
+     payload did not carry, which left a model doing calendar arithmetic on fourteen days by eye —
+     and getting it wrong on exactly the issues that had bounced, since those age from when the
+     question came back rather than from when it was filed. Those are the issues to answer, and
+     answering one is what reopens the slot.
+
+     **The date is the part that carries information a re-read does not.** This section is posted
+     every morning, and a bare age on the same five issues is the same message with one number
+     moved — a reader learns nothing from the second one. The date says when step 4 will take the
+     question away, which is the fact a person needs to decide whether today is the day. It is a
+     lapse and not a death (step 4): the issue stays open and the find comes back if the surface
+     still has it, so the line must not read as a deadline before deletion.
 
      **A held workstream is not a silent one and must not be listed as both.** It is scouting
      normally and finding things; it simply has nowhere to put them, and its finds are dropped

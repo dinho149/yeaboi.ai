@@ -40,8 +40,14 @@ the only thing standing between this routine and an agent that can lower its own
      reproduction; `user-facing-wording` says it read copy as behaviour; `outside-owns` says it
      scouted outside its charter.
    - **`rejected`** — a find that was real and unwanted. `slack-veto` is a human's ❌;
-     `aged-out` is fourteen days with nobody answering, which is a fact about the *queue* rather
-     than about the find.
+     `aged-out` is a proposal that lapsed unanswered and then went thirty days without any sweep
+     bringing it back, which is a fact about the *find* having stopped mattering.
+
+     **A lapse is not in this split, and must not be read into it.** `cron/digest.md` step 4 strips
+     `cowork:proposal` at fourteen days and leaves the issue open, so a lapsed find is neither a
+     misclassification nor a rejection — it is a question nobody answered, which is a fact about
+     the *human's* attention and not about the charter. Calibrating on it would re-aim a workstream
+     for being ignored.
 
    Two more, read directly:
 

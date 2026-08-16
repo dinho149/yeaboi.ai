@@ -49,9 +49,16 @@ Open one only for work that is **approved and starting** — an auto-lane item, 
 just received `claude-implement`. Never for a proposal. Linear carries work; GitHub issues carry
 candidates, and most candidates are answered no.
 
-**GitHub proposal issue** — labels `cowork:proposal` + `workstream:<name>` + `type:<type>` (the
+**GitHub proposal issue** — labels `cowork:proposal` + `workstream:<owner>` + `type:<type>` (the
 scout's `type` field, which is four words wide; when no scout is in the loop — a campaign angle,
 say — use the type the issue plainly is, and `docs` for docs-vs-code drift).
+
+`<owner>` is the workstream that **owns the paths**, which is usually but not always the sweep that
+handed you the find. A routed find arrives with the owner's name already resolved
+(`sweep-procedure.md` step 6, `--owner`); file it under that name and never under the finder's. The
+`[type][workstream]` title tag below takes the owner too — the tag is what `cron/digest.md` renders
+and what every quoted line downstream reads the ownership off, so a routed find tagged `[analysis]`
+reads as analysis's in Slack no matter what the label says.
 
 Title: `[type][workstream] short simple title` — lowercase brackets, then a specific noun phrase or
 imperative under ~70 characters. `[bug][integrations] Detect truncated Jira list results`, not "The
@@ -186,6 +193,23 @@ section. The digest's section emoji are owned by the table in `cron/digest.md`; 
 emoji are owned by the table in `cowork/README.md`. Everywhere else, and in prose anywhere, no
 emoji: a standup line is one line and a decorated one line is just a decorated one line.
 
+**A message that speaks for one workstream wears that workstream's glyph**, from
+`cowork/README.md`'s **The area glyphs** table — 🔬 for `analysis`, 🐚 for `tui-ux`. You never
+choose one and never invent one for an area the table does not list; `make cowork-check` fails
+when the table and `workstreams/` disagree, so an absent glyph is a repo fault to report rather
+than a gap to fill. The point is the notification preview: a reader should know a post is about
+team analysis before opening it, which is only true if the glyph never moves.
+
+Two of those glyphs are also title-line emoji that predate the table — 🧭 (`cron/agents-standup.md`)
+and 🐹 (`cron/go-migration-progress.md`) — and both speak for exactly the workstream they now name,
+so an area can legitimately post twice in a day under one glyph. The clause after the em-dash is
+what tells them apart, and it is the reason a title line always has one.
+
+**🔐 is not an area glyph.** It belongs to the security *disclosure* lane, which is an ALERT that
+wants a decision and is the one message in the fleet answerable with ✅ at the top level. Security's
+area glyph is 🦺. A routine TELL that looked like a disclosure in a preview is the one confusion
+here that costs something.
+
 **Three glyphs are reserved** — ✅ and ❌ are the approval verbs a human reacts with, and 🤖 is
 the marker `cron/slack-relay.md` reacts onto a message to record that it is handled. A reader who
 meets one of them in a heading has to stop and work out whether it means something, and for two
@@ -205,7 +229,8 @@ a cost with no upside; Slack's reaction picker surfaces recently-seen emoji.
 Some text is **rendered rather than composed**: it arrives finished and you post it unchanged —
 not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, both modes
 of `scripts/migration_progress.py` (`--weekly` and `--wave-merged` — the Go-migration bar and
-every count around it), and, for
+every count around it), `scripts/cowork_evening.py` (`cron/shipped-standup.md`'s per-area posts and
+its 🩺 fleet-health message), and, for
 `cron/release-promote-ask.md`, its **GitHub issue body** (`scripts/release_channel.py --manifest
 --markdown`) and its **thread reply**. Its *channel* message is composed by you from the same
 manifest, because no Slack renderer for it exists — so every number in it is copied from the
@@ -223,6 +248,14 @@ The promotion ask has one more constraint, and it is the strictest in this file.
 is parsed before anyone reads it: `#<issue> — promote X.Y.Z — <link>`, plain text, no emoji, no
 bold. `PROMOTE_RE` in `scripts/cowork_relay.py` matches that exact shape to decide whether a ✅
 cuts a release or approves a proposal. Reformat it and a human's ✅ silently does the wrong thing.
+
+**One run posts more than one channel message in exactly one place**, and it is
+`cron/shipped-standup.md`: one per entry in `cowork_evening.py`'s `posts` array, plus the 🩺 block
+if it is not null. Post them in the order given, add nothing between them, and never a message
+introducing the others — each one is about one area and is read on its own. Two messages under one
+glyph in a single run is a fault, not a fan-out: `posts` holds one entry per workstream by
+construction, so if you are about to post a second, post neither and say so in the run log.
+Everywhere else the rule is unchanged and absolute: one run, one channel message.
 
 The daily digest is the one event with a thread: after its single channel message, post one reply
 per listed item **into that message's thread**, shaped `#<issue-number> — <verbatim title> —

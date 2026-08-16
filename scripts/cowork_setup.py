@@ -69,7 +69,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -532,6 +532,8 @@ _ROUTINE_ROW = re.compile(r"^\|\s*`(cron|events)/([a-z0-9-]+)\.md`\s*\|(.*)$", r
 _TRIGGER_ID = re.compile(r"trig_[A-Za-z0-9]+")
 # `| Linear | team **Yeaboi** | `a324…` |`
 _TARGET_ROW = re.compile(r"^\|\s*(\w+)\s*\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|", re.M)
+# `| 🔬 | `analysis` | Analysis |` — glyph, slug, display name.
+_GLYPH_ROW = re.compile(r"^\|\s*(\S+)\s*\|\s*`([a-z-]+)`\s*\|\s*([^|]+?)\s*\|\s*$", re.M)
 
 _TRIGGER_LINE = re.compile(r"^\*\*Trigger\*\*\s*—\s*(.+)$", re.M)
 _MODEL_LINE = re.compile(r"^\*\*Model\*\*\s*—\s*`(\w+)`", re.M)
@@ -610,6 +612,126 @@ def parse_scout_types(text: str | None = None) -> tuple[str, ...]:
 def parse_workstreams() -> list[str]:
     """The seventeen workstream names, from the charter filenames."""
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
+
+
+def parse_workstream_glyphs(text: str | None = None) -> dict[str, str]:
+    """The area glyph per workstream, from ``README.md``'s table.
+
+    One glyph per area, and the same glyph in every message that speaks for it —
+    the thing that lets a reader tell what a post is about from the notification
+    preview. Parsed rather than hardcoded for the reason ``parse_tiers`` parses
+    ``models.md``: the table is what a scribe reads at run time, so a constant
+    disagreeing with it would describe a channel nobody is seeing.
+
+    Scoped to the ``## The area glyphs`` section. Every other table in the README
+    has a backticked cell somewhere, and read whole this would collect routine
+    names and tier labels as if they were areas.
+    """
+    return {name: glyph for name, (glyph, _) in _area_table(text).items()}
+
+
+def parse_workstream_names(text: str | None = None) -> dict[str, str]:
+    """The display name per workstream, from the same table.
+
+    A slug is not a name: title-casing ``tui-ux`` gives "Tui Ux", which is what a
+    reader would have met in the channel every week. Nothing joins on this — the
+    label stays ``workstream:tui-ux`` — it is the string a title line prints.
+    """
+    return {name: display for name, (_, display) in _area_table(text).items()}
+
+
+def _area_table(text: str | None = None) -> dict[str, tuple[str, str]]:
+    """``{workstream: (glyph, display name)}`` from ``## The area glyphs``.
+
+    Scoped to that section. Every other table in the README has a backticked cell
+    somewhere, and read whole this would collect routine names and tier labels as
+    if they were areas.
+    """
+    text = README.read_text(encoding="utf-8") if text is None else text
+    _, _, tail = text.partition("\n## The area glyphs")
+    section, _, _ = tail.partition("\n## ")
+    return {name: (glyph, display) for glyph, name, display in _GLYPH_ROW.findall(section)}
+
+
+# Everything a glyph may not be. Three sources, and each is a real collision
+# rather than a hypothetical one: the digest's section headings, the agenda's,
+# and the glyphs that carry a *verb* — ✅/❌ approve and reject, 🤖 marks handled,
+# 🟢/🟡/🔴 are check-in statuses. A message wearing one of those in its title line
+# invites somebody to answer it, or reads as a heading rather than a subject.
+#
+# `SECTION_EMOJI` is imported from below rather than re-spelled; the digest's are
+# read out of `cron/digest.md`, so a section added there closes the door here
+# without anybody remembering to.
+RESERVED_GLYPHS = ("✅", "❌", "🤖", "🟢", "🟡", "🔴")
+# `   | Security | 🔒 |` — the digest's own table, indented inside a numbered
+# step, section name first. Anchored on a capitalised name so the surrounding
+# prose tables in that file (all lower-case first cells) are not swept in.
+_DIGEST_SECTION_GLYPH = re.compile(r"^\s*\|\s*[A-Z][^|]*\|\s*(\S+)\s*\|\s*$", re.M)
+
+
+def digest_section_glyphs() -> set[str]:
+    """The digest's section emoji, read from the routine that owns them.
+
+    Read rather than re-spelled so a section added there closes the door here
+    without anybody remembering to. An unreadable file yields the empty set and
+    the caller checks one source fewer — the alternative is `make cowork-check`
+    failing on a table that is nothing to do with glyphs.
+    """
+    path = ROUTINES_DIR / "cron" / "digest.md"
+    if not path.is_file():
+        return set()
+    found = _DIGEST_SECTION_GLYPH.findall(path.read_text(encoding="utf-8"))
+    # The table's own `| Section | Emoji |` header matches the shape. Anything
+    # with an ASCII letter in it is a word, not a glyph.
+    return {glyph for glyph in found if not any(char.isascii() and char.isalpha() for char in glyph)}
+
+
+# The two title-line glyphs that predate the table and already belonged to the
+# workstream they now name: `cron/agents-standup.md` and
+# `cron/go-migration-progress.md`. They are grandfathered by *name*, so a third
+# routine adopting one is a collision rather than a precedent.
+GRANDFATHERED_GLYPHS = {"agents": "🧭", "go-migration": "🐹"}
+
+
+def check_glyphs() -> list[str]:
+    """Every way the area-glyph table can be wrong, as problem strings.
+
+    Nothing at run time would notice any of these. A missing area renders a post
+    with no title glyph; a duplicate makes two areas indistinguishable in a
+    preview, which is the one thing the table exists to provide.
+    """
+    problems: list[str] = []
+    glyphs = parse_workstream_glyphs()
+    workstreams = set(parse_workstreams())
+    missing = sorted(workstreams - set(glyphs))
+    unknown = sorted(set(glyphs) - workstreams)
+    if missing:
+        problems.append(f"workstreams with no area glyph: {', '.join(missing)}")
+    if unknown:
+        problems.append(f"area glyphs for no workstream: {', '.join(unknown)}")
+
+    seen: dict[str, str] = {}
+    for name, glyph in sorted(glyphs.items()):
+        if glyph in seen:
+            problems.append(f"{name} and {seen[glyph]} share the glyph {glyph}")
+        seen[glyph] = name
+        if len(glyph) != 1:
+            # A trailing U+FE0F renders as an emoji in one client and as text in
+            # another, so the title line is two different lines.
+            problems.append(f"{name}'s glyph {glyph!r} is not a single codepoint")
+
+    for name, display in sorted(parse_workstream_names().items()):
+        if not display or display.startswith("`"):
+            problems.append(f"{name} has no display name in the area-glyph table")
+
+    taken = set(RESERVED_GLYPHS) | set(SECTION_EMOJI.values()) | digest_section_glyphs()
+    for name, glyph in sorted(glyphs.items()):
+        if glyph in taken and GRANDFATHERED_GLYPHS.get(name) != glyph:
+            problems.append(f"{name}'s glyph {glyph} already means something else")
+    for name, glyph in sorted(GRANDFATHERED_GLYPHS.items()):
+        if glyphs.get(name) not in (None, glyph):
+            problems.append(f"{name} is grandfathered to {glyph} and the table says {glyphs[name]}")
+    return problems
 
 
 # Labels that live on the Linear team rather than on GitHub. The workstream
@@ -1482,6 +1604,9 @@ def check_repo(report: Report) -> None:
     check_grants(report, routines)
     check_charter_coverage(report)
 
+    for problem in check_glyphs():
+        report.fail(problem, "fix the area-glyph table under `## The area glyphs` in cowork/README.md")
+
 
 def check_webhooks(report: Report, routines: Sequence[Routine]) -> None:
     """Every routine's webhook declaration, and the one that fires the deployer."""
@@ -1670,6 +1795,103 @@ def check_charter_coverage(report: Report) -> None:
             f"src/yeaboi/{module} is claimed by no charter",
             "name it in a cowork/workstreams/*.md `**Owns**` line, or add it to UNOWNED_MODULES with a reason",
         )
+
+
+def owner_of(path: str) -> dict:
+    """Which workstream's ``**Owns**`` block claims one path, or None and why not.
+
+    `house-rules.md`'s **Stay in your paths** already says a find outside your
+    charter "becomes a proposal issue labelled for the owning workstream", and
+    `cowork-scout.md` says to record the owner "so it can be routed". Nothing
+    resolved it. Issue #170 was a `tests/unit/test_surface_parity.py` find —
+    **platform**'s file — filed under `workstream:analysis`, and that label is
+    what held one of *analysis*'s two proposal slots for ten days. The rule was
+    right and unimplemented, which is the failure mode a routing rule has: it
+    reads fine every morning and routes by eye.
+
+    So the arithmetic lives here rather than in the routine prose, for the same
+    reason `proposal_slots` does: a model asked to route seventeen charters by
+    eye will eventually misroute one, and nothing downstream would notice.
+
+    Three answers, and the two negative ones are separate on purpose:
+
+    - a workstream name — exactly one charter covers it, or several do and one
+      claim is strictly deeper than the rest (**most specific wins**: `fleet`
+      claims `cowork/`, and a charter naming a file inside it beats the
+      directory)
+    - ``None`` with `constitution` — the path is `house-rules.md` and its
+      siblings, which belong to no charter *by construction*. Not an error and
+      not an oversight: a find there is a human's, and saying "unclaimed" would
+      invite somebody to claim it
+    - ``None`` with a reason — no charter claims it, or two claim it at the same
+      depth. **Never a guess.** An unroutable find is one to leave in front of a
+      person, the same rule `proposal_slots` applies to a queue it could not read
+
+    The resolution itself is `scripts/hygiene_lens.py`'s `Charter`. It already
+    turns an `**Owns**` paragraph into real paths — prefixes, globs, `{a,b}`
+    braces and `**except …**` subtractions — and it is what
+    `tests/unit/test_cowork_retune.py` asserts the constitution against. A second
+    parser here would be a description of a fleet that may no longer exist.
+
+    Imported inside the function rather than beside `_gh_transport` above,
+    because that import is declared stdlib-only and this one is not: the lens
+    pulls in `yaml`. Every other entry point in this file keeps working without
+    it, and the one that needs it says so where it needs it. The `sys.path` line
+    above is what makes the bare name resolve however this module was loaded —
+    `python scripts/cowork_setup.py` and the tests' `spec_from_file_location`
+    both run it.
+    """
+    target = Path(path)
+    target = target if target.is_absolute() else REPO_ROOT / target
+    try:
+        target = target.resolve()
+    except OSError:  # a path that does not exist is still a path to route
+        target = REPO_ROOT / path
+    try:
+        relative = str(target.relative_to(REPO_ROOT))
+    except ValueError:
+        return {"path": path, "workstream": None, "reason": "outside this repository"}
+
+    if relative in CONSTITUTION or relative in CONSTITUTION_GUARDS:
+        return {"path": relative, "workstream": None, "reason": "constitution"}
+
+    try:
+        from hygiene_lens import charter as _charter
+    except Exception as exc:  # pragma: no cover - environment, not logic
+        return {"path": relative, "workstream": None, "reason": f"could not read the charters: {exc}"}
+
+    # Depth of the *matching claim*, not of the path: `fleet` matching on
+    # `cowork/` scores 1 and a charter naming `cowork/migration/` scores 2, so
+    # the narrower claim wins without either charter having to say so.
+    claims: list[tuple[int, str]] = []
+    for workstream in parse_workstreams():
+        try:
+            spec = _charter(workstream)
+        except SystemExit:  # a charter that will not parse routes nothing
+            continue
+        if not spec.covers(target):
+            continue
+        depth = max(len(own.parts) for own in spec.owns if own == target or own in target.parents)
+        claims.append((depth, workstream))
+
+    if not claims:
+        return {"path": relative, "workstream": None, "reason": "no charter claims it"}
+    claims.sort(reverse=True)
+    if len(claims) > 1 and claims[0][0] == claims[1][0]:
+        tied = sorted(name for depth, name in claims if depth == claims[0][0])
+        return {"path": relative, "workstream": None, "reason": f"claimed equally by {', '.join(tied)}"}
+    return {"path": relative, "workstream": claims[0][1], "reason": ""}
+
+
+def report_owner(path: str) -> int:
+    """`--owner` prints the routing answer as JSON and exits 0 either way.
+
+    Unroutable is an answer, not a failure: the caller is a scribe deciding a
+    label, and a non-zero exit would read as "the tool broke" rather than "no
+    charter claims this, put it in front of a person".
+    """
+    print(json.dumps(owner_of(path), indent=2))
+    return 0
 
 
 # --- GitHub ------------------------------------------------------------------
@@ -2190,6 +2412,139 @@ def _age_days(stamp: str, now: datetime) -> int | None:
     return max(0, (now - created).days)
 
 
+# `digest.md` step 4's first clock: a proposal nobody has answered in this many
+# days lapses — the label comes off and the issue stays open.
+LAPSE_DAYS = 14
+
+
+def proposal_clock(number: int) -> str:
+    """When ``cowork:proposal`` was last applied to an issue, or "".
+
+    ``digest.md`` step 4 ages a proposal from this rather than from ``createdAt``,
+    and says why: a proposal that was queued and then bounced back
+    (``sweep-procedure.md`` step 5) keeps its original filing date, so an
+    eight-day-old issue returning to the queue would have six days to be answered
+    rather than fourteen.
+
+    ``GET /repos/{slug}/issues/{n}/events`` rather than ``/timeline``: events is
+    what ``tests/fixtures/cowork_github_access_live.json`` records as served by a
+    routine session's egress proxy, and it carries the ``labeled`` entries. "" is
+    the documented fallback and the caller ages from ``created_at`` — which is the
+    right answer for every proposal that never bounced, i.e. nearly all of them.
+    """
+    return _label_event_at(number, "labeled")
+
+
+def _label_event_at(number: int, verb: str) -> str:
+    """The most recent ``labeled``/``unlabeled`` of ``cowork:proposal``, or "".
+
+    One reader for both directions: applying the label starts the fourteen-day
+    lapse clock and removing it starts the thirty-day close clock, and the two
+    must not drift apart in how they read the same event list.
+    """
+    slug = repo_slug()
+    if not slug:
+        return ""
+    path = f"/repos/{slug}/issues/{number}/events"
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return ""
+        result = _gh("api", "--paginate", f"{path.lstrip('/')}?per_page=100")
+        if result.returncode != 0:
+            return ""
+        try:
+            events = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            return ""
+    else:
+        answer = _api_paged(path)
+        if not answer.ok:
+            return ""
+        events = answer.data
+    if not isinstance(events, list):
+        return ""
+    stamps = []
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") != verb:
+            continue
+        label = event.get("label")
+        if isinstance(label, dict) and label.get("name") == PROPOSAL_LABEL:
+            stamps.append(event.get("created_at") or "")
+    stamps = [stamp for stamp in stamps if stamp]
+    return max(stamps) if stamps else ""
+
+
+def lapsed_items(workstream: str, now: datetime | None = None) -> tuple[list[dict] | None, str]:
+    """The lapsed questions for one workstream — open, unlabelled, unanswered.
+
+    **This is the query `digest.md` step 4's second half had no way to run.**
+    Step 1 collects by ``cowork:proposal``; a lapsed issue has had exactly that
+    label taken off, so nothing enumerated it and "at 30 days lapsed, close it"
+    could never fire on anything. Lapsed issues accumulated open for ever and
+    ``aged-out`` — which step 4 reserves for a find the fleet declined to bring
+    back — was unreachable.
+
+    A lapsed issue is an open one carrying a ``workstream:`` label and **none** of
+    ``cowork:proposal`` (it would still be a question), ``cowork:queued`` (it is
+    work in flight, and step 4 may never touch it), ``claude-implement`` (a human
+    approved it) or a ``codeql:`` prefix (never lapsed, so never lapsed-and-closed
+    either). ``days_lapsed`` is measured from the ``unlabeled`` event, not from
+    the filing, so it is the age of the *silence*.
+
+    None rather than an empty list on failure, the rule the whole file follows: a
+    close driven by a query that could not be asked is the destructive direction.
+    """
+    issues, error = _issues_labelled(f"workstream:{_segment(workstream)}", None)
+    if issues is None:
+        return None, error
+    moment = now or datetime.now(UTC)
+    lapsed = []
+    for issue in issues:
+        names = _labels_of(issue)
+        if names & {PROPOSAL_LABEL, QUEUE_LABEL, "claude-implement"}:
+            continue
+        if any(name.startswith("codeql:") for name in names):
+            continue
+        since = _unlabelled_at(issue.get("number") or 0)
+        if not since:
+            # No recorded removal means it never carried the label — an issue
+            # filed by hand, not a lapse. Skipped rather than closed on a guess.
+            continue
+        lapsed.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "lapsed_at": since,
+                "days_lapsed": _age_days(since, moment),
+            }
+        )
+    lapsed.sort(key=lambda item: (-(item["days_lapsed"] or 0), item["number"] or 0))
+    return lapsed, ""
+
+
+def _unlabelled_at(number: int) -> str:
+    """When ``cowork:proposal`` was last *removed*, or "" — the lapse moment."""
+    return _label_event_at(number, "unlabeled")
+
+
+def _lapse_date(stamp: str) -> str:
+    """``23 Aug`` — when ``LAPSE_DAYS`` runs out on a question asked at ``stamp``.
+
+    Rendered here rather than by the routine for the reason the whole file
+    exists: ``digest.md``'s ⏸️ **Held** line quotes this date, and a model doing
+    calendar arithmetic on fourteen days by eye is the failure
+    ``--proposal-slots`` was written to stop one line earlier in the same
+    sentence.
+    """
+    try:
+        asked = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return ""
+    if asked.tzinfo is None:
+        asked = asked.replace(tzinfo=UTC)
+    return f"{asked + timedelta(days=LAPSE_DAYS):%-d %b}"
+
+
 def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
     """How many proposals one workstream may still file, and what is holding it.
 
@@ -2227,14 +2582,23 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
             "error": error,
         }
     moment = now or datetime.now(UTC)
-    blocking = [
-        {
-            "number": issue.get("number"),
-            "title": issue.get("title", ""),
-            "age_days": _age_days(issue.get("created_at", ""), moment),
-        }
-        for issue in issues
-    ]
+    # Both fields come off the same clock, and the clock is `digest.md` step 4's:
+    # the last time the question was *asked*, not the day the issue was filed. A
+    # bounced proposal keeps its `created_at`, so ageing from that would print an
+    # age and a lapse date that disagree on the one issue where it matters.
+    blocking = []
+    for issue in issues:
+        asked = proposal_clock(issue.get("number") or 0) or issue.get("created_at", "")
+        blocking.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "age_days": _age_days(asked, moment),
+                # Rendered, never left to the reader: `digest.md`'s ⏸️ Held line
+                # quotes this and used to be asked for a date nothing produced.
+                "lapses_on": _lapse_date(asked),
+            }
+        )
     blocking.sort(key=lambda item: (-(item["age_days"] or 0), item["number"] or 0))
     return {
         "workstream": workstream,
@@ -2332,6 +2696,27 @@ def _has_section(body: str, name: str) -> bool:
 CODEQL_PROPOSAL = "codeql:"
 
 
+# The `**Paths**` section every scribe-written proposal carries, read back out as
+# the ticked tokens it lists. A find declares where its fix lands; routing it is
+# a question about those paths and nothing else in the body.
+_PATHS_SECTION = re.compile(r"^\s*(?:#+\s*|\*\*)Paths\b(.*?)(?=^\s*(?:#+\s*|\*\*)[A-Z]|\Z)", re.MULTILINE | re.DOTALL)
+_TICKED_TOKEN = re.compile(r"`([^`]+)`")
+
+
+def declared_paths(body: str | None) -> list[str]:
+    """The ticked paths under an issue's ``**Paths**`` heading, in order.
+
+    Only that section, deliberately. A proposal body quotes file names all the
+    way through — in its evidence, in the rule it is citing, in the sibling it
+    is contrasting itself with — and reading the whole document would route an
+    issue by whatever it happened to mention rather than by where its fix lands.
+    """
+    match = _PATHS_SECTION.search(body or "")
+    if not match:
+        return []
+    return [token.strip().rstrip(",.") for token in _TICKED_TOKEN.findall(match.group(1))]
+
+
 def _scores(body: str | None) -> tuple[int | None, int | None]:
     """``(impact, risk)`` parsed out of an issue body; either half may be None."""
     text = body or ""
@@ -2398,6 +2783,49 @@ def report_queued(workstream: str | None, now: datetime | None = None) -> int:
     return 0
 
 
+# `digest.md` step 4's second clock: a question that has been lapsed this long
+# without any sweep bringing it back is one the fleet declined to re-ask.
+CLOSE_DAYS = 30
+
+
+def lapsed_report(workstream: str, now: datetime | None = None) -> dict:
+    """One workstream's lapsed questions, and which of them are due to close.
+
+    ``due`` is the answer step 4 acts on, so the thirty-day comparison is
+    arithmetic here rather than a date a model reads off a comment — the same
+    reason ``slots`` is not counted by eye one section earlier.
+    """
+    items, error = lapsed_items(workstream, now)
+    if items is None:
+        return {"workstream": workstream, "lapsed": None, "due": None, "items": [], "error": error}
+    due = [item for item in items if (item["days_lapsed"] or 0) >= CLOSE_DAYS]
+    return {
+        "workstream": workstream,
+        "lapsed": len(items),
+        "due": len(due),
+        "close_days": CLOSE_DAYS,
+        "items": items,
+        "error": "",
+    }
+
+
+def report_lapsed(workstream: str | None, now: datetime | None = None) -> int:
+    """Print the lapsed questions for one workstream, or for all seventeen.
+
+    Same shape and same exit-code rule as `report_queued`: nothing lapsed is the
+    goal state, not a failure, so the status stays 0 either way.
+    """
+    if workstream:
+        known = parse_workstreams()
+        if workstream not in known:
+            print(f"unknown workstream: {workstream} (known: {', '.join(known)})", file=sys.stderr)
+            return 2
+        print(json.dumps(lapsed_report(workstream, now), indent=2))
+        return 0
+    print(json.dumps([lapsed_report(name, now) for name in parse_workstreams()], indent=2))
+    return 0
+
+
 # The comment left on every issue the backfill reclassifies. Fixed wording so it
 # is greppable, and so a bounced item's history reads straight afterwards.
 MIGRATION_NOTE = """**Reclassified in place** — `cowork:queued`.
@@ -2420,8 +2848,33 @@ def _labels_of(issue: dict) -> set[str]:
     }
 
 
-def migration_plan(issues: Sequence[dict], workstreams: Sequence[str] | None = None) -> dict:
-    """Classify a backlog of open ``cowork:proposal`` issues. Pure — no I/O.
+def routed_owner(body: str | None, resolve: Callable[[str], str | None]) -> str | None:
+    """The workstream that owns a find's **first resolvable** declared path.
+
+    First rather than all of them, because a `**Paths**` section is written
+    primary-site-first and its later entries are frequently citations — #170
+    names `tests/unit/test_surface_parity.py` (the fix) and then
+    `cowork/workstreams/analysis.md` (the rule it is quoting) in the same
+    sentence. Routing on every token would make an issue's owner a function of
+    what it argued rather than what it would change.
+    """
+    for token in declared_paths(body):
+        owner = resolve(token)
+        if owner:
+            return owner
+    return None
+
+
+def migration_plan(
+    issues: Sequence[dict],
+    workstreams: Sequence[str] | None = None,
+    resolve_owner: Callable[[str], str | None] | None = None,
+) -> dict:
+    """Classify a backlog of open ``cowork:proposal`` issues.
+
+    Pure given its inputs: `workstreams` and `resolve_owner` are the two facts it
+    needs from disk, injected so a test can state a fleet instead of standing in
+    one.
 
     First match wins, and the order is the point: every rule above `queue` is a
     reason **not** to touch an issue, so the default is only reached by an issue
@@ -2434,6 +2887,7 @@ def migration_plan(issues: Sequence[dict], workstreams: Sequence[str] | None = N
     forty-two issues is not something to run in bulk.
     """
     known = set(workstreams if workstreams is not None else parse_workstreams())
+    resolve = resolve_owner if resolve_owner is not None else (lambda token: owner_of(token)["workstream"])
     planned = []
     for issue in issues:
         if "pull_request" in issue:
@@ -2457,6 +2911,15 @@ def migration_plan(issues: Sequence[dict], workstreams: Sequence[str] | None = N
             action, reason = "hold", "codeql triage already recorded that this rule needs a human"
         elif not _has_section(body, "Evidence") and not _has_section(body, "What"):
             action, reason = "hold", "no evidence of any kind — nothing to reproduce or re-verify"
+        elif (owner := routed_owner(body, resolve)) and owner != workstream:
+            # The one condition this backfill can check that the rest cannot:
+            # **stay in your paths** is mechanical, and every other auto-lane
+            # condition is a judgement it is content to get wrong and let step 5
+            # bounce. Queuing a mislabelled find would hand `<owner>`'s file to
+            # `<workstream>`'s builder, which is the one bounce that costs more
+            # than a comment — it is also the failure that froze `analysis` for
+            # ten days over a `platform` file (#170).
+            action, reason = "hold", f"declared paths belong to `{owner}`, not `{workstream}` — relabel before queuing"
         else:
             action, reason = "queue", "on the auto-lane allowlist on its face"
 
@@ -4196,6 +4659,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="print how many proposals a workstream may still file (omit the name for all seventeen)",
     )
     parser.add_argument(
+        "--owner",
+        metavar="PATH",
+        help="print which workstream's Owns block claims one path (workstream=null means route it to a human)",
+    )
+    parser.add_argument(
+        "--glyphs",
+        action="store_true",
+        help="print the area glyph per workstream, from README.md's table",
+    )
+    parser.add_argument(
+        "--lapsed",
+        nargs="?",
+        const="",
+        metavar="WORKSTREAM",
+        help="print the lapsed questions and which are due to close (omit the name for all seventeen; "
+        "lapsed=null means the query failed)",
+    )
+    parser.add_argument(
         "--queued",
         nargs="?",
         const="",
@@ -4290,6 +4771,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(manifest(), indent=2))
         return 0
 
+    if args.glyphs:
+        print(json.dumps(parse_workstream_glyphs(), indent=2, ensure_ascii=False))
+        return 0
+
+    if args.owner is not None:
+        # No transport: this reads the charters on disk and asks GitHub nothing.
+        # A scribe calls it while deciding a label, which is before any issue
+        # exists to query.
+        return report_owner(args.owner)
+
     if args.proposal_slots is not None:
         # A read, so it needs a transport but nothing else — no labels, no
         # variables, no routine parse. `github_ready()` is what picks between
@@ -4310,6 +4801,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         github_ready()
         return migrate_proposals(apply=args.yes)
+
+    if args.lapsed is not None:
+        # Same shape as --proposal-slots above. `lapsed: null` on no transport is
+        # the safe direction here specifically: step 4 *closes* on this answer,
+        # and an unreadable query reported as "nothing lapsed" is inert while one
+        # reported as an empty list would be a close driven by a failed read.
+        github_ready()
+        return report_lapsed(args.lapsed or None)
 
     if args.queued is not None:
         # Same shape as --proposal-slots above: a read that needs a transport and
