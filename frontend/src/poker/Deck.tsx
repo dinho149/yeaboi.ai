@@ -25,6 +25,8 @@ import { cx } from '../runtime/cx';
 import { POKER_DECK } from '../types/enums';
 import styles from './poker.module.css';
 
+const FAN_CENTRE = (POKER_DECK.length - 1) / 2;
+
 export interface DeckProps {
   /** Your current vote, `''` if you have not voted. */
   mine: string;
@@ -59,13 +61,16 @@ export function Deck({ mine, pending, disabled, reason, locked, onVote }: DeckPr
       </p>
 
       <div className={styles['deck']} role="group" aria-label="Your hand">
-        {POKER_DECK.map((value) => {
+        {POKER_DECK.map((value, index) => {
           const selected = value === mine;
           return (
             <button
               key={value}
               type="button"
               className={cx(styles['pcard'], selected && styles['pcardSel'], selected && pending && styles['pcardWait'])}
+              // -1 at the left edge, 0 in the middle, 1 at the right: the arc
+              // the closed hand is drawn on.
+              style={{ '--fan': (index - FAN_CENTRE) / FAN_CENTRE } as never}
               disabled={disabled}
               // The label has to say what tapping does, and for the selected
               // card that is the opposite of what it does for every other one.

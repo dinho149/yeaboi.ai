@@ -12,6 +12,8 @@
  * "three people said 2 and one said 21" case that a duel exists to resolve.
  */
 
+import { useEffect, useState } from 'react';
+
 import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { AiPerspective } from '../types/board';
@@ -30,19 +32,46 @@ export interface ResultsProps {
 
 export function Results({ distribution, median, suggestion, ai, revealed }: ResultsProps) {
   const entries = Object.entries(distribution);
-  const show = revealed || ai.pending || Boolean(ai.note);
+  const hasAi = ai.pending || Boolean(ai.note);
+  const show = revealed || hasAi;
+
+  // Asking for the perspective is a deliberate act, so it opens on the answer.
+  // Once it is here, the tab is the reader's to move.
+  const [tab, setTab] = useState<Tab>('spread');
+  useEffect(() => setTab(hasAi ? 'ai' : 'spread'), [hasAi]);
+
   if (!show) return null;
 
   const max = entries.length ? Math.max(...entries.map(([, count]) => count)) : 0;
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   /* Null when the vote ties, so a split table is not drawn as two winners. */
   const mode = entries.filter(([, count]) => count === max).length === 1 ? max : null;
+  const onAi = hasAi && tab === 'ai';
 
   return (
     <section className={styles['results']} aria-label="Results">
       <div className={styles['resultsHead']}>
-        <Eyebrow>Results</Eyebrow>
-        {revealed && median !== null ? (
+        {/* One eyebrow until there are two things to show, then two tabs in its
+            place — the AI's read is long enough to push the table off screen if
+            it stacks under the spread. */}
+        {hasAi ? (
+          <div className={styles['rtabs']} role="tablist" aria-label="Results view">
+            <Tabbed id="spread" tab={tab} onPick={setTab}>
+              Results
+            </Tabbed>
+            <Tabbed id="ai" tab={tab} onPick={setTab}>
+              AI perspective
+            </Tabbed>
+          </div>
+        ) : (
+          <Eyebrow>Results</Eyebrow>
+        )}
+
+        {onAi ? (
+          ai.confidence ? (
+            <span className={cx(styles['conf'], styles[`conf-${ai.confidence}`])}>{ai.confidence} confidence</span>
+          ) : null
+        ) : revealed && median !== null ? (
           <span className={styles['resultsSum']}>
             median {fmtPoints(median)}
             {suggestion !== null ? (
@@ -55,29 +84,53 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
         ) : null}
       </div>
 
-      {revealed && entries.length ? (
-        <ul className={styles['dist']}>
-          {entries.map(([value, count]) => (
-            <li key={value} className={cx(styles['drow'], count === mode && styles['drowTop'])}>
-              <span className={styles['dval']}>{value}</span>
-              <span className={styles['dtrack']}>
-                {/* Share of the table, not of the tallest bar: normalising to
-                    the max draws every tie as a full bar. */}
-                <span className={styles['dbar']} style={{ width: `${(count / total) * 100}%` }} />
-              </span>
-              <span className={styles['dcount']}>{count}</span>
-              {/* Pluralised on the total, not the count: "1 of 3 vote" is what
-                  agreeing with `count` produces, and it is wrong. */}
-              <span className={styles['srOnly']}>
-                {count} of {total} {total === 1 ? 'vote' : 'votes'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <AiNote ai={ai} />
+      {onAi ? (
+        <div role="tabpanel" id="results-ai" aria-labelledby="results-tab-ai">
+          <AiNote ai={ai} />
+        </div>
+      ) : (
+        <div role={hasAi ? 'tabpanel' : undefined} id="results-spread" aria-labelledby="results-tab-spread">
+          {revealed && entries.length ? (
+            <ul className={styles['dist']}>
+              {entries.map(([value, count]) => (
+                <li key={value} className={cx(styles['drow'], count === mode && styles['drowTop'])}>
+                  <span className={styles['dval']}>{value}</span>
+                  <span className={styles['dtrack']}>
+                    {/* Share of the table, not of the tallest bar: normalising to
+                        the max draws every tie as a full bar. */}
+                    <span className={styles['dbar']} style={{ width: `${(count / total) * 100}%` }} />
+                  </span>
+                  <span className={styles['dcount']}>{count}</span>
+                  {/* Pluralised on the total, not the count: "1 of 3 vote" is what
+                      agreeing with `count` produces, and it is wrong. */}
+                  <span className={styles['srOnly']}>
+                    {count} of {total} {total === 1 ? 'vote' : 'votes'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
     </section>
+  );
+}
+
+type Tab = 'spread' | 'ai';
+
+function Tabbed({ id, tab, onPick, children }: { id: Tab; tab: Tab; onPick(next: Tab): void; children: string }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`results-tab-${id}`}
+      aria-selected={tab === id}
+      aria-controls={`results-${id}`}
+      className={cx(styles['rtab'], tab === id && styles['rtabOn'])}
+      onClick={() => onPick(id)}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -85,9 +138,6 @@ function AiNote({ ai }: { ai: AiPerspective }) {
   if (ai.pending) {
     return (
       <div className={cx(styles['ainote'], styles['ainotePending'])} role="status">
-        <div className={styles['aiHead']}>
-          <Eyebrow>AI perspective</Eyebrow>
-        </div>
         <p className={styles['aiBody']}>Thinking</p>
       </div>
     );
@@ -105,12 +155,6 @@ function AiNote({ ai }: { ai: AiPerspective }) {
 
   return (
     <div className={styles['ainote']}>
-      <div className={styles['aiHead']}>
-        <Eyebrow>AI perspective</Eyebrow>
-        {ai.confidence ? (
-          <span className={cx(styles['conf'], styles[`conf-${ai.confidence}`])}>{ai.confidence} confidence</span>
-        ) : null}
-      </div>
       <p className={styles['aiBody']}>{ai.note}</p>
       {ai.evidence.length ? (
         <ul className={styles['ev']}>

@@ -598,18 +598,38 @@
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-/* No panel: another section of the results, on the same ground and led by an
-   eyebrow like the spread above it. */
+/* No panel: the other half of the results, on the same ground. */
 .ainote {
   padding-top: var(--s1);
 }
 
-.aiHead {
+/* Eyebrows that can be clicked, so the pair reads as one label with a switch in
+   it rather than as a strip of buttons above the results. */
+.rtabs {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
-  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+.rtab {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--dim);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.rtab:hover {
+  color: var(--muted);
+}
+
+.rtabOn {
+  color: var(--text);
 }
 
 .aiBody {
@@ -976,6 +996,11 @@
   z-index: var(--z-deck);
   background: var(--bg);
   padding: var(--s3) 0 max(var(--s3), env(safe-area-inset-bottom));
+  /* `clip`, not `hidden`: the closed hand hangs past the bottom edge, and a
+     transform that overflows still lengthens the scroll. The margin leaves the
+     raised card and the fan's outer corners room. */
+  overflow: clip;
+  overflow-clip-margin: 24px;
 }
 
 /*
@@ -1041,6 +1066,8 @@
    cards apart is the number, which is what you are reading anyway. */
 .pcard {
   position: relative;
+  /* Where this card sits along the closed hand's arc; Deck.tsx overrides it. */
+  --fan: 0;
   /* Ten cards and their gaps have to fit the middle column on one line at the
      wide breakpoint — a hand that wraps reads as eleven cards. */
   width: 68px;
@@ -1084,6 +1111,24 @@
    make the card twitch. */
 .pcardWait {
   border-style: dashed;
+}
+
+/*
+ * Voting closed: the hand goes down to the bottom edge and peeks over it,
+ * fanned on a shallow arc.
+ *
+ * The scrollport ends at the screen's bottom and clips, so a card pushed past
+ * it really is half off the screen rather than drawn over the credit. `--fan`
+ * is set per card by Deck.tsx; squaring it drops the ends further than the
+ * middle, which is the curve, and the pivot at the card's base keeps the fan
+ * from sliding the outer cards sideways.
+ */
+.deckZone[data-state='closed'] .pcard {
+  transform: translateY(calc(64px + var(--fan) * var(--fan) * 12px)) rotate(calc(var(--fan) * 7deg));
+  transform-origin: 50% 100%;
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease);
 }
 
 .ci {
