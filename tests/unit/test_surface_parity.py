@@ -260,8 +260,8 @@ CAPABILITIES: dict[str, dict] = {
     },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
-    # All three modes ship at full parity: no Exempt entries, because each
-    # mode's engine/MCP/CLI/skill surfaces landed in the same phase commit that
+    # Every mode ships at full parity: no Exempt entries, because each mode's
+    # engine/MCP/CLI/skill surfaces landed in the same phase commit that
     # created its card.
     "agent-usage": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_usage")},
@@ -271,6 +271,17 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-usage",
         "cli": {"agents"},
         "skill": "agents-usage",
+    },
+    "agent-advisor": {
+        # advisor.py, not engine.py: the mirrored engine surface is served by
+        # the Go sidecar, and the advisor pipeline is deliberately Python-only
+        # (see advisor.py's module docstring) — a separate module keeps the
+        # dual-maintenance boundary visible.
+        "engines": {("yeaboi.agentwatch.advisor", "run_agent_advisor")},
+        "mcp_tools": {"agents_advisor_run", "agents_advisor_history"},
+        "tui_mode": "agent-advisor",
+        "cli": {"agents"},
+        "skill": "agents-advisor",
     },
     "agent-standup": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
@@ -289,8 +300,13 @@ CAPABILITIES: dict[str, dict] = {
 }
 
 # Engine modules discovered by convention: every src/yeaboi/*/engine.py, plus
-# the planning pipeline which (for LangGraph reasons) lives in agent/headless.py.
-EXTRA_ENGINE_MODULES = {"yeaboi.agent.headless": SRC / "agent" / "headless.py"}
+# the planning pipeline which (for LangGraph reasons) lives in agent/headless.py
+# and the advisor pipeline which lives outside agentwatch/engine.py to stay off
+# the Go-mirrored surface.
+EXTRA_ENGINE_MODULES = {
+    "yeaboi.agent.headless": SRC / "agent" / "headless.py",
+    "yeaboi.agentwatch.advisor": SRC / "agentwatch" / "advisor.py",
+}
 
 # ---------------------------------------------------------------------------
 # Param parity: MCP tool ↔ engine signature.
@@ -309,6 +325,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "team_analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
     "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents_advisor_run": ("yeaboi.agentwatch.advisor", "run_agent_advisor"),
     "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
 }

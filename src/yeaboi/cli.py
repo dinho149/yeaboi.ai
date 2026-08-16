@@ -810,10 +810,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     agents_p = subparsers.add_parser(
         "agents",
-        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
+        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
         description=AGENTWATCH_BETA_NOTICE,
     )
-    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,standup,security}", required=True)
+    agents_sub = agents_p.add_subparsers(
+        dest="agents_command", metavar="{cost,advisor,standup,security}", required=True
+    )
     # Every child carries the same description — `yeaboi agents cost --help` is
     # a perfectly normal place to arrive without ever seeing the parent's help.
     cost_p = agents_sub.add_parser(
@@ -826,6 +828,14 @@ def build_parser() -> argparse.ArgumentParser:
     cost_p.add_argument("--source", default="", choices=["", "claude_code"], help="Filter by telemetry source")
     cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    advisor_p = agents_sub.add_parser(
+        "advisor",
+        help="How much of your agent spend is recoverable: Read waste, cache health, prompt-prefix churn",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    advisor_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    advisor_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    advisor_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     astandup_p = agents_sub.add_parser(
         "standup",
         help="Daily digest of what your agents did (sessions + agent-authored commits/PRs)",
@@ -1767,6 +1777,22 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
             print(json.dumps(asdict(report), indent=2))
         else:
             console.print(format_usage_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
+
+    if args.agents_command == "advisor":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.advisor import run_agent_advisor
+        from yeaboi.agentwatch.render import format_advisor_rich
+
+        report = run_agent_advisor(window_days=args.window_days)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_advisor_rich(report))
         return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
 
     if args.agents_command == "standup":

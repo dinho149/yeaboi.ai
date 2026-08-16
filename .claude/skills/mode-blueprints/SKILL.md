@@ -106,7 +106,7 @@ The `src/yeaboi/reporting/` package produces a **business-friendly summary of de
 
 ## Agents family (agentwatch)
 
-Three modes (`agent-usage`, `agent-standup`, `agent-security`) share one package —
+Four modes (`agent-usage`, `agent-advisor`, `agent-standup`, `agent-security`) share one package —
 `src/yeaboi/agentwatch/` — and one blueprint deviation worth knowing: the *collector* is the gather
 step. `collector.refresh()` incrementally ingests `~/.claude/projects/**/*.jsonl` (and OpenClaw)
 into `agent_sessions` rollups, deduping usage by `requestId` via full-file reparse (Claude Code
@@ -122,7 +122,18 @@ Three invariants:
 
 Cost goes through `src/yeaboi/pricing.py` (dated `PRICING_AS_OF`, cache-aware, unknown models →
 flagged fallback tier). Exports are Markdown-only until an agentwatch React export component
-exists (a tracked web-ux follow-up). The TUI pages share one threaded-engine loop in
+exists (a tracked web-ux follow-up).
+
+**Advisor** (`advisor.py` + `waste_audit.py` + `cache_signals.py`) is the fourth pipeline and the
+one that is deliberately **not** served by the Go sidecar — it lives outside `engine.py` so the
+mirrored surface stays exactly what the sidecar serves. `waste_audit.py` and `cache_signals.py`
+are vendored/adapted from Headroom (Apache-2.0; provenance in each module header and
+`THIRD_PARTY_NOTICES.md`): the first re-reads the window's transcripts and sizes Read-waste
+mechanisms (identical/subset re-reads, write read-backs, `cat -n` scaffolding, stale reads —
+stale is sized but never summed into the recoverable headline), the second structurally detects
+volatile-shaped content (UUID/ISO-8601/JWT-shape/hex-hash — counts only, no samples) in
+prompt-prefix files (CLAUDE.md). Waste is priced at the window's input-token-weighted blended
+rate via `pricing.lookup_price`. The TUI pages share one threaded-engine loop in
 `ui/mode_select/_agents.py`; the landing split lives in `screens/_screens_category.py` and the
 Agents card list is `_AGENT_CARDS` (never merged into `_MODE_CARDS` — welcome tests pin exact
 renders and indices).

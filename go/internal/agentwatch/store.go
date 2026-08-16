@@ -32,7 +32,9 @@ const currentSchemaVersion = 30
 // ErrSchemaTooNew is the schema-guard sentinel; the RPC layer maps it to 1001.
 var ErrSchemaTooNew = errors.New("sessions.db schema is newer than this yeaboi-core understands")
 
-// agentwatchSchema is store._AGENTWATCH_SCHEMA verbatim.
+// agentwatchSchema is store._AGENTWATCH_SCHEMA minus the Python-only
+// agent_advisor_reports table (the advisor pipeline is not served by the
+// sidecar; Python's store-open executescript creates that table).
 const agentwatchSchema = `CREATE TABLE IF NOT EXISTS agent_ingest_files (
     path             TEXT PRIMARY KEY,
     source           TEXT NOT NULL DEFAULT '',

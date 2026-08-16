@@ -123,6 +123,7 @@ KINDS: dict[str, Kind] = {
     "docs/modes/reporting.html": Kind.ARTICLE,
     "docs/modes/team-analysis.html": Kind.ARTICLE,
     "docs/agents/usage.html": Kind.ARTICLE,
+    "docs/agents/advisor.html": Kind.ARTICLE,
     "docs/agents/standup.html": Kind.ARTICLE,
     "docs/agents/security.html": Kind.ARTICLE,
 }
@@ -349,6 +350,7 @@ def _software_full(description: str) -> dict:
             "Reporting — stakeholder summaries and a slide deck from delivered work",
             "Team Analysis — a reusable delivery profile that calibrates planning to real velocity",
             "Agent Usage — what your AI coding agents cost: tokens, cache, per-model and per-project spend",
+            "Agent Advisor — the recoverable share of that spend: re-read waste, cache health, prefix churn",
             "Agent Standup — a daily digest of what your agents did: sessions, commits, PRs, open threads",
             "Agent Security — audit agent permissions, MCP servers, secrets exposure and risky commands",
         ],

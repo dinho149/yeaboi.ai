@@ -341,7 +341,7 @@ src/yeaboi/
   standup/ retro/ poker/ performance/ reporting/ roadmap/ analysis/  — standalone modes (shared blueprint)
   agentwatch/                        — the Agents family: usage/standup/security engines over local agent-session telemetry
   pricing.py                         — the per-model LLM rate table (cache-aware); every cost estimate goes through it
-  mcp/                               — stdio MCP server (yeaboi-mcp; 47 tools over the engines)
+  mcp/                               — stdio MCP server (yeaboi-mcp; 49 tools over the engines)
   repl/                              — legacy REPL for CLI-flag-driven flows
   ui/                                — full-screen TUI (mode_select, provider_select, session, shared)
   input_guardrails.py / output_guardrails.py / formatters.py / *_exporter.py / *_sync.py

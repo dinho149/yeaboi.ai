@@ -164,6 +164,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_beta=True,
     ),
     FeatureTip(
+        "agent-advisor",
+        "\U0001f916 Tip: Agents → Advisor estimates how much of your agent spend is recoverable — and why",
+        mode_key="agent-advisor",
+        is_beta=True,
+    ),
+    FeatureTip(
         "agent-standup",
         "\U0001f916 Tip: Agents → Standup digests what your AI agents did yesterday — sessions, commits, PRs",
         mode_key="agent-standup",

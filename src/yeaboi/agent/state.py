@@ -1264,6 +1264,64 @@ class AgentSecurityReport:
 
 
 @dataclass(frozen=True)
+class WasteLineItem:
+    """One recoverable-spend mechanism sized by the advisor's transcript audit."""
+
+    mechanism: str = ""  # identical-repeat | subset-containment | write-readback | stale-reread | line-number-overhead
+    label: str = ""
+    calls: int = 0
+    content_bytes: int = 0  # UTF-8 bytes of Read tool_result content
+    est_tokens: int = 0  # ≈ content_bytes / 4
+    est_usd: float = 0.0  # est_tokens priced at the window's blended input rate
+    share_of_read_bytes: float = 0.0
+    # True = summed into the recoverable headline; False = sized but reported
+    # as context only (e.g. stale re-reads need staleness-aware handling).
+    recoverable: bool = True
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class VolatileFileSignal:
+    """Volatile-shaped content counts for one prompt-prefix file (CLAUDE.md…)."""
+
+    location: str = ""  # file path (never file content)
+    counts: tuple[tuple[str, str], ...] = ()  # (label, count as str)
+    total: int = 0
+
+
+@dataclass(frozen=True)
+class AgentAdvisorReport:
+    """Recoverable agent spend + prompt-cache health, audited from local sessions."""
+
+    period_start: str = ""
+    period_end: str = ""
+    session_count: int = 0
+    files_audited: int = 0
+    total_cost_usd: float = 0.0  # the window's estimated spend (context for the headline)
+    read_calls: int = 0
+    read_bytes: int = 0
+    tool_bytes_total: int = 0
+    recoverable_usd: float = 0.0  # sum of the recoverable line items
+    recoverable_share: float = 0.0  # of total_cost_usd
+    effective_input_rate_per_mtok: float = 0.0  # blended $/Mtok used to price waste
+    unknown_rate_share: float = 0.0  # share of input tokens priced at the fallback tier
+    pricing_as_of: str = ""
+    line_items: tuple[WasteLineItem, ...] = ()
+    residency_median: int = 0  # assistant turns a Read stays in context
+    residency_p90: int = 0
+    gaps_over_5m: int = 0  # cache-death windows (inter-message gaps past the TTL)
+    gaps_over_1h: int = 0
+    sessions_with_gap: int = 0
+    volatile_signals: tuple[VolatileFileSignal, ...] = ()
+    alignment_score: int = 100  # 0-100; lower = more volatile content in prefix files
+    insights: tuple[str, ...] = ()
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
 class PriorArtRef:
     """An existing team repository accepted as reference material for a plan.
 

@@ -14,7 +14,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 
 logger = logging.getLogger(__name__)
 
@@ -188,10 +188,75 @@ def build_security_markdown(report: AgentSecurityReport) -> str:
     return "\n".join(lines)
 
 
+def build_advisor_markdown(report: AgentAdvisorReport) -> str:
+    """The agent advisor report as a shareable Markdown document."""
+    lines: list[str] = [
+        f"# Agent Advisor — {report.period_start} → {report.period_end}",
+        "",
+        f"**~${report.recoverable_usd:,.2f} recoverable** of ${report.total_cost_usd:,.2f} estimated spend"
+        + (f" ({report.recoverable_share:.0%})" if report.total_cost_usd > 0 else "")
+        + f" — {report.files_audited} transcript(s) audited, "
+        f"{report.read_calls} Read call(s) totalling {report.read_bytes:,} bytes.",
+        "",
+        f"*Estimates: tokens ≈ bytes/4, priced at ~${report.effective_input_rate_per_mtok:,.2f}/Mtok input "
+        f"(rates as of {report.pricing_as_of}). Computed locally from session logs — a floor, not an invoice.*",
+    ]
+    if report.unknown_rate_share > 0:
+        lines.append(
+            f"*⚠ {report.unknown_rate_share:.0%} of input tokens priced at a fallback tier (unknown model rates).*"
+        )
+
+    items = [i for i in report.line_items if i.content_bytes]
+    if items:
+        lines += [
+            "",
+            "## Waste by mechanism",
+            "",
+            "| mechanism | calls | size | est. cost | of Read bytes | note |",
+            "|---|---|---|---|---|---|",
+        ]
+        for i in items:
+            marker = "" if i.recoverable else " \\*"
+            lines.append(
+                f"| {i.label}{marker} | {i.calls or '—'} | {i.est_tokens:,} tok | ${i.est_usd:,.2f} "
+                f"| {i.share_of_read_bytes:.0%} | {i.note} |"
+            )
+        if any(not i.recoverable for i in items):
+            lines.append("")
+            lines.append("*\\* sized as context, not counted in the recoverable total.*")
+
+    lines += [
+        "",
+        "## Cache health",
+        "",
+        f"- Alignment score: **{report.alignment_score}/100**",
+        f"- A Read stays in context for a median of {report.residency_median} assistant turn(s) "
+        f"(p90 {report.residency_p90}) — every retained turn re-bills it as cache reads.",
+        f"- {report.gaps_over_5m} inter-message gap(s) over 5 minutes ({report.gaps_over_1h} over 1h) "
+        f"across {report.sessions_with_gap} session(s) — likely cache-death windows.",
+    ]
+    if report.volatile_signals:
+        lines += ["", "## Volatile content in prompt-prefix files", "", "| file | findings | kinds |", "|---|---|---|"]
+        for s in report.volatile_signals:
+            kinds = ", ".join(f"{label}×{count}" for label, count in s.counts)
+            lines.append(f"| {s.location} | {s.total} | {kinds} |")
+
+    for title, prose in (("Insights", report.insights), ("Recommendations", report.recommendations)):
+        if prose:
+            lines += ["", f"## {title}", ""] + [f"- {item}" for item in prose]
+
+    if report.warnings:
+        lines += ["", "## Warnings", ""] + [f"- ⚠ {w}" for w in report.warnings]
+
+    lines += _md_footer()
+    return "\n".join(lines)
+
+
 _BUILDERS = {
     "usage": build_usage_markdown,
     "standup": build_standup_markdown,
     "security": build_security_markdown,
+    "advisor": build_advisor_markdown,
 }
 
 

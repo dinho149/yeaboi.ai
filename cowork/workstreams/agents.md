@@ -1,9 +1,11 @@
 # agents
 
-**Owns** — `src/yeaboi/agentwatch/` (engine, store, collector, security_checks, render, export),
+**Owns** — `src/yeaboi/agentwatch/` (engine, store, collector, security_checks, advisor,
+waste_audit, cache_signals, render, export),
 `src/yeaboi/pricing.py`, `mcp/tools_agentwatch.py`, `prompts/agentwatch.py`,
 `ui/mode_select/_agents.py`, `ui/mode_select/screens/_screens_agents.py`,
 `ui/mode_select/screens/_screens_category.py`, `claude-plugin/yeaboi/skills/agents-usage/`,
+`claude-plugin/yeaboi/skills/agents-advisor/`,
 `claude-plugin/yeaboi/skills/agents-standup/`, `claude-plugin/yeaboi/skills/agents-security/`,
 `tests/unit/test_agentwatch_*.py`, `tests/unit/test_pricing.py`, `tests/unit/test_category_screen.py`
 
