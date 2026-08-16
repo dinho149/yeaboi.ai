@@ -1505,6 +1505,27 @@
   color: var(--muted);
 }
 
+/* The one place the console asks a question rather than offering an action. */
+.micResume {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--edge);
+}
+
+.micResumeActs {
+  display: flex;
+  gap: var(--s2);
+}
+
+.micResumeActs > * {
+  flex: 1;
+}
+
 .chint,
 .cnotice {
   margin: 0;

@@ -34,6 +34,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiUrl, postJSON, type Session } from '../runtime/api';
+import { read, remove, write } from '../runtime/storage';
 import type { DuelSlice } from '../types/board';
 
 /** Containers to try, best first. Safari has neither webm option. */
@@ -41,6 +42,9 @@ const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
 
 /** One retry, after a second. Fits inside the server's post-close grace window. */
 const RETRY_MS = 1000;
+
+/** Per-tab, so a reload can tell that it interrupted its own recording. */
+const WAS_RECORDING = 'poker_room_mic';
 
 export interface DuelMic {
   /** Whether this browser could record at all — secure context + an API. */
@@ -53,6 +57,14 @@ export interface DuelMic {
   enable(): Promise<void>;
   /** Hand the hardware back and tell the room the indicator should go out. */
   disable(): void;
+  /**
+   * The board was recording when this page loaded, and this page is not the
+   * one doing it — a reload, a crash, a closed tab. Host-only, and answered by
+   * {@link enable} or {@link dismiss}.
+   */
+  interrupted: boolean;
+  /** Leave it stopped. */
+  dismiss(): void;
 }
 
 export function micCapable(): boolean {
@@ -112,6 +124,7 @@ function announce(session: Session, on: boolean): void {
 
 export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRecording = false): DuelMic {
   const [armed, setArmed] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
   const [error, setError] = useState('');
   const [capable] = useState(micCapable);
 
@@ -141,6 +154,8 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
     for (const track of stream.current.getTracks()) track.stop();
     stream.current = null;
     setArmed(false);
+    // Deliberate: this tab is not being interrupted next time it loads.
+    remove('session', WAS_RECORDING);
     void announce(sessionRef.current, false);
   }, [stopRecorder]);
 
@@ -182,6 +197,8 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
     }
     setError('');
     setArmed(true);
+    setInterrupted(false);
+    write('session', WAS_RECORDING, '1');
     void announce(sessionRef.current, true);
   }, [capable]);
 
@@ -227,9 +244,24 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
   }, [armed, session]);
 
   /*
-   * And the belt to that pair of braces: if the board says the room is being
-   * recorded and this browser is not the one doing it, it is not being
-   * recorded. Only the host reconciles, because only the host can set it.
+   * Was this tab recording when it went away?
+   *
+   * Not the board's flag: the beacon above clears that on the way out, so by
+   * the time the new page asks, it says no. `sessionStorage` is the one thing
+   * that survives a reload and dies with the tab, which is exactly the question
+   * — and it is read once, so answering the notice ends it.
+   */
+  useEffect(() => {
+    if (!session.admin || armed) return;
+    if (read('session', WAS_RECORDING) !== '1') return;
+    remove('session', WAS_RECORDING);
+    setInterrupted(true);
+  }, [session.admin, armed]);
+
+  /*
+   * And the belt to that pair of braces: if the board still says the room is
+   * being recorded and this browser is not the one doing it, it is not. The
+   * light goes out — it would otherwise be telling the room something untrue.
    */
   useEffect(() => {
     if (!session.admin || !boardSaysRecording || armed) return;
@@ -242,5 +274,5 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
   releaseRef.current = release;
   useEffect(() => () => releaseRef.current(), []);
 
-  return { capable, armed, error, enable, disable: release };
+  return { capable, armed, error, enable, disable: release, interrupted, dismiss: () => setInterrupted(false) };
 }

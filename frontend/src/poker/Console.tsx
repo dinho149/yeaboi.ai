@@ -226,6 +226,23 @@ export function Console({
           )}
           {mic.error ? <p className={styles['cnotice']}>{mic.error}</p> : null}
 
+          {/* A reload takes the microphone with it — the page's whole context
+              goes, and no API holds a capture across that. The permission is
+              remembered, so picking it back up costs one tap. */}
+          {mic.interrupted ? (
+            <div className={styles['micResume']} role="status">
+              <p className={styles['chint']}>Session recording stopped. Continue?</p>
+              <div className={styles['micResumeActs']}>
+                <Button size="s" tone="primary" onClick={() => void mic.enable()}>
+                  Continue
+                </Button>
+                <Button size="s" onClick={mic.dismiss}>
+                  Leave it
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {/* One slot: the preset picker and the live controls swap inside it,
               and it opens and shuts on a track rather than appearing. */}
           <div className={styles['duelSlot']} data-open={slot ? 'true' : 'false'}>
