@@ -33,9 +33,10 @@ What it sizes, per mechanism:
   TTL (free recompression moments; also a cache-health signal on their own).
 
 The privacy invariant holds here exactly as in the collector: transcript text
-is read in the stream and held only in per-file memory for the containment
-checks — nothing from a transcript's *content* ever leaves this module. The
-report carries counts and byte totals only.
+is read in the stream, and read bodies are retained (within one transcript's
+audit) only for files a partial Read targets — every other read keeps a hash.
+Nothing from a transcript's *content* ever leaves this module. The report
+carries counts and byte totals only.
 """
 
 from __future__ import annotations
@@ -115,11 +116,63 @@ class _Agg:
         self.residency: list[int] = []
 
 
+def _partial_read_files(path: Path) -> set[str]:
+    """Cheap first pass: the files targeted by a partial (offset/limit) Read.
+
+    The subset-containment check needs earlier read *bodies* for exactly these
+    files and no others; everything else keeps only a hash. That bounds the
+    audit's memory to the partially-read files rather than every Read in the
+    transcript — one long session can carry hundreds of MB of Read output.
+    """
+    out: set[str] = set()
+    with path.open(errors="replace") as f:
+        for raw in f:
+            # Substring pre-filter so the second JSON parse touches only the
+            # rare lines that could carry a partial Read.
+            if '"offset"' not in raw and '"limit"' not in raw:
+                continue
+            try:
+                line = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(line, dict):
+                continue
+            msg = line.get("message")
+            msg = msg if isinstance(msg, dict) else {}
+            if msg.get("role") != "assistant" or not isinstance(msg.get("content"), list):
+                continue
+            for b in msg["content"]:
+                if not (isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Read"):
+                    continue
+                inp = b.get("input") or {}
+                inp = inp if isinstance(inp, dict) else {}
+                if inp.get("offset") is None and inp.get("limit") is None:
+                    continue
+                fp = str(inp.get("file_path") or inp.get("path") or "")
+                if fp:
+                    out.add(fp)
+    return out
+
+
+def _echoes_write(text: str, writes: list[str]) -> bool:
+    """True when a Read result echoes a prior Write's input.
+
+    The Read side carries ``cat -n`` line numbers and the Write side is the
+    raw body, so the scaffolding must come off before the containment check —
+    compared as-is the two never match on a real transcript.
+    """
+    body = _LINE_NUM_RE.sub("", text).strip()
+    return bool(body) and any(w.strip() and body in w for w in writes)
+
+
 def _audit_session(path: Path, agg: _Agg) -> None:
     """Stream one transcript into the aggregate. Content stays in this frame."""
     r = agg.report
+    partial_files = _partial_read_files(path)
     tool_meta: dict[str, tuple[str, dict]] = {}
-    file_reads: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    # (sha256, body-or-None) per prior read; the body is kept only for files
+    # in partial_files — see _partial_read_files.
+    file_reads: dict[str, list[tuple[str, str | None]]] = defaultdict(list)
     file_writes: dict[str, list[str]] = defaultdict(list)
     read_events: list[tuple[str, int, int, bool]] = []  # (file, size, at, deduped)
     edit_files_at: list[tuple[int, str]] = []
@@ -202,11 +255,15 @@ def _audit_session(path: Path, agg: _Agg) -> None:
                             r.dedup_identical_bytes += size
                             r.dedup_identical_calls += 1
                             deduped = classified = True
-                        elif is_partial and text and any(text in pc for _, pc in prior if len(pc) > len(text)):
+                        elif (
+                            is_partial
+                            and text
+                            and any(pc is not None and len(pc) > len(text) and text in pc for _, pc in prior)
+                        ):
                             r.subset_bytes += size
                             r.subset_calls += 1
                             classified = True
-                        elif any(text.strip() and w.strip() and text.strip() in w for w in file_writes.get(fp, [])):
+                        elif _echoes_write(text, file_writes.get(fp, [])):
                             r.write_readback_bytes += size
                             r.write_readback_calls += 1
                             classified = True
@@ -217,7 +274,7 @@ def _audit_session(path: Path, agg: _Agg) -> None:
                     if not classified:
                         r.linenum_overhead_bytes += sum(len(m.group(0)) for m in _LINE_NUM_RE.finditer(text))
                     if fp:
-                        file_reads[fp].append((h, text))
+                        file_reads[fp].append((h, text if fp in partial_files else None))
                     read_events.append((fp, size, assistant_idx, deduped))
 
     for fp, size, at, deduped in read_events:
@@ -247,7 +304,11 @@ def audit_files(
     for i, p in enumerate(resolved, start=1):
         try:
             _audit_session(p, agg)
-        except OSError:
+        except Exception:
+            # The docstring's never-raises promise covers more than OSError —
+            # a MemoryError or a pathological line must also degrade to a
+            # skipped file, not a traceback through the engine.
+            logger.warning("read audit skipped a transcript: %s", p, exc_info=True)
             agg.report.files_skipped += 1
         if on_file is not None:
             on_file(i, len(resolved))

@@ -65,16 +65,23 @@ class TestMechanisms:
         assert report.subset_calls == 1
         assert report.subset_bytes == len(subset)
 
-    def test_write_readback(self, tmp_path):
+    def test_write_readback_sees_through_read_scaffolding(self, tmp_path):
+        # Regression: a real Read result is cat -n numbered while the Write
+        # input is the raw body — compared as-is the two never matched, so
+        # write-readback stayed 0 on every real transcript. The fixture is
+        # numbered (and truncated, like a capped Read) on purpose.
+        numbered = "     1\t" + BIG_C
         lines = [
             _assistant(1, [_tool_use("t1", "Write", file_path="/h.py", content=BIG_C + "\ntrailer")]),
             _result("t1", "ok"),
             _assistant(2, [_tool_use("t2", "Read", file_path="/h.py")]),
-            _result("t2", BIG_C),
+            _result("t2", numbered),
         ]
         report = waste_audit.audit_files([_write_transcript(tmp_path, "s.jsonl", lines)])
         assert report.write_readback_calls == 1
-        assert report.write_readback_bytes == len(BIG_C)
+        assert report.write_readback_bytes == len(numbered)
+        # Classified whole-read: its scaffolding is not also billed separately.
+        assert report.linenum_overhead_bytes == 0
 
     def test_stale_read_flagged_when_the_file_is_edited_later(self, tmp_path):
         lines = [
@@ -174,11 +181,49 @@ class TestCacheSignals:
         assert report.read_bytes == len(BIG_A)
 
 
+class TestMemoryDiscipline:
+    def test_read_bodies_kept_only_for_partially_read_files(self, tmp_path):
+        # Regression: every Read body used to be retained for the whole file
+        # audit, so peak RSS tracked the largest transcript's total Read
+        # bytes. Now a file no partial Read targets keeps only hashes — and
+        # identical-repeat still fires, because it is hash-based.
+        lines = [
+            _assistant(1, [_tool_use("t1", "Read", file_path="/f.py")]),
+            _result("t1", BIG_A),
+            _assistant(2, [_tool_use("t2", "Read", file_path="/f.py")]),
+            _result("t2", BIG_A),
+        ]
+        path = _write_transcript(tmp_path, "s.jsonl", lines)
+        assert waste_audit._partial_read_files(path) == set()
+        report = waste_audit.audit_files([path])
+        assert report.dedup_identical_calls == 1
+
+    def test_partial_read_files_prescan_finds_the_target(self, tmp_path):
+        lines = [
+            _assistant(1, [_tool_use("t1", "Read", file_path="/g.py")]),
+            _result("t1", BIG_B),
+            _assistant(2, [_tool_use("t2", "Read", file_path="/g.py", offset=1, limit=20)]),
+            _result("t2", BIG_B[:600]),
+        ]
+        path = _write_transcript(tmp_path, "s.jsonl", lines)
+        assert waste_audit._partial_read_files(path) == {"/g.py"}
+
+
 class TestRobustness:
     def test_missing_file_counts_skipped_and_does_not_raise(self, tmp_path):
         report = waste_audit.audit_files([tmp_path / "gone.jsonl"])
         assert report.files_skipped == 1
         assert report.sessions == 0
+
+    def test_non_os_errors_also_count_skipped(self, tmp_path, monkeypatch):
+        # Regression: the never-raises contract caught only OSError, so a
+        # MemoryError on a huge transcript escaped through the engine.
+        def _boom(path, agg):
+            raise ValueError("pathological line")
+
+        monkeypatch.setattr(waste_audit, "_audit_session", _boom)
+        report = waste_audit.audit_files([_write_transcript(tmp_path, "s.jsonl", ["{}"])])
+        assert report.files_skipped == 1
 
     def test_malformed_lines_are_ignored(self, tmp_path):
         path = _write_transcript(tmp_path, "s.jsonl", ["not json", '"a bare string"', "{}"])
