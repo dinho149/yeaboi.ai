@@ -196,6 +196,7 @@ class TestSprintTargetQuestion:
             "Add to PSOT Sprint 104 (active)",
             "Add to PSOT Sprint 105",
             "Create a new sprint",
+            "Backlog (no sprint)",
         )
         assert qs._sprint_target_options == {"PSOT Sprint 104": "88", "PSOT Sprint 105": "89"}
         # The active sprint feeds the start-date offset machinery.
@@ -241,6 +242,43 @@ class TestSprintTargetQuestion:
         _resolve_small_sprint_target_answer(qs)
         assert qs.answers[27] == "Fresh start (today)"
 
+    def test_resolve_backlog_keeps_the_sentinel(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.answers[27] = "Backlog (no sprint)"
+        qs._follow_up_choices[27] = ("Create a new sprint", "Backlog (no sprint)")
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Backlog (no sprint)"
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_backlog_from_free_text(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.answers[27] = "just put it in the backlog"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Backlog (no sprint)"
+
+    def test_fallback_question_with_known_number(self):
+        from yeaboi.agent.nodes import _setup_small_sprint_fallback_question
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_fallback_question(qs, 24, "Last analysed sprint: **Sprint 24**.\n\n")
+        assert "backlog" in prompt
+        assert qs._follow_up_choices[27] == ("Create Sprint 25 (next)", "Backlog (no sprint)")
+        assert qs.answers[27] == "_active:24"
+        assert qs._active_sprint_number == 24
+
+    def test_fallback_question_without_number(self):
+        from yeaboi.agent.nodes import _setup_small_sprint_fallback_question
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_fallback_question(qs, None, "")
+        assert "backlog" in prompt
+        assert qs._follow_up_choices[27] == ("Create a new sprint", "Backlog (no sprint)")
+        assert qs.answers[27] == "_targets"
+
     def test_analyzer_clamps_to_one_sprint_when_targeting_existing(self, monkeypatch):
         fake = MagicMock()
         fake.content = VALID_ANALYSIS_JSON
@@ -257,6 +295,25 @@ class TestSprintTargetQuestion:
             "_intake_mode": "small_project",
             "sprint_target_mode": "existing",
             "target_sprint_name": "PSOT Sprint 104",
+        }
+        result = project_analyzer(state)
+        assert result["project_analysis"].target_sprints == 1
+
+    def test_analyzer_clamps_to_one_sprint_for_backlog(self, monkeypatch):
+        fake = MagicMock()
+        fake.content = VALID_ANALYSIS_JSON
+        llm = MagicMock()
+        llm.invoke.return_value = fake
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: llm)
+
+        qs = make_completed_questionnaire()
+        state = {
+            "messages": [HumanMessage(content="continue")],
+            "questionnaire": qs,
+            "team_size": 3,
+            "velocity_per_sprint": 15,
+            "_intake_mode": "small_project",
+            "sprint_target_mode": "backlog",
         }
         result = project_analyzer(state)
         assert result["project_analysis"].target_sprints == 1

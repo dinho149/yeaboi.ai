@@ -494,6 +494,21 @@ class TestSyncIterationsToAzdevops:
         assert not mock_iter.called
         assert not mock_add.called
 
+    def test_backlog_target_creates_and_assigns_nothing(self, *_):
+        """sprint_target_mode='backlog' — stories only; no iteration, no assignment."""
+        state = self._state(sprint_target_mode="backlog")
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta") as mock_meta:
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert not result.errors
+        assert not mock_meta.called  # short-circuits before any tracker call
+        assert not mock_iter.called
+        assert not mock_add.called
+        assert result.iterations_created == {}
+        assert result.iterations_updated == {}
+
     def test_current_same_named_iteration_reused_not_created(self, *_):
         meta = [_iter_meta("Sprint 6", "current")]
         with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):

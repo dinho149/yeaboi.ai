@@ -1862,9 +1862,11 @@ class ScrumState(_RequiredState, total=False):
     starting_sprint_number: int
 
     # Small-project sprint targeting — "add to an existing sprint" support.
-    # sprint_target_mode is "" (create sprints, the default) or "existing"
+    # sprint_target_mode is "" (create sprints, the default), "existing"
     # (assign the plan's stories to an existing tracker sprint; the syncs then
-    # never create a sprint). target_sprint_name is the real board sprint /
+    # never create a sprint), or "backlog" (create the stories and assign them
+    # to nothing — the syncs skip sprints entirely and unassigned items sit in
+    # the tracker's backlog). target_sprint_name is the real board sprint /
     # iteration name ("PSOT Sprint 104"); target_sprint_external_id is the Jira
     # sprint id or AzDO iteration path, "" when only the name is known (the
     # sync resolves it by name among active/future sprints at execution time).

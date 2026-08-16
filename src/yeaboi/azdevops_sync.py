@@ -363,6 +363,14 @@ def sync_iterations_to_azdevops(
     result.stories_created.update(cascade_stories)
     result.errors.extend(cascade_errors)
 
+    # Backlog target (small-project intake): the stories above are the whole
+    # sync — nothing is created or assigned; unassigned items sit in the backlog.
+    if state.get("sprint_target_mode") == "backlog":
+        logger.info("Iteration sync: backlog mode — stories stay in the backlog, no iteration created")
+        if on_progress:
+            on_progress(1, 1, "Stories left in the backlog — no iteration created")
+        return result, state
+
     project = get_azure_devops_project() or ""
     org_url = get_azure_devops_org_url() or ""
     token = get_azure_devops_token() or ""

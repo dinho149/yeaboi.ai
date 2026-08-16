@@ -500,6 +500,10 @@ def _handle_tracker_sync(
             n_stories = len({sid for sp in sprints for sid in sp.story_ids})
             unit = "sprint" if tracker == "jira" else "iteration"
             parts.append(f"Add {n_stories} stories to existing {unit} '{target}'")
+        elif graph_state.get("sprint_target_mode") == "backlog":
+            # Small-project "backlog" — stories only, no sprint at all.
+            n_stories = len({sid for sp in sprints for sid in sp.story_ids})
+            parts.append(f"{n_stories} stories to the backlog (no sprint)")
         else:
             new_sprints = len(sprints) - existing_sprints
             sprint_label = "Sprints" if tracker == "jira" else "Iterations"
@@ -512,7 +516,7 @@ def _handle_tracker_sync(
         return None  # Nothing to create
 
     # Show confirmation via choice screen
-    if stage == "sprint_planner" and graph_state.get("sprint_target_mode") == "existing":
+    if stage == "sprint_planner" and graph_state.get("sprint_target_mode") in ("existing", "backlog"):
         desc = f"Sync to {tracker_label}: " + ", ".join(parts)
     else:
         desc = f"Create in {tracker_label}: " + ", ".join(parts)

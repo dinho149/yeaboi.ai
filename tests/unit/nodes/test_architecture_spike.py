@@ -135,6 +135,17 @@ class TestSpikeGate:
             == "skip"
         )
 
+    def test_parse_spike_reply_negations(self):
+        from langchain_core.messages import HumanMessage
+
+        prompt = {"recommended": "include"}
+        # A negated include must never inject the story the user refused.
+        assert _parse_spike_reply({"messages": [HumanMessage("no spike")], "_spike_prompt": prompt}) == "skip"
+        assert _parse_spike_reply({"messages": [HumanMessage("dont add one")], "_spike_prompt": prompt}) == "skip"
+        assert _parse_spike_reply({"messages": [HumanMessage("without the spike")], "_spike_prompt": prompt}) == "skip"
+        # A bare negation with no include keyword stays ambiguous → recommended.
+        assert _parse_spike_reply({"messages": [HumanMessage("not sure")], "_spike_prompt": prompt}) == "include"
+
 
 class TestSpikeStoryInjection:
     def test_injects_first_with_spike_shape(self):

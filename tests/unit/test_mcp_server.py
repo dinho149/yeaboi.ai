@@ -770,6 +770,12 @@ class TestPlanSync:
         assert payload["ok"] is True
         assert captured == {"mode": "existing", "name": "", "ext": "42"}
 
+        # The "backlog" keyword creates stories without assigning them anywhere.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "backlog"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "backlog", "name": "", "ext": ""}
+
     def test_sync_no_sessions_errors(self, tmp_db):
         payload = call_tool("plan_sync", {"destination": "jira"})
         assert payload["ok"] is False

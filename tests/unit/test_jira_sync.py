@@ -630,6 +630,44 @@ class TestSyncSprintsToJira:
         assert not mock_jira.create_sprint.called
 
     @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_backlog_target_creates_and_assigns_nothing(self, mock_key):
+        """sprint_target_mode='backlog' — stories only; no sprint, no assignment."""
+        mock_jira = _sprint_capable_jira({"closed": [], "active": [], "future": []})
+        state = _make_graph_state(jira_story_keys={"story-1": "PROJ-2"}, sprint_target_mode="backlog")
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, new_state = sync_sprints_to_jira(state)
+
+        assert not result.errors
+        assert not mock_jira.create_sprint.called
+        assert not mock_add.called
+        assert result.sprints_created == {}
+        assert result.sprints_updated == {}
+        assert "jira_sprint_keys" not in new_state or not new_state["jira_sprint_keys"]
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_duplicate_name_open_sprint_wins_over_closed(self, mock_key):
+        """A closed sprint must not shadow a same-named open one — reuse, don't re-create."""
+        mock_jira = _sprint_capable_jira(
+            {
+                "closed": [_board_sprint(1, "Sprint 104")],
+                "active": [],
+                "future": [_board_sprint(9, "Sprint 104")],
+            }
+        )
+        state = _make_graph_state(starting_sprint_number=104, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, _ = sync_sprints_to_jira(state)
+
+        assert not mock_jira.create_sprint.called
+        assert result.sprints_updated == {"sprint-1": "9"}
+        mock_add.assert_called_once()
+        assert mock_add.call_args.args[1] == 9
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
     def test_unnumbered_board_keeps_plan_names(self, mock_key):
         """No numbered sprints on the board → the plan's own names are used as-is."""
         mock_jira = _sprint_capable_jira({"closed": [_board_sprint(1, "Kickoff")], "active": [], "future": []})
@@ -691,6 +729,17 @@ class TestTeamStyleDescriptions:
         assert "* [x] Tests green" in desc
         assert "* [ ] ~Deployed~" in desc
         assert "* [x] Announced" in desc
+
+    def test_mixed_ac_list_numbers_gwt_triples_consecutively(self):
+        story = _make_story()
+        acs = (
+            AcceptanceCriterion(text="Free text first."),
+            AcceptanceCriterion(given="g", when="w", then="t"),
+        )
+        story = story.__class__(**{**story.__dict__, "acceptance_criteria": acs})
+        desc = _format_story_description(story, None)
+        assert "*AC1*" in desc  # the counter skips the free-text criterion
+        assert "AC2" not in desc
 
     def test_short_flags_pad_as_applicable(self):
         story = _make_story()

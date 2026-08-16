@@ -223,13 +223,19 @@ def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_pr
         # Route the whole plan into an existing sprint/iteration instead of
         # creating any: digits = a Jira sprint id, anything else = the sprint /
         # iteration name (resolved among active/future targets at sync time).
+        # The keyword "backlog" creates the stories and assigns them nowhere.
         value = target_sprint.strip()
         state = dict(state)
-        state["sprint_target_mode"] = "existing"
-        if value.isdigit():
+        if value.lower() == "backlog":
+            state["sprint_target_mode"] = "backlog"
+            state["target_sprint_name"] = ""
+            state["target_sprint_external_id"] = ""
+        elif value.isdigit():
+            state["sprint_target_mode"] = "existing"
             state["target_sprint_external_id"] = value
             state["target_sprint_name"] = ""
         else:
+            state["sprint_target_mode"] = "existing"
             state["target_sprint_name"] = value
             state["target_sprint_external_id"] = ""
     if destination == "jira":
@@ -424,7 +430,8 @@ def register(app) -> None:
         creates the epic, stories, tasks and sprints/iterations as REAL tickets on the
         configured board — always confirm with the user before calling. Idempotent: items
         created by an earlier sync are skipped, so a partial run can be safely retried.
-        target_sprint: add the plan's stories to this EXISTING active/future sprint instead
+        target_sprint: "backlog" creates the stories without assigning them to any
+            sprint; otherwise add the plan's stories to this EXISTING active/future sprint instead
         of creating sprints — a Jira sprint id (digits) or the sprint/iteration name.
         Blank session_id = most recent session."""
 

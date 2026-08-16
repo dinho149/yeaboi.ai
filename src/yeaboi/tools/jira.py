@@ -192,15 +192,18 @@ def fetch_board_sprints(
 
     Each item: {id, name, state, start_date, end_date} (dates "YYYY-MM-DD" or "").
     python-jira's default maxResults=50 silently truncates mature boards to the
-    OLDEST 50 sprints; maxResults=False makes it fetch every page. A failing
-    state query is logged and skipped (some boards reject some states).
+    OLDEST 50 sprints; maxResults=False makes it fetch every page. An auth
+    failure escalates (a partial list from a 401 would silently mis-derive the
+    board's numbering); any other failing state query is logged at WARNING and
+    skipped (some boards reject some states).
     """
     items: list[dict] = []
     for state in states:
         try:
             board_sprints = jira.sprints(board_id, state=state, maxResults=False)
         except JIRAError as e:
-            logger.debug("fetch_board_sprints: %s sprints failed: %s", state, _jira_error_msg(e))
+            _raise_if_auth_error(e, "jira")
+            logger.warning("fetch_board_sprints: %s sprints failed: %s", state, _jira_error_msg(e))
             continue
         for sp in board_sprints or []:
             name = getattr(sp, "name", "") or ""

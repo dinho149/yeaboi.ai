@@ -462,6 +462,8 @@ def export_prd_markdown(graph_state: dict, path: Path | None = None, result: Prd
 
     output_path = resolve_and_check(path or Path("prd.md"), mode="write", context="PRD markdown export")
     built = result or build_prd_markdown(graph_state)
-    output_path.write_text(built.markdown)
+    # Explicit encoding: the PRD always carries non-ASCII (✅/❌/⚠️ scope
+    # markers), and a cp1252 default would raise after the LLM call was paid.
+    output_path.write_text(built.markdown, encoding="utf-8")
     logger.info("prd: exported to %s (llm_mode=%s)", output_path, built.llm_mode)
     return output_path

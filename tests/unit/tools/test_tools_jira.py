@@ -1000,6 +1000,19 @@ class TestFetchBoardSprints:
         assert [it["name"] for it in items] == ["Sprint 2", "Sprint 1"]
         assert [it["state"] for it in items] == ["active", "closed"]
 
+    def test_auth_error_escalates_instead_of_truncating(self):
+        # A 401/403 must not degrade into a silently short list — a partial
+        # board mis-derives the numbering and hides sprints from the Q27 menu.
+        import pytest
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.jira import fetch_board_sprints
+
+        mock_client = MagicMock()
+        mock_client.sprints.side_effect = _make_jira_error(401, "expired token")
+        with pytest.raises(StandupSourceError):
+            fetch_board_sprints(mock_client, 7)
+
     def test_nameless_sprints_are_skipped(self):
         from yeaboi.tools.jira import fetch_board_sprints
 

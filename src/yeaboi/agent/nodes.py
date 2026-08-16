@@ -1512,21 +1512,23 @@ _MAX_SPRINT_TARGET_CHOICES = 4
 
 _SPRINT_TARGET_CREATE_CHOICE = "Create a new sprint"
 
+_SPRINT_TARGET_BACKLOG_CHOICE = "Backlog (no sprint)"
+
 
 def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> str | None:
-    """Park the small-mode Q27 choices: add to an existing sprint, or create new.
+    """Park the small-mode Q27 choices: existing sprint, create new, or backlog.
 
     # See docs: "Scrum Standards" — sprint planning
     #
     # Fetches the board's active + future sprints and offers them by their real
-    # names ("Add to PSOT Sprint 104 (active)"), plus "Create a new sprint".
-    # Mirrors the smart-mode Q27 dynamic-choice pattern: sentinel answer +
-    # _follow_up_choices, resolved on the next pass.
+    # names ("Add to PSOT Sprint 104 (active)"), plus "Create a new sprint" and
+    # "Backlog (no sprint)". Mirrors the smart-mode Q27 dynamic-choice pattern:
+    # sentinel answer + _follow_up_choices, resolved on the next pass.
 
     Returns:
         The prompt text to show, or None when no targets could be fetched —
-        the caller then falls back to _derive_q27_from_locale exactly like
-        smart mode does on a failed fetch.
+        the caller then falls back to _setup_small_sprint_fallback_question,
+        which keeps the create/backlog halves of the decision askable.
     """
     targets, status = _fetch_sprint_targets(questionnaire._preferred_tracker)
     if not targets:
@@ -1543,6 +1545,7 @@ def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> st
     questionnaire._sprint_target_options = {t["name"]: t["external_id"] for t in offered}
     choices = [f"Add to {t['name']}{' (active)' if t['state'] == 'active' else ''}" for t in offered]
     choices.append(_SPRINT_TARGET_CREATE_CHOICE)
+    choices.append(_SPRINT_TARGET_BACKLOG_CHOICE)
     questionnaire._follow_up_choices[27] = tuple(choices)
     if active is not None and active["number"] is not None:
         questionnaire.answers[27] = f"_active:{active['number']}"
@@ -1553,7 +1556,32 @@ def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> st
     label = "Jira" if (pref == "jira" or (not pref and _is_jira_configured())) else "Azure DevOps"
     logger.info("Small-mode Q27: offering %d sprint target(s) from %s", len(offered), label)
     active_line = f"Detected active sprint in {label}: **{active['name']}**.\n\n" if active else ""
-    return f"{active_line}Add this work to an existing sprint, or create a new one?"
+    return f"{active_line}Add this work to an existing sprint, create a new one, or leave it in the backlog?"
+
+
+def _setup_small_sprint_fallback_question(
+    questionnaire: QuestionnaireState, last_num: int | None, source_line: str
+) -> str:
+    """Small-mode Q27 when the board's sprint list cannot be fetched.
+
+    The small-project question is a landing decision — existing sprint, new
+    sprint, or backlog. Without a target list the first option is gone, but
+    the other two remain askable; the generic numbered menu used to swallow
+    them (a bare "Sprint 25" choice with no create/backlog language).
+    last_num is the best-known latest sprint number (live active sprint or
+    team analysis), used to name the create choice; None means no number is
+    known anywhere and the sync will number from the board at sync time.
+    """
+    if last_num is not None:
+        questionnaire._active_sprint_number = last_num
+        questionnaire.answers[27] = f"_active:{last_num}"
+        choices = (f"Create Sprint {last_num + 1} (next)", _SPRINT_TARGET_BACKLOG_CHOICE)
+    else:
+        questionnaire.answers[27] = "_targets"
+        choices = (_SPRINT_TARGET_CREATE_CHOICE, _SPRINT_TARGET_BACKLOG_CHOICE)
+    questionnaire._follow_up_choices[27] = choices
+    logger.info("Small-mode Q27 fallback: create/backlog choices (last_num=%s)", last_num)
+    return f"{source_line}Create a new sprint for this work, or leave it in the backlog?"
 
 
 def _resolve_small_sprint_target_answer(questionnaire: QuestionnaireState) -> None:
@@ -1568,6 +1596,10 @@ def _resolve_small_sprint_target_answer(questionnaire: QuestionnaireState) -> No
         target_name = answer.removeprefix("Add to ").strip()
         target_name = target_name.removesuffix("(active)").strip()
         questionnaire.answers[27] = f"Add to {target_name}"
+        questionnaire._follow_up_choices.pop(27, None)
+        return
+    if "backlog" in answer.lower():
+        questionnaire.answers[27] = _SPRINT_TARGET_BACKLOG_CHOICE
         questionnaire._follow_up_choices.pop(27, None)
         return
     if _SPRINT_TARGET_CREATE_CHOICE.lower() in answer.lower():
@@ -4553,6 +4585,18 @@ def project_intake(state: ScrumState) -> dict:
             small_q27 = q_nums[0] == 27 and _is_small_project_mode(qs.intake_mode) and _is_tracker_configured()
             if small_q27 and (small_prompt := _setup_small_sprint_target_question(qs)) is not None:
                 prompt_text = small_prompt
+            elif small_q27:
+                # Target list unavailable — the landing decision (new sprint
+                # vs backlog) is still real, so ask it instead of silently
+                # defaulting like the generic path would.
+                if active_num is not None:
+                    qs._active_sprint_start_date = active_start
+                source = (
+                    f"Detected active sprint in {_tracker_label}: **Sprint {active_num}**.\n\n"
+                    if active_num is not None
+                    else ""
+                )
+                prompt_text = _setup_small_sprint_fallback_question(qs, active_num, source)
             elif not small_q27 and q_nums[0] == 27 and active_num is not None:
                 qs._active_sprint_number = active_num
                 qs._active_sprint_start_date = active_start
@@ -4959,6 +5003,15 @@ def project_intake(state: ScrumState) -> dict:
                     f"Detected active sprint in {_trk_label}: **Sprint {active_num}**.\n\n"
                     f"Which sprint are you planning for?"
                 )
+            elif active_num is not None:
+                # Small mode with a live active number but no target list —
+                # the landing decision (new sprint vs backlog) is still real.
+                questionnaire._active_sprint_start_date = active_start
+                prompt_text = _setup_small_sprint_fallback_question(
+                    questionnaire,
+                    active_num,
+                    f"Detected active sprint in {_trk_label}: **Sprint {active_num}**.\n\n",
+                )
             else:
                 # Couldn't fetch active sprint from live tracker
                 logger.warning("Tracker sprint fetch failed: %s", jira_status)
@@ -4979,23 +5032,34 @@ def project_intake(state: ScrumState) -> dict:
                                 _num_m = _s27re.search(r"(\d+)", _last_name)
                                 if _num_m:
                                     _last_num = int(_num_m.group(1))
-                                    questionnaire._active_sprint_number = _last_num
-                                    questionnaire.answers[27] = f"_active:{_last_num}"
-                                    questionnaire._follow_up_choices[27] = (
-                                        f"Sprint {_last_num + 1} (next)",
-                                        f"Sprint {_last_num + 2}",
-                                        f"Sprint {_last_num + 3}",
-                                    )
-                                    prompt_text = (
+                                    _src_line = (
                                         f"Last analysed sprint: **Sprint {_last_num}** "
                                         f"(from team analysis — live tracker unavailable).\n\n"
-                                        f"Which sprint are you planning for?"
                                     )
+                                    if _is_small_project_mode(questionnaire.intake_mode):
+                                        # Small mode's landing decision: create
+                                        # a new sprint, or leave it in the backlog.
+                                        prompt_text = _setup_small_sprint_fallback_question(
+                                            questionnaire, _last_num, _src_line
+                                        )
+                                    else:
+                                        questionnaire._active_sprint_number = _last_num
+                                        questionnaire.answers[27] = f"_active:{_last_num}"
+                                        questionnaire._follow_up_choices[27] = (
+                                            f"Sprint {_last_num + 1} (next)",
+                                            f"Sprint {_last_num + 2}",
+                                            f"Sprint {_last_num + 3}",
+                                        )
+                                        prompt_text = f"{_src_line}Which sprint are you planning for?"
                                     _used_analysis = True
                                     logger.info("Q27 fallback: using analysis sprint %d", _last_num)
                     except Exception:
                         pass
-                if not _used_analysis:
+                if not _used_analysis and _is_small_project_mode(questionnaire.intake_mode):
+                    # No live board and no analysis number — the small-mode
+                    # landing decision (new sprint vs backlog) is still real.
+                    prompt_text = _setup_small_sprint_fallback_question(questionnaire, None, "")
+                elif not _used_analysis:
                     _derive_q27_from_locale(questionnaire)
                     gaps = _find_essential_gaps(questionnaire, essential_set)
                     if not gaps:
@@ -5376,6 +5440,11 @@ def project_intake(state: ScrumState) -> dict:
                 target_sprint_name,
                 target_sprint_external_id or "resolve-by-name",
             )
+        elif q27_answer == _SPRINT_TARGET_BACKLOG_CHOICE:
+            # Small-mode "Backlog (no sprint)": stories are created but never
+            # assigned — the syncs skip sprint creation/assignment entirely.
+            sprint_target_mode = "backlog"
+            logger.info("Sprint targeting: backlog — no sprint will be created or assigned")
 
         if _is_small_project_mode(questionnaire.intake_mode):
             # Small-project mode: no capacity planning. Net velocity equals gross,
@@ -6682,9 +6751,10 @@ def project_analyzer(state: ScrumState) -> dict:
     honest_target = analysis.target_sprints
     if small_mode:
         oversized = not analysis.skip_features or analysis.target_sprints > 2 or len(analysis.goals) > 3
-        # Targeting one existing sprint means one Sprint artifact — the stories
-        # are being added to a sprint that already exists, not spread over new ones.
-        targeting_existing = state.get("sprint_target_mode") == "existing"
+        # Targeting one existing sprint (or the backlog) means one Sprint
+        # artifact — the stories are being added to a sprint that already
+        # exists / left unscheduled, not spread over new ones.
+        targeting_existing = state.get("sprint_target_mode") in ("existing", "backlog")
         analysis = dataclasses.replace(
             analysis,
             skip_features=True,
@@ -8100,6 +8170,11 @@ def _parse_spike_reply(state: ScrumState) -> str:
     messages = state.get("messages") or []
     text = str(getattr(messages[-1], "content", "")).strip().lower() if messages else ""
     if "skip" in text or text in ("2", "no", "n"):
+        return "skip"
+    # A negated include ("no spike", "don't add one") must not fall through to
+    # the substring include-match below and inject the story the user refused.
+    negated = re.search(r"\b(no|not|don'?t|dont|never|without)\b", text)
+    if negated and ("add" in text or "include" in text or "spike" in text):
         return "skip"
     if "add" in text or "include" in text or "spike" in text or text in ("1", "yes", "y"):
         return "include"
@@ -9824,6 +9899,11 @@ def sprint_planner(state: ScrumState) -> dict:
     # The architecture spike must open the plan — prompt rule 4 asks for it,
     # this guarantees it (deterministic post-parse, like the capacity fixes).
     sprints = _pin_spike_to_first_sprint(sprints, stories)
+
+    if state.get("sprint_target_mode") == "backlog" and sprints:
+        # The plan's single bucket IS the backlog, not a numbered sprint —
+        # naming it "Sprint 1" would promise a sprint the sync never creates.
+        sprints = [dataclasses.replace(sprints[0], name="Backlog"), *sprints[1:]]
 
     # Format the sprints for display
     display = _format_sprints(sprints, stories, features, analysis.project_name, velocity)

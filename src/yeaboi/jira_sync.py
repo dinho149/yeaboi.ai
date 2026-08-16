@@ -442,6 +442,14 @@ def sync_sprints_to_jira(
     result.stories_created.update(result_stories)
     result.errors.extend(result_story_errors)
 
+    # Backlog target (small-project intake): the stories above are the whole
+    # sync — nothing is created or assigned, Jira's backlog is "no sprint".
+    if state.get("sprint_target_mode") == "backlog":
+        logger.info("Sprint sync: backlog mode — stories stay in the backlog, no sprint created")
+        if on_progress:
+            on_progress(1, 1, "Stories left in the backlog — no sprint created")
+        return result, state
+
     jira = _make_jira_client()
     if jira is None:
         result.errors.append("Jira not configured — missing credentials.")
@@ -470,6 +478,12 @@ def sync_sprints_to_jira(
     existing_board_sprints: dict[str, tuple[int, str]] = {}  # name → (sprint_id, state)
     try:
         for item in fetch_board_sprints(jira, board_id):
+            # Jira permits duplicate sprint names; never let a closed sprint
+            # shadow an open one of the same name (the reuse guard would then
+            # decline the still-open sprint and create a third).
+            prev = existing_board_sprints.get(item["name"])
+            if prev is not None and prev[1] in ("future", "active") and item["state"] == "closed":
+                continue
             existing_board_sprints[item["name"]] = (item["id"], item["state"])
         logger.debug("Found %d existing sprints on board %s", len(existing_board_sprints), board_id)
     except Exception as e:
@@ -762,11 +776,13 @@ def _format_story_description(story, feature=None, *, dod_items=None, headings=N
     # Acceptance criteria — GWT triples or the team's free-text criteria
     if story.acceptance_criteria:
         lines.append(f"h3. {headings.get('acceptance_criteria', 'Acceptance Criteria')}")
-        for i, ac in enumerate(story.acceptance_criteria, 1):
+        gwt_count = 0  # numbers the GWT triples only, so a mixed list reads AC1, AC2, …
+        for ac in story.acceptance_criteria:
             if ac.text:
                 lines.append(f"# {ac.text}")
             else:
-                lines.append(f"# *AC{i}*")
+                gwt_count += 1
+                lines.append(f"# *AC{gwt_count}*")
                 lines.append(f"*Given* {ac.given}")
                 lines.append(f"*When* {ac.when}")
                 lines.append(f"*Then* {ac.then}")
