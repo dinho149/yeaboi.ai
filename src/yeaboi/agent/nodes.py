@@ -7747,7 +7747,7 @@ def _validate_stories(
 
 
 def _parse_stories_response(
-    raw: str, features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt"
+    raw: str, features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt", dod_count: int = 0
 ) -> list[UserStory]:
     """Parse the LLM's JSON response into a list of UserStory dataclasses.
 
@@ -7856,14 +7856,21 @@ def _parse_stories_response(
                         )
                     )
 
-            # Parse Definition of Done applicability flags.
-            # LLM returns a 7-element boolean array matching DOD_ITEMS order.
-            # Fall back to all-True (fully applicable) if the field is missing or malformed.
+            # Parse Definition of Done applicability flags. The LLM is asked
+            # for a boolean array matching the plan's RESOLVED DoD list (a
+            # custom list may not be 7 items), so flags are normalised to that
+            # length — truncated if long, padded with True (fully applicable)
+            # if short or missing. The renderers zip flags against the same
+            # resolved list, so length agreement here is what keeps the DoD
+            # section on every synced ticket.
+            n_dod = dod_count or len(DOD_ITEMS)
             raw_dod = item.get("dod_applicable")
-            if isinstance(raw_dod, list) and len(raw_dod) == len(DOD_ITEMS):
-                dod_applicable: tuple[bool, ...] = tuple(bool(f) for f in raw_dod)
+            if isinstance(raw_dod, list) and raw_dod:
+                flags = [bool(f) for f in raw_dod[:n_dod]]
+                flags += [True] * (n_dod - len(flags))
+                dod_applicable: tuple[bool, ...] = tuple(flags)
             else:
-                dod_applicable = (True,) * len(DOD_ITEMS)
+                dod_applicable = (True,) * n_dod
 
             points_rationale = str(item.get("points_rationale", ""))
             points_confidence = str(item.get("points_confidence", ""))
@@ -8169,6 +8176,7 @@ def _inject_architecture_spike_story(
     features: list[Feature],
     analysis: ProjectAnalysis,
     ac_style: str = "gwt",
+    dod_count: int = 0,
 ) -> tuple[list[UserStory], str | None]:
     """Prepend the '[Spike] Validate architecture' story (large mode).
 
@@ -8182,6 +8190,11 @@ def _inject_architecture_spike_story(
         return stories, None
     arch = analysis.architecture
     runner_up = next((o.name for o in arch.options if o.name != arch.chosen), "the alternatives")
+    # DoD flags are positional against the plan's RESOLVED list. The curated
+    # pattern (Testing/Merge/SDLC not applicable) only means anything on the
+    # default 7-item list; a custom DoD gets all-applicable of its own length.
+    n_dod = dod_count or len(DOD_ITEMS)
+    curated = (True, True, False, False, False, True, True)
     spike = UserStory(
         id=f"US-{features[0].id}-SPIKE",
         feature_id=features[0].id,
@@ -8194,7 +8207,7 @@ def _inject_architecture_spike_story(
         priority=Priority.CRITICAL,
         title=f"{_SPIKE_TITLE_PREFIX}Validate architecture: {arch.chosen}",
         discipline=Discipline.FULLSTACK,
-        dod_applicable=(True, True, False, False, False, True, True),
+        dod_applicable=curated if n_dod == len(curated) else (True,) * n_dod,
         points_rationale=f"Time-boxed architecture spike; confidence in the recommendation is {arch.confidence}.",
     )
     logger.info("story_writer: injected architecture spike story %s", spike.id)
@@ -8264,6 +8277,10 @@ def _pin_spike_to_first_sprint(sprints: list[Sprint], stories: list[UserStory]) 
     misplaced = [sid for sid in spike_ids if sid not in first.story_ids]
     if not misplaced:
         return sprints
+    # capacity_points is defined as the sum of the sprint's story points
+    # (_validate_sprints), so every sprint whose story_ids change here must
+    # have it recomputed — the pin runs after validation.
+    points = {s.id: s.story_points.value for s in stories}
     result: list[Sprint] = []
     moved: list[str] = []
     for i, sprint in enumerate(sprints):
@@ -8272,11 +8289,16 @@ def _pin_spike_to_first_sprint(sprints: list[Sprint], stories: list[UserStory]) 
         remaining = tuple(sid for sid in sprint.story_ids if sid not in spike_ids)
         if len(remaining) != len(sprint.story_ids):
             moved.extend(sid for sid in sprint.story_ids if sid in spike_ids)
-            sprint = dataclasses.replace(sprint, story_ids=remaining)
+            sprint = dataclasses.replace(
+                sprint, story_ids=remaining, capacity_points=sum(points.get(sid, 0) for sid in remaining)
+            )
         result.append(sprint)
     if moved:
         logger.info("sprint_planner: pinned spike story(ies) %s into %s", moved, sprints[0].name)
-        first = dataclasses.replace(first, story_ids=(*moved, *first.story_ids))
+        pinned_ids = (*moved, *first.story_ids)
+        first = dataclasses.replace(
+            first, story_ids=pinned_ids, capacity_points=sum(points.get(sid, 0) for sid in pinned_ids)
+        )
     return [first, *result]
 
 
@@ -8413,7 +8435,7 @@ def story_writer(state: ScrumState) -> dict:
         # Single LLM call with low temperature for deterministic JSON output.
         # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
-        stories = _parse_stories_response(response.content, features, analysis, ac_style)
+        stories = _parse_stories_response(response.content, features, analysis, ac_style, dod_count=len(_dod))
     except Exception as exc:
         if _should_reraise_llm_error(exc):
             raise
@@ -8433,7 +8455,7 @@ def story_writer(state: ScrumState) -> dict:
     # small-mode cap below could immediately evict real work for it).
     effective_spike = state.get("spike_choice") or _spike_choice_override()
     if not small_mode and effective_spike == "include" and _spike_eligible(analysis):
-        stories, spike_note = _inject_architecture_spike_story(stories, features, analysis, ac_style)
+        stories, spike_note = _inject_architecture_spike_story(stories, features, analysis, ac_style, len(_dod))
         if spike_note:
             warnings.append(spike_note)
 

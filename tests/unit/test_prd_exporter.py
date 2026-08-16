@@ -157,6 +157,17 @@ class TestLlmPath:
         # The missing sections still render from the deterministic fallback.
         assert "## Risks & Mitigations" in result.markdown
 
+    def test_all_falsy_dict_entries_skipped_not_crashed(self, monkeypatch):
+        # A degenerate reply entry ({"persona": "", "description": ""}) must
+        # render as nothing, not IndexError — build_prd_markdown never raises.
+        self._mock_llm(
+            monkeypatch,
+            {"executive_summary": "Still here.", "target_users": [{"persona": "", "description": ""}]},
+        )
+        result = build_prd_markdown(_graph_state())
+        assert "Still here." in result.markdown
+        assert "## Target Users" not in result.markdown  # empty section skipped, not crashed
+
     def test_llm_failure_falls_back_whole(self, monkeypatch):
         monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
 

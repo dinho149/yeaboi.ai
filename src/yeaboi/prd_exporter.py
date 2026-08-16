@@ -204,9 +204,9 @@ def _as_lines(value: object, bullet: str = "- ") -> list[str]:
     for item in value or []:
         if isinstance(item, dict):
             parts = [str(v) for v in item.values() if v]
-            lines.append(
-                f"{bullet}{': '.join(parts[:1]) if len(parts) == 1 else parts[0] + ' — ' + '; '.join(parts[1:])}"
-            )
+            if not parts:  # a dict of empty values renders as nothing, not a crash
+                continue
+            lines.append(f"{bullet}{parts[0] if len(parts) == 1 else parts[0] + ' — ' + '; '.join(parts[1:])}")
         elif item:
             lines.append(f"{bullet}{item}")
     return lines

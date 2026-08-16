@@ -477,6 +477,23 @@ class TestSyncIterationsToAzdevops:
         assert not mock_iter.called
         assert not mock_add.called
 
+    def test_existing_target_past_path_external_id_errors_loudly(self, *_):
+        """A past iteration's path must not slip past the current/future filter."""
+        meta = [_iter_meta("Sprint 5", "past")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="",
+            target_sprint_external_id="MyProject\\Sprint 5",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert result.errors and "not found among current/future" in result.errors[0]
+        assert not mock_iter.called
+        assert not mock_add.called
+
     def test_current_same_named_iteration_reused_not_created(self, *_):
         meta = [_iter_meta("Sprint 6", "current")]
         with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
@@ -526,6 +543,28 @@ class TestTeamStyleDescriptionsHtml:
         desc = _format_story_description_html(story, None, dod_items=custom)
         assert "Tests green" in desc
         assert "<s>Deployed</s>" in desc
+
+    def test_default_length_flags_with_custom_dod_keep_the_section(self):
+        # The real pipeline shape: stories carry flags sized to the default
+        # 7-item list; a shorter custom DoD list must not drop the whole
+        # block — positions carry over, extra flags are ignored.
+        story = _make_story()
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True, True, True, True, True)})
+        desc = _format_story_description_html(story, None, dod_items=("Tests green", "Deployed", "Announced"))
+        assert "&#9745; Tests green" in desc
+        assert "<s>Deployed</s>" in desc
+        assert "&#9745; Announced" in desc
+
+    def test_mixed_ac_list_numbers_gwt_triples_consecutively(self):
+        story = _make_story()
+        acs = (
+            AcceptanceCriterion(text="Free text first."),
+            AcceptanceCriterion(given="g", when="w", then="t"),
+        )
+        story = story.__class__(**{**story.__dict__, "acceptance_criteria": acs})
+        desc = _format_story_description_html(story, None)
+        assert "<strong>AC1</strong>" in desc  # the counter skips the free-text criterion
+        assert "AC2" not in desc
 
     def test_team_headings_adopted(self):
         story = _make_story()

@@ -698,8 +698,10 @@ def fetch_team_iterations_meta(
     items: list[dict] = []
     for it in work_client.get_team_iterations(team_context) or []:
         attrs = getattr(it, "attributes", None)
-        start = getattr(attrs, "start_date", None)
-        finish = getattr(attrs, "finish_date", None)
+        # SDK datetimes may come back naive; comparing one against the aware
+        # `now` raises TypeError, which callers degrade on — coerce first.
+        start = _aware(getattr(attrs, "start_date", None))
+        finish = _aware(getattr(attrs, "finish_date", None))
         if start and finish:
             if finish < now:
                 time_frame = "past"

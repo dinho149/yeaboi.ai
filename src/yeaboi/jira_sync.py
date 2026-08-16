@@ -620,7 +620,13 @@ def _sync_to_existing_jira_sprint(
     open_by_name = {name: sid for name, (sid, st) in board_sprints.items() if st in ("future", "active")}
     target_id: int | None = None
     if target_ext.isdigit():
-        target_id = int(target_ext)
+        # An external id is validated against the board like a name is — a
+        # closed (or unknown) id must not slip past the active/future filter.
+        # An empty board list means the sprint fetch failed (already logged);
+        # then the id goes through best-effort and the API errors loudly.
+        candidate = int(target_ext)
+        if not board_sprints or candidate in set(open_by_name.values()):
+            target_id = candidate
     elif target_name:
         target_id = open_by_name.get(target_name)
         if target_id is None:
@@ -768,11 +774,15 @@ def _format_story_description(story, feature=None, *, dod_items=None, headings=N
         if story.acceptance_criteria[-1].text:
             lines.append("")
 
-    # Definition of Done — checkboxes with applicable/N/A items
+    # Definition of Done — checkboxes with applicable/N/A items. Flags are
+    # positional against the resolved list; stories from older sessions carry
+    # flags sized to the default 7-item list, so a length mismatch pads with
+    # applicable / drops extras rather than losing the whole section.
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(items):
+    if dod:
         lines.append(f"h3. {headings.get('dod', 'Definition of Done')}")
-        for item, applicable in zip(items, dod):
+        for i, item in enumerate(items):
+            applicable = dod[i] if i < len(dod) else True
             if applicable:
                 lines.append(f"* [x] {item}")
             else:

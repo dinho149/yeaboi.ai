@@ -381,7 +381,9 @@ def sync_iterations_to_azdevops(
 
         iteration_meta = fetch_team_iterations_meta(org_url, token, project)
     except Exception as e:
-        logger.debug("Could not detect iteration naming pattern: %s", e)
+        # Without the metadata the sync silently reverts to generic numbering
+        # (and an existing-target sync cannot resolve by name) — say so.
+        logger.warning("Could not fetch iteration metadata: %s — falling back to generic numbering", e)
 
     # "Add to an existing iteration" (small-project intake): assign the plan's
     # stories to the chosen iteration and never create one.
@@ -527,7 +529,13 @@ def _sync_to_existing_azdo_iteration(
     open_iters = {it["name"]: it["path"] for it in iteration_meta if it["time_frame"] != "past"}
     target_path = ""
     if target_ext:
-        target_path = target_ext
+        # An external path is validated against the team's iterations like a
+        # name is — a past (or unknown) path must not slip past the filter.
+        # Empty metadata means the fetch failed (already logged); then the
+        # path goes through best-effort and the API errors loudly.
+        open_paths = {p.lstrip("\\") for p in open_iters.values()}
+        if not iteration_meta or target_ext.lstrip("\\") in open_paths:
+            target_path = target_ext
     elif target_name:
         target_path = open_iters.get(target_name, "")
         if not target_path:
@@ -665,23 +673,29 @@ def _format_story_description_html(story, feature=None, *, dod_items=None, headi
                 parts.append(f"<li>{ac.text}</li>")
             parts.append("</ul>")
         else:
-            for i, ac in enumerate(story.acceptance_criteria, 1):
+            gwt_count = 0  # numbers the GWT triples only, so a mixed list reads AC1, AC2, …
+            for ac in story.acceptance_criteria:
                 if ac.text:
                     parts.append(f"<p>{ac.text}</p>")
                     continue
-                parts.append(f"<p><strong>AC{i}</strong></p>")
+                gwt_count += 1
+                parts.append(f"<p><strong>AC{gwt_count}</strong></p>")
                 parts.append("<ul>")
                 parts.append(f"<li><strong>Given</strong> {ac.given}</li>")
                 parts.append(f"<li><strong>When</strong> {ac.when}</li>")
                 parts.append(f"<li><strong>Then</strong> {ac.then}</li>")
                 parts.append("</ul>")
 
-    # Definition of Done
+    # Definition of Done. Flags are positional against the resolved list;
+    # stories from older sessions carry flags sized to the default 7-item
+    # list, so a length mismatch pads with applicable / drops extras rather
+    # than losing the whole section.
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(items):
+    if dod:
         parts.append(f"<h3>{headings.get('dod', 'Definition of Done')}</h3>")
         parts.append("<ul>")
-        for item, applicable in zip(items, dod):
+        for i, item in enumerate(items):
+            applicable = dod[i] if i < len(dod) else True
             if applicable:
                 parts.append(f"<li>&#9745; {item}</li>")
             else:

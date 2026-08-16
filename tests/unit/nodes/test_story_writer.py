@@ -1071,3 +1071,54 @@ class TestAcStyleParsing:
         assert all(ac.text for s in bullets for ac in s.acceptance_criteria)
         gwt = _build_fallback_stories(self._features(), self._analysis(), "gwt")
         assert all(ac.given for s in gwt for ac in s.acceptance_criteria)
+
+
+class TestParseDodCount:
+    """dod_applicable flags normalise to the plan's RESOLVED DoD length.
+
+    A custom Definition of Done list is not 7 items; the renderers zip flags
+    against the resolved list, so a mis-sized tuple used to drop the whole
+    DoD section from every synced ticket.
+    """
+
+    def _raw(self, dod=None):
+        import json as _json
+
+        story = {
+            "id": "US-F1-001",
+            "feature_id": "F1",
+            "title": "Login",
+            "persona": "user",
+            "goal": "log in",
+            "benefit": "access my data",
+            "acceptance_criteria": [{"given": "g", "when": "w", "then": "t"}],
+            "story_points": 3,
+            "priority": "high",
+        }
+        if dod is not None:
+            story["dod_applicable"] = dod
+        return _json.dumps([story])
+
+    def test_custom_count_sizes_flags(self):
+        raw = self._raw([True, False, True])
+        result = _parse_stories_response(raw, make_sample_features(), make_dummy_analysis(), "gwt", dod_count=3)
+        assert result[0].dod_applicable == (True, False, True)
+
+    def test_long_reply_truncated(self):
+        raw = self._raw([True] * 7)
+        result = _parse_stories_response(raw, make_sample_features(), make_dummy_analysis(), "gwt", dod_count=3)
+        assert result[0].dod_applicable == (True, True, True)
+
+    def test_short_reply_padded_applicable(self):
+        raw = self._raw([False])
+        result = _parse_stories_response(raw, make_sample_features(), make_dummy_analysis(), "gwt", dod_count=3)
+        assert result[0].dod_applicable == (False, True, True)
+
+    def test_missing_defaults_to_resolved_length(self):
+        result = _parse_stories_response(self._raw(), make_sample_features(), make_dummy_analysis(), "gwt", dod_count=3)
+        assert result[0].dod_applicable == (True, True, True)
+
+    def test_default_count_stays_seven(self):
+        raw = self._raw([True, False, True, True, True, True, True])
+        result = _parse_stories_response(raw, make_sample_features(), make_dummy_analysis())
+        assert result[0].dod_applicable == (True, False, True, True, True, True, True)

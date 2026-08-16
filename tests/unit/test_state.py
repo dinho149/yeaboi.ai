@@ -11,6 +11,8 @@ from yeaboi.agent.state import (
     PHASE_QUESTION_RANGES,
     TOTAL_QUESTIONS,
     AcceptanceCriterion,
+    ArchitectureDecision,
+    ArchitectureOption,
     Discipline,
     Feature,
     MemberUpdate,
@@ -29,6 +31,7 @@ from yeaboi.agent.state import (
     TaskLabel,
     UserStory,
     _merge_dicts,
+    architecture_from_dict,
 )
 
 # ── Enum tests ─────────────────────────────────────────────────────────
@@ -464,6 +467,61 @@ class TestProjectAnalysis:
         assert analysis.prompt_quality is not None
         assert analysis.prompt_quality.grade == "B"
         assert analysis.prompt_quality.score_pct == 74
+
+
+class TestArchitectureFromDict:
+    """Rebuilding ArchitectureDecision from its asdict() form on resume."""
+
+    def _decision(self) -> ArchitectureDecision:
+        return ArchitectureDecision(
+            options=(
+                ArchitectureOption(
+                    name="Modular monolith",
+                    summary="One deployable, clear internal seams",
+                    pros=("simple ops",),
+                    cons=("scaling ceiling",),
+                ),
+            ),
+            chosen="Modular monolith",
+            confidence="medium",
+            rationale="Team of two, one product",
+            pinned_by_constraint=True,
+        )
+
+    def test_round_trip_from_asdict(self):
+        decision = self._decision()
+        rebuilt = architecture_from_dict(asdict(decision))
+        assert rebuilt == decision
+        # Nested containers come back as real dataclasses/tuples, not lists.
+        assert isinstance(rebuilt.options[0], ArchitectureOption)
+        assert isinstance(rebuilt.options[0].pros, tuple)
+
+    def test_non_dict_non_decision_returns_none(self):
+        assert architecture_from_dict("not a dict") is None
+        assert architecture_from_dict(None) is None
+        assert architecture_from_dict(42) is None
+
+    def test_decision_instance_passes_through_unchanged(self):
+        decision = self._decision()
+        assert architecture_from_dict(decision) is decision
+
+    def test_non_dict_option_entries_are_skipped(self):
+        raw = {
+            "options": [
+                "garbage",
+                {"name": "Serverless", "summary": "s", "pros": ["cheap"], "cons": []},
+                None,
+            ],
+            "chosen": "Serverless",
+        }
+        rebuilt = architecture_from_dict(raw)
+        assert [o.name for o in rebuilt.options] == ["Serverless"]
+        assert rebuilt.options[0].pros == ("cheap",)
+
+    def test_missing_keys_default(self):
+        rebuilt = architecture_from_dict({})
+        assert rebuilt == ArchitectureDecision()
+        assert rebuilt.pinned_by_constraint is False
 
 
 class TestPromptQualityRating:

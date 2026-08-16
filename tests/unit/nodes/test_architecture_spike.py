@@ -169,6 +169,13 @@ class TestSpikeStoryInjection:
         stories, note = _inject_architecture_spike_story([make_valid_story()], [], analysis)
         assert note is None
 
+    def test_custom_dod_length_sizes_flags(self):
+        # The curated Testing/Merge/SDLC pattern only means anything on the
+        # default 7-item list; a custom DoD gets all-applicable of its length.
+        analysis = make_dummy_analysis(architecture=_open_decision())
+        stories, _ = _inject_architecture_spike_story([], make_sample_features(), analysis, "gwt", 3)
+        assert stories[0].dod_applicable == (True, True, True)
+
 
 class TestSpikeTaskInjection:
     def test_spliced_first_for_first_story(self):
@@ -218,6 +225,20 @@ class TestPinSpikeToFirstSprint:
         pinned = _pin_spike_to_first_sprint(sprints, stories)
         assert "US-F1-SPIKE" in pinned[0].story_ids
         assert "US-F1-SPIKE" not in pinned[1].story_ids
+
+    def test_pin_recomputes_capacity_points(self):
+        # capacity_points is the sum of the sprint's story points; a pin that
+        # moves the spike must not leave sprint 1 under-reporting by 2 points.
+        stories = self._stories()
+        spike_pts = stories[0].story_points.value
+        other_pts = stories[1].story_points.value
+        sprints = [
+            Sprint(id="SP-1", name="Sprint 1", goal="g", capacity_points=other_pts, story_ids=(stories[1].id,)),
+            Sprint(id="SP-2", name="Sprint 2", goal="g", capacity_points=spike_pts, story_ids=("US-F1-SPIKE",)),
+        ]
+        pinned = _pin_spike_to_first_sprint(sprints, stories)
+        assert pinned[0].capacity_points == other_pts + spike_pts
+        assert pinned[1].capacity_points == 0
 
     def test_noop_when_already_first_or_absent(self):
         stories = self._stories()

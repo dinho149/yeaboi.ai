@@ -611,6 +611,25 @@ class TestSyncSprintsToJira:
         assert not mock_add.called
 
     @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_existing_target_closed_external_id_errors_loudly(self, mock_key):
+        """A closed sprint's external id must not slip past the active/future filter."""
+        mock_jira = _sprint_capable_jira({"closed": [_board_sprint(42, "PSOT Sprint 99")], "active": [], "future": []})
+        state = _make_graph_state(
+            jira_story_keys={"story-1": "PROJ-2"},
+            sprint_target_mode="existing",
+            target_sprint_name="",
+            target_sprint_external_id="42",
+        )
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, _ = sync_sprints_to_jira(state)
+
+        assert result.errors and "not found among active/future" in result.errors[0]
+        assert not mock_add.called
+        assert not mock_jira.create_sprint.called
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
     def test_unnumbered_board_keeps_plan_names(self, mock_key):
         """No numbered sprints on the board → the plan's own names are used as-is."""
         mock_jira = _sprint_capable_jira({"closed": [_board_sprint(1, "Kickoff")], "active": [], "future": []})
@@ -660,6 +679,25 @@ class TestTeamStyleDescriptions:
         assert "* [x] Tests green" in desc
         assert "* [ ] ~Deployed~" in desc
         assert "* [x] Announced" in desc
+
+    def test_default_length_flags_with_custom_dod_keep_the_section(self):
+        # The real pipeline shape: stories carry flags sized to the default
+        # 7-item list; a shorter custom DoD list must not drop the whole
+        # block — positions carry over, extra flags are ignored.
+        story = _make_story()
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True, True, True, True, True)})
+        desc = _format_story_description(story, None, dod_items=("Tests green", "Deployed", "Announced"))
+        assert "Definition of Done" in desc
+        assert "* [x] Tests green" in desc
+        assert "* [ ] ~Deployed~" in desc
+        assert "* [x] Announced" in desc
+
+    def test_short_flags_pad_as_applicable(self):
+        story = _make_story()
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True,)})
+        desc = _format_story_description(story, None, dod_items=("Tests green", "Deployed"))
+        assert "* [x] Tests green" in desc
+        assert "* [x] Deployed" in desc
 
     def test_team_headings_adopted(self):
         story = _make_story()

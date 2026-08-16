@@ -19,11 +19,13 @@ src/yeaboi/
   formatters.py         — Rich Table/Panel rendering (dark/light themes)
   html_exporter.py      — Export plans to self-contained HTML
   json_exporter.py      — Export plans to clean JSON (for CI/CD pipelines)
+  prd_exporter.py       — Build/export a Product Requirements Document from a plan (one LLM call for prose, deterministic sections + honest fallback; `--output prd`, MCP plan_export/plan_publish, TUI export flow)
   markdown_convert.py   — Generated Markdown → Notion blocks / Confluence storage XHTML (pure, no SDK; nested lists, hard breaks, links, native Confluence task lists, ⚠ Notices → callout/warning panels, ![alt](path) images via caller-supplied upload maps)
   export_targets.py     — publish_to_notion/publish_to_confluence/publish_markdown (PublishResult; never raises); uploads referenced images (Notion File Upload API / Confluence attach_file), localize_images() for portable .md folders, and yeaboi branding (🤙 Notion page icon, `yeaboi` Confluence label, linked footer auto-appended); with no exports page configured, docs group under an auto-created "🤙 yeaboi" container page (find-or-create, session-cached, best-effort fallback to root/space root)
   charts.py             — velocity/delivered-work PNG charts for exports (optional `charts` extra = matplotlib, lazy-imported; every function returns None gracefully)
   jira_sync.py          — Batch Jira creation (idempotent, cascade, progress callbacks)
   azdevops_sync.py      — Batch Azure DevOps creation (idempotent, cascade, progress callbacks)
+  sync_naming.py        — Pure board/iteration numbering: consensus name prefix, starting-number resolution (the -1 sentinel guard), advance-past-closed batches; shared by both syncs and the small-project intake
   questionnaire_io.py   — Import/export questionnaire templates as Markdown
   input_guardrails.py   — Input validation (length, injection, profanity, relevance)
   output_guardrails.py  — Output validation (story format, AC coverage, sprint capacity)
@@ -159,7 +161,7 @@ Two paths:
 1. **Interactive TUI**: `cli.py` → splash → mode selection TUI → provider selection → session TUI
 2. **CLI-flag / headless**: `cli.py` → `run_repl()` (for `--quick`, `--full-intake`, `--questionnaire`, `--mode`) or `_run_headless()` (for `--non-interactive`)
 
-Sessions can be listed (`--list-sessions`), resumed (`--resume`), and cleared (`--clear-sessions`). `--dry-run` runs the TUI with fake delays and no LLM calls. `--non-interactive` runs the full pipeline headlessly with `--description` as input and `--output {json,html,markdown}` for format.
+Sessions can be listed (`--list-sessions`), resumed (`--resume`), and cleared (`--clear-sessions`). `--dry-run` runs the TUI with fake delays and no LLM calls. `--non-interactive` runs the full pipeline headlessly with `--description` as input and `--output {json,html,markdown,prd}` for format.
 
 ## CLI Flags
 
@@ -169,7 +171,9 @@ Key flags to know about when modifying the CLI:
 |------|-------------|
 | `--non-interactive` | Headless mode (requires `--description`) |
 | `--description TEXT` | Project description; `@file.txt` reads from file |
-| `--output {markdown,json,html}` | Output format (only with `--non-interactive` or `--export-only`) |
+| `--output {markdown,json,html,prd}` | Output format (only with `--non-interactive` or `--export-only`); `prd` writes the Product Requirements Document |
+| `--ac-format {gwt,bullets}` | Acceptance-criteria style override (sets `YEABOI_AC_FORMAT`; default: learned team profile, else Given/When/Then) |
+| `--architecture-spike {auto,include,skip}` | Architecture validation spike (sets `YEABOI_ARCHITECTURE_SPIKE` when not `auto`; `auto` = confidence-driven) |
 | `--team-size N` | Maps to intake Q6 |
 | `--sprint-length {1,2,3,4}` | Maps to intake Q8 |
 | `--quick` / `--full-intake` | Mutually exclusive intake modes |
@@ -230,6 +234,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `NOTION_EXPORT_PARENT_PAGE_ID` — optional, a dedicated Notion page the Export buttons publish under; **blank groups exports under an auto-created "yeaboi" page (🤙 icon) inside `NOTION_ROOT_PAGE_ID`**. With neither set, Notion export shows a warning pointing at Setup (the Notion API can't create top-level pages).
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).
 - `ANONYMIZE_MASK_TERMS` — optional, comma-separated company-specific terms the Anonymize action always masks (e.g. `"YouLend,YL"`); seeds the deterministic pre-mask pass so they're redacted even when no LLM is available
+- `YEABOI_AC_FORMAT` — optional, acceptance-criteria style override for planning (`gwt`/`given-when-then`/`gherkin` or `bullets`/`freeform`/`checklist`; `config.get_ac_format` normalises). Sits between the session's stored choice and the learned team profile in `resolve_ac_style` precedence.
+- `YEABOI_ARCHITECTURE_SPIKE` — optional, `include`/`skip` forces the architecture validation spike decision (unset = ask in interactive runs, confidence rule in headless ones). Set by `--architecture-spike`.
 - `STANDUP_USER_NAME` — optional, your display name for your own standup update (default: "Me")
 - `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery

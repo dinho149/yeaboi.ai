@@ -13,6 +13,7 @@ from tests._node_helpers import VALID_ANALYSIS_JSON, make_completed_questionnair
 from yeaboi.agent.nodes import (
     _essentials_for_mode,
     _extract_capacity_deductions,
+    _fetch_sprint_targets,
     _is_small_project_mode,
     _prepare_bank_holiday_choices,
     _reopen_intake_for_epic,
@@ -259,6 +260,94 @@ class TestSprintTargetQuestion:
         }
         result = project_analyzer(state)
         assert result["project_analysis"].target_sprints == 1
+
+
+class TestFetchSprintTargets:
+    """Board-sprint targets for the Q27 "add to an existing sprint" menu."""
+
+    def _patch_trackers(self, monkeypatch, jira: bool = False, azdo: bool = False) -> None:
+        monkeypatch.setattr("yeaboi.agent.nodes._is_jira_configured", lambda: jira)
+        monkeypatch.setattr("yeaboi.agent.nodes._is_azdevops_configured", lambda: azdo)
+
+    def test_jira_targets_carry_fields_and_parse_trailing_numbers(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        fake_client = object()
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: fake_client)
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", lambda jira, key: 7)
+        calls: dict = {}
+
+        def fake_fetch(jira, board_id, states):
+            calls["jira"], calls["board_id"], calls["states"] = jira, board_id, states
+            return [
+                {"id": 101, "name": "Sprint 12", "state": "active", "start_date": "2026-08-10", "end_date": ""},
+                {"id": None, "name": "Hardening", "state": "future", "start_date": "", "end_date": ""},
+            ]
+
+        monkeypatch.setattr("yeaboi.tools.jira.fetch_board_sprints", fake_fetch)
+
+        targets, status = _fetch_sprint_targets()
+        # The same scrum-filtered board and only the open states.
+        assert calls["jira"] is fake_client
+        assert calls["board_id"] == 7
+        assert calls["states"] == ("active", "future")
+        assert targets[0] == {
+            "name": "Sprint 12",
+            "external_id": "101",
+            "state": "active",
+            "start_date": "2026-08-10",
+            "number": 12,
+        }
+        # No trailing digits → number None; a None id → empty external_id.
+        assert targets[1]["number"] is None
+        assert targets[1]["external_id"] == ""
+        assert status == "2 open sprint(s) on the board"
+
+    def test_no_jira_board_returns_empty_with_reason(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: object())
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", lambda jira, key: None)
+
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "No Jira board found for project PROJ"
+
+    def test_jira_fetch_error_degrades_to_empty_with_message(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: object())
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+
+        def _boom(jira, key):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", _boom)
+
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "Jira connection failed: boom"
+
+    def test_azdo_targets_drop_past_and_sort_active_first(self, monkeypatch):
+        self._patch_trackers(monkeypatch, azdo=True)
+        iterations = [
+            {"name": "Sprint 3", "path": "\\P\\Sprint 3", "time_frame": "future", "start_date": "2026-09-01"},
+            {"name": "Sprint 1", "path": "\\P\\Sprint 1", "time_frame": "past", "start_date": "2026-07-01"},
+            {"name": "Sprint 2", "path": "\\P\\Sprint 2", "time_frame": "current", "start_date": "2026-08-10"},
+        ]
+        monkeypatch.setattr("yeaboi.tools.azure_devops.fetch_team_iterations_meta", lambda: iterations)
+
+        targets, status = _fetch_sprint_targets()
+        assert [t["name"] for t in targets] == ["Sprint 2", "Sprint 3"]  # past dropped, active first
+        assert targets[0]["state"] == "active"
+        assert targets[0]["external_id"] == "\\P\\Sprint 2"
+        assert targets[1]["state"] == "future"
+        assert status == "2 open iteration(s) for the team"
+
+    def test_no_tracker_configured(self, monkeypatch):
+        self._patch_trackers(monkeypatch)
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "No tracker configured"
 
 
 class TestApplyEpicSwitch:
