@@ -345,6 +345,12 @@ class ProvenanceChain:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM provenance_records").fetchone()
         return int(row["n"])
 
+    def count_since(self, since: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM provenance_records WHERE timestamp >= ?", (since,)
+        ).fetchone()
+        return int(row["n"])
+
     # -- verification ------------------------------------------------------
 
     def verify(self) -> ChainVerification:

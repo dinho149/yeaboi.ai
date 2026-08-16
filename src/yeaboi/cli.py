@@ -907,6 +907,39 @@ def build_parser() -> argparse.ArgumentParser:
     asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
 
+    provenance_desc = (
+        "Every deterministic signal yeaboi surfaces (practice nudges, blocker flags, confidence "
+        "adjustments, conflict cards, performance preps and reviews) is recorded in a tamper-evident "
+        "hash chain with its evidence. This command verifies and reads that chain — deterministic, "
+        "local, no LLM involved."
+    )
+    provenance_p = subparsers.add_parser(
+        "provenance",
+        help="Audit the tamper-evident decision chain behind yeaboi's signals",
+        description=provenance_desc,
+    )
+    provenance_sub = provenance_p.add_subparsers(dest="provenance_command", metavar="{audit,trace}", required=True)
+    # Every child carries the same description — `yeaboi provenance audit --help`
+    # is a perfectly normal place to arrive without ever seeing the parent's help.
+    paudit_p = provenance_sub.add_parser(
+        "audit",
+        help="Verify every chain link and summarise the recorded decisions",
+        description=provenance_desc,
+    )
+    paudit_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    paudit_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    paudit_p.add_argument(
+        "--strict", action="store_true", help="Exit 3 on a broken chain or an empty one (warnings present)"
+    )
+    ptrace_p = provenance_sub.add_parser(
+        "trace",
+        help='The "why" trail behind one recorded decision, evidence included',
+        description=provenance_desc,
+    )
+    ptrace_p.add_argument("entity_id", metavar="ENTITY", help="Entity id, as listed by `yeaboi provenance audit`")
+    ptrace_p.add_argument("--depth", type=int, default=2, metavar="N", help="Evidence hops to follow (default 2)")
+    ptrace_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
         "--source",
@@ -1356,6 +1389,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
         "agents": _cmd_agents,
+        "provenance": _cmd_provenance,
     }
     try:
         return handlers[args.command](args, console)
@@ -1774,6 +1808,41 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
         store.add_note(args.engineer, args.text)
     console.print(f"[green]Note recorded for {args.engineer}[/green]")
     return 0
+
+
+def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
+    """The provenance audit headless: same engine the MCP tools use
+    (CLAUDE.md "REQUIRED: Surface Parity")."""
+    import json
+    from dataclasses import asdict
+
+    logging.getLogger(__name__).info("provenance %s", args.provenance_command)
+
+    if args.provenance_command == "audit":
+        from yeaboi.provenance.engine import run_provenance_audit
+        from yeaboi.provenance.render import format_audit_rich
+
+        report = run_provenance_audit(window_days=args.window_days)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_audit_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.total_records == 0)
+
+    # trace
+    from yeaboi.provenance.engine import trace_entity
+    from yeaboi.provenance.render import format_trace_rich
+
+    trace = trace_entity(args.entity_id, depth=args.depth)
+    for warning in trace.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    if args.format == "json":
+        print(json.dumps(asdict(trace), indent=2))
+    else:
+        console.print(format_trace_rich(trace))
+    return 0 if trace.found else 1
 
 
 def _cmd_agents(args: argparse.Namespace, console: Console) -> int:

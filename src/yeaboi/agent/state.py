@@ -1492,6 +1492,58 @@ class AgentAdvisorReport:
     annotations: tuple[Annotation, ...] = ()
 
 
+# Provenance audit artifacts (provenance/engine.py). The chain itself lives in
+# yeaboi.provenance; these are the render-ready views of it — deterministic,
+# no LLM anywhere in the pipeline, because a trust report that needs a model
+# to read the tamper log would undermine the thing it reports on.
+@dataclass(frozen=True)
+class ProvenanceDecisionRow:
+    """One decision record, summarised for display. Counts and keys only —
+    the row never carries more than the chain already stores."""
+
+    entity_id: str = ""
+    entity_type: str = ""  # practice-signal | blocker-signal | confidence | conflict | …
+    record_kind: str = "decision"  # decision | invalidation
+    agent_id: str = ""  # the rule, model, or person behind it
+    role: str = ""  # generator | suppressor | invalidator | …
+    timestamp: str = ""
+    detail: str = ""
+    inputs: tuple[str, ...] = ()  # the evidence keys the decision rests on
+    sequence_id: int = 0
+
+
+@dataclass(frozen=True)
+class ProvenanceAuditReport:
+    """The chain's health plus what it recorded in the window.
+
+    ``chain_valid`` covers the WHOLE chain, not the window: a tamper verdict
+    scoped to recent rows would miss exactly the edits it exists to catch.
+    """
+
+    generated_at: str = ""
+    window_days: int = 30
+    chain_valid: bool = True
+    total_records: int = 0
+    window_records: int = 0
+    records_by_type: tuple[tuple[str, int], ...] = ()  # (entity_type, count), whole chain
+    recent: tuple[ProvenanceDecisionRow, ...] = ()  # newest first, capped
+    # (sequence_id, entity_id, reason) per verification failure — reason is
+    # "checksum_mismatch" (edited row) or "chain_break" (deleted/renumbered).
+    breaks: tuple[tuple[int, str, str], ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProvenanceTrace:
+    """The "why" trail behind one entity: its records plus the latest record
+    behind each of its inputs, breadth-first."""
+
+    entity_id: str = ""
+    found: bool = False
+    records: tuple[ProvenanceDecisionRow, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class PriorArtRef:
     """An existing team repository accepted as reference material for a plan.

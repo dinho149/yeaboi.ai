@@ -1255,3 +1255,41 @@ class TestStandupTranscriptFlag:
 
     def test_no_transcript_review_turns_it_off(self):
         assert build_parser().parse_args(["standup", "--no-transcript-review"]).review_transcripts is False
+
+
+class TestProvenanceCommand:
+    def test_audit_parses_with_defaults(self):
+        args = build_parser().parse_args(["provenance", "audit"])
+        assert args.command == "provenance"
+        assert args.provenance_command == "audit"
+        assert args.window_days == 30
+        assert args.format == "text"
+        assert args.strict is False
+
+    def test_trace_requires_an_entity(self):
+        args = build_parser().parse_args(["provenance", "trace", "standup:2026-08-16:confidence"])
+        assert args.provenance_command == "trace"
+        assert args.entity_id == "standup:2026-08-16:confidence"
+        assert args.depth == 2
+
+    def test_audit_json_prints_the_report(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["provenance", "audit", "--format", "json"])
+        assert _run_subcommand(args) == 0
+        out = capsys.readouterr()
+        payload = json.loads(out.out)
+        assert payload["chain_valid"] is True
+        assert payload["total_records"] == 0
+        assert "No decisions recorded" in out.err
+
+    def test_audit_strict_exits_3_on_an_empty_chain(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["provenance", "audit", "--strict"])
+        assert _run_subcommand(args) == 3
+
+    def test_trace_unknown_entity_exits_1(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["provenance", "trace", "ghost", "--format", "json"])
+        assert _run_subcommand(args) == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["found"] is False
