@@ -45,7 +45,10 @@ export function Table({ votes, revealed, arguing = [] }: TableProps) {
       ) : (
         <ul className={styles['vrow']}>
           {votes.map((person, index) => (
-            <li key={`${person.name}:${index}`} className={styles['voter']}>
+            // `data-seat` is what the floor measures its entrance from: the two
+            // duelists fly out of the chairs they were picked from. By name,
+            // because a seat carries no participant id.
+            <li key={`${person.name}:${index}`} className={styles['voter']} data-seat={person.name}>
               {/* The seat does not change on reveal — the vote arrives beside
                   the name as a card, so the table stays the same table. */}
               <span className={styles['seatFace']}>

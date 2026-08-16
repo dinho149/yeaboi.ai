@@ -2002,13 +2002,21 @@
      edge with the room shut. It takes its shadow on the way out. */
   box-shadow: none;
   font-size: var(--fs-s);
-  /* Every card starts in the same place — one card-height above the cut, which
-     is to say under the bar — and slides down to its own. */
-  transform: translateY(
-    calc((var(--room-drop) + var(--i) * (var(--card-h) + var(--room-gap)) + var(--card-h) + 2px) * -1)
-  );
+  /*
+   * Out from behind the card above it — the first one out from behind the bar,
+   * where the clip is.
+   *
+   * Every card travels the same short distance, and the fade is what hides it
+   * until then. Sliding each one all the way from the bar is the same idea and
+   * does not survive a full room: the tenth card had four hundred pixels to
+   * cover in the same fifth of a second as the first card's forty, so half the
+   * list streaked past while the other half crept.
+   */
+  opacity: 0;
+  transform: translateY(calc((var(--card-h) + var(--room-gap)) * -1));
   transition:
     transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease),
     box-shadow var(--dur-base) var(--ease);
 }
 
@@ -2017,15 +2025,41 @@
 }
 
 /* One after another on the way in. Leaving, they go together — a staggered
-   exit reads as the list being reluctant. */
+   exit reads as the list being reluctant.
+
+   The step is capped: past the eighth card a per-person delay stops reading as
+   a deal and starts reading as a list that will not open. A room of twenty
+   finishes in the same quarter-second as a room of eight. */
 .room:hover .roomCard,
 .room:has(:focus-visible) .roomCard {
+  opacity: 1;
   transform: none;
   box-shadow:
     var(--edge),
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
-  transition-delay: calc(var(--i) * 45ms);
+  transition-delay: calc(min(var(--i), 8) * 30ms);
+}
+
+/* A full room is a different object: at nine people a stack of full-height
+   cards runs off the bottom of a laptop screen. It tightens rather than
+   scrolling, because a scroller here would clip the shadows the cards were
+   given in the first place. */
+.roomList:has(> :nth-child(9)) {
+  --room-gap: var(--s1);
+}
+
+.roomList:has(> :nth-child(9)) .roomCard {
+  --card-h: 28px;
+  font-size: var(--fs-xs);
+}
+
+/* Past that there is no arrangement that fits, so it scrolls and the shadows
+   go. The cut stays where it was: the list still starts under the bar. */
+.roomList:has(> :nth-child(15)) {
+  max-height: calc(100dvh - 5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .room:hover .roomList,
