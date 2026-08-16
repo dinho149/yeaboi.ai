@@ -1752,7 +1752,7 @@ class TestTriggerPlan:
     def test_a_first_deploy_names_what_only_the_account_can_supply(self):
         """The API accepts an empty string, so nothing downstream would notice.
 
-        Twenty-two routines register pointing at no repository, on no environment,
+        Twenty-eight routines register pointing at no repository, on no environment,
         with every connector attached — and it looks like it worked until the
         first Monday.
         """
@@ -5236,3 +5236,138 @@ class TestTheRefusedTimelineEndpoint:
         left a model ageing seventeen queues by eye off a refused call."""
         assert "--proposal-slots" in self.DIGEST
         assert "age_days" in self.DIGEST
+
+
+class TestTheDocsCountTheFleetCorrectly:
+    """The spelled-out fleet sizes in the prose, against the fleet.
+
+    `make cowork-check` proves the generated tables agree with each other and
+    never looks at the sentences around them, so every count written as a word
+    drifted silently as the fleet grew: twenty-two and twenty-four routines in a
+    fleet of twenty-eight, thirty-three labels where the manifest has thirty-six,
+    and `crew.md` contradicting itself inside two sentences.
+
+    **These are load-bearing.** `cowork/`, `.claude/agents/cowork-*.md` and
+    `.claude/commands/cowork.md` are the prompts the fleet actually runs on — a
+    routine reading "twenty-two routines × six fields" is being told the size of
+    the job it is about to do by hand.
+
+    Digits are deliberately not checked. `13 maintenance sweeps` is a table
+    heading somebody would notice; a number spelled as a word is one nobody reads
+    twice, which is the whole reason this class exists.
+    """
+
+    WORDS = {
+        10: "ten",
+        11: "eleven",
+        12: "twelve",
+        13: "thirteen",
+        14: "fourteen",
+        15: "fifteen",
+        16: "sixteen",
+        17: "seventeen",
+        18: "eighteen",
+        19: "nineteen",
+        20: "twenty",
+        21: "twenty-one",
+        22: "twenty-two",
+        23: "twenty-three",
+        24: "twenty-four",
+        25: "twenty-five",
+        26: "twenty-six",
+        27: "twenty-seven",
+        28: "twenty-eight",
+        29: "twenty-nine",
+        30: "thirty",
+        31: "thirty-one",
+        32: "thirty-two",
+        33: "thirty-three",
+        34: "thirty-four",
+        35: "thirty-five",
+        36: "thirty-six",
+        37: "thirty-seven",
+    }
+
+    # A number word beside one of these nouns that is *not* a fleet total. Each
+    # entry says why, the way `.github/hygiene/lens-policy.yml` does — an
+    # exclusion nobody can read is how a check stops meaning anything.
+    ALLOWED = {
+        (
+            "CLAUDE.md",
+            "twenty",
+            "routines",
+        ): "`RemoteTrigger list` returns twenty routines per page — the API's page size, not the fleet's size",
+        (
+            "scripts/cowork_setup.py",
+            "seventeen",
+            "labels",
+        ): "the seventeen `workstream:*` labels — one dimension of the thirty-six, not the total",
+    }
+
+    NOUNS = {
+        "routines": r"\s+routines\b",
+        "labels": r"\s+(?:GitHub\s+)?labels\b",
+        "sweeps": r"\s+maintenance\s+sweep",
+        "workstreams": r"\s+standing\s+workstreams",
+    }
+
+    @classmethod
+    def _docs(cls):
+        seen = []
+        for pattern in ("cowork/**/*.md", ".claude/agents/cowork-*.md", ".claude/commands/cowork.md"):
+            seen += sorted(ROOT.glob(pattern))
+        seen += [
+            ROOT / "CLAUDE.md",
+            ROOT / "scripts" / "cowork_setup.py",
+            ROOT / ".github" / "workflows" / "cowork-repo-setup.yml",
+        ]
+        # This file is deliberately not in the set. It is a test, not a prompt
+        # the fleet reads — and scanning it would make the class fail on its own
+        # docstring, which names every wrong number it exists to catch.
+        return [path for path in seen if path.is_file()]
+
+    def _claims(self, noun):
+        """Every ``<word> <noun>`` in the doc set, as (word, repo-relative path)."""
+        words = sorted(self.WORDS.values(), key=len, reverse=True)
+        pattern = re.compile(r"(?P<n>" + "|".join(words) + r")" + self.NOUNS[noun], re.IGNORECASE)
+        found = []
+        for path in self._docs():
+            rel = str(path.relative_to(ROOT))
+            for match in pattern.finditer(path.read_text(encoding="utf-8")):
+                word = match.group("n").lower()
+                if (rel, word, noun) in self.ALLOWED:
+                    continue
+                found.append((word, rel))
+        return found
+
+    def _assert_all_say(self, noun, expected):
+        word = self.WORDS[expected]
+        wrong = [(said, where) for said, where in self._claims(noun) if said != word]
+        assert not wrong, (
+            f"the fleet has {expected} {noun} ('{word}'), but these say otherwise: {wrong}. "
+            f"Fix the prose, or add an entry to ALLOWED with the reason it is not a fleet total."
+        )
+
+    def test_the_routine_count(self):
+        routines = len(list((ROOT / "cowork" / "routines").rglob("*.md")))
+        assert routines == len(setup.parse_routines()), "the routine files and the README table disagree"
+        self._assert_all_say("routines", routines)
+
+    def test_the_label_count(self):
+        self._assert_all_say("labels", len(setup.expected_labels()))
+
+    def test_the_sweep_count(self):
+        sweeps = len(list((ROOT / "cowork" / "routines" / "cron").glob("*-sweep.md")))
+        self._assert_all_say("sweeps", sweeps)
+
+    def test_the_workstream_count(self):
+        self._assert_all_say("workstreams", len(setup.parse_workstreams()))
+
+    def test_every_allowance_still_matches_something(self):
+        """An exclusion for a phrase nobody writes any more is one that hides the
+        next real drift under the same words."""
+        for (rel, word, noun), why in self.ALLOWED.items():
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            assert re.search(word + self.NOUNS[noun], text, re.IGNORECASE), (
+                f"ALLOWED entry {(rel, word, noun)} ({why}) no longer matches anything — delete it"
+            )
