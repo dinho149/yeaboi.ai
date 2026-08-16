@@ -61,8 +61,9 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
     the success screen (min 1 s + a key press); returns straight away on Back/Esc.
 
     scope: "plan" (default — the two existing call sites are unchanged),
-    "transcript" (scrum-chat.md only), "both", or "ask" (the chat's bare
-    /export — a small choice screen picks the scope first).
+    "transcript" (scrum-chat.md only), "both", "prd" (a Product Requirements
+    Document; one LLM call), or "ask" (the chat's bare /export — a small
+    choice screen picks the scope first).
     """
     from yeaboi.ui.shared._export_picker import pick_export_destination
 
@@ -73,7 +74,12 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
             key_fn,
             title="Export",
             subtitle="What would you like to export?",
-            options=["Plan (HTML + Markdown)", "Chat transcript", "Both"],
+            options=[
+                "Plan (HTML + Markdown)",
+                "PRD (Product Requirements Doc)",
+                "Chat transcript",
+                "Both plan + transcript",
+            ],
             step=0,
             total=0,
             stage_label="Export",
@@ -81,9 +87,10 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         )
         if choice is None:
             return
-        scope = ("plan", "transcript", "both")[choice]
+        scope = ("plan", "prd", "transcript", "both")[choice]
     include_plan = scope in ("plan", "both")
     include_transcript = scope in ("transcript", "both")
+    include_prd = scope == "prd"
 
     def _open_setup():
         # Same suspend-wizard-resume dance as Settings → Configure.
@@ -100,6 +107,20 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         from yeaboi.transcript import build_chat_transcript_markdown
 
         return build_chat_transcript_markdown(graph_state)
+
+    prd_result = None
+    if include_prd:
+        # The prose sections are one LLM call — show a working screen so the
+        # multi-second wait doesn't look like a hang.
+        w, h = console.size
+        live.update(
+            _build_project_export_success_screen(
+                "Generating PRD…", width=w, height=h, subtitle="Working", mode="planning"
+            )
+        )
+        from yeaboi.prd_exporter import build_prd_markdown
+
+        prd_result = build_prd_markdown(graph_state)
 
     if dest == "files":
         from yeaboi.paths import get_planning_export_dir
@@ -120,8 +141,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
 
             chat_path = export_chat_transcript(graph_state, out_dir / "scrum-chat.md")
             body_lines.append(f"CHAT  {chat_path}")
+        if include_prd:
+            from yeaboi.prd_exporter import export_prd_markdown
+
+            prd_path = export_prd_markdown(graph_state, path=out_dir / "prd.md", result=prd_result)
+            logger.info("Exported: PRD=%s", prd_path)
+            body_lines.append(f"PRD   {prd_path}")
         body = "\n".join(body_lines)
-        subtitle = "Exported"
+        subtitle = prd_result.warnings[0] if prd_result and prd_result.warnings else "Exported"
     elif dest == "copy":
         from yeaboi.clipboard import copy_markdown_status
         from yeaboi.repl._io import build_plan_markdown
@@ -131,8 +158,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
             parts.append(build_plan_markdown(graph_state))
         if include_transcript:
             parts.append(_transcript_markdown())
+        if include_prd:
+            parts.append(prd_result.markdown)
         subtitle = copy_markdown_status("\n\n---\n\n".join(parts))
-        what = {"plan": "Sprint plan", "transcript": "Chat transcript", "both": "Plan + transcript"}[scope]
+        if prd_result and prd_result.warnings:
+            subtitle = prd_result.warnings[0]
+        what = {"plan": "Sprint plan", "prd": "PRD", "transcript": "Chat transcript", "both": "Plan + transcript"}[
+            scope
+        ]
         body = f"{what} Markdown copied — paste it anywhere."
     else:
         from yeaboi.export_targets import publish_markdown
@@ -147,9 +180,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         if include_transcript:
             title = f"Chat Transcript — {name}" if name else "Chat Transcript"
             results.append(publish_markdown(dest, title=title, markdown=_transcript_markdown()))
+        if include_prd:
+            title = f"PRD — {name}" if name else "PRD"
+            results.append(publish_markdown(dest, title=title, markdown=prd_result.markdown))
         body = "\n".join(r.url or r.message for r in results)
         failed = [r for r in results if not r.ok]
         subtitle = f"Export failed — {failed[0].message}" if failed else results[-1].message
+        if not failed and prd_result and prd_result.warnings:
+            subtitle = prd_result.warnings[0]
 
     w, h = console.size
     live.update(_build_project_export_success_screen(body, width=w, height=h, subtitle=subtitle, mode="planning"))

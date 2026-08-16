@@ -7,7 +7,8 @@ lives outside a `<mode>/engine.py` (`agent/headless.py:run_planning_pipeline`).
 `repo_signals.py`, `ceremony_history.py`), `src/yeaboi/prompts/`, `src/yeaboi/ui/session/`
 (intake / review / editor screens), `sessions.py`, `persistence.py`, `questionnaire_io.py`,
 `transcript.py` (the planning chat transcript exporter),
-`json_exporter.py`, `ollama_control.py` (a provider's lifecycle, like `llm.py`), `mcp/tools_planning.py`,
+`json_exporter.py`, `prd_exporter.py` (the Product Requirements Document builder),
+`ollama_control.py` (a provider's lifecycle, like `llm.py`), `mcp/tools_planning.py`,
 `mcp/tools_sessions.py` (its `usage_get` is a read-only view over **tui-ux**'s page),
 `claude-plugin/yeaboi/skills/plan-sprint/`, `tests/unit/nodes/`, `tests/unit/prompts/`,
 `tests/integration/`, `tests/golden/`

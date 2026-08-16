@@ -238,6 +238,20 @@ class TestPlanningTools:
 
         assert Path(payload["data"]["path"]).exists()
 
+    def test_plan_export_prd(self, seeded_session, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)  # exporter writes relative to CWD
+        payload = call_tool("plan_export", {"format": "prd"})
+        assert payload["ok"] is True
+        from pathlib import Path
+
+        path = Path(payload["data"]["path"])
+        assert path.exists()
+        assert path.read_text().startswith("# PRD — ")
+        # No LLM in the test env — the envelope must report the honest mode
+        # and the section warnings must surface, never a silent skeleton.
+        assert payload["data"]["llm_mode"] == "fallback"
+        assert payload["warnings"]
+
     def test_plan_export_bad_format(self, seeded_session):
         payload = call_tool("plan_export", {"format": "pdf"})
         assert payload["ok"] is False
@@ -964,6 +978,27 @@ class TestPlanPublish:
         payload = call_tool("plan_publish", {"destination": "sharepoint"})
         assert payload["ok"] is False
         assert "Unsupported destination" in payload["error"]["message"]
+
+    def test_publish_prd_content(self, seeded_session, monkeypatch):
+        from yeaboi.export_targets import PublishResult
+
+        captured: dict = {}
+
+        def fake_publish(destination, *, title, markdown):
+            captured.update(title=title, markdown=markdown)
+            return PublishResult(ok=True, message="Published", url="https://notion.so/prd")
+
+        monkeypatch.setattr("yeaboi.export_targets.publish_markdown", fake_publish)
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "prd"})
+        assert payload["ok"] is True
+        assert captured["title"].startswith("PRD")
+        assert captured["markdown"].startswith("# PRD — ")
+        assert payload["data"]["content"] == "prd"
+
+    def test_publish_bad_content(self, seeded_session):
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "roadmap"})
+        assert payload["ok"] is False
+        assert "Unsupported content" in payload["error"]["message"]
 
 
 class TestPerfNotes:

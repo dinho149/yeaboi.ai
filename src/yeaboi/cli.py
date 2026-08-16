@@ -461,9 +461,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        choices=["markdown", "json", "html"],
+        choices=["markdown", "json", "html", "prd"],
         default=None,
-        help="Output format for the generated plan. Only valid with --non-interactive or --export-only.",
+        help="Output format for the generated plan ('prd' writes a Product Requirements "
+        "Document; one extra LLM call). Only valid with --non-interactive or --export-only.",
     )
     parser.add_argument(
         "--description",

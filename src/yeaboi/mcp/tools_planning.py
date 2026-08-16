@@ -156,28 +156,63 @@ def _plan_export(session_id: str, format: str) -> dict:
         from yeaboi.repl._io import _export_plan_markdown
 
         path = _export_plan_markdown(state)
+    elif format == "prd":
+        from yeaboi.prd_exporter import build_prd_markdown, export_prd_markdown
+
+        result = build_prd_markdown(state)
+        path = export_prd_markdown(state, result=result)
+        logger.info("PRD exported via MCP: session=%s path=%s llm_mode=%s", resolved, path, result.llm_mode)
+        return {
+            "session_id": resolved,
+            "format": format,
+            "path": str(path),
+            "llm_mode": result.llm_mode,
+            "warnings": list(result.warnings),
+        }
     else:
-        raise ValueError(f"Unsupported format {format!r} — use 'markdown' or 'html'.")
+        raise ValueError(f"Unsupported format {format!r} — use 'markdown', 'html' or 'prd'.")
     logger.info("Plan exported via MCP: session=%s format=%s path=%s", resolved, format, path)
     return {"session_id": resolved, "format": format, "path": str(path)}
 
 
-def _plan_publish(session_id: str, destination: str) -> dict:
+def _plan_publish(session_id: str, destination: str, content: str = "plan") -> dict:
     if destination not in ("notion", "confluence"):
         raise ValueError(f"Unsupported destination {destination!r} — use 'notion' or 'confluence'.")
+    if content not in ("plan", "prd"):
+        raise ValueError(f"Unsupported content {content!r} — use 'plan' or 'prd'.")
     resolved, state = _load_state(session_id)
     from yeaboi.export_targets import publish_markdown
-    from yeaboi.repl._io import build_plan_markdown
 
     name = getattr(state.get("project_analysis"), "project_name", "")
-    title = f"Sprint Plan — {name}" if name else "Sprint Plan"
-    result = publish_markdown(destination, title=title, markdown=build_plan_markdown(state))
+    warnings: list[str] = []
+    if content == "prd":
+        from yeaboi.prd_exporter import build_prd_markdown
+
+        built = build_prd_markdown(state)
+        title = f"PRD — {name}" if name else "PRD"
+        markdown = built.markdown
+        warnings = list(built.warnings)
+    else:
+        from yeaboi.repl._io import build_plan_markdown
+
+        title = f"Sprint Plan — {name}" if name else "Sprint Plan"
+        markdown = build_plan_markdown(state)
+    result = publish_markdown(destination, title=title, markdown=markdown)
     if not result.ok:
         # publish_markdown never raises — surface its failure message as the
         # tool error so the agent gets the setup hint instead of a silent no-op.
         raise ValueError(result.message)
-    logger.info("Plan published via MCP: session=%s dest=%s url=%s", resolved, destination, result.url)
-    return {"session_id": resolved, "destination": destination, "url": result.url, "message": result.message}
+    logger.info(
+        "Plan published via MCP: session=%s dest=%s content=%s url=%s", resolved, destination, content, result.url
+    )
+    return {
+        "session_id": resolved,
+        "destination": destination,
+        "content": content,
+        "url": result.url,
+        "message": result.message,
+        "warnings": warnings,
+    }
 
 
 def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_progress=None) -> dict:
@@ -359,18 +394,29 @@ def register(app) -> None:
         return await run_readonly(_plan_get, session_id)
 
     @app.tool()
-    async def plan_export(session_id: str = "", format: str = "markdown") -> dict:
-        """Export a saved plan to a file (format: 'markdown' or 'html') and return its path.
+    async def plan_export(ctx: Context, session_id: str = "", format: str = "markdown") -> dict:
+        """Export a saved plan to a file and return its path. format: 'markdown', 'html' or
+        'prd' — 'prd' generates a full Product Requirements Document (one LLM call for the
+        prose sections; deterministic skeleton when no LLM is available, see llm_mode).
         Blank session_id = most recent session."""
+        if format == "prd":
+            # run_readonly reports llm_mode "n/a" and never injects the sampling
+            # model — the PRD's prose call must go through run_engine.
+            return await run_engine(ctx, _plan_export, session_id, format)
         return await run_readonly(_plan_export, session_id, format)
 
     @app.tool()
-    async def plan_publish(session_id: str = "", destination: str = "notion") -> dict:
+    async def plan_publish(
+        ctx: Context, session_id: str = "", destination: str = "notion", content: str = "plan"
+    ) -> dict:
         """Publish a saved plan as a page in the user's configured Notion or Confluence
-        (destination: 'notion' or 'confluence') and return the page URL. This creates a page
-        in an external workspace — confirm with the user before calling. Blank session_id =
-        most recent session."""
-        return await run_readonly(_plan_publish, session_id, destination)
+        (destination: 'notion' or 'confluence') and return the page URL. content: 'plan'
+        (the sprint plan) or 'prd' (a full Product Requirements Document — one LLM call).
+        This creates a page in an external workspace — confirm with the user before calling.
+        Blank session_id = most recent session."""
+        if content == "prd":
+            return await run_engine(ctx, _plan_publish, session_id, destination, content)
+        return await run_readonly(_plan_publish, session_id, destination, content)
 
     @app.tool()
     async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira", target_sprint: str = "") -> dict:
