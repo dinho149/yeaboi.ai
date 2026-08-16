@@ -435,17 +435,6 @@ export function App({ boot }: { boot: PokerBoot }) {
         }
       >
         <div className={styles['identity']}>
-          {/* Everyone's to see, not the host's: the one person who knows a mic
-              is open is the one who opened it, and the rest of the room is who
-              is being recorded. `role="status"` so it is announced once when it
-              starts rather than read as part of the toolbar. */}
-          {recording ? (
-            <span className={styles['recBadge']} role="status">
-              <span className={styles['recDot']} aria-hidden="true" />
-              Recording
-            </span>
-          ) : null}
-
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
@@ -455,6 +444,18 @@ export function App({ boot }: { boot: PokerBoot }) {
           <PresenceRow people={presence.filter((person) => person.name !== name)} />
 
           <Room people={presence} meName={name} />
+
+          {/* Everyone's to see, not the host's: the one person who knows a mic
+              is open is the one who opened it, and the rest of the room is who
+              is being recorded. A light rather than a label — it sits beside
+              the headcount, which is the other thing that is true of the room
+              as a whole. `role="status"` announces it once when it starts. */}
+          {recording ? (
+            <span className={styles['recBadge']} role="status" title="The debate is being recorded">
+              <span className={styles['recDot']} aria-hidden="true" />
+              <span className={styles['srOnly']}>Recording</span>
+            </span>
+          ) : null}
         </div>
         </Toolbar>
       }
