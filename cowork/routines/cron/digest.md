@@ -333,7 +333,19 @@ The single decision point. It is the only routine that posts proposals to Slack.
 4. **Lapse, then age out** — two steps, because a clock may release a *slot* and may never make a
    *decision*.
 
-   **At 14 days, lapse it.** For any `cowork:proposal` issue whose age passes fourteen days:
+   **At 14 days, lapse it — and do not work out which those are.** `--proposal-slots` already
+   answers it, off the right clock, for all seventeen workstreams at once:
+
+   ```bash
+   uv run python scripts/cowork_setup.py --proposal-slots
+   ```
+
+   Every row's `blocking` list carries `number`, `age_days` and `lapses_on` per open proposal.
+   **Lapse the entries whose `age_days` is at or past 14, and nothing else.** A row whose `slots`
+   is `null` could not be read: lapse nothing for that workstream and say so in the run log, the
+   same rule the thirty-day half follows below.
+
+   For each one:
 
    ```bash
    gh issue edit <n> --remove-label cowork:proposal
@@ -385,16 +397,20 @@ The single decision point. It is the only routine that posts proposals to Slack.
    and then gets re-opened next week under a new number. Those close on the human's verb or not at
    all.
 
-   **And age a bounced proposal from when it came back, not from when it was filed.** A proposal
-   that was queued and then bounced (`sweep-procedure.md` step 5) keeps its original `createdAt`,
-   so an eight-day-old issue returning to the queue would have six days to be answered. Take the
-   age from the most recent `cowork:proposal` labelling event when there is one, the same way
-   ⏳ **Approved, no PR yet** takes its age from the label rather than the filing:
+   **A bounced proposal ages from when it came back, not from when it was filed — and
+   `--proposal-slots` already does that for you.** A proposal that was queued and then bounced
+   (`sweep-procedure.md` step 5) keeps its original `createdAt`, so an eight-day-old issue
+   returning to the queue would have six days to be answered. `age_days` and `lapses_on` are both
+   taken from the most recent `cowork:proposal` labelling event when there is one, falling back to
+   the filing date when there is not — which is the right answer for every proposal that never
+   bounced, i.e. nearly all of them.
 
-   ```bash
-   gh api repos/{owner}/{repo}/issues/<n>/timeline \
-     --jq '[.[] | select(.event == "labeled" and .label.name == "cowork:proposal")] | last | .created_at'
-   ```
+   **Do not go and read the label event yourself.** The obvious command for it is
+   `gh api repos/{owner}/{repo}/issues/<n>/timeline`, and `/timeline` is **not** on the probed
+   allowlist — `tests/fixtures/cowork_github_access_live.json` records
+   `GET /repos/{slug}/issues/{n}/events` and not it. In an unattended routine session that call is
+   refused, and a refusal handled by falling back to `createdAt` lapses a bounced proposal up to
+   eight days early, silently. `proposal_clock()` reads `/events` for exactly this reason.
 
    A human comment does **not** exempt an issue. Commenting "not now" is the natural way to say no,
    and exempting commented issues would make every explicit rejection immortal while silence — the
@@ -424,13 +440,18 @@ The single decision point. It is the only routine that posts proposals to Slack.
      they fail differently: nothing started, versus a run truncated between its push and its
      `gh pr create`.
 
-     **`<k>` is days since the label landed, not since the issue was filed.** Only the timeline
-     carries that:
-     `gh api repos/{owner}/{repo}/issues/<n>/timeline --jq '[.[] | select(.event == "labeled" and
+     **`<k>` is days since the label landed, not since the issue was filed.** Only the label
+     events carry that:
+     `gh api repos/{owner}/{repo}/issues/<n>/events --jq '[.[] | select(.event == "labeled" and
      .label.name == "claude-implement")] | last | .created_at'`. `createdAt` from `gh issue list` is
      the filing date, which for a proposal approved after a fortnight in the queue overstates the
      delay by that fortnight — and the "more than a day is a broken lane" reading below depends on
      the number meaning what it says.
+
+     **`/events`, not `/timeline`.** Both carry `labeled`, and only the first is on the probed
+     allowlist (`tests/fixtures/cowork_github_access_live.json`). `/timeline` is refused in a cloud
+     routine session, and a refusal here degrades to the filing date — the exact overstatement this
+     paragraph exists to prevent, arriving silently.
 
      This is the only section here about an issue rather than a workstream, and it exists because
      that window had no owner. The approval is the moment a proposal stops being a question, and

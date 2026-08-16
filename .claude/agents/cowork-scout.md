@@ -62,10 +62,14 @@ Procedure:
    decide the answer.
    - restates an issue **closed** unapproved → **drop it.** A closing is a rejection.
    - restates an **open** issue carrying **neither** `cowork:proposal` nor `cowork:queued` →
-     **return it**, with `restates` set to that issue's number, whatever lane you put the find in.
-     That is a *lapsed* question: `cron/digest.md` step 4 strips the label at fourteen days and
-     leaves the issue open, so nobody rejected it and nobody is being asked. Re-labelling it is the
-     caller's call, not yours.
+     **return it**, with `restates` set to that issue's number, whatever lane you put the find in,
+     **and set `lapsed` to whether `uv run python scripts/cowork_setup.py --lapsed <name>` lists
+     that number.** It is a *lapsed* question only if it does — `cron/digest.md` step 4 strips the
+     label at fourteen days and leaves the issue open, so nobody rejected it and nobody is being
+     asked. Every issue a human opened and tagged `workstream:<name>` has the same *shape* and is
+     not lapsed at all, and the caller re-labels on this field: reporting `lapsed: true` for one of
+     those puts a stranger's issue into the unattended build lane. Unreadable → `false`. Re-labelling
+     it is the caller's call, not yours; saying which it is, is yours.
    - restates an **open** issue carrying `cowork:proposal` and you classified the find `propose` →
      **drop it.** The question is already asked.
    - restates an **open** issue and you classified the find `auto` → **return it**, with `restates`

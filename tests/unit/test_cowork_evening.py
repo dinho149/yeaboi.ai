@@ -78,7 +78,7 @@ def _no_network(monkeypatch):
     """
     monkeypatch.setattr(evening, "_get", lambda path: None)
     monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
-    monkeypatch.setattr(evening, "_installable", lambda: ("3.9.0rc14", ""))
+    monkeypatch.setattr(evening, "_installable", lambda: ("3.9.0rc14", "", frozenset()))
     monkeypatch.setattr(evening, "review_verdict", lambda number: ("", None))
     monkeypatch.setattr(evening, "ci_state", lambda sha: "")
 
@@ -263,7 +263,7 @@ class TestTheRenderedBlock:
         assert "→ `3.9.0rc14`" in lines[0]
 
     def test_nothing_published_says_so_rather_than_naming_a_stale_version(self, monkeypatch):
-        monkeypatch.setattr(evening, "_installable", lambda: ("", ""))
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "", frozenset()))
         lines = self._lines(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
         assert lines[0].endswith("→ no new pre-release")
         assert not any(line.startswith("`pip install") for line in lines)
@@ -680,7 +680,7 @@ class TestTheReleaseChannelReportsItsOwnBlindness:
     """ "" renders as *no new pre-release*, which is a claim about the world."""
 
     def test_an_unreadable_channel_is_a_warning(self, monkeypatch):
-        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel"))
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel", None))
         _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
         warnings = evening.build(SINCE, NOW)["payload"]["warnings"]
         assert any("could not read the release channel" in warning for warning in warnings)
@@ -690,7 +690,7 @@ class TestTheReleaseChannelReportsItsOwnBlindness:
         channel answered; rendering an unanswered read as that sentence is a
         claim about the world assembled out of a failure — and the warning
         telling the routine so does not un-post the message."""
-        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel"))
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel", None))
         _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
         lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
         assert lines[0].endswith("· 1 merged")
@@ -699,7 +699,7 @@ class TestTheReleaseChannelReportsItsOwnBlindness:
 
     def test_a_channel_that_answered_nothing_still_says_so(self, monkeypatch):
         """The distinction only works if the ordinary empty case is unchanged."""
-        monkeypatch.setattr(evening, "_installable", lambda: ("", ""))
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "", frozenset()))
         _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
         assert evening.build(SINCE, NOW)["posts"][0]["lines"][0].endswith("→ no new pre-release")
 
@@ -712,7 +712,7 @@ class TestTheReleaseChannelReportsItsOwnBlindness:
         import release_channel
 
         monkeypatch.setattr(release_channel, "pending", explode)
-        value, note = evening._installable()
+        value, note, _batch = evening._installable()
         assert value == ""
         assert "could not read the release channel" in note
 
@@ -721,7 +721,7 @@ class TestTheReleaseChannelReportsItsOwnBlindness:
         import release_channel
 
         monkeypatch.setattr(release_channel, "pending", lambda: "not a dict")
-        value, note = evening._installable()
+        value, note, _batch = evening._installable()
         assert value == ""
         assert note
 
@@ -876,3 +876,88 @@ class TestTheTransportSeams:
         self._no_stub(monkeypatch)
         monkeypatch.setattr(evening.transport, "resolve_slug", lambda root: "o/r")
         assert evening._repo_path("/pulls") == "/repos/o/r/pulls"
+
+
+class TestAnAreaOnlyClaimsAnRcThatHoldsIt:
+    """A merge being in the day is not the same as it being in the build.
+
+    ``publish-beta.yml`` skips the publish when a merge did not move the version,
+    and `chore` and `docs` are two of the four types a sweep can produce — so an
+    area whose only merge today was a chore was handed a version clause and an
+    install line for a pre-release cut *before* it. The number was read; the
+    claim that it contained anything of this area's was inferred, and this module
+    refuses inferred facts everywhere else.
+    """
+
+    def _batch(self, monkeypatch, version, not_in_rc):
+        monkeypatch.setattr(evening, "_installable", lambda: (version, "", not_in_rc))
+
+    def test_a_merge_the_rc_holds_names_the_version(self, monkeypatch):
+        self._batch(monkeypatch, "3.9.0rc14", frozenset())
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert lines[0].endswith("→ `3.9.0rc14`")
+        assert any(line.startswith("`pip install --pre yeaboi==3.9.0rc14`") for line in lines)
+
+    def test_a_chore_the_rc_never_picked_up_claims_nothing(self, monkeypatch):
+        self._batch(monkeypatch, "3.9.0rc14", frozenset({1}))
+        _serve(
+            monkeypatch,
+            closed=[pr(1, labels=["cowork", "workstream:platform", "type:chore"], merged_at="2026-08-16T14:00:00Z")],
+        )
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert lines[0].endswith("· 1 merged")
+        assert "3.9.0rc14" not in "\n".join(lines)
+
+    def test_one_merge_in_the_rc_carries_the_area(self, monkeypatch):
+        """The area is in the build if any of its merges is; it does not have to
+        be all of them."""
+        self._batch(monkeypatch, "3.9.0rc14", frozenset({2}))
+        _serve(
+            monkeypatch,
+            closed=[
+                pr(1, merged_at="2026-08-16T14:00:00Z"),
+                pr(2, merged_at="2026-08-16T15:00:00Z"),
+            ],
+        )
+        assert evening.build(SINCE, NOW)["posts"][0]["lines"][0].endswith("→ `3.9.0rc14`")
+
+    def test_nothing_published_still_says_so(self, monkeypatch):
+        """The `no new pre-release` state is read, not inferred, and survives."""
+        self._batch(monkeypatch, "", frozenset({1}))
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        assert evening.build(SINCE, NOW)["posts"][0]["lines"][0].endswith("→ no new pre-release")
+
+    def test_an_unreadable_batch_claims_nothing_in_either_direction(self, monkeypatch):
+        self._batch(monkeypatch, "3.9.0rc14", None)
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert lines[0].endswith("· 1 merged")
+        assert not any(line.startswith("`pip install") for line in lines)
+
+    def test_the_untested_commits_are_parsed_for_pr_numbers(self, monkeypatch):
+        """`untested_commits` is what landed on main *after* the published tag —
+        the exact set the rc does not hold, with no git call and no inference."""
+        monkeypatch.undo()
+        import release_channel
+
+        monkeypatch.setattr(
+            release_channel,
+            "pending",
+            lambda: {
+                "installable": "3.9.0rc14",
+                "untested_commits": ["abc1234 add a thing (#271)", "def5678 chore: tidy (#272)"],
+            },
+        )
+        version, note, not_in_rc = evening._installable()
+        assert (version, note) == ("3.9.0rc14", "")
+        assert not_in_rc == frozenset({271, 272})
+
+    def test_a_batch_without_the_field_claims_nothing(self, monkeypatch):
+        """Reported rather than assumed empty: an absent field is not proof that
+        the rc contains everything."""
+        monkeypatch.undo()
+        import release_channel
+
+        monkeypatch.setattr(release_channel, "pending", lambda: {"installable": "3.9.0rc14"})
+        assert evening._installable()[2] is None

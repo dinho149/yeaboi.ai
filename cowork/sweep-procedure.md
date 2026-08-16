@@ -79,13 +79,29 @@ workstream and any per-run focus; everything else is here.
      and do not drop it: carry that issue's number into step 5.
    - restates an open **`cowork:proposal`** issue and your find is **`propose`** → **drop it.** The
      question is already in front of a human; asking it twice does not answer it.
-   - restates an **open** issue carrying **neither** label → **that is a lapsed question, and it
-     is yours to re-ask or to build.** `cron/digest.md` step 4 strips `cowork:proposal` at fourteen
-     days and leaves the issue open precisely so this outcome exists: the question stopped being
-     asked, the find was never rejected. Re-label it in place rather than filing a second write-up —
-     `cowork:proposal` if your find is `propose` (it takes one slot, and it keeps its number, its
-     body and its history), `cowork:queued` if your find is `auto`, carried into step 5 like any
-     other. Add before you remove, and never `gh api` with `PUT .../labels`, exactly as above.
+   - restates an **open** issue carrying **neither** label, **and listed by `--lapsed`** → **that
+     is a lapsed question, and it is yours to re-ask or to build.** `cron/digest.md` step 4 strips
+     `cowork:proposal` at fourteen days and leaves the issue open precisely so this outcome exists:
+     the question stopped being asked, the find was never rejected. Re-label it in place rather
+     than filing a second write-up — `cowork:proposal` if your find is `propose` (it takes one
+     slot, and it keeps its number, its body and its history), `cowork:queued` if your find is
+     `auto`, carried into step 5 like any other. Add before you remove, and never `gh api` with
+     `PUT .../labels`, exactly as above.
+
+     ```bash
+     uv run python scripts/cowork_setup.py --lapsed <name>
+     ```
+
+     **Carrying neither label is a much wider set than "lapsed", and the difference is the whole
+     safety of this outcome.** *Every* issue a human opened and tagged `workstream:<name>` has that
+     shape, and so does every `integration:candidate`. Re-labelling one of those `cowork:queued`
+     puts a stranger's issue into the unattended build lane with no human verb ever having been
+     given — the one thing the queue label is supposed to mean. So the shape does not qualify an
+     issue; **a recorded lapse does**, which is a `cowork:proposal` `unlabeled` event, which is
+     what `lapsed_items()` checks and what `--lapsed` reports. An issue that is not in that list is
+     somebody else's: leave its labels alone and file your find the ordinary way. `lapsed: null`
+     means the query failed — treat every issue as not-lapsed that run, because the direction that
+     costs you a duplicate is safer than the one that builds unasked.
    - restates an open **`cowork:proposal`** issue and your find is **`auto`** → **reclassify that
      issue in place**, and carry it into step 5:
 

@@ -412,8 +412,12 @@ def collect(since: datetime, now: datetime, zone: object | None) -> dict:
     return {"areas": areas, "warnings": warnings}
 
 
-def _installable() -> tuple[str, str]:
-    """The tag-backed pre-release and a warning, either of which may be "".
+# `9108e9aa fix what the review found (#272)` — the squash subject GitHub writes.
+_MERGED_PR = re.compile(r"\(#(\d+)\)")
+
+
+def _installable() -> tuple[str, str, frozenset[int] | None]:
+    """The tag-backed pre-release, a warning, and what that rc does **not** hold.
 
     Never ``latest_prerelease``: that is what the *next* release-worthy merge
     would be numbered, raised by every docs merge including ones that publish
@@ -424,6 +428,18 @@ def _installable() -> tuple[str, str]:
     batch, and "" renders as *no new pre-release* — a claim about the world. This
     module's contract is that blindness is reported and never smoothed, and it
     applies to its own imports.
+
+    The third value is the PR numbers in ``untested_commits`` — everything on
+    ``main`` that landed *after* the published tag. **A merge being in the day is
+    not the same as it being in the rc**, and the common case is the one that
+    diverges: ``publish-beta.yml`` skips the publish when a merge did not move
+    the version, and `chore` and `docs` are two of the four types a sweep can
+    produce. An area whose only merge today was a chore was being handed
+    ``→ `3.9.0rc14``` and an install line for a build that predates it — a fact
+    inferred rather than read, which is the one thing this module refuses.
+
+    ``None`` means the batch could not be read, and the caller claims nothing
+    rather than guessing in either direction.
     """
     try:
         import release_channel
@@ -431,6 +447,7 @@ def _installable() -> tuple[str, str]:
         return (
             "",
             f"could not read the release channel ({exc.__class__.__name__}) — the version clause is missing, not empty",
+            None,
         )
     try:
         batch = release_channel.pending()
@@ -438,23 +455,40 @@ def _installable() -> tuple[str, str]:
         return (
             "",
             f"could not read the release channel ({exc.__class__.__name__}) — the version clause is missing, not empty",
+            None,
         )
     if not isinstance(batch, dict):
-        return "", "the release channel answered in an unexpected shape — the version clause is missing, not empty"
-    return batch.get("installable") or "", ""
+        return (
+            "",
+            "the release channel answered in an unexpected shape — the version clause is missing, not empty",
+            None,
+        )
+    untested = batch.get("untested_commits")
+    if not isinstance(untested, list):
+        return batch.get("installable") or "", "", None
+    numbers = {int(match.group(1)) for line in untested if isinstance(line, str) for match in _MERGED_PR.finditer(line)}
+    return batch.get("installable") or "", "", frozenset(numbers)
 
 
-def _title(glyph: str, display: str, day: str, merged: list, installable: str, channel_known: bool = True) -> str:
+def _title(
+    glyph: str, display: str, day: str, merged: list, installable: str, channel_known: bool = True, in_rc: bool = True
+) -> str:
     """``🔬 **Analysis** — Sun 16 Aug · 2 merged → `3.9.0rc14```.
 
     The dating fact is what tells two posts under the same glyph apart — 🧭 at
     06:15 about other agents' output and 🧭 in the evening about this area's
     merges are both about agents, and the clause is the difference.
 
-    **Three states, not two.** A version, *no new pre-release*, and no clause at
-    all. The third is what an unreadable release channel gets: "" means "nothing
-    was published" only when the channel answered, and rendering an unanswered
-    read as that sentence is a claim about the world made out of a failure.
+    **Four states, not two**, and only one of them names a version:
+
+    - the channel could not be read → no clause at all, because "" would render
+      as *no new pre-release*, a claim about the world made out of a failure;
+    - nothing was published for this batch → *no new pre-release*, which is read
+      rather than inferred;
+    - something was published but it does not contain **this area's** merges → no
+      clause, because a chore or docs merge publishes no rc and the newest tag
+      predates it;
+    - the published rc holds one of this area's merges → the version.
     """
     head = f"{glyph} **{display}** — {day}"
     if not merged:
@@ -465,11 +499,37 @@ def _title(glyph: str, display: str, day: str, merged: list, installable: str, c
     # `installable` is empty when nothing has been published for this batch. Say
     # so rather than printing a stale version, which is `shipped-standup.md`'s
     # rule and the reason the field is read at all.
-    return head + (f" → `{installable}`" if installable else " → no new pre-release")
+    if not installable:
+        return head + " → no new pre-release"
+    return head + (f" → `{installable}`" if in_rc else "")
+
+
+def _in_rc(data: dict, not_in_rc: frozenset[int] | None) -> bool:
+    """Whether this area has a merge the published pre-release actually holds.
+
+    The gate on the version clause and the install footer. ``None`` — the batch
+    could not be read — claims nothing, which is the same direction every other
+    unreadable source takes here.
+
+    An area with no merges is False by construction, which is the case the footer
+    was gated on before: a post that fired because a PR *opened* has contributed
+    nothing to any build. A chore-only merge is the case that was missing, and it
+    is the more common of the two.
+    """
+    if not_in_rc is None:
+        return False
+    numbers = {item.get("number") for item in data["merged"]}
+    return bool(numbers - set(not_in_rc)) and bool(numbers)
 
 
 def area_lines(
-    display: str, glyph: str, day: str, data: dict, installable: str, channel_known: bool = True
+    display: str,
+    glyph: str,
+    day: str,
+    data: dict,
+    installable: str,
+    channel_known: bool = True,
+    in_rc: bool = True,
 ) -> list[str]:
     """One area's whole message. Pure over its inputs, like ``agenda_lines``.
 
@@ -508,13 +568,14 @@ def area_lines(
                 block.append(f"   — {item['clause']}")
         blocks.append(block)
 
-    # Gated on `merged`, not on `installable`: a post that fired because a PR
-    # opened has contributed nothing to that build, and an install line under it
+    # Gated on `in_rc`, which is False for both ways an area can fail to be in a
+    # build: a post that fired because a PR *opened*, and a chore or docs merge
+    # the release channel never picked up. An install line under either
     # advertises a version this area is not in.
-    if installable and merged:
+    if installable and merged and in_rc:
         blocks.append([f"`pip install --pre yeaboi=={installable}`"])
 
-    lines = [_title(glyph, display, day, merged, installable, channel_known), ""]
+    lines = [_title(glyph, display, day, merged, installable, channel_known, in_rc), ""]
     for position, block in enumerate(blocks):
         if position:
             lines += ["───────────────────────────", ""]
@@ -552,7 +613,7 @@ def build(since: datetime, now: datetime, checked_in: list[str] | None = None) -
 
     glyphs = setup.parse_workstream_glyphs()
     names = setup.parse_workstream_names()
-    installable, channel_note = _installable()
+    installable, channel_note, not_in_rc = _installable()
     if channel_note:
         warnings.append(channel_note)
     posts = []
@@ -571,7 +632,7 @@ def build(since: datetime, now: datetime, checked_in: list[str] | None = None) -
             {
                 "workstream": name,
                 "glyph": glyph,
-                "lines": area_lines(display, glyph, day, data, installable, not channel_note),
+                "lines": area_lines(display, glyph, day, data, installable, not channel_note, _in_rc(data, not_in_rc)),
             }
         )
 

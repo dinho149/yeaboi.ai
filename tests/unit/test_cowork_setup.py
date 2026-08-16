@@ -5156,3 +5156,83 @@ class TestReportOwner:
     def test_the_answer_names_the_path_it_was_asked_about(self, capsys):
         setup.report_owner("src/yeaboi/retro/engine.py")
         assert json.loads(capsys.readouterr().out)["path"] == "src/yeaboi/retro/engine.py"
+
+
+class TestALapseIsProvenNotInferred:
+    """ "Carries neither label" is a much wider set than "lapsed".
+
+    Both new dedupe outcomes key on *open + neither `cowork:proposal` nor
+    `cowork:queued`*, and then say to re-label in place — `cowork:queued` if the
+    find is `auto`. Every issue a human opened and tagged `workstream:<name>` has
+    exactly that shape, and so does every `integration:candidate`. Re-labelling
+    one of those puts a stranger's issue into the unattended build lane with no
+    human verb ever having been given, which is the one thing that label means.
+
+    The Python half always required a recorded `unlabeled` event. These pin the
+    prose half to the same evidence.
+    """
+
+    SWEEP = (ROOT / "cowork" / "sweep-procedure.md").read_text(encoding="utf-8")
+    SCOUT = (ROOT / ".claude" / "agents" / "cowork-scout.md").read_text(encoding="utf-8")
+
+    def test_the_sweep_checks_the_lapse_before_re_labelling(self):
+        assert "--lapsed" in self.SWEEP
+
+    def test_the_scout_reports_whether_a_match_is_lapsed(self):
+        assert "--lapsed" in self.SCOUT
+
+    def test_the_sweep_says_the_shape_alone_does_not_qualify(self):
+        assert "wider set" in self.SWEEP
+
+    def test_an_unreadable_lapse_query_never_re_labels(self):
+        assert "lapsed: null" in self.SWEEP
+
+    def test_the_script_agrees_that_shape_alone_is_not_a_lapse(self, monkeypatch):
+        """The prose and the code have to require the same evidence, or one of
+        them is decoration."""
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+        issue = {"number": 9, "title": "a human's issue", "labels": [{"name": "workstream:fleet"}]}
+
+        def paged(path, key=None):
+            return setup.ApiResult(True, [] if "/events" in path else [issue], "")
+
+        monkeypatch.setattr(setup.transport, "api_paged", paged)
+        items, _ = setup.lapsed_items("fleet")
+        assert items == []
+
+
+class TestTheRefusedTimelineEndpoint:
+    """`/timeline` is not on the probed allowlist and `/events` is.
+
+    Both carry `labeled`. In a cloud routine session the first is refused, and a
+    refusal handled by falling back to `createdAt` ages a bounced proposal from
+    its filing date — lapsing it up to eight days early, silently, which is the
+    exact error `proposal_clock()` exists to prevent.
+    """
+
+    DIGEST = (ROOT / "cowork" / "routines" / "cron" / "digest.md").read_text(encoding="utf-8")
+
+    def test_no_routine_tells_anyone_to_call_timeline(self):
+        """A recipe, not a mention. The prose names the endpoint in order to
+        forbid it, and a check that could not tell those apart would be one
+        nobody could satisfy."""
+        recipes = [
+            line
+            for line in self.DIGEST.splitlines()
+            if "gh api" in line and "/timeline" in line and "not** on the probed" not in line
+        ]
+        assert recipes == [], f"these call a refused endpoint: {recipes}"
+
+    def test_the_events_endpoint_is_the_one_on_the_allowlist(self):
+        fixture = json.loads((ROOT / "tests" / "fixtures" / "cowork_github_access_live.json").read_text())
+        permitted = {entry["call"] for entry in fixture["permitted"]}
+        assert "GET /repos/{slug}/issues/{n}/events" in permitted
+        assert not any("timeline" in call for call in permitted)
+
+    def test_the_fourteen_day_half_reads_the_rendered_age(self):
+        """It used to say "whose age passes fourteen days" with no source, which
+        left a model ageing seventeen queues by eye off a refused call."""
+        assert "--proposal-slots" in self.DIGEST
+        assert "age_days" in self.DIGEST
