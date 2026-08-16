@@ -146,7 +146,12 @@
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
 .btnAttention:not(:disabled) { animation: btnPulse 1.6s ease-in-out infinite; }
+/* Both ends spelled out, and one shadow at each: a surface that gives its
+   buttons a raised shadow leaves the base as a list of two, and a list of two
+   cannot interpolate to a list of one — the ring switches on and off instead of
+   breathing. */
 @keyframes btnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 28%, transparent); }
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
@@ -156,6 +161,9 @@
    in-card glyphs, which sit on a card rather than in a toolbar. */
 .btnDim { opacity: 0.72; }
 .btnDim:hover, .btnDim:focus-visible { opacity: 1; }
+/* Except when it is filled: the fill is the whole point of a primary, and
+   dimming it turns the accent into a wash. */
+.btnDim.btnPrimary { opacity: 1; }
 
 /* Flex, so the glyph is centred rather than set on a baseline: an inline SVG
    picks up `vertical-align` and lands on a fractional row, which is the whole

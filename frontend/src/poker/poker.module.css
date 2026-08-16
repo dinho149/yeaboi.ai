@@ -1288,14 +1288,22 @@
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
-/* Unavailable, not invisible. A washed-out fill is what made a spent primary
-   read as mud; an outline says the same thing and keeps the label readable. */
+/* Unavailable, not invisible: it keeps its outline and a readable label. */
 .app [class*='btn']:disabled {
   opacity: 1;
   background: none;
   border-color: var(--hairline);
   box-shadow: none;
   color: var(--dim);
+}
+
+/* A filled control keeps its colour when it is spent — the accent is how you
+   find the round's one action, and it should not move around the panel. */
+.app [class*='btnPrimary']:disabled {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--ink);
+  opacity: 0.55;
 }
 
 /* The one live action wherever it appears. */
@@ -1461,6 +1469,11 @@
 .finInput:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
+}
+
+/* No rule when there is nothing to type into: the underline is the offer. */
+.finInput:disabled {
+  box-shadow: none;
 }
 
 .finSrc {
@@ -1633,6 +1646,9 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
   background: var(--panel);
+  /* Cast only while it is moving. At rest a dozen of these stack their shadows
+     into a grey column; a card that has arrived is a pill on the board, and the
+     border is enough to hold it there. */
   box-shadow:
     var(--edge),
     0 1px 1px rgb(0 0 0 / 12%),
@@ -1643,7 +1659,9 @@
   transform: translateY(
     calc((var(--room-drop) + var(--i) * (var(--card-h) + var(--room-gap)) + var(--card-h) + 2px) * -1)
   );
-  transition: transform var(--dur-base) var(--ease);
+  transition:
+    transform var(--dur-base) var(--ease),
+    box-shadow var(--dur-base) var(--ease);
 }
 
 .roomName {
@@ -1655,6 +1673,7 @@
 .room:hover .roomCard,
 .room:has(:focus-visible) .roomCard {
   transform: none;
+  box-shadow: none;
   transition-delay: calc(var(--i) * 45ms);
 }
 

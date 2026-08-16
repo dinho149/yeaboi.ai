@@ -259,7 +259,10 @@
   align-items: stretch;
   margin: var(--s3);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-m);
+  /* Rounder than the concentric arithmetic asks for: 20px of screen minus a
+     12px inset is 8, and 8 inside a 20 reads as a square panel in a rounded
+     window. The eye wants the two curves to look related, not to be. */
+  border-radius: var(--r-l);
   background: var(--panel);
   /* It sits over the board and the board scrolls under it, so it casts — but
      only just: it is fixed furniture, not something floating. */
