@@ -551,6 +551,66 @@ class TestSyncSprintsToJira:
         assert second["startDate"] == "2026-03-30T00:00:00.000+00:00"  # no overlap with first end
 
     @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_existing_target_adds_stories_never_creates(self, mock_key):
+        """sprint_target_mode='existing' assigns stories to the target and never creates."""
+        mock_jira = _sprint_capable_jira({"closed": [], "active": [_board_sprint(7, "PSOT Sprint 104")], "future": []})
+        state = _make_graph_state(
+            jira_story_keys={"story-1": "PROJ-2"},
+            sprint_target_mode="existing",
+            target_sprint_name="PSOT Sprint 104",
+            target_sprint_external_id="",
+        )
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, new_state = sync_sprints_to_jira(state)
+
+        assert not result.errors
+        assert not mock_jira.create_sprint.called
+        assert result.sprints_created == {}
+        assert result.sprints_updated == {"sprint-1": "7"}
+        assert new_state["jira_sprint_keys"]["sprint-1"] == "7"
+        mock_add.assert_called_once()
+        assert mock_add.call_args.args[1] == 7
+        assert mock_add.call_args.args[2] == ["PROJ-2"]
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_existing_target_resolved_by_external_id(self, mock_key):
+        mock_jira = _sprint_capable_jira({"closed": [], "active": [], "future": []})
+        state = _make_graph_state(
+            jira_story_keys={"story-1": "PROJ-2"},
+            sprint_target_mode="existing",
+            target_sprint_name="",
+            target_sprint_external_id="42",
+        )
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, _ = sync_sprints_to_jira(state)
+
+        assert not result.errors
+        assert mock_add.call_args.args[1] == 42
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_existing_target_closed_or_missing_errors_loudly(self, mock_key):
+        """A closed or vanished target sprint is an error — never a silent create."""
+        mock_jira = _sprint_capable_jira({"closed": [_board_sprint(7, "PSOT Sprint 104")], "active": [], "future": []})
+        state = _make_graph_state(
+            jira_story_keys={"story-1": "PROJ-2"},
+            sprint_target_mode="existing",
+            target_sprint_name="PSOT Sprint 104",
+            target_sprint_external_id="",
+        )
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, _ = sync_sprints_to_jira(state)
+
+        assert result.errors and "not found among active/future" in result.errors[0]
+        assert not mock_jira.create_sprint.called
+        assert not mock_add.called
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
     def test_unnumbered_board_keeps_plan_names(self, mock_key):
         """No numbered sprints on the board → the plan's own names are used as-is."""
         mock_jira = _sprint_capable_jira({"closed": [_board_sprint(1, "Kickoff")], "active": [], "future": []})

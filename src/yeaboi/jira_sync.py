@@ -468,6 +468,11 @@ def sync_sprints_to_jira(
     except Exception as e:
         logger.warning("Could not fetch existing sprints: %s — will create new ones", e)
 
+    # "Add to an existing sprint" (small-project intake): assign the plan's
+    # stories to the chosen sprint and never create one.
+    if state.get("sprint_target_mode") == "existing":
+        return _sync_to_existing_jira_sprint(jira, state, result, story_keys, existing_board_sprints, on_progress)
+
     # Derive the board's naming convention by consensus (e.g. "PSOT Sprint {N}")
     # so the plan's generic "Sprint 1", "Sprint 2" are renamed to continue the
     # board's real sequence, then resolve where that sequence starts. The
@@ -581,6 +586,68 @@ def sync_sprints_to_jira(
     merged_sprint_keys = {**existing_sprint_keys, **new_sprint_keys}
     state["jira_sprint_keys"] = merged_sprint_keys
 
+    return result, state
+
+
+def _sync_to_existing_jira_sprint(
+    jira,
+    state: dict[str, Any],
+    result: JiraSyncResult,
+    story_keys: dict[str, str],
+    board_sprints: dict[str, tuple[int, str]],
+    on_progress: ProgressCallback | None,
+) -> tuple[JiraSyncResult, dict[str, Any]]:
+    """Assign the plan's stories to an existing sprint — never create one.
+
+    The target comes from the small-project intake ("Add to <sprint>"): resolved
+    by target_sprint_external_id when the intake captured it, else by
+    target_sprint_name among the board's active/future sprints. A closed (or
+    vanished) target is a loud error, not a fallback — silently creating a
+    sprint here is exactly what the user chose against.
+    """
+    from yeaboi.tools.jira import add_issues_to_sprint
+
+    target_name = str(state.get("target_sprint_name") or "")
+    target_ext = str(state.get("target_sprint_external_id") or "")
+
+    open_by_name = {name: sid for name, (sid, st) in board_sprints.items() if st in ("future", "active")}
+    target_id: int | None = None
+    if target_ext.isdigit():
+        target_id = int(target_ext)
+    elif target_name:
+        target_id = open_by_name.get(target_name)
+        if target_id is None:
+            folded = {name.casefold(): sid for name, sid in open_by_name.items()}
+            target_id = folded.get(target_name.casefold())
+
+    if target_id is None:
+        result.errors.append(
+            f"Sprint '{target_name or target_ext}' not found among active/future sprints — nothing was created. "
+            "Pick a different sprint or re-run the sync without an existing-sprint target."
+        )
+        logger.error("Existing-sprint sync: target %r not resolvable", target_name or target_ext)
+        return result, state
+
+    sprints = state.get("sprints", [])
+    issue_keys = sorted({story_keys[sid] for sprint in sprints for sid in sprint.story_ids if sid in story_keys})
+    label = target_name or str(target_id)
+    if len(sprints) > 1:
+        logger.info("Existing-sprint sync: %d plan sprints all target %s", len(sprints), label)
+    try:
+        add_issues_to_sprint(jira, target_id, issue_keys)
+    except Exception as e:
+        result.errors.append(f"Could not add stories to sprint '{label}': {e}")
+        logger.error("Existing-sprint sync failed — %s", e)
+        return result, state
+
+    merged_keys = dict(state.get("jira_sprint_keys", {}))
+    for sprint in sprints:
+        merged_keys[sprint.id] = str(target_id)
+        result.sprints_updated[sprint.id] = str(target_id)
+    state["jira_sprint_keys"] = merged_keys
+    logger.info("Added %d story(ies) to existing sprint %s (ID %s)", len(issue_keys), label, target_id)
+    if on_progress:
+        on_progress(len(sprints), len(sprints), f"Stories added to {label}")
     return result, state
 
 

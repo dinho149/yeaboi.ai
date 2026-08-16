@@ -442,6 +442,41 @@ class TestSyncIterationsToAzdevops:
         assert kwargs["start_date"] == "2026-03-16"
         assert kwargs["finish_date"] == "2026-03-29"  # start + 2 weeks − 1 day
 
+    def test_existing_target_adds_items_never_creates(self, *_):
+        """sprint_target_mode='existing' assigns items to the target iteration, no creation."""
+        meta = [_iter_meta("Sprint 6", "current")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="Sprint 6",
+            target_sprint_external_id="",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, new_state = sync_iterations_to_azdevops(state)
+
+        assert not result.errors
+        assert not mock_iter.called
+        assert result.iterations_updated == {"sprint-1": "MyProject\\Sprint 6"}
+        assert new_state["azdevops_iteration_keys"]["sprint-1"] == "MyProject\\Sprint 6"
+        mock_add.assert_called_once()
+
+    def test_existing_target_past_iteration_errors_loudly(self, *_):
+        meta = [_iter_meta("Sprint 5", "past")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="Sprint 5",
+            target_sprint_external_id="",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert result.errors and "not found among current/future" in result.errors[0]
+        assert not mock_iter.called
+        assert not mock_add.called
+
     def test_current_same_named_iteration_reused_not_created(self, *_):
         meta = [_iter_meta("Sprint 6", "current")]
         with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):

@@ -317,14 +317,19 @@ QUICK_ESSENTIALS: frozenset[int] = frozenset({6, 11})
 
 # SMALL_PROJECT_ESSENTIALS — the "Small project (1-2 tickets)" mode. A quick
 # intake for tiny scopes: project type (Q2), problem/DoD (Q3, Q4), team size
-# (Q6), sprint length (Q8), and tech stack (Q11). Q1 comes from the description.
-# Deliberately EXCLUDES the capacity questions asked in smart mode:
+# (Q6), sprint length (Q8), tech stack (Q11), and sprint targeting (Q27).
+# Q1 comes from the description. In small mode Q27 asks a different question
+# than in smart mode: "add this work to an existing sprint, or create a new
+# one?" — offering the board's active + future sprints as targets. It is
+# auto-derived ("Fresh start") when no tracker is configured, so tracker-less
+# runs never see it. Deliberately EXCLUDES the capacity questions asked in
+# smart mode:
 #   Q10 (target sprints)  → defaulted to 1 (max 2); small work is one quick sprint
-#   Q27 (sprint selection) / Q28-Q30 (bank holidays, unplanned %, onboarding)
+#   Q28-Q30 (bank holidays, unplanned %, onboarding)
 #       → skipped entirely; small mode does no capacity/bank-holiday planning.
 # The project_analyzer still runs honestly so its size signal can trigger the
 # "this looks bigger than a small project" advisory (offer to switch to Large).
-SMALL_PROJECT_ESSENTIALS: frozenset[int] = frozenset({2, 3, 4, 6, 8, 11})
+SMALL_PROJECT_ESSENTIALS: frozenset[int] = frozenset({2, 3, 4, 6, 8, 11, 27})
 
 # Conditional essentials — questions that become essential when their
 # prerequisite has a real (non-defaulted) answer. This keeps smart mode
@@ -659,6 +664,7 @@ CHAT_QUESTION_PREAMBLES: dict[int, str] = {
 CHAT_QUESTION_PREAMBLES_BY_MODE: dict[tuple[int, str], str] = {
     (10, "smart"): "Since we're going Large here — delivery-wise:",
     (8, "small_project"): "Since this is a quick one —",
+    (27, "small_project"): "Almost done — where should this work land?",
 }
 
 # Chat-only: choice rows hidden from the inline list per intake mode.

@@ -723,6 +723,39 @@ class TestPlanSync:
         assert payload["ok"] is False
         assert "jira" in payload["error"]["message"]
 
+    def test_sync_target_sprint_routes_to_existing(self, seeded_session, monkeypatch):
+        """target_sprint switches the loaded state into existing-sprint mode."""
+        from types import SimpleNamespace
+
+        captured: dict = {}
+
+        def fake_sync(state, on_progress=None):
+            captured["mode"] = state.get("sprint_target_mode")
+            captured["name"] = state.get("target_sprint_name")
+            captured["ext"] = state.get("target_sprint_external_id")
+            result = SimpleNamespace(
+                epic_key="PROJ-1",
+                stories_created={},
+                tasks_created={},
+                sprints_created={},
+                sprints_updated={"sp1": "42"},
+                errors=[],
+                skipped=0,
+            )
+            return result, dict(state)
+
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "PSOT Sprint 104"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "PSOT Sprint 104", "ext": ""}
+        assert payload["data"]["sprints_updated"] == {"sp1": "42"}
+
+        # Digits-only resolves as a Jira sprint id, not a name.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "42"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "", "ext": "42"}
+
     def test_sync_no_sessions_errors(self, tmp_db):
         payload = call_tool("plan_sync", {"destination": "jira"})
         assert payload["ok"] is False

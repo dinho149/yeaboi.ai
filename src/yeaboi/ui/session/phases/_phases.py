@@ -456,18 +456,28 @@ def _handle_tracker_sync(
         if existing_tasks > 0:
             parts.append(f"({existing_tasks} already exist)")
     elif stage == "sprint_planner":
-        new_sprints = len(sprints) - existing_sprints
-        sprint_label = "Sprints" if tracker == "jira" else "Iterations"
-        if new_sprints > 0:
-            parts.append(f"{new_sprints} {sprint_label}")
-        if existing_sprints > 0:
-            parts.append(f"({existing_sprints} already exist)")
+        if graph_state.get("sprint_target_mode") == "existing":
+            # Small-project "add to existing sprint" — nothing gets created.
+            target = graph_state.get("target_sprint_name") or graph_state.get("target_sprint_external_id") or "?"
+            n_stories = len({sid for sp in sprints for sid in sp.story_ids})
+            unit = "sprint" if tracker == "jira" else "iteration"
+            parts.append(f"Add {n_stories} stories to existing {unit} '{target}'")
+        else:
+            new_sprints = len(sprints) - existing_sprints
+            sprint_label = "Sprints" if tracker == "jira" else "Iterations"
+            if new_sprints > 0:
+                parts.append(f"{new_sprints} {sprint_label}")
+            if existing_sprints > 0:
+                parts.append(f"({existing_sprints} already exist)")
 
     if not parts:
         return None  # Nothing to create
 
     # Show confirmation via choice screen
-    desc = f"Create in {tracker_label}: " + ", ".join(parts)
+    if stage == "sprint_planner" and graph_state.get("sprint_target_mode") == "existing":
+        desc = f"Sync to {tracker_label}: " + ", ".join(parts)
+    else:
+        desc = f"Create in {tracker_label}: " + ", ".join(parts)
     choice = _pipeline_choice_screen(
         live,
         console,

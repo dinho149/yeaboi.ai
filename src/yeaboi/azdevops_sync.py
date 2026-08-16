@@ -376,6 +376,11 @@ def sync_iterations_to_azdevops(
     except Exception as e:
         logger.debug("Could not detect iteration naming pattern: %s", e)
 
+    # "Add to an existing iteration" (small-project intake): assign the plan's
+    # stories to the chosen iteration and never create one.
+    if state.get("sprint_target_mode") == "existing":
+        return _sync_to_existing_azdo_iteration(state, result, story_keys, iteration_meta, project, on_progress)
+
     numbering = derive_board_numbering(
         (it["name"], time_frame_to_state.get(it["time_frame"], "future")) for it in iteration_meta
     )
@@ -490,6 +495,65 @@ def sync_iterations_to_azdevops(
     merged_iteration_keys = {**existing_iteration_keys, **new_iteration_keys}
     state["azdevops_iteration_keys"] = merged_iteration_keys
 
+    return result, state
+
+
+def _sync_to_existing_azdo_iteration(
+    state: dict[str, Any],
+    result: AzDevOpsSyncResult,
+    story_keys: dict[str, str],
+    iteration_meta: list[dict],
+    project: str,
+    on_progress: ProgressCallback | None,
+) -> tuple[AzDevOpsSyncResult, dict[str, Any]]:
+    """Assign the plan's stories to an existing iteration — never create one.
+
+    Mirror of _sync_to_existing_jira_sprint: resolve by the intake's captured
+    iteration path first, else by name among current/future iterations; a past
+    (or missing) target errors loudly instead of falling back to creation.
+    """
+    from yeaboi.tools.azure_devops import add_work_items_to_iteration
+
+    target_name = str(state.get("target_sprint_name") or "")
+    target_ext = str(state.get("target_sprint_external_id") or "")
+
+    open_iters = {it["name"]: it["path"] for it in iteration_meta if it["time_frame"] != "past"}
+    target_path = ""
+    if target_ext:
+        target_path = target_ext
+    elif target_name:
+        target_path = open_iters.get(target_name, "")
+        if not target_path:
+            folded = {name.casefold(): path for name, path in open_iters.items()}
+            target_path = folded.get(target_name.casefold(), "")
+
+    if not target_path:
+        result.errors.append(
+            f"Iteration '{target_name or target_ext}' not found among current/future iterations — "
+            "nothing was created. Pick a different iteration or re-run without an existing-sprint target."
+        )
+        logger.error("Existing-iteration sync: target %r not resolvable", target_name or target_ext)
+        return result, state
+
+    target_path = target_path.lstrip("\\")
+    sprints = state.get("sprints", [])
+    issue_ids = sorted({story_keys[sid] for sprint in sprints for sid in sprint.story_ids if sid in story_keys})
+    label = target_name or target_path
+    try:
+        add_work_items_to_iteration(issue_ids, target_path, project)
+    except Exception as e:
+        result.errors.append(f"Could not add stories to iteration '{label}': {e}")
+        logger.error("Existing-iteration sync failed — %s", e)
+        return result, state
+
+    merged_keys = dict(state.get("azdevops_iteration_keys", {}))
+    for sprint in sprints:
+        merged_keys[sprint.id] = target_path
+        result.iterations_updated[sprint.id] = target_path
+    state["azdevops_iteration_keys"] = merged_keys
+    logger.info("Added %d story(ies) to existing iteration %s", len(issue_ids), label)
+    if on_progress:
+        on_progress(len(sprints), len(sprints), f"Stories added to {label}")
     return result, state
 
 

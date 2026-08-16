@@ -1553,6 +1553,11 @@ class QuestionnaireState:
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.
     _active_sprint_number: int | None = None
+    # Transient: the board's open sprint targets offered in small-project Q27
+    # ("add to an existing sprint or create a new one?"). Maps the real board
+    # sprint/iteration NAME to its external id (Jira sprint id / AzDO iteration
+    # path). Consumed at confirmation to fill target_sprint_* on ScrumState.
+    _sprint_target_options: dict[str, str] = field(default_factory=dict)
     # Transient: active sprint start date from Jira (ISO string, e.g. "2026-03-02").
     # Used with _active_sprint_number to compute exact start dates for future sprints.
     _active_sprint_start_date: str | None = None
@@ -1702,6 +1707,18 @@ class ScrumState(_RequiredState, total=False):
     # When 0 (default), sprint_planner uses generic "Sprint 1, Sprint 2, ...".
     # See docs: "Scrum Standards" — sprint planning
     starting_sprint_number: int
+
+    # Small-project sprint targeting — "add to an existing sprint" support.
+    # sprint_target_mode is "" (create sprints, the default) or "existing"
+    # (assign the plan's stories to an existing tracker sprint; the syncs then
+    # never create a sprint). target_sprint_name is the real board sprint /
+    # iteration name ("PSOT Sprint 104"); target_sprint_external_id is the Jira
+    # sprint id or AzDO iteration path, "" when only the name is known (the
+    # sync resolves it by name among active/future sprints at execution time).
+    # See docs: "Scrum Standards" — sprint planning
+    sprint_target_mode: str
+    target_sprint_name: str
+    target_sprint_external_id: str
 
     # Capacity override — set by sprint_planner when total story points exceed
     # what fits in the user's target sprint range (Q10).

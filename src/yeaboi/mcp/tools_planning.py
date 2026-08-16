@@ -172,10 +172,23 @@ def _plan_publish(session_id: str, destination: str) -> dict:
     return {"session_id": resolved, "destination": destination, "url": result.url, "message": result.message}
 
 
-def _plan_sync(session_id: str, destination: str, on_progress=None) -> dict:
+def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_progress=None) -> dict:
     if destination not in ("jira", "azdevops"):
         raise ValueError(f"Unsupported destination {destination!r} — use 'jira' or 'azdevops'.")
     resolved, state = _load_state(session_id)
+    if target_sprint.strip():
+        # Route the whole plan into an existing sprint/iteration instead of
+        # creating any: digits = a Jira sprint id, anything else = the sprint /
+        # iteration name (resolved among active/future targets at sync time).
+        value = target_sprint.strip()
+        state = dict(state)
+        state["sprint_target_mode"] = "existing"
+        if value.isdigit():
+            state["target_sprint_external_id"] = value
+            state["target_sprint_name"] = ""
+        else:
+            state["target_sprint_name"] = value
+            state["target_sprint_external_id"] = ""
     if destination == "jira":
         from yeaboi.jira_sync import sync_all_to_jira as sync_all
     else:
@@ -343,11 +356,13 @@ def register(app) -> None:
         return await run_readonly(_plan_publish, session_id, destination)
 
     @app.tool()
-    async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira") -> dict:
+    async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira", target_sprint: str = "") -> dict:
         """Push a saved plan into the user's issue tracker (destination: 'jira' or 'azdevops'):
         creates the epic, stories, tasks and sprints/iterations as REAL tickets on the
         configured board — always confirm with the user before calling. Idempotent: items
         created by an earlier sync are skipped, so a partial run can be safely retried.
+        target_sprint: add the plan's stories to this EXISTING active/future sprint instead
+        of creating sprints — a Jira sprint id (digits) or the sprint/iteration name.
         Blank session_id = most recent session."""
 
         def report(current: int, total: int, label: str) -> None:
@@ -358,4 +373,4 @@ def register(app) -> None:
             except Exception:
                 logger.debug("sync progress report failed (continuing)", exc_info=True)
 
-        return await run_engine(ctx, _plan_sync, session_id, destination, report, needs_llm=False)
+        return await run_engine(ctx, _plan_sync, session_id, destination, target_sprint, report, needs_llm=False)

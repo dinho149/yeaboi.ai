@@ -40,13 +40,17 @@ class TestModeConstants:
         assert keys == ["chat", "roadmap", "offline"]
 
     def test_small_essentials_include_sprint_length(self):
-        # Small essentials = project type, problem, DoD, team size, sprint length, stack.
-        assert SMALL_PROJECT_ESSENTIALS == frozenset({2, 3, 4, 6, 8, 11})
+        # Small essentials = project type, problem, DoD, team size, sprint
+        # length, stack, and sprint targeting (existing sprint vs new).
+        assert SMALL_PROJECT_ESSENTIALS == frozenset({2, 3, 4, 6, 8, 11, 27})
 
     def test_small_essentials_drop_capacity_questions(self):
-        # No target sprints (Q10) or sprint selection (Q27) — Small does no capacity work.
+        # No target sprints (Q10) and none of the capacity questions (Q28-Q30)
+        # — Small does no capacity work. Q27 IS asked (with a tracker) but as
+        # "add to an existing sprint or create new?", not capacity planning.
         assert 10 not in SMALL_PROJECT_ESSENTIALS
-        assert 27 not in SMALL_PROJECT_ESSENTIALS
+        for q in (28, 29, 30):
+            assert q not in SMALL_PROJECT_ESSENTIALS
 
 
 class TestEssentialsForMode:
@@ -154,6 +158,107 @@ class TestSmallProjectAdvisory:
         assert result["_small_project_oversized"] is False
         # Smart mode keeps the analyzer's own values (not coerced to a flat plan).
         assert result["project_analysis"].target_sprints == 4
+
+
+class TestSprintTargetQuestion:
+    """Small-mode Q27: add to an existing sprint, or create a new one."""
+
+    def _targets(self):
+        return [
+            {
+                "name": "PSOT Sprint 104",
+                "external_id": "88",
+                "state": "active",
+                "start_date": "2026-03-02",
+                "number": 104,
+            },
+            {
+                "name": "PSOT Sprint 105",
+                "external_id": "89",
+                "state": "future",
+                "start_date": "2026-03-16",
+                "number": 105,
+            },
+        ]
+
+    def test_setup_parks_choices_and_options(self, monkeypatch):
+        from yeaboi.agent.nodes import _setup_small_sprint_target_question
+
+        monkeypatch.setattr("yeaboi.agent.nodes._fetch_sprint_targets", lambda pref="": (self._targets(), "ok"))
+        monkeypatch.setattr("yeaboi.agent.nodes._is_jira_configured", lambda: True)
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_target_question(qs)
+
+        assert prompt is not None
+        assert "existing sprint" in prompt
+        assert qs._follow_up_choices[27] == (
+            "Add to PSOT Sprint 104 (active)",
+            "Add to PSOT Sprint 105",
+            "Create a new sprint",
+        )
+        assert qs._sprint_target_options == {"PSOT Sprint 104": "88", "PSOT Sprint 105": "89"}
+        # The active sprint feeds the start-date offset machinery.
+        assert qs._active_sprint_number == 104
+        assert qs._active_sprint_start_date == "2026-03-02"
+        assert qs.answers[27] == "_active:104"
+
+    def test_setup_returns_none_on_fetch_failure(self, monkeypatch):
+        from yeaboi.agent.nodes import _setup_small_sprint_target_question
+
+        monkeypatch.setattr("yeaboi.agent.nodes._fetch_sprint_targets", lambda pref="": ([], "connection failed"))
+        qs = QuestionnaireState(intake_mode="small_project")
+        assert _setup_small_sprint_target_question(qs) is None
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_add_to_strips_active_suffix(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"PSOT Sprint 104": "88"}
+        qs.answers[27] = "Add to PSOT Sprint 104 (active)"
+        qs._follow_up_choices[27] = ("Add to PSOT Sprint 104 (active)",)
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Add to PSOT Sprint 104"
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_create_new_uses_max_plus_one(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"PSOT Sprint 104": "88", "PSOT Sprint 105": "89"}
+        qs._active_sprint_number = 104
+        qs.answers[27] = "Create a new sprint"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Sprint 106"
+
+    def test_resolve_create_new_without_numbers_falls_back(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"Hardening": "12"}
+        qs.answers[27] = "Create a new sprint"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Fresh start (today)"
+
+    def test_analyzer_clamps_to_one_sprint_when_targeting_existing(self, monkeypatch):
+        fake = MagicMock()
+        fake.content = VALID_ANALYSIS_JSON
+        llm = MagicMock()
+        llm.invoke.return_value = fake
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: llm)
+
+        qs = make_completed_questionnaire()
+        state = {
+            "messages": [HumanMessage(content="continue")],
+            "questionnaire": qs,
+            "team_size": 3,
+            "velocity_per_sprint": 15,
+            "_intake_mode": "small_project",
+            "sprint_target_mode": "existing",
+            "target_sprint_name": "PSOT Sprint 104",
+        }
+        result = project_analyzer(state)
+        assert result["project_analysis"].target_sprints == 1
 
 
 class TestApplyEpicSwitch:

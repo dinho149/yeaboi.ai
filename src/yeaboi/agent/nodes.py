@@ -1423,6 +1423,165 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
     return None, None, "No tracker configured"
 
 
+def _fetch_sprint_targets(preferred: str = "") -> tuple[list[dict], str]:
+    """Fetch the board's open (active + future) sprints/iterations as targets.
+
+    # See docs: "Scrum Standards" — sprint planning
+    #
+    # Small-project mode offers "add this work to an existing sprint" and needs
+    # the real board sprints to offer as targets — the active one first (small
+    # work often lands mid-sprint), then upcoming future sprints. Uses the same
+    # paginated, scrum-filtered lookup as the sync modules so intake and sync
+    # can never disagree about what exists.
+
+    Returns:
+        ([{name, external_id, state, start_date, number|None}], status_message).
+        Empty list on failure, with the reason in status_message — same
+        contract as _fetch_active_sprint_number.
+    """
+    use_jira = (preferred == "jira" and _is_jira_configured()) or (not preferred and _is_jira_configured())
+
+    if use_jira:
+        try:
+            from yeaboi.tools.jira import _make_jira_client, fetch_board_sprints, find_scrum_board_id
+
+            jira = _make_jira_client()
+            if jira is None:
+                return [], "Jira not configured"
+            from yeaboi.config import get_jira_project_key
+
+            key = get_jira_project_key() or ""
+            if not key:
+                return [], "JIRA_PROJECT_KEY not set"
+            board_id = find_scrum_board_id(jira, key)
+            if board_id is None:
+                return [], f"No Jira board found for project {key}"
+            targets = []
+            for item in fetch_board_sprints(jira, board_id, states=("active", "future")):
+                num_match = re.search(r"(\d+)\s*$", item["name"])
+                targets.append(
+                    {
+                        "name": item["name"],
+                        "external_id": str(item["id"] or ""),
+                        "state": item["state"],
+                        "start_date": item["start_date"],
+                        "number": int(num_match.group(1)) if num_match else None,
+                    }
+                )
+            return targets, f"{len(targets)} open sprint(s) on the board"
+        except Exception as exc:
+            logger.debug("Failed to fetch Jira sprint targets", exc_info=True)
+            return [], f"Jira connection failed: {exc}"
+
+    if _is_azdevops_configured():
+        try:
+            from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+            targets = []
+            for it in fetch_team_iterations_meta():
+                if it["time_frame"] == "past":
+                    continue
+                num_match = re.search(r"(\d+)\s*$", it["name"])
+                targets.append(
+                    {
+                        "name": it["name"],
+                        "external_id": it["path"],
+                        "state": "active" if it["time_frame"] == "current" else "future",
+                        "start_date": it["start_date"],
+                        "number": int(num_match.group(1)) if num_match else None,
+                    }
+                )
+            # Active first, then future — same ordering the Jira path gets
+            # from its states tuple.
+            targets.sort(key=lambda t: (t["state"] != "active", t["start_date"] or "9999"))
+            return targets, f"{len(targets)} open iteration(s) for the team"
+        except Exception as exc:
+            logger.debug("Failed to fetch AzDO iteration targets", exc_info=True)
+            return [], f"Azure DevOps connection failed: {exc}"
+
+    return [], "No tracker configured"
+
+
+# Cap on how many existing sprints the small-mode Q27 menu offers — beyond
+# the active sprint and the next few, "add to a sprint two months out" is
+# backlog management, not small-project planning.
+_MAX_SPRINT_TARGET_CHOICES = 4
+
+_SPRINT_TARGET_CREATE_CHOICE = "Create a new sprint"
+
+
+def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> str | None:
+    """Park the small-mode Q27 choices: add to an existing sprint, or create new.
+
+    # See docs: "Scrum Standards" — sprint planning
+    #
+    # Fetches the board's active + future sprints and offers them by their real
+    # names ("Add to PSOT Sprint 104 (active)"), plus "Create a new sprint".
+    # Mirrors the smart-mode Q27 dynamic-choice pattern: sentinel answer +
+    # _follow_up_choices, resolved on the next pass.
+
+    Returns:
+        The prompt text to show, or None when no targets could be fetched —
+        the caller then falls back to _derive_q27_from_locale exactly like
+        smart mode does on a failed fetch.
+    """
+    targets, status = _fetch_sprint_targets(questionnaire._preferred_tracker)
+    if not targets:
+        logger.warning("Small-mode Q27: sprint target fetch failed: %s", status)
+        return None
+
+    active = next((t for t in targets if t["state"] == "active"), None)
+    if active is not None and active["number"] is not None:
+        # Feed the start-date offset machinery the same transients smart mode sets.
+        questionnaire._active_sprint_number = active["number"]
+        questionnaire._active_sprint_start_date = active["start_date"] or None
+
+    offered = targets[:_MAX_SPRINT_TARGET_CHOICES]
+    questionnaire._sprint_target_options = {t["name"]: t["external_id"] for t in offered}
+    choices = [f"Add to {t['name']}{' (active)' if t['state'] == 'active' else ''}" for t in offered]
+    choices.append(_SPRINT_TARGET_CREATE_CHOICE)
+    questionnaire._follow_up_choices[27] = tuple(choices)
+    if active is not None and active["number"] is not None:
+        questionnaire.answers[27] = f"_active:{active['number']}"
+    else:
+        questionnaire.answers[27] = "_targets"
+
+    pref = questionnaire._preferred_tracker
+    label = "Jira" if (pref == "jira" or (not pref and _is_jira_configured())) else "Azure DevOps"
+    logger.info("Small-mode Q27: offering %d sprint target(s) from %s", len(offered), label)
+    active_line = f"Detected active sprint in {label}: **{active['name']}**.\n\n" if active else ""
+    return f"{active_line}Add this work to an existing sprint, or create a new one?"
+
+
+def _resolve_small_sprint_target_answer(questionnaire: QuestionnaireState) -> None:
+    """Normalize the small-mode Q27 answer after the user picked a choice.
+
+    "Add to <name> (active)" → "Add to <name>" (the real board name, kept for
+    the confirmation write). "Create a new sprint" → "Sprint <max+1>" so the
+    plan's Sprint artifact carries the number the sync will actually use.
+    """
+    answer = questionnaire.answers.get(27, "")
+    if answer.startswith("Add to "):
+        target_name = answer.removeprefix("Add to ").strip()
+        target_name = target_name.removesuffix("(active)").strip()
+        questionnaire.answers[27] = f"Add to {target_name}"
+        questionnaire._follow_up_choices.pop(27, None)
+        return
+    if _SPRINT_TARGET_CREATE_CHOICE.lower() in answer.lower():
+        numbers = [
+            int(m.group(1))
+            for name in questionnaire._sprint_target_options
+            if (m := re.search(r"(\d+)\s*$", name)) is not None
+        ]
+        if questionnaire._active_sprint_number is not None:
+            numbers.append(questionnaire._active_sprint_number)
+        if numbers:
+            questionnaire.answers[27] = f"Sprint {max(numbers) + 1}"
+        else:
+            questionnaire.answers[27] = "Fresh start (today)"
+        questionnaire._follow_up_choices.pop(27, None)
+
+
 # ---------------------------------------------------------------------------
 # Intake-mode helpers — Small project / Large / Offline.
 # See docs: "Project Intake Questionnaire" — intake modes.
@@ -4385,8 +4544,13 @@ def project_intake(state: ScrumState) -> dict:
             qs.current_question = q_nums[0]
 
             # Q27 with tracker: use the active sprint/iteration number (fetched concurrently above)
-            # to populate dynamic choices for the sprint selection menu
-            if q_nums[0] == 27 and active_num is not None:
+            # to populate dynamic choices for the sprint selection menu.
+            # Small mode asks a different Q27 — "add to an existing sprint, or
+            # create a new one?" — with the board's real sprint names as targets.
+            small_q27 = q_nums[0] == 27 and _is_small_project_mode(qs.intake_mode) and _is_tracker_configured()
+            if small_q27 and (small_prompt := _setup_small_sprint_target_question(qs)) is not None:
+                prompt_text = small_prompt
+            elif not small_q27 and q_nums[0] == 27 and active_num is not None:
                 qs._active_sprint_number = active_num
                 qs._active_sprint_start_date = active_start
                 qs.answers[27] = f"_active:{active_num}"
@@ -4399,8 +4563,8 @@ def project_intake(state: ScrumState) -> dict:
                     f"Detected active sprint in {_tracker_label}: **Sprint {active_num}**.\n\n"
                     f"Which sprint are you planning for?"
                 )
-            elif q_nums[0] == 27 and _is_tracker_configured() and active_num is None:
-                # Couldn't fetch sprint — tell the user why, then fall back
+            elif q_nums[0] == 27 and _is_tracker_configured():
+                # Couldn't fetch sprint/targets — tell the user why, then fall back
                 logger.warning("Tracker sprint fetch failed: %s", jira_status)
                 _derive_q27_from_locale(qs)
                 gaps = _find_essential_gaps(qs, essential_set)
@@ -4708,14 +4872,20 @@ def project_intake(state: ScrumState) -> dict:
 
         # Q27 sprint selection: resolve the selected sprint.
         # The resolved choice text is "Sprint 105 (next)" — extract the sprint number.
+        # Small mode resolves its "Add to <name>" / "Create a new sprint" choices
+        # FIRST: "Add to PSOT Sprint 104" must keep its add-to intent, so the
+        # generic Sprint-N rewrite below must never see it.
         # Bank holidays are now a separate question (Q28).
         if current_q == 27 and _is_tracker_configured():
+            if _is_small_project_mode(questionnaire.intake_mode):
+                _resolve_small_sprint_target_answer(questionnaire)
             q27_answer = questionnaire.answers.get(27, "")
-            sprint_num_match = re.search(r"Sprint\s+(\d+)", q27_answer)
-            if sprint_num_match:
-                questionnaire.answers[27] = f"Sprint {sprint_num_match.group(1)}"
+            if not q27_answer.startswith("Add to "):
+                sprint_num_match = re.search(r"Sprint\s+(\d+)", q27_answer)
+                if sprint_num_match:
+                    questionnaire.answers[27] = f"Sprint {sprint_num_match.group(1)}"
             questionnaire._follow_up_choices.pop(27, None)
-            # Prepare bank holiday detection choices for Q28
+            # Prepare bank holiday detection choices for Q28 (no-op in small mode)
             _prepare_bank_holiday_choices(questionnaire)
 
         # Q28 bank holiday: parse the user's answer (same logic as standard mode)
@@ -4757,15 +4927,23 @@ def project_intake(state: ScrumState) -> dict:
         questionnaire._pending_merged_questions = q_nums
         questionnaire.current_question = q_nums[0]
 
-        # Q27 with tracker: populate dynamic choices for the sprint selection menu
-        if q_nums[0] == 27 and _is_tracker_configured():
+        # Q27 with tracker: populate dynamic choices for the sprint selection menu.
+        # Small mode asks its own Q27 (existing sprint vs new) with board names.
+        if (
+            q_nums[0] == 27
+            and _is_small_project_mode(questionnaire.intake_mode)
+            and _is_tracker_configured()
+            and (small_prompt := _setup_small_sprint_target_question(questionnaire)) is not None
+        ):
+            prompt_text = small_prompt
+        elif q_nums[0] == 27 and _is_tracker_configured():
             _pref_trk = questionnaire._preferred_tracker
             _use_jira = _pref_trk == "jira" or (not _pref_trk and _is_jira_configured())
             _trk_label = "Jira" if _use_jira else "Azure DevOps"
             logger.info("Q27: fetching active sprint from %s (preferred=%s)", _trk_label, _pref_trk)
             active_num, active_start, jira_status = _fetch_active_sprint_number(_pref_trk)
             logger.info("Q27: active_num=%s, active_start=%s, status=%s", active_num, active_start, jira_status)
-            if active_num is not None:
+            if active_num is not None and not _is_small_project_mode(questionnaire.intake_mode):
                 questionnaire._active_sprint_number = active_num
                 questionnaire._active_sprint_start_date = active_start
                 questionnaire.answers[27] = f"_active:{active_num}"
@@ -5179,6 +5357,23 @@ def project_intake(state: ScrumState) -> dict:
         if sprint_num_match:
             starting_sprint = int(sprint_num_match.group(1))
 
+        # Small-mode "Add to <existing sprint>" — carry the target so the syncs
+        # assign stories to that sprint instead of creating one. The trailing
+        # digits (already captured above) also name the Sprint artifact after
+        # the real board sprint.
+        sprint_target_mode = ""
+        target_sprint_name = ""
+        target_sprint_external_id = ""
+        if q27_answer.startswith("Add to "):
+            sprint_target_mode = "existing"
+            target_sprint_name = q27_answer.removeprefix("Add to ").strip()
+            target_sprint_external_id = questionnaire._sprint_target_options.get(target_sprint_name, "")
+            logger.info(
+                "Sprint targeting: existing sprint %r (external_id=%r)",
+                target_sprint_name,
+                target_sprint_external_id or "resolve-by-name",
+            )
+
         if _is_small_project_mode(questionnaire.intake_mode):
             # Small-project mode: no capacity planning. Net velocity equals gross,
             # and there is no per-sprint breakdown (project_analyzer caps the plan
@@ -5278,6 +5473,9 @@ def project_intake(state: ScrumState) -> dict:
             "velocity_source": velocity_source,
             "sprint_start_date": sprint_start,
             "starting_sprint_number": starting_sprint,
+            "sprint_target_mode": sprint_target_mode,
+            "target_sprint_name": target_sprint_name,
+            "target_sprint_external_id": target_sprint_external_id,
             "planned_leave_entries": list(questionnaire._planned_leave_entries),
             # Promote the accepted references off the transient questionnaire
             # onto durable state — the analyzer, the summary and the exports
@@ -6381,10 +6579,13 @@ def project_analyzer(state: ScrumState) -> dict:
     honest_target = analysis.target_sprints
     if small_mode:
         oversized = not analysis.skip_features or analysis.target_sprints > 2 or len(analysis.goals) > 3
+        # Targeting one existing sprint means one Sprint artifact — the stories
+        # are being added to a sprint that already exists, not spread over new ones.
+        targeting_existing = state.get("sprint_target_mode") == "existing"
         analysis = dataclasses.replace(
             analysis,
             skip_features=True,
-            target_sprints=min(max(analysis.target_sprints or 1, 1), 2),
+            target_sprints=1 if targeting_existing else min(max(analysis.target_sprints or 1, 1), 2),
         )
 
     # Format the analysis for display — include capacity data so the user
