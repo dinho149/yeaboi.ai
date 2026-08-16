@@ -122,6 +122,16 @@ _AGENT_CARDS: list[dict[str, Any]] = [
         "color": "rgb(70,190,230)",
     },
     {
+        # Advisor sits beside Usage deliberately: Usage says what the agents
+        # cost, Advisor says how much of that was avoidable.
+        "key": "agent-advisor",
+        "title": "Advisor",
+        "description": "Find recoverable agent spend: re-read waste, cache health, and what each is costing you.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(240,180,70)",
+    },
+    {
         "key": "agent-standup",
         "title": "Standup",
         "description": "A daily digest of what your agents did: sessions worked, commits and PRs, open threads.",

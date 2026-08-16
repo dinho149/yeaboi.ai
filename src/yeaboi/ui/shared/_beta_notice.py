@@ -29,12 +29,14 @@ from yeaboi.beta import BETA_LABEL
 from yeaboi.config import is_beta_notice_seen, mark_beta_notice_seen
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
+    AGENT_ADVISOR_THEME,
     AGENT_SECURITY_THEME,
     AGENT_STANDUP_THEME,
     AGENT_USAGE_THEME,
     PAD,
     PERFORMANCE_THEME,
     Theme,
+    agent_advisor_title,
     agent_security_title,
     agent_standup_title,
     agent_usage_title,
@@ -93,6 +95,20 @@ _BETA_MODES: dict[str, _BetaMode] = {
             "",
             "Only aggregates are stored. Session transcripts are read on this machine",
             "and never copied, uploaded, or persisted.",
+        ),
+    ),
+    "agent-advisor": _BetaMode(
+        title_fn=agent_advisor_title,
+        theme=AGENT_ADVISOR_THEME,
+        subtitle="Beta — worth thirty seconds",
+        headline="Agent Advisor is in beta.",
+        body=(
+            "Recoverable-spend figures are estimates of opportunity, not promised",
+            "savings: tokens are approximated from bytes and priced at your window's",
+            "blended input rate, and every mechanism count is a floor.",
+            "",
+            "Transcripts and CLAUDE.md files are read on this machine only. The report",
+            "keeps counts, byte totals and file paths — never their content.",
         ),
     ),
     "agent-standup": _BetaMode(

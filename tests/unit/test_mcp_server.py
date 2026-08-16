@@ -65,6 +65,8 @@ EXPECTED_TOOLS = {
     "anonymize_text",
     "agents_usage",
     "agents_usage_history",
+    "agents_advisor_run",
+    "agents_advisor_history",
     "agents_standup_run",
     "agents_standup_history",
     "agents_security_scan",

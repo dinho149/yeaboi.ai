@@ -7,7 +7,7 @@ shared sessions.db:
 - ``agent_sessions``          — one rollup row per monitored agent session (aggregates only)
 - ``agent_security_findings`` — security signals as (pattern, file, line) references
 - ``agent_usage_reports`` / ``agent_standup_digests`` / ``agent_security_reports``
-                              — saved artifacts, one row per run
+  / ``agent_advisor_reports`` — saved artifacts, one row per run
 
 The privacy invariant lives at this layer: **no transcript text is ever
 stored**. Session rows carry counts and metadata; security findings carry a
@@ -108,6 +108,17 @@ CREATE TABLE IF NOT EXISTS agent_standup_digests (
 CREATE TABLE IF NOT EXISTS agent_security_reports (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_date      TEXT NOT NULL DEFAULT '',
+    report_json    TEXT NOT NULL DEFAULT '',
+    origin         TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL
+);
+-- Additive vs the sidecar: the Go store never reads or writes this table
+-- (the advisor pipeline is Python-only; see advisor.py), and store open runs
+-- this script idempotently, so existing DBs gain it without a version bump.
+CREATE TABLE IF NOT EXISTS agent_advisor_reports (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start   TEXT NOT NULL DEFAULT '',
     report_json    TEXT NOT NULL DEFAULT '',
     origin         TEXT NOT NULL DEFAULT 'generated',
     edited_from_id INTEGER NOT NULL DEFAULT 0,
@@ -384,8 +395,8 @@ class AgentWatchStore:
     def record_report(self, kind: str, artifact: object, *, key_date: str = "") -> int:
         """Persist one report artifact under its kind's table; return the row id.
 
-        ``kind`` is "usage" / "standup" / "security"; ``key_date`` fills the
-        kind-specific date column (period_start, on_date, scan_date).
+        ``kind`` is "usage" / "standup" / "security" / "advisor"; ``key_date``
+        fills the kind-specific date column (period_start, on_date, scan_date).
         """
         table, date_col = _REPORT_TABLES[kind]
         payload = json.dumps(asdict(artifact), ensure_ascii=False)  # type: ignore[call-overload]
@@ -428,6 +439,7 @@ _REPORT_TABLES: dict[str, tuple[str, str]] = {
     "usage": ("agent_usage_reports", "period_start"),
     "standup": ("agent_standup_digests", "on_date"),
     "security": ("agent_security_reports", "scan_date"),
+    "advisor": ("agent_advisor_reports", "period_start"),
 }
 
 
@@ -637,10 +649,71 @@ def _dict_to_security_report(d: dict):
     )
 
 
+def _dict_to_advisor_report(d: dict):
+    from yeaboi.agent.state import (
+        AgentAdvisorReport,
+        VolatileFileSignal,
+        WasteLineItem,
+        annotations_from,
+    )
+
+    return AgentAdvisorReport(
+        period_start=str(d.get("period_start", "")),
+        period_end=str(d.get("period_end", "")),
+        session_count=int(d.get("session_count", 0)),
+        files_audited=int(d.get("files_audited", 0)),
+        total_cost_usd=float(d.get("total_cost_usd", 0.0)),
+        read_calls=int(d.get("read_calls", 0)),
+        read_bytes=int(d.get("read_bytes", 0)),
+        tool_bytes_total=int(d.get("tool_bytes_total", 0)),
+        recoverable_usd=float(d.get("recoverable_usd", 0.0)),
+        recoverable_share=float(d.get("recoverable_share", 0.0)),
+        effective_input_rate_per_mtok=float(d.get("effective_input_rate_per_mtok", 0.0)),
+        unknown_rate_share=float(d.get("unknown_rate_share", 0.0)),
+        pricing_as_of=str(d.get("pricing_as_of", "")),
+        line_items=tuple(
+            WasteLineItem(
+                mechanism=str(i.get("mechanism", "")),
+                label=str(i.get("label", "")),
+                calls=int(i.get("calls", 0)),
+                content_bytes=int(i.get("content_bytes", 0)),
+                est_tokens=int(i.get("est_tokens", 0)),
+                est_usd=float(i.get("est_usd", 0.0)),
+                share_of_read_bytes=float(i.get("share_of_read_bytes", 0.0)),
+                recoverable=bool(i.get("recoverable", True)),
+                note=str(i.get("note", "")),
+            )
+            for i in d.get("line_items") or ()
+            if isinstance(i, dict)
+        ),
+        residency_median=int(d.get("residency_median", 0)),
+        residency_p90=int(d.get("residency_p90", 0)),
+        gaps_over_5m=int(d.get("gaps_over_5m", 0)),
+        gaps_over_1h=int(d.get("gaps_over_1h", 0)),
+        sessions_with_gap=int(d.get("sessions_with_gap", 0)),
+        volatile_signals=tuple(
+            VolatileFileSignal(
+                location=str(s.get("location", "")),
+                counts=_pair_tuple(s.get("counts")),
+                total=int(s.get("total", 0)),
+            )
+            for s in d.get("volatile_signals") or ()
+            if isinstance(s, dict)
+        ),
+        alignment_score=int(d.get("alignment_score", 100)),
+        insights=_str_tuple(d.get("insights")),
+        recommendations=_str_tuple(d.get("recommendations")),
+        warnings=_str_tuple(d.get("warnings")),
+        generated_at=str(d.get("generated_at", "")),
+        annotations=annotations_from(d.get("annotations")),
+    )
+
+
 _REHYDRATORS = {
     "usage": _dict_to_usage_report,
     "standup": _dict_to_standup_digest,
     "security": _dict_to_security_report,
+    "advisor": _dict_to_advisor_report,
 }
 
 

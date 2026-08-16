@@ -16,7 +16,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.analysis.progress import is_component_progress
 from yeaboi.ui.shared._components import (
@@ -61,6 +61,12 @@ _SECURITY_PHASES: tuple[tuple[str, str], ...] = (
     ("settings", "Audit settings"),
     ("mcp", "Inventory MCP servers"),
     ("summary", "Write the summary"),
+)
+_ADVISOR_PHASES: tuple[tuple[str, str], ...] = (
+    ("scan", "Scan agent sessions"),
+    ("audit", "Audit Read waste"),
+    ("signals", "Check cache health"),
+    ("insights", "Write advice"),
 )
 
 # Marker per terminal status — same vocabulary as the analysis activity rows
@@ -283,6 +289,72 @@ def _build_agent_usage_screen(
             parts.append(Text(note, style="rgb(110,110,125)"))
         parts.extend(_result_footer(action_sel, notice, theme))
 
+    panel = build_page_panel(Group(*parts), theme=theme, height=height)
+    # The chrome's corner companion and entrance read this stamp — Agents pages
+    # get the robo, not the duck (see MusicLive.get_renderable).
+    panel._duck_mascot = "robo"
+    return panel
+
+
+def _capped_advisor(report: AgentAdvisorReport) -> tuple[AgentAdvisorReport, list[str]]:
+    """Cap the advisor report's list fields for on-screen rendering."""
+    notes: list[str] = []
+    if len(report.volatile_signals) > _MAX_BREAKDOWN_ROWS:
+        notes.append(f"… and {len(report.volatile_signals) - _MAX_BREAKDOWN_ROWS} more file(s) in the export")
+    capped = replace(
+        report,
+        # Line items are a fixed five-row taxonomy — they always fit; only the
+        # volatile-file table and the prose grow with the corpus.
+        volatile_signals=report.volatile_signals[:_MAX_BREAKDOWN_ROWS],
+        insights=report.insights[:_MAX_PROSE],
+        recommendations=report.recommendations[:_MAX_PROSE],
+    )
+    return capped, notes
+
+
+def _build_agent_advisor_screen(
+    report: AgentAdvisorReport | None = None,
+    *,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    status: str = "",
+    action_sel: int = 0,
+    notice: str = "",
+    progress: list | None = None,
+    refreshing: bool = False,
+    as_of: str = "",
+) -> Panel:
+    """The Agent Advisor page: phase checklist while auditing, capped report when done."""
+    from yeaboi.agentwatch.render import format_advisor_rich
+    from yeaboi.ui.shared._components import AGENT_ADVISOR_THEME, agent_advisor_title
+
+    theme = AGENT_ADVISOR_THEME
+    parts: list = [
+        Text(""),
+        agent_advisor_title(shimmer_tick, width=width),
+        build_reveal_subtitle("How much of your agent spend is recoverable", None, justify="center"),
+        Text(""),
+    ]
+    if report is None:
+        if progress is not None:
+            parts += _build_agent_progress_body(
+                _ADVISOR_PHASES, progress, tick=shimmer_tick or 0.0, theme=theme, status=status
+            )
+        else:
+            frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+            working = Text(justify="center")
+            working.append(f"{frame} ", style=theme.accent_bright)
+            working.append(status or "Auditing agent sessions…", style="rgb(160,160,175)")
+            parts += [Text(""), working]
+    else:
+        if refreshing:
+            parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
+        capped, notes = _capped_advisor(report)
+        parts.append(format_advisor_rich(capped))
+        for note in notes:
+            parts.append(Text(note, style="rgb(110,110,125)"))
+        parts.extend(_result_footer(action_sel, notice, theme))
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
     # get the robo, not the duck (see MusicLive.get_renderable).

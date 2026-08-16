@@ -20,11 +20,17 @@ import time
 
 from rich.console import Console
 
-from yeaboi.agentwatch.export import build_security_markdown, build_standup_markdown, build_usage_markdown
+from yeaboi.agentwatch.export import (
+    build_advisor_markdown,
+    build_security_markdown,
+    build_standup_markdown,
+    build_usage_markdown,
+)
 from yeaboi.logging_setup import mode_log
 from yeaboi.ui.mode_select.screens._screens_agents import AGENT_RESULT_ACTIONS
 from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._components import (
+    AGENT_ADVISOR_THEME,
     AGENT_SECURITY_THEME,
     AGENT_STANDUP_THEME,
     AGENT_USAGE_THEME,
@@ -35,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 _MODE_META: dict[str, tuple[str, Theme]] = {
     "agent-usage": ("Agent Usage", AGENT_USAGE_THEME),
+    "agent-advisor": ("Agent Advisor", AGENT_ADVISOR_THEME),
     "agent-standup": ("Agent Standup", AGENT_STANDUP_THEME),
     "agent-security": ("Agent Security", AGENT_SECURITY_THEME),
 }
@@ -58,6 +65,8 @@ def route_agent_mode(
             return
         if key == "agent-usage":
             _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout)
+        elif key == "agent-advisor":
+            _run_agent_advisor_page(console, live, read_key, frame_time, supports_timeout)
         elif key == "agent-standup":
             _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout)
         elif key == "agent-security":
@@ -326,6 +335,35 @@ def _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout)
         make_failure_artifact=_failure,
         export_kind="usage",
         build_markdown=build_usage_markdown,
+    )
+
+
+def _run_agent_advisor_page(console, live, read_key, frame_time, supports_timeout) -> None:
+    """Agent Advisor — threaded engine run + capped recoverable-spend report."""
+    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_advisor_screen
+
+    def _run(on_progress):
+        from yeaboi.agentwatch.advisor import run_agent_advisor
+
+        return run_agent_advisor(on_progress=on_progress)
+
+    def _failure(exc):
+        from yeaboi.agent.state import AgentAdvisorReport
+
+        return AgentAdvisorReport(warnings=(f"Agent advisor failed: {exc}",))
+
+    _run_threaded_engine_page(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        label="agent-advisor",
+        run_engine=_run,
+        build_screen=_build_agent_advisor_screen,
+        make_failure_artifact=_failure,
+        export_kind="advisor",
+        build_markdown=build_advisor_markdown,
     )
 
 

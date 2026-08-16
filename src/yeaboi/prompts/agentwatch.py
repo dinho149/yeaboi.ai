@@ -118,6 +118,64 @@ def get_standup_digest_prompt(
     return f"{ask}\n\n{requirements}\n\n{context}"
 
 
+def get_advisor_insights_prompt(
+    *,
+    period_start: str,
+    period_end: str,
+    total_cost_usd: float,
+    recoverable_usd: float,
+    line_items: list[tuple[str, int, float, float, bool]],
+    residency_median: int,
+    gaps_over_5m: int,
+    volatile_files: list[tuple[str, int]],
+    alignment_score: int,
+) -> str:
+    """Build the advisor-insights prompt.
+
+    Args:
+        line_items: (label, calls, est_usd, share_of_read_bytes, recoverable)
+            rows for every audited waste mechanism with any volume.
+        volatile_files: (file name, finding count) rows, worst first.
+    """
+    item_lines = (
+        "\n".join(
+            f"- {label}: {calls} call(s), ~${usd:,.2f} ({share:.0%} of Read bytes)"
+            + ("" if recoverable else " [context only — not counted as recoverable]")
+            for label, calls, usd, share, recoverable in line_items
+        )
+        or "(no measurable Read waste)"
+    )
+    volatile_lines = (
+        "\n".join(f"- {name}: {count} volatile-shaped token(s)" for name, count in volatile_files)
+        or "(no volatile content found in prompt-prefix files)"
+    )
+
+    ask = (
+        "You are advising an engineering lead on their team's AI-agent spend efficiency "
+        f"between {period_start} and {period_end}. Estimated spend: ${total_cost_usd:,.2f}, of which "
+        f"~${recoverable_usd:,.2f} looks mechanically recoverable. Write short, concrete insights about "
+        "where the waste comes from and recommendations to reclaim it."
+    )
+    requirements = (
+        "Requirements:\n"
+        "- Ground every statement in the figures below — never invent or recompute numbers.\n"
+        "- Insights describe what IS (waste patterns, cache behaviour, prefix churn).\n"
+        "- Recommendations describe what to DO (session habits, CLAUDE.md hygiene, caching), each actionable.\n"
+        "- Every figure is an estimate from local session logs — keep that framing; never promise exact savings.\n"
+        "- 2-4 items per list, one sentence each. No preamble, no headings.\n"
+        'Return STRICT JSON: {"insights": ["..."], "recommendations": ["..."]}'
+    )
+    context = (
+        "Audit figures (computed locally from agent session logs; tokens ≈ bytes/4, priced at the window's "
+        "blended input rate):\n"
+        f"Waste by mechanism:\n{item_lines}\n"
+        f"Context residency: a Read stays in context for a median of {residency_median} assistant turn(s).\n"
+        f"Cache-death windows: {gaps_over_5m} gap(s) over 5 minutes between messages.\n"
+        f"Prompt-prefix volatility (cache alignment score {alignment_score}/100):\n{volatile_lines}"
+    )
+    return f"{ask}\n\n{requirements}\n\n{context}"
+
+
 def get_security_summary_prompt(
     *,
     scan_date: str,

@@ -11,23 +11,29 @@ is drift waiting to happen. This pins the copy to its source instead.
 from rich.console import Console
 
 from yeaboi.agent.state import (
+    AgentAdvisorReport,
     AgentSecurityReport,
     AgentStandupDigest,
     AgentUsageBreakdownRow,
     AgentUsageReport,
     ModelUsageRow,
     SecurityFinding,
+    VolatileFileSignal,
+    WasteLineItem,
 )
 from yeaboi.agentwatch.render import (
     _ACCENT,
+    _ADVISOR_ACCENT,
     _SECURITY_ACCENT,
     _STANDUP_ACCENT,
     _tokens,
+    format_advisor_rich,
     format_security_rich,
     format_standup_rich,
     format_usage_rich,
 )
 from yeaboi.ui.shared._components import (
+    AGENT_ADVISOR_THEME,
     AGENT_SECURITY_THEME,
     AGENT_STANDUP_THEME,
     AGENT_USAGE_THEME,
@@ -54,6 +60,81 @@ class TestThemeParity:
         assert _ACCENT == AGENT_USAGE_THEME.accent
         assert _STANDUP_ACCENT == AGENT_STANDUP_THEME.accent
         assert _SECURITY_ACCENT == AGENT_SECURITY_THEME.accent
+        assert _ADVISOR_ACCENT == AGENT_ADVISOR_THEME.accent
+
+
+def make_advisor_report(**over) -> AgentAdvisorReport:
+    defaults = dict(
+        period_start="2026-07-10",
+        period_end="2026-08-08",
+        session_count=3,
+        files_audited=4,
+        total_cost_usd=31.1,
+        read_calls=40,
+        read_bytes=100_000,
+        tool_bytes_total=250_000,
+        recoverable_usd=2.75,
+        recoverable_share=0.0884,
+        effective_input_rate_per_mtok=5.0,
+        pricing_as_of="2026-06-24",
+        line_items=(
+            WasteLineItem(
+                mechanism="identical-repeat",
+                label="Identical re-reads",
+                calls=3,
+                content_bytes=12_000,
+                est_tokens=3_000,
+                est_usd=1.5,
+                share_of_read_bytes=0.12,
+                note="the same file read again, byte-identical",
+            ),
+            WasteLineItem(
+                mechanism="stale-reread",
+                label="Stale reads (edited after)",
+                calls=1,
+                content_bytes=4_000,
+                est_tokens=1_000,
+                est_usd=0.5,
+                share_of_read_bytes=0.04,
+                recoverable=False,
+                note="context, not savings",
+            ),
+        ),
+        residency_median=6,
+        residency_p90=20,
+        gaps_over_5m=2,
+        gaps_over_1h=1,
+        sessions_with_gap=1,
+        volatile_signals=(VolatileFileSignal(location="/home/dev/webapp/CLAUDE.md", counts=(("uuid", "2"),), total=2),),
+        alignment_score=80,
+        insights=("re-reads dominate",),
+        recommendations=("read once, edit from context",),
+    )
+    defaults.update(over)
+    return AgentAdvisorReport(**defaults)
+
+
+class TestAdvisorRender:
+    def test_headline_line_items_and_health(self):
+        out = _plain(format_advisor_rich(make_advisor_report()))
+        assert "~$2.75 recoverable" in out
+        assert "$31.10 estimated spend" in out
+        assert "Identical re-reads" in out
+        # The non-recoverable row is starred and footnoted, never silently summed.
+        assert "Stale reads (edited after) *" in out
+        assert "not counted in the recoverable total" in out
+        assert "alignment 80/100" in out
+        assert "CLAUDE.md" in out
+        assert "re-reads dominate" in out
+
+    def test_unknown_rate_share_is_flagged(self):
+        out = _plain(format_advisor_rich(make_advisor_report(unknown_rate_share=0.4)))
+        assert "40% of input tokens priced at a fallback tier" in out
+
+    def test_empty_report_still_renders(self):
+        out = _plain(format_advisor_rich(AgentAdvisorReport(warnings=("no sessions",))))
+        assert "Agent Advisor" in out
+        assert "⚠ no sessions" in out
 
 
 class TestTokens:

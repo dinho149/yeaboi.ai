@@ -96,6 +96,7 @@ AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
 AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
 AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
+AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
 
 # Button color scheme: (accent_border, accent_label, grey_border, grey_label)
 _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
@@ -391,6 +392,11 @@ def agent_standup_title(shimmer_tick: float | None = None, *, width: int | None 
 def agent_security_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Agent Security ASCII title (rose accent). Optionally shimmering."""
     return build_ascii_title("Security", "rgb(230,90,120)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_advisor_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Advisor ASCII title (amber accent). Optionally shimmering."""
+    return build_ascii_title("Advisor", "rgb(240,180,70)", shimmer_tick=shimmer_tick, width=width)
 
 
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
