@@ -1246,6 +1246,70 @@
   gap: var(--s2);
 }
 
+/*
+ * The console's controls, in the board's own material.
+ *
+ * The shared button is a form control: a flat fill, a one-pixel outline and a
+ * small radius, which is what a browser draws when nobody has decided anything.
+ * These are furniture — the same panel ground, hairline and top-edge highlight
+ * as the bar and the notch — so they read as raised rather than outlined, and
+ * they move when pressed.
+ *
+ * Matched on a substring because the class is hashed by CSS modules and the
+ * button belongs to another one; the dock reaches its own the same way.
+ */
+.console [class*='btn'] {
+  border-radius: var(--r-m);
+  border-color: var(--hairline);
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%);
+  font-size: var(--fs-s);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.console [class*='btn']:hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: var(--hairline-strong);
+  box-shadow:
+    var(--edge),
+    0 3px 8px rgb(0 0 0 / 18%);
+  transform: translateY(-1px);
+}
+
+.console [class*='btn']:active:not(:disabled) {
+  transform: none;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
+}
+
+/* Unavailable, not invisible. A washed-out fill is what made a spent primary
+   read as mud; an outline says the same thing and keeps the label readable. */
+.console [class*='btn']:disabled {
+  opacity: 1;
+  background: none;
+  border-color: var(--hairline);
+  box-shadow: none;
+  color: var(--dim);
+}
+
+/* The one live action on the panel. */
+.console [class*='btnPrimary']:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.console [class*='btnPrimary']:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent);
+  filter: brightness(1.06);
+}
+
 .crow,
 .navrow {
   display: flex;
@@ -1368,16 +1432,35 @@
   gap: var(--s2);
 }
 
+/* A rule under the number, like the ticket editor's fields — a box with a
+   stepper in it is the browser's idea of a form, not this board's. */
 .finInput {
-  width: 5em;
+  width: 4ch;
   min-height: var(--tap);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--r-s);
-  background: transparent;
+  padding: 0 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--fs-s);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-m);
+  text-align: right;
+  /* The spinner is half the width of a two-character field. */
+  appearance: textfield;
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+
+.finInput::-webkit-outer-spin-button,
+.finInput::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.finInput:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
 }
 
 .finSrc {
