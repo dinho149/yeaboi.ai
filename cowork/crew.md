@@ -16,9 +16,9 @@ carries `model: inherit` so the caller decides.
 
 ## Why the scribe is separate
 
-**One format, twenty-two routines.** Every ticket, digest, and Notion page has one shape because one
-agent writes them all. Twenty routines each doing their own comms drift into twenty different
-ticket styles within a month.
+**One format, twenty-eight routines.** Every ticket, digest, and Notion page has one shape because
+one agent writes them all. Twenty-eight routines each doing their own comms drift into twenty-eight
+different ticket styles within a month.
 
 Two writers are not the scribe, and the boundary in both cases is *authorship*: the scribe is the
 only agent that **composes** comms.

@@ -113,12 +113,14 @@ of its lines.
 
 Three things follow from that table, and they are the whole design:
 
-- **Silence is the default and it is load-bearing.** Every routine but the two that bookend the
-  day — 📅 at 05:45 and 🧭 at 06:15 — is allowed to say nothing, and most of them say nothing most
-  days. A routine that reports every morning is a routine nobody reads by Thursday, and a muted
-  channel is worse than no channel — the one day it matters, nobody looks. The two exceptions
-  earn it by being the ones you *wait* for: silence from a findings routine means it found
-  nothing, silence from a schedule is ambiguous.
+- **Silence is the default and it is load-bearing.** Every routine but three — 📅 at 05:45, 🧭 at
+  06:15 and 🐹 on Tuesdays — is allowed to say nothing, and most of them say nothing most days. A
+  routine that reports every morning is a routine nobody reads by Thursday, and a muted channel is
+  worse than no channel — the one day it matters, nobody looks. The three exceptions earn it by
+  being the ones you *wait* for, and each is a report on a **standing** thing rather than a
+  findings run: silence from a findings routine means it found nothing, while silence from a
+  schedule, a daily agent digest or a progress bar is ambiguous — a bar that only appears when it
+  grows cannot be trusted, which is the same argument the other two make.
 - **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and the
   only one whose thread does — 📅's thread is the day's run ledger and asks nothing, which is why
   check-ins carry none of the glyphs an answer is spelled with. ✅ and ❌ mean approve and reject, they are never decoration, and
@@ -417,7 +419,7 @@ The labels half, by contrast, is genuinely repaired by the REST path: `gh label 
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the thirty-three GitHub labels (`cowork`,
+**What each command covers.** `make cowork-setup` does the thirty-six GitHub labels (`cowork`,
 `cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
 `release:promotion`/`release:promote`
 pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
