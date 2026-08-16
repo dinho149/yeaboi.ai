@@ -43,7 +43,21 @@ _JSON_SCHEMA = """\
   "skip_features": "boolean — true when project is small enough that feature grouping adds no value. Default false.",
   "is_low_code": "boolean — true for mostly config/content/no-code projects, not custom engineering. Default false.",
   "low_code_reason": "string — short phrase why is_low_code is true (e.g. 'Webflow + Zapier site'). Empty when false.",
-  "scrum_md_contributions": "JSON field names whose values came from SCRUM.md. Empty list if no SCRUM.md was present."
+  "scrum_md_contributions": "JSON field names whose values came from SCRUM.md. Empty list if no SCRUM.md was present.",
+  "architecture": {
+    "options": [
+      {
+        "name": "string — short label, e.g. 'Modular monolith'",
+        "summary": "string — 1-2 sentences describing the approach",
+        "pros": ["string array — concrete advantages for THIS project"],
+        "cons": ["string array — concrete drawbacks or risks"]
+      }
+    ],
+    "chosen": "string — name of the recommended option",
+    "confidence": "string — high | medium | low",
+    "rationale": "string — why this recommendation; what evidence would change it",
+    "pinned_by_constraint": "boolean — true when Q13 / the repository / team docs already fixed the architecture"
+  }
 }"""
 
 
@@ -289,7 +303,16 @@ def get_analyzer_prompt(
         "adds no value (guideline: target_sprints ≤ 2 AND goals ≤ 3). Default `false` when in doubt.\n"
         "11. `scrum_md_contributions`: if a SCRUM.md user context section was present above, "
         "list the exact JSON field names whose values were primarily sourced from it. "
-        "Leave empty if no such section was present.\n\n"
+        "Leave empty if no such section was present.\n"
+        "12. `architecture`: for greenfield projects with an OPEN architecture choice, propose "
+        "2-3 genuinely distinct `options` (e.g. modular monolith vs microservices vs serverless — "
+        "grounded in the tech stack, team size, and timeline), mark one as `chosen`, and rate "
+        '`confidence` honestly: "high" only when the evidence clearly favours one option.\n'
+        "13. When Q13 states an architecture decision is already made, the repository scan shows "
+        "an existing architecture, or team docs / prior-art repositories pin the approach: emit "
+        "exactly ONE option describing it, set `pinned_by_constraint: true` and "
+        '`confidence: "high"`, and cite the pinning source in `rationale`. Never invent '
+        "alternatives to a decision that is already made.\n\n"
         "Return ONLY the JSON object, no other text."
     )
 

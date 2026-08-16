@@ -158,6 +158,24 @@ class TestNextAutoInput:
         with pytest.raises(HeadlessPipelineError):
             _next_auto_input({"questionnaire": qs})
 
+    def test_spike_prompt_auto_answered_by_confidence_rule(self):
+        # medium/low confidence → include; high → skip. The sentinel clears
+        # and spike_choice is written so the node never re-asks.
+        state = {
+            "questionnaire": make_completed_questionnaire(),
+            "_spike_prompt": {"chosen": "Monolith", "confidence": "medium", "recommended": "include"},
+        }
+        assert _next_auto_input(state) == "include the architecture spike"
+        assert state["spike_choice"] == "include"
+        assert state["_spike_prompt"] == {}
+
+        state = {
+            "questionnaire": make_completed_questionnaire(),
+            "_spike_prompt": {"chosen": "Monolith", "confidence": "high", "recommended": "skip"},
+        }
+        assert _next_auto_input(state) == "skip the architecture spike"
+        assert state["spike_choice"] == "skip"
+
 
 class TestRunPlanningPipeline:
     """End-to-end driver behaviour against the FakeGraph."""

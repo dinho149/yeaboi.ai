@@ -17,6 +17,7 @@ import dataclasses
 import json
 import logging
 import math
+import os
 import re
 from collections.abc import Callable
 
@@ -32,6 +33,8 @@ from yeaboi.agent.state import (
     PHASE_QUESTION_RANGES,
     TOTAL_QUESTIONS,
     AcceptanceCriterion,
+    ArchitectureDecision,
+    ArchitectureOption,
     Discipline,
     Feature,
     Priority,
@@ -5983,6 +5986,63 @@ def _build_answers_block(questionnaire: QuestionnaireState) -> str:
     return "\n".join(lines)
 
 
+def _parse_architecture(raw: object) -> ArchitectureDecision | None:
+    """Parse the analyzer's architecture block with deterministic guardrails.
+
+    # See docs: "Scrum Standards" — DoD Spike
+    #
+    # Clamps to at most 3 options, drops nameless ones, normalizes confidence
+    # to high/medium/low, and coerces `chosen` to a real option name. Returns
+    # None (no architecture section, no spike downstream) for anything that
+    # isn't a dict with at least one named option — including the deterministic
+    # fallback path, which never fabricates options.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def to_str_tuple(val: object) -> tuple[str, ...]:
+        if isinstance(val, list):
+            return tuple(str(item) for item in val if item)
+        if isinstance(val, str) and val.strip():
+            return (val,)
+        return ()
+
+    options: list[ArchitectureOption] = []
+    raw_options = raw.get("options")
+    if isinstance(raw_options, list):
+        for item in raw_options[:3]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            options.append(
+                ArchitectureOption(
+                    name=name,
+                    summary=str(item.get("summary", "")).strip(),
+                    pros=to_str_tuple(item.get("pros")),
+                    cons=to_str_tuple(item.get("cons")),
+                )
+            )
+    if not options:
+        return None
+
+    confidence = str(raw.get("confidence", "")).strip().lower()
+    if confidence not in ("high", "medium", "low"):
+        confidence = "medium"
+    chosen = str(raw.get("chosen", "")).strip()
+    if chosen not in {o.name for o in options}:
+        chosen = options[0].name
+
+    return ArchitectureDecision(
+        options=tuple(options),
+        chosen=chosen,
+        confidence=confidence,
+        rationale=str(raw.get("rationale", "")).strip(),
+        pinned_by_constraint=bool(raw.get("pinned_by_constraint", False)) or len(options) == 1,
+    )
+
+
 def _parse_analysis_response(
     raw: str,
     questionnaire: QuestionnaireState,
@@ -6063,6 +6123,7 @@ def _parse_analysis_response(
             is_low_code=bool(parsed.get("is_low_code", False)),
             low_code_reason=str(parsed.get("low_code_reason", "")),
             scrum_md_contributions=to_str_tuple(parsed.get("scrum_md_contributions")),
+            architecture=_parse_architecture(parsed.get("architecture")),
         )
 
     except Exception:
@@ -6134,6 +6195,39 @@ def _build_fallback_analysis(
     )
 
 
+def _format_architecture_section(architecture: ArchitectureDecision | None) -> str:
+    """Render the analysis review's Architecture block ("" when absent).
+
+    Shows WHAT was considered — every option with pros/cons — beside the
+    recommendation and its confidence, so the pick is a reviewable decision
+    rather than a silent default.
+    """
+    if architecture is None or not architecture.options:
+        return ""
+    lines = [
+        "## Architecture",
+        f"  **Recommended:** {architecture.chosen} · confidence: **{architecture.confidence}**",
+    ]
+    if architecture.rationale:
+        lines.append(f"  {architecture.rationale}")
+    for opt in architecture.options:
+        marker = "✓ " if opt.name == architecture.chosen else ""
+        summary = f" — {opt.summary}" if opt.summary else ""
+        lines.append(f"  - {marker}**{opt.name}**{summary}")
+        if opt.pros:
+            lines.append(f"      pros: {'; '.join(opt.pros)}")
+        if opt.cons:
+            lines.append(f"      cons: {'; '.join(opt.cons)}")
+    if architecture.pinned_by_constraint:
+        lines.append("  _(decision already pinned — no validation spike needed)_")
+    else:
+        lines.append(
+            "  _(the choice is open — you'll be asked whether to add a validation spike; "
+            "to pick a different option, choose Edit and say so)_"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _format_analysis(
     analysis: ProjectAnalysis,
     *,
@@ -6180,6 +6274,7 @@ def _format_analysis(
         f"## End Users\n{_bullet_list(analysis.end_users)}\n",
         f"## Target State\n{analysis.target_state or '_(not specified)_'}\n",
         f"## Tech Stack\n{_bullet_list(analysis.tech_stack)}\n",
+        _format_architecture_section(analysis.architecture),
         f"## Integrations\n{_bullet_list(analysis.integrations)}\n",
         f"## Constraints\n{_bullet_list(analysis.constraints)}\n",
         f"## Sprint Planning\n"
@@ -6538,6 +6633,14 @@ def project_analyzer(state: ScrumState) -> dict:
         # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=images)
         analysis = _parse_analysis_response(response.content, questionnaire, team_size, velocity)
+        if analysis.architecture is not None:
+            logger.info(
+                "project_analyzer: architecture options=%d chosen=%s confidence=%s pinned=%s",
+                len(analysis.architecture.options),
+                analysis.architecture.chosen,
+                analysis.architecture.confidence,
+                analysis.architecture.pinned_by_constraint,
+            )
     except Exception as exc:
         if _should_reraise_llm_error(exc):
             raise
@@ -7940,6 +8043,243 @@ def _format_stories(
     return "\n".join(sections)
 
 
+# ── Architecture-validation spike ─────────────────────────────────────
+# See docs: "Scrum Standards" — DoD Spike
+#
+# When the analyzer produced a genuinely OPEN architecture decision (2+
+# options, not pinned by a constraint), the user is asked whether to add a
+# time-boxed validation spike to the plan. The ask follows the capacity-popup
+# pattern: the node returns early with a sentinel (_spike_prompt) + message,
+# the driver renders a choice, and the answer lands in state["spike_choice"].
+# Injection itself is deterministic Python (never an LLM instruction), so every
+# entry path — TUI, headless, MCP, roadmap — gets an identical artifact.
+
+_SPIKE_TITLE_PREFIX = "[Spike] "
+
+
+def _spike_eligible(analysis: ProjectAnalysis | None) -> bool:
+    """True when the architecture decision is open enough to be worth a spike."""
+    arch = getattr(analysis, "architecture", None)
+    return arch is not None and len(arch.options) >= 2 and not arch.pinned_by_constraint
+
+
+def _spike_choice_override() -> str:
+    """Pre-made spike choice from YEABOI_ARCHITECTURE_SPIKE (CLI --architecture-spike).
+
+    "include"/"skip" suppress the interactive question entirely; anything else
+    (including "auto" and unset) means ask/auto-rule as usual.
+    """
+    val = (os.getenv("YEABOI_ARCHITECTURE_SPIKE") or "").strip().lower()
+    return val if val in ("include", "skip") else ""
+
+
+def spike_recommended(confidence: str) -> bool:
+    """The confidence auto-rule: validate unless the AI is confident.
+
+    Used both as the recommended default in the interactive popup and as the
+    unattended answer in headless/MCP runs.
+    """
+    return confidence != "high"
+
+
+def _parse_spike_reply(state: ScrumState) -> str:
+    """Resolve a pending spike question from the user's textual reply.
+
+    The TUI popups write state["spike_choice"] directly and never reach this;
+    the REPL (and any plain-text driver) answers in words. An ambiguous reply
+    (including the REPL export-only "continue") falls back to the recommended
+    default parked in the sentinel — which is the confidence auto-rule.
+    """
+    messages = state.get("messages") or []
+    text = str(getattr(messages[-1], "content", "")).strip().lower() if messages else ""
+    if "skip" in text or text in ("2", "no", "n"):
+        return "skip"
+    if "add" in text or "include" in text or "spike" in text or text in ("1", "yes", "y"):
+        return "include"
+    return (state.get("_spike_prompt") or {}).get("recommended", "include")
+
+
+def _maybe_prompt_spike_choice(state: ScrumState, analysis: ProjectAnalysis | None) -> dict | None:
+    """Return the ask-the-user sentinel when the spike question is still open.
+
+    None when nothing needs asking: ineligible architecture, or the choice was
+    already made (interactively, via the architecture_spike param, the
+    YEABOI_ARCHITECTURE_SPIKE env override, or the headless auto-rule).
+    """
+    if not _spike_eligible(analysis) or state.get("spike_choice") or _spike_choice_override():
+        return None
+    arch = analysis.architecture
+    rec = "add" if spike_recommended(arch.confidence) else "skip"
+    question = (
+        f"The architecture choice is open — recommended: **{arch.chosen}** "
+        f"(confidence: **{arch.confidence}**), against {len(arch.options) - 1} alternative(s).\n\n"
+        f"Add a time-boxed **validation spike** (1-3 days) to the plan? "
+        f"Recommended: **{rec}** — "
+        + (
+            "confidence is not high, so validating before committing de-risks the build."
+            if rec == "add"
+            else "confidence is high, so you can likely commit without a spike."
+        )
+    )
+    logger.info("spike prompt: chosen=%s confidence=%s recommendation=%s", arch.chosen, arch.confidence, rec)
+    return {
+        "_spike_prompt": {
+            "chosen": arch.chosen,
+            "confidence": arch.confidence,
+            "options": [o.name for o in arch.options],
+            "recommended": "include" if rec == "add" else "skip",
+        },
+        "messages": [AIMessage(content=question)],
+    }
+
+
+def _spike_story_acs(analysis: ProjectAnalysis, ac_style: str) -> tuple[AcceptanceCriterion, ...]:
+    """The spike story's ACs, mapped from the documented Spike DoD, style-matched."""
+    arch = analysis.architecture
+    option_names = ", ".join(o.name for o in arch.options)
+    if ac_style == "bullets":
+        return (
+            AcceptanceCriterion(text=f"The spike objective and 1-3 day time-box are stated up front ({option_names})."),
+            AcceptanceCriterion(
+                text="Findings are documented with a recommendation including trade-offs and rejected alternatives."
+            ),
+            AcceptanceCriterion(text="Next steps (adopt or adjust the plan) are agreed with the team and linked."),
+        )
+    return (
+        AcceptanceCriterion(
+            given=f"the candidate architectures ({option_names})",
+            when="the spike starts",
+            then="the objective and 1-3 day time-box are stated",
+        ),
+        AcceptanceCriterion(
+            given="the spike work",
+            when="it concludes",
+            then="findings are documented with a recommendation including trade-offs and rejected alternatives",
+        ),
+        AcceptanceCriterion(
+            given="the recommendation",
+            when="it is shared with the team",
+            then="next steps (adopt or adjust the plan) are agreed and resources are linked",
+        ),
+    )
+
+
+def _inject_architecture_spike_story(
+    stories: list[UserStory],
+    features: list[Feature],
+    analysis: ProjectAnalysis,
+    ac_style: str = "gwt",
+) -> tuple[list[UserStory], str | None]:
+    """Prepend the '[Spike] Validate architecture' story (large mode).
+
+    Deterministic post-parse injection — attaches to the first (highest-value)
+    feature, CRITICAL priority so the sprint planner schedules it first, 2
+    points (the spike DoD's 1-3 day time-box). Idempotent across Edit re-runs
+    via the title prefix. Docs/Knowledge-Sharing DoD items stay applicable
+    (the findings write-up IS the deliverable); Testing/Merge/SDLC do not.
+    """
+    if not features or any(s.title.startswith(_SPIKE_TITLE_PREFIX) for s in stories):
+        return stories, None
+    arch = analysis.architecture
+    runner_up = next((o.name for o in arch.options if o.name != arch.chosen), "the alternatives")
+    spike = UserStory(
+        id=f"US-{features[0].id}-SPIKE",
+        feature_id=features[0].id,
+        persona="development team",
+        goal=f"run a time-boxed spike (1-3 days) validating the recommended {arch.chosen} architecture "
+        f"against {runner_up}",
+        benefit="we commit to an architecture based on evidence rather than assumption",
+        acceptance_criteria=_spike_story_acs(analysis, ac_style),
+        story_points=StoryPointValue.TWO,
+        priority=Priority.CRITICAL,
+        title=f"{_SPIKE_TITLE_PREFIX}Validate architecture: {arch.chosen}",
+        discipline=Discipline.FULLSTACK,
+        dod_applicable=(True, True, False, False, False, True, True),
+        points_rationale=f"Time-boxed architecture spike; confidence in the recommendation is {arch.confidence}.",
+    )
+    logger.info("story_writer: injected architecture spike story %s", spike.id)
+    note = (
+        f"Added {spike.title} — scheduled first to de-risk the open architecture decision "
+        f"(confidence: {arch.confidence})."
+    )
+    return [spike, *stories], note
+
+
+def _inject_architecture_spike_task(
+    tasks: list[Task],
+    stories: list[UserStory],
+    analysis: ProjectAnalysis,
+) -> tuple[list[Task], str | None]:
+    """Splice the spike TASK first among the first story's tasks (small mode).
+
+    Small mode caps stories at 2, so a story-level spike would crowd out real
+    work — the spike rides as the first sub-task instead. TaskLabel.SPIKE is
+    set here directly (the LLM is never asked to emit it), and test_plan stays
+    empty: the deliverable is a written recommendation, not code.
+    """
+    if not stories or any(t.title.startswith(_SPIKE_TITLE_PREFIX) for t in tasks):
+        return tasks, None
+    arch = analysis.architecture
+    first_story = stories[0]
+    trade_offs = "\n".join(
+        f"- {o.name}: {o.summary or 'candidate architecture'}" + (f" (cons: {'; '.join(o.cons)})" if o.cons else "")
+        for o in arch.options
+    )
+    spike = Task(
+        id=f"T-{first_story.id}-SPIKE",
+        story_id=first_story.id,
+        title=f"{_SPIKE_TITLE_PREFIX}Validate architecture: {arch.chosen}",
+        description=(
+            f"Time-boxed spike (1-3 days): validate the recommended {arch.chosen} architecture "
+            f"before building on it. Candidates considered:\n{trade_offs}\n"
+            "Deliverables: documented findings, a recommendation with trade-offs and rejected "
+            "alternatives, and agreed next steps (adopt or adjust the plan)."
+        ),
+        label=TaskLabel.SPIKE,
+        test_plan="",
+        ai_prompt=(
+            f"You are a tech lead evaluating architectures for {analysis.project_name} "
+            f"({', '.join(analysis.tech_stack) or 'stack TBD'}). Compare: "
+            f"{', '.join(o.name for o in arch.options)}. Produce a written recommendation "
+            "with concrete trade-offs, what evidence would change the pick, and next steps."
+        ),
+    )
+    insert_at = next((i for i, t in enumerate(tasks) if t.story_id == first_story.id), len(tasks))
+    logger.info("task_decomposer: injected architecture spike task %s at index %d", spike.id, insert_at)
+    note = f"Added {spike.title} as the first task — a 1-3 day spike to validate the open architecture decision."
+    return [*tasks[:insert_at], spike, *tasks[insert_at:]], note
+
+
+def _pin_spike_to_first_sprint(sprints: list[Sprint], stories: list[UserStory]) -> list[Sprint]:
+    """Guarantee the spike story lands in the first sprint.
+
+    The sprint-planner prompt already asks for spikes first (rule 4); this
+    enforces it deterministically after parse, moving a misplaced spike story
+    into sprints[0] via dataclasses.replace (Sprint is frozen).
+    """
+    spike_ids = {s.id for s in stories if s.title.startswith(_SPIKE_TITLE_PREFIX)}
+    if not spike_ids or not sprints:
+        return sprints
+    first = sprints[0]
+    misplaced = [sid for sid in spike_ids if sid not in first.story_ids]
+    if not misplaced:
+        return sprints
+    result: list[Sprint] = []
+    moved: list[str] = []
+    for i, sprint in enumerate(sprints):
+        if i == 0:
+            continue  # rebuilt last, once we know what moves
+        remaining = tuple(sid for sid in sprint.story_ids if sid not in spike_ids)
+        if len(remaining) != len(sprint.story_ids):
+            moved.extend(sid for sid in sprint.story_ids if sid in spike_ids)
+            sprint = dataclasses.replace(sprint, story_ids=remaining)
+        result.append(sprint)
+    if moved:
+        logger.info("sprint_planner: pinned spike story(ies) %s into %s", moved, sprints[0].name)
+        first = dataclasses.replace(first, story_ids=(*moved, *first.story_ids))
+    return [first, *result]
+
+
 def story_writer(state: ScrumState) -> dict:
     """LangGraph node: decompose features into user stories with ACs and points.
 
@@ -7973,6 +8313,23 @@ def story_writer(state: ScrumState) -> dict:
     """
     analysis: ProjectAnalysis = state["project_analysis"]
     features: list[Feature] = state["features"]
+
+    # Architecture-validation spike: when the decision is open and the user
+    # hasn't chosen yet, ask BEFORE generating stories (large mode asks here;
+    # small mode asks in task_decomposer, where its spike lives). The TUI
+    # popups answer by writing spike_choice; a plain-text driver's reply is
+    # parsed here on the re-invoke.
+    spike_updates: dict = {}
+    if not _is_small_project_mode(state.get("_intake_mode")):
+        if state.get("_spike_prompt") and not state.get("spike_choice"):
+            choice = _parse_spike_reply(state)
+            logger.info("story_writer: spike reply resolved to %s", choice)
+            state = {**state, "spike_choice": choice}
+            spike_updates = {"spike_choice": choice, "_spike_prompt": {}}
+        else:
+            spike_ask = _maybe_prompt_spike_choice(state, analysis)
+            if spike_ask is not None:
+                return spike_ask
 
     # Read review state (same pattern as feature_generator)
     review_decision = state.get("last_review_decision")
@@ -8071,6 +8428,15 @@ def story_writer(state: ScrumState) -> dict:
     # See docs: "Scrum Standards" — Story Checklist
     stories, warnings = _validate_stories(stories, features, ac_style, min_acs=ac_median if ac_median > 0 else 3)
 
+    # Inject the architecture-validation spike story when the user opted in
+    # (large mode only — small mode's spike is a task; and never when the
+    # small-mode cap below could immediately evict real work for it).
+    effective_spike = state.get("spike_choice") or _spike_choice_override()
+    if not small_mode and effective_spike == "include" and _spike_eligible(analysis):
+        stories, spike_note = _inject_architecture_spike_story(stories, features, analysis, ac_style)
+        if spike_note:
+            warnings.append(spike_note)
+
     # Hard cap for small projects — the prompt asks, this enforces. Keep
     # document order: the LLM lists stories by importance, so the first
     # SMALL_PROJECT_MAX_STORIES are the ones to keep.
@@ -8097,6 +8463,7 @@ def story_writer(state: ScrumState) -> dict:
         # actually written — on all surfaces, not just the TUI.
         "ac_format": ac_style,
         "ticket_template_sections": _tpl_sections,
+        **spike_updates,
         "messages": [AIMessage(content=display)],
         "pending_review": "story_writer",
     }
@@ -8546,6 +8913,21 @@ def task_decomposer(state: ScrumState) -> dict:
     features: list[Feature] = state["features"]
     stories: list[UserStory] = state["stories"]
 
+    # Architecture-validation spike (small mode): the spike rides as a task
+    # here, so this is where small mode asks the opt-in question — same
+    # sentinel + driver-popup pattern as story_writer's large-mode ask.
+    spike_updates: dict = {}
+    if _is_small_project_mode(state.get("_intake_mode")):
+        if state.get("_spike_prompt") and not state.get("spike_choice"):
+            choice = _parse_spike_reply(state)
+            logger.info("task_decomposer: spike reply resolved to %s", choice)
+            state = {**state, "spike_choice": choice}
+            spike_updates = {"spike_choice": choice, "_spike_prompt": {}}
+        else:
+            spike_ask = _maybe_prompt_spike_choice(state, analysis)
+            if spike_ask is not None:
+                return spike_ask
+
     # Read review state (same pattern as feature_generator)
     review_decision = state.get("last_review_decision")
     review_feedback = state.get("last_review_feedback", "")
@@ -8616,11 +8998,24 @@ def task_decomposer(state: ScrumState) -> dict:
             is_low_code=analysis.is_low_code,
         )
 
+    # Inject the architecture-validation spike task when the user opted in
+    # (small mode only — large mode injected a spike story instead).
+    spike_note = None
+    if (
+        _is_small_project_mode(state.get("_intake_mode"))
+        and (state.get("spike_choice") or _spike_choice_override()) == "include"
+        and _spike_eligible(analysis)
+    ):
+        tasks, spike_note = _inject_architecture_spike_task(tasks, stories, analysis)
+
     # Format the tasks for display
     display = _format_tasks(tasks, stories, features, analysis.project_name)
+    if spike_note:
+        display = f"{display}\n\n_{spike_note}_"
 
     return {
         "tasks": tasks,
+        **spike_updates,
         "messages": [AIMessage(content=display)],
         "pending_review": "task_decomposer",
     }
@@ -9403,6 +9798,10 @@ def sprint_planner(state: ScrumState) -> dict:
     should_merge = (enforce_target or team_override_active) and target_sprints > 0
     if should_merge and len(sprints) > target_sprints:
         sprints = _merge_sprints_to_target(sprints, target_sprints, stories, starting_sprint_number)
+
+    # The architecture spike must open the plan — prompt rule 4 asks for it,
+    # this guarantees it (deterministic post-parse, like the capacity fixes).
+    sprints = _pin_spike_to_first_sprint(sprints, stories)
 
     # Format the sprints for display
     display = _format_sprints(sprints, stories, features, analysis.project_name, velocity)

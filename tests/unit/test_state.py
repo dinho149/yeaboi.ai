@@ -309,7 +309,17 @@ class TestTask:
 
 class TestTaskLabel:
     def test_all_values(self):
-        assert set(TaskLabel) == {TaskLabel.CODE, TaskLabel.DOCUMENTATION, TaskLabel.INFRASTRUCTURE, TaskLabel.TESTING}
+        assert set(TaskLabel) == {
+            TaskLabel.CODE,
+            TaskLabel.DOCUMENTATION,
+            TaskLabel.INFRASTRUCTURE,
+            TaskLabel.TESTING,
+            TaskLabel.SPIKE,
+        }
+
+    def test_spike_label(self):
+        # Set only by the deterministic spike injector, never requested from the LLM.
+        assert TaskLabel("Spike") is TaskLabel.SPIKE
 
     def test_string_values(self):
         assert TaskLabel.CODE.value == "Code"

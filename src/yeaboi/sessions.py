@@ -36,6 +36,7 @@ from yeaboi.agent.state import (
     Sprint,
     StoryPointValue,
     Task,
+    TaskLabel,
     UserStory,
     prior_art_from_dicts,
     prior_art_to_dicts,
@@ -296,7 +297,10 @@ def _dict_to_analysis(d: dict) -> ProjectAnalysis:
 
     Lists → tuples for frozen dataclass tuple[str, ...] fields.
     """
+    from yeaboi.agent.state import architecture_from_dict
+
     return ProjectAnalysis(
+        architecture=architecture_from_dict(d.get("architecture")),
         project_name=d["project_name"],
         project_description=d["project_description"],
         project_type=d["project_type"],
@@ -352,12 +356,24 @@ def _dict_to_story(d: dict) -> UserStory:
 
 
 def _dict_to_task(d: dict) -> Task:
-    """Reconstruct a Task from a JSON-parsed dict."""
+    """Reconstruct a Task from a JSON-parsed dict.
+
+    label/test_plan/ai_prompt used to be silently dropped on --resume — a
+    resumed session lost every task's label and test plan. Defaults keep old
+    rows (without those keys) loading unchanged.
+    """
+    try:
+        label = TaskLabel(d.get("label", TaskLabel.CODE.value))
+    except ValueError:
+        label = TaskLabel.CODE
     return Task(
         id=d["id"],
         story_id=d["story_id"],
         title=d["title"],
         description=d["description"],
+        label=label,
+        test_plan=d.get("test_plan", ""),
+        ai_prompt=d.get("ai_prompt", ""),
     )
 
 

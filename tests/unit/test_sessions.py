@@ -89,3 +89,74 @@ class TestSchemaInfoSingleRow:
         SessionStore(db_path).close()
         SessionStore(db_path).close()
         assert self._rows(db_path) == [CURRENT_SCHEMA_VERSION]
+
+
+class TestArchitectureRoundTrip:
+    """ArchitectureDecision and full Task fields survive save/load."""
+
+    def _analysis_with_architecture(self):
+        from yeaboi.agent.state import ArchitectureDecision, ArchitectureOption
+
+        return ArchitectureDecision(
+            options=(
+                ArchitectureOption(name="Monolith", summary="s", pros=("a",), cons=("b",)),
+                ArchitectureOption(name="Serverless", summary="s2"),
+            ),
+            chosen="Monolith",
+            confidence="medium",
+            rationale="why",
+        )
+
+    def test_architecture_round_trips(self, tmp_path):
+        from tests._node_helpers import make_dummy_analysis
+        from yeaboi.sessions import SessionStore
+
+        analysis = make_dummy_analysis(architecture=self._analysis_with_architecture())
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "project_analysis": analysis})
+            loaded = store.load_state("s1")
+        arch = loaded["project_analysis"].architecture
+        assert arch is not None
+        assert arch.chosen == "Monolith"
+        assert arch.options[0].pros == ("a",)
+
+    def test_old_analysis_without_architecture_loads(self, tmp_path):
+        from tests._node_helpers import make_dummy_analysis
+        from yeaboi.sessions import SessionStore
+
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "project_analysis": make_dummy_analysis()})
+            loaded = store.load_state("s1")
+        assert loaded["project_analysis"].architecture is None
+
+    def test_task_label_and_plans_survive_resume(self, tmp_path):
+        # Regression: _dict_to_task used to drop label/test_plan/ai_prompt.
+        from yeaboi.agent.state import Task, TaskLabel
+        from yeaboi.sessions import SessionStore
+
+        task = Task(
+            id="T-1",
+            story_id="US-1",
+            title="[Spike] Validate architecture: X",
+            description="d",
+            label=TaskLabel.SPIKE,
+            test_plan="",
+            ai_prompt="research prompt",
+        )
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "tasks": [task]})
+            loaded = store.load_state("s1")
+        restored = loaded["tasks"][0]
+        assert restored.label is TaskLabel.SPIKE
+        assert restored.ai_prompt == "research prompt"
+
+    def test_old_task_dict_without_new_keys_loads(self):
+        from yeaboi.agent.state import TaskLabel
+        from yeaboi.sessions import _dict_to_task
+
+        task = _dict_to_task({"id": "T-1", "story_id": "US-1", "title": "t", "description": "d"})
+        assert task.label is TaskLabel.CODE
+        assert task.test_plan == ""

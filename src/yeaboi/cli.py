@@ -378,6 +378,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--architecture-spike",
+        choices=["auto", "include", "skip"],
+        default=None,
+        help="Whether to add an architecture-validation spike when the analyzer's decision is "
+        "open (2+ options): 'include'/'skip' force it, 'auto' adds it unless the analyzer's "
+        "confidence is high. Default: ask interactively (auto in non-interactive runs).",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -2278,6 +2287,10 @@ def main(argv: list[str] | None = None) -> None:
     # already reads — one seam serves the TUI, REPL and headless paths alike.
     if getattr(args, "ac_format", None):
         os.environ["YEABOI_AC_FORMAT"] = args.ac_format
+    # Same seam for the architecture spike ("auto" = the built-in behaviour,
+    # so only a forced include/skip needs the override).
+    if getattr(args, "architecture_spike", None) in ("include", "skip"):
+        os.environ["YEABOI_ARCHITECTURE_SPIKE"] = args.architecture_spike
 
     # ── --list-audio-devices: print the mic table and exit ───────────────────
     # After load_user_config() so the currently-configured VOICE_DEVICE can be

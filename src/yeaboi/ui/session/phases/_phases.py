@@ -1254,6 +1254,44 @@ def _phase_pipeline(
             graph_state["_capacity_warning"] = {"text": cap_warning_text, "recommended": recommended}
             continue  # Re-invoke graph — sprint_planner generates sprints
 
+        # ── Architecture-spike intercept ──────────────────────────────
+        # The architecture decision is open (2+ options, not pinned) and the
+        # node parked _spike_prompt: ask whether to add a validation spike,
+        # with the recommendation driven by the analyzer's confidence.
+        # See docs: "Guardrails" — human-in-the-loop pattern
+        _spike = graph_state.get("_spike_prompt")
+        if _spike and not graph_state.get("spike_choice") and not dry_run:
+            recommended_choice = _spike.get("recommended", "include")
+            chosen = _spike.get("chosen", "the recommended architecture")
+            confidence = _spike.get("confidence", "medium")
+            ai_msgs = graph_state.get("messages", [])
+            spike_text = ai_msgs[-1].content.replace("**", "") if ai_msgs and isinstance(ai_msgs[-1], AIMessage) else ""
+            add_label = "Add a validation spike (1-3 days)"
+            skip_label = f"Skip — commit to {chosen}"
+            if recommended_choice == "include":
+                spike_options = [f"{add_label} (recommended — confidence {confidence})", skip_label]
+            else:
+                spike_options = [f"{skip_label} (recommended — confidence high)", add_label]
+            spike_pick = _pipeline_choice_screen(
+                live,
+                console,
+                _key,
+                title="Architecture Spike",
+                subtitle=spike_text,
+                options=spike_options,
+                step=step,
+                total=total,
+                stage_label=stage_label,
+                progress=progress,
+            )
+            # Option 0 is always the recommended one; Esc (None) takes it too.
+            follows_recommendation = spike_pick in (None, 0)
+            picked_include = (recommended_choice == "include") == follows_recommendation
+            graph_state["spike_choice"] = "include" if picked_include else "skip"
+            graph_state["_spike_prompt"] = {}
+            logger.info("Spike question answered: %s (recommended=%s)", graph_state["spike_choice"], recommended_choice)
+            continue  # Re-invoke graph — the node generates with the choice set
+
         # Check for pending_review
         pending = graph_state.get("pending_review")
         if not pending:

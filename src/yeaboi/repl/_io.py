@@ -473,6 +473,27 @@ def build_plan_markdown(graph_state: dict) -> str:
         lines.append(f"\n**Target state:** {analysis.target_state}")
         lines.append("")
 
+        # Architecture options + recommendation (feeds file export AND the
+        # Notion/Confluence publish through publish_markdown).
+        arch = getattr(analysis, "architecture", None)
+        if arch is not None and arch.options:
+            lines.append("# Architecture")
+            lines.append("")
+            lines.append(f"**Recommended:** {arch.chosen} (confidence: {arch.confidence})")
+            if arch.rationale:
+                lines.append(f"\n{arch.rationale}")
+            lines.append("")
+            for opt in arch.options:
+                marker = "✓ " if opt.name == arch.chosen else ""
+                lines.append(f"- **{marker}{opt.name}** — {opt.summary}")
+                if opt.pros:
+                    lines.append(f"  - Pros: {'; '.join(opt.pros)}")
+                if opt.cons:
+                    lines.append(f"  - Cons: {'; '.join(opt.cons)}")
+            if arch.pinned_by_constraint:
+                lines.append("\n*(decision pinned by an existing constraint)*")
+            lines.append("")
+
     # Features
     features = graph_state.get("features", [])
     if features:

@@ -150,6 +150,47 @@ def _render_tui_analysis(
     parts.append(Text(""))
     parts.extend(_section("Tech Stack", analysis.tech_stack))
     parts.append(Text(""))
+
+    # Architecture options + recommendation — the pick, its confidence badge,
+    # and every candidate with pros/cons so the decision is reviewable.
+    arch = getattr(analysis, "architecture", None)
+    if arch is not None and arch.options:
+        parts.append(Text("Architecture", style="bold rgb(140,140,160)"))
+        conf_colour = {"high": "rgb(80,200,80)", "medium": "rgb(200,180,60)", "low": "rgb(200,60,60)"}.get(
+            arch.confidence, "rgb(160,160,160)"
+        )
+        header = Text()
+        header.append("  Recommended: ", style="rgb(140,140,140)")
+        header.append(arch.chosen, style="bold white")
+        header.append("  ")
+        header.append(f"{arch.confidence} confidence", style=f"bold {conf_colour}")
+        parts.append(header)
+        if arch.rationale:
+            rationale = Text()
+            rationale.append("  ", style="dim")
+            rationale.append(arch.rationale, style="rgb(160,160,160)")
+            parts.append(rationale)
+        for opt in arch.options:
+            row = Text()
+            row.append("  ✓ " if opt.name == arch.chosen else "  – ", style="dim")
+            row.append(opt.name, style="bold rgb(160,160,160)" if opt.name == arch.chosen else "rgb(160,160,160)")
+            if opt.summary:
+                row.append(f" — {opt.summary}", style="rgb(140,140,140)")
+            parts.append(row)
+            for prefix, items in (("pros", opt.pros), ("cons", opt.cons)):
+                if items:
+                    detail = Text()
+                    detail.append(f"      {prefix}: ", style="dim")
+                    detail.append("; ".join(items), style="rgb(120,120,120)")
+                    parts.append(detail)
+        note = Text()
+        if arch.pinned_by_constraint:
+            note.append("  (decision pinned — no validation spike needed)", style="dim")
+        else:
+            note.append("  (choice is open — Edit to pick a different option)", style="dim")
+        parts.append(note)
+        parts.append(Text(""))
+
     parts.extend(_section("Integrations", analysis.integrations))
     parts.append(Text(""))
     parts.extend(_section("Constraints", analysis.constraints))

@@ -85,6 +85,10 @@ class TaskLabel(StrEnum):
     CODE = "Code"
     DOCUMENTATION = "Documentation"
     INFRASTRUCTURE = "Infrastructure"
+    # Research/validation work (e.g. the architecture-validation spike). Only
+    # ever set by the deterministic injectors in nodes.py — the task-decomposer
+    # LLM is never asked to emit it. See docs: "Scrum Standards" — DoD Spike
+    SPIKE = "Spike"
     TESTING = "Testing"
 
 
@@ -1126,6 +1130,64 @@ class PromptQualityRating:
 
 # See docs: "Scrum Standards" — project analysis
 @dataclass(frozen=True)
+class ArchitectureOption:
+    """One candidate architecture for a new project, with its trade-offs.
+
+    Produced by the project_analyzer alongside the rest of the analysis so the
+    user sees WHAT was considered, not just what was picked. All fields
+    defaulted — old saved sessions have no architecture data at all.
+    See docs: "Scrum Standards" — DoD Spike (trade-offs & alternatives)
+    """
+
+    name: str = ""  # short label, e.g. "Modular monolith"
+    summary: str = ""
+    pros: tuple[str, ...] = ()
+    cons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ArchitectureDecision:
+    """The analyzer's architecture recommendation: options, pick, confidence.
+
+    ``pinned_by_constraint`` is True when the decision was already made before
+    planning (Q13 constraint, existing repo, team docs, prior art) — a pinned
+    decision gets exactly one option and never triggers a validation spike.
+    """
+
+    options: tuple[ArchitectureOption, ...] = ()  # 1-3 candidates
+    chosen: str = ""  # name of the recommended option
+    confidence: str = ""  # "high" | "medium" | "low"
+    rationale: str = ""  # why this pick; what evidence would change it
+    pinned_by_constraint: bool = False
+
+
+def architecture_from_dict(raw: object) -> ArchitectureDecision | None:
+    """Rebuild an ArchitectureDecision from its asdict() form (or return None).
+
+    Shared by sessions.py and persistence.py so a resumed session's analysis
+    carries a real dataclass, not the raw nested dict.
+    """
+    if not isinstance(raw, dict):
+        return raw if isinstance(raw, ArchitectureDecision) else None
+    return ArchitectureDecision(
+        options=tuple(
+            ArchitectureOption(
+                name=o.get("name", ""),
+                summary=o.get("summary", ""),
+                pros=tuple(o.get("pros", ())),
+                cons=tuple(o.get("cons", ())),
+            )
+            for o in raw.get("options", ())
+            if isinstance(o, dict)
+        ),
+        chosen=raw.get("chosen", ""),
+        confidence=raw.get("confidence", ""),
+        rationale=raw.get("rationale", ""),
+        pinned_by_constraint=bool(raw.get("pinned_by_constraint", False)),
+    )
+
+
+@dataclass(frozen=True)
 class ProjectAnalysis:
     """Structured synthesis of all 30 intake answers.
 
@@ -1169,6 +1231,11 @@ class ProjectAnalysis:
     # compute_prompt_quality() in nodes.py from QuestionnaireState tracking sets.
     # None until the project_analyzer node runs. Displayed on the analysis review screen.
     prompt_quality: PromptQualityRating | None = None
+    # Architecture options + recommendation (greenfield projects with an open
+    # choice get 2-3 candidates; a pinned decision gets exactly one). None when
+    # the analyzer produced no architecture data (fallback path, old sessions).
+    # See docs: "Scrum Standards" — DoD Spike
+    architecture: ArchitectureDecision | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1831,6 +1898,19 @@ class ScrumState(_RequiredState, total=False):
     # instead of using enforce_target. 0 = not set (default).
     # See docs: "Guardrails" — human-in-the-loop pattern
     _capacity_team_override: int
+
+    # Architecture-validation spike opt-in/out. "" = undecided, "include" /
+    # "skip" = the user's (or the confidence auto-rule's) answer. Asked only
+    # when the architecture decision is genuinely open (2+ options, not
+    # pinned); see _maybe_prompt_spike_choice in nodes.py.
+    # See docs: "Guardrails" — human-in-the-loop pattern
+    spike_choice: str
+
+    # Transient sentinel: set (with {chosen, confidence, options}) when a node
+    # needs the driver to ask the spike question — same ask-the-user pattern as
+    # capacity_override_target, but a dict instead of a sign-encoded int.
+    # Cleared (empty dict) once answered.
+    _spike_prompt: dict
 
     # Small-project scope advisory. Set True by project_analyzer when the intake
     # ran in "small_project" mode but the analyzer judged the project bigger than

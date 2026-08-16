@@ -83,6 +83,20 @@ def export_plan_json(graph_state: dict) -> str:
             team_size = questionnaire.answers.get(6)
             if team_size:
                 project["team_size"] = team_size
+        # Architecture options + recommendation — carried whole so MCP
+        # consumers (plan_get / plan_generate) see WHAT was considered too.
+        arch = analysis.architecture
+        if arch is not None and arch.options:
+            project["architecture"] = {
+                "chosen": arch.chosen,
+                "confidence": arch.confidence,
+                "rationale": arch.rationale,
+                "pinned_by_constraint": arch.pinned_by_constraint,
+                "options": [
+                    {"name": o.name, "summary": o.summary, "pros": list(o.pros), "cons": list(o.cons)}
+                    for o in arch.options
+                ],
+            }
         output["project"] = project
 
     # Features
