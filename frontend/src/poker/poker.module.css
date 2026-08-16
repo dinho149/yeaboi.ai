@@ -262,7 +262,10 @@
 
 .ticket {
   flex: 1;
-  min-height: 0;
+  /* A floor rather than 0: the column hands whatever is left to the ticket, and
+     on a short laptop what is left is nothing — the ticket disappeared entirely
+     rather than scrolling. It scrolls inside this. */
+  min-height: 5lh;
   overflow-y: auto;
   /* No panel: the ticket is the column's content, not a card sitting in it.
      Padded to the same edge as the table below. */
@@ -1222,6 +1225,26 @@
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
+}
+
+/* A smaller hand below --bp-m: ten cards and their gaps have to fit the middle
+   column on one line, and wrapped to two rows the deck is 196px tall — which is
+   the whole of the ticket's height on a laptop this size. After the rules it
+   overrides, because they weigh the same and the last one wins. */
+@media (max-width: 1099px) {
+  .pcard {
+    width: 48px;
+    height: 66px;
+  }
+
+  .cv {
+    font-size: var(--fs-l);
+  }
+
+  .ci {
+    top: 4px;
+    left: 5px;
+  }
 }
 
 .pcard:hover:not(:disabled) {
