@@ -313,6 +313,18 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"provenance"},
         "skill": "provenance",
     },
+    "ship": {
+        # The supervised story → PR pipeline. run_ship is the one entry point;
+        # the MCP surface is read-only by design — launching holds a live
+        # subprocess for many minutes behind the server's engine lock, and the
+        # approval gate is a human decision made at a terminal (the
+        # output-sharing precedent).
+        "engines": {("yeaboi.ship.engine", "run_ship")},
+        "mcp_tools": {"ship_history", "ship_status"},
+        "tui_mode": "ship",
+        "cli": {"ship"},
+        "skill": "ship",
+    },
 }
 
 # Engine modules discovered by convention: every src/yeaboi/*/engine.py, plus
@@ -400,6 +412,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
     "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
+    "ship run": ("yeaboi.ship.engine", "run_ship"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -412,6 +425,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "perf prep": {"session": "session_id"},
     "perf complete": {"session": "session_id"},
     "perf review": {"session": "session_id", "months": "period_months"},
+    "ship run": {"session": "session_id", "check": "check_command"},
     "analyze": {
         "project": "project_key",
         "sprints": "sprint_count",
@@ -446,6 +460,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
     "agents security": {"format", "strict"},
+    "ship run": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -473,6 +488,10 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "components": "assembled from per-component --delivery/--code/--docs sub-source flags",
         "analysis_scope": "assembled from the four provider-specific scope flags",
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+    },
+    "ship run": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+        "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
 }
 

@@ -97,6 +97,7 @@ AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,2
 AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
+SHIP_THEME = Theme(accent="rgb(235,140,60)", accent_bright="rgb(255,175,95)")
 
 # Button color scheme: (accent_border, accent_label, grey_border, grey_label)
 _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
@@ -171,6 +172,13 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Back": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Advisory action on the analysis review when a Small project looks bigger.
     "Switch to Large": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    # Ship mode (cargo-orange accent). Approve is the "go" green like Accept;
+    # Reject is amber, not red — it stages a rework, it does not end the run;
+    # Cancel Run is the destructive-ish amber family; Launch carries the mode accent.
+    "Launch": ("rgb(200,115,45)", "rgb(240,155,80)", "rgb(52,44,38)", "rgb(62,54,48)"),
+    "Approve": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Reject": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    "Cancel Run": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Feedback form (silver chrome; Submit green like Accept, Open Browser blue like Export).
     "Submit": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "AI Polish": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
@@ -397,6 +405,11 @@ def agent_security_title(shimmer_tick: float | None = None, *, width: int | None
 def agent_advisor_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Agent Advisor ASCII title (amber accent). Optionally shimmering."""
     return build_ascii_title("Advisor", "rgb(240,180,70)", shimmer_tick=shimmer_tick, width=width)
+
+
+def ship_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Ship ASCII title (cargo-orange accent). Optionally shimmering."""
+    return build_ascii_title("Ship", "rgb(235,140,60)", shimmer_tick=shimmer_tick, width=width)
 
 
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

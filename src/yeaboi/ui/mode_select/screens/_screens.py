@@ -90,6 +90,18 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "color": "rgb(140,120,230)",
     },
     {
+        "key": "ship",
+        "title": "Ship",
+        "description": "Hand a plan story to a supervised coding agent: isolated branch, your approval, then a PR.",
+        # Beta like Performance: the mode runs end to end, but it drives a
+        # coding agent against the user's own repository — "available" stays
+        # True (it gates Enter, click, and the tip jump), the badge carries
+        # the caveat.
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(235,140,60)",
+    },
+    {
         "key": "usage",
         "title": "Usage",
         "description": "View API token usage, session history, and cost estimates.",

@@ -40,6 +40,7 @@ COLOR_RGB: dict[str, tuple[int, int, int]] = {
     "rgb(120,210,170)": (120, 210, 170),  # Agent Standup accent (mint)
     "rgb(230,90,120)": (230, 90, 120),  # Agent Security accent (alert rose)
     "rgb(240,180,70)": (240, 180, 70),  # Agent Advisor accent (amber)
+    "rgb(235,140,60)": (235, 140, 60),  # Ship accent (cargo orange)
 }
 
 # Grey levels for fade-out (bright → invisible) and fade-in (invisible → bright).

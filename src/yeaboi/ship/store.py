@@ -35,7 +35,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from yeaboi.agent.state import SHIP_STATUSES, ShipPhase, ShipRun, ShipValidation
-from yeaboi.paths import get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +115,10 @@ class ShipStore:
     """Run history + gate state in the shared sessions database."""
 
     def __init__(self, db_path: Path | None = None) -> None:
+        # Lazy import so tests that monkeypatch yeaboi.paths.get_db_path
+        # redirect this store too (the provenance/engine convention).
+        from yeaboi.paths import get_db_path
+
         self._path = db_path or get_db_path()
         self._conn = sqlite3.connect(str(self._path))
         self._conn.isolation_level = None  # explicit BEGIN IMMEDIATE below

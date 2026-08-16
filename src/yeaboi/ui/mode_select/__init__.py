@@ -13498,6 +13498,22 @@ def select_mode(
                 _skip_fade_in = True
                 continue
 
+            # ── Route: Ship mode → supervised story → PR pipeline ────────
+            if chosen["key"] == "ship":
+                logger.info("Ship mode selected")
+                with mode_log("ship"):
+                    # Beta gate first: the mode launches a coding agent against
+                    # the user's own repository, so the caveat comes before the
+                    # story picker. Shown once ever; a decline returns to the
+                    # menu unrecorded.
+                    if show_beta_notice(live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="ship"):
+                        from yeaboi.ui.mode_select._ship import run_ship_page
+
+                        run_ship_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
             # ── Route: Usage mode → single-page dashboard ────────────────
             if chosen["key"] == "usage":
                 logger.info("Usage mode selected")

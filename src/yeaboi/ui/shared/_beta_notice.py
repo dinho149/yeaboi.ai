@@ -35,6 +35,7 @@ from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
     PAD,
     PERFORMANCE_THEME,
+    SHIP_THEME,
     Theme,
     agent_advisor_title,
     agent_security_title,
@@ -45,6 +46,7 @@ from yeaboi.ui.shared._components import (
     build_page_panel,
     build_reveal_subtitle,
     performance_title,
+    ship_title,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,22 @@ _BETA_MODES: dict[str, _BetaMode] = {
             "",
             "Nothing is sent to anyone automatically. Exports stay on this machine",
             "under ~/.yeaboi/exports/performance.",
+        ),
+    ),
+    "ship": _BetaMode(
+        title_fn=ship_title,
+        theme=SHIP_THEME,
+        subtitle="Beta — worth thirty seconds",
+        headline="Ship is in beta.",
+        body=(
+            "Ship launches a real coding agent (Claude Code) against a repository you",
+            "name, on an isolated branch cut from a clean tree. It spends real API",
+            "quota — a launch budget caps runs at 2 per hour, 12 per day.",
+            "",
+            "Nothing merges by itself: the branch is pushed and the pull request is",
+            "opened only after you approve the diff at the gate.",
+            "",
+            "Review the diff like a stranger wrote it, because one did.",
         ),
     ),
     "agent-usage": _BetaMode(

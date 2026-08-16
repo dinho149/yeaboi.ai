@@ -940,6 +940,34 @@ def build_parser() -> argparse.ArgumentParser:
     ptrace_p.add_argument("--depth", type=int, default=2, metavar="N", help="Evidence hops to follow (default 2)")
     ptrace_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    ship_desc = (
+        "Hand a story from your saved sprint plan to a supervised coding agent (Claude Code headless): "
+        "isolated worktree and branch, deterministic validation, a human approval gate at the terminal, "
+        "and a PR only after approval. A user-global launch budget caps runs."
+    )
+    ship_p = subparsers.add_parser(
+        "ship",
+        help="Implement a story from your plan via a supervised coding agent",
+        description=ship_desc,
+    )
+    ship_sub = ship_p.add_subparsers(dest="ship_command", metavar="{run,status,history}", required=True)
+    srun_p = ship_sub.add_parser("run", help="Run one story through the pipeline", description=ship_desc)
+    srun_p.add_argument("story_id", metavar="STORY", help="Story id from the plan (e.g. US-001)")
+    srun_p.add_argument("--repo", default=".", metavar="PATH", help="Target git repository (default: current dir)")
+    srun_p.add_argument("--session", default="", metavar="ID", help="Planning session id (default: latest)")
+    srun_p.add_argument(
+        "--check", default="", metavar="CMD", help="Validation command run in the worktree (e.g. 'make test')"
+    )
+    srun_p.add_argument("--timeout-minutes", type=int, default=30, metavar="N", help="Agent run timeout (default 30)")
+    srun_p.add_argument("--dry-run", action="store_true", help="Canned run — no agent, no git, no network")
+    srun_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    srun_p.add_argument("--strict", action="store_true", help="Exit 3 when the run did not end approved")
+    sstatus_p = ship_sub.add_parser("status", help="The latest run and the launch budget", description=ship_desc)
+    sstatus_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    shistory_p = ship_sub.add_parser("history", help="Recent runs, newest first", description=ship_desc)
+    shistory_p.add_argument("--limit", type=int, default=10, metavar="N", help="Runs to show (default 10)")
+    shistory_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
         "--source",
@@ -1390,6 +1418,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "analyze": _cmd_analyze,
         "agents": _cmd_agents,
         "provenance": _cmd_provenance,
+        "ship": _cmd_ship,
     }
     try:
         return handlers[args.command](args, console)
@@ -1843,6 +1872,143 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print(format_trace_rich(trace))
     return 0 if trace.found else 1
+
+
+def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
+    """The ship pipeline headless: same engine the TUI page uses
+    (CLAUDE.md "REQUIRED: Surface Parity"). The approval gate prompts on the
+    terminal and resolves through the same ShipStore CAS as the TUI screen."""
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.beta import SHIP_BETA_NOTICE
+
+    logging.getLogger(__name__).info("ship %s (beta)", args.ship_command)
+    _print_beta_notice(SHIP_BETA_NOTICE)
+
+    if args.ship_command == "history":
+        from yeaboi.ship.render import format_history_rich
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore() as store:
+            runs = store.list_runs(limit=args.limit)
+        if args.format == "json":
+            print(json.dumps([asdict(r) for r in runs], indent=2))
+        else:
+            console.print(format_history_rich(runs))
+        return 0
+
+    if args.ship_command == "status":
+        from yeaboi.ship import budget
+        from yeaboi.ship.render import format_budget_rich, format_run_rich
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore() as store:
+            runs = store.list_runs(limit=1)
+        posture = budget.status()
+        if args.format == "json":
+            print(json.dumps({"latest": asdict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
+        else:
+            if runs:
+                console.print(format_run_rich(runs[0]))
+            else:
+                console.print("No ship runs yet.")
+            console.print(format_budget_rich(posture))
+        return 0
+
+    # run
+    return _ship_run(args, console)
+
+
+def _ship_run(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi ship run` — engine on a worker thread, the gate answered here."""
+    import json
+    import threading
+    import time
+    from dataclasses import asdict
+
+    from yeaboi import fs_policy
+    from yeaboi.ship import engine
+    from yeaboi.ship.render import format_run_rich
+    from yeaboi.ship.store import ShipStore
+
+    repo = str(Path(args.repo).expanduser().resolve())
+    if not args.dry_run:
+        try:
+            fs_policy.resolve_and_check(repo, mode="write", context="ship: run a coding agent against this repository")
+        except PermissionError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
+        if not sys.stdin.isatty():
+            # The gate is a human decision made at a terminal; without one the
+            # run would hang forever awaiting an approval nobody can give.
+            print("✗ ship run needs an interactive terminal — the approval gate prompts here.", file=sys.stderr)
+            return 2
+
+    result_box: list = [None]
+    cancel = threading.Event()
+
+    def _work() -> None:
+        result_box[0] = engine.run_ship(
+            args.story_id,
+            repo,
+            session_id=args.session,
+            check_command=args.check,
+            timeout_minutes=args.timeout_minutes,
+            dry_run=args.dry_run,
+            cancel_event=cancel,
+        )
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    try:
+        with ShipStore() as store:
+            while worker.is_alive():
+                worker.join(timeout=0.5)
+                if not worker.is_alive() or cancel.is_set():
+                    continue  # a cancelled run winds down on its own; stop prompting
+                # An open gate is one this loop has not answered yet: resolving
+                # stamps gate_resolution, and a rework clears it again — so the
+                # reopened gate prompts again by construction.
+                for run in store.list_runs(limit=3):
+                    if run.status != "awaiting_approval" or run.gate_resolution:
+                        continue
+                    console.print(format_run_rich(run))
+                    try:
+                        answer = input("Approve and open a PR? [y]es / [n]o with feedback / [c]ancel run: ")
+                    except EOFError:
+                        answer = "c"
+                    answer = answer.strip().lower()
+                    if answer in ("y", "yes"):
+                        store.resolve_gate(run.run_id, "approved")
+                    elif answer in ("n", "no"):
+                        try:
+                            comment = input("Feedback for the agent's rework: ").strip()
+                        except EOFError:
+                            comment = ""
+                        store.resolve_gate(run.run_id, "rejected", comment)
+                    else:
+                        cancel.set()
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        cancel.set()
+        print("Cancelling the run — the agent is stopped and nothing is pushed…", file=sys.stderr)
+        worker.join(timeout=60)
+    worker.join(timeout=5)
+    run = result_box[0]
+    if run is None:
+        print("✗ the run did not report a result — see logs", file=sys.stderr)
+        return 1
+    for warning in run.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    if args.format == "json":
+        print(json.dumps(asdict(run), indent=2))
+    else:
+        console.print(format_run_rich(run))
+    if args.strict and run.status != "approved":
+        print(f"strict: run ended {run.status} — exit 3", file=sys.stderr)
+        return 3
+    return 0
 
 
 def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
