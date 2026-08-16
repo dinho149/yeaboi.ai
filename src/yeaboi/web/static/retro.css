@@ -470,7 +470,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_1yckr_13 {
+._chip_hoxc3_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -485,22 +485,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_1yckr_28 { text-decoration: none; }
-._chipLink_1yckr_28:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_hoxc3_28 { text-decoration: none; }
+._chipLink_hoxc3_28:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_1yckr_32 {
+._statGrid_hoxc3_32 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_1yckr_32 {
+._stat_hoxc3_32 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_1yckr_43 {
+._statValue_hoxc3_43 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -510,25 +510,25 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_1yckr_53 {
+._statLabel_hoxc3_53 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_1yckr_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_hoxc3_60 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_1yckr_63 {
+._bar_hoxc3_63 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_1yckr_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_hoxc3_69 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_1yckr_71 {
+._segTrack_hoxc3_71 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -536,10 +536,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_1yckr_71 > i { display: block; height: 100%; }
+._segTrack_hoxc3_71 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_1yckr_82 {
+._legend_hoxc3_82 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -547,14 +547,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_1yckr_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_1yckr_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_1yckr_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_hoxc3_82 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_hoxc3_91 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_hoxc3_92 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_1yckr_95 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_1yckr_95 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_1yckr_97 {
+._sparkWrap_hoxc3_95 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_hoxc3_95 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_hoxc3_97 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -564,7 +564,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_1yckr_107 {
+._avatar_hoxc3_107 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -578,13 +578,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_1yckr_121 {
+._notice_hoxc3_121 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_1yckr_127 {
+._noticeTitle_hoxc3_127 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -593,18 +593,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   align-items: center;
   gap: var(--s2);
 }
-._notice_1yckr_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_hoxc3_121 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_1yckr_139 {
+._card_hoxc3_139 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_1yckr_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_1yckr_147 {
+._cardHover_hoxc3_146:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_hoxc3_147 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -615,10 +615,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_1yckr_158 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_hoxc3_158 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_1yckr_160 { margin-bottom: var(--s6); }
-._sectionTitle_1yckr_161 {
+._section_hoxc3_160 { margin-bottom: var(--s6); }
+._sectionTitle_hoxc3_161 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -631,9 +631,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_1yckr_174 { overflow-x: auto; }
-._table_1yckr_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_1yckr_174 th {
+._tableWrap_hoxc3_174 { overflow-x: auto; }
+._table_hoxc3_174 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_hoxc3_174 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -644,23 +644,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_1yckr_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_1yckr_174 tr:last-child td { border-bottom: none; }
-._numeric_1yckr_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_hoxc3_174 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_hoxc3_174 tr:last-child td { border-bottom: none; }
+._numeric_hoxc3_189 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_1yckr_192 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_hoxc3_192 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_1yckr_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_1yckr_197 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_1yckr_197 > li {
+._proseText_hoxc3_196 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_hoxc3_197 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_hoxc3_197 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_1yckr_197 > li::before {
+._proseList_hoxc3_197 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -680,14 +680,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    rather than a face keeps that true if the stack changes. */
 /* The block face is drawn, not typeset — sized off the same font-size so it
    still scales with the type scale. Four pixel rows, two rows of type. */
-svg._wordmark_1yckr_223 {
+svg._wordmark_hoxc3_223 {
   display: block;
   width: auto;
   height: 2em;
   overflow: visible;
 }
 
-._wordmark_1yckr_223 {
+._wordmark_hoxc3_223 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -705,7 +705,7 @@ svg._wordmark_1yckr_223 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_1yckr_223::-webkit-scrollbar { display: none; }
+._wordmark_hoxc3_223::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -716,7 +716,7 @@ svg._wordmark_1yckr_223 {
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_1yckr_259 {
+._wordmarkFit_hoxc3_259 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -725,7 +725,7 @@ svg._wordmark_1yckr_223 {
   min-width: 0;
 }
 
-._wordmarkShadow_1yckr_268 {
+._wordmarkShadow_hoxc3_268 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -739,14 +739,14 @@ svg._wordmark_1yckr_223 {
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_1yckr_282 {
+._wordmarkStroke_hoxc3_282 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_1yckr_288 {
+._eyebrow_hoxc3_288 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -760,9 +760,9 @@ svg._wordmark_1yckr_223 {
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_1yckr_303 { color: var(--accent); }
-._eyebrowDot_1yckr_304 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_1yckr_305 {
+._eyebrowAccent_hoxc3_303 { color: var(--accent); }
+._eyebrowDot_hoxc3_304 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_hoxc3_305 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -771,14 +771,14 @@ svg._wordmark_1yckr_223 {
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_1yckr_314 {
+._frame_hoxc3_314 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
   box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_1yckr_321 {
+._frameBar_hoxc3_321 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -786,8 +786,8 @@ svg._wordmark_1yckr_223 {
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_1yckr_329 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_1yckr_329 i {
+._frameLights_hoxc3_329 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_hoxc3_329 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -795,10 +795,10 @@ svg._wordmark_1yckr_223 {
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_1yckr_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_1yckr_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_1yckr_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_1yckr_341 {
+._frameLights_hoxc3_329 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_hoxc3_329 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_hoxc3_329 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_hoxc3_341 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -811,13 +811,13 @@ svg._wordmark_1yckr_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_1yckr_354 { padding: var(--s5); }
+._frameBody_hoxc3_354 { padding: var(--s5); }
 
 /* ── Lozenge — Jira-style status tag ─────────────────────────────────
    Category classes only set the two custom properties; the base rule owns
    the shape. Colours come from the derived lozenge tokens in tokens.css,
    never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
-._lozenge_1yckr_360 {
+._lozenge_hoxc3_360 {
   display: inline-block;
   padding: 1px var(--s2);
   border-radius: var(--r-s);
@@ -831,31 +831,163 @@ svg._wordmark_1yckr_223 {
   color: var(--lozenge-fg, var(--muted));
   background: var(--lozenge-bg, var(--card));
 }
-._lozengeSmall_1yckr_374 { padding: 0 var(--s1); font-weight: 600; }
-._lozengeTodo_1yckr_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
-._lozengeProgress_1yckr_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
-._lozengeDone_1yckr_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
-._lozengeBlocked_1yckr_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+._lozengeSmall_hoxc3_374 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_hoxc3_375 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_hoxc3_376 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_hoxc3_377 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_hoxc3_378 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
 
 /* ── Icon ────────────────────────────────────────────────────────
    Sits on the text baseline rather than the line box, so a glyph beside a
    label lines up with it instead of riding high. */
-._icon_1yckr_383 {
+._icon_hoxc3_383 {
   display: inline-block;
   vertical-align: -0.15em;
   flex: none;
+}
+
+/*
+ * The hand-drawn set moves.
+ *
+ * Each glyph answers the control it sits on: the lock's shackle lifts, the
+ * timer's hand sweeps, the theme's half turns over. Small, and only on the way
+ * in — an icon that keeps moving is a distraction, and these sit in a bar that
+ * is always on screen.
+ *
+ * `transform-box: view-box` puts the transform in the glyph's own 16 units, so
+ * a translate of 1 is one drawn pixel and an origin of 50% is the middle of the
+ * icon rather than of whatever the part's own outline happens to be.
+ *
+ * Reduced motion flattens all of it — nothing here carries meaning that the
+ * icon does not already carry standing still.
+ */
+._icon_hoxc3_383[data-icon] :where([data-part]) {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: transform var(--dur-base) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* The shackle rises off the body and drops back. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon^='lock'] [data-part='shackle'] {
+  transform: translateY(-1px);
+}
+
+/* The heads swing apart, the way they would if you struck them. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='music'] [data-part='low'] {
+  transform: translateY(0.75px);
+}
+:where(button, a):hover ._icon_hoxc3_383[data-icon='music'] [data-part='high'] {
+  transform: translateY(-0.75px);
+}
+
+/* A quarter turn of the hand, about the case's centre rather than its own. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='timer'] [data-part='hand'] {
+  transform-origin: 8px 9.5px;
+  transform: rotate(90deg);
+}
+
+/* The lit half turns over — the gesture the button performs. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='contrast'] [data-part='fill'] {
+  transform: rotate(180deg);
+  transition-duration: 320ms;
+}
+
+/* The flap dips, as if something were being put in. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='mail'] [data-part='flap'] {
+  transform: translateY(1px);
+}
+
+/* A chevron leans the way it points. */
+:where(button, a):hover:not(:disabled) ._icon_hoxc3_383[data-icon='chevron-left'] [data-part='v'] {
+  transform: translateX(-1px);
+}
+:where(button, a):hover:not(:disabled) ._icon_hoxc3_383[data-icon='chevron-right'] [data-part='v'] {
+  transform: translateX(1px);
+}
+:where(button, a):hover:not(:disabled) ._icon_hoxc3_383[data-icon='chevron-up'] [data-part='v'] {
+  transform: translateY(-1px);
+}
+
+/* The one at the back steps up beside the one at the front. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='users'] [data-part='back'] {
+  transform: translateX(-1px);
+}
+
+/* The small sparks flare and the star turns a little under them. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='sparkles'] [data-part='spark'] {
+  transform: scale(1.35);
+  transform-origin: 12.5px 3.5px;
+}
+:where(button, a):hover ._icon_hoxc3_383[data-icon='sparkles'] [data-part='spark']:last-of-type {
+  transform-origin: 12.5px 11.5px;
+}
+:where(button, a):hover ._icon_hoxc3_383[data-icon='sparkles'] [data-part='star'] {
+  transform: rotate(-12deg);
+  transform-origin: 6.5px 7px;
+}
+
+/* The blades scissor — the two halves of one gesture, opposite ways. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='swords'] [data-part='a'] {
+  transform: rotate(-7deg);
+}
+:where(button, a):hover ._icon_hoxc3_383[data-icon='swords'] [data-part='b'] {
+  transform: rotate(7deg);
+}
+
+/* Picked up off its stand. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='mic'] :where([data-part='capsule'], [data-part='arc']) {
+  transform: translateY(-0.75px);
+}
+
+/* The nib runs along its rule. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='pen-line'] [data-part='nib'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+/* And the arrow leaves the frame. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='external-link'] [data-part='out'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+:where(button, a):hover:not(:disabled) ._icon_hoxc3_383[data-icon='chevron-down'] [data-part='v'] {
+  transform: translateY(1px);
+}
+
+:where(button, a):hover ._icon_hoxc3_383[data-icon='pencil'] [data-part='nib'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+/* Nudged the way it is about to go. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='play'] [data-part='tri'] {
+  transform: translateX(0.75px);
+}
+
+/* The horn lifts, the way one is raised to speak through. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='megaphone'] [data-part='horn'] {
+  transform: rotate(-6deg);
+  transform-origin: 4.5px 8px;
+}
+
+/* The middle bar draws back, so the stack is not three identical lines. */
+:where(button, a):hover ._icon_hoxc3_383[data-icon='menu'] [data-part='bar']:nth-of-type(2) {
+  transform: scaleX(0.7);
+  transform-origin: 2.5px 8.5px;
+}
+
+:where(button, a):hover ._icon_hoxc3_383[data-icon='x'] [data-part='s'] {
+  transform: rotate(90deg);
 }
 
 /* ── Dropdown ────────────────────────────────────────────────────
    Closed, it is the value and nothing else: the underline is the whole
    affordance, square-ended so it reads as a rule under text rather than a
    field. */
-._dd_1yckr_393 {
+._dd_hoxc3_525 {
   position: relative;
   display: inline-block;
 }
 
-._ddTrigger_1yckr_398 {
+._ddTrigger_hoxc3_530 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -874,34 +1006,34 @@ svg._wordmark_1yckr_223 {
     color var(--dur-fast) var(--ease);
 }
 
-._ddTrigger_1yckr_398:hover,
-._ddTrigger_1yckr_398:focus-visible,
-._ddTriggerOpen_1yckr_419 {
+._ddTrigger_hoxc3_530:hover,
+._ddTrigger_hoxc3_530:focus-visible,
+._ddTriggerOpen_hoxc3_551 {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
-._ddValue_1yckr_424 {
+._ddValue_hoxc3_556 {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._ddEmpty_1yckr_431 {
+._ddEmpty_hoxc3_563 {
   color: var(--dim);
 }
 
-._ddCaret_1yckr_435 {
+._ddCaret_hoxc3_567 {
   color: var(--dim);
   transition: transform var(--dur-fast) var(--ease);
 }
 
-._ddTriggerOpen_1yckr_419 ._ddCaret_1yckr_435 {
+._ddTriggerOpen_hoxc3_551 ._ddCaret_hoxc3_567 {
   transform: rotate(180deg);
 }
 
-._ddMenu_1yckr_444 {
+._ddMenu_hoxc3_576 {
   /* Fixed and portalled: see the note in Dropdown.tsx — an in-flow menu is
      clipped by the dock drawer, which has to clip to animate its own size. */
   position: fixed;
@@ -915,17 +1047,17 @@ svg._wordmark_1yckr_223 {
   border-radius: var(--r-m);
   background: var(--panel);
   box-shadow: var(--shadow-2);
-  animation: _ddOpen_1yckr_1 var(--dur-fast) var(--ease) both;
+  animation: _ddOpen_hoxc3_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _ddOpen_1yckr_1 {
+@keyframes _ddOpen_hoxc3_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
 }
 
-._ddOpt_1yckr_468 {
+._ddOpt_hoxc3_600 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -938,11 +1070,11 @@ svg._wordmark_1yckr_223 {
   transition: background var(--dur-fast) var(--ease);
 }
 
-._ddOptActive_1yckr_481 {
+._ddOptActive_hoxc3_613 {
   background: var(--panel-2);
 }
 
-._ddNone_1yckr_485 {
+._ddNone_hoxc3_617 {
   padding: var(--s2);
   font-size: var(--fs-xs);
   color: var(--dim);
