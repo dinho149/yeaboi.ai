@@ -18,8 +18,7 @@
  * ## Finalize
  *
  * Prefilled from the suggestion once per reveal, and never re-prefilled while
- * the host is typing into it — a poll landing mid-keystroke used to overwrite
- * the number they were entering. It is also locked while a duel transcript is
+ * the host is entering a number. It is also locked while a duel transcript is
  * still being produced: finalizing then would silently drop the debate from the
  * record, which is the one part of the round that cannot be reconstructed.
  */
@@ -81,18 +80,16 @@ export function Console({
   const [open, setOpen] = useState(false);
   const [duelOpen, setDuelOpen] = useState(false);
   const [points, setPoints] = useState('');
-  const [typing, setTyping] = useState(false);
 
   /**
    * Prefill once per (ticket, phase), and never over a host mid-entry.
    *
-   * `typing` is the guard: the moment the host touches the field it stops being
-   * a suggestion and starts being their answer, and a poll landing a beat later
-   * must not take it back.
+   * The dependency list is the guard: it names the round and nothing else, so a
+   * poll landing a beat after the host starts typing cannot take their answer
+   * back.
    */
   useEffect(() => {
     if (!revealed) return;
-    setTyping(false);
     setPoints(state.suggestion !== null ? fmtPoints(state.suggestion) : '');
     // Keyed on the round — `(index, phase)` — and deliberately not on
     // `suggestion` or `revealed`, both of which this body reads. The suggestion
@@ -255,14 +252,8 @@ export function Console({
               className={styles['finInput']}
               disabled={!finalizeReady}
               value={points}
-              onInput={(event) => {
-                setTyping(true);
-                setPoints((event.target as HTMLInputElement).value);
-              }}
+              onInput={(event) => setPoints((event.target as HTMLInputElement).value)}
             />
-            {/* Where the number came from, so a host does not have to remember
-                whether they typed it or the board suggested it. */}
-            {!typing && points && finalizeReady ? <span className={styles['finSrc']}>median</span> : null}
           </div>
           <Button
             tone="primary"

@@ -197,8 +197,9 @@
    A bare `.dockApp button` also reaches inside the open panels and strips the
    fill off things like the play button, which is how it went invisible. */
 /* The one filled control in the notch is a pill, like the presence chip it
-   sits opposite. */
-.dockApp [class*='btnPrimary'] {
+   sits opposite. Two class matches, so it outranks a surface's own button
+   material rather than depending on which stylesheet the bundler wrote last. */
+.dockApp [class*='btnPrimary'][class*='btn'] {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
@@ -207,6 +208,9 @@
 .dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
+  /* And no edge: a surface may give its own buttons a raised material, but the
+     notch's tools are glyphs on the notch, not controls sitting on it. */
+  box-shadow: none;
 }
 
 .dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),

@@ -934,10 +934,14 @@
 
 /* The avatar and, once revealed, the card that was played — tucked against it
    so the pair reads as one seat. */
+/* The card hangs off the face rather than sitting beside it: in flow it made
+   the seat 66px wide while the eye still read the 44px circle as the middle, so
+   every name looked shifted. Out of flow, the face is the seat. */
 .seatFace {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .seatFace .vcard {
@@ -990,6 +994,8 @@
  * animation written the other way round would freeze mid-flip.
  */
 .vcard {
+  position: absolute;
+  left: calc(100% - 4px);
   display: grid;
   place-items: center;
   width: 22px;
@@ -1247,25 +1253,23 @@
 }
 
 /*
- * The console's controls, in the board's own material.
+ * Every control on the board, in one material.
  *
  * The shared button is a form control: a flat fill, a one-pixel outline and a
  * small radius, which is what a browser draws when nobody has decided anything.
  * These are furniture — the same panel ground, hairline and top-edge highlight
- * as the bar and the notch — so they read as raised rather than outlined, and
- * they move when pressed.
+ * as the bar and the notch — so they read as raised rather than outlined.
  *
  * Matched on a substring because the class is hashed by CSS modules and the
  * button belongs to another one; the dock reaches its own the same way.
  */
-.console [class*='btn'] {
+.app [class*='btn'] {
   border-radius: var(--r-m);
   border-color: var(--hairline);
   background: var(--panel);
   box-shadow:
     var(--edge),
     0 1px 1px rgb(0 0 0 / 12%);
-  font-size: var(--fs-s);
   transition:
     transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
@@ -1273,23 +1277,20 @@
     background-color var(--dur-fast) var(--ease);
 }
 
-.console [class*='btn']:hover:not(:disabled) {
-  background: var(--panel-2);
+/* Nothing rises on hover — a panel of controls that all lift as the pointer
+   crosses them is a panel that will not sit still. The press is the feedback. */
+.app [class*='btn']:hover:not(:disabled) {
   border-color: var(--hairline-strong);
-  box-shadow:
-    var(--edge),
-    0 3px 8px rgb(0 0 0 / 18%);
-  transform: translateY(-1px);
 }
 
-.console [class*='btn']:active:not(:disabled) {
-  transform: none;
+.app [class*='btn']:active:not(:disabled) {
+  transform: translateY(1px);
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
 /* Unavailable, not invisible. A washed-out fill is what made a spent primary
    read as mud; an outline says the same thing and keeps the label readable. */
-.console [class*='btn']:disabled {
+.app [class*='btn']:disabled {
   opacity: 1;
   background: none;
   border-color: var(--hairline);
@@ -1297,16 +1298,15 @@
   color: var(--dim);
 }
 
-/* The one live action on the panel. */
-.console [class*='btnPrimary']:not(:disabled) {
+/* The one live action wherever it appears. */
+.app [class*='btnPrimary']:not(:disabled) {
   border-color: transparent;
   background: var(--accent);
   color: var(--ink);
 }
 
-.console [class*='btnPrimary']:hover:not(:disabled) {
+.app [class*='btnPrimary']:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--accent);
   filter: brightness(1.06);
 }
 
