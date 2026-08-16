@@ -1254,7 +1254,10 @@
 
 /*
  * Every control on the board, in one material — except the two that declare
- * themselves chromeless: a bare button (the ticket's Edit) and a pill (the
+ * themselves chromeless. The exclusions sit in `:where()` so they weigh
+ * nothing: matched at full weight they outrank the primary rules below and take
+ * the accent fill off every filled button on the board. They are also
+ * chromeless by declaration: a bare button (the ticket's Edit) and a pill (the
  * deck's arrows) are meant to be glyphs, and giving them a panel is how the
  * pencil stopped being something you only notice when you look for it.
  *
@@ -1266,7 +1269,7 @@
  * Matched on a substring because the class is hashed by CSS modules and the
  * button belongs to another one; the dock reaches its own the same way.
  */
-.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']) {
+.app [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])) {
   border-radius: var(--r-m);
   border-color: var(--hairline);
   background: var(--panel);
@@ -1282,17 +1285,17 @@
 
 /* Nothing rises on hover — a panel of controls that all lift as the pointer
    crosses them is a panel that will not sit still. The press is the feedback. */
-.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):hover:not(:disabled) {
+.app [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):hover:not(:disabled) {
   border-color: var(--hairline-strong);
 }
 
-.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):active:not(:disabled) {
+.app [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):active:not(:disabled) {
   transform: translateY(1px);
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
 /* Unavailable, not invisible: it keeps its outline and a readable label. */
-.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):disabled {
+.app [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):disabled {
   opacity: 1;
   background: none;
   border-color: var(--hairline);
