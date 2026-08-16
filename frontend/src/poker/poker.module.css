@@ -66,6 +66,11 @@
      and scrolls inside itself. */
   align-items: start;
   min-height: 0;
+  /* A definite row, or an auto one sizes to its tallest column and pushes past
+     the region — and then the whole board scrolls instead of the rail and the
+     ticket scrolling inside themselves, which is what their own `min-height: 0`
+     and `overflow-y: auto` are for. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
@@ -77,8 +82,11 @@
   align-self: stretch;
   /* The closed hand hangs past this column's bottom edge. `clip` rather than
      `hidden`: it keeps the hang out of the scroller's length without making
-     this a scrollport of its own, which the sticky deck sticks to. */
+     this a scrollport of its own, which the sticky deck sticks to. The margin
+     is the layout's own bottom padding, so the hand is cut off by the screen's
+     edge rather than a couple of dozen pixels above it. */
   overflow: clip;
+  overflow-clip-margin: var(--s5);
 }
 
 @media (max-width: 1099px) {
@@ -1019,12 +1027,14 @@
 
 .deckZone {
   /* How far the hand goes down once voting closes. */
-  --deck-drop: 64px;
+  --deck-drop: 80px;
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
   background: var(--bg);
-  transition: margin-bottom var(--dur-base) var(--ease);
+  transition:
+    bottom var(--dur-base) var(--ease),
+    margin-bottom var(--dur-base) var(--ease);
   padding: var(--s3) 0 max(var(--s3), env(safe-area-inset-bottom));
   /* `clip`, not `hidden`: the closed hand hangs past the bottom edge, and a
      transform that overflows still lengthens the scroll. The margin leaves the
@@ -1109,14 +1119,17 @@
   color: var(--text);
   font-family: var(--font-mono);
   cursor: pointer;
+  /* Base duration, so the fan folding away keeps step with the column coming
+     back up; a hover is the one thing that wants to be quicker than that. */
   transition:
-    transform var(--dur-fast) var(--ease),
+    transform var(--dur-base) var(--ease),
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
 
 .pcard:hover:not(:disabled) {
+  transition-duration: var(--dur-fast);
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
@@ -1156,10 +1169,11 @@
  * keeps the fan from sliding the outer cards sideways.
  */
 .deckZone[data-state='closed'] {
-  /* Static, or sticky clamps the hand back up to the scrollport's bottom edge —
-     which is the whole thing it is trying to hang past. Nothing is lost: a
-     closed deck has nothing to keep in reach. */
-  position: static;
+  /* Still sticky — switching to static mid-transition snaps the hand up before
+     the column has finished coming down. The inset moves instead: sticky's
+     clamp is what would otherwise hold the hand at the edge it is hanging past,
+     and it animates alongside the margin. */
+  bottom: calc(var(--deck-drop) * -1);
   margin-bottom: calc(var(--deck-drop) * -1);
 }
 
