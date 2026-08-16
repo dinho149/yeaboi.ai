@@ -256,16 +256,12 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
     if (read('session', WAS_RECORDING) !== '1') return;
     remove('session', WAS_RECORDING);
     setInterrupted(true);
-  }, [session.admin, armed]);
-
-  /*
-   * And the belt to that pair of braces: if the board still says the room is
-   * being recorded and this browser is not the one doing it, it is not. The
-   * light goes out — it would otherwise be telling the room something untrue.
-   */
-  useEffect(() => {
-    if (!session.admin || !boardSaysRecording || armed) return;
-    announce(session, false);
+    // And put the light out, since this tab's recording is the one that
+    // stopped. Deliberately not "the board says recording and I am not doing
+    // it": a host with a second tab open, or one who opens the board again on
+    // another device, is not evidence that the first tab has stopped — and on
+    // that reading every extra tab would extinguish a live recording.
+    if (boardSaysRecording) announce(session, false);
   }, [session, boardSaysRecording, armed]);
 
   // Unmount: never leave the hardware held. Held in a ref so this runs on
