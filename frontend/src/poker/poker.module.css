@@ -96,8 +96,6 @@
 @media (max-width: 1099px) {
   .layout {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
-    /* Room for the console, which is a fixed bottom sheet at this width. */
-    padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
   }
 }
 
@@ -105,7 +103,7 @@
   .layout {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
-    padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
+    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 }
 
@@ -969,7 +967,8 @@
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
 .main {
-  --deck-w: calc(10 * 72px + 9 * var(--s2));
+  --deck-gap: var(--s2);
+  --deck-w: calc(10 * 72px + 9 * var(--deck-gap));
 }
 
 .table {
@@ -1193,9 +1192,12 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--s2);
+  gap: var(--deck-gap);
   width: min(100%, var(--deck-w));
   margin-inline: auto;
+  /* So a card can be a tenth of the hand. Inline-size only, and the width above
+     is set from the outside, so nothing here depends on what it contains. */
+  container-type: inline-size;
 }
 
 /* A deck is one object in ten copies, not ten coloured objects. The bands went
@@ -1207,11 +1209,26 @@
   position: relative;
   /* Where this card sits along the closed hand's arc; Deck.tsx overrides it. */
   --fan: 0;
-  /* Ten cards and their gaps have to fit the middle column on one line at the
-     wide breakpoint — a hand that wraps reads as eleven cards. */
-  width: 68px;
-  height: 94px;
-  border-radius: var(--r-m);
+  /*
+   * A tenth of the hand, up to the size it is on a wide screen.
+   *
+   * A hand that wraps reads as eleven cards, and the middle column is at its
+   * narrowest just inside the three-column breakpoint — where a stepped card
+   * width is still at its wide value and wraps to three rows. Sized off the
+   * hand itself there are no steps and no width at which it is wrong.
+   *
+   * Floored where the value stops being comfortably readable: narrower than
+   * that the right answer is a hand of two rows, not ten cards too small to
+   * read or to hit.
+   */
+  --card-w: clamp(44px, calc((100cqw - 9 * var(--deck-gap)) / 10), 68px);
+  /* Every measurement on the card is a fraction of its width, so a smaller
+     hand is the same card at a smaller size rather than a differently
+     proportioned one — a fixed radius and a fixed corner index on a 48px card
+     is what made the small deck read as a different component. */
+  width: var(--card-w);
+  height: calc(var(--card-w) * 1.382);
+  border-radius: calc(var(--card-w) * 0.118);
   border: 1px solid var(--hairline-strong);
   background: var(--bg);
   box-shadow: var(--shadow-1);
@@ -1225,26 +1242,6 @@
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
-}
-
-/* A smaller hand below --bp-m: ten cards and their gaps have to fit the middle
-   column on one line, and wrapped to two rows the deck is 196px tall — which is
-   the whole of the ticket's height on a laptop this size. After the rules it
-   overrides, because they weigh the same and the last one wins. */
-@media (max-width: 1099px) {
-  .pcard {
-    width: 48px;
-    height: 66px;
-  }
-
-  .cv {
-    font-size: var(--fs-l);
-  }
-
-  .ci {
-    top: 4px;
-    left: 5px;
-  }
 }
 
 .pcard:hover:not(:disabled) {
@@ -1306,9 +1303,9 @@
 
 .ci {
   position: absolute;
-  top: 6px;
-  left: 8px;
-  font-size: var(--fs-2xs);
+  top: calc(var(--card-w) * 0.088);
+  left: calc(var(--card-w) * 0.118);
+  font-size: calc(var(--card-w) * 0.162);
   font-weight: 500;
   color: var(--dim);
 }
@@ -1316,13 +1313,13 @@
 .ciFlip {
   top: auto;
   left: auto;
-  right: 8px;
-  bottom: 6px;
+  right: calc(var(--card-w) * 0.118);
+  bottom: calc(var(--card-w) * 0.088);
   transform: rotate(180deg);
 }
 
 .cv {
-  font-size: var(--fs-2xl);
+  font-size: calc(var(--card-w) * 0.4);
   font-weight: 600;
 }
 
@@ -1642,9 +1639,18 @@
     inset: auto 0 0 0;
     z-index: var(--z-console);
     max-height: 70dvh;
-    border-radius: var(--r-m) var(--r-m) 0 0;
-    border-bottom: 0;
-    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+    /* A sheet over the board needs to be a surface. As a column it inherits the
+       board's ground and needs none — fixed over the ticket, the table and the
+       hand, a transparent one puts the host's controls straight through the
+       board they are controlling. Same material as the bar at the top of the
+       screen, cast the other way. */
+    background: var(--panel);
+    border-top: 1px solid var(--hairline);
+    border-radius: var(--r-l) var(--r-l) 0 0;
+    box-shadow:
+      var(--edge),
+      0 -6px 20px rgb(0 0 0 / 22%);
+    padding: var(--s3) var(--s4) max(var(--s3), env(safe-area-inset-bottom));
   }
 
   .cbar {
@@ -1659,6 +1665,42 @@
 
   .consoleOpen .cbody {
     display: flex;
+  }
+
+  /* Open, the sheet is most of the screen, and the dock's corner is under it.
+     They share a layer by design — both are furniture anchored to the bottom
+     edge — so the one that is being read takes the layer above while it is up. */
+  .consoleOpen {
+    z-index: var(--z-popover);
+  }
+}
+
+/* ── A short screen ──────────────────────────────────────────────────────
+ * The board is one screen and never scrolls as a document, so on a laptop in a
+ * window the whole of it comes out of about 570px. What gives is the furniture
+ * — the display type and the air around it. What must not is the ticket, which
+ * had 113px left and showed its heading and nothing else.
+ *
+ * Height, not width: a 27" monitor at half height has exactly this problem and
+ * none of the narrow one. Last in the file, after every rule it overrides.
+ */
+@media (max-height: 800px) {
+  .layout {
+    padding-top: var(--s3);
+    padding-bottom: var(--s3);
+  }
+
+  .main {
+    gap: var(--s3);
+  }
+
+  .tkSummary,
+  .editTitle {
+    font-size: var(--fs-xl);
+  }
+
+  .deckZone {
+    padding-top: var(--s2);
   }
 }
 
