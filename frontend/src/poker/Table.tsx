@@ -13,51 +13,66 @@
  * than ten simultaneous flips — and the App announces it to assistive tech.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 import { Icon } from '../design/primitives';
-import { cx } from '../runtime/cx';
 import type { PokerVote } from '../types/board';
+import { floorFace, rememberSeat, type FaceBox } from './seats';
 import styles from './poker.module.css';
 
-/** Matches the floor's own entrance, and `--dur-base` on the way back. */
-const LEAVE_MS = 620;
-const RETURN_MS = 260;
+/** How long a seat takes to slide to its new place, or back from the floor. */
+const MOVE_MS = 420;
+const MOVE_EASE = 'cubic-bezier(0.32, 0.94, 0.3, 1)';
 
 /**
- * The two chairs in the middle of being vacated, and the two being sat back in.
+ * The table rearranges itself rather than jumping.
  *
- * A chair cannot simply vanish the moment its occupant is called up: the floor
- * measures the chair to fly them out of it, and it does that after the DOM has
- * already been updated. So the seat is held for the length of that flight,
- * emptying as they go, and only then removed.
+ * Two people leaving for the floor closes a gap the row then has to redistribute,
+ * and every remaining seat lands somewhere new. Done by the browser alone that is
+ * an instant teleport in the middle of a movement the floor is making smoothly —
+ * so each seat is animated from where it was to where it now is, and the two
+ * coming back from the floor are animated from the panel they were just in.
+ *
+ * Keyed on who is seated, not on every poll: the board re-renders once a second
+ * and measuring ten elements each time would force a layout for nothing.
  */
-function useSeatPhases(arguing: readonly string[]): { leaving: Set<string>; returning: Set<string> } {
-  const key = arguing.join(' ');
-  const [leaving, setLeaving] = useState<readonly string[]>([]);
-  const [returning, setReturning] = useState<readonly string[]>([]);
-  const was = useRef<readonly string[]>([]);
+function useSeatChoreography(row: { current: HTMLUListElement | null }, seatKey: string): void {
+  const was = useRef(new Map<string, FaceBox>());
 
-  useEffect(() => {
-    const previous = was.current;
-    was.current = arguing;
-    if (arguing.length) {
-      setReturning([]);
-      setLeaving(arguing);
-      const timer = window.setTimeout(() => setLeaving([]), LEAVE_MS);
-      return () => window.clearTimeout(timer);
+  useLayoutEffect(() => {
+    const list = row.current;
+    if (!list) return;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const now = new Map<string, FaceBox>();
+
+    for (const seat of list.querySelectorAll<HTMLElement>('[data-seat]')) {
+      const name = seat.dataset['seat'] ?? '';
+      const face = seat.querySelector('[data-face]');
+      if (!face) continue;
+      const here = seat.getBoundingClientRect();
+      const centre = { x: here.left + here.width / 2, y: here.top + here.height / 2, width: here.width };
+      // Back from the floor, if that is where they were; otherwise from
+      // wherever this seat sat before the row closed up.
+      const from = was.current.get(name) ?? floorFace(name);
+      now.set(name, centre);
+      rememberSeat(name, face);
+
+      if (still || !from || typeof seat.animate !== 'function') continue;
+      const dx = from.x - centre.x;
+      const dy = from.y - centre.y;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      const scale = was.current.has(name) ? 1 : Math.min(2.5, Math.max(0.4, from.width / (centre.width || 1)));
+      seat.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: was.current.has(name) ? 1 : 0 },
+          { transform: 'none', opacity: 1 },
+        ],
+        { duration: MOVE_MS, easing: MOVE_EASE }
+      );
     }
-    setLeaving([]);
-    if (!previous.length) return undefined;
-    setReturning(previous);
-    const timer = window.setTimeout(() => setReturning([]), RETURN_MS);
-    return () => window.clearTimeout(timer);
-    // `key` is the dependency, not the array: a poll hands back a fresh array
-    // of the same two names every second, and re-running on that would restart
-    // the exit for as long as the floor is open.
-  }, [key]);
 
-  return { leaving: new Set(leaving), returning: new Set(returning) };
+    was.current = now;
+  }, [row, seatKey]);
 }
 
 export interface TableProps {
@@ -75,11 +90,13 @@ export interface TableProps {
 }
 
 export function Table({ votes, revealed, arguing = [] }: TableProps) {
-  const { leaving, returning } = useSeatPhases(arguing);
   const onTheFloor = new Set(arguing);
-  // Their chair is empty while they are arguing, and holds only long enough for
-  // them to get out of it.
-  const seated = votes.filter((person) => !onTheFloor.has(person.name) || leaving.has(person.name));
+  // A chair is empty the moment its occupant is called up. Nothing is held back
+  // for the sake of the animation — the floor flies them out of the rectangle
+  // this table recorded on its last layout, not out of the element.
+  const seated = votes.filter((person) => !onTheFloor.has(person.name));
+  const row = useRef<HTMLUListElement>(null);
+  useSeatChoreography(row, seated.map((person) => person.name).join(' '));
 
   return (
     <section className={styles['table']} aria-label="The table">
@@ -92,24 +109,16 @@ export function Table({ votes, revealed, arguing = [] }: TableProps) {
           {revealed ? 'No votes were cast.' : 'Waiting for the team — share the code to invite them.'}
         </p>
       ) : (
-        <ul className={styles['vrow']}>
+        <ul className={styles['vrow']} ref={row}>
           {seated.map((person, index) => (
-            // `data-seat` is what the floor measures its entrance from: the two
-            // duelists fly out of the chairs they were picked from. By name,
-            // because a seat carries no participant id.
-            <li
-              key={`${person.name}:${index}`}
-              className={cx(
-                styles['voter'],
-                leaving.has(person.name) && styles['seatLeaving'],
-                returning.has(person.name) && styles['seatReturning']
-              )}
-              data-seat={person.name}
-            >
+            // Keyed by name, not by index: a seat leaving for the floor must
+            // take its own element with it rather than handing it to the person
+            // who moves up into its place, or the table swaps two faces over.
+            <li key={person.name} className={styles['voter']} data-seat={person.name}>
               {/* The seat does not change on reveal — the vote arrives beside
                   the name as a card, so the table stays the same table. */}
               <span className={styles['seatFace']}>
-                <span className={styles['face']}>
+                <span className={styles['face']} data-face="">
                   <span aria-hidden="true">{person.avatar || <Icon name="user" size={16} />}</span>
                   {!revealed && person.voted ? (
                     <span className={styles['tick']} aria-hidden="true">

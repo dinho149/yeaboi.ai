@@ -381,9 +381,15 @@ export function App({ boot }: { boot: PokerBoot }) {
             trigger={
               <>
                 <Icon name="timer" size={16} />
-                {/* Not while the floor is open: the count belongs between
-                    the two people it is counting for. */}
-                <TimerReadout remaining={phase === 'duel' ? null : remaining} />
+                {/* Not while the floor is open: the count belongs between the
+                    two people it is counting for.
+
+                    Gated on the timer's own flag as well as the phase, because
+                    `remaining` is state and lags by a render: closing the floor
+                    clears the phase and the timer in one revision, but for the
+                    render in between the old count was still here — so the
+                    readout appeared, widened the dock, and folded away again. */}
+                <TimerReadout remaining={phase === 'duel' || !snapshot?.timer.running ? null : remaining} />
               </>
             }
             label="Timer"

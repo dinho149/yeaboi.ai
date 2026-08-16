@@ -1140,33 +1140,6 @@
   max-width: 160px;
 }
 
-/* Taking the floor, and coming back to the table.
-   The chair empties as they fly out of it — the floor's own entrance is
-   measured from this element, so it has to still be here while that happens —
-   and fills again when the floor closes. */
-.seatLeaving {
-  animation: seat-leave 380ms var(--ease) both;
-  pointer-events: none;
-}
-
-.seatReturning {
-  animation: seat-return var(--dur-base) var(--ease) both;
-}
-
-@keyframes seat-leave {
-  to {
-    opacity: 0;
-    transform: scale(0.7) translateY(-8px);
-  }
-}
-
-@keyframes seat-return {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-}
-
 .face {
   position: relative;
   display: grid;

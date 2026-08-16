@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { cx } from '../runtime/cx';
+import { rememberFloor, seatFace } from './seats';
 import { fmtClock } from '../runtime/format';
 import type { DuelSlice } from '../types/board';
 import styles from './poker.module.css';
@@ -42,56 +43,64 @@ export interface DuelProps {
 
 /** How long a duelist takes to get out of their chair, in ms. */
 const SEAT_MS = 620;
+const SEAT_EASE = 'cubic-bezier(0.32, 0.94, 0.3, 1)';
 
 /**
- * Fly a duelist in from the seat they were picked out of.
+ * Walk a duelist from their chair to the floor.
  *
- * Measured rather than declared, because where the chair is depends on how many
- * people are at the table and how wide the board is. `useLayoutEffect` so the
- * two rectangles are read before the browser paints the floor in its final
- * place, and the Web Animations API rather than CSS because the distance is
- * only known at that moment.
+ * The face is what travels — it leaves the seat's coordinates and arrives at the
+ * panel's — and the panel fades up around it once it lands. The alternative, and
+ * what this replaced, was flying the whole panel from the seat: correct in its
+ * arithmetic and wrong to look at, because the thing that moved was a rectangle
+ * the size of the floor rather than the person.
  *
- * Once per pairing: a re-render mid-turn must not send them back to their
- * chairs and out again.
+ * The chair is gone from the DOM by the time this runs, so the start is the box
+ * the table recorded on its last layout. Once per pairing: a re-render mid-turn
+ * must not send them back and out again.
  */
-function useSeatEntrance(card: { current: HTMLDivElement | null }, name: string): void {
+function useSeatEntrance(
+  card: { current: HTMLDivElement | null },
+  face: { current: HTMLSpanElement | null },
+  name: string
+): void {
   const flown = useRef('');
 
   useLayoutEffect(() => {
-    if (!name || flown.current === name) return;
+    const node = face.current;
+    if (!name || !node) return;
+    // Recorded every layout, so the table can fly them home again.
+    rememberFloor(name, node);
+    if (flown.current === name) return;
     flown.current = name;
-    const node = card.current;
-    if (!node || typeof node.animate !== 'function') return;
+    if (typeof node.animate !== 'function') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const seat = document.querySelector(`[data-seat="${CSS.escape(name)}"]`);
-    if (!seat) return;
 
-    const from = seat.getBoundingClientRect();
-    const to = node.getBoundingClientRect();
-    if (!to.width) return;
-    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
-    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
-    // Scaled down to roughly the seat's width on the way in, so it reads as the
-    // chair growing into the panel rather than the panel sliding over from it.
+    const from = seatFace(name);
+    const here = node.getBoundingClientRect();
+    if (!from || !here.width) return;
+    const dx = from.x - (here.left + here.width / 2);
+    const dy = from.y - (here.top + here.height / 2);
     node.animate(
       [
-        { transform: `translate(${dx}px, ${dy}px) scale(${Math.max(0.2, from.width / to.width)})`, opacity: 0 },
-        { transform: 'none', opacity: 1 },
+        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / here.width})` },
+        { transform: 'none' },
       ],
-      { duration: SEAT_MS, easing: 'cubic-bezier(0.32, 0.94, 0.3, 1)' }
+      { duration: SEAT_MS, easing: SEAT_EASE }
     );
-  }, [card, name]);
+    // The panel is not what moves; it arrives around them.
+    card.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: SEAT_MS, easing: 'ease-out' });
+  }, [card, face, name]);
 }
 
 function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   const person = duel[role];
   const speaking = duel.status === 'live' && duel.turn === role;
   const card = useRef<HTMLDivElement>(null);
-  useSeatEntrance(card, duel.status === 'live' ? person.name : '');
+  const face = useRef<HTMLSpanElement>(null);
+  useSeatEntrance(card, face, duel.status === 'live' ? person.name : '');
   return (
     <div ref={card} className={cx(styles['duelist'], speaking && styles['duelistSpeaking'])}>
-      <span className={styles['duelFace']} aria-hidden="true">
+      <span ref={face} className={styles['duelFace']} aria-hidden="true">
         {person.avatar || <Icon name="user" size={14} />}
       </span>
       <span className={styles['duelName']}>{person.name}</span>
