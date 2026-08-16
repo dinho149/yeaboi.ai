@@ -72,6 +72,6 @@ The Go seam — `go/`, `contracts/`, `src/yeaboi/gocore/`, `tests/parity/`,
 `tests/unit/test_migration_freeze.py` — belongs to **go-migration** now. **go-migration** may
 edit the lockstep sites named in its charter's `**Extends**` paragraph — the version line in
 `packaging/yeaboi-core/pyproject.toml`, the root `core` extra pin in `pyproject.toml`, appending
-dual-maintenance bullets in `CLAUDE.md`, the `go-*`/`parity` `Makefile` targets, ci.yml's parity
+dual-maintenance table rows in `CLAUDE.md`, the `go-*`/`parity` `Makefile` targets, ci.yml's parity
 scope, and (at W19 only) adding `release-binaries.yml` — that operation at those sites only;
 everything else in those files is yours.

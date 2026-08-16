@@ -92,11 +92,12 @@ When driving multiple features at once, work as an **orchestrator**: one main se
 | `cowork/README.md` | **Start here** — the loop, the routine table, setup, and the deploy lifecycle |
 | `cowork/house-rules.md` | The auto lane, the campaign lane, the migration lane, the proposal cap, the queue |
 | `cowork/sweep-procedure.md` | What a sweep does, step by step |
+| `cowork/models.md` | The only file that names a model — everything else names a tier |
 | `cowork/hygiene-lenses.md` | The standing detectors a routine runs before scouting |
 | `cowork/release-signoff.md` | The pre-release channel and the two-track hand-test |
 | `cowork/migration/program.md` | The Go rewrite program, wave by wave |
 
-`/cowork status | deploy | run <name> | pause | resume | teardown` drives the fleet. Editing anything under `cowork/` is the `fleet` workstream's subject — read `cowork/workstreams/fleet.md` first, and note that the constitution (`house-rules.md`, `definition-of-done.md`, `sweep-procedure.md`, `models.md`, `crew.md`, and the three crew agents in `.claude/agents/`) sits outside every charter.
+`/cowork status | today | runs | deploy | run <name> | pause | resume | teardown` drives the fleet. Editing anything under `cowork/` is the `fleet` workstream's subject — read `cowork/workstreams/fleet.md` first, and note that the constitution (`house-rules.md`, `definition-of-done.md`, `sweep-procedure.md`, `models.md`, `crew.md`, and the three crew agents in `.claude/agents/`) sits outside every charter.
 
 ## Front End (`frontend/` → `src/yeaboi/web/static/`)
 
@@ -104,9 +105,9 @@ Every browser-facing page — the retro and poker live boards, the share gate, t
 
 - **Edited anything under `frontend/`? Run `make web` and commit `src/yeaboi/web/static/` in the same commit.** CI's `web` job rebuilds and fails if they disagree. Never hand-resolve a merge conflict in the minified output (and never configure a `union` merge driver — it produces silently corrupt JS): `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`.
 - Bundles must stay **self-contained**: no CDN, no external `<link>`, no `eval`/`new Function`, no dynamic `import()`, classic IIFE not ESM — exports open over `file://` (where a `type="module"` script does not execute at all) and tunnel pages run under a strict CSP. `tests/unit/test_web_assets.py` enforces this statically, because CSP breakage is invisible on localhost and on a LAN and shows up only for the remote teammate.
-- Python reaches the bundles only through `web/assets.py`; a served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents come only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation.
+- Python reaches the bundles only through `web/assets.py`; a served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents come only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation (one documented exception, in the skill).
 
-Everything else — the CSP table and what makes an export inert, the export capability flags, the `enums.ts` codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, or any exporter.
+Everything else — the CSPs and what makes an export inert, the export capability flags, the `enums.ts` codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, or any exporter.
 
 ## REQUIRED: Go sidecar dual maintenance
 
