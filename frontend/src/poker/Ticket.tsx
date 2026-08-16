@@ -311,7 +311,13 @@ function TicketBody({ ticket, tag, onEdit, nav }: BodyProps) {
         </span>
         {tag}
         {onEdit ? (
-          <Button size="s" shape="bare" aria-label="Edit this ticket" onClick={onEdit}>
+          <Button
+            size="s"
+            shape="bare"
+            className={styles['tkEdit']}
+            aria-label="Edit this ticket"
+            onClick={onEdit}
+          >
             <Icon name="pencil" size={12} /> Edit
           </Button>
         ) : null}

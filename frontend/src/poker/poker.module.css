@@ -358,6 +358,39 @@
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
+/* The one control in the key row, so it takes that row's shape: the phase tag's
+   pill, tracking and size. Bare, it read as a caption of the tag beside it and
+   was missed — and it is the only thing here you can press. Two classes, so it
+   outranks the shared button's own metrics whichever stylesheet lands last. */
+.tkrow .tkEdit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 0;
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  /* The shared button sets its own; inheriting is what makes the two pills the
+     same height rather than nearly. */
+  line-height: inherit;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.tkrow .tkEdit:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* The pager sits at the end of the key row, hard right. Bordered rather than
    bare: it moves the whole room, which is not a thing to leave looking like
    furniture. */
