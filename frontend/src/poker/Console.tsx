@@ -263,12 +263,12 @@ export function Console({
           >
             Save &amp; next
           </Button>
-        </div>
 
-        <div className={styles['cgroup']}>
-          {/* Tracker write failures live here rather than in a toast: they are
-              the kind of thing a host needs to still be able to read after they
-              have finished the ticket that caused them. */}
+          {/* Under the button that raised it, and inside the same group: a
+              tracker write failure in a group of its own reads as a footnote
+              about the panel rather than an answer to what was just pressed.
+              Not a toast, either — a host needs to still be able to read it
+              after they have finished the ticket that caused it. */}
           {notice ? (
             <p className={styles['cnotice']} role="status">
               {notice}
