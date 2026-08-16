@@ -14,12 +14,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/** How much of the pointer's height above the dock it takes for itself. */
-const RISE = 0.16;
-/** The most it will ever leave the floor. */
-const CEILING = 16;
-/** Never so short that a small viewport zeroes the tether out. */
-const MIN_REACH = 240;
+/** The most it will leave the floor, as a share of the screen's height. */
+const LIFT = 0.03;
+/** Sideways room, as a share of the screen's width, before the band goes slack. */
+const SPREAD = 0.5;
+/**
+ * `t ** 0.6 * (1 - 0.6t)` at its maximum, `t = 0.625`.
+ *
+ * The curve is the tether: steep at first, so a small pull moves it plainly;
+ * flattening through the middle; and easing off toward the top, so the last
+ * third of the screen buys almost nothing. Dividing by its own peak is what
+ * makes {@link LIFT} mean the lift rather than roughly half of it.
+ */
+const PEAK = 0.4737;
 
 export interface DockLift {
   /** Pixels above its resting place, never negative. */
@@ -54,15 +61,16 @@ export function useDockLift(node: () => HTMLElement | null, dragging: boolean): 
           apply(0);
           return;
         }
+        // Everything is a ratio of the screen and of the room the dock has above
+        // it, so the tether spans the whole board on any display rather than
+        // dying a few hundred pixels up.
+        const climb = Math.min(1, above / Math.max(1, box.top));
         // Distance to the dock itself, not to its centre: a wide dock should
         // not feel further away to somebody standing over its edge.
         const sideways = Math.max(0, box.left - event.clientX, event.clientX - box.right);
-        const away = Math.hypot(above, sideways);
-        // The reach is the room above the dock, so the tether is still taut at
-        // the top bar rather than going slack a third of the way up. It thins
-        // the whole way, which is what makes pulling harder give less.
-        const reach = Math.max(0, 1 - away / Math.max(MIN_REACH, box.top));
-        apply(Math.min(CEILING, above * RISE) * reach);
+        const spread = Math.max(0, 1 - sideways / (window.innerWidth * SPREAD));
+        const pull = (climb ** 0.6 * (1 - 0.6 * climb)) / PEAK;
+        apply(pull * window.innerHeight * LIFT * spread);
       });
     };
 
