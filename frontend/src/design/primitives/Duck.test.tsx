@@ -91,6 +91,17 @@ describe('the resting rig', () => {
     }
   });
 
+  it('dances on its own axis, so a dance can never mask a report', () => {
+    // Jamming is a mood and every DuckState is a report. As a state it would
+    // have to outrank or be outranked by "the connection is dead"; as its own
+    // attribute on layers the states cancel, it is simply both.
+    const { container } = render(<Duck state="offline" jamming />);
+    const duck = container.firstElementChild;
+    expect(duck?.getAttribute('data-jam')).toBe('true');
+    expect(duck?.getAttribute('data-state')).toBe('offline');
+    expect(duckCss.indexOf('[data-jam="true"]')).toBeLessThan(duckCss.indexOf('[data-state="offline"]'));
+  });
+
   it.each(['locked', 'offline'])('cancels the entrance for %s', (state) => {
     // Without this the static transform these states rely on is overridden for
     // the first 1.4s — the exact window someone opening a dead board is looking.

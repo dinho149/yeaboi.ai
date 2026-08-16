@@ -429,7 +429,7 @@ export function App({ boot }: { boot: PokerBoot }) {
         <Toolbar
         // No `brand`: the masthead above already sets the word in the six-row
         // face. See the note on Toolbar's prop.
-        mark={<Duck state={duckState} size={30} />}
+        mark={<Duck state={duckState} jamming={music.playing} size={30} />}
         subtitle={
           <>
             {status === 'retrying' ? <span className={styles['offline']}>reconnecting…</span> : null}

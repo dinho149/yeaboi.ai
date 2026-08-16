@@ -79,22 +79,32 @@ const PULSE_MS: Record<DuckPulse, number> = {
 
 export interface DuckProps {
   state?: DuckState;
+  /**
+   * Music is playing — the duck dances to it.
+   *
+   * Not a `DuckState`, because it is a mood and every state is a report. Kept
+   * apart so a dance can never mask a dead connection, and so the duck can do
+   * both at once.
+   */
+  jamming?: boolean;
   /** Rendered width in px. The sprite is 128px, so 64 is the 2x-crisp size. */
   size?: number;
   className?: string | undefined;
 }
 
-export function Duck({ state = 'idle', size = 64, className }: DuckProps) {
+export function Duck({ state = 'idle', jamming = false, size = 64, className }: DuckProps) {
   // Only when nothing else is going on. An idle mannerism during a startle or a
   // reconnect would be two animations arguing over the same layer, and the one
-  // that matters would be the one that lost.
-  const idle = useDuckIdle(state === 'idle');
+  // that matters would be the one that lost — and a duck that already has music
+  // to move to does not need something to do.
+  const idle = useDuckIdle(state === 'idle' && !jamming);
   const arriving = useDuckArrival();
 
   return (
     <div
       className={cx(styles['duck'], className)}
       data-state={state}
+      data-jam={jamming ? 'true' : undefined}
       data-enter={arriving ? 'true' : undefined}
       data-idle={idle ?? undefined}
       style={{ width: `${size}px` }}

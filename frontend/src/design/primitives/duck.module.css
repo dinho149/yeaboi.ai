@@ -152,6 +152,31 @@
   animation: wing-flap-hard 0.3s ease-in-out 3;
 }
 
+/* ── jamming: there is music on ───────────────────────────────────────
+   A mood, not a status, so it is its own attribute rather than a state: the
+   duck can be dancing *and* reporting, and nothing it reports is ever masked by
+   a dance. All three continuous layers move to one period so it reads as one
+   movement rather than three loops that happen to overlap — and none of them
+   touch `.duck`, so `urgent`'s hard flap and `locked`'s nap both still land.
+
+   Placed with the mannerisms and above every state rule for the same reason
+   they are: source order is what settles a tie at this specificity. */
+.duck[data-jam="true"] .body {
+  animation: duck-jam 0.52s ease-in-out infinite;
+}
+.duck[data-jam="true"] .wing {
+  animation: wing-flap 0.52s ease-in-out infinite;
+}
+.duck[data-jam="true"] .glasses {
+  animation: glasses-bob 0.52s ease-in-out infinite;
+}
+@keyframes duck-jam {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  25% { transform: translateY(-11%) rotate(0deg); }
+  50% { transform: translateY(0) rotate(5deg); }
+  75% { transform: translateY(-11%) rotate(0deg); }
+}
+
 /* ── urgent: the last ten seconds on the clock ───────────────────────
    Motion-only, and that is acceptable here where it is not for the states
    below: the timer readout is aria-live and announces the same ten seconds. */
