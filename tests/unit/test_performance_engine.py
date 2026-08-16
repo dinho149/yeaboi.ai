@@ -208,3 +208,47 @@ class TestReview:
         review = engine.run_six_month_review("Ada", db_path=db_path, today=date(2026, 7, 12))
         assert review.warnings
         assert review.framework_used == "default"
+
+
+class TestProvenanceWiring:
+    def test_prep_appends_a_chained_record(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, stories=[EngineerStory(key="P-1", title="auth", source="jira")])
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["Discuss auth"]}))
+        engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            record = chain.get("performance:Ada:prep:2026-07-12")
+            assert record is not None
+            assert "jira:P-1" in record.inputs
+            assert chain.verify().valid is True
+
+    def test_failed_audit_write_warns_but_never_fails_the_run(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["x"]}))
+        from yeaboi.performance import provenance_log
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(provenance_log, "record_prep", _boom)
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+        assert any("Audit trail not recorded" in w for w in prep.warnings)
+
+    def test_review_links_the_one_on_one_history(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, stories=[EngineerStory(key="P-2", title="export", source="jira")])
+        _patch_llm(monkeypatch, json.dumps({"email_subject": "s", "email_summary": "b", "action_items": ["a"]}))
+        engine.complete_one_on_one("Ada", "we talked", deliver=False, db_path=db_path, today=date(2026, 5, 1))
+
+        _patch_llm(monkeypatch, json.dumps({"strengths": ["delivery"], "overall": "solid"}))
+        engine.run_six_month_review("Ada", db_path=db_path, today=date(2026, 7, 12))
+
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            review = chain.get("performance:Ada:review:2026-07-12")
+            assert review is not None
+            assert "performance:Ada:one-on-one:2026-05-01" in review.inputs
+            assert "jira:P-2" in review.inputs
+            assert chain.verify().valid is True

@@ -224,6 +224,26 @@ export interface StandupPractice {
   repeat?: boolean;
 }
 
+/**
+ * One cross-source disagreement (`standup/conflicts.py`). `severity` is a
+ * word from `provenance.conflicts.Severity`; the component maps it to a tone
+ * with a muted fallback — no colour crosses the wire.
+ */
+export interface StandupConflict {
+  /** Stable id (`entity:property:type`) — the list key, and the handle a
+   * future correction flow would vote on. */
+  fingerprint: string;
+  title: string;
+  detail: string;
+  severity: string;
+  /** What would settle the disagreement. */
+  action: string;
+  /** Both sides, each with its source, asserted value, and evidence link. */
+  claims: Array<{ source: string; value: string; label: string; url: string }>;
+  /** Whose activity surfaced it. */
+  members: string[];
+}
+
 export interface StandupMember {
   name: string;
   /** They wrote this themselves, rather than it being derived from activity. */
@@ -513,6 +533,10 @@ export type ExportReport = (
       skipped: Array<[string, string]>;
       /** Team rollup. `count` is MEMBERS with that signal, not signal count. */
       practices: Array<{ rule: string; count: number; title: string }>;
+      /** Cross-source disagreements, one card each. Required — the exporter
+       * always emits it (empty on a clean day), same rationale as
+       * `quietMembers`: optionality would hide it from the fixture guard. */
+      conflicts: StandupConflict[];
       /** Screenshots, embedded as `data:` URIs so the file stays portable. */
       images: string[];
       trend: Trend | null;

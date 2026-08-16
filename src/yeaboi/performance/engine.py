@@ -40,6 +40,23 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+# The chain write is best-effort, but never silently absent (same contract as
+# the standup's audit trail): a failed write becomes a warning on the artifact.
+_AUDIT_WARNING = "Audit trail not recorded for this run — see logs; the artifact itself is unaffected."
+
+
+def _audit(artifact, record_fn, *args, **kwargs):
+    """Append one decision record; on failure return the artifact re-warned."""
+    try:
+        record_fn(*args, **kwargs)
+    except Exception:  # noqa: BLE001 — an audit write must never fail the run
+        logger.warning("performance: provenance recording failed", exc_info=True)
+        from dataclasses import replace
+
+        return replace(artifact, warnings=artifact.warnings + (_AUDIT_WARNING,))
+    return artifact
+
+
 def _parse_json_response(raw: str) -> dict:
     """Extract a JSON object from an LLM response, tolerating markdown fences."""
     raw = (raw or "").strip()
@@ -212,6 +229,10 @@ def run_one_on_one_prep(
     with PerformanceStore(db_path) as store:
         store.record_prep(prep, session_id=session_id)
 
+    from yeaboi.performance import provenance_log
+
+    prep = _audit(prep, provenance_log.record_prep, db_path, prep, activity=activity, used_llm=bool(parsed))
+
     _export(prep, engineer, kind="prep")
     logger.info("run_one_on_one_prep complete: engineer=%s points=%d", engineer, len(prep.talking_points))
     return prep
@@ -309,6 +330,10 @@ def complete_one_on_one(
 
     with PerformanceStore(db_path) as store:
         store.record_completion(record, session_id=session_id)
+
+    from yeaboi.performance import provenance_log
+
+    record = _audit(record, provenance_log.record_completion, db_path, record, used_llm=bool(parsed))
 
     _export(record, engineer, kind="completion")
     logger.info("complete_one_on_one complete: engineer=%s actions=%d", engineer, len(record.action_items))
@@ -478,6 +503,18 @@ def run_six_month_review(
 
     with PerformanceStore(db_path) as store:
         store.record_review(review, session_id=session_id)
+
+    from yeaboi.performance import provenance_log
+
+    review = _audit(
+        review,
+        provenance_log.record_review,
+        db_path,
+        review,
+        delivery=delivery,
+        one_on_one_dates=tuple(r.date for r in completions),
+        used_llm=bool(parsed),
+    )
 
     _export(review, engineer, kind="review")
     logger.info("run_six_month_review complete: engineer=%s strengths=%d", engineer, len(review.strengths))

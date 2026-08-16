@@ -59,6 +59,7 @@
       "trend": "declining",
       "trendText": "▼ 9 vs last standup"
     },
+    "conflicts": [],
     "coverage": [
       [
         "ticketing",

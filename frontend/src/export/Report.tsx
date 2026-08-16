@@ -116,6 +116,7 @@ function Body({ report }: { report: ExportReport }) {
           coverage={report.coverage}
           skipped={report.skipped}
           practices={report.practices}
+          conflicts={report.conflicts}
           images={report.images}
           trend={report.trend}
           warnings={report.warnings}

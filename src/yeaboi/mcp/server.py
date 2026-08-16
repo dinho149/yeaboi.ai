@@ -63,6 +63,7 @@ def create_app():
         tools_performance,
         tools_planning,
         tools_poker,
+        tools_provenance,
         tools_reporting,
         tools_retro,
         tools_sessions,
@@ -83,6 +84,7 @@ def create_app():
         tools_team,
         tools_anonymize,
         tools_agentwatch,
+        tools_provenance,
     )
     for module in modules:
         module.register(app)

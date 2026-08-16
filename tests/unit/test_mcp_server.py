@@ -71,6 +71,8 @@ EXPECTED_TOOLS = {
     "agents_standup_history",
     "agents_security_scan",
     "agents_security_history",
+    "provenance_audit",
+    "provenance_trace",
 }
 
 
@@ -1249,3 +1251,31 @@ class TestServerEntry:
         import yeaboi.mcp.server  # noqa: F401
 
         assert hasattr(yeaboi.mcp.server, "main")
+
+
+class TestProvenanceTools:
+    def test_audit_on_an_empty_chain(self, tmp_db):
+        out = call_tool("provenance_audit")
+        assert out["ok"] is True
+        assert out["data"]["chain_valid"] is True
+        assert out["data"]["total_records"] == 0
+
+    def test_audit_rejects_a_bad_window(self, tmp_db):
+        out = call_tool("provenance_audit", {"window_days": 0})
+        assert out["ok"] is False
+        assert "window_days" in out["error"]["message"]
+
+    def test_trace_round_trips_a_recorded_decision(self, tmp_db):
+        from yeaboi.provenance import DecisionRecord, ProvenanceChain
+
+        with ProvenanceChain(tmp_db) as chain:
+            chain.append(DecisionRecord(entity_id="e1", entity_type="conflict", agent_id="conflicts.status"))
+        out = call_tool("provenance_trace", {"entity_id": "e1"})
+        assert out["ok"] is True
+        assert out["data"]["found"] is True
+        assert out["data"]["records"][0]["entity_id"] == "e1"
+
+    def test_trace_requires_an_entity_id(self, tmp_db):
+        out = call_tool("provenance_trace", {"entity_id": "  "})
+        assert out["ok"] is False
+        assert "entity_id" in out["error"]["message"]

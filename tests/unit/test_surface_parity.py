@@ -299,6 +299,20 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"agents"},
         "skill": "agents-security",
     },
+    "provenance": {
+        "engines": {
+            ("yeaboi.provenance.engine", "run_provenance_audit"),
+            ("yeaboi.provenance.engine", "trace_entity"),
+        },
+        "mcp_tools": {"provenance_audit", "provenance_trace"},
+        "tui_mode": Exempt(
+            "the chain records itself during standup/performance runs and its cards render inside "
+            "those modes (the standup Conflicts card); the verify/trace surface is CLI/MCP-first — "
+            "a dedicated TUI card is a tracked gap"
+        ),
+        "cli": {"provenance"},
+        "skill": "provenance",
+    },
 }
 
 # Engine modules discovered by convention: every src/yeaboi/*/engine.py, plus
@@ -330,6 +344,8 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents_advisor_run": ("yeaboi.agentwatch.advisor", "run_agent_advisor"),
     "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
+    "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
+    "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.

@@ -187,6 +187,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         mode_key="agent-security",
         is_beta=True,
     ),
+    FeatureTip(
+        "provenance",
+        "\U0001f512 Tip: `yeaboi provenance audit` verifies the tamper-evident log behind every signal",
+        is_new=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic

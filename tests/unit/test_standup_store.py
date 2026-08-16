@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from yeaboi.agent.state import (
+    ConflictCard,
     MemberUpdate,
     StandupGap,
     StandupReport,
@@ -1208,3 +1209,39 @@ class TestPracticeReportRoundTrip:
             loaded = store.get_latest_report("s1")
         assert loaded.member_updates[0].practices == ()
         assert loaded.practice_rollup == ()
+
+
+class TestConflictsRoundTrip:
+    def test_conflict_cards_survive_the_store(self, db_path):
+        card = ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done on the board while a PR still names it.",
+            severity="medium",
+            entity_id="YEA-12",
+            property_name="status",
+            claims=(("jira", "Done", "YEA-12", "https://j/12"), ("github", "open", "fix", "https://g/41")),
+            recommended_action="Reopen YEA-12, or merge the pull request.",
+            members=("Bob",),
+        )
+        report = _make_report(conflicts=(card,))
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            loaded = store.get_latest_report("s1")
+        assert loaded.conflicts == (card,)
+
+    def test_report_without_conflicts_key_still_deserializes(self, db_path):
+        import json
+
+        # A report stored before conflict cards existed has no "conflicts" key.
+        report = _make_report()
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            row = store._conn.execute("SELECT id, report_json FROM standup_history").fetchone()
+            payload = json.loads(row[1])
+            payload.pop("conflicts", None)
+            store._conn.execute(
+                "UPDATE standup_history SET report_json = ? WHERE id = ?", (json.dumps(payload), row[0])
+            )
+            loaded = store.get_latest_report("s1")
+        assert loaded.conflicts == ()

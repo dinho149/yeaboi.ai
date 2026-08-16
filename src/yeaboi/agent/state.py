@@ -478,6 +478,31 @@ class PracticeSignal:
 
 
 @dataclass(frozen=True)
+class ConflictCard:
+    """Two sources disagree about one property of one work item.
+
+    Produced by standup/conflicts.py from the aggregate's grouped activity.
+    Like a PracticeSignal, a conflict is an observation with evidence, not a
+    verdict: the card names both claims and says what would settle them,
+    instead of anyone's confidence being silently lowered because the sources
+    disagree. Severity is a word (provenance.conflicts.Severity), never a
+    colour — payload rules apply all the way down.
+    """
+
+    fingerprint: str = ""  # stable id, e.g. "YEA-12:status:status_conflict"
+    title: str = ""  # "YEA-12 — the board says Done, a pull request is still open"
+    detail: str = ""  # the observation, spelled out
+    severity: str = "medium"  # low | medium | high | critical
+    entity_id: str = ""  # the work item both sources are talking about
+    property_name: str = ""  # what they disagree on, e.g. "status"
+    # One claim per source: (source, value, label, url) — label/url are the
+    # click-through evidence, same shape discipline as MemberUpdate.links.
+    claims: tuple[tuple[str, str, str, str], ...] = ()
+    recommended_action: str = ""  # what would settle it
+    members: tuple[str, ...] = ()  # whose activity surfaced the disagreement
+
+
+@dataclass(frozen=True)
 class MemberUpdate:
     """One team member's standup update for a given day."""
 
@@ -546,6 +571,9 @@ class StandupReport:
     annotations: tuple[Annotation, ...] = ()
     # (rule, member count) for the overview rollup — same shape as activity_counts
     practice_rollup: tuple[tuple[str, int], ...] = ()
+    # Cross-source disagreements (standup/conflicts.py) — defaulted so a
+    # report stored before conflict cards existed still deserializes.
+    conflicts: tuple[ConflictCard, ...] = ()
 
 
 # See docs: "Session Management" — Daily Standup transcript-review artifacts
@@ -1462,6 +1490,60 @@ class AgentAdvisorReport:
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
     annotations: tuple[Annotation, ...] = ()
+
+
+# Provenance audit artifacts (provenance/engine.py). The chain itself lives in
+# yeaboi.provenance; these are the render-ready views of it — deterministic,
+# no LLM anywhere in the pipeline, because a trust report that needs a model
+# to read the tamper log would undermine the thing it reports on.
+@dataclass(frozen=True)
+class ProvenanceDecisionRow:
+    """One decision record, summarised for display. Counts and keys only —
+    the row never carries more than the chain already stores."""
+
+    entity_id: str = ""
+    entity_type: str = ""  # practice-signal | blocker-signal | confidence | conflict | …
+    record_kind: str = "decision"  # decision | invalidation
+    agent_id: str = ""  # the rule, model, or person behind it
+    role: str = ""  # generator | suppressor | invalidator | …
+    timestamp: str = ""
+    detail: str = ""
+    inputs: tuple[str, ...] = ()  # the evidence keys the decision rests on
+    sequence_id: int = 0
+
+
+@dataclass(frozen=True)
+class ProvenanceAuditReport:
+    """The chain's health plus what it recorded in the window.
+
+    ``chain_valid`` covers the WHOLE chain, not the window: a tamper verdict
+    scoped to recent rows would miss exactly the edits it exists to catch.
+    """
+
+    generated_at: str = ""
+    window_days: int = 30
+    chain_valid: bool = True
+    total_records: int = 0
+    window_records: int = 0
+    records_by_type: tuple[tuple[str, int], ...] = ()  # (entity_type, count), whole chain
+    recent: tuple[ProvenanceDecisionRow, ...] = ()  # newest first, capped
+    # (sequence_id, entity_id, reason) per verification failure — reason is
+    # "checksum_mismatch" (edited row), "chain_break" (deleted/renumbered),
+    # or "truncated_tail" (newest rows removed; the walk fell short of the
+    # head anchor).
+    breaks: tuple[tuple[int, str, str], ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProvenanceTrace:
+    """The "why" trail behind one entity: its records plus the latest record
+    behind each of its inputs, breadth-first."""
+
+    entity_id: str = ""
+    found: bool = False
+    records: tuple[ProvenanceDecisionRow, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

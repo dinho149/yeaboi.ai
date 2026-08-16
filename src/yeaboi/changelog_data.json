@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.15.0",
+      "date": "2026-08-16",
+      "summary": "Deterministic signals now carry a tamper-evident, auditable decision chain that tracks the evidence behind every verdict. Provenance adds a new run_provenance_audit engine and command-line tools to verify chain integrity and trace any signal to the data that produced it. Standup surfaces conflicts as explicit cards when sources disagree (board says Done but a PR is open), and every standup decision (practice signals, confidence verdicts, LLM-adjudication drops) chains its evidence. Performance mode's 1:1 preps, completions, and reviews record their source ticket keys so every assessment is traceable. Payloads carry severity as a word, resolution strategies default to manual review, and failed chain writes become report warnings instead of blocking runs. New provenance audit|trace CLI commands and MCP tools bring full parity to headless and agent-driven workflows.",
+      "highlights": [
+        {
+          "text": "Tamper-evident decision chain: hash-chained append-only log verifies that every decision is unedited and can be traced to its source",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Conflict detection surfaces disagreements as cards: board says Done but a PR is open, confidence is adjusting due to conflicting signals",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Every standup decision now chains its evidence: practice signals and their verdicts, confidence adjustments and their reasons, LLM-adjudication drops",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Performance 1:1s and reviews record source ticket keys so every assessment is tied to its source data",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "New `yeaboi provenance audit|trace` CLI commands and MCP tools expose full chain verification to headless and agent workflows",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.14.0",
       "date": "2026-08-16",
       "summary": "Planning mode gained five major capabilities: sprint targeting for small projects (reuse existing sprints and assign stories without creating new ones), team-style acceptance criteria with learned and customizable formats, architecture options with opt-in validation spikes (2\u20133 options with confidence scoring), and PRD export for full product requirements documents. Tracker sync fixes kill the Sprint -1 bug and add full pagination, closed-sprint safety, and ISO-8601 datetime handling. The story writer and all renderers now follow learned team acceptance-criteria styles, and custom Definition-of-Done lists are normalized and honored in every sync path.",
