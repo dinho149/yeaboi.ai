@@ -65,6 +65,12 @@ STUCK_DAYS = 7
 # fleet's own upkeep is the closest thing to an owner.
 UNCLAIMED_AREA = "fleet"
 
+# The routine that runs this. It is on the 18:00 agenda and checks in *after*
+# posting, so it can never appear in `--checked-in` and `no_shows()` excludes it
+# by name. There is no general rule to derive this from: every other routine on
+# the agenda has finished by the time it is asked about.
+SELF_ROUTINE = "shipped-standup"
+
 # A `type:bug` PR's admission ticket is a regression test that fails before the
 # fix and passes after (`sweep-procedure.md`). The body carries both runs. This
 # looks for the claim rather than parsing pytest output — the clause it produces
@@ -124,12 +130,20 @@ def type_of(item: dict) -> str:
 
 
 def _moment(stamp: str | None) -> datetime | None:
+    """An ISO stamp as an aware datetime, or None.
+
+    A naive stamp is read as UTC rather than left naive. GitHub always sends the
+    ``Z``, but ``--since`` is typed by a human, and a naive one used to parse
+    cleanly here and then raise ``TypeError`` on the first comparison — killing
+    the run for a missing letter.
+    """
     if not stamp:
         return None
     try:
-        return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     except ValueError:
         return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 def _clock(stamp: str | None, zone: object | None) -> str:
@@ -193,7 +207,10 @@ def fetch_closed_since(since: datetime) -> list[dict] | None:
             return None
         items = [item for item in data if isinstance(item, dict)]
         collected.extend(items)
-        if len(items) < 100:
+        # `data`, not `items`: the page-is-short test asks GitHub how many rows it
+        # sent, and one malformed entry on a full page would otherwise end the
+        # walk as though it were the last one.
+        if len(data) < 100:
             return collected
         oldest = _moment(items[-1].get("updated_at"))
         if oldest is not None and oldest < since:
@@ -204,22 +221,27 @@ def fetch_closed_since(since: datetime) -> list[dict] | None:
     return None
 
 
-def review_verdict(number: int) -> str:
-    """``review clean`` when the API says so, "" when it does not.
+def review_verdict(number: int) -> tuple[str, datetime | None]:
+    """``review clean`` when the API says so, "" when it does not — and when.
 
     Never "review pending" or any other invented state: an absent fact is an
     omitted clause, which is honest, and an invented one costs the whole post its
     credibility.
+
+    The timestamp is the second half because a verdict is a *change*, and the
+    firing rule (see ``collect``) needs to know whether that change happened
+    inside the window. It is the moment of the surviving ``CHANGES_REQUESTED``,
+    and None for every other verdict — nothing fires on an approval.
     """
     path = _repo_path(f"/pulls/{number}/reviews")
     if path is None:
-        return ""
+        return "", None
     data = _get(path)
     if not isinstance(data, list):
-        return ""
+        return "", None
     # Last verdict per reviewer — an APPROVED after a CHANGES_REQUESTED is a
     # resolved round, and counting both would report a clean PR as contested.
-    latest: dict[str, str] = {}
+    latest: dict[str, tuple[str, datetime | None]] = {}
     for item in data:
         if not isinstance(item, dict):
             continue
@@ -227,11 +249,46 @@ def review_verdict(number: int) -> str:
         if state not in ("APPROVED", "CHANGES_REQUESTED"):
             continue
         who = ((item.get("user") or {}).get("login")) or ""
-        latest[who] = state
-    verdicts = set(latest.values())
-    if "CHANGES_REQUESTED" in verdicts:
-        return "changes requested"
-    return "review clean" if "APPROVED" in verdicts else ""
+        latest[who] = (state, _moment(item.get("submitted_at")))
+    blocked = [when for state, when in latest.values() if state == "CHANGES_REQUESTED"]
+    if blocked:
+        # The most recent block is the one the PR is sitting behind.
+        stamps = [when for when in blocked if when is not None]
+        return "changes requested", max(stamps) if stamps else None
+    approved = any(state == "APPROVED" for state, _ in latest.values())
+    return ("review clean" if approved else ""), None
+
+
+def ci_state(sha: str) -> str:
+    """``ci red`` for a definite failure, ``ci green`` for a definite success, "".
+
+    ``GET /repos/{slug}/commits/{ref}/status`` is on the probed allowlist
+    (``tests/fixtures/cowork_github_access_live.json``), which is why this reads
+    the combined *status* rather than ``/check-runs``.
+
+    **A zero-status or pending commit reports nothing**, and that asymmetry is the
+    whole safety of the call. The combined API answers ``pending`` both for a run
+    in flight and for a commit that has no statuses at all, and this repo's
+    Actions report as check runs — so treating ``pending`` as a fact would mark
+    every open PR stuck on a signal that means "I was not told".
+    """
+    if not sha:
+        return ""
+    path = _repo_path(f"/commits/{sha}/status")
+    if path is None:
+        return ""
+    data = _get(path)
+    if not isinstance(data, dict) or not data.get("statuses"):
+        return ""
+    state = data.get("state") or ""
+    if state in ("failure", "error"):
+        return "ci red"
+    return "ci green" if state == "success" else ""
+
+
+def _head_sha(pr: dict) -> str:
+    head = pr.get("head")
+    return (head.get("sha") or "") if isinstance(head, dict) else ""
 
 
 def merged_clause(pr: dict, zone: object | None) -> str:
@@ -244,7 +301,10 @@ def merged_clause(pr: dict, zone: object | None) -> str:
     bits: list[str] = []
     if type_of(pr) == "bug" and _REGRESSION.search(pr.get("body") or ""):
         bits.append("regression test added, failed before and passes after")
-    verdict = review_verdict(pr.get("number") or 0)
+    checks = ci_state(_head_sha(pr))
+    if checks:
+        bits.append(checks)
+    verdict, _blocked_at = review_verdict(pr.get("number") or 0)
     if verdict:
         bits.append(verdict)
     clock = _clock(pr.get("merged_at"), zone)
@@ -253,12 +313,23 @@ def merged_clause(pr: dict, zone: object | None) -> str:
     return " · ".join(bits)
 
 
-def open_clause(pr: dict, now: datetime, zone: object | None) -> tuple[str, bool]:
-    """One open PR's clause, and whether it counts as stuck."""
+def open_clause(pr: dict, now: datetime, zone: object | None) -> tuple[str, bool, datetime | None]:
+    """One open PR's clause, whether it is stuck, and when it became so.
+
+    Three ways to be stuck, and they are `shipped-standup.md`'s original three:
+    open past ``STUCK_DAYS``, red checks, or a standing ``changes requested``.
+    The red one came back after a round-trip through the fan-out — the renderer
+    read only ``/pulls/{n}/reviews`` at first, so a PR red since the hour it
+    opened reported as *building*, while the README went on promising the trace.
+
+    The third value is the moment it crossed, or None when the crossing has no
+    timestamp (age and red checks both cross silently). ``collect`` fires on it.
+    """
     opened = _moment(pr.get("created_at"))
     age = (now - opened).days if opened else 0
-    verdict = review_verdict(pr.get("number") or 0)
-    stuck = age >= STUCK_DAYS or verdict == "changes requested"
+    verdict, blocked_at = review_verdict(pr.get("number") or 0)
+    checks = ci_state(_head_sha(pr))
+    stuck = age >= STUCK_DAYS or checks == "ci red" or verdict == "changes requested"
     if opened and opened.astimezone(zone or UTC).date() == now.astimezone(zone or UTC).date():
         when = "opened today"
     elif age <= 0:
@@ -266,11 +337,13 @@ def open_clause(pr: dict, now: datetime, zone: object | None) -> tuple[str, bool
     else:
         when = f"opened {age} day{'s' if age != 1 else ''} ago"
     bits = [when]
+    if checks:
+        bits.append(checks)
     if verdict:
         bits.append(verdict)
     elif age >= STUCK_DAYS:
         bits.append(f"no review verdict in {age} days")
-    return " · ".join(bits), stuck
+    return " · ".join(bits), stuck, blocked_at
 
 
 def collect(since: datetime, now: datetime, zone: object | None) -> dict:
@@ -311,7 +384,7 @@ def collect(since: datetime, now: datetime, zone: object | None) -> dict:
         if not in_lane(pr):
             continue
         bucket = area(workstream_of(pr))
-        clause, stuck = open_clause(pr, now, zone)
+        clause, stuck, blocked_at = open_clause(pr, now, zone)
         entry = {
             "number": pr.get("number"),
             "title": pr.get("title") or "",
@@ -323,51 +396,81 @@ def collect(since: datetime, now: datetime, zone: object | None) -> dict:
         # A change fires a post; a state does not. Opened today is a change. So is
         # crossing into stuck — measured by the same STUCK_DAYS boundary, so it
         # fires on the day it crosses and not on the six after it.
+        #
+        # A `changes requested` verdict is the third crossing and it has its own
+        # clock: a PR blocked on day 2 is stuck on day 2, and dating that
+        # crossing by age would leave it unannounced until day 7 — or for ever,
+        # if it merged first. So the review's own timestamp is what places it.
         opened_at = _moment(pr.get("created_at"))
         if opened_at and opened_at >= since:
             bucket["fires"] = True
         elif stuck and opened_at and (now - opened_at).days == STUCK_DAYS:
             bucket["fires"] = True
+        elif stuck and blocked_at and blocked_at >= since:
+            bucket["fires"] = True
 
     return {"areas": areas, "warnings": warnings}
 
 
-def _installable() -> str:
-    """The tag-backed pre-release, or "".
+def _installable() -> tuple[str, str]:
+    """The tag-backed pre-release and a warning, either of which may be "".
 
     Never ``latest_prerelease``: that is what the *next* release-worthy merge
     would be numbered, raised by every docs merge including ones that publish
     nothing, so quoting it in an install command hands out a 404.
+
+    **An unreadable channel is a warning, not an empty string.** ``pending()``
+    shells out to git and can fail for reasons that have nothing to do with the
+    batch, and "" renders as *no new pre-release* — a claim about the world. This
+    module's contract is that blindness is reported and never smoothed, and it
+    applies to its own imports.
     """
     try:
         import release_channel
-    except Exception:
-        return ""
+    except Exception as exc:
+        return (
+            "",
+            f"could not read the release channel ({exc.__class__.__name__}) — the version clause is missing, not empty",
+        )
     try:
         batch = release_channel.pending()
-    except Exception:
-        return ""
-    return batch.get("installable") or "" if isinstance(batch, dict) else ""
+    except Exception as exc:
+        return (
+            "",
+            f"could not read the release channel ({exc.__class__.__name__}) — the version clause is missing, not empty",
+        )
+    if not isinstance(batch, dict):
+        return "", "the release channel answered in an unexpected shape — the version clause is missing, not empty"
+    return batch.get("installable") or "", ""
 
 
-def _title(glyph: str, display: str, day: str, merged: list, installable: str) -> str:
+def _title(glyph: str, display: str, day: str, merged: list, installable: str, channel_known: bool = True) -> str:
     """``🔬 **Analysis** — Sun 16 Aug · 2 merged → `3.9.0rc14```.
 
     The dating fact is what tells two posts under the same glyph apart — 🧭 at
     06:15 about other agents' output and 🧭 in the evening about this area's
     merges are both about agents, and the clause is the difference.
+
+    **Three states, not two.** A version, *no new pre-release*, and no clause at
+    all. The third is what an unreadable release channel gets: "" means "nothing
+    was published" only when the channel answered, and rendering an unanswered
+    read as that sentence is a claim about the world made out of a failure.
     """
     head = f"{glyph} **{display}** — {day}"
     if not merged:
         return f"{head} · nothing merged"
     head += f" · {len(merged)} merged"
+    if not channel_known:
+        return head
     # `installable` is empty when nothing has been published for this batch. Say
     # so rather than printing a stale version, which is `shipped-standup.md`'s
     # rule and the reason the field is read at all.
     return head + (f" → `{installable}`" if installable else " → no new pre-release")
 
 
-def area_lines(display: str, glyph: str, day: str, data: dict, installable: str) -> list[str]:
+def area_lines(
+    display: str, glyph: str, day: str, data: dict, installable: str, channel_known: bool = True
+) -> list[str]:
     """One area's whole message. Pure over its inputs, like ``agenda_lines``.
 
     Sections are separated by a divider rather than a blank line, and the divider
@@ -405,10 +508,13 @@ def area_lines(display: str, glyph: str, day: str, data: dict, installable: str)
                 block.append(f"   — {item['clause']}")
         blocks.append(block)
 
-    if installable:
+    # Gated on `merged`, not on `installable`: a post that fired because a PR
+    # opened has contributed nothing to that build, and an install line under it
+    # advertises a version this area is not in.
+    if installable and merged:
         blocks.append([f"`pip install --pre yeaboi=={installable}`"])
 
-    lines = [_title(glyph, display, day, merged, installable), ""]
+    lines = [_title(glyph, display, day, merged, installable, channel_known), ""]
     for position, block in enumerate(blocks):
         if position:
             lines += ["───────────────────────────", ""]
@@ -446,7 +552,9 @@ def build(since: datetime, now: datetime, checked_in: list[str] | None = None) -
 
     glyphs = setup.parse_workstream_glyphs()
     names = setup.parse_workstream_names()
-    installable = _installable()
+    installable, channel_note = _installable()
+    if channel_note:
+        warnings.append(channel_note)
     posts = []
     # Sorted by name so two runs over the same day post in the same order — a
     # dict's insertion order here is GitHub's page order, which is not stable.
@@ -463,7 +571,7 @@ def build(since: datetime, now: datetime, checked_in: list[str] | None = None) -
             {
                 "workstream": name,
                 "glyph": glyph,
-                "lines": area_lines(display, glyph, day, data, installable),
+                "lines": area_lines(display, glyph, day, data, installable, not channel_note),
             }
         )
 
@@ -490,14 +598,20 @@ def no_shows(now: datetime, zone: object | None, checked_in: list[str]) -> list[
     Anything due *before* 📅 is excluded rather than reported: `cd-deploy` at
     04:00 and every GitHub event have no thread to reply to and check in to their
     run log instead. Reporting those would put a false 🔴 here every morning.
+
+    **And the caller excludes itself.** ``shipped-standup`` is on the 18:00
+    agenda and its own check-in is the last thing it does — *after* this post
+    goes up — so its name can never be in ``checked_in`` and it named itself as a
+    no-show on every single firing. A 🩺 that is wrong every evening is a 🩺
+    nobody reads, which is the one failure this section cannot survive: it is the
+    fault the fleet cannot otherwise report on itself.
     """
     plan = setup.agenda(now.date())
     seen = {name.strip().lower() for name in checked_in if name.strip()}
-    local_now = now.astimezone(zone) if zone is not None else now
     missing = []
     for entry in plan.get("today", []):
         name = entry.get("name") or ""
-        if name.lower() in seen:
+        if name.lower() in seen or name.lower() == SELF_ROUTINE:
             continue
         # `--agenda` carries a list per routine; a routine firing more than once
         # today is a no-show only if it never replied at all, so the first firing
@@ -506,21 +620,29 @@ def no_shows(now: datetime, zone: object | None, checked_in: list[str]) -> list[
         due = next(iter(entry.get("times_local") or []), "")
         # 📅 goes up at 05:45 UTC. Earlier is silent by design, later has not
         # happened yet — `slack-relay`'s window counts only up to now.
-        if not _between(utc, "05:45", f"{local_now:%H:%M}", due):
+        if not _between(utc, "05:45", f"{now:%H:%M}"):
             continue
-        missing.append({"name": name, "due": due})
+        missing.append({"name": name, "due": due or utc})
     return missing
 
 
-def _between(utc: str, floor: str, ceiling_local: str, due_local: str) -> bool:
+def _between(utc: str, floor: str, ceiling: str) -> bool:
     """Whether a routine was due after 📅 and before now. Unparseable → excluded.
 
     Excluded rather than included: a 🔴 naming a routine that ran is how this
     section stops being read, and it is the only section here that names a fault.
+
+    **All three are UTC**, and that is load-bearing rather than incidental. The
+    schedule's UTC time was once compared against a *local* ceiling, which broke
+    two ways at once: any ``DISPLAY_TZ`` past about +6 wraps ``now`` past midnight
+    so the ceiling sorts below everything and 🩺 silently never fires, and
+    ``cowork_setup._local()`` appends ``" (+1d)"`` to a time that lands on
+    another date, which string-sorts below every bare ``HH:MM``. The local string
+    is for the reader; the comparison is UTC on both sides.
     """
-    if not utc or not due_local:
+    if not utc:
         return False
-    return utc > floor and due_local <= ceiling_local
+    return floor < utc <= ceiling
 
 
 def main(argv: list[str] | None = None) -> int:

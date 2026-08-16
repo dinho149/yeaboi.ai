@@ -3629,7 +3629,7 @@ class TestProposalSlots:
         the number is what a human needs and the age is decoration on it."""
         self._serve(monkeypatch, [{"number": 5, "title": "t", "created_at": "not a date"}])
         blocking = setup.proposal_slots("platform", now=self.NOW)["blocking"]
-        assert blocking == [{"number": 5, "title": "t", "age_days": None}]
+        assert blocking == [{"number": 5, "title": "t", "age_days": None, "lapses_on": ""}]
 
     def test_the_read_is_rest_on_both_transports(self, monkeypatch):
         """The one that matters most. Every other read in the script branches to
@@ -4935,3 +4935,224 @@ class TestAScopedShellCanStillCheckIn:
         report = setup.Report()
         setup.check_grants(report, [r for r in ROUTINES if r.name == "cd-deploy"])
         assert not any("cannot run the check-in" in problem for problem in report.problems)
+
+
+class TestTheLapseClocks:
+    """`digest.md` step 4 has two clocks, and neither was executable.
+
+    The fourteen-day one asked the ⏸️ **Held** line to quote a lapse date the
+    payload did not carry, leaving a model doing calendar arithmetic by eye — the
+    exact failure `--proposal-slots` exists to prevent, one sentence earlier in
+    the same section. The thirty-day one told the routine to close lapsed issues
+    without giving it any way to find one: step 1 collects by `cowork:proposal`
+    and a lapse takes precisely that label off, so nothing enumerated them and
+    `aged-out` was permanently unreachable.
+    """
+
+    NOW = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
+
+    def _serve(self, monkeypatch, items, *, events=None, ok=True, error=""):
+        monkeypatch.setattr(setup, "TRANSPORT", "api")
+        monkeypatch.setenv("GH_TOKEN", "t")
+        monkeypatch.setattr(setup, "repo_slug", lambda: "o/r")
+
+        def paged(path, key=None):
+            if "/events" in path:
+                return setup.ApiResult(True, events or [], "")
+            return setup.ApiResult(ok, items, error)
+
+        monkeypatch.setattr(setup.transport, "api_paged", paged)
+
+    @staticmethod
+    def _issue(number, labels=("workstream:fleet",), **extra):
+        return {"number": number, "title": f"finding {number}", "labels": [{"name": n} for n in labels], **extra}
+
+    @staticmethod
+    def _event(verb, stamp, label=setup.PROPOSAL_LABEL):
+        return {"event": verb, "label": {"name": label}, "created_at": stamp}
+
+    # --- the fourteen-day clock -------------------------------------------
+
+    def test_a_blocking_row_carries_the_date_the_question_lapses(self, monkeypatch):
+        self._serve(
+            monkeypatch,
+            [self._issue(146, labels=("workstream:fleet",), created_at="2026-08-09T12:00:00Z")],
+        )
+        row = setup.proposal_slots("fleet", now=self.NOW)["blocking"][0]
+        assert row["lapses_on"] == "23 Aug"
+        assert row["age_days"] == 7
+
+    def test_a_bounced_proposal_ages_from_when_it_came_back(self, monkeypatch):
+        """It keeps its original `created_at`, so ageing from that would give an
+        eight-day-old issue six days to be answered — and would print an age and
+        a lapse date that disagree on the one issue where it matters."""
+        self._serve(
+            monkeypatch,
+            [self._issue(146, created_at="2026-08-01T12:00:00Z")],
+            events=[self._event("labeled", "2026-08-14T12:00:00Z")],
+        )
+        row = setup.proposal_slots("fleet", now=self.NOW)["blocking"][0]
+        assert row["age_days"] == 2
+        assert row["lapses_on"] == "28 Aug"
+
+    def test_an_unreadable_event_list_falls_back_to_the_filing_date(self, monkeypatch):
+        """ "" is the documented fallback, and right for every proposal that never
+        bounced — which is nearly all of them."""
+        monkeypatch.setattr(setup, "_label_event_at", lambda number, verb: "")
+        self._serve(monkeypatch, [self._issue(146, created_at="2026-08-09T12:00:00Z")])
+        assert setup.proposal_slots("fleet", now=self.NOW)["blocking"][0]["lapses_on"] == "23 Aug"
+
+    def test_an_unparseable_date_is_no_date_rather_than_a_wrong_one(self):
+        assert setup._lapse_date("not a date") == ""
+        assert setup._lapse_date("") == ""
+
+    def test_only_the_proposal_labels_events_are_read(self, monkeypatch):
+        self._serve(
+            monkeypatch,
+            [self._issue(1)],
+            events=[
+                self._event("labeled", "2026-08-15T12:00:00Z", label="type:bug"),
+                self._event("closed", "2026-08-15T12:00:00Z"),
+            ],
+        )
+        assert setup.proposal_clock(1) == ""
+
+    def test_the_most_recent_labelling_wins(self, monkeypatch):
+        self._serve(
+            monkeypatch,
+            [self._issue(1)],
+            events=[
+                self._event("labeled", "2026-08-02T12:00:00Z"),
+                self._event("labeled", "2026-08-14T12:00:00Z"),
+            ],
+        )
+        assert setup.proposal_clock(1) == "2026-08-14T12:00:00Z"
+
+    # --- the thirty-day clock ---------------------------------------------
+
+    def test_a_lapsed_issue_is_findable_at_all(self, monkeypatch):
+        """The whole point: nothing enumerated these before."""
+        self._serve(
+            monkeypatch,
+            [self._issue(200)],
+            events=[self._event("unlabeled", "2026-07-01T12:00:00Z")],
+        )
+        items, error = setup.lapsed_items("fleet", now=self.NOW)
+        assert error == ""
+        assert [item["number"] for item in items] == [200]
+        assert items[0]["days_lapsed"] == 46
+
+    @pytest.mark.parametrize("label", ["cowork:proposal", "cowork:queued", "claude-implement", "codeql:py/rule"])
+    def test_a_live_issue_is_never_lapsed(self, monkeypatch, label):
+        """Each of these means something is still happening to the issue, and
+        step 4 must never close one. Enforced by the query rather than by the
+        routine remembering four rules."""
+        self._serve(
+            monkeypatch,
+            [self._issue(200, labels=("workstream:fleet", label))],
+            events=[self._event("unlabeled", "2026-07-01T12:00:00Z")],
+        )
+        items, _ = setup.lapsed_items("fleet", now=self.NOW)
+        assert items == []
+
+    def test_an_issue_that_never_carried_the_label_is_not_a_lapse(self, monkeypatch):
+        """A hand-filed issue is not a lapsed question; closing one on a guess is
+        the destructive direction."""
+        self._serve(monkeypatch, [self._issue(200)], events=[])
+        items, _ = setup.lapsed_items("fleet", now=self.NOW)
+        assert items == []
+
+    def test_an_unreadable_query_is_none_and_never_an_empty_list(self, monkeypatch):
+        """Step 4 *closes* on this answer. An empty list would be a close driven
+        by a failed read; None is inert."""
+        self._serve(monkeypatch, None, ok=False, error="boom")
+        items, error = setup.lapsed_items("fleet", now=self.NOW)
+        assert items is None
+        assert error == "boom"
+        assert setup.lapsed_report("fleet", now=self.NOW)["lapsed"] is None
+
+    def test_only_the_ones_past_close_days_are_due(self, monkeypatch):
+        self._serve(
+            monkeypatch,
+            [self._issue(200), self._issue(201)],
+            events=[self._event("unlabeled", "2026-08-14T12:00:00Z")],
+        )
+        report = setup.lapsed_report("fleet", now=self.NOW)
+        assert report["lapsed"] == 2
+        assert report["due"] == 0
+        assert report["close_days"] == setup.CLOSE_DAYS
+
+    def test_a_long_lapsed_one_is_due(self, monkeypatch):
+        self._serve(
+            monkeypatch,
+            [self._issue(200)],
+            events=[self._event("unlabeled", "2026-06-01T12:00:00Z")],
+        )
+        assert setup.lapsed_report("fleet", now=self.NOW)["due"] == 1
+
+    def test_the_report_refuses_an_unknown_workstream(self, capsys):
+        assert setup.report_lapsed("not-a-workstream") == 2
+
+    def test_the_report_covers_every_workstream_when_unnamed(self, monkeypatch, capsys):
+        self._serve(monkeypatch, [])
+        assert setup.report_lapsed(None, now=self.NOW) == 0
+        rows = json.loads(capsys.readouterr().out)
+        assert {row["workstream"] for row in rows} == set(setup.parse_workstreams())
+
+    def test_nothing_lapsed_is_not_a_failure(self, monkeypatch, capsys):
+        """The goal state. A routine branching on the exit status would read a
+        clean queue as a broken run."""
+        self._serve(monkeypatch, [])
+        assert setup.report_lapsed("fleet", now=self.NOW) == 0
+
+
+class TestTheDigestCanRunItsOwnStepFour:
+    """The prose and the tooling have to agree, because the prose is the prompt."""
+
+    DIGEST = (ROOT / "cowork" / "routines" / "cron" / "digest.md").read_text(encoding="utf-8")
+
+    def test_the_thirty_day_close_names_the_command_that_finds_its_candidates(self):
+        assert "--lapsed" in self.DIGEST
+
+    def test_the_held_line_reads_the_lapse_date_off_the_row(self):
+        assert "lapses_on" in self.DIGEST
+
+    def test_the_lapse_date_field_is_one_proposal_slots_actually_emits(self, monkeypatch):
+        monkeypatch.setattr(setup, "_label_event_at", lambda number, verb: "")
+        monkeypatch.setattr(setup, "open_proposals", lambda ws: ([{"number": 1, "title": "t", "created_at": ""}], ""))
+        monkeypatch.setattr(setup, "queued_items", lambda ws: ([], ""))
+        row = setup.proposal_slots("fleet")["blocking"][0]
+        for field in ("number", "age_days", "lapses_on"):
+            assert field in row, f"digest.md's Held line reads {field} off this row"
+
+    def test_an_unreadable_lapse_query_is_never_reported_as_nothing_lapsed(self):
+        assert "close nothing that run" in self.DIGEST.lower()
+
+
+class TestReportOwner:
+    """`--owner` is what `house-rules.md` now tells every sweep to run on an
+    out-of-charter find, and it had no test at all.
+
+    The routing decides whose *slots* a proposal takes. Issue #170 was a
+    `test_surface_parity.py` find — platform's file — labelled
+    `workstream:analysis`, and it held one of analysis's two slots for ten days
+    over a file analysis may not open.
+    """
+
+    def test_a_claimed_path_routes_to_its_charter(self, capsys):
+        assert setup.report_owner("src/yeaboi/retro/engine.py") == 0
+        assert json.loads(capsys.readouterr().out)["workstream"] == "retro"
+
+    def test_an_unroutable_path_is_an_answer_rather_than_a_failure(self, capsys):
+        """The caller is a scribe deciding a label. A non-zero exit reads as "the
+        tool broke" rather than "put this in front of a person"."""
+        assert setup.report_owner("some/path/nothing/claims.py") == 0
+        assert json.loads(capsys.readouterr().out)["workstream"] is None
+
+    def test_the_constitution_is_never_routed_to_a_workstream(self, capsys):
+        assert setup.report_owner("cowork/house-rules.md") == 0
+        assert json.loads(capsys.readouterr().out)["workstream"] is None
+
+    def test_the_answer_names_the_path_it_was_asked_about(self, capsys):
+        setup.report_owner("src/yeaboi/retro/engine.py")
+        assert json.loads(capsys.readouterr().out)["path"] == "src/yeaboi/retro/engine.py"

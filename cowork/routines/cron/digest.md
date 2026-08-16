@@ -360,6 +360,22 @@ The single decision point. It is the only routine that posts proposals to Slack.
    find back, which is the fleet saying it stopped mattering. That is a decision made on evidence
    rather than on silence, and it is the only thing that may spend the rejection marker.
 
+   **A lapsed issue is not in step 1's collection, so ask for it by name.** Step 1 collects by
+   `cowork:proposal`, and a lapse takes exactly that label off — so nothing above enumerates these
+   and this half could never fire on anything:
+
+   ```bash
+   uv run python scripts/cowork_setup.py --lapsed
+   ```
+
+   Each row is one workstream with `lapsed`, `due`, and an `items` list carrying `number`,
+   `lapsed_at` and `days_lapsed`. **Close the `items` whose `days_lapsed` is at or past
+   `close_days`, and nothing else** — the comparison is arithmetic there rather than a date read
+   off a comment, for the same reason `slots` is not counted by eye. `lapsed: null` is an
+   unreadable query: **close nothing that run and say so in the run log.** The command already
+   withholds anything carrying `cowork:queued`, `claude-implement` or a `codeql:` prefix, so the
+   never-touch rules above are enforced by the query rather than by remembering them.
+
    Never lapse and never close an issue carrying `claude-implement`, and **never touch one carrying
    `cowork:queued`.** A queued item is work waiting on the fleet, not a question waiting on a human,
    so a fourteen-day clock is measuring the wrong thing on it.
@@ -435,9 +451,14 @@ The single decision point. It is the only routine that posts proposals to Slack.
    - **Held** — a workstream at its proposal cap. `uv run python scripts/cowork_setup.py
      --proposal-slots` with no argument answers for all seventeen at once; list every row with
      `slots` of 0. Line one is `**<workstream>**` and the count, `— <n> open proposals, cap 2`;
-     line two is `— ` and the oldest blocking issues by number, age **and lapse date**, from the
-     row's `blocking` list, e.g. `— holding on #146 (7d, lapses 23 Aug), #152 (6d, lapses 24 Aug)`.
-     Those are the issues to answer, and answering one is what reopens the slot.
+     line two is `— ` and the oldest blocking issues, one per entry in the row's `blocking` list,
+     each rendered `#<number> (<age_days>d, lapses <lapses_on>)` — e.g. `— holding on #146 (7d,
+     lapses 23 Aug), #152 (6d, lapses 24 Aug)`. **All three fields are read off the row; none of
+     them is computed here.** `lapses_on` exists because this line used to ask for a lapse date the
+     payload did not carry, which left a model doing calendar arithmetic on fourteen days by eye —
+     and getting it wrong on exactly the issues that had bounced, since those age from when the
+     question came back rather than from when it was filed. Those are the issues to answer, and
+     answering one is what reopens the slot.
 
      **The date is the part that carries information a re-read does not.** This section is posted
      every morning, and a bare age on the same five issues is the same message with one number

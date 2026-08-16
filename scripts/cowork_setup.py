@@ -2412,6 +2412,139 @@ def _age_days(stamp: str, now: datetime) -> int | None:
     return max(0, (now - created).days)
 
 
+# `digest.md` step 4's first clock: a proposal nobody has answered in this many
+# days lapses — the label comes off and the issue stays open.
+LAPSE_DAYS = 14
+
+
+def proposal_clock(number: int) -> str:
+    """When ``cowork:proposal`` was last applied to an issue, or "".
+
+    ``digest.md`` step 4 ages a proposal from this rather than from ``createdAt``,
+    and says why: a proposal that was queued and then bounced back
+    (``sweep-procedure.md`` step 5) keeps its original filing date, so an
+    eight-day-old issue returning to the queue would have six days to be answered
+    rather than fourteen.
+
+    ``GET /repos/{slug}/issues/{n}/events`` rather than ``/timeline``: events is
+    what ``tests/fixtures/cowork_github_access_live.json`` records as served by a
+    routine session's egress proxy, and it carries the ``labeled`` entries. "" is
+    the documented fallback and the caller ages from ``created_at`` — which is the
+    right answer for every proposal that never bounced, i.e. nearly all of them.
+    """
+    return _label_event_at(number, "labeled")
+
+
+def _label_event_at(number: int, verb: str) -> str:
+    """The most recent ``labeled``/``unlabeled`` of ``cowork:proposal``, or "".
+
+    One reader for both directions: applying the label starts the fourteen-day
+    lapse clock and removing it starts the thirty-day close clock, and the two
+    must not drift apart in how they read the same event list.
+    """
+    slug = repo_slug()
+    if not slug:
+        return ""
+    path = f"/repos/{slug}/issues/{number}/events"
+    if TRANSPORT == "gh":
+        if shutil.which("gh") is None:
+            return ""
+        result = _gh("api", "--paginate", f"{path.lstrip('/')}?per_page=100")
+        if result.returncode != 0:
+            return ""
+        try:
+            events = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            return ""
+    else:
+        answer = _api_paged(path)
+        if not answer.ok:
+            return ""
+        events = answer.data
+    if not isinstance(events, list):
+        return ""
+    stamps = []
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") != verb:
+            continue
+        label = event.get("label")
+        if isinstance(label, dict) and label.get("name") == PROPOSAL_LABEL:
+            stamps.append(event.get("created_at") or "")
+    stamps = [stamp for stamp in stamps if stamp]
+    return max(stamps) if stamps else ""
+
+
+def lapsed_items(workstream: str, now: datetime | None = None) -> tuple[list[dict] | None, str]:
+    """The lapsed questions for one workstream — open, unlabelled, unanswered.
+
+    **This is the query `digest.md` step 4's second half had no way to run.**
+    Step 1 collects by ``cowork:proposal``; a lapsed issue has had exactly that
+    label taken off, so nothing enumerated it and "at 30 days lapsed, close it"
+    could never fire on anything. Lapsed issues accumulated open for ever and
+    ``aged-out`` — which step 4 reserves for a find the fleet declined to bring
+    back — was unreachable.
+
+    A lapsed issue is an open one carrying a ``workstream:`` label and **none** of
+    ``cowork:proposal`` (it would still be a question), ``cowork:queued`` (it is
+    work in flight, and step 4 may never touch it), ``claude-implement`` (a human
+    approved it) or a ``codeql:`` prefix (never lapsed, so never lapsed-and-closed
+    either). ``days_lapsed`` is measured from the ``unlabeled`` event, not from
+    the filing, so it is the age of the *silence*.
+
+    None rather than an empty list on failure, the rule the whole file follows: a
+    close driven by a query that could not be asked is the destructive direction.
+    """
+    issues, error = _issues_labelled(f"workstream:{_segment(workstream)}", None)
+    if issues is None:
+        return None, error
+    moment = now or datetime.now(UTC)
+    lapsed = []
+    for issue in issues:
+        names = _labels_of(issue)
+        if names & {PROPOSAL_LABEL, QUEUE_LABEL, "claude-implement"}:
+            continue
+        if any(name.startswith("codeql:") for name in names):
+            continue
+        since = _unlabelled_at(issue.get("number") or 0)
+        if not since:
+            # No recorded removal means it never carried the label — an issue
+            # filed by hand, not a lapse. Skipped rather than closed on a guess.
+            continue
+        lapsed.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "lapsed_at": since,
+                "days_lapsed": _age_days(since, moment),
+            }
+        )
+    lapsed.sort(key=lambda item: (-(item["days_lapsed"] or 0), item["number"] or 0))
+    return lapsed, ""
+
+
+def _unlabelled_at(number: int) -> str:
+    """When ``cowork:proposal`` was last *removed*, or "" — the lapse moment."""
+    return _label_event_at(number, "unlabeled")
+
+
+def _lapse_date(stamp: str) -> str:
+    """``23 Aug`` — when ``LAPSE_DAYS`` runs out on a question asked at ``stamp``.
+
+    Rendered here rather than by the routine for the reason the whole file
+    exists: ``digest.md``'s ⏸️ **Held** line quotes this date, and a model doing
+    calendar arithmetic on fourteen days by eye is the failure
+    ``--proposal-slots`` was written to stop one line earlier in the same
+    sentence.
+    """
+    try:
+        asked = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return ""
+    if asked.tzinfo is None:
+        asked = asked.replace(tzinfo=UTC)
+    return f"{asked + timedelta(days=LAPSE_DAYS):%-d %b}"
+
+
 def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
     """How many proposals one workstream may still file, and what is holding it.
 
@@ -2449,14 +2582,23 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
             "error": error,
         }
     moment = now or datetime.now(UTC)
-    blocking = [
-        {
-            "number": issue.get("number"),
-            "title": issue.get("title", ""),
-            "age_days": _age_days(issue.get("created_at", ""), moment),
-        }
-        for issue in issues
-    ]
+    # Both fields come off the same clock, and the clock is `digest.md` step 4's:
+    # the last time the question was *asked*, not the day the issue was filed. A
+    # bounced proposal keeps its `created_at`, so ageing from that would print an
+    # age and a lapse date that disagree on the one issue where it matters.
+    blocking = []
+    for issue in issues:
+        asked = proposal_clock(issue.get("number") or 0) or issue.get("created_at", "")
+        blocking.append(
+            {
+                "number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "age_days": _age_days(asked, moment),
+                # Rendered, never left to the reader: `digest.md`'s ⏸️ Held line
+                # quotes this and used to be asked for a date nothing produced.
+                "lapses_on": _lapse_date(asked),
+            }
+        )
     blocking.sort(key=lambda item: (-(item["age_days"] or 0), item["number"] or 0))
     return {
         "workstream": workstream,
@@ -2638,6 +2780,49 @@ def report_queued(workstream: str | None, now: datetime | None = None) -> int:
         print(json.dumps(queue_report(workstream, now), indent=2))
         return 0
     print(json.dumps([queue_report(name, now) for name in parse_workstreams()], indent=2))
+    return 0
+
+
+# `digest.md` step 4's second clock: a question that has been lapsed this long
+# without any sweep bringing it back is one the fleet declined to re-ask.
+CLOSE_DAYS = 30
+
+
+def lapsed_report(workstream: str, now: datetime | None = None) -> dict:
+    """One workstream's lapsed questions, and which of them are due to close.
+
+    ``due`` is the answer step 4 acts on, so the thirty-day comparison is
+    arithmetic here rather than a date a model reads off a comment — the same
+    reason ``slots`` is not counted by eye one section earlier.
+    """
+    items, error = lapsed_items(workstream, now)
+    if items is None:
+        return {"workstream": workstream, "lapsed": None, "due": None, "items": [], "error": error}
+    due = [item for item in items if (item["days_lapsed"] or 0) >= CLOSE_DAYS]
+    return {
+        "workstream": workstream,
+        "lapsed": len(items),
+        "due": len(due),
+        "close_days": CLOSE_DAYS,
+        "items": items,
+        "error": "",
+    }
+
+
+def report_lapsed(workstream: str | None, now: datetime | None = None) -> int:
+    """Print the lapsed questions for one workstream, or for all seventeen.
+
+    Same shape and same exit-code rule as `report_queued`: nothing lapsed is the
+    goal state, not a failure, so the status stays 0 either way.
+    """
+    if workstream:
+        known = parse_workstreams()
+        if workstream not in known:
+            print(f"unknown workstream: {workstream} (known: {', '.join(known)})", file=sys.stderr)
+            return 2
+        print(json.dumps(lapsed_report(workstream, now), indent=2))
+        return 0
+    print(json.dumps([lapsed_report(name, now) for name in parse_workstreams()], indent=2))
     return 0
 
 
@@ -4484,6 +4669,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="print the area glyph per workstream, from README.md's table",
     )
     parser.add_argument(
+        "--lapsed",
+        nargs="?",
+        const="",
+        metavar="WORKSTREAM",
+        help="print the lapsed questions and which are due to close (omit the name for all seventeen; "
+        "lapsed=null means the query failed)",
+    )
+    parser.add_argument(
         "--queued",
         nargs="?",
         const="",
@@ -4608,6 +4801,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         github_ready()
         return migrate_proposals(apply=args.yes)
+
+    if args.lapsed is not None:
+        # Same shape as --proposal-slots above. `lapsed: null` on no transport is
+        # the safe direction here specifically: step 4 *closes* on this answer,
+        # and an unreadable query reported as "nothing lapsed" is inert while one
+        # reported as an empty list would be a close driven by a failed read.
+        github_ready()
+        return report_lapsed(args.lapsed or None)
 
     if args.queued is not None:
         # Same shape as --proposal-slots above: a read that needs a transport and

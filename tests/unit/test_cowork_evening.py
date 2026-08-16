@@ -78,8 +78,9 @@ def _no_network(monkeypatch):
     """
     monkeypatch.setattr(evening, "_get", lambda path: None)
     monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
-    monkeypatch.setattr(evening, "_installable", lambda: "3.9.0rc14")
-    monkeypatch.setattr(evening, "review_verdict", lambda number: "")
+    monkeypatch.setattr(evening, "_installable", lambda: ("3.9.0rc14", ""))
+    monkeypatch.setattr(evening, "review_verdict", lambda number: ("", None))
+    monkeypatch.setattr(evening, "ci_state", lambda sha: "")
 
 
 def _serve(monkeypatch, *, closed=(), opened=()):
@@ -262,7 +263,7 @@ class TestTheRenderedBlock:
         assert "→ `3.9.0rc14`" in lines[0]
 
     def test_nothing_published_says_so_rather_than_naming_a_stale_version(self, monkeypatch):
-        monkeypatch.setattr(evening, "_installable", lambda: "")
+        monkeypatch.setattr(evening, "_installable", lambda: ("", ""))
         lines = self._lines(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
         assert lines[0].endswith("→ no new pre-release")
         assert not any(line.startswith("`pip install") for line in lines)
@@ -310,10 +311,11 @@ class TestReviewVerdict:
     """Read or omitted, never invented — and never the wrong one."""
 
     def _verdict(self, monkeypatch, reviews):
+        """The verdict half only — the timestamp half has its own tests below."""
         monkeypatch.undo()
         monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
         monkeypatch.setattr(evening, "_get", lambda path: reviews)
-        return evening.review_verdict(1)
+        return evening.review_verdict(1)[0]
 
     def test_an_approval_reads_clean(self, monkeypatch):
         assert self._verdict(monkeypatch, [{"state": "APPROVED", "user": {"login": "a"}}]) == "review clean"
@@ -490,3 +492,387 @@ class TestTheAreaGlyphContract:
         confusion here that costs something."""
         assert "🔐" not in setup.parse_workstream_glyphs().values()
         assert setup.parse_workstream_glyphs()["security"] == "🦺"
+
+
+class TestTheCallerIsNeverItsOwnNoShow:
+    """🩺 fired falsely on every single evening before this class existed.
+
+    ``shipped-standup`` is on the 18:00 agenda and checks in *after* posting, so
+    its name can never be in the list it is handed — and the whole section is the
+    fault the fleet cannot otherwise report on itself. A 🔴 that is wrong every
+    evening is a 🔴 nobody reads, which costs more than the section is worth.
+
+    Every other case in ``TestFleetHealth`` stubs ``setup.agenda`` with a
+    synthetic entry, which is why none of them saw it. These run against the real
+    fleet schedule on purpose.
+    """
+
+    def test_the_real_schedule_never_names_the_routine_that_posts_it(self):
+        zone, _ = setup.display_zone()
+        missing = evening.no_shows(NOW, zone, ["digest", "day-ahead"])
+        assert evening.SELF_ROUTINE not in {item["name"] for item in missing}
+
+    def test_the_real_schedule_still_names_something_that_did_not_run(self):
+        """The exclusion is by name and must not have muted the section."""
+        zone, _ = setup.display_zone()
+        every = {entry["name"] for entry in setup.agenda(NOW.date()).get("today", [])}
+        assert every - {evening.SELF_ROUTINE}, "no other routine on the agenda to assert against"
+        missing = {item["name"] for item in evening.no_shows(NOW, zone, [])}
+        assert missing, "excluding the caller silently emptied the whole section"
+
+    def test_a_routine_named_in_the_agenda_is_still_excluded_when_it_checked_in(self):
+        zone, _ = setup.display_zone()
+        named = {item["name"] for item in evening.no_shows(NOW, zone, [])}
+        one = sorted(named)[0]
+        assert one not in {item["name"] for item in evening.no_shows(NOW, zone, [one])}
+
+
+class TestTheNoShowWindowIsUtcOnBothSides:
+    """The floor is UTC, so the ceiling has to be.
+
+    A UTC due-time was once compared against a *local* ceiling. That breaks two
+    ways at once, and both are silent: a ``DISPLAY_TZ`` past about +6 wraps
+    ``now`` past midnight so the ceiling sorts below everything and 🩺 never
+    fires, and ``cowork_setup._local()`` appends ``" (+1d)"`` to a time landing
+    on another date, which string-sorts below every bare ``HH:MM``.
+    """
+
+    def test_the_window_is_half_open_above_the_schedule_post(self):
+        assert evening._between("05:46", "05:45", "18:00")
+        assert not evening._between("05:45", "05:45", "18:00")
+
+    def test_a_run_still_ahead_of_now_is_excluded(self):
+        assert not evening._between("22:00", "05:45", "18:00")
+
+    def test_an_unparseable_time_is_excluded_rather_than_reported(self):
+        assert not evening._between("", "05:45", "18:00")
+
+    def test_a_far_east_display_zone_does_not_mute_the_section(self, monkeypatch):
+        """+9 renders 18:00 UTC as 03:00 local. Comparing against that ceiling
+        excluded every routine on the agenda and 🩺 silently never fired."""
+        import zoneinfo
+
+        monkeypatch.setattr(setup, "display_zone", lambda: (zoneinfo.ZoneInfo("Asia/Tokyo"), ""))
+        monkeypatch.setattr(
+            setup,
+            "agenda",
+            lambda day: {"today": [{"name": "security-sweep", "times_utc": ["06:00"], "times_local": ["15:00"]}]},
+        )
+        health = evening.build(SINCE, NOW, checked_in=[])["health"]
+        assert health is not None
+        assert "security-sweep" in health["lines"][-1]
+
+    def test_a_local_time_that_wrapped_the_date_is_not_read_as_early(self, monkeypatch):
+        """`_local()` writes `00:30 (+1d)`, which sorts below every bare HH:MM."""
+        monkeypatch.setattr(
+            setup,
+            "agenda",
+            lambda day: {"today": [{"name": "late-thing", "times_utc": ["22:30"], "times_local": ["00:30 (+1d)"]}]},
+        )
+        assert evening.build(SINCE, NOW, checked_in=[])["health"] is None
+
+
+class TestChecks:
+    """Red CI is one of the three ways to be stuck, and it came back.
+
+    The renderer read only `/pulls/{n}/reviews` at first, so a PR red since the
+    hour it opened reported as *building* while the README went on promising the
+    trace behind each merge.
+    """
+
+    def _state(self, monkeypatch, payload):
+        # The autouse fixture stubs `ci_state` itself; these tests want the real one.
+        monkeypatch.undo()
+        monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
+        monkeypatch.setattr(evening, "_get", lambda path: payload)
+        return evening.ci_state("abc123")
+
+    def test_a_failure_is_red(self, monkeypatch):
+        assert self._state(monkeypatch, {"state": "failure", "statuses": [{"context": "ci"}]}) == "ci red"
+
+    def test_an_error_is_red(self, monkeypatch):
+        assert self._state(monkeypatch, {"state": "error", "statuses": [{"context": "ci"}]}) == "ci red"
+
+    def test_a_success_is_green(self, monkeypatch):
+        assert self._state(monkeypatch, {"state": "success", "statuses": [{"context": "ci"}]}) == "ci green"
+
+    def test_a_commit_with_no_statuses_claims_nothing(self, monkeypatch):
+        """The combined API answers `pending` both for a run in flight and for a
+        commit nothing ever reported on, and this repo's Actions report as check
+        runs. Reading that as a fact would mark every open PR stuck."""
+        assert self._state(monkeypatch, {"state": "pending", "statuses": []}) == ""
+
+    def test_a_pending_run_claims_nothing(self, monkeypatch):
+        assert self._state(monkeypatch, {"state": "pending", "statuses": [{"context": "ci"}]}) == ""
+
+    def test_an_unreadable_response_claims_nothing(self, monkeypatch):
+        assert self._state(monkeypatch, None) == ""
+
+    def test_no_sha_is_no_call(self, monkeypatch):
+        monkeypatch.undo()
+        called = []
+        monkeypatch.setattr(evening, "_get", lambda path: called.append(path))
+        assert evening.ci_state("") == ""
+        assert called == []
+
+    def test_a_red_pr_is_stuck_rather_than_building(self, monkeypatch):
+        monkeypatch.setattr(evening, "ci_state", lambda sha: "ci red")
+        _serve(monkeypatch, opened=[pr(9, created_at="2026-08-16T09:00:00Z")])
+        post = evening.build(SINCE, NOW)["posts"][0]
+        assert any("🚧 **Stuck**" in line for line in post["lines"])
+        assert not any("🔨 **Building**" in line for line in post["lines"])
+
+    def test_the_check_result_reaches_the_merged_clause(self, monkeypatch):
+        monkeypatch.setattr(evening, "ci_state", lambda sha: "ci green")
+        _serve(monkeypatch, closed=[pr(1, labels=["cowork", "workstream:analysis"], merged_at="2026-08-16T14:00:00Z")])
+        post = evening.build(SINCE, NOW)["posts"][0]
+        assert any("ci green" in line for line in post["lines"])
+
+
+class TestAChangesRequestedCrossingFires:
+    """A block on day 2 is stuck on day 2.
+
+    Dating that crossing by *age* left it unannounced until day 7 — and for ever
+    if it merged first, which is the case the area most needed to hear about.
+    """
+
+    def _blocked(self, monkeypatch, when):
+        monkeypatch.setattr(evening, "review_verdict", lambda number: ("changes requested", when))
+
+    def test_a_block_inside_the_window_fires_a_post(self, monkeypatch):
+        self._blocked(monkeypatch, datetime(2026, 8, 16, 11, 0, tzinfo=UTC))
+        _serve(monkeypatch, opened=[pr(9, created_at="2026-08-01T09:00:00Z")])
+        assert evening.build(SINCE, NOW)["posts"]
+
+    def test_a_block_before_the_window_does_not_re_announce(self, monkeypatch):
+        """The standing state must not re-fire nightly."""
+        self._blocked(monkeypatch, datetime(2026, 8, 10, 11, 0, tzinfo=UTC))
+        _serve(monkeypatch, opened=[pr(9, created_at="2026-08-12T09:00:00Z")])
+        assert evening.build(SINCE, NOW)["posts"] == []
+
+    def test_the_verdict_carries_the_moment_of_the_surviving_block(self, monkeypatch):
+        monkeypatch.undo()
+        monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
+        monkeypatch.setattr(
+            evening,
+            "_get",
+            lambda path: [
+                {"state": "CHANGES_REQUESTED", "user": {"login": "a"}, "submitted_at": "2026-08-10T09:00:00Z"},
+                {"state": "CHANGES_REQUESTED", "user": {"login": "b"}, "submitted_at": "2026-08-14T09:00:00Z"},
+            ],
+        )
+        verdict, when = evening.review_verdict(1)
+        assert verdict == "changes requested"
+        assert when == datetime(2026, 8, 14, 9, 0, tzinfo=UTC)
+
+    def test_an_approval_carries_no_moment(self, monkeypatch):
+        monkeypatch.undo()
+        monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
+        monkeypatch.setattr(
+            evening,
+            "_get",
+            lambda path: [{"state": "APPROVED", "user": {"login": "a"}, "submitted_at": "2026-08-14T09:00:00Z"}],
+        )
+        assert evening.review_verdict(1) == ("review clean", None)
+
+
+class TestTheReleaseChannelReportsItsOwnBlindness:
+    """ "" renders as *no new pre-release*, which is a claim about the world."""
+
+    def test_an_unreadable_channel_is_a_warning(self, monkeypatch):
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel"))
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        warnings = evening.build(SINCE, NOW)["payload"]["warnings"]
+        assert any("could not read the release channel" in warning for warning in warnings)
+
+    def test_an_unreadable_channel_makes_no_claim_in_the_title(self, monkeypatch):
+        """Three states, not two. "" means *nothing was published* only when the
+        channel answered; rendering an unanswered read as that sentence is a
+        claim about the world assembled out of a failure — and the warning
+        telling the routine so does not un-post the message."""
+        monkeypatch.setattr(evening, "_installable", lambda: ("", "could not read the release channel"))
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert lines[0].endswith("· 1 merged")
+        assert "no new pre-release" not in lines[0]
+        assert not any(line.startswith("`pip install") for line in lines)
+
+    def test_a_channel_that_answered_nothing_still_says_so(self, monkeypatch):
+        """The distinction only works if the ordinary empty case is unchanged."""
+        monkeypatch.setattr(evening, "_installable", lambda: ("", ""))
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        assert evening.build(SINCE, NOW)["posts"][0]["lines"][0].endswith("→ no new pre-release")
+
+    def test_a_failed_import_does_not_kill_the_run(self, monkeypatch):
+        def explode():
+            raise RuntimeError("no git here")
+
+        monkeypatch.undo()
+        monkeypatch.setattr(evening, "_get", lambda path: None)
+        import release_channel
+
+        monkeypatch.setattr(release_channel, "pending", explode)
+        value, note = evening._installable()
+        assert value == ""
+        assert "could not read the release channel" in note
+
+    def test_an_unexpected_shape_is_a_warning_rather_than_a_claim(self, monkeypatch):
+        monkeypatch.undo()
+        import release_channel
+
+        monkeypatch.setattr(release_channel, "pending", lambda: "not a dict")
+        value, note = evening._installable()
+        assert value == ""
+        assert note
+
+
+class TestTheInstallFooter:
+    def test_a_post_with_no_merge_carries_no_install_line(self, monkeypatch):
+        """A post that fired because a PR opened contributed nothing to that
+        build, and an install line under it advertises a version it is not in."""
+        _serve(monkeypatch, opened=[pr(9, created_at="2026-08-16T09:00:00Z")])
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert not any(line.startswith("`pip install") for line in lines)
+
+    def test_a_post_with_a_merge_still_carries_one(self, monkeypatch):
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        lines = evening.build(SINCE, NOW)["posts"][0]["lines"]
+        assert any(line.startswith("`pip install --pre yeaboi==3.9.0rc14`") for line in lines)
+
+
+class TestTheEntryPoint:
+    """`main()` is what the routine actually invokes, and had no test at all."""
+
+    def test_it_prints_the_three_top_level_keys(self, monkeypatch, capsys):
+        import json
+
+        _serve(monkeypatch)
+        assert evening.main([]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert set(payload) == {"payload", "posts", "health"}
+
+    def test_a_naive_since_does_not_kill_the_run(self, monkeypatch, capsys):
+        """A human types `--since` and the `Z` is easy to leave off. That parsed
+        cleanly and then raised TypeError on the first comparison."""
+        import json
+
+        _serve(monkeypatch, closed=[pr(1, merged_at="2026-08-16T14:00:00Z")])
+        assert evening.main(["--since", "2026-08-16T00:00:00"]) == 0
+        assert json.loads(capsys.readouterr().out)["posts"]
+
+    def test_a_naive_stamp_is_read_as_utc(self):
+        assert evening._moment("2026-08-16T09:00:00") == datetime(2026, 8, 16, 9, 0, tzinfo=UTC)
+
+    def test_no_checked_in_flag_means_no_health_message(self, monkeypatch, capsys):
+        import json
+
+        _serve(monkeypatch)
+        evening.main([])
+        assert json.loads(capsys.readouterr().out)["health"] is None
+
+
+class TestThePagedWalk:
+    """A short page ends the walk, and only GitHub decides what short means."""
+
+    def _pages(self, monkeypatch, pages):
+        monkeypatch.setattr(evening, "_repo_path", lambda suffix: f"/repos/o/r{suffix}")
+
+        def get(path):
+            number = int(path.split("&page=")[1]) if "&page=" in path else 1
+            return pages[number - 1] if number <= len(pages) else []
+
+        monkeypatch.setattr(evening, "_get", get)
+
+    def test_one_malformed_row_does_not_end_a_full_page_early(self, monkeypatch):
+        """`len(items)` is measured after filtering non-dicts, so a single junk
+        entry on a full page read as the last page and the walk stopped."""
+        full = [pr(n, updated_at="2026-08-16T17:00:00Z") for n in range(99)] + ["junk"]
+        self._pages(monkeypatch, [full, [pr(500, updated_at="2026-08-16T17:00:00Z")]])
+        collected = evening.fetch_closed_since(SINCE)
+        assert collected is not None
+        assert 500 in [item["number"] for item in collected]
+
+    def test_the_walk_stops_at_the_window_edge(self, monkeypatch):
+        full = [pr(n, updated_at="2026-08-01T17:00:00Z") for n in range(100)]
+        self._pages(monkeypatch, [full, [pr(500)]])
+        collected = evening.fetch_closed_since(SINCE)
+        assert 500 not in [item["number"] for item in collected]
+
+    def test_running_out_of_pages_is_blindness_rather_than_a_short_answer(self, monkeypatch):
+        full = [pr(n, updated_at="2026-08-16T17:00:00Z") for n in range(100)]
+        self._pages(monkeypatch, [full] * (evening.MAX_PAGES + 1))
+        assert evening.fetch_closed_since(SINCE) is None
+
+
+class TestTheTransportSeams:
+    """`_get` is the only place the two transports are chosen, and had no test.
+
+    A routine session has a GitHub *token* and no `gh` CLI, and its egress proxy
+    refuses GraphQL — so `gh pr list --json` cannot work there and both branches
+    have to ask the same REST question. A branch that only ever runs unattended
+    is exactly the one nothing notices breaking.
+    """
+
+    def _no_stub(self, monkeypatch):
+        monkeypatch.undo()
+
+    def test_the_gh_branch_parses_its_stdout(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "gh_available", lambda: True)
+        monkeypatch.setattr(
+            evening.transport,
+            "gh",
+            lambda *args: type("R", (), {"returncode": 0, "stdout": '[{"number": 7}]'})(),
+        )
+        assert evening._get("/repos/o/r/pulls") == [{"number": 7}]
+
+    def test_a_failed_gh_call_is_blindness(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "gh_available", lambda: True)
+        monkeypatch.setattr(
+            evening.transport,
+            "gh",
+            lambda *args: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
+        assert evening._get("/repos/o/r/pulls") is None
+
+    def test_an_html_error_page_is_blindness_rather_than_a_crash(self, monkeypatch):
+        """An egress proxy answers with HTML, not JSON."""
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "gh_available", lambda: True)
+        monkeypatch.setattr(
+            evening.transport,
+            "gh",
+            lambda *args: type("R", (), {"returncode": 0, "stdout": "<html>403</html>"})(),
+        )
+        assert evening._get("/repos/o/r/pulls") is None
+
+    def test_the_rest_branch_is_used_when_there_is_no_cli(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "gh_available", lambda: False)
+        monkeypatch.setattr(
+            evening.transport,
+            "api",
+            lambda verb, path: type("R", (), {"ok": True, "data": [{"number": 9}]})(),
+        )
+        assert evening._get("/repos/o/r/pulls") == [{"number": 9}]
+
+    def test_a_failed_rest_call_is_blindness(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "gh_available", lambda: False)
+        monkeypatch.setattr(
+            evening.transport,
+            "api",
+            lambda verb, path: type("R", (), {"ok": False, "data": None})(),
+        )
+        assert evening._get("/repos/o/r/pulls") is None
+
+    def test_an_unresolvable_checkout_is_no_path_rather_than_a_wrong_one(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "resolve_slug", lambda root: "")
+        assert evening._repo_path("/pulls") is None
+
+    def test_the_slug_is_segment_escaped(self, monkeypatch):
+        self._no_stub(monkeypatch)
+        monkeypatch.setattr(evening.transport, "resolve_slug", lambda root: "o/r")
+        assert evening._repo_path("/pulls") == "/repos/o/r/pulls"

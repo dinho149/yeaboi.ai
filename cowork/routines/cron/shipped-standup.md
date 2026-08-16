@@ -87,7 +87,12 @@ nothing here is reactable, and a reply shape that looked like the digest's would
      its notification preview. 🔐 is not one of them — it belongs to the security *disclosure*
      lane, and security's area glyph is 🦺.
    - **A missing clause is honest and an invented one is the whole message's credibility.** A
-     review verdict, a merge time, a regression run: read or omitted, never guessed.
+     review verdict, a check result, a merge time, a regression run: read or omitted, never
+     guessed. `ci green`/`ci red` appear only when the commit actually carried statuses — a commit
+     with none reads back as *pending*, which means "I was not told" and never "in flight".
+   - **Stuck is three things, not one**: open past seven days, red checks, or a standing
+     `changes requested`. All three are computed by the script; the boundary is
+     `STUCK_DAYS` and it is unchanged by the fan-out.
    - **A divider is the only separator that survives a list.** Slack renders `1.` items as a list
      block and eats the blank line that ends it, so a heading written after a list arrives glued to
      the final item. This was measured against `#yeaboi-claude`, not assumed.

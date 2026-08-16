@@ -67,12 +67,18 @@ and always arrive; the rest are exceptions reporting themselves. Every message o
 title line carrying a fixed emoji, so a message is identifiable from its notification preview
 before it is opened.
 
-**Every message is about one area, with one deliberate exception.** 🗳️ spans all seventeen
-workstreams because it is the daily digest and the one message that *asks* rather than tells; a
-reader answering it wants everything waiting on them in one place. Everything else names its area
-in the title line and stays inside it. That was not true until 2026-08-16: the evening post was one
-roll-up grouped by *type*, so a fix in `analysis/` arrived as a `[bug]` line between a go-migration
-wave and a platform chore, and the twelve areas with no other voice had no voice at all.
+**Every message about the work is about one area.** When a workstream ships, opens or gets stuck,
+that arrives as a message naming that workstream in its title line and containing nothing else.
+That was not true until 2026-08-16: the evening post was one roll-up grouped by *type*, so a fix in
+`analysis/` arrived as a `[bug]` line between a go-migration wave and a platform chore, and the
+twelve areas with no other voice had no voice at all.
+
+**The messages that are not about the work are not about an area, and could not be.** 🗳️ spans all
+seventeen because it is the daily digest and the one message that *asks* rather than tells — a
+reader answering it wants everything waiting on them in one place. 📅 is a schedule, 🩺 reports the
+routines that never ran (a no-show has no area), and 🏷️/🎉/🚀/🚨 are about the release and the fleet
+itself. The rule is not "one area per message" but **one subject per message**, and for anything a
+workstream did, the subject is that workstream.
 
 **Every run also checks in, and the budget above is unchanged, because a check-in is a reply.**
 Each routine closes with two lines under that morning's 📅 message — worked or not, what it did,
