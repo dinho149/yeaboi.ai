@@ -73,15 +73,16 @@
  * recomputed every frame of that growth.
  */
 .dockApp {
-  --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  /* The bar at the top of the screen, upside down: same hairline, same three
+     shadows, and the same inset off the edge it is anchored to. Its ends are
+     rounded off entirely, which is what tells it apart from the top bar. */
   border: 1px solid var(--hairline);
-  border-bottom: none;
-  border-radius: var(--lift) var(--lift) 0 0;
+  border-radius: var(--r-pill);
   background: var(--panel);
   box-shadow:
     var(--edge),
@@ -90,7 +91,7 @@
   cursor: grab;
   touch-action: none;
   left: 0;
-  bottom: var(--app-inset-bottom, 0px);
+  bottom: calc(var(--app-inset-bottom, 0px) + var(--s3));
   transform: translate3d(var(--dock-x, 0px), 0, 0);
   /* No transition, and nothing to see, until it has been measured onto the wall
      — otherwise the first placement animates out of the left-hand corner. */
@@ -234,16 +235,6 @@
   border-color: transparent;
   box-shadow: none;
   color: var(--text);
-}
-
-/* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
-   the border and has to close itself. */
-@media (max-width: 1099px) {
-  [data-host='true'] .dockApp {
-    bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
-    border-bottom: 1px solid var(--hairline);
-    border-radius: var(--r-m);
-  }
 }
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen

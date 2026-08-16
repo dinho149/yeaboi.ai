@@ -1461,9 +1461,99 @@
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
+.room {
+  position: relative;
+}
+
 .presenceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  border: 1px solid transparent;
   border-radius: var(--r-pill);
-  border-color: transparent;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+
+.room:hover .presenceChip,
+.room:focus-within .presenceChip,
+.roomOn .presenceChip {
+  border-color: var(--accent);
+}
+
+/* Dealt out under the chip, one card per person and no panel behind them. The
+   top padding is the bridge: without it the pointer leaves the room on its way
+   from the chip to the first card. */
+.roomList {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: var(--z-popover);
+  margin: 0;
+  padding: var(--s2) 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s1);
+  pointer-events: none;
+}
+
+.roomCard {
+  /* Its place in the deal; Room.tsx overrides it. */
+  --i: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s3);
+  white-space: nowrap;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  font-size: var(--fs-s);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+/* One after another on the way in. Leaving, they go together — a staggered
+   exit reads as the list being reluctant. */
+.room:hover .roomCard,
+.room:focus-within .roomCard,
+.roomOn .roomCard {
+  opacity: 1;
+  transform: none;
+  transition-delay: calc(var(--i) * 45ms);
+}
+
+.room:hover .roomList,
+.room:focus-within .roomList,
+.roomOn .roomList {
+  pointer-events: auto;
+}
+
+.roomYou {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.roomEmpty {
+  color: var(--dim);
 }
 
 /* The headcount is a number, so it is set as one. */

@@ -51,7 +51,6 @@ import {
   Popover,
   PresenceRow,
   ProfileModal,
-  Roster,
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
@@ -71,6 +70,7 @@ import { Duel } from './Duel';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
+import { Room } from './Room';
 import { ticketOptions, TicketPanel } from './Ticket';
 import { useDuelMic } from './useDuelMic';
 import styles from './poker.module.css';
@@ -441,19 +441,7 @@ export function App({ boot }: { boot: PokerBoot }) {
 
           <PresenceRow people={presence.filter((person) => person.name !== name)} />
 
-          <Popover
-            align="left"
-            triggerClassName={styles['presenceChip']}
-            trigger={
-              <>
-                <Icon name="users" />
-                <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
-              </>
-            }
-            label="Who is in the room"
-          >
-            <Roster people={presence} meName={name} />
-          </Popover>
+          <Room people={presence} meName={name} />
         </div>
         </Toolbar>
       }
