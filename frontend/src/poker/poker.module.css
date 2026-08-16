@@ -829,9 +829,13 @@
   animation-delay: 210ms;
 }
 
-/* And the two of them one after the other inside their row. */
-.dualrow .duelist:last-child {
-  animation: floorIn var(--dur-base) var(--ease) 210ms both;
+/* Except the two people, who are not dealt in with the furniture — they travel
+   from their chairs, and Duel.tsx fades their panel up around them as they land.
+   Fading here as well is a second entrance on the same element, which is the
+   flicker underneath the flight. */
+.duel > .dualrow,
+.dualrow .duelist {
+  animation: none;
 }
 
 @keyframes floorIn {
