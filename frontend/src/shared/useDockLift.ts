@@ -18,15 +18,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const LIFT = 0.03;
 /** Sideways room, as a share of the screen's width, before the band goes slack. */
 const SPREAD = 0.5;
-/**
- * `t ** 0.6 * (1 - 0.6t)` at its maximum, `t = 0.625`.
- *
- * The curve is the tether: steep at first, so a small pull moves it plainly;
- * flattening through the middle; and easing off toward the top, so the last
- * third of the screen buys almost nothing. Dividing by its own peak is what
- * makes {@link LIFT} mean the lift rather than roughly half of it.
- */
-const PEAK = 0.4737;
 
 export interface DockLift {
   /** Pixels above its resting place, never negative. */
@@ -69,8 +60,12 @@ export function useDockLift(node: () => HTMLElement | null, dragging: boolean): 
         // not feel further away to somebody standing over its edge.
         const sideways = Math.max(0, box.left - event.clientX, event.clientX - box.right);
         const spread = Math.max(0, 1 - sideways / (window.innerWidth * SPREAD));
-        const pull = (climb ** 0.6 * (1 - 0.6 * climb)) / PEAK;
-        apply(pull * window.innerHeight * LIFT * spread);
+        // Straight through: the dock is at whatever fraction of the way up the
+        // pointer is, so half-way up the screen is half the lift and the full
+        // travel is only spent at the top. A curve that front-loads it — which
+        // this was — is at its maximum by the middle of the screen and has
+        // nothing left for the rest.
+        apply(climb * window.innerHeight * LIFT * spread);
       });
     };
 
