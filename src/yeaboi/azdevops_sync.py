@@ -145,6 +145,13 @@ def sync_stories_to_azdevops(
     # --- Stories ---
     new_story_keys: dict[str, str] = {}
 
+    # Descriptions render against the plan's OWN DoD list and the team's own
+    # section headings — never the hardcoded defaults.
+    from yeaboi.agent.state import map_template_headings, resolve_dod_items
+
+    dod_items = resolve_dod_items(state)
+    headings = map_template_headings(tuple(state.get("ticket_template_sections") or ()))
+
     for story in stories:
         feature = feature_map.get(story.feature_id)
 
@@ -154,7 +161,7 @@ def sync_stories_to_azdevops(
             try:
                 from azure.devops.v7_1.work_item_tracking.models import JsonPatchOperation as _Jpo
 
-                description = _format_story_description_html(story, feature)
+                description = _format_story_description_html(story, feature, dod_items=dod_items, headings=headings)
                 doc = [_Jpo(op="replace", path="/fields/System.Description", value=description)]
                 wit_client.update_work_item(document=doc, id=int(wi_id), project=project)
                 logger.info("Updated AzDO Story description: %s", wi_id)
@@ -177,7 +184,7 @@ def sync_stories_to_azdevops(
             tags_str = "; ".join(tags)
 
             summary = story.title or story.goal
-            description = _format_story_description_html(story, feature)
+            description = _format_story_description_html(story, feature, dod_items=dod_items, headings=headings)
             raw_pri = story.priority
             priority_val = _map_priority_to_azdo(raw_pri.value if hasattr(raw_pri, "value") else str(raw_pri))
 
@@ -627,35 +634,54 @@ def _feature_title_to_tag(title: str) -> str:
     return tag[:80] or "Feature"
 
 
-def _format_story_description_html(story, feature=None) -> str:
-    """Format a UserStory as an HTML description for Azure DevOps."""
+def _format_story_description_html(story, feature=None, *, dod_items=None, headings=None) -> str:
+    """Format a UserStory as an HTML description for Azure DevOps.
+
+    Mirror of jira_sync._format_story_description: renders against the plan's
+    resolved DoD list (not the hardcoded default) and adopts the team's own
+    section headings where learned.
+    """
     from yeaboi.agent.state import DOD_ITEMS
 
+    items = tuple(dod_items) if dod_items else DOD_ITEMS
+    headings = headings or {}
     parts: list[str] = []
 
-    # User story sentence
+    # User story sentence — under the team's summary heading when they have one
+    if headings.get("summary"):
+        parts.append(f"<h3>{headings['summary']}</h3>")
     parts.append(
         f"<p><strong>As a</strong> {story.persona}, <strong>I want to</strong> {story.goal}, "
         f"<strong>so that</strong> {story.benefit}.</p>"
     )
 
-    # Acceptance criteria
+    # Acceptance criteria — GWT triples or the team's free-text criteria
     if story.acceptance_criteria:
-        parts.append("<h3>Acceptance Criteria</h3>")
-        for i, ac in enumerate(story.acceptance_criteria, 1):
-            parts.append(f"<p><strong>AC{i}</strong></p>")
+        parts.append(f"<h3>{headings.get('acceptance_criteria', 'Acceptance Criteria')}</h3>")
+        free_text = [ac for ac in story.acceptance_criteria if ac.text]
+        if len(free_text) == len(story.acceptance_criteria):
             parts.append("<ul>")
-            parts.append(f"<li><strong>Given</strong> {ac.given}</li>")
-            parts.append(f"<li><strong>When</strong> {ac.when}</li>")
-            parts.append(f"<li><strong>Then</strong> {ac.then}</li>")
+            for ac in story.acceptance_criteria:
+                parts.append(f"<li>{ac.text}</li>")
             parts.append("</ul>")
+        else:
+            for i, ac in enumerate(story.acceptance_criteria, 1):
+                if ac.text:
+                    parts.append(f"<p>{ac.text}</p>")
+                    continue
+                parts.append(f"<p><strong>AC{i}</strong></p>")
+                parts.append("<ul>")
+                parts.append(f"<li><strong>Given</strong> {ac.given}</li>")
+                parts.append(f"<li><strong>When</strong> {ac.when}</li>")
+                parts.append(f"<li><strong>Then</strong> {ac.then}</li>")
+                parts.append("</ul>")
 
     # Definition of Done
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(DOD_ITEMS):
-        parts.append("<h3>Definition of Done</h3>")
+    if dod and len(dod) == len(items):
+        parts.append(f"<h3>{headings.get('dod', 'Definition of Done')}</h3>")
         parts.append("<ul>")
-        for item, applicable in zip(DOD_ITEMS, dod):
+        for item, applicable in zip(items, dod):
             if applicable:
                 parts.append(f"<li>&#9745; {item}</li>")
             else:

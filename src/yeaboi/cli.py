@@ -369,6 +369,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--ac-format",
+        choices=["gwt", "bullets"],
+        default=None,
+        help="Acceptance-criteria style for generated stories: 'gwt' (Given/When/Then) or "
+        "'bullets' (clear testable statements). Default: follow the learned team profile "
+        "(or YEABOI_AC_FORMAT).",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -2264,6 +2273,11 @@ def main(argv: list[str] | None = None) -> None:
     # Load ~/.yeaboi/.env before any credential reads.
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
+
+    # --ac-format rides the YEABOI_AC_FORMAT env override that resolve_ac_style
+    # already reads — one seam serves the TUI, REPL and headless paths alike.
+    if getattr(args, "ac_format", None):
+        os.environ["YEABOI_AC_FORMAT"] = args.ac_format
 
     # ── --list-audio-devices: print the mic table and exit ───────────────────
     # After load_user_config() so the currently-configured VOICE_DEVICE can be

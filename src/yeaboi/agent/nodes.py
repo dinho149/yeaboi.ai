@@ -7463,7 +7463,7 @@ def _infer_discipline(story: UserStory) -> Discipline:
     # Combine all textual fields into a single lowercase string for matching
     parts = [story.persona, story.goal, story.benefit]
     for ac in story.acceptance_criteria:
-        parts.extend([ac.given, ac.when, ac.then])
+        parts.extend([ac.given, ac.when, ac.then, ac.text])
     text = " ".join(parts).lower()
 
     words = set(text.split())
@@ -7495,32 +7495,52 @@ def _infer_discipline(story: UserStory) -> Discipline:
 # what it can and collects warnings for the user. No LLM call needed — all rules
 # are deterministic.
 
-_GENERIC_ACS = (
-    AcceptanceCriterion(
-        given="the feature is available",
-        when="the user performs the happy-path workflow",
-        then="the expected outcome is achieved",
-    ),
-    AcceptanceCriterion(
-        given="invalid input is provided",
-        when="the user attempts the action",
-        then="an appropriate error message is shown",
-    ),
-    AcceptanceCriterion(
-        given="an edge case scenario occurs",
-        when="the user encounters unusual conditions",
-        then="the system handles it gracefully",
-    ),
-)
+
+def _generic_acs(ac_style: str = "gwt") -> tuple[AcceptanceCriterion, ...]:
+    """Generic coverage-padding criteria, in the plan's resolved AC style.
+
+    Padding must match how the team's real criteria are written — a bullets
+    plan with Gherkin padding would read as two formats in one ticket.
+    """
+    if ac_style == "bullets":
+        return (
+            AcceptanceCriterion(text="Happy path: the main workflow completes with the expected outcome."),
+            AcceptanceCriterion(text="Error path: invalid input produces a clear, appropriate error message."),
+            AcceptanceCriterion(text="Edge cases: unusual conditions are handled gracefully."),
+        )
+    return (
+        AcceptanceCriterion(
+            given="the feature is available",
+            when="the user performs the happy-path workflow",
+            then="the expected outcome is achieved",
+        ),
+        AcceptanceCriterion(
+            given="invalid input is provided",
+            when="the user attempts the action",
+            then="an appropriate error message is shown",
+        ),
+        AcceptanceCriterion(
+            given="an edge case scenario occurs",
+            when="the user encounters unusual conditions",
+            then="the system handles it gracefully",
+        ),
+    )
 
 
-def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tuple[list[UserStory], list[str]]:
+def _validate_stories(
+    stories: list[UserStory],
+    features: list[Feature],
+    ac_style: str = "gwt",
+    min_acs: int = 3,
+) -> tuple[list[UserStory], list[str]]:
     """Validate stories against the Story Checklist and auto-fix where possible.
 
     # See docs: "Scrum Standards" — Story Checklist
     #
     # Checks:
-    # 1. AC count >= 3 — pads with generic ACs if fewer.
+    # 1. AC count >= min_acs — pads with style-matched generic ACs if fewer.
+    #    min_acs honours a learned team median below 3 (a 1-AC team must not
+    #    be force-padded to 3), and never exceeds 3.
     # 2. Non-empty persona, goal, benefit — sets defaults if empty.
     # 3. Per-feature story count in [MIN_STORIES_PER_FEATURE, MAX_STORIES_PER_FEATURE] — warns if out of range.
     #
@@ -7529,10 +7549,13 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
     Args:
         stories: The parsed stories to validate.
         features: The feature list for per-feature count validation.
+        ac_style: The resolved AC style — padding matches it.
+        min_acs: Minimum AC count per story (clamped to 1..3).
 
     Returns:
         A tuple of (validated_stories, warnings).
     """
+    min_acs = max(1, min(3, min_acs))
     warnings: list[str] = []
     validated: list[UserStory] = []
 
@@ -7567,11 +7590,11 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
             needs_rebuild = True
             warnings.append(f"Story {story.id} had empty benefit — set default.")
 
-        # Check AC count >= 3
-        if len(new_acs) < 3:
+        # Check AC count >= min_acs
+        if len(new_acs) < min_acs:
             added = 0
-            for generic_ac in _GENERIC_ACS:
-                if len(new_acs) >= 3:
+            for generic_ac in _generic_acs(ac_style):
+                if len(new_acs) >= min_acs:
                     break
                 # Only add generic ACs that aren't already present
                 if generic_ac not in new_acs:
@@ -7581,7 +7604,7 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
                 needs_rebuild = True
                 warnings.append(
                     f"Story {story.id} had only {len(story.acceptance_criteria)} AC(s) "
-                    f"— added {added} generic AC(s) to reach 3."
+                    f"— added {added} generic AC(s) to reach {min_acs}."
                 )
 
         if needs_rebuild:
@@ -7620,7 +7643,9 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
     return validated, warnings
 
 
-def _parse_stories_response(raw: str, features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
+def _parse_stories_response(
+    raw: str, features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt"
+) -> list[UserStory]:
     """Parse the LLM's JSON response into a list of UserStory dataclasses.
 
     # See docs: "Scrum Standards" — story format, acceptance criteria
@@ -7649,7 +7674,7 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
 
         parsed = json.loads(text)
         if not isinstance(parsed, list):
-            return _build_fallback_stories(features, analysis)
+            return _build_fallback_stories(features, analysis, ac_style)
 
         # Build a set of valid feature IDs for validation
         valid_feature_ids = {e.id for e in features}
@@ -7693,7 +7718,9 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
             raw_discipline = str(item.get("discipline", "")).lower().strip()
             discipline = Discipline(raw_discipline) if raw_discipline in valid_disciplines else None
 
-            # Parse nested acceptance criteria
+            # Parse nested acceptance criteria — accept every shape regardless
+            # of the requested style (the LLM may disobey): a GWT triple dict,
+            # a free-text dict ({"text": …}), or a bare string.
             raw_acs = item.get("acceptance_criteria", [])
             acs: list[AcceptanceCriterion] = []
             if isinstance(raw_acs, list):
@@ -7702,20 +7729,29 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
                         given = str(ac_item.get("given", "")).strip()
                         when = str(ac_item.get("when", "")).strip()
                         then = str(ac_item.get("then", "")).strip()
+                        text_ac = str(ac_item.get("text", "")).strip()
                         if given and when and then:
                             acs.append(AcceptanceCriterion(given=given, when=when, then=then))
+                        elif text_ac:
+                            acs.append(AcceptanceCriterion(text=text_ac))
+                    elif isinstance(ac_item, str) and ac_item.strip():
+                        acs.append(AcceptanceCriterion(text=ac_item.strip()))
 
             # Fallback: if no valid ACs parsed, add a generic happy-path AC
+            # in the plan's resolved style.
             if not acs:
                 persona = str(item.get("persona", "user"))
                 goal = str(item.get("goal", "perform the action"))
-                acs.append(
-                    AcceptanceCriterion(
-                        given=f"the {persona} is authenticated",
-                        when=f"they {goal}",
-                        then="the operation completes successfully",
+                if ac_style == "bullets":
+                    acs.append(AcceptanceCriterion(text=f"The {persona} can {goal} successfully."))
+                else:
+                    acs.append(
+                        AcceptanceCriterion(
+                            given=f"the {persona} is authenticated",
+                            when=f"they {goal}",
+                            then="the operation completes successfully",
+                        )
                     )
-                )
 
             # Parse Definition of Done applicability flags.
             # LLM returns a 7-element boolean array matching DOD_ITEMS order.
@@ -7752,16 +7788,18 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
             stories.append(story)
 
         if not stories:
-            return _build_fallback_stories(features, analysis)
+            return _build_fallback_stories(features, analysis, ac_style)
 
         return stories
 
     except Exception:
         logger.debug("Failed to parse stories JSON, falling back to deterministic extraction", exc_info=True)
-        return _build_fallback_stories(features, analysis)
+        return _build_fallback_stories(features, analysis, ac_style)
 
 
-def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
+def _build_fallback_stories(
+    features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt"
+) -> list[UserStory]:
     """Build deterministic fallback stories per feature.
 
     # See docs: "Scrum Standards" — story format
@@ -7790,7 +7828,9 @@ def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) 
                 goal=f"use the core features of {feature.title}",
                 benefit=f"I can accomplish the primary objectives of {feature.title}",
                 acceptance_criteria=(
-                    AcceptanceCriterion(
+                    AcceptanceCriterion(text=f"The {end_user} can complete the main {feature.title} workflow.")
+                    if ac_style == "bullets"
+                    else AcceptanceCriterion(
                         given=f"the {end_user} has access to {feature.title}",
                         when="they perform the main workflow",
                         then="the expected outcome is achieved",
@@ -7812,7 +7852,9 @@ def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) 
                 goal=f"set up and validate {feature.title}",
                 benefit="the feature is reliable and properly tested",
                 acceptance_criteria=(
-                    AcceptanceCriterion(
+                    AcceptanceCriterion(text=f"All tests pass and {feature.title} works as deployed.")
+                    if ac_style == "bullets"
+                    else AcceptanceCriterion(
                         given="the development environment is configured",
                         when=f"the {feature.title} feature is deployed",
                         then="all tests pass and the feature works as expected",
@@ -7878,9 +7920,12 @@ def _format_stories(
 
             sections.append("**Acceptance Criteria:**")
             for i, ac in enumerate(story.acceptance_criteria, 1):
-                sections.append(f"  {i}. **Given** {ac.given}")
-                sections.append(f"     **When** {ac.when}")
-                sections.append(f"     **Then** {ac.then}")
+                if ac.text:
+                    sections.append(f"  {i}. {ac.text}")
+                else:
+                    sections.append(f"  {i}. **Given** {ac.given}")
+                    sections.append(f"     **When** {ac.when}")
+                    sections.append(f"     **Then** {ac.then}")
             sections.append("")
 
     # Show validation warnings if any were collected
@@ -7954,9 +7999,29 @@ def story_writer(state: ScrumState) -> dict:
     )
 
     # Resolve DoD items — custom from analysis or default 7
-    from yeaboi.agent.state import resolve_dod_items
+    from yeaboi.agent.state import resolve_ac_style, resolve_dod_items
 
     _dod = resolve_dod_items(state)
+
+    # Resolve the acceptance-criteria style once (session choice > env override
+    # > learned team profile > GWT) and read the team's median AC count off the
+    # profile directly — the prompt rules take these as structured params, not
+    # regex-greps of the calibration markdown.
+    # See docs: "Scrum Standards" — Acceptance Criteria
+    ac_style = resolve_ac_style(state, team_profile)
+    ac_median = round(getattr(getattr(team_profile, "writing_patterns", None), "median_ac_count", 0) or 0)
+    logger.info("story_writer: ac_style=%s median_ac=%d", ac_style, ac_median)
+
+    # The team's learned ticket-template section headings (naming conventions)
+    # — persisted on state so exporters can adopt them on every surface.
+    _tpl_sections: list[str] = []
+    _examples = _load_team_examples(state.get("analysis_profile_id", ""))
+    if _examples:
+        _naming = _examples.get("naming_conventions") or {}
+        for entry in (_naming.get("template_sections") or [])[:8]:
+            heading = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+            if isinstance(heading, str) and heading.strip():
+                _tpl_sections.append(heading.strip())
 
     # Same predicate as the analyzer coercion — the two must not disagree on
     # what "small" means, or the sprint clamp and the story cap would drift.
@@ -7974,6 +8039,8 @@ def story_writer(state: ScrumState) -> dict:
         out_of_scope=_format_epic_list(analysis.out_of_scope),
         team_calibration=team_calibration_text,
         dod_items=_dod,
+        ac_style=ac_style,
+        ac_median_count=ac_median,
         is_low_code=analysis.is_low_code,
         carry_over_items=tuple(state.get("_ceremony_action_items", ()) or ()),
         review_feedback=review_feedback if review_mode else None,
@@ -7989,18 +8056,20 @@ def story_writer(state: ScrumState) -> dict:
         # Single LLM call with low temperature for deterministic JSON output.
         # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
-        stories = _parse_stories_response(response.content, features, analysis)
+        stories = _parse_stories_response(response.content, features, analysis, ac_style)
     except Exception as exc:
         if _should_reraise_llm_error(exc):
             raise
         # LLM call failed entirely — use deterministic fallback.
         logger.warning("LLM call failed in story_writer, using fallback", exc_info=True)
-        stories = _build_fallback_stories(features, analysis)
+        stories = _build_fallback_stories(features, analysis, ac_style)
 
     # Validate stories against the Story Checklist — auto-fix where possible
     # and collect warnings for the user. Deterministic post-processing, no LLM.
+    # A learned team median below 3 lowers the padding floor — a 1-AC team
+    # must not have every story force-padded to 3.
     # See docs: "Scrum Standards" — Story Checklist
-    stories, warnings = _validate_stories(stories, features)
+    stories, warnings = _validate_stories(stories, features, ac_style, min_acs=ac_median if ac_median > 0 else 3)
 
     # Hard cap for small projects — the prompt asks, this enforces. Keep
     # document order: the LLM lists stories by importance, so the first
@@ -8023,6 +8092,11 @@ def story_writer(state: ScrumState) -> dict:
 
     return {
         "stories": stories,
+        # Persist the resolved style + learned template headings so every later
+        # consumer (exports, editor, re-runs, MCP) matches how the stories were
+        # actually written — on all surfaces, not just the TUI.
+        "ac_format": ac_style,
+        "ticket_template_sections": _tpl_sections,
         "messages": [AIMessage(content=display)],
         "pending_review": "story_writer",
     }
@@ -8128,7 +8202,7 @@ def _format_stories_for_prompt(stories: list[UserStory], features: list[Feature]
             if story.acceptance_criteria:
                 lines.append("  ACs:")
                 for ac in story.acceptance_criteria:
-                    lines.append(f"    - Given {ac.given}, When {ac.when}, Then {ac.then}")
+                    lines.append(f"    - {ac.flat_text}")
             lines.append("")
 
     return "\n".join(lines)

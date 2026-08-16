@@ -135,7 +135,9 @@ def _story_payload(story, dod_items: list[str]) -> dict:
         "discipline": _enum(story.discipline),
         "points": _points(story.story_points),
         "acceptanceCriteria": [
-            {"given": ac.given, "when": ac.when, "then": ac.then} for ac in story.acceptance_criteria
+            # "text" carries a free-text criterion (team style); empty for GWT.
+            {"given": ac.given, "when": ac.when, "then": ac.then, "text": ac.text}
+            for ac in story.acceptance_criteria
         ],
         # Paired with its flag rather than sent as two lists: the old renderer
         # zipped them and length-checked first, and a mismatch silently dropped

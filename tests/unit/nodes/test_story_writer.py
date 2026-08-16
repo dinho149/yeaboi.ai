@@ -985,3 +985,89 @@ class TestStoryWriterValidation:
         result = story_writer(self._make_state())
         # The single AC should have been padded to 3 by validation
         assert len(result["stories"][0].acceptance_criteria) == 3
+
+
+class TestAcStyleParsing:
+    """The parser accepts every AC shape regardless of the requested style."""
+
+    def _features(self) -> list[Feature]:
+        return make_sample_features()
+
+    def _analysis(self):
+        return make_dummy_analysis()
+
+    def _story_json(self, acs) -> str:
+        import json as _json
+
+        return _json.dumps(
+            [
+                {
+                    "id": "US-F1-001",
+                    "feature_id": "F1",
+                    "title": "Login",
+                    "persona": "user",
+                    "goal": "log in",
+                    "benefit": "access my data",
+                    "acceptance_criteria": acs,
+                    "story_points": 3,
+                    "priority": "high",
+                }
+            ]
+        )
+
+    def test_string_acs_parse_as_free_text(self):
+        raw = self._story_json(["Login succeeds with valid credentials.", "Invalid password shows an error."])
+        result = _parse_stories_response(raw, self._features(), self._analysis(), "bullets")
+        acs = result[0].acceptance_criteria
+        assert [ac.text for ac in acs] == [
+            "Login succeeds with valid credentials.",
+            "Invalid password shows an error.",
+        ]
+        assert all(not ac.given for ac in acs)
+
+    def test_text_dict_acs_parse(self):
+        raw = self._story_json([{"text": "Search returns within 200ms."}])
+        result = _parse_stories_response(raw, self._features(), self._analysis(), "gwt")
+        assert result[0].acceptance_criteria[0].text == "Search returns within 200ms."
+
+    def test_mixed_shapes_all_survive(self):
+        raw = self._story_json(
+            [
+                {"given": "a", "when": "b", "then": "c"},
+                "Free text criterion.",
+                {"text": "Another one."},
+            ]
+        )
+        result = _parse_stories_response(raw, self._features(), self._analysis(), "gwt")
+        acs = result[0].acceptance_criteria
+        assert len(acs) == 3
+        assert acs[0].given == "a" and not acs[0].text
+        assert acs[1].text == "Free text criterion."
+
+    def test_generic_fallback_matches_style(self):
+        raw = self._story_json([])
+        gwt = _parse_stories_response(raw, self._features(), self._analysis(), "gwt")
+        assert gwt[0].acceptance_criteria[0].given  # GWT-shaped
+        bullets = _parse_stories_response(raw, self._features(), self._analysis(), "bullets")
+        assert bullets[0].acceptance_criteria[0].text  # free-text-shaped
+
+    def test_validate_pads_with_style_matched_generics(self):
+        story = make_valid_story()
+        story = story.__class__(**{**story.__dict__, "acceptance_criteria": (AcceptanceCriterion(text="One."),)})
+        validated, warnings = _validate_stories([story], self._features(), "bullets")
+        acs = validated[0].acceptance_criteria
+        assert len(acs) == 3
+        assert all(ac.text for ac in acs)
+
+    def test_validate_honours_low_team_median(self):
+        story = make_valid_story()
+        story = story.__class__(**{**story.__dict__, "acceptance_criteria": (AcceptanceCriterion(text="One."),)})
+        validated, warnings = _validate_stories([story], self._features(), "bullets", min_acs=1)
+        assert len(validated[0].acceptance_criteria) == 1
+        assert not any("generic" in w for w in warnings)
+
+    def test_fallback_stories_match_style(self):
+        bullets = _build_fallback_stories(self._features(), self._analysis(), "bullets")
+        assert all(ac.text for s in bullets for ac in s.acceptance_criteria)
+        gwt = _build_fallback_stories(self._features(), self._analysis(), "gwt")
+        assert all(ac.given for s in gwt for ac in s.acceptance_criteria)

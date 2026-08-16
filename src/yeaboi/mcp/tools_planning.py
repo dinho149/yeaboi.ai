@@ -126,13 +126,14 @@ def _plan_generate(
     sprint_length_weeks: int,
     project_context: str,
     prior_art: list[str] | None,
+    ac_format: str,
     on_progress,
 ) -> dict:
     from yeaboi.agent.headless import run_planning_pipeline
     from yeaboi.json_exporter import export_plan_json
 
     questionnaire = _build_questionnaire(description, answers, team_size, sprint_length_weeks, project_context)
-    state = run_planning_pipeline(questionnaire, on_progress=on_progress, prior_art=prior_art)
+    state = run_planning_pipeline(questionnaire, on_progress=on_progress, prior_art=prior_art, ac_format=ac_format)
     plan = json.loads(export_plan_json(state))
     plan["session_id"] = state.get("_session_id", "")
     return plan
@@ -278,6 +279,7 @@ def register(app) -> None:
         sprint_length_weeks: int = 0,
         project_context: str = "",
         prior_art: list[str] | None = None,
+        ac_format: str = "",
     ) -> dict:
         """Generate a full sprint plan (analysis, epics, stories, tasks, sprints) from a project
         description. Gather the intake_questions smart_essentials from the user first and pass
@@ -285,7 +287,9 @@ def register(app) -> None:
         (tech stack, constraints, goals). Takes a few minutes — several LLM calls. The plan is
         saved as a session (see data.session_id) for plan_get/plan_export and the other modes.
         `prior_art` takes repository keys from plan_prior_art that the user confirmed are
-        relevant — pass only what they approved; the plan builds on them."""
+        relevant — pass only what they approved; the plan builds on them.
+        `ac_format`: acceptance-criteria style — 'gwt' (Given/When/Then) or 'bullets'
+        (clear testable statements); empty follows the learned team profile."""
 
         def report(node_name: str, step: int) -> None:
             # Called from the engine's worker thread — bridge the async
@@ -304,6 +308,7 @@ def register(app) -> None:
             sprint_length_weeks,
             project_context,
             prior_art,
+            ac_format,
             report,
         )
 

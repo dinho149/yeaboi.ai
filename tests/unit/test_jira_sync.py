@@ -636,3 +636,36 @@ class TestJiraSyncResult:
         assert r.sprints_created == {}
         assert r.errors == []
         assert r.skipped == 0
+
+
+class TestTeamStyleDescriptions:
+    """Descriptions follow the team's AC style, DoD list, and section headings."""
+
+    def test_free_text_acs_render_verbatim(self):
+        story = _make_story()
+        story = story.__class__(
+            **{**story.__dict__, "acceptance_criteria": (AcceptanceCriterion(text="Login works end to end."),)}
+        )
+        desc = _format_story_description(story, _make_feature())
+        assert "Login works end to end." in desc
+        assert "*Given*" not in desc
+
+    def test_custom_dod_list_renders_with_its_own_labels(self):
+        # The regression this pins: the gate compared against the DEFAULT
+        # DOD_ITEMS, silently dropping custom DoD sections of another length.
+        story = _make_story()
+        custom = ("Tests green", "Deployed", "Announced")
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True)})
+        desc = _format_story_description(story, None, dod_items=custom)
+        assert "* [x] Tests green" in desc
+        assert "* [ ] ~Deployed~" in desc
+        assert "* [x] Announced" in desc
+
+    def test_team_headings_adopted(self):
+        story = _make_story()
+        headings = {"summary": "What is this about?", "acceptance_criteria": "ACs", "dod": "Done looks like"}
+        desc = _format_story_description(story, None, headings=headings)
+        assert "h3. What is this about?" in desc
+        assert "h3. ACs" in desc
+        assert "h3. Done looks like" in desc
+        assert "h3. Acceptance Criteria" not in desc

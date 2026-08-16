@@ -155,6 +155,7 @@ def run_planning_pipeline(
     on_progress: Callable[[str, int], None] | None = None,
     max_steps: int = 40,
     prior_art: list[str] | None = None,
+    ac_format: str = "",
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -179,6 +180,9 @@ def run_planning_pipeline(
             headless caller states them up front or gets none, because the
             step will not guess on a user's behalf. Unknown keys are used as
             given: this is an assertion by the caller, not a lookup.
+        ac_format: Acceptance-criteria style override ("gwt" | "bullets").
+            "" (default) resolves from YEABOI_AC_FORMAT / the learned team
+            profile — see resolve_ac_style in agent/state.py.
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -221,6 +225,13 @@ def run_planning_pipeline(
             "_intake_mode": "quick",
             "prior_art": prior_art_refs(prior_art),
         }
+        if ac_format:
+            from yeaboi.agent.state import AC_STYLES
+
+            if ac_format not in AC_STYLES:
+                raise HeadlessPipelineError(f"Unknown ac_format {ac_format!r} — use one of {AC_STYLES}.")
+            # Seeding state["ac_format"] wins the resolve_ac_style precedence.
+            graph_state["ac_format"] = ac_format
 
         store = SessionStore(db_path or get_db_path()) if save_session else None
         session_created = False

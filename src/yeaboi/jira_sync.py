@@ -215,6 +215,13 @@ def sync_stories_to_jira(
     # Track the epic link method that works for this project (auto-detected on first story)
     link_method = "auto"
 
+    # Descriptions render against the plan's OWN DoD list and the team's own
+    # section headings — never the hardcoded defaults.
+    from yeaboi.agent.state import map_template_headings, resolve_dod_items
+
+    dod_items = resolve_dod_items(state)
+    headings = map_template_headings(tuple(state.get("ticket_template_sections") or ()))
+
     for story in stories:
         feature = feature_map.get(story.feature_id)
 
@@ -222,7 +229,7 @@ def sync_stories_to_jira(
             # Story already exists — update its description (DoD, rationale may have been added)
             jira_key = existing_story_keys[story.id]
             try:
-                description = _format_story_description(story, feature)
+                description = _format_story_description(story, feature, dod_items=dod_items, headings=headings)
                 jira.issue(jira_key).update(fields={"description": description})
                 logger.info("Updated Jira Story description: %s", jira_key)
                 time.sleep(0.1)
@@ -242,7 +249,7 @@ def sync_stories_to_jira(
             labels.append(disc.value if hasattr(disc, "value") else str(disc))
 
             summary = story.title or story.goal
-            description = _format_story_description(story, feature)
+            description = _format_story_description(story, feature, dod_items=dod_items, headings=headings)
             raw_pri = story.priority
             priority_name = _map_priority_to_jira(raw_pri.value if hasattr(raw_pri, "value") else str(raw_pri))
 
@@ -725,31 +732,47 @@ def _feature_title_to_label(title: str) -> str:
     return label[:50] or "Feature"
 
 
-def _format_story_description(story, feature=None) -> str:
-    """Format a UserStory as a Jira description with acceptance criteria, DoD, and rationale."""
+def _format_story_description(story, feature=None, *, dod_items=None, headings=None) -> str:
+    """Format a UserStory as a Jira description with acceptance criteria, DoD, and rationale.
+
+    dod_items: the plan's resolved DoD list (resolve_dod_items) — comparing the
+    story's flags against the DEFAULT list silently dropped (or mislabeled) the
+    whole DoD section for teams with a custom list. headings: the team's own
+    section names (map_template_headings) — the structure stays fixed, the
+    headings adopt the team's vocabulary.
+    """
     from yeaboi.agent.state import DOD_ITEMS
 
+    items = tuple(dod_items) if dod_items else DOD_ITEMS
+    headings = headings or {}
     lines: list[str] = []
 
-    # User story sentence
+    # User story sentence — under the team's summary heading when they have one
+    if headings.get("summary"):
+        lines.append(f"h3. {headings['summary']}")
     lines.append(f"*As a* {story.persona}, *I want to* {story.goal}, *so that* {story.benefit}.")
     lines.append("")
 
-    # Acceptance criteria
+    # Acceptance criteria — GWT triples or the team's free-text criteria
     if story.acceptance_criteria:
-        lines.append("h3. Acceptance Criteria")
+        lines.append(f"h3. {headings.get('acceptance_criteria', 'Acceptance Criteria')}")
         for i, ac in enumerate(story.acceptance_criteria, 1):
-            lines.append(f"# *AC{i}*")
-            lines.append(f"*Given* {ac.given}")
-            lines.append(f"*When* {ac.when}")
-            lines.append(f"*Then* {ac.then}")
+            if ac.text:
+                lines.append(f"# {ac.text}")
+            else:
+                lines.append(f"# *AC{i}*")
+                lines.append(f"*Given* {ac.given}")
+                lines.append(f"*When* {ac.when}")
+                lines.append(f"*Then* {ac.then}")
+                lines.append("")
+        if story.acceptance_criteria[-1].text:
             lines.append("")
 
     # Definition of Done — checkboxes with applicable/N/A items
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(DOD_ITEMS):
-        lines.append("h3. Definition of Done")
-        for item, applicable in zip(DOD_ITEMS, dod):
+    if dod and len(dod) == len(items):
+        lines.append(f"h3. {headings.get('dod', 'Definition of Done')}")
+        for item, applicable in zip(items, dod):
             if applicable:
                 lines.append(f"* [x] {item}")
             else:

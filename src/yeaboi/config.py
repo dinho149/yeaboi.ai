@@ -436,6 +436,32 @@ def get_jira_project_key() -> str | None:
     return os.getenv("JIRA_PROJECT_KEY") or None
 
 
+# YEABOI_AC_FORMAT alias table — normalized to the canonical style names in
+# agent/state.py (AC_STYLES). Unknown values normalize to "" (no override);
+# a config getter never raises.
+_AC_FORMAT_ALIASES: dict[str, str] = {
+    "gwt": "gwt",
+    "given-when-then": "gwt",
+    "given/when/then": "gwt",
+    "gherkin": "gwt",
+    "bullets": "bullets",
+    "bullet": "bullets",
+    "freeform": "bullets",
+    "free-form": "bullets",
+    "checklist": "bullets",
+}
+
+
+def get_ac_format() -> str:
+    """Return the acceptance-criteria style override from YEABOI_AC_FORMAT.
+
+    "" when unset or unrecognized — the planner then follows the learned team
+    profile (see resolve_ac_style in agent/state.py).
+    """
+    raw = (os.getenv("YEABOI_AC_FORMAT") or "").strip().lower()
+    return _AC_FORMAT_ALIASES.get(raw, "")
+
+
 def get_confluence_base_url() -> str | None:
     """Return the Confluence Cloud base URL, or None if not set.
 

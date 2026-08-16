@@ -505,3 +505,31 @@ class TestAzDevOpsSyncResult:
         assert result.iterations_created == {}
         assert result.errors == []
         assert result.skipped == 0
+
+
+class TestTeamStyleDescriptionsHtml:
+    """AzDO mirror: team AC style, DoD list, and section headings."""
+
+    def test_free_text_acs_render_as_list(self):
+        story = _make_story()
+        story = story.__class__(
+            **{**story.__dict__, "acceptance_criteria": (AcceptanceCriterion(text="Login works end to end."),)}
+        )
+        desc = _format_story_description_html(story, _make_feature())
+        assert "<li>Login works end to end.</li>" in desc
+        assert "<strong>Given</strong>" not in desc
+
+    def test_custom_dod_list_renders_with_its_own_labels(self):
+        story = _make_story()
+        custom = ("Tests green", "Deployed", "Announced")
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True)})
+        desc = _format_story_description_html(story, None, dod_items=custom)
+        assert "Tests green" in desc
+        assert "<s>Deployed</s>" in desc
+
+    def test_team_headings_adopted(self):
+        story = _make_story()
+        headings = {"acceptance_criteria": "ACs", "dod": "Done looks like"}
+        desc = _format_story_description_html(story, None, headings=headings)
+        assert "<h3>ACs</h3>" in desc
+        assert "<h3>Done looks like</h3>" in desc

@@ -127,11 +127,87 @@ TOTAL_QUESTIONS = 30
 
 @dataclass(frozen=True)
 class AcceptanceCriterion:
-    """A single Given/When/Then acceptance criterion."""
+    """A single acceptance criterion — Given/When/Then, or the team's own style.
 
-    given: str
-    when: str
-    then: str
+    Two shapes share this class: a Gherkin triple (given/when/then set, text
+    empty) and a free-text criterion (text set, triple empty) for teams whose
+    tickets don't use Given/When/Then. All fields are defaulted so old saved
+    sessions (no ``text`` key) deserialize unchanged.
+    See docs: "Scrum Standards" — Acceptance Criteria
+    """
+
+    given: str = ""
+    when: str = ""
+    then: str = ""
+    # Free-text criterion ("Search results return within 200ms"). When set,
+    # renderers show it verbatim; when empty, the GWT triple renders.
+    text: str = ""
+
+    @property
+    def flat_text(self) -> str:
+        """The criterion as one sentence, whichever shape it carries."""
+        return self.text or f"Given {self.given}, when {self.when}, then {self.then}"
+
+
+# Acceptance-criteria styles a plan can be generated in. "gwt" is the
+# Given/When/Then default; "bullets" writes each criterion as a single clear,
+# testable statement — for teams whose real tickets don't use Gherkin.
+AC_STYLE_GWT = "gwt"
+AC_STYLE_BULLETS = "bullets"
+AC_STYLES: tuple[str, ...] = (AC_STYLE_GWT, AC_STYLE_BULLETS)
+
+
+def resolve_ac_style(graph_state: dict | None = None, team_profile: object | None = None) -> str:
+    """Resolve which acceptance-criteria style this plan should use.
+
+    Precedence: the session's persisted choice (state["ac_format"], written by
+    story_writer so exports of a saved plan match how it was generated) >
+    the YEABOI_AC_FORMAT env override > the learned team profile
+    (WritingPatterns.uses_given_when_then / evidence of writing data) >
+    Given/When/Then.
+    """
+    if graph_state:
+        persisted = graph_state.get("ac_format")
+        if persisted in AC_STYLES:
+            return persisted
+
+    from yeaboi.config import get_ac_format  # lazy: config must not import state
+
+    override = get_ac_format()
+    if override in AC_STYLES:
+        return override
+
+    patterns = getattr(team_profile, "writing_patterns", None)
+    if patterns is not None:
+        if getattr(patterns, "uses_given_when_then", False):
+            return AC_STYLE_GWT
+        # The team has analysed writing data and it did NOT show GWT — follow
+        # their real style instead of forcing the template on them.
+        if getattr(patterns, "median_ac_count", 0) > 0 or getattr(patterns, "common_personas", ()):
+            return AC_STYLE_BULLETS
+
+    return AC_STYLE_GWT
+
+
+def map_template_headings(sections: tuple[str, ...] | list[str] | None) -> dict[str, str]:
+    """Map a team's learned description-section headings onto our canonical blocks.
+
+    Team analysis records the section headings the team's real tickets use
+    (e.g. "What is this about?", "Done looks like"). Exports keep their fixed
+    structure but adopt the team's own heading names where one clearly maps:
+    "summary" (the story sentence), "acceptance_criteria", and "dod". Unmatched
+    headings are ignored — we have no content to put under them.
+    """
+    mapping: dict[str, str] = {}
+    for heading in sections or ():
+        low = str(heading).lower()
+        if "acceptance" in low or low.rstrip(":?") in ("ac", "acs"):
+            mapping.setdefault("acceptance_criteria", str(heading))
+        elif "done" in low or "dod" in low:
+            mapping.setdefault("dod", str(heading))
+        elif any(word in low for word in ("summary", "about", "background", "description", "context", "what")):
+            mapping.setdefault("summary", str(heading))
+    return mapping
 
 
 @dataclass(frozen=True)
@@ -1681,6 +1757,16 @@ class ScrumState(_RequiredState, total=False):
     # Custom DoD items from team analysis — overrides DOD_ITEMS when set.
     # Empty tuple means use the default 7 items.
     custom_dod_items: tuple[str, ...]
+
+    # Acceptance-criteria style the plan was generated in ("gwt" | "bullets").
+    # Written by story_writer after resolve_ac_style() so every later consumer
+    # (exports, editor, re-runs) matches how the stories were actually written.
+    # "" = not yet resolved. See docs: "Scrum Standards" — Acceptance Criteria
+    ac_format: str
+    # The team's learned ticket description section headings (from the analysis
+    # profile's naming conventions). Exports map them onto our canonical blocks
+    # via map_template_headings(). Empty = use the default headings.
+    ticket_template_sections: list[str]
 
     # Selected team members from analysis profile (names from contributor_stats).
     # When set, velocity is calculated from these specific members' per_sprint values.

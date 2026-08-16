@@ -91,9 +91,13 @@ function Story({ story }: { story: PlanStory }) {
           {story.acceptanceCriteria.map((ac, index) => (
             <li key={index}>
               <Eyebrow>AC {index + 1}</Eyebrow>
-              <span>
-                <b>Given</b> {ac.given} <b>When</b> {ac.when} <b>Then</b> {ac.then}
-              </span>
+              {ac.text ? (
+                <span>{ac.text}</span>
+              ) : (
+                <span>
+                  <b>Given</b> {ac.given} <b>When</b> {ac.when} <b>Then</b> {ac.then}
+                </span>
+              )}
             </li>
           ))}
         </ol>
