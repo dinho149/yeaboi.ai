@@ -51,6 +51,8 @@ export interface DuelMic {
   error: string;
   /** Ask for the mic. Must be called from a user gesture (the consent moment). */
   enable(): Promise<void>;
+  /** Hand the hardware back and tell the room the indicator should go out. */
+  disable(): void;
 }
 
 export function micCapable(): boolean {
@@ -179,13 +181,23 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
   const role = duel?.mine_role ?? '';
   const myTurn = live && role !== '' && duel?.turn === role;
   const turnNo = duel?.turn_no ?? 0;
+  /* The host records the room. Everyone is usually on one call, so one device
+     catching both turns is the whole recording — and the host is the only
+     person who is certainly there for all of it. */
+  const roomMic = live && Boolean(session.admin);
 
-  // The choreography: record during my turn and at no other time.
+  // Record my turn, or every turn if this is the room's mic. Keyed on the turn
+  // number so the cleanup flushes each turn as its own clip: `onstop` is what
+  // uploads, so a recorder left running across the hand-off would arrive as one
+  // untellable blob.
   useEffect(() => {
-    if (!armed) return;
-    if (myTurn) startRecorder(turnNo);
-    else stopRecorder();
-  }, [armed, myTurn, turnNo, startRecorder, stopRecorder]);
+    if (!armed || !(myTurn || roomMic)) {
+      stopRecorder();
+      return undefined;
+    }
+    startRecorder(turnNo);
+    return () => stopRecorder();
+  }, [armed, myTurn, roomMic, turnNo, startRecorder, stopRecorder]);
 
   // The floor closed — mid-turn or not. `stopRecorder` before `release` is what
   // flushes a turn that was still running when the host closed the floor.
@@ -199,5 +211,5 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
   releaseRef.current = release;
   useEffect(() => () => releaseRef.current(), []);
 
-  return { capable, armed, error, enable };
+  return { capable, armed, error, enable, disable: release };
 }

@@ -516,7 +516,6 @@ export function App({ boot }: { boot: PokerBoot }) {
             suggestion={snapshot?.suggestion ?? null}
             ai={snapshot?.ai ?? { pending: false, from_llm: false, note: '', suggested: null, confidence: '', evidence: [] }}
             duel={duel}
-            mic={mic}
             remaining={remaining}
             isHost={isHost}
             onNextTurn={() => run(actions.nextTurn())}
@@ -546,6 +545,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             onAskAi={() => run(actions.askAi())}
             onOpenDuel={(seconds) => run(actions.openDuel(seconds))}
             onCloseDuel={() => run(actions.closeDuel())}
+            mic={mic}
             onFinalize={(points) => run(actions.finalize(points))}
           />
         ) : null}

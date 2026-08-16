@@ -24,14 +24,12 @@
 import { cx } from '../runtime/cx';
 import { fmtClock } from '../runtime/format';
 import type { DuelSlice } from '../types/board';
-import type { DuelMic } from './useDuelMic';
 import styles from './poker.module.css';
 import { Icon } from '../design/primitives';
 import { Button } from '../shared';
 
 export interface DuelProps {
   duel: DuelSlice;
-  mic: DuelMic;
   /** Seconds left on the turn, shown between the two of them. */
   remaining: number | null;
   isHost: boolean;
@@ -61,7 +59,7 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   );
 }
 
-export function Duel({ duel, mic, remaining, isHost, onNextTurn, onCloseDuel }: DuelProps) {
+export function Duel({ duel, remaining, isHost, onNextTurn, onCloseDuel }: DuelProps) {
   if (duel.status === 'transcribing') {
     return (
       <div className={styles['duel']} role="status">
@@ -92,8 +90,7 @@ export function Duel({ duel, mic, remaining, isHost, onNextTurn, onCloseDuel }: 
   }
 
   const anyRecording = duel.recording.host || duel.recording.low || duel.recording.high;
-  const mine = duel.mine_role;
-  const myTurn = mine !== '' && duel.turn === mine;
+  const myTurn = duel.mine_role !== '' && duel.turn === duel.mine_role;
 
   return (
     <div className={styles['duel']}>
@@ -140,32 +137,6 @@ export function Duel({ duel, mic, remaining, isHost, onNextTurn, onCloseDuel }: 
         <p className={styles['youup']} role="status">
           You&rsquo;re up — make your case!
         </p>
-      ) : null}
-
-      {mine !== '' && !mic.armed ? (
-        <div className={styles['micRow']}>
-          {mic.capable ? (
-            <>
-              <button type="button" className={styles['micBtn']} onClick={() => void mic.enable()}>
-                <Icon name="mic" /> Start my mic
-              </button>
-              <span className={styles['hint']}>record your own turn — attributed to you in the transcript</span>
-            </>
-          ) : (
-            <span className={styles['hint']}>
-              {/* Not a failure to work around: getUserMedia needs a secure
-                  context. Every way of reaching this board now is one — the
-                  host is on localhost, everyone else on the HTTPS tunnel — so
-                  this branch is a browser that refused rather than a connection
-                  that can't. Worded as "this connection" rather than naming the
-                  scheme, because the person reading it opened a link someone
-                  sent them, and the bundle guard forbids a literal scheme
-                  anywhere in the JS regardless. */}
-              Your browser can&rsquo;t record on this connection — the room mic covers you.
-            </span>
-          )}
-          {mic.error ? <span className={styles['hint']}>{mic.error}</span> : null}
-        </div>
       ) : null}
 
       {duel.recording.host ? <p className={styles['hint']}>Host room mic is recording the debate.</p> : null}

@@ -30,6 +30,7 @@ import { cx } from '../runtime/cx';
 import type { DuelSlice, PokerPhase, PokerState } from '../types/board';
 import { fmtPoints } from './points';
 import { Button } from '../shared';
+import type { DuelMic } from './useDuelMic';
 import styles from './poker.module.css';
 
 /** Turn lengths the host can open the floor with. Server clamps to 15..600s. */
@@ -48,6 +49,8 @@ export interface ConsoleProps {
   onOpenDuel(seconds: number): void;
   onCloseDuel(): void;
   onFinalize(points: number): void;
+  /** The room's mic. Armed here and nowhere else — see the note below. */
+  mic: DuelMic;
   /** A refusal from the server, or a local validation message. */
   notice: string;
 }
@@ -67,6 +70,7 @@ export function Console({
   onOpenDuel,
   onCloseDuel,
   onFinalize,
+  mic,
   notice,
 }: ConsoleProps) {
   const { phase, duel, ai, ticket, votes, ticket_index: index } = state;
@@ -192,6 +196,33 @@ export function Console({
           >
             <Icon name="swords" /> Open the floor
           </Button>
+
+          {/* One mic, and it is the host's. The room is usually on a call
+              together, so a second device recording the same conversation adds
+              a duplicate track rather than a missing voice — and the host is
+              the one person certainly present for both turns. */}
+          {dueling ? (
+            mic.capable ? (
+              <Button
+                active={mic.armed}
+                title={mic.armed ? 'Stop recording the debate' : 'Record the debate from this device'}
+                onClick={() => (mic.armed ? mic.disable() : void mic.enable())}
+              >
+                {mic.armed ? (
+                  <>
+                    <span className={styles['recDot']} aria-hidden="true" /> Recording
+                  </>
+                ) : (
+                  <>
+                    <Icon name="mic" /> Start the room mic
+                  </>
+                )}
+              </Button>
+            ) : (
+              <p className={styles['chint']}>This browser can&rsquo;t record on this connection.</p>
+            )
+          ) : null}
+          {mic.error ? <p className={styles['cnotice']}>{mic.error}</p> : null}
 
           {/* One slot: the preset picker and the live controls swap inside it,
               and it opens and shuts on a track rather than appearing. */}

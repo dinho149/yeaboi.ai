@@ -18,7 +18,6 @@ import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { AiPerspective, DuelSlice } from '../types/board';
 import { Duel } from './Duel';
-import type { DuelMic } from './useDuelMic';
 import { fmtPoints } from './points';
 import styles from './poker.module.css';
 
@@ -30,7 +29,6 @@ export interface ResultsProps {
   ai: AiPerspective;
   /** The open floor, when there is one. Null the rest of the time. */
   duel: DuelSlice | null;
-  mic: DuelMic;
   /** Seconds left on the board timer, for the turn clock between the two. */
   remaining: number | null;
   /** The floor's own controls are host-only, and they live inside it. */
@@ -47,7 +45,6 @@ export function Results({
   suggestion,
   ai,
   duel,
-  mic,
   remaining,
   isHost,
   onNextTurn,
@@ -173,7 +170,6 @@ export function Results({
           >
             <Duel
               duel={duel}
-              mic={mic}
               remaining={remaining}
               isHost={isHost}
               onNextTurn={onNextTurn}
