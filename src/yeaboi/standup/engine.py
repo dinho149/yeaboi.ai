@@ -1684,6 +1684,9 @@ def run_standup(
     )
     result = aggregate.go_aggregate(inputs) or aggregate.aggregate_standup(inputs)
     cases = aggregate.cases_from_wire(result.get("adjudication_cases") or ())
+    # Hoisted out of the branch: the provenance log records every drop below,
+    # and a run with no adjudicator simply has none to record.
+    dropped: list[str] = []
     if cases and adjudicator is not None:
         try:
             dropped = sorted({str(case_id) for case_id in adjudicator(cases)})
@@ -1705,6 +1708,21 @@ def run_standup(
     if result.get("blocker_signals"):
         logger.info("standup: blocker signals detected for %d member(s)", len(result["blocker_signals"]))
     progress = aggregate.progress_from_wire(result["progress"])
+
+    # 4c. Cross-source conflict cards (engine layer, above the mirrored core):
+    #     the board and the code disagreeing becomes an explicit card with both
+    #     claims on it, never a silent confidence adjustment. Best-effort — a
+    #     detector failure costs the cards, not the standup.
+    conflict_cards, conflict_warnings = (), ()
+    try:
+        from yeaboi.standup import conflicts as standup_conflicts
+
+        gate_prefixes, gate_ids = _reference_gates(result["grouped"])
+        conflict_cards, conflict_warnings = standup_conflicts.detect_status_conflicts(
+            result["grouped"], prefixes=gate_prefixes, work_item_ids=gate_ids
+        )
+    except Exception:
+        logger.warning("standup: conflict detection failed", exc_info=True)
 
     # 5. Per-member + team summary (one LLM call, deterministic fallback).
     _notify("Writing summaries with AI")
@@ -1782,6 +1800,28 @@ def run_standup(
     except Exception as e:  # a nudge must never break a standup
         logger.warning("standup: transcript nudge failed: %s", e)
 
+    warnings.extend(conflict_warnings)
+
+    # Audit trail: every signal above — and every suppression — becomes a
+    # hash-chained decision record (yeaboi.provenance). Best-effort, but never
+    # silently absent: a failed audit write is itself reported, because an
+    # audit trail that fails quietly is not one.
+    if not dry_run:
+        try:
+            from yeaboi.standup import provenance_log
+
+            provenance_log.record_run(
+                db_path,
+                result=result,
+                date_str=date_str,
+                session_id=session_id,
+                dropped_case_ids=dropped,
+                conflict_cards=conflict_cards,
+            )
+        except Exception:
+            logger.warning("standup: provenance recording failed", exc_info=True)
+            warnings.append("Audit trail not recorded for this run — see logs; the report itself is unaffected.")
+
     report = StandupReport(
         date=date_str,
         session_id=session_id,
@@ -1812,6 +1852,7 @@ def run_standup(
         # Rebuilt from the updates, not from `practices`, so a member dropped
         # between detection and the report can never inflate the team count.
         practice_rollup=habits.rollup({m.name: m.practices for m in member_updates if m.practices}),
+        conflicts=tuple(conflict_cards),
     )
 
     # 6. Deliver, then record the run (so delivery status is captured).

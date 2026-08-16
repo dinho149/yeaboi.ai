@@ -322,6 +322,9 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/changelog.py",
             "src/yeaboi/changelog_data.json",
             "src/yeaboi/mcp/",
+            # Cross-mode shared infrastructure, like config/paths above: the
+            # tamper-evident decision chain every mode records into.
+            "src/yeaboi/provenance/",
             "claude-plugin/",
             "packaging/",
         ),
@@ -332,6 +335,10 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_update_*.py",
             "tests/unit/test_changelog*.py",
             "tests/unit/test_mcp_*.py",
+            "tests/unit/test_provenance_*.py",
+            # The standup wiring consumes the chain; a provenance change must
+            # prove it did not break its first consumer.
+            "tests/unit/test_standup_provenance_log.py",
         ),
     ),
     # The seventeenth workstream: the Go rewrite program. The seam moved here

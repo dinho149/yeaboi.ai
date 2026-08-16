@@ -633,6 +633,51 @@ a.issueKey:hover {
   margin: var(--s3) 0 0;
 }
 
+/* Cross-source conflict cards. Louder than a practice nudge — two systems
+   disagree about a fact — but the severity word always rides beside the chip
+   colour, so the card survives greyscale. */
+.conflictList {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.conflict {
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.conflictTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+}
+.conflictDetail {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.conflictClaims {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+}
+.conflictClaim {
+  color: var(--muted);
+}
+.conflictAction {
+  margin: var(--s2) 0 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
 /* The two answers, on a correctable share only. Quieter than the signal they
    sit under: disputing a nudge should look as low-stakes as it is. They take
    the full row so a long signal sentence never wraps around them. */

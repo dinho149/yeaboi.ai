@@ -2726,3 +2726,73 @@ class TestAggregateDispatchProtocol:
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         assert len(calls) == 1  # no second pass — deterministic verdicts stand
         assert report.date == "2026-07-10"
+
+
+class TestConflictAndProvenanceWiring:
+    ITEMS = [
+        {
+            "author": "Alice",
+            "kind": "issue",
+            "key": "YEA-12",
+            "status": "Done",
+            "title": "auth epic",
+            "source": "jira",
+            "url": "https://j/12",
+        },
+        {
+            "author": "Alice",
+            "kind": "pr",
+            "status": "open",
+            "title": "YEA-12 auth fix",
+            "source": "github",
+            "url": "https://g/41",
+        },
+    ]
+
+    def test_conflict_cards_and_audit_trail_land(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+
+        assert len(report.conflicts) == 1
+        card = report.conflicts[0]
+        assert card.entity_id == "YEA-12"
+        assert {claim[0] for claim in card.claims} == {"jira", "github"}
+
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            assert chain.verify().valid is True
+            conflict = chain.get("standup:2026-07-10:conflict:YEA-12:status:status_conflict")
+            assert conflict is not None
+            assert conflict.inputs == ("https://j/12", "https://g/41")
+            assert chain.get("standup:2026-07-10:confidence") is not None
+
+    def test_dry_run_records_no_audit_trail(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        report = engine.run_standup(
+            seeded_session, deliver=False, dry_run=True, db_path=db_path, today=date(2026, 7, 10)
+        )
+
+        # The cards still render — only the side-effecting chain write is skipped.
+        assert len(report.conflicts) == 1
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            assert chain.total() == 0
+
+    def test_failed_audit_write_warns_but_never_fails_the_run(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        from yeaboi.standup import provenance_log
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(provenance_log, "record_run", _boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert any("Audit trail not recorded" in w for w in report.warnings)

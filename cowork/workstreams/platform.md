@@ -1,7 +1,8 @@
 # platform
 
 **Owns** — `src/yeaboi/cli.py` (2.5k LOC), `config.py`, `paths.py`, `logging_setup.py`,
-`telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
+`telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`,
+`provenance/` (the cross-mode tamper-evident decision chain), the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
 `scripts/pr_feedback.py` and `tests/unit/test_surface_parity.py`

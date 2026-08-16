@@ -33,6 +33,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import (
     ActivityEvidence,
+    ConflictCard,
     MemberUpdate,
     PracticeSignal,
     StandupGap,
@@ -233,6 +234,31 @@ def _dict_to_practices(items: object) -> tuple[PracticeSignal, ...]:
     )
 
 
+def _dict_to_conflicts(items: object) -> tuple[ConflictCard, ...]:
+    """Rebuild conflict cards from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        ConflictCard(
+            fingerprint=str(c.get("fingerprint", "")),
+            title=str(c.get("title", "")),
+            detail=str(c.get("detail", "")),
+            severity=str(c.get("severity", "medium")),
+            entity_id=str(c.get("entity_id", "")),
+            property_name=str(c.get("property_name", "")),
+            # JSON turned each (source, value, label, url) tuple into a list —
+            # rebuild tuples.
+            claims=tuple(
+                (str(cl[0]), str(cl[1]), str(cl[2]), str(cl[3])) for cl in c.get("claims") or () if len(cl) == 4
+            ),
+            recommended_action=str(c.get("recommended_action", "")),
+            members=tuple(str(m) for m in (c.get("members") or ()) if str(m)),
+        )
+        for c in items
+        if isinstance(c, dict)
+    )
+
+
 def _dict_to_standup_report(d: dict) -> StandupReport:
     """Reconstruct a StandupReport from a JSON-parsed dict.
 
@@ -297,6 +323,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         images=tuple(d.get("images", ())),
         annotations=annotations_from(d.get("annotations")),
         practice_rollup=tuple((str(p[0]), int(p[1])) for p in d.get("practice_rollup", ()) if len(p) == 2),
+        conflicts=_dict_to_conflicts(d.get("conflicts")),
     )
 
 

@@ -383,7 +383,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_wm1hn_15 {
+._h2_1nv7j_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -395,21 +395,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_wm1hn_27 {
+._bullets_1nv7j_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_wm1hn_27 li + li {
+._bullets_1nv7j_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_wm1hn_27 li::marker {
+._bullets_1nv7j_27 li::marker {
   color: var(--accent);
 }
 
-._lede_wm1hn_41 {
+._lede_1nv7j_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -422,12 +422,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._empty_wm1hn_54 {
+._empty_1nv7j_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_wm1hn_59 {
+._footnote_1nv7j_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -437,20 +437,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_wm1hn_69 {
+._split_1nv7j_69 {
   margin: var(--s4) 0;
 }
-._split_wm1hn_69 > * + * {
+._split_1nv7j_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_wm1hn_76 {
+._trend_1nv7j_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_wm1hn_82 {
+._people_1nv7j_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -458,7 +458,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_wm1hn_90 {
+._person_1nv7j_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -467,7 +467,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_wm1hn_99 {
+._identity_1nv7j_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -480,33 +480,33 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_wm1hn_112 {
+._mixes_1nv7j_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_wm1hn_112 > * + * {
+._mix_1nv7j_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_wm1hn_122 {
+._projects_1nv7j_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_wm1hn_122 {
+._project_1nv7j_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_wm1hn_131 {
+._projectIndex_1nv7j_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_wm1hn_138 {
+._chips_1nv7j_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
@@ -517,13 +517,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_wm1hn_138 {
+  ._chips_1nv7j_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_wm1hn_155 {
+._why_1nv7j_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -535,12 +535,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_wm1hn_167 {
+._votes_1nv7j_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_wm1hn_167 {
+._vote_1nv7j_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -551,18 +551,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_wm1hn_183 {
+._skipped_1nv7j_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_wm1hn_188 {
+._notes_1nv7j_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_wm1hn_194 {
+._transcript_1nv7j_194 {
   font-size: var(--fs-s);
 }
 
@@ -571,7 +571,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_wm1hn_203 {
+._columns_1nv7j_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -580,14 +580,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_wm1hn_203 {
+._column_1nv7j_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_wm1hn_219 {
+._columnTitle_1nv7j_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -599,75 +599,75 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_wm1hn_231 {
+._count_1nv7j_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_wm1hn_203 ._bullets_wm1hn_27 li::marker {
+._column_1nv7j_203 ._bullets_1nv7j_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_wm1hn_239 {
+._byline_1nv7j_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_wm1hn_246 {
+._reactions_1nv7j_246 {
   margin-left: var(--s1);
 }
-._status_wm1hn_249 {
+._status_1nv7j_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_wm1hn_256 {
+._confidence_1nv7j_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_wm1hn_263 {
+._rationale_1nv7j_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_wm1hn_270 {
+._activity_1nv7j_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_wm1hn_270 > * + * {
+._activity_1nv7j_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_wm1hn_280 {
+._activityRow_1nv7j_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_wm1hn_286 {
+._activityName_1nv7j_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_wm1hn_292 {
+._activityTotal_1nv7j_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_wm1hn_299 {
+._member_1nv7j_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -676,10 +676,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_wm1hn_308 {
+._blocked_1nv7j_308 {
   border-left-color: var(--danger);
 }
-._memberHead_wm1hn_311 {
+._memberHead_1nv7j_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -687,18 +687,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_wm1hn_319 {
+._memberSummary_1nv7j_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* The intro renders as terse clause bullets (a ul), one thought per line. */
-ul._memberSummary_wm1hn_319 {
+ul._memberSummary_1nv7j_319 {
   display: grid;
   gap: calc(var(--s1) / 2);
   padding-left: 1.1em;
 }
-._since_wm1hn_330 {
+._since_1nv7j_330 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -708,7 +708,7 @@ ul._memberSummary_wm1hn_319 {
    One column of headed sections, like a tracker's issue view: key and
    status lozenge up top, then Description / Code / Documentation /
    Ticket status changes / Untracked work / What's next. */
-._issueHead_wm1hn_340 {
+._issueHead_1nv7j_340 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -719,7 +719,7 @@ ul._memberSummary_wm1hn_319 {
   border-bottom: 1px solid var(--line-soft);
 }
 /* The issue key is mono furniture, like Jira's breadcrumb key. */
-._issueKey_wm1hn_351 {
+._issueKey_1nv7j_351 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -727,16 +727,16 @@ ul._memberSummary_wm1hn_319 {
   color: var(--muted);
   text-decoration: none;
 }
-a._issueKey_wm1hn_351:hover {
+a._issueKey_1nv7j_351:hover {
   color: var(--text);
   text-decoration: underline;
 }
 /* When there is no headline ticket the lozenge keeps to the right edge. */
-._issueHead_wm1hn_340 > :last-child {
+._issueHead_1nv7j_340 > :last-child {
   margin-left: auto;
 }
 /* Jira's flagged-issue banner: the impediment as a strip, not a footnote. */
-._impediment_wm1hn_368 {
+._impediment_1nv7j_368 {
   margin: var(--s2) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--danger);
@@ -747,27 +747,27 @@ a._issueKey_wm1hn_351:hover {
 }
 /* The glyph only — RichText wraps the blocker prose in a <span> too, and a
    bare child selector would paint the whole sentence danger-red. */
-._impedimentFlag_wm1hn_379 {
+._impedimentFlag_1nv7j_379 {
   color: var(--danger);
 }
 /* Full-width headed section; the hairline top rule is the row divider a
    tracker's issue view uses between field groups. */
-._issueSection_wm1hn_384 {
+._issueSection_1nv7j_384 {
   margin-top: var(--s3);
   padding-top: var(--s2);
   border-top: 1px solid var(--line-soft);
 }
-._issueSection_wm1hn_384 > * + * {
+._issueSection_1nv7j_384 > * + * {
   margin-top: var(--s2);
 }
-._categoryHead_wm1hn_392 {
+._categoryHead_1nv7j_392 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
 }
 /* Story groups: one card per user story, its subtasks and linked work indented
    behind a left rule — the tracker's own child-item silhouette. */
-._storyList_wm1hn_399 {
+._storyList_1nv7j_399 {
   display: grid;
   gap: var(--s3);
   margin: var(--s2) 0 0;
@@ -775,13 +775,13 @@ a._issueKey_wm1hn_351:hover {
   list-style: none;
 }
 /* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._storyList_wm1hn_399[hidden] {
+._storyList_1nv7j_399[hidden] {
   display: none;
 }
-._storyCard_wm1hn_410 > * + * {
+._storyCard_1nv7j_410 > * + * {
   margin-top: var(--s1);
 }
-._storySubtasks_wm1hn_413 {
+._storySubtasks_1nv7j_413 {
   display: grid;
   gap: var(--s1);
   margin: var(--s1) 0 0;
@@ -789,34 +789,34 @@ a._issueKey_wm1hn_351:hover {
   border-left: 1px solid var(--line);
   list-style: none;
 }
-._storyLinkedWork_wm1hn_421 {
+._storyLinkedWork_1nv7j_421 {
   margin: var(--s1) 0 0;
   padding: 0 0 0 var(--s3);
   border-left: 1px solid var(--line);
 }
 /* An orphan subtask's parent, named in words — the row is not on this card,
    so there is nothing honest to link. */
-._storyParentNote_wm1hn_428 {
+._storyParentNote_1nv7j_428 {
   margin: 0;
   padding: 0 0 0 var(--s3);
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
 
-._chipRow_wm1hn_435 {
+._chipRow_1nv7j_435 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
 /* The jump strip above the member cards: who's here, who's blocked, one glance. */
-._memberStrip_wm1hn_442 {
+._memberStrip_1nv7j_442 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberJump_wm1hn_448 {
+._memberJump_1nv7j_448 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -828,20 +828,20 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-xs);
   text-decoration: none;
 }
-._memberJump_wm1hn_448:hover {
+._memberJump_1nv7j_448:hover {
   border-color: var(--line-strong);
 }
-._memberJumpBlocked_wm1hn_463 {
+._memberJumpBlocked_1nv7j_463 {
   border-color: var(--danger);
 }
-._memberJumpFlag_wm1hn_466 {
+._memberJumpFlag_1nv7j_466 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
-._quietStrip_wm1hn_473 {
+._quietStrip_1nv7j_473 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -850,7 +850,7 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
-._quietMember_wm1hn_482 {
+._quietMember_1nv7j_482 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -861,7 +861,7 @@ a._issueKey_wm1hn_351:hover {
 }
 
 /* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
-._evidence_wm1hn_406 {
+._evidence_1nv7j_406 {
   display: grid;
   gap: var(--s1);
   margin: var(--s2) 0 0;
@@ -870,10 +870,10 @@ a._issueKey_wm1hn_351:hover {
 }
 /* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
    fold would render fully open with a lying "+ N more" button. */
-._evidence_wm1hn_406[hidden] {
+._evidence_1nv7j_406[hidden] {
   display: none;
 }
-._evidenceRow_wm1hn_505 {
+._evidenceRow_1nv7j_505 {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
@@ -884,33 +884,33 @@ a._issueKey_wm1hn_351:hover {
    (repo · lozenge) aligns under the title rather than under a chip. Must sit
    BELOW .evidenceRow: same specificity, and the later template has to win —
    jsdom cannot see the cascade, so no test guards this ordering. */
-._evidenceFeedRow_wm1hn_516 {
+._evidenceFeedRow_1nv7j_516 {
   grid-template-columns: auto minmax(0, 1fr);
 }
-._evidenceFeedRow_wm1hn_516 > ._evidenceMeta_wm1hn_519 {
+._evidenceFeedRow_1nv7j_516 > ._evidenceMeta_1nv7j_519 {
   grid-column: 1 / -1;
 }
-._evidenceRef_wm1hn_522 {
+._evidenceRef_1nv7j_522 {
   font-family: var(--font-mono);
   white-space: nowrap;
 }
-._evidenceTitle_wm1hn_526 {
+._evidenceTitle_1nv7j_526 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._evidenceMeta_wm1hn_519 {
+._evidenceMeta_1nv7j_519 {
   grid-column: 2 / -1;
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
 /* Board status as a Lozenge — the module classes own the colour, and the
    status word always renders inside it (never colour alone). */
-._evidenceStatus_wm1hn_538 {
+._evidenceStatus_1nv7j_538 {
   white-space: nowrap;
 }
 /* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
-._commitToggle_wm1hn_542 {
+._commitToggle_1nv7j_542 {
   padding: 0;
   border: 0;
   background: none;
@@ -921,10 +921,10 @@ a._issueKey_wm1hn_351:hover {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._commitToggle_wm1hn_542:hover {
+._commitToggle_1nv7j_542:hover {
   color: var(--text);
 }
-._evidenceChildren_wm1hn_556 {
+._evidenceChildren_1nv7j_556 {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--s1);
@@ -934,10 +934,10 @@ a._issueKey_wm1hn_351:hover {
   list-style: none;
 }
 /* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._evidenceChildren_wm1hn_556[hidden] {
+._evidenceChildren_1nv7j_556[hidden] {
   display: none;
 }
-._moreToggle_wm1hn_569 {
+._moreToggle_1nv7j_569 {
   margin-top: var(--s1);
   padding: 0;
   border: 0;
@@ -949,11 +949,11 @@ a._issueKey_wm1hn_351:hover {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._moreToggle_wm1hn_569:hover {
+._moreToggle_1nv7j_569:hover {
   color: var(--text);
 }
 
-._note_wm1hn_188 {
+._note_1nv7j_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -966,19 +966,19 @@ a._issueKey_wm1hn_351:hover {
 /* Practice signals: deliberately quieter than .note, and much quieter than the
    blocker. These are coaching nudges about how work landed, not something to
    stop the sprint for, and the person named is reading them. */
-._practices_wm1hn_598 {
+._practices_1nv7j_598 {
   margin-top: var(--s3);
   padding-top: var(--s2);
   border-top: 1px dashed var(--line);
 }
-._practiceList_wm1hn_603 {
+._practiceList_1nv7j_603 {
   display: grid;
   gap: var(--s2);
   margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
 }
-._practice_wm1hn_598 {
+._practice_1nv7j_598 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -989,14 +989,14 @@ a._issueKey_wm1hn_351:hover {
 }
 /* The repeat marker is a word, never colour alone — a second day running is a
    different fact from a one-off and has to survive greyscale. */
-._practiceRepeat_wm1hn_621 {
+._practiceRepeat_1nv7j_621 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._practiceRollup_wm1hn_628 {
+._practiceRollup_1nv7j_628 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1004,11 +1004,56 @@ a._issueKey_wm1hn_351:hover {
   margin: var(--s3) 0 0;
 }
 
+/* Cross-source conflict cards. Louder than a practice nudge — two systems
+   disagree about a fact — but the severity word always rides beside the chip
+   colour, so the card survives greyscale. */
+._conflictList_1nv7j_639 {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+._conflict_1nv7j_639 {
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+._conflictTitle_1nv7j_651 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+}
+._conflictDetail_1nv7j_658 {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+._conflictClaims_1nv7j_664 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+}
+._conflictClaim_1nv7j_664 {
+  color: var(--muted);
+}
+._conflictAction_1nv7j_674 {
+  margin: var(--s2) 0 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
 /* The two answers, on a correctable share only. Quieter than the signal they
    sit under: disputing a nudge should look as low-stakes as it is. They take
    the full row so a long signal sentence never wraps around them. */
-._practiceVotes_wm1hn_639,
-._practiceAsk_wm1hn_640 {
+._practiceVotes_1nv7j_684,
+._practiceAsk_1nv7j_685 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1016,24 +1061,24 @@ a._issueKey_wm1hn_351:hover {
   width: 100%;
   margin: 0;
 }
-._practiceAsk_wm1hn_640 {
+._practiceAsk_1nv7j_685 {
   flex-direction: column;
   align-items: stretch;
   gap: var(--s1);
 }
-._practiceAskRow_wm1hn_653 {
+._practiceAskRow_1nv7j_698 {
   display: flex;
   gap: var(--s2);
 }
-._practiceAskLabel_wm1hn_657 {
+._practiceAskLabel_1nv7j_702 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._practiceVote_wm1hn_639,
-._practiceSend_wm1hn_665 {
+._practiceVote_1nv7j_684,
+._practiceSend_1nv7j_710 {
   padding: 2px var(--s2);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -1043,20 +1088,20 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-2xs);
   cursor: pointer;
 }
-._practiceVote_wm1hn_639:hover:not(:disabled),
-._practiceSend_wm1hn_665:hover {
+._practiceVote_1nv7j_684:hover:not(:disabled),
+._practiceSend_1nv7j_710:hover {
   border-color: var(--accent);
   color: var(--text);
 }
-._practiceVote_wm1hn_639:disabled {
+._practiceVote_1nv7j_684:disabled {
   opacity: 0.5;
   cursor: default;
 }
-._practiceSend_wm1hn_665 {
+._practiceSend_1nv7j_710 {
   border-color: var(--accent);
   color: var(--text);
 }
-._practiceInput_wm1hn_688 {
+._practiceInput_1nv7j_733 {
   width: 100%;
   padding: var(--s1) var(--s2);
   border: 1px solid var(--line);
@@ -1066,14 +1111,14 @@ a._issueKey_wm1hn_351:hover {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._practiceInput_wm1hn_688:focus {
+._practiceInput_1nv7j_733:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 /* What replaces a signal the reader removed. Not an error, so not a warn tone —
    it is a receipt for something that worked. */
-._practiceResolved_wm1hn_704,
-._practiceOutcome_wm1hn_705 {
+._practiceResolved_1nv7j_749,
+._practiceOutcome_1nv7j_750 {
   width: 100%;
   margin: 0;
   color: var(--dim);
@@ -1081,7 +1126,7 @@ a._issueKey_wm1hn_351:hover {
   font-style: italic;
 }
 
-._quote_wm1hn_713 {
+._quote_1nv7j_758 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -1094,7 +1139,7 @@ a._issueKey_wm1hn_351:hover {
   white-space: pre-wrap;
 }
 
-._screenshot_wm1hn_726 {
+._screenshot_1nv7j_771 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -1102,26 +1147,26 @@ a._issueKey_wm1hn_351:hover {
   border-radius: var(--r-m);
 }
 
-._details_wm1hn_734 {
+._details_1nv7j_779 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_wm1hn_741 {
+._coverage_1nv7j_786 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_wm1hn_748 {
+._dot_1nv7j_793 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_wm1hn_753 {
+._dim_1nv7j_798 {
   color: var(--dim);
 }
 
@@ -1129,14 +1174,14 @@ a._issueKey_wm1hn_351:hover {
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_wm1hn_761 {
+._headingEmoji_1nv7j_806 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_wm1hn_768 {
+._cardId_1nv7j_813 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1147,57 +1192,57 @@ a._issueKey_wm1hn_351:hover {
   white-space: nowrap;
 }
 
-._feature_wm1hn_779,
-._story_wm1hn_399,
-._sprint_wm1hn_781 {
+._feature_1nv7j_824,
+._story_1nv7j_399,
+._sprint_1nv7j_826 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_wm1hn_399 {
+._story_1nv7j_399 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_wm1hn_788 {
+._storyText_1nv7j_833 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_wm1hn_795 {
+._storyGroup_1nv7j_840 {
   margin-bottom: var(--s5);
 }
-._storyGroup_wm1hn_795 > .eyebrow {
+._storyGroup_1nv7j_840 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_wm1hn_805 {
+._criteria_1nv7j_850 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_wm1hn_805 li {
+._criteria_1nv7j_850 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_wm1hn_805 li + li {
+._criteria_1nv7j_850 li + li {
   margin-top: var(--s1);
 }
-._criteria_wm1hn_805 b {
+._criteria_1nv7j_850 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_wm1hn_826 {
+._dod_1nv7j_871 {
   margin-top: var(--s3);
 }
-._dod_wm1hn_826 ul {
+._dod_1nv7j_871 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -1205,22 +1250,22 @@ a._issueKey_wm1hn_351:hover {
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_wm1hn_837 {
+._exempt_1nv7j_882 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_wm1hn_842 {
+._fields_1nv7j_887 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_wm1hn_842 > * + * {
+._field_1nv7j_887 > * + * {
   margin-top: var(--s2);
 }
 
-._target_wm1hn_852 {
+._target_1nv7j_897 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1229,36 +1274,36 @@ a._issueKey_wm1hn_351:hover {
   line-height: 1.6;
 }
 
-._capacity_wm1hn_861 {
+._capacity_1nv7j_906 {
   margin-top: var(--s4);
 }
-._capacity_wm1hn_861 > * + * {
+._capacity_1nv7j_906 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_wm1hn_868 {
+._sprintGoal_1nv7j_913 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_wm1hn_874 {
+._reduced_1nv7j_919 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_wm1hn_877 {
+._reducedNote_1nv7j_922 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_wm1hn_883 {
+._taskGroup_1nv7j_928 {
   margin-bottom: var(--s5);
 }
-._taskGroup_wm1hn_883 > .eyebrow {
+._taskGroup_1nv7j_928 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_wm1hn_890 {
+._groupSubject_1nv7j_935 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1266,7 +1311,7 @@ a._issueKey_wm1hn_351:hover {
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_wm1hn_898 {
+._taskNote_1nv7j_943 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1276,44 +1321,44 @@ a._issueKey_wm1hn_351:hover {
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_wm1hn_908 {
+._document_1nv7j_953 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_wm1hn_908 > * + * {
+._document_1nv7j_953 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_wm1hn_908 h2,
-._document_wm1hn_908 h3,
-._document_wm1hn_908 h4,
-._document_wm1hn_908 h5,
-._document_wm1hn_908 h6 {
+._document_1nv7j_953 h2,
+._document_1nv7j_953 h3,
+._document_1nv7j_953 h4,
+._document_1nv7j_953 h5,
+._document_1nv7j_953 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_wm1hn_908 h2 { font-size: var(--fs-m); }
-._document_wm1hn_908 h3 { font-size: var(--fs-s); }
-._document_wm1hn_908 h4,
-._document_wm1hn_908 h5,
-._document_wm1hn_908 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_wm1hn_908 ul,
-._document_wm1hn_908 ol {
+._document_1nv7j_953 h2 { font-size: var(--fs-m); }
+._document_1nv7j_953 h3 { font-size: var(--fs-s); }
+._document_1nv7j_953 h4,
+._document_1nv7j_953 h5,
+._document_1nv7j_953 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1nv7j_953 ul,
+._document_1nv7j_953 ol {
   padding-left: 1.2rem;
 }
-._document_wm1hn_908 li + li {
+._document_1nv7j_953 li + li {
   margin-top: var(--s1);
 }
-._document_wm1hn_908 li::marker {
+._document_1nv7j_953 li::marker {
   color: var(--accent);
 }
-._document_wm1hn_908 code {
+._document_1nv7j_953 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1321,18 +1366,18 @@ a._issueKey_wm1hn_351:hover {
   background: var(--card);
   color: var(--accent2);
 }
-._document_wm1hn_908 a {
+._document_1nv7j_953 a {
   color: var(--accent);
 }
 
-._quote_wm1hn_713 {
+._quote_1nv7j_758 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_wm1hn_964 {
+._code_1nv7j_1009 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1345,13 +1390,13 @@ a._issueKey_wm1hn_351:hover {
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_wm1hn_964 code {
+._code_1nv7j_1009 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_wm1hn_983 {
+._rule_1nv7j_1028 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
@@ -1359,13 +1404,13 @@ a._issueKey_wm1hn_351:hover {
 
 /* ── Team profile: generated blocks ───────────────────────────── */
 
-._blocks_wm1hn_991 > * + * {
+._blocks_1nv7j_1036 > * + * {
   margin-top: var(--s4);
 }
 
 /* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
    accent — it groups within a section rather than announcing a new one. */
-._h3_wm1hn_997 {
+._h3_1nv7j_1042 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -1374,48 +1419,48 @@ a._issueKey_wm1hn_351:hover {
   color: var(--muted);
   margin: 0 0 var(--s2);
 }
-._kvWrap_wm1hn_1006 > * + * {
+._kvWrap_1nv7j_1051 > * + * {
   margin-top: var(--s2);
 }
 
 /* Label and value on one baseline. A `<dl>` rather than a table: these are
    facts about one thing, not rows that compare with each other. */
-._kv_wm1hn_1006 {
+._kv_1nv7j_1051 {
   display: grid;
   gap: 0;
   margin: 0;
   font-size: var(--fs-s);
 }
-._kv_wm1hn_1006 > div {
+._kv_1nv7j_1051 > div {
   display: grid;
   grid-template-columns: minmax(0, 14rem) 1fr;
   gap: var(--s3);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-._kv_wm1hn_1006 > div:last-child {
+._kv_1nv7j_1051 > div:last-child {
   border-bottom: none;
 }
-._kv_wm1hn_1006 dt {
+._kv_1nv7j_1051 dt {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._kv_wm1hn_1006 dd {
+._kv_1nv7j_1051 dd {
   margin: 0;
   line-height: 1.6;
   min-width: 0;
 }
 @media (max-width: 699px) {
-  ._kv_wm1hn_1006 > div {
+  ._kv_1nv7j_1051 > div {
     grid-template-columns: 1fr;
     gap: var(--s1);
   }
 }
 
-._cell_wm1hn_1047 {
+._cell_1nv7j_1092 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1424,32 +1469,32 @@ a._issueKey_wm1hn_351:hover {
 }
 /* Bounded rather than fluid: a proportion bar is only comparable down a column
    if every row draws the same track. */
-._cellBar_wm1hn_1056 {
+._cellBar_1nv7j_1101 {
   width: 90px;
   flex: none;
 }
-._cellNote_wm1hn_1060 {
+._cellNote_1nv7j_1105 {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._cellPerson_wm1hn_1064 {
+._cellPerson_1nv7j_1109 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._profileCards_wm1hn_1070 {
+._profileCards_1nv7j_1115 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
-._profileProse_wm1hn_1075 {
+._profileProse_1nv7j_1120 {
   font-size: var(--fs-s);
 }
 
 /* A caveat reads as a qualification of the section, not as one of its
    findings. */
-._note_wm1hn_188 {
+._note_1nv7j_188 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1459,17 +1504,17 @@ a._issueKey_wm1hn_351:hover {
 
 /* A finding worth stopping on. The rule and the wash are both derived from the
    tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_wm1hn_1091 {
+._callout_1nv7j_1136 {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
   border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
-._callout_wm1hn_1091 > * + * {
+._callout_1nv7j_1136 > * + * {
   margin-top: var(--s2);
 }
-._callout_wm1hn_1091 p {
+._callout_1nv7j_1136 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -1480,16 +1525,16 @@ a._issueKey_wm1hn_351:hover {
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_wm1hn_122,
-  ._column_wm1hn_203,
-  ._lede_wm1hn_41,
-  ._callout_wm1hn_1091 {
+  ._project_1nv7j_122,
+  ._column_1nv7j_203,
+  ._lede_1nv7j_41,
+  ._callout_1nv7j_1136 {
     break-inside: avoid;
   }
-  ._h3_wm1hn_997 {
+  ._h3_1nv7j_1042 {
     break-after: avoid;
   }
-  ._h2_wm1hn_15 {
+  ._h2_1nv7j_15 {
     break-after: avoid;
   }
 }
@@ -1497,13 +1542,13 @@ a._issueKey_wm1hn_351:hover {
 /* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
    the rules live with the other report sections rather than in a file of their
    own. Tokens only — no literal colours (test_web_frontend_guards). */
-._annotations_wm1hn_1129 {
+._annotations_1nv7j_1174 {
   margin-block-start: var(--s6);
   border-block-start: 1px solid var(--line);
   padding-block-start: var(--s5);
 }
 
-._annotationList_wm1hn_1135 {
+._annotationList_1nv7j_1180 {
   display: grid;
   gap: var(--s3);
   margin: 0;
@@ -1511,16 +1556,16 @@ a._issueKey_wm1hn_351:hover {
   list-style: none;
 }
 
-._annotation_wm1hn_1129 {
+._annotation_1nv7j_1174 {
   border-inline-start: 2px solid var(--line-strong);
   padding-inline-start: var(--s4);
 }
 
-._annotationBody_wm1hn_1148 {
+._annotationBody_1nv7j_1193 {
   margin: 0;
 }
 
-._annotationMeta_wm1hn_1152 {
+._annotationMeta_1nv7j_1197 {
   display: flex;
   gap: var(--s2);
   margin: var(--s1) 0 0;
@@ -1528,11 +1573,11 @@ a._issueKey_wm1hn_351:hover {
   font-size: var(--fs-s);
 }
 
-._annotationWhen_wm1hn_1160 {
+._annotationWhen_1nv7j_1205 {
   font-variant-numeric: tabular-nums;
 }
 
-._annotationWhere_wm1hn_1164 {
+._annotationWhere_1nv7j_1209 {
   font-style: italic;
 }
 /*

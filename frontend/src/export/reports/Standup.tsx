@@ -44,6 +44,7 @@ import type {
   EvidenceLink,
   Run,
   StandupCategory,
+  StandupConflict,
   StandupMember,
   StandupPractice,
   Trend,
@@ -568,6 +569,55 @@ function Practice({
   );
 }
 
+/** `provenance.conflicts.Severity` words. Unknown → muted, the same policy as
+ * every other engine-produced vocabulary on this page. The word always
+ * renders beside the colour. */
+const CONFLICT_TONE: Record<string, Tone> = {
+  low: 'low',
+  medium: 'warn',
+  high: 'danger',
+  critical: 'danger',
+};
+
+function ConflictCards({ conflicts }: { conflicts: StandupConflict[] }) {
+  if (!conflicts.length) return null;
+  return (
+    <section id="conflicts">
+      <h2 className={styles['h2']}>Conflicts</h2>
+      <ul className={styles['conflictList']}>
+        {conflicts.map((conflict) => (
+          <li key={conflict.title} className={styles['conflict']}>
+            <p className={styles['conflictTitle']}>
+              <Chip tone={tone(CONFLICT_TONE, conflict.severity)}>{conflict.severity}</Chip>
+              <strong>{conflict.title}</strong>
+            </p>
+            <p className={styles['conflictDetail']}>{conflict.detail}</p>
+            <p className={styles['conflictClaims']}>
+              {conflict.claims.map((claim, index) => {
+                const url = safeUrl(claim.url);
+                return (
+                  <span key={index} className={styles['conflictClaim']}>
+                    <Eyebrow>{claim.source}</Eyebrow>{' '}
+                    {url ? (
+                      <a href={url} target="_blank" rel="noreferrer">
+                        {claim.label}
+                      </a>
+                    ) : (
+                      claim.label
+                    )}{' '}
+                    — {claim.value}
+                  </span>
+                );
+              })}
+            </p>
+            {conflict.action ? <p className={styles['conflictAction']}>{conflict.action}</p> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Practices({
   member,
   practices,
@@ -858,6 +908,7 @@ export function Standup({
   coverage,
   skipped,
   practices,
+  conflicts = [],
   images,
   trend,
   warnings,
@@ -876,6 +927,8 @@ export function Standup({
   coverage: Array<[string, string]>;
   skipped: Array<[string, string]>;
   practices: Array<{ rule: string; count: number; title: string }>;
+  /** Cross-source disagreements. Empty on a clean day; absent on legacy payloads. */
+  conflicts?: StandupConflict[];
   images: string[];
   trend: Trend | null;
   warnings: string[];
@@ -964,6 +1017,8 @@ export function Standup({
           </Field>
         </section>
       ) : null}
+
+      <ConflictCards conflicts={conflicts} />
 
       <section id="updates">
         <h2 className={styles['h2']}>Updates</h2>
