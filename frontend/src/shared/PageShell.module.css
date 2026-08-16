@@ -37,6 +37,10 @@
      where the same notch reads as a rendering fault — so it is opt-in, from
      `.shellCurved`. */
   border-radius: 0 0 var(--screen-radius) var(--screen-radius);
+  /* The top pair is decided a frame or two after the document renders, and going
+     fullscreen decides it again — so the corners round off rather than appear.
+     The void is the same box's shadow and follows without being told. */
+  transition: border-radius var(--dur-base) var(--ease);
   background: var(--bg);
   box-shadow: 0 0 0 50vmax var(--screen-void);
   /* Clips the children to the curve. */
