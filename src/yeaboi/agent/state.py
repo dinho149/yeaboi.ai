@@ -1752,18 +1752,23 @@ class QuestionnaireState:
     # Transient prior-art sub-loop, modelled on the PTO sub-loop above. After
     # the questionnaire and before the confirmation summary, a greenfield
     # project is offered the team's own repositories as reference material and
-    # the user accepts or rejects each in turn.
-    # Stages: "" (not started), "ask", "reason", "done".
+    # the user picks the relevant ones in one batched answer.
+    # Stages: "" (not started), "ask", "empty", "done". ("reason" was the old
+    # per-repo rejection-reason stage — read-tolerated from sessions serialized
+    # by older builds; the handler converts it back to "ask".)
     # See docs: "Project Intake Questionnaire" — prior art
     _prior_art_stage: str = ""
-    # Transient: the shortlist being walked, each a RepoCandidate as a dict.
+    # Transient: the shortlist on offer, each a RepoCandidate as a dict.
     _prior_art_candidates: list[dict] = field(default_factory=list)
-    # Transient: which candidate is currently on screen.
+    # Transient: kept for serialization compatibility with the old one-at-a-time
+    # loop; no longer advanced (the whole shortlist shows at once).
     _prior_art_index: int = 0
     # Transient: accepted candidates, promoted to ScrumState.prior_art on confirm.
     _prior_art_accepted: list[dict] = field(default_factory=list)
-    # Transient: rejections as {"key", "name", "reason"}, written to the global
-    # feedback ledger when the sub-loop ends.
+    # Transient: banned candidates ("never suggest again") as {"key", "name",
+    # "reason"}, written to the global feedback ledger when the sub-loop ends.
+    # Reason is always "" now — the free-text "why?" stage is gone; a candidate
+    # merely left unticked lands in neither list and is never written down.
     _prior_art_rejected: list[dict] = field(default_factory=list)
     # Transient: why the shortlist was empty, so the card can say which of
     # "no profile" / "profile too old" / "nothing matched" happened. Going

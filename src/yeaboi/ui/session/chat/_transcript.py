@@ -63,7 +63,12 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
         return _render_tui_intake_summary(qs, render_w) if qs is not None else None
     if kind == "prior_art":
         qs = graph_state.get("questionnaire")
-        return _render_prior_art(qs, render_w) if qs is not None else None
+        if qs is None:
+            return None
+        # _prior_art_preview is the chat driver's presentation-only cursor —
+        # which row the carousel is highlighting right now. It never reaches
+        # the node; surfaces without the widget just preview the first repo.
+        return _render_prior_art(qs, render_w, preview=graph_state.get("_prior_art_preview", 0))
     if kind == "epic" and graph_state.get("project_analysis"):
         return _render_tui_epic(graph_state["project_analysis"], render_w=render_w)
     if kind == "analysis" and graph_state.get("project_analysis"):
@@ -130,39 +135,38 @@ def _render_prior_art_closed(qs, candidates: list) -> object:
         elif key and key in rejected:
             line.append("  ✗ ", style="dim")
             line.append(name, style="dim")
-            line.append("   not relevant", style="dim")
+            line.append("   never suggest", style="dim")
         else:
-            # Reached by "Skip the rest", which ends the loop without a verdict
-            # on what is left. Saying "not reviewed" rather than nothing keeps
-            # a skip distinguishable from a rejection.
+            # Left unticked: passed over for this project only, nothing
+            # written down. "Not this time" keeps that distinguishable from
+            # the permanent ✗ ban above.
             line.append("  · ", style="dim")
             line.append(name, style="dim")
-            line.append("   not reviewed", style="dim")
+            line.append("   not this time", style="dim")
         rows.append(line)
     return Group(*rows)
 
 
-def _render_prior_art(qs, render_w: int):
-    """The prior-art candidate currently awaiting a verdict.
+def _render_prior_art(qs, render_w: int, *, preview: int = 0):
+    """The prior-art card: a preview of one repo, browsable over the batch.
 
     Rendered from the questionnaire's transient sub-loop state, like every
-    other card renders from live graph_state — the card holds no data of its
-    own, so a re-render after an answer always shows the right candidate.
+    other card renders from live graph_state — plus ``preview``, the chat
+    driver's highlight cursor: as the carousel moves through the choice rows
+    the card re-renders to show that row's pitch and stack. The card is a
+    pure preview — selection state lives in the checkboxes below it, bans in
+    their ✗ rows — so it stays a function of (graph_state, preview) only.
     Once the loop closes it becomes the record of the verdicts given.
     """
     from rich.console import Group
     from rich.text import Text
 
     candidates = getattr(qs, "_prior_art_candidates", None) or []
-    index = getattr(qs, "_prior_art_index", 0)
     if not candidates:
         return None
-    # "Skip the rest" ends the loop without moving the index, so the stage is
-    # the authority on whether anything is still being asked — keying off the
-    # index alone would leave the card frozen on the skipped candidate,
-    # still marked as the one being decided.
-    if getattr(qs, "_prior_art_stage", "") == "done" or not (0 <= index < len(candidates)):
+    if getattr(qs, "_prior_art_stage", "") == "done":
         return _render_prior_art_closed(qs, candidates)
+    index = max(0, min(int(preview or 0), len(candidates) - 1))
     candidate = candidates[index]
 
     rows: list = []
@@ -187,35 +191,23 @@ def _render_prior_art(qs, render_w: int):
         rows.append(Text(""))
         rows.append(Text("  " + " · ".join(str(s) for s in stack), style="dim"))
 
-    rows.append(Text(""))
-    rows.append(Text(f"  {index + 1} of {len(candidates)}", style="dim"))
-    # The roster. One card per kind means this card *replaces itself* as the
-    # loop advances, so without the full list there is no evidence the other
-    # candidates exist — "1 of 3" reads as a pager with no pager keys. Listing
-    # every one, with what was already decided, makes the sequence visible
-    # without adding navigation the rest of intake does not have.
+    # The browse roster: which repo the card is detailing, among what else is
+    # on offer. No verdicts here — a ✓ on the card would duplicate (and race)
+    # the checkbox that actually holds the selection.
     if len(candidates) > 1:
-        accepted, rejected = _prior_art_verdicts(qs)
+        rows.append(Text(""))
         for position, other in enumerate(candidates):
             name = str(other.get("name", ""))
-            key = str(other.get("key", ""))
             line = Text(overflow="ellipsis", no_wrap=True)
             if position == index:
                 line.append("  ▶ ", style="bold")
                 line.append(name, style="bold white")
-                line.append("   deciding now", style="dim")
-            elif key and key in accepted:
-                line.append("  ✓ ", style="bold")
-                line.append(name, style="dim")
-                line.append("   kept", style="dim")
-            elif key and key in rejected:
-                line.append("  ✗ ", style="dim")
-                line.append(name, style="dim")
-                line.append("   not relevant", style="dim")
             else:
                 line.append("  · ", style="dim")
                 line.append(name, style="dim")
             rows.append(line)
+        rows.append(Text(""))
+        rows.append(Text(f"  {len(candidates)} repositories — ←/→ to browse, pick below", style="dim"))
     return Group(*rows)
 
 
@@ -320,6 +312,13 @@ class ChatTranscript:
         """Drop artifact caches after a graph turn — their data may have changed."""
         for message in self.messages:
             if message.role == "artifact":
+                message.invalidate()
+
+    def invalidate_artifact(self, kind: str) -> None:
+        """Drop one card's cache — for a presentation change (the prior-art
+        preview following the highlight) that touches no other card's data."""
+        for message in self.messages:
+            if message.role == "artifact" and message.artifact_kind == kind:
                 message.invalidate()
 
     # -- rendering ---------------------------------------------------------

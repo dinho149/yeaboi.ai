@@ -106,26 +106,15 @@ _CONFIRM_VERDICT_PROMPT = (
     "Here's everything I've got. Pick an option below — or type **accept**, **edit N**, or just tell me what's off."
 )
 
-_PRIOR_ART_VERDICT_PROMPT = "You already own this one. Pick an option below — or type **yes**, **no**, or **skip**."
+_PRIOR_ART_VERDICT_PROMPT = (
+    "You already own these. **Space** picks the relevant ones, **←/→** browses the details, "
+    "**X** hides a repo forever, **Enter** confirms — or type e.g. **1 3**, **all**, or **none**."
+)
 
 
 def _prior_art_verdict_prompt(qs) -> str:
-    """The verdict line, ending in what happens after the pick.
-
-    The card replaces itself each time the loop advances, so a bare prompt
-    leaves someone looking at "1 of 3" with no way to know that answering is
-    the thing that reaches 2 and 3 — the one question the card cannot answer
-    about itself.
-    """
-    candidates = getattr(qs, "_prior_art_candidates", None) or []
-    remaining = len(candidates) - (getattr(qs, "_prior_art_index", 0) + 1)
-    if remaining == 1:
-        tail = " Answering brings up the last one."
-    elif remaining > 1:
-        tail = f" Answering brings up the next of {remaining} more."
-    else:
-        tail = " This is the last one."
-    return _PRIOR_ART_VERDICT_PROMPT + tail
+    """The one bubble under the prior-art card — the whole batch, one line."""
+    return _PRIOR_ART_VERDICT_PROMPT
 
 
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
@@ -563,6 +552,7 @@ class _ChatDriver:
         # render from any more and would show as "(… unavailable)". The step
         # re-runs under the new mode and posts a fresh one.
         self.transcript.drop_artifact("prior_art")
+        self.state.pop("_prior_art_preview", None)
         self._note(f"Switched to {label} — I kept all your answers.")
         # One no-LLM invoke so project_intake produces the first gap question
         # (mirrors the old _switch_to_epic_pending re-entry).
@@ -835,8 +825,8 @@ class _ChatDriver:
             return
 
         # Prior-art verdict → card + one line. The node's prompt already
-        # contains the pitch and a [1]/[2]/[3] block; the card renders both
-        # properly and the choice rows carry the keys.
+        # contains the numbered shortlist and the answer grammar; the card
+        # renders the same data properly and the choice rows carry the keys.
         if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
             self.transcript.add_artifact("prior_art")
             self._say(_prior_art_verdict_prompt(qs))
@@ -1330,14 +1320,50 @@ class _ChatDriver:
                 # through to the scroll handler below.
                 if key == "up":
                     self.choices.highlight = (self.choices.highlight - 1) % len(self.choices.options)
+                    self._carousel_moved()
                     continue
                 if key == "down":
                     self.choices.highlight = (self.choices.highlight + 1) % len(self.choices.options)
+                    self._carousel_moved()
+                    continue
+                if key in ("left", "right") and self.choices.carousel:
+                    # A carousel browses sideways too. Safe to claim here: the
+                    # composer is empty (outer gate), so there is no cursor for
+                    # ←/→ to move, and ordinary menus fall through untouched.
+                    step = -1 if key == "left" else 1
+                    self.choices.highlight = (self.choices.highlight + step) % len(self.choices.options)
+                    self._carousel_moved()
                     continue
                 if key == " " and self.choices.multi:
                     i = self.choices.highlight
                     label, checked = self.choices.options[i]
+                    if i in self.choices.banned:
+                        # Space on a banned row un-bans and picks it — the two
+                        # marks are mutually exclusive, and reaching for Space
+                        # says "actually I want this one".
+                        self.choices.banned.discard(i)
+                        self.choices.options[i] = (label, True)
+                        logger.info("Chat prior-art ban toggle: row %d -> unbanned (picked)", i + 1)
+                        continue
                     self.choices.options[i] = (label, not checked)
+                    continue
+                if key in ("x", "X") and self.choices.carousel:
+                    # Permanent "never suggest again" — kept off Space so a
+                    # quick multi-pick can't blacklist a repo by accident.
+                    # Claiming a letter is safe only because the composer is
+                    # empty; prose starting with "x" needs another char first.
+                    i = self.choices.highlight
+                    label, _checked = self.choices.options[i]
+                    if i in self.choices.banned:
+                        self.choices.banned.discard(i)
+                    else:
+                        self.choices.banned.add(i)
+                        self.choices.options[i] = (label, False)
+                    logger.info(
+                        "Chat prior-art ban toggle: row %d -> %s",
+                        i + 1,
+                        "banned" if i in self.choices.banned else "unbanned",
+                    )
                     continue
                 if key == "enter":
                     return self._choice_answer()
@@ -1424,11 +1450,37 @@ class _ChatDriver:
         self.composer.col = len(before)
         return word
 
+    def _carousel_moved(self) -> None:
+        """Sync the prior-art preview card to the highlighted row.
+
+        Presentation-only: the preview index lives on graph_state under a
+        driver-owned key (precedent: _intake_mode) and never reaches the node.
+        Fires in key branches only — never per frame — and invalidates just
+        the one card rather than the whole transcript cache.
+        """
+        if self.choices is None or not self.choices.carousel:
+            return
+        self.state["_prior_art_preview"] = self.choices.highlight
+        self.transcript.invalidate_artifact("prior_art")
+
     def _choice_answer(self) -> str:
         assert self.choices is not None
         # This return leaves the input loop without touching handle_key, so the
         # stash has to be burned here as it is on a typed submit.
         self.composer.forget_stash()
+        if self.choices.carousel:
+            # The batch verdict goes to the node as its index grammar, never as
+            # joined labels — a repo named "a, b" would shatter on the comma
+            # join below and then re-parse as nonsense.
+            picked = [
+                str(i + 1)
+                for i, (_label, is_checked) in enumerate(self.choices.options)
+                if is_checked and i not in self.choices.banned
+            ]
+            banned = [f"!{i + 1}" for i in sorted(self.choices.banned)]
+            answer = " ".join(picked + banned) or "none"
+            logger.info("Chat prior-art batch submit: %s", answer)
+            return answer
         checked = [label for label, is_checked in self.choices.options if is_checked]
         if self.choices.multi and checked:
             return ", ".join(checked)
@@ -1623,15 +1675,27 @@ class _ChatDriver:
         # exists to replace. It is the newest assistant reply whenever the
         # questionnaire is parked on the verdict gate.
         summary_at = -1
+        newest_reply_at = max(
+            (
+                i
+                for i, m in enumerate(messages)
+                if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content
+            ),
+            default=-1,
+        )
         if self._at_intake_summary():
-            summary_at = max(
-                (
-                    i
-                    for i, m in enumerate(messages)
-                    if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content
-                ),
-                default=-1,
-            )
+            summary_at = newest_reply_at
+        # Same replacement for a session parked mid prior-art: the live turn
+        # rendered a card + one line (_append_reply), so replaying the node's
+        # markdown here would resurrect the wall the card replaced. Mutually
+        # exclusive with summary_at — _at_intake_summary excludes prior art.
+        # Only the "ask" stage gets the card; "empty" went out as prose, and a
+        # legacy "reason" reply has no card to rebuild (the node re-asks the
+        # batch on the next input, which posts a fresh one).
+        prior_art_at = -1
+        qs = self._qs()
+        if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask" and qs._prior_art_candidates:
+            prior_art_at = newest_reply_at
         for i, message in enumerate(messages):
             if isinstance(message, HumanMessage) and isinstance(message.content, str):
                 self.transcript.add_user(message.content)
@@ -1639,6 +1703,9 @@ class _ChatDriver:
                 if i == summary_at:
                     self.transcript.add_artifact("intake_summary")
                     self.transcript.add_assistant(_CONFIRM_VERDICT_PROMPT)
+                elif i == prior_art_at:
+                    self.transcript.add_artifact("prior_art")
+                    self.transcript.add_assistant(_prior_art_verdict_prompt(qs))
                 else:
                     self.transcript.add_assistant(message.content)
         for kind, key in (
@@ -1805,11 +1872,26 @@ class _ChatDriver:
                     view.choices = None
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
+                    banned: set[int] = set()
+                    if view.prior_art:
+                        # Pre-bans mirror the pre-checks: populated only when a
+                        # legacy mid-loop session resumed with per-repo verdicts
+                        # already recorded, so they stay visible and reversible.
+                        qs = self._qs()
+                        rejected_keys = {r.get("key", "") for r in getattr(qs, "_prior_art_rejected", [])}
+                        banned = {
+                            i
+                            for i, c in enumerate(getattr(qs, "_prior_art_candidates", []))
+                            if c.get("key", "") and c.get("key", "") in rejected_keys
+                        }
+                        self.state["_prior_art_preview"] = highlight
                     self.choices = ChoiceRows(
                         options=list(view.choices),
                         highlight=highlight,
                         multi=view.multi_select,
                         auto_submit=view.auto_submit,
+                        carousel=view.prior_art,
+                        banned=banned,
                     )
                 else:
                     self.choices = None
@@ -1918,22 +2000,22 @@ class _ChatDriver:
         return submit
 
     def _prior_art_pick(self, submit: str) -> str:
-        """Map a prior-art verdict pick to the digit the node understands.
+        """Map a prior-art submission to what the node understands.
 
-        The "reason" stage has no menu, so free text passes straight through —
-        including text that starts with a digit, which is why this maps only
-        exact labels and never parses the reply.
+        The "ask" stage needs no mapping any more: both the widget
+        (:meth:`_choice_answer`'s carousel branch) and a typed reply already
+        speak the node's index grammar, so they pass straight through. Only
+        the empty card's "Continue" row is a label to translate — it is an
+        acknowledgement, not a verdict, and just needs to not be mistaken for
+        a confirmation-gate pick on the way through.
         """
-        from ._question_view import PRIOR_ART_CONTINUE, PRIOR_ART_NO, PRIOR_ART_SKIP, PRIOR_ART_YES
+        from ._question_view import PRIOR_ART_CONTINUE
 
-        # "Continue" is an acknowledgement of the empty card, not a verdict —
-        # the node takes any input there, so it only needs to not be mistaken
-        # for a confirmation-gate pick on the way through.
-        mapping = {PRIOR_ART_YES: "1", PRIOR_ART_NO: "2", PRIOR_ART_SKIP: "3", PRIOR_ART_CONTINUE: "ok"}
-        mapped = mapping.get(submit)
-        if mapped is not None:
+        self.state.pop("_prior_art_preview", None)  # the preview dies with the menu
+        if submit == PRIOR_ART_CONTINUE:
             logger.info("Chat: prior-art pick -> %s", submit)
-        return mapped or submit
+            return "ok"
+        return submit
 
     def _entertain_duck(self, tick: float) -> None:
         """Rotate working quips (plus the odd gag) through a long wait.
