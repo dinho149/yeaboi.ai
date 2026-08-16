@@ -59,15 +59,19 @@ export function fillsDisplay(): boolean {
 }
 
 /**
- * When to look again after mounting, in ms.
+ * When to look again, in ms, after anything that could have moved the window.
  *
- * A window that has just been restored out of fullscreen is still moving when
- * the first document of a reload runs, and nothing else is guaranteed to ask
- * again — a board that read itself wrong stayed that way until the next resize.
- * These are cheap (one property read and a `setState` that usually bails) and
- * bounded, so a bad first read costs a second rather than the session.
+ * Going fullscreen is an animation, and `resize` fires as it starts — so the
+ * position read there is of a window in flight, and it is the *old* one. Nothing
+ * fires at the end, which is why entering fullscreen left the board square while
+ * reloading inside fullscreen made the corners appear: a fresh mount was the only
+ * thing measuring a window at rest.
+ *
+ * The last of these clears a macOS fullscreen transition. They are cheap — one
+ * property read and a `setState` that usually bails — and every one is cancelled
+ * by the next event.
  */
-const SETTLE_MS = [60, 250, 1000];
+const SETTLE_MS = [60, 250, 600, 1200];
 
 /**
  * Starts square, then corrects — deliberately, and not the way the neighbouring
@@ -88,14 +92,24 @@ export function useFillsDisplay(): boolean {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const apply = () => setFills(fillsDisplay());
 
-    // Now (mounted, so layout has happened), again next frame, and then on a
-    // short schedule — on a hard refresh the early readings can still be of a
-    // half-built window, and nothing else is guaranteed to ask again.
+    let pending: number[] = [];
+    const cancel = (): void => {
+      pending.forEach(window.clearTimeout);
+      pending = [];
+    };
+    // Read now, and again while the window may still be moving. Every event this
+    // listens to announces the *start* of a change, so the trailing reads are
+    // what see the end of one.
+    const apply = (): void => {
+      cancel();
+      const read = () => setFills(fillsDisplay());
+      read();
+      pending = SETTLE_MS.map((ms) => window.setTimeout(read, ms));
+    };
+
     apply();
     const frame = requestAnimationFrame(apply);
-    const timers = SETTLE_MS.map((ms) => window.setTimeout(apply, ms));
 
     // `fullscreenchange` is the Fullscreen API (the deck's `f` key); the
     // browser's own fullscreen and a bookmarks bar being toggled arrive as a
@@ -107,7 +121,7 @@ export function useFillsDisplay(): boolean {
     if (document.readyState !== 'complete') window.addEventListener('load', apply);
     return () => {
       cancelAnimationFrame(frame);
-      timers.forEach(window.clearTimeout);
+      cancel();
       window.removeEventListener('resize', apply);
       window.removeEventListener('load', apply);
       document.removeEventListener('fullscreenchange', apply);
