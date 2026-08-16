@@ -75,6 +75,10 @@
   gap: var(--s4);
   min-width: 0;
   align-self: stretch;
+  /* The closed hand hangs past this column's bottom edge. `clip` rather than
+     `hidden`: it keeps the hang out of the scroller's length without making
+     this a scrollport of its own, which the sticky deck sticks to. */
+  overflow: clip;
 }
 
 @media (max-width: 1099px) {
@@ -632,6 +636,23 @@
   color: var(--text);
 }
 
+/* One cell for both panels: the taller one sets the height, so the tabs above
+   stay where they are whichever is showing. The perspective is nearly always
+   the taller, so the spread sits centred in the space it leaves. */
+.rpanel {
+  display: grid;
+  align-items: center;
+}
+
+.rpanel > * {
+  grid-area: 1 / 1;
+}
+
+.rpanelOff {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .aiBody {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
@@ -665,9 +686,15 @@
 }
 
 .sug {
-  margin: var(--s2) 0 0;
+  margin: var(--s1) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
+}
+
+/* Holds its space and its line breaks, and is simply not on the page yet. */
+.aiUnwritten {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease);
 }
 
 .sug b {
@@ -991,10 +1018,13 @@
 /* ── The deck ────────────────────────────────────────────────────────── */
 
 .deckZone {
+  /* How far the hand goes down once voting closes. */
+  --deck-drop: 64px;
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
   background: var(--bg);
+  transition: margin-bottom var(--dur-base) var(--ease);
   padding: var(--s3) 0 max(var(--s3), env(safe-area-inset-bottom));
   /* `clip`, not `hidden`: the closed hand hangs past the bottom edge, and a
      transform that overflows still lengthens the scroll. The margin leaves the
@@ -1117,14 +1147,24 @@
  * Voting closed: the hand goes down to the bottom edge and peeks over it,
  * fanned on a shallow arc.
  *
- * The scrollport ends at the screen's bottom and clips, so a card pushed past
- * it really is half off the screen rather than drawn over the credit. `--fan`
- * is set per card by Deck.tsx; squaring it drops the ends further than the
- * middle, which is the curve, and the pivot at the card's base keeps the fan
- * from sliding the outer cards sideways.
+ * The drop is a negative margin rather than a transform on the cards, so the
+ * column above comes down with them: the zone gives `.ticket` its `--deck-drop`
+ * back, everything after the ticket starts that much lower, and the zone's own
+ * box ends up past the scrollport — which ends at the screen's bottom edge and
+ * clips. `--fan` is set per card by Deck.tsx; squaring it drops the ends
+ * further than the middle, which is the curve, and the pivot at the card's base
+ * keeps the fan from sliding the outer cards sideways.
  */
+.deckZone[data-state='closed'] {
+  /* Static, or sticky clamps the hand back up to the scrollport's bottom edge —
+     which is the whole thing it is trying to hang past. Nothing is lost: a
+     closed deck has nothing to keep in reach. */
+  position: static;
+  margin-bottom: calc(var(--deck-drop) * -1);
+}
+
 .deckZone[data-state='closed'] .pcard {
-  transform: translateY(calc(64px + var(--fan) * var(--fan) * 12px)) rotate(calc(var(--fan) * 7deg));
+  transform: translateY(calc(var(--fan) * var(--fan) * 12px)) rotate(calc(var(--fan) * 7deg));
   transform-origin: 50% 100%;
   transition:
     transform var(--dur-base) var(--ease),

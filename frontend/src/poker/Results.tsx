@@ -84,12 +84,17 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
         ) : null}
       </div>
 
-      {onAi ? (
-        <div role="tabpanel" id="results-ai" aria-labelledby="results-tab-ai">
-          <AiNote ai={ai} />
-        </div>
-      ) : (
-        <div role={hasAi ? 'tabpanel' : undefined} id="results-spread" aria-labelledby="results-tab-spread">
+      {/* Both panels share one grid cell, so the box is always as tall as the
+          taller of them and switching tabs cannot move the tabs. The one that
+          is not showing keeps its space and loses its visibility, which is also
+          what takes it out of the accessibility tree. */}
+      <div className={styles['rpanel']}>
+        <div
+          role={hasAi ? 'tabpanel' : undefined}
+          id="results-spread"
+          aria-labelledby="results-tab-spread"
+          className={cx(onAi && styles['rpanelOff'])}
+        >
           {revealed && entries.length ? (
             <ul className={styles['dist']}>
               {entries.map(([value, count]) => (
@@ -111,7 +116,18 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
             </ul>
           ) : null}
         </div>
-      )}
+
+        {hasAi ? (
+          <div
+            role="tabpanel"
+            id="results-ai"
+            aria-labelledby="results-tab-ai"
+            className={cx(!onAi && styles['rpanelOff'])}
+          >
+            <AiNote ai={ai} />
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -153,18 +169,61 @@ function AiNote({ ai }: { ai: AiPerspective }) {
     );
   }
 
+  return <AiWritten ai={ai} />;
+}
+
+/** How long one word waits for the next. A read-along pace, not a wait. */
+const WORD_MS = 22;
+
+/**
+ * The perspective arrives as one finished string, and lands a word at a time.
+ *
+ * The whole note is in the DOM from the first frame — the part not yet written
+ * is transparent, not absent — so nothing reflows as it fills in and the tabs
+ * above it do not move. It is also what a screen reader gets, whole, at once.
+ */
+function AiWritten({ ai }: { ai: AiPerspective }) {
+  const note = ai.note;
+  const [upto, setUpto] = useState(note.length);
+
+  useEffect(() => {
+    if (!note || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setUpto(note.length);
+      return undefined;
+    }
+    setUpto(0);
+    let at = 0;
+    let timer = 0;
+    const write = (): void => {
+      const space = note.indexOf(' ', at + 1);
+      at = space === -1 ? note.length : space;
+      setUpto(at);
+      if (at < note.length) timer = window.setTimeout(write, WORD_MS);
+    };
+    timer = window.setTimeout(write, WORD_MS);
+    return () => window.clearTimeout(timer);
+  }, [note]);
+
+  const done = upto >= note.length;
+
   return (
     <div className={styles['ainote']}>
-      <p className={styles['aiBody']}>{ai.note}</p>
+      <p className={styles['aiBody']}>
+        {note.slice(0, upto)}
+        <span className={styles['aiUnwritten']}>{note.slice(upto)}</span>
+      </p>
+      {/* The conclusion holds its place from the start and fades in once the
+          reasoning above it is finished — reading the verdict first would give
+          the argument away. */}
       {ai.evidence.length ? (
-        <ul className={styles['ev']}>
+        <ul className={cx(styles['ev'], !done && styles['aiUnwritten'])}>
           {ai.evidence.map((item, index) => (
             <li key={index}>{item}</li>
           ))}
         </ul>
       ) : null}
       {ai.suggested !== null ? (
-        <p className={styles['sug']}>
+        <p className={cx(styles['sug'], !done && styles['aiUnwritten'])}>
           AI suggests <b>{fmtPoints(ai.suggested)} points</b>
         </p>
       ) : null}
