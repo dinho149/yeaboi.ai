@@ -52,6 +52,7 @@ class AzDevOpsSyncResult:
     stories_created: dict[str, str] = field(default_factory=dict)  # internal_id → work_item_id
     tasks_created: dict[str, str] = field(default_factory=dict)
     iterations_created: dict[str, str] = field(default_factory=dict)  # internal_id → iteration_path
+    iterations_updated: dict[str, str] = field(default_factory=dict)  # existing iterations that gained items
     errors: list[str] = field(default_factory=list)
     skipped: int = 0
 
@@ -144,6 +145,13 @@ def sync_stories_to_azdevops(
     # --- Stories ---
     new_story_keys: dict[str, str] = {}
 
+    # Descriptions render against the plan's OWN DoD list and the team's own
+    # section headings — never the hardcoded defaults.
+    from yeaboi.agent.state import map_template_headings, resolve_dod_items
+
+    dod_items = resolve_dod_items(state)
+    headings = map_template_headings(tuple(state.get("ticket_template_sections") or ()))
+
     for story in stories:
         feature = feature_map.get(story.feature_id)
 
@@ -153,7 +161,7 @@ def sync_stories_to_azdevops(
             try:
                 from azure.devops.v7_1.work_item_tracking.models import JsonPatchOperation as _Jpo
 
-                description = _format_story_description_html(story, feature)
+                description = _format_story_description_html(story, feature, dod_items=dod_items, headings=headings)
                 doc = [_Jpo(op="replace", path="/fields/System.Description", value=description)]
                 wit_client.update_work_item(document=doc, id=int(wi_id), project=project)
                 logger.info("Updated AzDO Story description: %s", wi_id)
@@ -176,7 +184,7 @@ def sync_stories_to_azdevops(
             tags_str = "; ".join(tags)
 
             summary = story.title or story.goal
-            description = _format_story_description_html(story, feature)
+            description = _format_story_description_html(story, feature, dod_items=dod_items, headings=headings)
             raw_pri = story.priority
             priority_val = _map_priority_to_azdo(raw_pri.value if hasattr(raw_pri, "value") else str(raw_pri))
 
@@ -340,13 +348,28 @@ def sync_iterations_to_azdevops(
     # Cascade: create stories first if not done
     story_keys = state.get("azdevops_story_keys", {})
     stories = state.get("stories", [])
+    cascade_stories: dict[str, str] = {}
+    cascade_errors: list[str] = []
     if stories and not story_keys:
         story_result, state = sync_stories_to_azdevops(state, on_progress)
         story_keys = state.get("azdevops_story_keys", {})
         if story_result.errors and not story_keys:
             return story_result, state
+        cascade_stories = dict(story_result.stories_created)
+        cascade_errors = list(story_result.errors)
 
     result = AzDevOpsSyncResult(epic_id=state.get("azdevops_epic_id"))
+    # Cascade-created stories are reported in the stories bucket, not silently dropped.
+    result.stories_created.update(cascade_stories)
+    result.errors.extend(cascade_errors)
+
+    # Backlog target (small-project intake): the stories above are the whole
+    # sync — nothing is created or assigned; unassigned items sit in the backlog.
+    if state.get("sprint_target_mode") == "backlog":
+        logger.info("Iteration sync: backlog mode — stories stay in the backlog, no iteration created")
+        if on_progress:
+            on_progress(1, 1, "Stories left in the backlog — no iteration created")
+        return result, state
 
     project = get_azure_devops_project() or ""
     org_url = get_azure_devops_org_url() or ""
@@ -355,38 +378,47 @@ def sync_iterations_to_azdevops(
     sprints = state.get("sprints", [])
     existing_iteration_keys: dict[str, str] = dict(state.get("azdevops_iteration_keys", {}))
 
-    # Detect existing iteration naming convention (same pattern as jira_sync.py)
-    iteration_name_prefix = ""
-    max_existing_number = 0
+    # Detect existing iteration naming convention (same consensus derivation as
+    # jira_sync.py); "past" iterations map onto the closed-sprint guard.
+    from yeaboi.sync_naming import advance_past_closed, derive_board_numbering, resolve_starting_number
+
+    time_frame_to_state = {"past": "closed", "current": "active", "future": "future"}
+    iteration_meta: list[dict] = []
     try:
-        from yeaboi.tools.azure_devops import _make_azdo_clients
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
 
-        _, work_client = _make_azdo_clients(org_url, token)
-        from azure.devops.v7_1.work.models import TeamContext
-
-        from yeaboi.config import get_azure_devops_team
-
-        team = get_azure_devops_team() or f"{project} Team"
-        team_context = TeamContext(project=project, team=team)
-        existing_iters = work_client.get_team_iterations(team_context) or []
-        for it in existing_iters:
-            match = re.match(r"^(.+?)(\d+)\s*$", it.name or "")
-            if match:
-                num = int(match.group(2))
-                if num > max_existing_number:
-                    max_existing_number = num
-                    iteration_name_prefix = match.group(1)
-        if iteration_name_prefix:
-            logger.debug(
-                "Detected iteration naming pattern: '%sN' (max: %d)", iteration_name_prefix, max_existing_number
-            )
+        iteration_meta = fetch_team_iterations_meta(org_url, token, project)
     except Exception as e:
-        logger.debug("Could not detect iteration naming pattern: %s", e)
+        # Without the metadata the sync silently reverts to generic numbering
+        # (and an existing-target sync cannot resolve by name) — say so.
+        logger.warning("Could not fetch iteration metadata: %s — falling back to generic numbering", e)
 
-    # Determine starting number for new iterations
-    starting_number = state.get("starting_sprint_number", 0)
-    if not starting_number and max_existing_number > 0:
-        starting_number = max_existing_number + 1
+    # "Add to an existing iteration" (small-project intake): assign the plan's
+    # stories to the chosen iteration and never create one.
+    if state.get("sprint_target_mode") == "existing":
+        return _sync_to_existing_azdo_iteration(state, result, story_keys, iteration_meta, project, on_progress)
+
+    numbering = derive_board_numbering(
+        (it["name"], time_frame_to_state.get(it["time_frame"], "future")) for it in iteration_meta
+    )
+    iteration_name_prefix = numbering.prefix
+
+    # Determine starting number for new iterations. The intake's -1 "no tracker
+    # sprint picked" sentinel falls through to max+1, and a batch that would
+    # land on a past iteration's name is shifted forward as one block.
+    starting_number = resolve_starting_number(state.get("starting_sprint_number", 0), numbering)
+    starting_number, closed_warn = advance_past_closed(starting_number, len(sprints), numbering)
+    if closed_warn:
+        logger.warning("%s", closed_warn)
+        if on_progress:
+            on_progress(0, len(sprints), closed_warn)
+    if iteration_name_prefix:
+        logger.info(
+            "Iteration naming: prefix=%r max_existing=%d starting_number=%d",
+            iteration_name_prefix,
+            numbering.max_number,
+            starting_number,
+        )
 
     sprint_length_weeks = state.get("sprint_length_weeks", 2)
     sprint_start_date_str = state.get("sprint_start_date", "")
@@ -420,49 +452,131 @@ def sync_iterations_to_azdevops(
             continue
 
         try:
-            # Compute iteration dates
-            start_date = ""
-            finish_date = ""
-            if sprint_start_date_str:
-                from datetime import datetime, timedelta
-
-                start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
-                end = start + timedelta(weeks=sprint_length_weeks)
-                start_date = start.strftime("%Y-%m-%d")
-                finish_date = end.strftime("%Y-%m-%d")
-
-            # Create iteration as a classification node via REST API
-            iteration_path = _create_iteration_node(
-                org_url,
-                token,
-                project,
-                sprint_name,
-                start_date=start_date,
-                finish_date=finish_date,
+            # Reuse a same-named iteration only while it can still take items —
+            # past iterations are never a target (mirrors the Jira closed-sprint
+            # guard; numbered collisions were already renumbered above).
+            matched = next(
+                (it for it in iteration_meta if it["name"] == sprint_name and it["time_frame"] != "past"),
+                None,
             )
+            if matched:
+                iteration_path = matched["path"].lstrip("\\") or f"{project}\\{sprint_name}"
+                result.iterations_updated[sprint.id] = iteration_path
+                progress_label = f"Iteration reused: {sprint_name}"
+                logger.info("Reusing existing AzDO Iteration: %s → %s", sprint_name, iteration_path)
+            else:
+                # Compute iteration dates. End is inclusive (start + length − 1
+                # day) so consecutive iterations don't overlap — same convention
+                # as reporting/sprints.py and the Jira sync.
+                start_date = ""
+                finish_date = ""
+                if sprint_start_date_str:
+                    from datetime import datetime, timedelta
+
+                    start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
+                    end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)
+                    start_date = start.strftime("%Y-%m-%d")
+                    finish_date = end.strftime("%Y-%m-%d")
+
+                # Create iteration as a classification node via REST API
+                iteration_path = _create_iteration_node(
+                    org_url,
+                    token,
+                    project,
+                    sprint_name,
+                    start_date=start_date,
+                    finish_date=finish_date,
+                )
+                result.iterations_created[sprint.id] = iteration_path
+                progress_label = f"Iteration created: {sprint_name}"
+                logger.info("Created AzDO Iteration: %s → %s", sprint_name, iteration_path)
 
             new_iteration_keys[sprint.id] = iteration_path
-            result.iterations_created[sprint.id] = iteration_path
 
             # Assign stories to iteration
             issue_ids = [story_keys[sid] for sid in sprint.story_ids if sid in story_keys]
             if issue_ids:
                 add_work_items_to_iteration(issue_ids, iteration_path, project)
 
-            logger.info("Created AzDO Iteration: %s → %s", sprint_name, iteration_path)
             time.sleep(0.1)
         except Exception as e:
             err = f"Iteration '{sprint_name}': {e}"
             logger.error("AzDO sync failed — %s", err)
             result.errors.append(err)
+            progress_label = f"Iteration failed: {sprint_name}"
 
         current += 1
         if on_progress:
-            on_progress(current, total, f"Iteration created: {sprint_name}")
+            on_progress(current, total, progress_label)
 
     merged_iteration_keys = {**existing_iteration_keys, **new_iteration_keys}
     state["azdevops_iteration_keys"] = merged_iteration_keys
 
+    return result, state
+
+
+def _sync_to_existing_azdo_iteration(
+    state: dict[str, Any],
+    result: AzDevOpsSyncResult,
+    story_keys: dict[str, str],
+    iteration_meta: list[dict],
+    project: str,
+    on_progress: ProgressCallback | None,
+) -> tuple[AzDevOpsSyncResult, dict[str, Any]]:
+    """Assign the plan's stories to an existing iteration — never create one.
+
+    Mirror of _sync_to_existing_jira_sprint: resolve by the intake's captured
+    iteration path first, else by name among current/future iterations; a past
+    (or missing) target errors loudly instead of falling back to creation.
+    """
+    from yeaboi.tools.azure_devops import add_work_items_to_iteration
+
+    target_name = str(state.get("target_sprint_name") or "")
+    target_ext = str(state.get("target_sprint_external_id") or "")
+
+    open_iters = {it["name"]: it["path"] for it in iteration_meta if it["time_frame"] != "past"}
+    target_path = ""
+    if target_ext:
+        # An external path is validated against the team's iterations like a
+        # name is — a past (or unknown) path must not slip past the filter.
+        # Empty metadata means the fetch failed (already logged); then the
+        # path goes through best-effort and the API errors loudly.
+        open_paths = {p.lstrip("\\") for p in open_iters.values()}
+        if not iteration_meta or target_ext.lstrip("\\") in open_paths:
+            target_path = target_ext
+    elif target_name:
+        target_path = open_iters.get(target_name, "")
+        if not target_path:
+            folded = {name.casefold(): path for name, path in open_iters.items()}
+            target_path = folded.get(target_name.casefold(), "")
+
+    if not target_path:
+        result.errors.append(
+            f"Iteration '{target_name or target_ext}' not found among current/future iterations — "
+            "nothing was created. Pick a different iteration or re-run without an existing-sprint target."
+        )
+        logger.error("Existing-iteration sync: target %r not resolvable", target_name or target_ext)
+        return result, state
+
+    target_path = target_path.lstrip("\\")
+    sprints = state.get("sprints", [])
+    issue_ids = sorted({story_keys[sid] for sprint in sprints for sid in sprint.story_ids if sid in story_keys})
+    label = target_name or target_path
+    try:
+        add_work_items_to_iteration(issue_ids, target_path, project)
+    except Exception as e:
+        result.errors.append(f"Could not add stories to iteration '{label}': {e}")
+        logger.error("Existing-iteration sync failed — %s", e)
+        return result, state
+
+    merged_keys = dict(state.get("azdevops_iteration_keys", {}))
+    for sprint in sprints:
+        merged_keys[sprint.id] = target_path
+        result.iterations_updated[sprint.id] = target_path
+    state["azdevops_iteration_keys"] = merged_keys
+    logger.info("Added %d story(ies) to existing iteration %s", len(issue_ids), label)
+    if on_progress:
+        on_progress(len(sprints), len(sprints), f"Stories added to {label}")
     return result, state
 
 
@@ -495,6 +609,8 @@ def sync_all_to_azdevops(
     if state.get("sprints"):
         iter_result, state = sync_iterations_to_azdevops(state, on_progress)
         aggregated.iterations_created.update(iter_result.iterations_created)
+        aggregated.iterations_updated.update(iter_result.iterations_updated)
+        aggregated.stories_created.update(iter_result.stories_created)
         aggregated.errors.extend(iter_result.errors)
         aggregated.skipped += iter_result.skipped
 
@@ -534,35 +650,60 @@ def _feature_title_to_tag(title: str) -> str:
     return tag[:80] or "Feature"
 
 
-def _format_story_description_html(story, feature=None) -> str:
-    """Format a UserStory as an HTML description for Azure DevOps."""
+def _format_story_description_html(story, feature=None, *, dod_items=None, headings=None) -> str:
+    """Format a UserStory as an HTML description for Azure DevOps.
+
+    Mirror of jira_sync._format_story_description: renders against the plan's
+    resolved DoD list (not the hardcoded default) and adopts the team's own
+    section headings where learned.
+    """
     from yeaboi.agent.state import DOD_ITEMS
 
+    items = tuple(dod_items) if dod_items else DOD_ITEMS
+    headings = headings or {}
     parts: list[str] = []
 
-    # User story sentence
+    # User story sentence — under the team's summary heading when they have one
+    if headings.get("summary"):
+        parts.append(f"<h3>{headings['summary']}</h3>")
     parts.append(
         f"<p><strong>As a</strong> {story.persona}, <strong>I want to</strong> {story.goal}, "
         f"<strong>so that</strong> {story.benefit}.</p>"
     )
 
-    # Acceptance criteria
+    # Acceptance criteria — GWT triples or the team's free-text criteria
     if story.acceptance_criteria:
-        parts.append("<h3>Acceptance Criteria</h3>")
-        for i, ac in enumerate(story.acceptance_criteria, 1):
-            parts.append(f"<p><strong>AC{i}</strong></p>")
+        parts.append(f"<h3>{headings.get('acceptance_criteria', 'Acceptance Criteria')}</h3>")
+        free_text = [ac for ac in story.acceptance_criteria if ac.text]
+        if len(free_text) == len(story.acceptance_criteria):
             parts.append("<ul>")
-            parts.append(f"<li><strong>Given</strong> {ac.given}</li>")
-            parts.append(f"<li><strong>When</strong> {ac.when}</li>")
-            parts.append(f"<li><strong>Then</strong> {ac.then}</li>")
+            for ac in story.acceptance_criteria:
+                parts.append(f"<li>{ac.text}</li>")
             parts.append("</ul>")
+        else:
+            gwt_count = 0  # numbers the GWT triples only, so a mixed list reads AC1, AC2, …
+            for ac in story.acceptance_criteria:
+                if ac.text:
+                    parts.append(f"<p>{ac.text}</p>")
+                    continue
+                gwt_count += 1
+                parts.append(f"<p><strong>AC{gwt_count}</strong></p>")
+                parts.append("<ul>")
+                parts.append(f"<li><strong>Given</strong> {ac.given}</li>")
+                parts.append(f"<li><strong>When</strong> {ac.when}</li>")
+                parts.append(f"<li><strong>Then</strong> {ac.then}</li>")
+                parts.append("</ul>")
 
-    # Definition of Done
+    # Definition of Done. Flags are positional against the resolved list;
+    # stories from older sessions carry flags sized to the default 7-item
+    # list, so a length mismatch pads with applicable / drops extras rather
+    # than losing the whole section.
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(DOD_ITEMS):
-        parts.append("<h3>Definition of Done</h3>")
+    if dod:
+        parts.append(f"<h3>{headings.get('dod', 'Definition of Done')}</h3>")
         parts.append("<ul>")
-        for item, applicable in zip(DOD_ITEMS, dod):
+        for i, item in enumerate(items):
+            applicable = dod[i] if i < len(dod) else True
             if applicable:
                 parts.append(f"<li>&#9745; {item}</li>")
             else:

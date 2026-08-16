@@ -85,6 +85,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     FeatureTip(
+        "planning",
+        "\U0001f4c4 Tip: Export a publishable PRD of your plan — to file, Notion or Confluence",
+        mode_key="project-planning",
+        is_new=True,
+    ),
+    FeatureTip(
         "standup",
         "☀️ Tip: Paste or drop a standup transcript in Review — Standup learns what it missed",
         mode_key="daily-standup",

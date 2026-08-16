@@ -25,7 +25,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jira import JIRAError
@@ -51,6 +51,7 @@ class JiraSyncResult:
     stories_created: dict[str, str] = field(default_factory=dict)  # internal_id → jira_key
     tasks_created: dict[str, str] = field(default_factory=dict)
     sprints_created: dict[str, str] = field(default_factory=dict)  # internal_id → jira_sprint_id
+    sprints_updated: dict[str, str] = field(default_factory=dict)  # existing sprints that gained issues
     errors: list[str] = field(default_factory=list)
     skipped: int = 0
 
@@ -214,6 +215,13 @@ def sync_stories_to_jira(
     # Track the epic link method that works for this project (auto-detected on first story)
     link_method = "auto"
 
+    # Descriptions render against the plan's OWN DoD list and the team's own
+    # section headings — never the hardcoded defaults.
+    from yeaboi.agent.state import map_template_headings, resolve_dod_items
+
+    dod_items = resolve_dod_items(state)
+    headings = map_template_headings(tuple(state.get("ticket_template_sections") or ()))
+
     for story in stories:
         feature = feature_map.get(story.feature_id)
 
@@ -221,7 +229,7 @@ def sync_stories_to_jira(
             # Story already exists — update its description (DoD, rationale may have been added)
             jira_key = existing_story_keys[story.id]
             try:
-                description = _format_story_description(story, feature)
+                description = _format_story_description(story, feature, dod_items=dod_items, headings=headings)
                 jira.issue(jira_key).update(fields={"description": description})
                 logger.info("Updated Jira Story description: %s", jira_key)
                 time.sleep(0.1)
@@ -241,7 +249,7 @@ def sync_stories_to_jira(
             labels.append(disc.value if hasattr(disc, "value") else str(disc))
 
             summary = story.title or story.goal
-            description = _format_story_description(story, feature)
+            description = _format_story_description(story, feature, dod_items=dod_items, headings=headings)
             raw_pri = story.priority
             priority_name = _map_priority_to_jira(raw_pri.value if hasattr(raw_pri, "value") else str(raw_pri))
 
@@ -404,10 +412,13 @@ def sync_sprints_to_jira(
 
     Returns (result, updated_graph_state).
     """
+    from yeaboi.sync_naming import advance_past_closed, derive_board_numbering, resolve_starting_number
     from yeaboi.tools.jira import (
         _jira_error_msg,
         _make_jira_client,
         add_issues_to_sprint,
+        fetch_board_sprints,
+        find_scrum_board_id,
     )
 
     state = dict(graph_state)
@@ -420,8 +431,24 @@ def sync_sprints_to_jira(
         story_keys = state.get("jira_story_keys", {})
         if story_result.errors and not story_keys:
             return story_result, state
+        result_stories: dict[str, str] = dict(story_result.stories_created)
+        result_story_errors: list[str] = list(story_result.errors)
+    else:
+        result_stories = {}
+        result_story_errors = []
 
     result = JiraSyncResult(epic_key=state.get("jira_epic_key"))
+    # Cascade-created stories are reported in the stories bucket, not silently dropped.
+    result.stories_created.update(result_stories)
+    result.errors.extend(result_story_errors)
+
+    # Backlog target (small-project intake): the stories above are the whole
+    # sync — nothing is created or assigned, Jira's backlog is "no sprint".
+    if state.get("sprint_target_mode") == "backlog":
+        logger.info("Sprint sync: backlog mode — stories stay in the backlog, no sprint created")
+        if on_progress:
+            on_progress(1, 1, "Stories left in the backlog — no sprint created")
+        return result, state
 
     jira = _make_jira_client()
     if jira is None:
@@ -436,59 +463,56 @@ def sync_sprints_to_jira(
     sprints = state.get("sprints", [])
     existing_sprint_keys: dict[str, str] = dict(state.get("jira_sprint_keys", {}))
 
-    # Discover board ID
+    # Discover the scrum board — a kanban board cannot host sprints.
     try:
-        boards = jira.boards(projectKeyOrID=project_key)
-        if not boards:
+        board_id = find_scrum_board_id(jira, project_key)
+        if board_id is None:
             result.errors.append(f"No Jira board found for project '{project_key}'.")
             return result, state
-        board_id = boards[0].id
     except JIRAError as e:
         result.errors.append(f"Board discovery failed: {_jira_error_msg(e)}")
         return result, state
 
-    # Fetch all existing sprints on the board so we can match by name
-    # and reuse instead of always creating new ones.
-    existing_board_sprints: dict[str, int] = {}  # name → sprint_id
+    # Fetch all existing sprints on the board (fully paginated) so we can match
+    # by name and reuse instead of always creating new ones.
+    existing_board_sprints: dict[str, tuple[int, str]] = {}  # name → (sprint_id, state)
     try:
-        for sprint_state in ("future", "active", "closed"):
-            try:
-                board_sprints = jira.sprints(board_id, state=sprint_state)
-                for bs in board_sprints:
-                    existing_board_sprints[bs.name] = bs.id
-            except JIRAError:
-                pass  # some states may not be available
+        for item in fetch_board_sprints(jira, board_id):
+            # Jira permits duplicate sprint names; never let a closed sprint
+            # shadow an open one of the same name (the reuse guard would then
+            # decline the still-open sprint and create a third).
+            prev = existing_board_sprints.get(item["name"])
+            if prev is not None and prev[1] in ("future", "active") and item["state"] == "closed":
+                continue
+            existing_board_sprints[item["name"]] = (item["id"], item["state"])
         logger.debug("Found %d existing sprints on board %s", len(existing_board_sprints), board_id)
     except Exception as e:
         logger.warning("Could not fetch existing sprints: %s — will create new ones", e)
 
-    # Detect the board's sprint naming pattern (e.g. "PSOT Sprint {N}") so we
-    # can rename LLM-generated sprint names to match the convention.
-    # The LLM may generate "Sprint 1", "Sprint 2" but the board uses
-    # "PSOT Sprint 107", "PSOT Sprint 108".
-    sprint_name_prefix = ""
-    max_existing_number = 0
-    for name in existing_board_sprints:
-        match = re.match(r"^(.+?)(\d+)\s*$", name)
-        if match:
-            prefix_candidate = match.group(1)
-            num = int(match.group(2))
-            if num > max_existing_number:
-                max_existing_number = num
-                sprint_name_prefix = prefix_candidate
-    if sprint_name_prefix:
-        logger.debug(
-            "Detected sprint naming pattern: '%sN' (max existing: %d)",
-            sprint_name_prefix,
-            max_existing_number,
-        )
+    # "Add to an existing sprint" (small-project intake): assign the plan's
+    # stories to the chosen sprint and never create one.
+    if state.get("sprint_target_mode") == "existing":
+        return _sync_to_existing_jira_sprint(jira, state, result, story_keys, existing_board_sprints, on_progress)
 
-    # Determine the starting sprint number for new sprints.
-    # Use the state's starting_sprint_number if set, otherwise increment
-    # from the highest existing sprint number on the board.
-    starting_number = state.get("starting_sprint_number", 0)
-    if not starting_number and max_existing_number > 0:
-        starting_number = max_existing_number + 1
+    # Derive the board's naming convention by consensus (e.g. "PSOT Sprint {N}")
+    # so the plan's generic "Sprint 1", "Sprint 2" are renamed to continue the
+    # board's real sequence, then resolve where that sequence starts. The
+    # intake's -1 "no tracker sprint picked" sentinel falls through to max+1.
+    numbering = derive_board_numbering((name, st) for name, (_id, st) in existing_board_sprints.items())
+    sprint_name_prefix = numbering.prefix
+    starting_number = resolve_starting_number(state.get("starting_sprint_number", 0), numbering)
+    starting_number, closed_warn = advance_past_closed(starting_number, len(sprints), numbering)
+    if closed_warn:
+        logger.warning("%s", closed_warn)
+        if on_progress:
+            on_progress(0, len(sprints), closed_warn)
+    if sprint_name_prefix:
+        logger.info(
+            "Sprint naming: prefix=%r max_existing=%d starting_number=%d",
+            sprint_name_prefix,
+            numbering.max_number,
+            starting_number,
+        )
 
     sprint_length_weeks = state.get("sprint_length_weeks", 2)
     sprint_start_date_str = state.get("sprint_start_date", "")
@@ -522,33 +546,42 @@ def sync_sprints_to_jira(
             continue
 
         try:
-            # Check if a sprint with this name already exists on the board
-            existing_jira_sprint_id = existing_board_sprints.get(sprint_name)
+            # Reuse a same-named sprint only while it can still take issues —
+            # Jira rejects adding issues to a completed sprint.
+            matched = existing_board_sprints.get(sprint_name)
+            existing_jira_sprint_id = matched[0] if matched and matched[1] in ("future", "active") else None
 
             if existing_jira_sprint_id:
                 # Sprint exists — reuse it, just assign stories
                 sprint_id_str = str(existing_jira_sprint_id)
                 logger.info("Reusing existing Jira Sprint: %s (ID: %s)", sprint_name, sprint_id_str)
                 progress_label = f"Sprint reused: {sprint_name}"
+                result.sprints_updated[sprint.id] = sprint_id_str
             else:
                 # Sprint doesn't exist — create it
                 kwargs: dict[str, Any] = {"name": sprint_name, "board_id": board_id}
                 if sprint.goal:
                     kwargs["goal"] = sprint.goal
                 if sprint_start_date_str:
-                    start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
-                    end = start + timedelta(weeks=sprint_length_weeks)
-                    kwargs["startDate"] = start.strftime("%Y-%m-%d")
-                    kwargs["endDate"] = end.strftime("%Y-%m-%d")
+                    # The Jira Agile API expects ISO-8601 datetimes with an offset,
+                    # not bare dates. End is inclusive (start + length − 1 day) so
+                    # consecutive sprints don't overlap — same convention as
+                    # reporting/sprints.py.
+                    start = datetime.fromisoformat(sprint_start_date_str).replace(tzinfo=UTC) + timedelta(
+                        weeks=sprint_length_weeks * idx
+                    )
+                    end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)
+                    kwargs["startDate"] = start.isoformat(timespec="milliseconds")
+                    kwargs["endDate"] = end.isoformat(timespec="milliseconds")
 
                 jira_sprint = jira.create_sprint(**kwargs)
                 sprint_id_str = str(jira_sprint.id)
                 existing_jira_sprint_id = int(jira_sprint.id)
                 logger.info("Created Jira Sprint: %s → %s", sprint_name, sprint_id_str)
                 progress_label = f"Sprint created: {sprint_name}"
+                result.sprints_created[sprint.id] = sprint_id_str
 
             new_sprint_keys[sprint.id] = sprint_id_str
-            result.sprints_created[sprint.id] = sprint_id_str
 
             # Assign stories to sprint (whether new or existing)
             issue_keys = [story_keys[sid] for sid in sprint.story_ids if sid in story_keys]
@@ -574,6 +607,74 @@ def sync_sprints_to_jira(
     merged_sprint_keys = {**existing_sprint_keys, **new_sprint_keys}
     state["jira_sprint_keys"] = merged_sprint_keys
 
+    return result, state
+
+
+def _sync_to_existing_jira_sprint(
+    jira,
+    state: dict[str, Any],
+    result: JiraSyncResult,
+    story_keys: dict[str, str],
+    board_sprints: dict[str, tuple[int, str]],
+    on_progress: ProgressCallback | None,
+) -> tuple[JiraSyncResult, dict[str, Any]]:
+    """Assign the plan's stories to an existing sprint — never create one.
+
+    The target comes from the small-project intake ("Add to <sprint>"): resolved
+    by target_sprint_external_id when the intake captured it, else by
+    target_sprint_name among the board's active/future sprints. A closed (or
+    vanished) target is a loud error, not a fallback — silently creating a
+    sprint here is exactly what the user chose against.
+    """
+    from yeaboi.tools.jira import add_issues_to_sprint
+
+    target_name = str(state.get("target_sprint_name") or "")
+    target_ext = str(state.get("target_sprint_external_id") or "")
+
+    open_by_name = {name: sid for name, (sid, st) in board_sprints.items() if st in ("future", "active")}
+    target_id: int | None = None
+    if target_ext.isdigit():
+        # An external id is validated against the board like a name is — a
+        # closed (or unknown) id must not slip past the active/future filter.
+        # An empty board list means the sprint fetch failed (already logged);
+        # then the id goes through best-effort and the API errors loudly.
+        candidate = int(target_ext)
+        if not board_sprints or candidate in set(open_by_name.values()):
+            target_id = candidate
+    elif target_name:
+        target_id = open_by_name.get(target_name)
+        if target_id is None:
+            folded = {name.casefold(): sid for name, sid in open_by_name.items()}
+            target_id = folded.get(target_name.casefold())
+
+    if target_id is None:
+        result.errors.append(
+            f"Sprint '{target_name or target_ext}' not found among active/future sprints — nothing was created. "
+            "Pick a different sprint or re-run the sync without an existing-sprint target."
+        )
+        logger.error("Existing-sprint sync: target %r not resolvable", target_name or target_ext)
+        return result, state
+
+    sprints = state.get("sprints", [])
+    issue_keys = sorted({story_keys[sid] for sprint in sprints for sid in sprint.story_ids if sid in story_keys})
+    label = target_name or str(target_id)
+    if len(sprints) > 1:
+        logger.info("Existing-sprint sync: %d plan sprints all target %s", len(sprints), label)
+    try:
+        add_issues_to_sprint(jira, target_id, issue_keys)
+    except Exception as e:
+        result.errors.append(f"Could not add stories to sprint '{label}': {e}")
+        logger.error("Existing-sprint sync failed — %s", e)
+        return result, state
+
+    merged_keys = dict(state.get("jira_sprint_keys", {}))
+    for sprint in sprints:
+        merged_keys[sprint.id] = str(target_id)
+        result.sprints_updated[sprint.id] = str(target_id)
+    state["jira_sprint_keys"] = merged_keys
+    logger.info("Added %d story(ies) to existing sprint %s (ID %s)", len(issue_keys), label, target_id)
+    if on_progress:
+        on_progress(len(sprints), len(sprints), f"Stories added to {label}")
     return result, state
 
 
@@ -605,8 +706,9 @@ def sync_all_to_jira(
     # Sprints
     if state.get("sprints"):
         sprint_result, state = sync_sprints_to_jira(state, on_progress)
-        aggregated.sprints_created.update(sprint_result.stories_created)
+        aggregated.stories_created.update(sprint_result.stories_created)
         aggregated.sprints_created.update(sprint_result.sprints_created)
+        aggregated.sprints_updated.update(sprint_result.sprints_updated)
         aggregated.errors.extend(sprint_result.errors)
         aggregated.skipped += sprint_result.skipped
 
@@ -650,31 +752,53 @@ def _feature_title_to_label(title: str) -> str:
     return label[:50] or "Feature"
 
 
-def _format_story_description(story, feature=None) -> str:
-    """Format a UserStory as a Jira description with acceptance criteria, DoD, and rationale."""
+def _format_story_description(story, feature=None, *, dod_items=None, headings=None) -> str:
+    """Format a UserStory as a Jira description with acceptance criteria, DoD, and rationale.
+
+    dod_items: the plan's resolved DoD list (resolve_dod_items) — comparing the
+    story's flags against the DEFAULT list silently dropped (or mislabeled) the
+    whole DoD section for teams with a custom list. headings: the team's own
+    section names (map_template_headings) — the structure stays fixed, the
+    headings adopt the team's vocabulary.
+    """
     from yeaboi.agent.state import DOD_ITEMS
 
+    items = tuple(dod_items) if dod_items else DOD_ITEMS
+    headings = headings or {}
     lines: list[str] = []
 
-    # User story sentence
+    # User story sentence — under the team's summary heading when they have one
+    if headings.get("summary"):
+        lines.append(f"h3. {headings['summary']}")
     lines.append(f"*As a* {story.persona}, *I want to* {story.goal}, *so that* {story.benefit}.")
     lines.append("")
 
-    # Acceptance criteria
+    # Acceptance criteria — GWT triples or the team's free-text criteria
     if story.acceptance_criteria:
-        lines.append("h3. Acceptance Criteria")
-        for i, ac in enumerate(story.acceptance_criteria, 1):
-            lines.append(f"# *AC{i}*")
-            lines.append(f"*Given* {ac.given}")
-            lines.append(f"*When* {ac.when}")
-            lines.append(f"*Then* {ac.then}")
+        lines.append(f"h3. {headings.get('acceptance_criteria', 'Acceptance Criteria')}")
+        gwt_count = 0  # numbers the GWT triples only, so a mixed list reads AC1, AC2, …
+        for ac in story.acceptance_criteria:
+            if ac.text:
+                lines.append(f"# {ac.text}")
+            else:
+                gwt_count += 1
+                lines.append(f"# *AC{gwt_count}*")
+                lines.append(f"*Given* {ac.given}")
+                lines.append(f"*When* {ac.when}")
+                lines.append(f"*Then* {ac.then}")
+                lines.append("")
+        if story.acceptance_criteria[-1].text:
             lines.append("")
 
-    # Definition of Done — checkboxes with applicable/N/A items
+    # Definition of Done — checkboxes with applicable/N/A items. Flags are
+    # positional against the resolved list; stories from older sessions carry
+    # flags sized to the default 7-item list, so a length mismatch pads with
+    # applicable / drops extras rather than losing the whole section.
     dod = getattr(story, "dod_applicable", None)
-    if dod and len(dod) == len(DOD_ITEMS):
-        lines.append("h3. Definition of Done")
-        for item, applicable in zip(DOD_ITEMS, dod):
+    if dod:
+        lines.append(f"h3. {headings.get('dod', 'Definition of Done')}")
+        for i, item in enumerate(items):
+            applicable = dod[i] if i < len(dod) else True
             if applicable:
                 lines.append(f"* [x] {item}")
             else:

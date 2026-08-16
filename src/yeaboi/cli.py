@@ -369,6 +369,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--ac-format",
+        choices=["gwt", "bullets"],
+        default=None,
+        help="Acceptance-criteria style for generated stories: 'gwt' (Given/When/Then) or "
+        "'bullets' (clear testable statements). Default: follow the learned team profile "
+        "(or YEABOI_AC_FORMAT).",
+    )
+
+    parser.add_argument(
+        "--architecture-spike",
+        choices=["auto", "include", "skip"],
+        default=None,
+        help="Whether to add an architecture-validation spike when the analyzer's decision is "
+        "open (2+ options): 'include'/'skip' force it, 'auto' adds it unless the analyzer's "
+        "confidence is high. Default: ask interactively (auto in non-interactive runs).",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -443,9 +461,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        choices=["markdown", "json", "html"],
+        choices=["markdown", "json", "html", "prd"],
         default=None,
-        help="Output format for the generated plan. Only valid with --non-interactive or --export-only.",
+        help="Output format for the generated plan ('prd' writes a Product Requirements "
+        "Document; one extra LLM call). Only valid with --non-interactive or --export-only.",
     )
     parser.add_argument(
         "--description",
@@ -2264,6 +2283,15 @@ def main(argv: list[str] | None = None) -> None:
     # Load ~/.yeaboi/.env before any credential reads.
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
+
+    # --ac-format rides the YEABOI_AC_FORMAT env override that resolve_ac_style
+    # already reads — one seam serves the TUI, REPL and headless paths alike.
+    if getattr(args, "ac_format", None):
+        os.environ["YEABOI_AC_FORMAT"] = args.ac_format
+    # Same seam for the architecture spike ("auto" = the built-in behaviour,
+    # so only a forced include/skip needs the override).
+    if getattr(args, "architecture_spike", None) in ("include", "skip"):
+        os.environ["YEABOI_ARCHITECTURE_SPIKE"] = args.architecture_spike
 
     # ── --list-audio-devices: print the mic table and exit ───────────────────
     # After load_user_config() so the currently-configured VOICE_DEVICE can be

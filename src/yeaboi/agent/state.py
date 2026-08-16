@@ -85,6 +85,10 @@ class TaskLabel(StrEnum):
     CODE = "Code"
     DOCUMENTATION = "Documentation"
     INFRASTRUCTURE = "Infrastructure"
+    # Research/validation work (e.g. the architecture-validation spike). Only
+    # ever set by the deterministic injectors in nodes.py — the task-decomposer
+    # LLM is never asked to emit it. See docs: "Scrum Standards" — DoD Spike
+    SPIKE = "Spike"
     TESTING = "Testing"
 
 
@@ -127,11 +131,87 @@ TOTAL_QUESTIONS = 30
 
 @dataclass(frozen=True)
 class AcceptanceCriterion:
-    """A single Given/When/Then acceptance criterion."""
+    """A single acceptance criterion — Given/When/Then, or the team's own style.
 
-    given: str
-    when: str
-    then: str
+    Two shapes share this class: a Gherkin triple (given/when/then set, text
+    empty) and a free-text criterion (text set, triple empty) for teams whose
+    tickets don't use Given/When/Then. All fields are defaulted so old saved
+    sessions (no ``text`` key) deserialize unchanged.
+    See docs: "Scrum Standards" — Acceptance Criteria
+    """
+
+    given: str = ""
+    when: str = ""
+    then: str = ""
+    # Free-text criterion ("Search results return within 200ms"). When set,
+    # renderers show it verbatim; when empty, the GWT triple renders.
+    text: str = ""
+
+    @property
+    def flat_text(self) -> str:
+        """The criterion as one sentence, whichever shape it carries."""
+        return self.text or f"Given {self.given}, when {self.when}, then {self.then}"
+
+
+# Acceptance-criteria styles a plan can be generated in. "gwt" is the
+# Given/When/Then default; "bullets" writes each criterion as a single clear,
+# testable statement — for teams whose real tickets don't use Gherkin.
+AC_STYLE_GWT = "gwt"
+AC_STYLE_BULLETS = "bullets"
+AC_STYLES: tuple[str, ...] = (AC_STYLE_GWT, AC_STYLE_BULLETS)
+
+
+def resolve_ac_style(graph_state: dict | None = None, team_profile: object | None = None) -> str:
+    """Resolve which acceptance-criteria style this plan should use.
+
+    Precedence: the session's persisted choice (state["ac_format"], written by
+    story_writer so exports of a saved plan match how it was generated) >
+    the YEABOI_AC_FORMAT env override > the learned team profile
+    (WritingPatterns.uses_given_when_then / evidence of writing data) >
+    Given/When/Then.
+    """
+    if graph_state:
+        persisted = graph_state.get("ac_format")
+        if persisted in AC_STYLES:
+            return persisted
+
+    from yeaboi.config import get_ac_format  # lazy: config must not import state
+
+    override = get_ac_format()
+    if override in AC_STYLES:
+        return override
+
+    patterns = getattr(team_profile, "writing_patterns", None)
+    if patterns is not None:
+        if getattr(patterns, "uses_given_when_then", False):
+            return AC_STYLE_GWT
+        # The team has analysed writing data and it did NOT show GWT — follow
+        # their real style instead of forcing the template on them.
+        if getattr(patterns, "median_ac_count", 0) > 0 or getattr(patterns, "common_personas", ()):
+            return AC_STYLE_BULLETS
+
+    return AC_STYLE_GWT
+
+
+def map_template_headings(sections: tuple[str, ...] | list[str] | None) -> dict[str, str]:
+    """Map a team's learned description-section headings onto our canonical blocks.
+
+    Team analysis records the section headings the team's real tickets use
+    (e.g. "What is this about?", "Done looks like"). Exports keep their fixed
+    structure but adopt the team's own heading names where one clearly maps:
+    "summary" (the story sentence), "acceptance_criteria", and "dod". Unmatched
+    headings are ignored — we have no content to put under them.
+    """
+    mapping: dict[str, str] = {}
+    for heading in sections or ():
+        low = str(heading).lower()
+        if "acceptance" in low or low.rstrip(":?") in ("ac", "acs"):
+            mapping.setdefault("acceptance_criteria", str(heading))
+        elif "done" in low or "dod" in low:
+            mapping.setdefault("dod", str(heading))
+        elif any(word in low for word in ("summary", "about", "background", "description", "context", "what")):
+            mapping.setdefault("summary", str(heading))
+    return mapping
 
 
 @dataclass(frozen=True)
@@ -1050,6 +1130,64 @@ class PromptQualityRating:
 
 # See docs: "Scrum Standards" — project analysis
 @dataclass(frozen=True)
+class ArchitectureOption:
+    """One candidate architecture for a new project, with its trade-offs.
+
+    Produced by the project_analyzer alongside the rest of the analysis so the
+    user sees WHAT was considered, not just what was picked. All fields
+    defaulted — old saved sessions have no architecture data at all.
+    See docs: "Scrum Standards" — DoD Spike (trade-offs & alternatives)
+    """
+
+    name: str = ""  # short label, e.g. "Modular monolith"
+    summary: str = ""
+    pros: tuple[str, ...] = ()
+    cons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ArchitectureDecision:
+    """The analyzer's architecture recommendation: options, pick, confidence.
+
+    ``pinned_by_constraint`` is True when the decision was already made before
+    planning (Q13 constraint, existing repo, team docs, prior art) — a pinned
+    decision gets exactly one option and never triggers a validation spike.
+    """
+
+    options: tuple[ArchitectureOption, ...] = ()  # 1-3 candidates
+    chosen: str = ""  # name of the recommended option
+    confidence: str = ""  # "high" | "medium" | "low"
+    rationale: str = ""  # why this pick; what evidence would change it
+    pinned_by_constraint: bool = False
+
+
+def architecture_from_dict(raw: object) -> ArchitectureDecision | None:
+    """Rebuild an ArchitectureDecision from its asdict() form (or return None).
+
+    Shared by sessions.py and persistence.py so a resumed session's analysis
+    carries a real dataclass, not the raw nested dict.
+    """
+    if not isinstance(raw, dict):
+        return raw if isinstance(raw, ArchitectureDecision) else None
+    return ArchitectureDecision(
+        options=tuple(
+            ArchitectureOption(
+                name=o.get("name", ""),
+                summary=o.get("summary", ""),
+                pros=tuple(o.get("pros", ())),
+                cons=tuple(o.get("cons", ())),
+            )
+            for o in raw.get("options", ())
+            if isinstance(o, dict)
+        ),
+        chosen=raw.get("chosen", ""),
+        confidence=raw.get("confidence", ""),
+        rationale=raw.get("rationale", ""),
+        pinned_by_constraint=bool(raw.get("pinned_by_constraint", False)),
+    )
+
+
+@dataclass(frozen=True)
 class ProjectAnalysis:
     """Structured synthesis of all 30 intake answers.
 
@@ -1093,6 +1231,11 @@ class ProjectAnalysis:
     # compute_prompt_quality() in nodes.py from QuestionnaireState tracking sets.
     # None until the project_analyzer node runs. Displayed on the analysis review screen.
     prompt_quality: PromptQualityRating | None = None
+    # Architecture options + recommendation (greenfield projects with an open
+    # choice get 2-3 candidates; a pinned decision gets exactly one). None when
+    # the analyzer produced no architecture data (fallback path, old sessions).
+    # See docs: "Scrum Standards" — DoD Spike
+    architecture: ArchitectureDecision | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1553,6 +1696,11 @@ class QuestionnaireState:
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.
     _active_sprint_number: int | None = None
+    # Transient: the board's open sprint targets offered in small-project Q27
+    # ("add to an existing sprint or create a new one?"). Maps the real board
+    # sprint/iteration NAME to its external id (Jira sprint id / AzDO iteration
+    # path). Consumed at confirmation to fill target_sprint_* on ScrumState.
+    _sprint_target_options: dict[str, str] = field(default_factory=dict)
     # Transient: active sprint start date from Jira (ISO string, e.g. "2026-03-02").
     # Used with _active_sprint_number to compute exact start dates for future sprints.
     _active_sprint_start_date: str | None = None
@@ -1677,6 +1825,16 @@ class ScrumState(_RequiredState, total=False):
     # Empty tuple means use the default 7 items.
     custom_dod_items: tuple[str, ...]
 
+    # Acceptance-criteria style the plan was generated in ("gwt" | "bullets").
+    # Written by story_writer after resolve_ac_style() so every later consumer
+    # (exports, editor, re-runs) matches how the stories were actually written.
+    # "" = not yet resolved. See docs: "Scrum Standards" — Acceptance Criteria
+    ac_format: str
+    # The team's learned ticket description section headings (from the analysis
+    # profile's naming conventions). Exports map them onto our canonical blocks
+    # via map_template_headings(). Empty = use the default headings.
+    ticket_template_sections: list[str]
+
     # Selected team members from analysis profile (names from contributor_stats).
     # When set, velocity is calculated from these specific members' per_sprint values.
     # Empty tuple = no specific members selected (use total team velocity).
@@ -1703,6 +1861,20 @@ class ScrumState(_RequiredState, total=False):
     # See docs: "Scrum Standards" — sprint planning
     starting_sprint_number: int
 
+    # Small-project sprint targeting — "add to an existing sprint" support.
+    # sprint_target_mode is "" (create sprints, the default), "existing"
+    # (assign the plan's stories to an existing tracker sprint; the syncs then
+    # never create a sprint), or "backlog" (create the stories and assign them
+    # to nothing — the syncs skip sprints entirely and unassigned items sit in
+    # the tracker's backlog). target_sprint_name is the real board sprint /
+    # iteration name ("PSOT Sprint 104"); target_sprint_external_id is the Jira
+    # sprint id or AzDO iteration path, "" when only the name is known (the
+    # sync resolves it by name among active/future sprints at execution time).
+    # See docs: "Scrum Standards" — sprint planning
+    sprint_target_mode: str
+    target_sprint_name: str
+    target_sprint_external_id: str
+
     # Capacity override — set by sprint_planner when total story points exceed
     # what fits in the user's target sprint range (Q10).
     # See docs: "Guardrails" — human-in-the-loop pattern
@@ -1728,6 +1900,19 @@ class ScrumState(_RequiredState, total=False):
     # instead of using enforce_target. 0 = not set (default).
     # See docs: "Guardrails" — human-in-the-loop pattern
     _capacity_team_override: int
+
+    # Architecture-validation spike opt-in/out. "" = undecided, "include" /
+    # "skip" = the user's (or the confidence auto-rule's) answer. Asked only
+    # when the architecture decision is genuinely open (2+ options, not
+    # pinned); see _maybe_prompt_spike_choice in nodes.py.
+    # See docs: "Guardrails" — human-in-the-loop pattern
+    spike_choice: str
+
+    # Transient sentinel: set (with {chosen, confidence, options}) when a node
+    # needs the driver to ask the spike question — same ask-the-user pattern as
+    # capacity_override_target, but a dict instead of a sign-encoded int.
+    # Cleared (empty dict) once answered.
+    _spike_prompt: dict
 
     # Small-project scope advisory. Set True by project_analyzer when the intake
     # ran in "small_project" mode but the analyzer judged the project bigger than

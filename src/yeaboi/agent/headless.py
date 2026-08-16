@@ -101,6 +101,21 @@ def _next_auto_input(graph_state: dict) -> str | None:
         graph_state["capacity_override_target"] = recommended
         return "accept recommended sprints"
 
+    # Architecture-spike question — the node parked _spike_prompt because the
+    # architecture decision is open and spike_choice is unset. Headless has
+    # nobody to ask, so it applies the confidence auto-rule: validate unless
+    # the analyzer's confidence is high. Callers override via
+    # run_planning_pipeline(architecture_spike=...).
+    spike_prompt = graph_state.get("_spike_prompt")
+    if spike_prompt:
+        from yeaboi.agent.nodes import spike_recommended
+
+        choice = "include" if spike_recommended(spike_prompt.get("confidence", "")) else "skip"
+        logger.info("Spike question auto-answered: %s (confidence=%s)", choice, spike_prompt.get("confidence", ""))
+        graph_state["spike_choice"] = choice
+        graph_state["_spike_prompt"] = {}
+        return f"{choice} the architecture spike"
+
     # Review checkpoint — a generation node produced artifacts and set
     # pending_review. The REPL's intercept clears the review fields on accept
     # and re-invokes; we do the same. project_intake's pending_review is the
@@ -155,6 +170,8 @@ def run_planning_pipeline(
     on_progress: Callable[[str, int], None] | None = None,
     max_steps: int = 40,
     prior_art: list[str] | None = None,
+    ac_format: str = "",
+    architecture_spike: str = "auto",
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -179,6 +196,14 @@ def run_planning_pipeline(
             headless caller states them up front or gets none, because the
             step will not guess on a user's behalf. Unknown keys are used as
             given: this is an assertion by the caller, not a lookup.
+        ac_format: Acceptance-criteria style override ("gwt" | "bullets").
+            "" (default) resolves from YEABOI_AC_FORMAT / the learned team
+            profile — see resolve_ac_style in agent/state.py.
+        architecture_spike: Whether to add the architecture-validation spike
+            when the analyzer's decision is open: "include" / "skip" force it,
+            "auto" (default) applies the confidence rule (validate unless the
+            analyzer's confidence is high). Irrelevant when the architecture
+            is pinned or has a single option — nothing is added then.
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -221,6 +246,21 @@ def run_planning_pipeline(
             "_intake_mode": "quick",
             "prior_art": prior_art_refs(prior_art),
         }
+        if ac_format:
+            from yeaboi.agent.state import AC_STYLES
+
+            if ac_format not in AC_STYLES:
+                raise HeadlessPipelineError(f"Unknown ac_format {ac_format!r} — use one of {AC_STYLES}.")
+            # Seeding state["ac_format"] wins the resolve_ac_style precedence.
+            graph_state["ac_format"] = ac_format
+        if architecture_spike not in ("auto", "include", "skip"):
+            raise HeadlessPipelineError(
+                f"Unknown architecture_spike {architecture_spike!r} — use 'auto', 'include' or 'skip'."
+            )
+        if architecture_spike != "auto":
+            # A pre-made choice means the spike question is never asked;
+            # "auto" leaves it unset so _next_auto_input's confidence rule answers.
+            graph_state["spike_choice"] = architecture_spike
 
         store = SessionStore(db_path or get_db_path()) if save_session else None
         session_created = False

@@ -159,6 +159,7 @@
             "acceptanceCriteria": [
               {
                 "given": "a configured tenant",
+                "text": "",
                 "then": "they reach Okta",
                 "when": "they log in"
               }

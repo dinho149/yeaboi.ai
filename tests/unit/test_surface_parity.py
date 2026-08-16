@@ -90,6 +90,8 @@ CAPABILITIES: dict[str, dict] = {
             "--export-only",
             "--mode",
             "--prior-art",
+            "--ac-format",
+            "--architecture-spike",
         },
         "skill": "plan-sprint",
     },

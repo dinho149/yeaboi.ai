@@ -871,6 +871,8 @@ class _ChatDriver:
     def _stage(self) -> str:
         if self.state.get("capacity_override_target", 0) < -1 and not self.dry_run:
             return "capacity"
+        if self.state.get("_spike_prompt") and not self.state.get("spike_choice") and not self.dry_run:
+            return "spike"
         pending = self.state.get("pending_review")
         if pending == "project_intake":
             return "intake"  # confirmation gate — the node consumes the reply
@@ -1142,6 +1144,56 @@ class _ChatDriver:
             self.state["capacity_override_target"] = recommended
         self.state["_capacity_warning"] = {"text": warning, "recommended": recommended}
         self._note(f"Capacity: {options[choice if choice is not None else 0]}")
+
+    def _spike_popup(self) -> None:
+        """Architecture-spike opt-in/out — the confidence rule sets the default.
+
+        Same choice-screen pattern as _capacity_popup; the recommended option
+        always lists first, and fast mode takes it without asking (matching
+        the headless auto-rule).
+        """
+        from yeaboi.ui.session.phases._phases import _pipeline_choice_screen
+
+        prompt = self.state.get("_spike_prompt") or {}
+        recommended = prompt.get("recommended", "include")
+        chosen = prompt.get("chosen", "the recommended architecture")
+        confidence = prompt.get("confidence", "medium")
+        if self.state.get("_chat_fast_forward"):
+            self.state["spike_choice"] = recommended
+            self.state["_spike_prompt"] = {}
+            self._note(f"Architecture spike: {recommended} (fast mode, confidence {confidence}).")
+            logger.info("Spike question (chat): auto-%s (fast mode)", recommended)
+            return
+
+        messages = self.state.get("messages", [])
+        subtitle = messages[-1].content.replace("**", "") if messages and isinstance(messages[-1], AIMessage) else ""
+        add_label = "Add a validation spike (1-3 days)"
+        skip_label = f"Skip — commit to {chosen}"
+        if recommended == "include":
+            options = [f"{add_label} (recommended — confidence {confidence})", skip_label]
+        else:
+            options = [f"{skip_label} (recommended — confidence high)", add_label]
+
+        small_mode = self.state.get("_intake_mode") == "small_project"
+        label, progress = self._stage_meta("task_decomposer" if small_mode else "story_writer")
+        choice = _pipeline_choice_screen(
+            self.live,
+            self.console,
+            self._key,
+            title="Architecture Spike",
+            subtitle=subtitle,
+            options=options,
+            step=3,
+            total=5,
+            stage_label=label,
+            progress=progress,
+        )
+        follows_recommendation = choice in (None, 0)
+        picked_include = (recommended == "include") == follows_recommendation
+        self.state["spike_choice"] = "include" if picked_include else "skip"
+        self.state["_spike_prompt"] = {}
+        self._note(f"Architecture spike: {self.state['spike_choice']}.")
+        logger.info("Spike question (chat): %s (recommended=%s)", self.state["spike_choice"], recommended)
 
     # ----------------------------------------------------------- review logic
 
@@ -1717,6 +1769,9 @@ class _ChatDriver:
                 break
             if stage == "capacity":
                 self._capacity_popup()
+                continue
+            if stage == "spike":
+                self._spike_popup()
                 continue
             if stage == "epic":
                 self._epic_step()

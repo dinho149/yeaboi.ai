@@ -115,9 +115,10 @@ def generate_acceptance_criteria(
     story: str,
     context: str = "",
 ) -> str:
-    """Generate Given/When/Then acceptance criteria for a user story.
+    """Generate acceptance criteria for a user story, in the team's preferred format.
 
-    Produces 2-4 acceptance criteria in the standard Given/When/Then format.
+    Produces 2-4 acceptance criteria — Given/When/Then by default, or clear
+    testable statements when the team's learned style is not Gherkin.
     Use this when drafting or reviewing user stories that lack detailed ACs,
     or when a user asks to expand the acceptance criteria for a specific story.
 
@@ -126,31 +127,65 @@ def generate_acceptance_criteria(
     """
     # See docs: "Scrum Standards" — story format, acceptance criteria
     # See docs: "Prompt Construction" — ARC framework
+    # Resolve the team's AC style (env override > learned profile > GWT).
+    # Lazy import: nodes imports this module's tools, so the reverse import
+    # must happen at call time to avoid the cycle.
+    from yeaboi.agent.state import resolve_ac_style
+
+    try:
+        from yeaboi.agent.nodes import _load_team_profile
+
+        ac_style = resolve_ac_style({}, _load_team_profile(""))
+    except Exception:
+        ac_style = resolve_ac_style({})
+    logger.debug("generate_acceptance_criteria: ac_style=%s", ac_style)
+
     context_line = f"\n\nAdditional context:\n{context}" if context.strip() else ""
+    if ac_style == "bullets":
+        task_block = (
+            "## Task\n\n"
+            "Write 2-4 acceptance criteria as clear, testable statements "
+            "(the team does NOT use Given/When/Then).\n\n"
+            "## Rules\n\n"
+            "1. Each criterion is a single sentence with a specific, observable outcome.\n"
+            "2. Cover the happy path first, then the most important edge case.\n"
+            "3. Be concrete and testable — avoid vague words like 'properly' or 'correctly'.\n"
+            "4. Do not reference implementation details (e.g. 'clicks a React button').\n\n"
+            "## Output format\n\n"
+            "Acceptance Criteria:\n\n"
+            "1. <criterion>\n"
+            "2. <criterion>\n\n"
+            "(repeat for 3-4 if needed)\n\n"
+            "Return only this format, no other text."
+        )
+    else:
+        task_block = (
+            "## Task\n\n"
+            "Write 2-4 acceptance criteria in Given/When/Then format.\n\n"
+            "## Rules\n\n"
+            "1. Each criterion must have exactly one Given, one When, and one Then clause.\n"
+            "2. Given — describes the precondition or system state.\n"
+            "3. When — describes the user action or triggering event.\n"
+            "4. Then — describes the observable outcome or system response.\n"
+            "5. Cover the happy path first, then the most important edge case.\n"
+            "6. Be concrete and testable — avoid vague words like 'properly' or 'correctly'.\n"
+            "7. Do not reference implementation details (e.g. 'clicks a React button').\n\n"
+            "## Output format\n\n"
+            "Acceptance Criteria:\n\n"
+            "1. Given <precondition>\n"
+            "   When <action>\n"
+            "   Then <outcome>\n\n"
+            "2. Given <precondition>\n"
+            "   When <action>\n"
+            "   Then <outcome>\n\n"
+            "(repeat for 3-4 if needed)\n\n"
+            "Return only this format, no other text."
+        )
     prompt = (
         "You are a Senior Scrum Master writing acceptance criteria.\n\n"
         "## User Story\n\n"
         f"{story}{context_line}\n\n"
-        "## Task\n\n"
-        "Write 2-4 acceptance criteria in Given/When/Then format.\n\n"
-        "## Rules\n\n"
-        "1. Each criterion must have exactly one Given, one When, and one Then clause.\n"
-        "2. Given — describes the precondition or system state.\n"
-        "3. When — describes the user action or triggering event.\n"
-        "4. Then — describes the observable outcome or system response.\n"
-        "5. Cover the happy path first, then the most important edge case.\n"
-        "6. Be concrete and testable — avoid vague words like 'properly' or 'correctly'.\n"
-        "7. Do not reference implementation details (e.g. 'clicks a React button').\n\n"
-        "## Output format\n\n"
-        "Acceptance Criteria:\n\n"
-        "1. Given <precondition>\n"
-        "   When <action>\n"
-        "   Then <outcome>\n\n"
-        "2. Given <precondition>\n"
-        "   When <action>\n"
-        "   Then <outcome>\n\n"
-        "(repeat for 3-4 if needed)\n\n"
-        "Return only this format, no other text."
+        f"{task_block}"
     )
 
     # temperature=0.3 — slightly warmer to allow creative but realistic AC generation.

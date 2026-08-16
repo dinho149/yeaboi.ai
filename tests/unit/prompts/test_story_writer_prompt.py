@@ -275,3 +275,32 @@ class TestMaxTotalStories:
 
     def test_small_project_max_stories_is_2(self):
         assert SMALL_PROJECT_MAX_STORIES == 2
+
+
+class TestAcStyle:
+    """ac_style shapes rule 8 AND the embedded JSON schema — they must agree."""
+
+    def test_default_gwt_schema_and_rule(self):
+        prompt = _make_prompt()
+        assert '"given"' in prompt
+        assert "Given/When/Then format" in prompt
+
+    def test_bullets_schema_has_no_gwt_keys(self):
+        # The regression this pins: the old prompt asked for bullet ACs while
+        # the schema still demanded given/when/then keys.
+        prompt = _make_prompt(ac_style="bullets")
+        assert '"given"' not in prompt
+        assert '"when"' not in prompt
+        assert '"then"' not in prompt
+        assert "one clear, testable criterion" in prompt
+        assert "Do NOT use Given/When/Then" in prompt
+
+    def test_median_count_rule_from_structured_param(self):
+        prompt = _make_prompt(ac_median_count=1)
+        assert "exactly 1 acceptance criterion" in prompt
+        prompt = _make_prompt(ac_median_count=4)
+        assert "approximately 4 acceptance criteria" in prompt
+
+    def test_no_median_defaults_to_three(self):
+        prompt = _make_prompt()
+        assert "at least 3 acceptance criteria" in prompt

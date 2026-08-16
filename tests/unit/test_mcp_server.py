@@ -238,6 +238,20 @@ class TestPlanningTools:
 
         assert Path(payload["data"]["path"]).exists()
 
+    def test_plan_export_prd(self, seeded_session, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)  # exporter writes relative to CWD
+        payload = call_tool("plan_export", {"format": "prd"})
+        assert payload["ok"] is True
+        from pathlib import Path
+
+        path = Path(payload["data"]["path"])
+        assert path.exists()
+        assert path.read_text().startswith("# PRD — ")
+        # No LLM in the test env — the envelope must report the honest mode
+        # and the section warnings must surface, never a silent skeleton.
+        assert payload["data"]["llm_mode"] == "fallback"
+        assert payload["warnings"]
+
     def test_plan_export_bad_format(self, seeded_session):
         payload = call_tool("plan_export", {"format": "pdf"})
         assert payload["ok"] is False
@@ -695,6 +709,7 @@ class TestPlanSync:
                 stories_created={"s1": "PROJ-2"},
                 tasks_created={},
                 sprints_created={"sp1": "17"},
+                sprints_updated={"sp2": "18"},
                 errors=["Sprint 2 board missing"],
                 skipped=1,
             )
@@ -705,6 +720,7 @@ class TestPlanSync:
         assert payload["ok"] is True
         assert payload["data"]["epic"] == "PROJ-1"
         assert payload["data"]["stories_created"] == {"s1": "PROJ-2"}
+        assert payload["data"]["sprints_updated"] == {"sp2": "18"}
         assert payload["data"]["skipped_existing"] == 1
         assert payload["warnings"] == ["Sprint 2 board missing"]
         assert captured["stories_in_state"] > 0
@@ -720,6 +736,45 @@ class TestPlanSync:
         payload = call_tool("plan_sync", {"destination": "linear"})
         assert payload["ok"] is False
         assert "jira" in payload["error"]["message"]
+
+    def test_sync_target_sprint_routes_to_existing(self, seeded_session, monkeypatch):
+        """target_sprint switches the loaded state into existing-sprint mode."""
+        from types import SimpleNamespace
+
+        captured: dict = {}
+
+        def fake_sync(state, on_progress=None):
+            captured["mode"] = state.get("sprint_target_mode")
+            captured["name"] = state.get("target_sprint_name")
+            captured["ext"] = state.get("target_sprint_external_id")
+            result = SimpleNamespace(
+                epic_key="PROJ-1",
+                stories_created={},
+                tasks_created={},
+                sprints_created={},
+                sprints_updated={"sp1": "42"},
+                errors=[],
+                skipped=0,
+            )
+            return result, dict(state)
+
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "PSOT Sprint 104"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "PSOT Sprint 104", "ext": ""}
+        assert payload["data"]["sprints_updated"] == {"sp1": "42"}
+
+        # Digits-only resolves as a Jira sprint id, not a name.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "42"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "", "ext": "42"}
+
+        # The "backlog" keyword creates stories without assigning them anywhere.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "backlog"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "backlog", "name": "", "ext": ""}
 
     def test_sync_no_sessions_errors(self, tmp_db):
         payload = call_tool("plan_sync", {"destination": "jira"})
@@ -929,6 +984,27 @@ class TestPlanPublish:
         payload = call_tool("plan_publish", {"destination": "sharepoint"})
         assert payload["ok"] is False
         assert "Unsupported destination" in payload["error"]["message"]
+
+    def test_publish_prd_content(self, seeded_session, monkeypatch):
+        from yeaboi.export_targets import PublishResult
+
+        captured: dict = {}
+
+        def fake_publish(destination, *, title, markdown):
+            captured.update(title=title, markdown=markdown)
+            return PublishResult(ok=True, message="Published", url="https://notion.so/prd")
+
+        monkeypatch.setattr("yeaboi.export_targets.publish_markdown", fake_publish)
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "prd"})
+        assert payload["ok"] is True
+        assert captured["title"].startswith("PRD")
+        assert captured["markdown"].startswith("# PRD — ")
+        assert payload["data"]["content"] == "prd"
+
+    def test_publish_bad_content(self, seeded_session):
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "roadmap"})
+        assert payload["ok"] is False
+        assert "Unsupported content" in payload["error"]["message"]
 
 
 class TestPerfNotes:

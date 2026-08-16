@@ -61,8 +61,9 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
     the success screen (min 1 s + a key press); returns straight away on Back/Esc.
 
     scope: "plan" (default — the two existing call sites are unchanged),
-    "transcript" (scrum-chat.md only), "both", or "ask" (the chat's bare
-    /export — a small choice screen picks the scope first).
+    "transcript" (scrum-chat.md only), "both", "prd" (a Product Requirements
+    Document; one LLM call), or "ask" (the chat's bare /export — a small
+    choice screen picks the scope first).
     """
     from yeaboi.ui.shared._export_picker import pick_export_destination
 
@@ -73,7 +74,12 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
             key_fn,
             title="Export",
             subtitle="What would you like to export?",
-            options=["Plan (HTML + Markdown)", "Chat transcript", "Both"],
+            options=[
+                "Plan (HTML + Markdown)",
+                "PRD (Product Requirements Doc)",
+                "Chat transcript",
+                "Both plan + transcript",
+            ],
             step=0,
             total=0,
             stage_label="Export",
@@ -81,9 +87,10 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         )
         if choice is None:
             return
-        scope = ("plan", "transcript", "both")[choice]
+        scope = ("plan", "prd", "transcript", "both")[choice]
     include_plan = scope in ("plan", "both")
     include_transcript = scope in ("transcript", "both")
+    include_prd = scope == "prd"
 
     def _open_setup():
         # Same suspend-wizard-resume dance as Settings → Configure.
@@ -100,6 +107,20 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         from yeaboi.transcript import build_chat_transcript_markdown
 
         return build_chat_transcript_markdown(graph_state)
+
+    prd_result = None
+    if include_prd:
+        # The prose sections are one LLM call — show a working screen so the
+        # multi-second wait doesn't look like a hang.
+        w, h = console.size
+        live.update(
+            _build_project_export_success_screen(
+                "Generating PRD…", width=w, height=h, subtitle="Working", mode="planning"
+            )
+        )
+        from yeaboi.prd_exporter import build_prd_markdown
+
+        prd_result = build_prd_markdown(graph_state)
 
     if dest == "files":
         from yeaboi.paths import get_planning_export_dir
@@ -120,8 +141,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
 
             chat_path = export_chat_transcript(graph_state, out_dir / "scrum-chat.md")
             body_lines.append(f"CHAT  {chat_path}")
+        if include_prd:
+            from yeaboi.prd_exporter import export_prd_markdown
+
+            prd_path = export_prd_markdown(graph_state, path=out_dir / "prd.md", result=prd_result)
+            logger.info("Exported: PRD=%s", prd_path)
+            body_lines.append(f"PRD   {prd_path}")
         body = "\n".join(body_lines)
-        subtitle = "Exported"
+        subtitle = prd_result.warnings[0] if prd_result and prd_result.warnings else "Exported"
     elif dest == "copy":
         from yeaboi.clipboard import copy_markdown_status
         from yeaboi.repl._io import build_plan_markdown
@@ -131,8 +158,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
             parts.append(build_plan_markdown(graph_state))
         if include_transcript:
             parts.append(_transcript_markdown())
+        if include_prd:
+            parts.append(prd_result.markdown)
         subtitle = copy_markdown_status("\n\n---\n\n".join(parts))
-        what = {"plan": "Sprint plan", "transcript": "Chat transcript", "both": "Plan + transcript"}[scope]
+        if prd_result and prd_result.warnings:
+            subtitle = prd_result.warnings[0]
+        what = {"plan": "Sprint plan", "prd": "PRD", "transcript": "Chat transcript", "both": "Plan + transcript"}[
+            scope
+        ]
         body = f"{what} Markdown copied — paste it anywhere."
     else:
         from yeaboi.export_targets import publish_markdown
@@ -147,9 +180,14 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, s
         if include_transcript:
             title = f"Chat Transcript — {name}" if name else "Chat Transcript"
             results.append(publish_markdown(dest, title=title, markdown=_transcript_markdown()))
+        if include_prd:
+            title = f"PRD — {name}" if name else "PRD"
+            results.append(publish_markdown(dest, title=title, markdown=prd_result.markdown))
         body = "\n".join(r.url or r.message for r in results)
         failed = [r for r in results if not r.ok]
         subtitle = f"Export failed — {failed[0].message}" if failed else results[-1].message
+        if not failed and prd_result and prd_result.warnings:
+            subtitle = prd_result.warnings[0]
 
     w, h = console.size
     live.update(_build_project_export_success_screen(body, width=w, height=h, subtitle=subtitle, mode="planning"))
@@ -456,18 +494,32 @@ def _handle_tracker_sync(
         if existing_tasks > 0:
             parts.append(f"({existing_tasks} already exist)")
     elif stage == "sprint_planner":
-        new_sprints = len(sprints) - existing_sprints
-        sprint_label = "Sprints" if tracker == "jira" else "Iterations"
-        if new_sprints > 0:
-            parts.append(f"{new_sprints} {sprint_label}")
-        if existing_sprints > 0:
-            parts.append(f"({existing_sprints} already exist)")
+        if graph_state.get("sprint_target_mode") == "existing":
+            # Small-project "add to existing sprint" — nothing gets created.
+            target = graph_state.get("target_sprint_name") or graph_state.get("target_sprint_external_id") or "?"
+            n_stories = len({sid for sp in sprints for sid in sp.story_ids})
+            unit = "sprint" if tracker == "jira" else "iteration"
+            parts.append(f"Add {n_stories} stories to existing {unit} '{target}'")
+        elif graph_state.get("sprint_target_mode") == "backlog":
+            # Small-project "backlog" — stories only, no sprint at all.
+            n_stories = len({sid for sp in sprints for sid in sp.story_ids})
+            parts.append(f"{n_stories} stories to the backlog (no sprint)")
+        else:
+            new_sprints = len(sprints) - existing_sprints
+            sprint_label = "Sprints" if tracker == "jira" else "Iterations"
+            if new_sprints > 0:
+                parts.append(f"{new_sprints} {sprint_label}")
+            if existing_sprints > 0:
+                parts.append(f"({existing_sprints} already exist)")
 
     if not parts:
         return None  # Nothing to create
 
     # Show confirmation via choice screen
-    desc = f"Create in {tracker_label}: " + ", ".join(parts)
+    if stage == "sprint_planner" and graph_state.get("sprint_target_mode") in ("existing", "backlog"):
+        desc = f"Sync to {tracker_label}: " + ", ".join(parts)
+    else:
+        desc = f"Create in {tracker_label}: " + ", ".join(parts)
     choice = _pipeline_choice_screen(
         live,
         console,
@@ -1243,6 +1295,44 @@ def _phase_pipeline(
             # Save warning text as a banner for the sprint review screen
             graph_state["_capacity_warning"] = {"text": cap_warning_text, "recommended": recommended}
             continue  # Re-invoke graph — sprint_planner generates sprints
+
+        # ── Architecture-spike intercept ──────────────────────────────
+        # The architecture decision is open (2+ options, not pinned) and the
+        # node parked _spike_prompt: ask whether to add a validation spike,
+        # with the recommendation driven by the analyzer's confidence.
+        # See docs: "Guardrails" — human-in-the-loop pattern
+        _spike = graph_state.get("_spike_prompt")
+        if _spike and not graph_state.get("spike_choice") and not dry_run:
+            recommended_choice = _spike.get("recommended", "include")
+            chosen = _spike.get("chosen", "the recommended architecture")
+            confidence = _spike.get("confidence", "medium")
+            ai_msgs = graph_state.get("messages", [])
+            spike_text = ai_msgs[-1].content.replace("**", "") if ai_msgs and isinstance(ai_msgs[-1], AIMessage) else ""
+            add_label = "Add a validation spike (1-3 days)"
+            skip_label = f"Skip — commit to {chosen}"
+            if recommended_choice == "include":
+                spike_options = [f"{add_label} (recommended — confidence {confidence})", skip_label]
+            else:
+                spike_options = [f"{skip_label} (recommended — confidence high)", add_label]
+            spike_pick = _pipeline_choice_screen(
+                live,
+                console,
+                _key,
+                title="Architecture Spike",
+                subtitle=spike_text,
+                options=spike_options,
+                step=step,
+                total=total,
+                stage_label=stage_label,
+                progress=progress,
+            )
+            # Option 0 is always the recommended one; Esc (None) takes it too.
+            follows_recommendation = spike_pick in (None, 0)
+            picked_include = (recommended_choice == "include") == follows_recommendation
+            graph_state["spike_choice"] = "include" if picked_include else "skip"
+            graph_state["_spike_prompt"] = {}
+            logger.info("Spike question answered: %s (recommended=%s)", graph_state["spike_choice"], recommended_choice)
+            continue  # Re-invoke graph — the node generates with the choice set
 
         # Check for pending_review
         pending = graph_state.get("pending_review")

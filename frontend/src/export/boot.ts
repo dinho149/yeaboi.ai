@@ -268,7 +268,8 @@ export interface PlanStory {
   rationale?: string;
   /** `high` | `medium` | `low` — how sure the estimate is. */
   confidence?: string;
-  acceptanceCriteria: Array<{ given: string; when: string; then: string }>;
+  /** `text` carries a free-text criterion (team style); the GWT triple is empty then. */
+  acceptanceCriteria: Array<{ given: string; when: string; then: string; text?: string }>;
   /**
    * `[item, applicable]` pairs, already zipped.
    *

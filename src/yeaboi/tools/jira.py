@@ -157,6 +157,71 @@ def add_issues_to_sprint(jira: JIRA, sprint_id: int, issue_keys: list[str]) -> N
     logger.debug("Added %d issues to sprint %d", len(issue_keys), sprint_id)
 
 
+def find_scrum_board_id(jira: JIRA, project_key: str) -> int | None:
+    """Return the project's scrum board id, or None when the project has no boards.
+
+    Sprint operations (create, list by state) only work on scrum boards, so a
+    kanban board that happens to be listed first must not win. When no scrum
+    board exists we still fall back to the first board — sprint calls against
+    it fail loudly, which beats silently doing nothing.
+    """
+    try:
+        boards = jira.boards(projectKeyOrID=project_key, type="scrum")
+    except JIRAError:
+        logger.debug("find_scrum_board_id: type-filtered board query failed", exc_info=True)
+        boards = []
+    if boards:
+        return boards[0].id
+    boards = jira.boards(projectKeyOrID=project_key)
+    if not boards:
+        return None
+    logger.warning(
+        "No scrum board found for project %s — using board %r; sprint operations may fail",
+        project_key,
+        getattr(boards[0], "name", boards[0].id),
+    )
+    return boards[0].id
+
+
+def fetch_board_sprints(
+    jira: JIRA,
+    board_id: int,
+    states: tuple[str, ...] = ("future", "active", "closed"),
+) -> list[dict]:
+    """Return all of the board's sprints in the given states, fully paginated.
+
+    Each item: {id, name, state, start_date, end_date} (dates "YYYY-MM-DD" or "").
+    python-jira's default maxResults=50 silently truncates mature boards to the
+    OLDEST 50 sprints; maxResults=False makes it fetch every page. An auth
+    failure escalates (a partial list from a 401 would silently mis-derive the
+    board's numbering); any other failing state query is logged at WARNING and
+    skipped (some boards reject some states).
+    """
+    items: list[dict] = []
+    for state in states:
+        try:
+            board_sprints = jira.sprints(board_id, state=state, maxResults=False)
+        except JIRAError as e:
+            _raise_if_auth_error(e, "jira")
+            logger.warning("fetch_board_sprints: %s sprints failed: %s", state, _jira_error_msg(e))
+            continue
+        for sp in board_sprints or []:
+            name = getattr(sp, "name", "") or ""
+            if not name:
+                continue
+            items.append(
+                {
+                    "id": getattr(sp, "id", None),
+                    "name": name,
+                    "state": state,
+                    "start_date": (getattr(sp, "startDate", None) or "")[:10],
+                    "end_date": (getattr(sp, "endDate", None) or getattr(sp, "completeDate", None) or "")[:10],
+                }
+            )
+    logger.debug("fetch_board_sprints: board=%s states=%s → %d sprint(s)", board_id, states, len(items))
+    return items
+
+
 @tool
 def jira_read_board(project_key: str = "") -> str:
     """Read the current state of a Jira board: active sprint, backlog size, and velocity.
@@ -621,15 +686,14 @@ def jira_fetch_active_sprint(project_key: str = "") -> str:
         return "Error: No project key provided and JIRA_PROJECT_KEY is not set in .env."
 
     try:
-        boards = jira.boards(projectKeyOrID=key)
-        if not boards:
+        board_id = find_scrum_board_id(jira, key)
+        if board_id is None:
             return f"Error: No Jira boards found for project {key}"
 
-        board = boards[0]
-        active_sprints = jira.sprints(board.id, state="active")
+        active_sprints = jira.sprints(board_id, state="active")
         if not active_sprints:
-            logger.debug("No active sprint on board %s", board.name)
-            return f"Error: No active sprint on board '{board.name}'"
+            logger.debug("No active sprint on board %s", board_id)
+            return f"Error: No active sprint on board {board_id}"
 
         active_sprint = active_sprints[0]
         sprint_name = active_sprint.name
@@ -1291,31 +1355,13 @@ def jira_list_sprints(project_key: str = "", limit: int = 30) -> list[dict]:
     if not key:
         return []
     try:
-        boards = jira.boards(projectKeyOrID=key)
-        if not boards:
+        board_id = find_scrum_board_id(jira, key)
+        if board_id is None:
             return []
-        board_id = boards[0].id
         seen: dict[str, dict] = {}
-        for state in ("closed", "active", "future"):
-            try:
-                board_sprints = jira.sprints(board_id, state=state)
-            except JIRAError as e:
-                _raise_if_auth_error(e, "jira")
-                logger.warning("jira_list_sprints: %s sprints failed: %s", state, _jira_error_msg(e))
-                continue
-            for sp in board_sprints or []:
-                name = getattr(sp, "name", "") or ""
-                if not name or name in seen:
-                    continue
-                start = (getattr(sp, "startDate", None) or "")[:10]
-                end = (getattr(sp, "endDate", None) or getattr(sp, "completeDate", None) or "")[:10]
-                seen[name] = {
-                    "id": getattr(sp, "id", None),
-                    "name": name,
-                    "start_date": start,
-                    "end_date": end,
-                    "state": state,
-                }
+        for item in fetch_board_sprints(jira, board_id, states=("closed", "active", "future")):
+            if item["name"] not in seen:
+                seen[item["name"]] = item
         # Sort by start date (undated last), newest last so the caller can window the tail.
         sprints = sorted(seen.values(), key=lambda s: s["start_date"] or "0000-00-00")
         logger.info("jira_list_sprints: %d sprint(s)", len(sprints))

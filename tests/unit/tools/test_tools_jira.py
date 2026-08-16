@@ -868,7 +868,8 @@ class TestJiraListSprints:
         active = _make_sprint(2, "Sprint 2", "2026-06-15T00:00:00.000Z", "2026-06-28T00:00:00.000Z")
         mock_client = MagicMock()
         mock_client.boards.return_value = [board]
-        mock_client.sprints.side_effect = lambda bid, state: {
+        # jira_list_sprints must fetch fully paginated (maxResults=False).
+        mock_client.sprints.side_effect = lambda bid, state, **kw: {
             "closed": [closed],
             "active": [active],
             "future": [],
@@ -899,6 +900,128 @@ class TestJiraListSprints:
         mock_client.boards.return_value = []
         monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
         assert jira_list_sprints("PROJ") == []
+
+
+class TestFindScrumBoardId:
+    """Board discovery for sprint operations — scrum boards win over kanban."""
+
+    def test_prefers_scrum_board_over_earlier_non_scrum_board(self, monkeypatch):
+        from yeaboi.tools.jira import find_scrum_board_id
+
+        kanban = _make_board(3, "Kanban Board")
+        scrum = _make_board(9, "Scrum Board")
+        mock_client = MagicMock()
+        # The unfiltered board list has the kanban board first; the
+        # type-filtered query returns only the scrum board — it must win.
+        mock_client.boards.side_effect = lambda **kw: [scrum] if kw.get("type") == "scrum" else [kanban, scrum]
+
+        assert find_scrum_board_id(mock_client, "PROJ") == 9
+        mock_client.boards.assert_called_once_with(projectKeyOrID="PROJ", type="scrum")
+
+    def test_falls_back_to_first_board_and_warns_when_no_scrum_board(self, caplog):
+        from yeaboi.tools.jira import find_scrum_board_id
+
+        kanban = _make_board(3, "Kanban Board")
+        mock_client = MagicMock()
+        mock_client.boards.side_effect = lambda **kw: [] if kw.get("type") == "scrum" else [kanban]
+
+        with caplog.at_level("WARNING", logger="yeaboi.tools.jira"):
+            assert find_scrum_board_id(mock_client, "PROJ") == 3
+        assert any("No scrum board found" in rec.message for rec in caplog.records)
+
+    def test_type_filtered_query_error_falls_back_to_unfiltered(self):
+        from yeaboi.tools.jira import find_scrum_board_id
+
+        board = _make_board(5, "Only Board")
+        mock_client = MagicMock()
+
+        def _boards(**kw):
+            if kw.get("type") == "scrum":
+                raise _make_jira_error(400, "type filter unsupported")
+            return [board]
+
+        mock_client.boards.side_effect = _boards
+        assert find_scrum_board_id(mock_client, "PROJ") == 5
+
+    def test_none_when_project_has_no_boards(self):
+        from yeaboi.tools.jira import find_scrum_board_id
+
+        mock_client = MagicMock()
+        mock_client.boards.return_value = []
+        assert find_scrum_board_id(mock_client, "PROJ") is None
+
+
+class TestFetchBoardSprints:
+    """Paginated sprint fetch across states — truncation and partial failures."""
+
+    def test_passes_max_results_false_and_aggregates_states(self):
+        from yeaboi.tools.jira import fetch_board_sprints
+
+        future = _make_sprint(1, "Sprint 3")
+        active = _make_sprint(2, "Sprint 2", "2026-08-10T00:00:00.000Z", "2026-08-23T00:00:00.000Z")
+        closed = _make_sprint(3, "Sprint 1", "2026-07-27T00:00:00.000Z", "2026-08-09T00:00:00.000Z")
+        calls: list[dict] = []
+        mock_client = MagicMock()
+
+        def _sprints(board_id, state, **kw):
+            calls.append({"board_id": board_id, "state": state, **kw})
+            return {"future": [future], "active": [active], "closed": [closed]}[state]
+
+        mock_client.sprints.side_effect = _sprints
+        items = fetch_board_sprints(mock_client, 7)
+
+        # Every state query must be fully paginated — maxResults=False.
+        assert [c["state"] for c in calls] == ["future", "active", "closed"]
+        assert all(c["maxResults"] is False for c in calls)
+        assert all(c["board_id"] == 7 for c in calls)
+        assert [it["name"] for it in items] == ["Sprint 3", "Sprint 2", "Sprint 1"]
+        assert items[1] == {
+            "id": 2,
+            "name": "Sprint 2",
+            "state": "active",
+            "start_date": "2026-08-10",
+            "end_date": "2026-08-23",
+        }
+
+    def test_failing_state_is_skipped_without_losing_other_states(self):
+        from yeaboi.tools.jira import fetch_board_sprints
+
+        active = _make_sprint(2, "Sprint 2", "2026-08-10T00:00:00.000Z", "2026-08-23T00:00:00.000Z")
+        closed = _make_sprint(3, "Sprint 1", "2026-07-27T00:00:00.000Z", "2026-08-09T00:00:00.000Z")
+        mock_client = MagicMock()
+
+        def _sprints(board_id, state, **kw):
+            if state == "future":
+                raise _make_jira_error(400, "board rejects future queries")
+            return {"active": [active], "closed": [closed]}[state]
+
+        mock_client.sprints.side_effect = _sprints
+        items = fetch_board_sprints(mock_client, 7)
+        assert [it["name"] for it in items] == ["Sprint 2", "Sprint 1"]
+        assert [it["state"] for it in items] == ["active", "closed"]
+
+    def test_auth_error_escalates_instead_of_truncating(self):
+        # A 401/403 must not degrade into a silently short list — a partial
+        # board mis-derives the numbering and hides sprints from the Q27 menu.
+        import pytest
+
+        from yeaboi.standup.errors import StandupSourceError
+        from yeaboi.tools.jira import fetch_board_sprints
+
+        mock_client = MagicMock()
+        mock_client.sprints.side_effect = _make_jira_error(401, "expired token")
+        with pytest.raises(StandupSourceError):
+            fetch_board_sprints(mock_client, 7)
+
+    def test_nameless_sprints_are_skipped(self):
+        from yeaboi.tools.jira import fetch_board_sprints
+
+        named = _make_sprint(1, "Sprint 1", "2026-08-10T00:00:00.000Z", "2026-08-23T00:00:00.000Z")
+        nameless = _make_sprint(2, "")
+        mock_client = MagicMock()
+        mock_client.sprints.side_effect = lambda board_id, state, **kw: [named, nameless] if state == "active" else []
+        items = fetch_board_sprints(mock_client, 7, states=("active",))
+        assert [it["name"] for it in items] == ["Sprint 1"]
 
 
 class TestJiraToolsRegistered:

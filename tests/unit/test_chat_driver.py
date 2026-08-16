@@ -1439,6 +1439,60 @@ def _bounded_keys(sequence: list[str], deadline_seconds: float = 5.0):
     return _key
 
 
+class TestSpikePopup:
+    """Architecture-spike opt-in/out — recommended option first, Esc takes it."""
+
+    def _spike_state(self, recommended: str, **extra) -> dict:
+        return {
+            "messages": [AIMessage(content="Spike question")],
+            "_spike_prompt": {"recommended": recommended, "chosen": "Modular monolith", "confidence": "medium"},
+            **extra,
+        }
+
+    def _popup(self, state: dict, monkeypatch, choice):
+        """Run _spike_popup with the choice screen faked; return its kwargs."""
+        captured: dict = {}
+
+        def fake_choice_screen(live, console, key, **kw):
+            captured.update(kw)
+            return choice
+
+        monkeypatch.setattr("yeaboi.ui.session.phases._phases._pipeline_choice_screen", fake_choice_screen)
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._spike_popup()
+        return driver, captured
+
+    def test_recommended_include_lists_first_and_esc_takes_it(self, monkeypatch):
+        # choice=None is the Esc path — it must resolve to the recommendation.
+        driver, captured = self._popup(self._spike_state("include"), monkeypatch, choice=None)
+        assert captured["options"][0].startswith("Add a validation spike")
+        assert "(recommended" in captured["options"][0]
+        assert driver.state["spike_choice"] == "include"
+        assert driver.state["_spike_prompt"] == {}
+
+    def test_recommended_skip_lists_first_and_esc_takes_it(self, monkeypatch):
+        driver, captured = self._popup(self._spike_state("skip"), monkeypatch, choice=None)
+        assert captured["options"][0].startswith("Skip — commit to Modular monolith")
+        assert "(recommended" in captured["options"][0]
+        assert driver.state["spike_choice"] == "skip"
+
+    def test_second_option_overrides_the_recommendation(self, monkeypatch):
+        driver, _ = self._popup(self._spike_state("skip"), monkeypatch, choice=1)
+        assert driver.state["spike_choice"] == "include"
+
+    def test_fast_mode_takes_recommendation_without_asking(self, monkeypatch):
+        def _boom(*a, **kw):  # the choice screen must never open in fast mode
+            raise AssertionError("choice screen opened in fast mode")
+
+        monkeypatch.setattr("yeaboi.ui.session.phases._phases._pipeline_choice_screen", _boom)
+        state = self._spike_state("skip", _chat_fast_forward=True)
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._spike_popup()
+        assert driver.state["spike_choice"] == "skip"
+        assert driver.state["_spike_prompt"] == {}
+        assert any("fast mode" in m.text for m in driver.transcript.messages)
+
+
 class TestEntertainDuck:
     """The working-wait entertainer: clock-derived quip slots, gags on a
     schedule, real EVENT bubbles always win."""
