@@ -14,7 +14,7 @@
  * viewport. `app` is always compact — its screen cannot spend 260px.
  */
 
-import { Children, Fragment, isValidElement, useState, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -23,6 +23,7 @@ import type { PageChrome } from './chrome';
 import { Credit } from './Credit';
 import { PopoverGroup } from './Popover';
 import { useDockDrag } from './useDockDrag';
+import { useDockLift } from './useDockLift';
 import styles from './PageShell.module.css';
 
 /**
@@ -102,6 +103,18 @@ export function PageShell({
   // know where each of them falls rather than laying out one row.
   const tools = dockItems(dock);
   const drag = useDockDrag();
+  const dockEl = useRef<HTMLElement | null>(null);
+  const holdDock = useCallback(
+    (el: HTMLElement | null) => {
+      dockEl.current = el;
+      drag.ref(el);
+    },
+    [drag],
+  );
+  const readDock = useCallback(() => dockEl.current, []);
+  // Not while it is being dragged: the pointer is holding it, and two things
+  // moving one element is a fight.
+  const tilt = useDockLift(readDock, !drag.dragging);
   // The dock's drawer, once it exists. Every dock popover renders into it, so
   // opening one grows the dock itself rather than floating a panel over it.
   const [drawer, setDrawer] = useState<HTMLDivElement | null>(null);
@@ -194,13 +207,20 @@ export function PageShell({
       {app && dock ? (
         <PopoverGroup panelHost={drawer}>
           <div
-            ref={drag.ref}
+            ref={holdDock}
             className={cx(
               styles['dockApp'],
               drag.placed && styles['dockPlaced'],
+              tilt.following && styles['dockLifted'],
               drag.dragging && styles['dockDragging'],
             )}
-            style={{ '--dock-x': `${drag.x}px`, '--dock-vis': drag.placed ? 'visible' : 'hidden' } as never}
+            style={
+              {
+                '--dock-x': `${drag.x}px`,
+                '--dock-lift': `${-tilt.lift}px`,
+                '--dock-vis': drag.placed ? 'visible' : 'hidden',
+              } as never
+            }
             onPointerDown={drag.onPointerDown}
           >
             <div ref={setDrawer} className={styles['dockDrawer']} />

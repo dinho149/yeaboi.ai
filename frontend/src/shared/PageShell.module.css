@@ -92,7 +92,7 @@
   touch-action: none;
   left: 0;
   bottom: calc(var(--app-inset-bottom, 0px) + var(--s3));
-  transform: translate3d(var(--dock-x, 0px), 0, 0);
+  transform: translate3d(var(--dock-x, 0px), var(--dock-lift, 0px), 0);
   /* No transition, and nothing to see, until it has been measured onto the wall
      — otherwise the first placement animates out of the left-hand corner. */
   transition: none;
@@ -100,7 +100,15 @@
 }
 
 .dockPlaced {
-  transition: transform var(--dur-base) var(--ease);
+  /* Coming back down: a spring that overshoots, so the dock has some weight to
+     it rather than sliding to a stop. Also the curve the wall-to-wall drag
+     lands on, which is the same motion at a different scale. */
+  transition: transform 520ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* Off the floor and tracking a pointer: eased, this would trail the mouse. */
+.dockLifted {
+  transition: none;
 }
 
 /* The controls themselves. */
