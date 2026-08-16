@@ -62,10 +62,12 @@ rule is in [house-rules.md](house-rules.md); the arithmetic is
 ## What arrives in Slack, and what does not
 
 Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is three to six
-channel messages a day**, worst case about eight, plus thread replies. Two of them bookend the day
-and always arrive; the rest are exceptions reporting themselves. Every message opens with a
-title line carrying a fixed emoji, so a message is identifiable from its notification preview
-before it is opened.
+channel messages a day**, worst case about eight, plus thread replies. Three of them always arrive
+— 📅, 🧭 and the Tuesday 🐹 — and the rest are exceptions reporting themselves. **The evening post
+is not one of the three**: an area that did nothing says nothing, which is why the fan-out costs
+so much less than one message per area per day would. Every message opens with a title line
+carrying a fixed emoji, so a message is identifiable from its notification preview before it is
+opened.
 
 **Every message about the work is about one area.** When a workstream ships, opens or gets stuck,
 that arrives as a message naming that workstream in its title line and containing nothing else.

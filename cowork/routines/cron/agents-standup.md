@@ -112,6 +112,6 @@ lives in `yeaboi agents cost` and the TUI, on the machine that has the history.
   that reports the routine's own container as the team's agent activity is worse than a short one.
 - If the CLI exits non-zero, post the degenerate form with the error's first line and nothing else:
   `🧭 **Agents** — <DATE> · standup engine failed: <first line>`. No sections, no footer, no
-  speculation about the cause. This routine is one of the two that may never be silent, and a
+  speculation about the cause. This routine is one of the three that may never be silent, and a
   failed run is the case where silence is most easily mistaken for a quiet day — an empty digest
   and no digest at all are different facts and must not produce the same message.

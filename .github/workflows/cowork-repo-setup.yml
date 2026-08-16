@@ -1,6 +1,6 @@
 name: Cowork repo setup
 
-# Apply the cowork GitHub half — the thirty-three labels and the four
+# Apply the cowork GitHub half — the thirty-six labels and the four
 # `YEABOI_MODEL_*` repository variables — on every merge that changes what they
 # are derived from.
 #

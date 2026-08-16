@@ -1999,7 +1999,7 @@ def existing_labels() -> set[str] | None:
     None rather than an empty set, and the same for the variables below: they are
     different facts and the difference matters. A ready transport does not mean
     the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all thirty-three labels
+    and an empty set read as truth makes the doctor report all thirty-six labels
     missing and ``apply_labels`` try to create every one of them.
     """
     if TRANSPORT == "gh":
@@ -3270,7 +3270,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across twenty-four routines is exactly
+# split is the point: comparing seven fields across twenty-eight routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -3282,7 +3282,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering twenty-four routines that already exist.
+    propose registering twenty-eight routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -3335,7 +3335,7 @@ def _walk(payload: object) -> _Read:
     by hand is often the bare array, and a fleet read in parts is an array of any
     of those. Guessing wrong on any of them reads as an empty account — which is
     the one wrong answer that would have this script propose registering
-    twenty-four routines that already exist.
+    twenty-eight routines that already exist.
 
     A ``get`` proves nothing either way: it answers for one routine and says
     nothing about how many there are. Only a ``list`` page can close the
@@ -3712,7 +3712,7 @@ class Plan:
         """The update this plan would apply to the deployer itself, if any.
 
         Its own key so an unattended deploy cannot miss it while scanning
-        twenty-two entries: this is the one change that alters the thing applying
+        twenty-eight entries: this is the one change that alters the thing applying
         the change, and ``cd-deploy.md`` requires it be named in the Slack post
         with both values rather than applied quietly.
         """
@@ -3849,7 +3849,7 @@ def desired_webhook(routine: Routine, trigger_id: str, scope_id: str) -> dict:
 # a *pre-existing* routine — which would attach a second webhook to one that
 # already fires. The snapshot carries the server's own answer in `created_at`, so
 # the claim is checked against it rather than trusted. Generous, because a deploy
-# that posts twenty-two bodies before re-listing can take a while.
+# that posts twenty-eight bodies before re-listing can take a while.
 CREATED_WINDOW = timedelta(minutes=30)
 
 
@@ -4192,7 +4192,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers twenty-four routines pointing at no repository — which looks like it
+    # registers twenty-eight routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.postable_creates:
         if not repo_url:
@@ -4238,7 +4238,7 @@ def trigger_plan(
 def readme_with_urls(text: str, urls: dict[str, str]) -> str:
     """Fill the registered-routines URL column from a plan's ``urls``.
 
-    Done here, on whole rows, rather than asked of the command as twenty-two edits.
+    Done here, on whole rows, rather than asked of the command as twenty-eight edits.
     The first version of this asked for the edits and got none of them, which is
     how a table that claims to record what is running came to record nothing.
 
@@ -4605,7 +4605,7 @@ def run_check(local_only: bool, triggers: Sequence[str] | None = None) -> int:
     elif github_ready():
         check_merge_gate(report)
         # A failed query is not an empty repo. Reported by the helper and skipped
-        # here, rather than turning one gh error into twenty-two findings.
+        # here, rather than turning one gh error into twenty-eight findings.
         present = existing_labels()
         if present is None:
             report.notes.append("the GitHub labels were not checked — the query failed")
