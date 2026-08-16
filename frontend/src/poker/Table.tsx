@@ -13,9 +13,52 @@
  * than ten simultaneous flips — and the App announces it to assistive tech.
  */
 
+import { useEffect, useRef, useState } from 'react';
+
 import { Icon } from '../design/primitives';
+import { cx } from '../runtime/cx';
 import type { PokerVote } from '../types/board';
 import styles from './poker.module.css';
+
+/** Matches the floor's own entrance, and `--dur-base` on the way back. */
+const LEAVE_MS = 620;
+const RETURN_MS = 260;
+
+/**
+ * The two chairs in the middle of being vacated, and the two being sat back in.
+ *
+ * A chair cannot simply vanish the moment its occupant is called up: the floor
+ * measures the chair to fly them out of it, and it does that after the DOM has
+ * already been updated. So the seat is held for the length of that flight,
+ * emptying as they go, and only then removed.
+ */
+function useSeatPhases(arguing: readonly string[]): { leaving: Set<string>; returning: Set<string> } {
+  const key = arguing.join(' ');
+  const [leaving, setLeaving] = useState<readonly string[]>([]);
+  const [returning, setReturning] = useState<readonly string[]>([]);
+  const was = useRef<readonly string[]>([]);
+
+  useEffect(() => {
+    const previous = was.current;
+    was.current = arguing;
+    if (arguing.length) {
+      setReturning([]);
+      setLeaving(arguing);
+      const timer = window.setTimeout(() => setLeaving([]), LEAVE_MS);
+      return () => window.clearTimeout(timer);
+    }
+    setLeaving([]);
+    if (!previous.length) return undefined;
+    setReturning(previous);
+    const timer = window.setTimeout(() => setReturning([]), RETURN_MS);
+    return () => window.clearTimeout(timer);
+    // `key` is the dependency, not the array: a poll hands back a fresh array
+    // of the same two names every second, and re-running on that would restart
+    // the exit for as long as the floor is open.
+  }, [key]);
+
+  return { leaving: new Set(leaving), returning: new Set(returning) };
+}
 
 export interface TableProps {
   /** One entry per person present. `value` exists only once revealed. */
@@ -32,23 +75,37 @@ export interface TableProps {
 }
 
 export function Table({ votes, revealed, arguing = [] }: TableProps) {
+  const { leaving, returning } = useSeatPhases(arguing);
+  const onTheFloor = new Set(arguing);
+  // Their chair is empty while they are arguing, and holds only long enough for
+  // them to get out of it.
+  const seated = votes.filter((person) => !onTheFloor.has(person.name) || leaving.has(person.name));
+
   return (
     <section className={styles['table']} aria-label="The table">
       {/* No label and no status: the row of faces is unmistakably the table,
           the section carries its name for anything that cannot see them, and
           who the round is waiting for is said on the deck's own line. */}
 
-      {votes.length === 0 ? (
+      {seated.length === 0 ? (
         <p className={styles['vempty']}>
           {revealed ? 'No votes were cast.' : 'Waiting for the team — share the code to invite them.'}
         </p>
       ) : (
         <ul className={styles['vrow']}>
-          {votes.map((person, index) => (
+          {seated.map((person, index) => (
             // `data-seat` is what the floor measures its entrance from: the two
             // duelists fly out of the chairs they were picked from. By name,
             // because a seat carries no participant id.
-            <li key={`${person.name}:${index}`} className={styles['voter']} data-seat={person.name}>
+            <li
+              key={`${person.name}:${index}`}
+              className={cx(
+                styles['voter'],
+                leaving.has(person.name) && styles['seatLeaving'],
+                returning.has(person.name) && styles['seatReturning']
+              )}
+              data-seat={person.name}
+            >
               {/* The seat does not change on reveal — the vote arrives beside
                   the name as a card, so the table stays the same table. */}
               <span className={styles['seatFace']}>
