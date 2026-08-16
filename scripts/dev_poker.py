@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -77,6 +78,25 @@ SEED: list[dict] = [
     {"key": "YB-104", "summary": "Delete the hand-written poker page"},
 ]
 
+# The rest of the room. Avatars come from the server's own allowed set.
+CREW = [
+    ("dev-ada", "Ada", "🦊"),
+    ("dev-grace", "Grace", "🐙"),
+    ("dev-kit", "Kit", "🐼"),
+    ("dev-remy", "Remy", "🐸"),
+    ("dev-nico", "Nico", "🦉"),
+    ("dev-suki", "Suki", "🦄"),
+    ("dev-tobi", "Tobi", "🐝"),
+]
+
+
+def _keep_seated(board: PokerBoard) -> None:
+    """Re-announce the seeded crew forever, so the table does not empty out."""
+    while True:
+        for pid, name, avatar in CREW:
+            board.heartbeat(pid, name=name, avatar=avatar)
+        time.sleep(2)
+
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -98,12 +118,19 @@ def main() -> int:
     board.finalize_current(5.0)
     board.goto_ticket(0)
 
-    # Two seated teammates, so the table is not empty on first load. Their
-    # heartbeats expire after a few seconds — that is real presence behaviour,
-    # not a bug in the seed.
-    board.heartbeat("dev-ada", name="Ada", avatar="🦊")
-    board.heartbeat("dev-grace", name="Grace", avatar="🐙")
+    # A full table, so the seats, the spread and the duel all have something to
+    # work with. Half of them have voted: enough for a shape, with people still
+    # outstanding so the waiting line means something.
+    for pid, name, avatar in CREW:
+        board.heartbeat(pid, name=name, avatar=avatar)
     board.cast_vote("dev-ada", "3")
+    board.cast_vote("dev-grace", "13")
+    board.cast_vote("dev-kit", "3")
+    board.cast_vote("dev-remy", "5")
+
+    # Kept alive in the background, because presence expires in seconds — a
+    # seeded table that is not re-announced empties while you are looking at it.
+    threading.Thread(target=_keep_seated, args=(board,), daemon=True).start()
 
     server = PokerServer(board)
     # Fixed credentials so a rebuild-and-restart does not invalidate the token

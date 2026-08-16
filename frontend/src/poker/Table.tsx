@@ -21,9 +21,17 @@ export interface TableProps {
   /** One entry per person present. `value` exists only once revealed. */
   votes: readonly PokerVote[];
   revealed: boolean;
+  /**
+   * The two people arguing, while a floor is open. Everyone else is watching,
+   * and gets a bucket of popcorn to say so. Empty the rest of the time.
+   *
+   * By name, because that is the only thing a seat and a duelist have in
+   * common on the wire — a seat carries no participant id.
+   */
+  arguing?: readonly string[] | undefined;
 }
 
-export function Table({ votes, revealed }: TableProps) {
+export function Table({ votes, revealed, arguing = [] }: TableProps) {
   return (
     <section className={styles['table']} aria-label="The table">
       {/* No label and no status: the row of faces is unmistakably the table,
@@ -46,6 +54,13 @@ export function Table({ votes, revealed }: TableProps) {
                   {!revealed && person.voted ? (
                     <span className={styles['tick']} aria-hidden="true">
                       <Icon name="check" size={11} strokeWidth={3} />
+                    </span>
+                  ) : null}
+                  {/* Same corner as the tick, which is free by then: the tick
+                      is a voting-phase mark and the floor only opens after. */}
+                  {arguing.length && !arguing.includes(person.name) ? (
+                    <span className={styles['popcorn']} aria-hidden="true">
+                      🍿
                     </span>
                   ) : null}
                 </span>

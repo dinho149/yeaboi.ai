@@ -539,7 +539,11 @@ export function App({ boot }: { boot: PokerBoot }) {
             revealed={revealed}
           />
 
-          <Table votes={votes} revealed={revealed} />
+          <Table
+            votes={votes}
+            revealed={revealed}
+            arguing={duel && duel.status === 'live' ? [duel.low.name, duel.high.name] : undefined}
+          />
 
           <Deck
             mine={vote.value}

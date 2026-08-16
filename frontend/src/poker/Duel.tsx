@@ -21,6 +21,9 @@
  * ceremony people find genuinely novel.
  */
 
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+
 import { cx } from '../runtime/cx';
 import { fmtClock } from '../runtime/format';
 import type { DuelSlice } from '../types/board';
@@ -56,6 +59,42 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** How long the announcement holds the screen, in ms. */
+const TURN_MS = 2400;
+
+/**
+ * "You're up", once, over the whole board.
+ *
+ * A line inside the floor was the wrong shape for it: the floor is one tab of
+ * three, so the person whose turn had just started could be reading the spread
+ * and never see it — and once seen there is nothing more to do with it, yet it
+ * stayed for the length of the turn.
+ *
+ * A portal, because it belongs to the screen rather than to the panel it is
+ * declared in, and the panel it is declared in is `visibility: hidden` whenever
+ * another tab is showing.
+ */
+function YourTurn({ on }: { on: boolean }) {
+  const [showing, setShowing] = useState(false);
+
+  useEffect(() => {
+    if (!on) return undefined;
+    setShowing(true);
+    const timer = window.setTimeout(() => setShowing(false), TURN_MS);
+    return () => window.clearTimeout(timer);
+  }, [on]);
+
+  if (!showing) return null;
+  return createPortal(
+    // `role="status"` rather than `alert`: it is your turn, not an error, and
+    // alert would interrupt whatever a screen reader was mid-sentence on.
+    <div className={styles['youupWrap']} role="status">
+      <p className={styles['youup']}>You&rsquo;re up — make your case!</p>
+    </div>,
+    document.body
   );
 }
 
@@ -119,13 +158,7 @@ export function Duel({ duel, remaining, isHost, onNextTurn, onCloseDuel }: DuelP
         <Duelist duel={duel} role="high" />
       </div>
 
-      {/* `role="status"` rather than `alert`: it is your turn, not an error, and
-          alert would interrupt whatever a screen reader was mid-sentence on. */}
-      {myTurn ? (
-        <p className={styles['youup']} role="status">
-          You&rsquo;re up — make your case!
-        </p>
-      ) : null}
+      <YourTurn on={myTurn} />
 
       {duel.recording.host ? <p className={styles['hint']}>Host room mic is recording the debate.</p> : null}
     </div>

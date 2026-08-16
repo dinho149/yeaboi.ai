@@ -992,14 +992,49 @@
   color: var(--accent);
 }
 
+/* The whole screen, for a couple of seconds. Everything behind goes soft, so
+   there is one thing to look at and it is not competing with a live clock.
+   `pointer-events: none`: it says something, it does not ask anything, and the
+   turn it announces is on a timer that nobody should have to dismiss a card to
+   get back to. */
+.youupWrap {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  animation: youup-veil var(--dur-base) var(--ease) both;
+}
+
 .youup {
-  margin: var(--s3) 0 0;
-  padding: var(--s2) var(--s3);
-  border-radius: var(--r-s);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  margin: 0;
+  padding: var(--s4) var(--s6);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  box-shadow:
+    var(--edge),
+    0 12px 32px rgb(0 0 0 / 28%);
   color: var(--accent);
   font-weight: 600;
-  font-size: var(--fs-s);
+  font-size: var(--fs-l);
+  animation: youup-card 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+@keyframes youup-veil {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes youup-card {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
 }
 
 .micRow {
@@ -1130,6 +1165,28 @@
   background: var(--ok);
   color: var(--ink);
   font-size: var(--fs-2xs);
+}
+
+/* Everyone who is not arguing is watching. No disc behind it — a badge would
+   read as a status the way the tick does, and this is a joke about being in the
+   audience. It settles in and then keeps still. */
+.popcorn {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  /* Over the revealed card, which is a later sibling and would otherwise cover
+     it — the card is the thing being watched, so the audience sits in front. */
+  z-index: 1;
+  font-size: var(--fs-s);
+  line-height: 1;
+  animation: popcorn-in 420ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+
+@keyframes popcorn-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4) translateY(-6px) rotate(-18deg);
+  }
 }
 
 /*
