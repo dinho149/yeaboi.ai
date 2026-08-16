@@ -17,12 +17,6 @@
  * Unlike the neighbouring `useMediaQuery` this does *not* read during render —
  * see `useFillsDisplay` below. A media query is authoritative the moment it is
  * asked; a window measurement is not.
- *
- * KNOWN GAP: a hard refresh while windowed still paints the top corners rounded,
- * and they stay until the next resize. Toggling fullscreen is correct in both
- * directions. So the mount-time reading disagrees with the post-resize one, and
- * which of the two signals below is at fault has not been established from real
- * numbers yet.
  */
 
 import { useEffect, useState } from 'react';
@@ -56,14 +50,30 @@ export function fillsDisplay(): boolean {
   // The Fullscreen API is a direct answer where it applies (the deck's `f` key),
   // so take it before measuring anything.
   if (typeof document !== 'undefined' && document.fullscreenElement) return true;
-  const chrome = window.outerHeight - window.innerHeight;
   // jsdom defaults both to the same value, so the gap is 0 and this would report
   // fullscreen for every component test. Require the pair to be real first: a
   // headless environment has no window furniture to measure and should get the
   // square screen.
   if (!window.outerHeight || !window.innerHeight) return false;
+  const chrome = window.outerHeight - window.innerHeight;
+  // A viewport taller than the window it is inside is not a window with no
+  // chrome, it is a reading that means nothing — page zoom scales `innerHeight`
+  // and leaves `outerHeight` alone, so a zoomed-out page reports a negative gap
+  // while sitting under a full tab strip. `<= slack` called that fullscreen.
+  if (chrome < 0) return false;
   return chrome <= CHROME_SLACK_PX;
 }
+
+/**
+ * When to look again after mounting, in ms.
+ *
+ * The first reading is the one that goes wrong, and until now nothing looked
+ * again until the window was resized — so a board that read itself as fullscreen
+ * on a hard refresh stayed curved for as long as you left it alone. These are
+ * cheap (two integer reads and a `setState` that usually bails) and bounded, so
+ * a bad first read costs a second rather than the session.
+ */
+const SETTLE_MS = [60, 250, 1000];
 
 /**
  * Starts square, then corrects — deliberately, and not the way the neighbouring
@@ -88,21 +98,24 @@ export function useFillsDisplay(): boolean {
     if (typeof window === 'undefined') return;
     const apply = () => setFills(fillsDisplay());
 
-    // Now (mounted, so layout has happened), and again next frame — on a hard
-    // refresh the first of these can still read a half-built window.
+    // Now (mounted, so layout has happened), again next frame, and then on a
+    // short schedule — on a hard refresh the early readings can still be of a
+    // half-built window, and nothing else is guaranteed to ask again.
     apply();
     const frame = requestAnimationFrame(apply);
+    const timers = SETTLE_MS.map((ms) => window.setTimeout(apply, ms));
 
-    // Three sources, because they are genuinely different transitions:
     // `fullscreenchange` is the Fullscreen API (the deck's `f` key); the
     // browser's own fullscreen and a bookmarks bar being toggled arrive as a
-    // plain resize; and `load` is the one that catches a window still settling
-    // after a refresh, which is the case this hook got wrong.
+    // plain resize. `load` is only worth subscribing to if it has not already
+    // fired — a listener added afterwards never runs, which is how the one case
+    // this was added for went on failing.
     window.addEventListener('resize', apply);
-    window.addEventListener('load', apply);
     document.addEventListener('fullscreenchange', apply);
+    if (document.readyState !== 'complete') window.addEventListener('load', apply);
     return () => {
       cancelAnimationFrame(frame);
+      timers.forEach(window.clearTimeout);
       window.removeEventListener('resize', apply);
       window.removeEventListener('load', apply);
       document.removeEventListener('fullscreenchange', apply);
@@ -111,4 +124,3 @@ export function useFillsDisplay(): boolean {
 
   return fills;
 }
-

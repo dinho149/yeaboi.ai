@@ -89,11 +89,13 @@ export function Duck({ state = 'idle', size = 64, className }: DuckProps) {
   // reconnect would be two animations arguing over the same layer, and the one
   // that matters would be the one that lost.
   const idle = useDuckIdle(state === 'idle');
+  const arriving = useDuckArrival();
 
   return (
     <div
       className={cx(styles['duck'], className)}
       data-state={state}
+      data-enter={arriving ? 'true' : undefined}
       data-idle={idle ?? undefined}
       style={{ width: `${size}px` }}
       aria-hidden="true"
@@ -106,9 +108,33 @@ export function Duck({ state = 'idle', size = 64, className }: DuckProps) {
         <img className={styles['wing']} src={wingSrc} alt="" draggable={false} />
         <img className={styles['glasses']} src={glassesSrc} alt="" draggable={false} />
       </div>
-      {state === 'offline' ? <span className={styles['zzz']}>z</span> : null}
+      {/* Both resting states are a nap: the connection is gone, or the room is
+          closed. What tells them apart is colour — `offline` is drained. */}
+      {state === 'offline' || state === 'locked' ? <span className={styles['zzz']}>z</span> : null}
     </div>
   );
+}
+
+/** How long `duck-waddle-in` runs, in ms. Matches duck.module.css. */
+const ENTER_MS = 1400;
+
+/**
+ * True for the length of the arrival, once per mount.
+ *
+ * The entrance is a mount, not a state. Left on `.duck`'s base rule, the states
+ * that cancel it to hold a static transform re-arm it on the way out — so
+ * unlocking a board replayed the whole waddle instead of the duck simply turning
+ * back around.
+ */
+function useDuckArrival(): boolean {
+  const [arriving, setArriving] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setArriving(false), ENTER_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return arriving;
 }
 
 /**

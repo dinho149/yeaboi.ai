@@ -33,16 +33,17 @@ describe('<Duck>', () => {
     expect(container.querySelectorAll('img')).toHaveLength(3);
   });
 
-  it('shows a literal sleep marker when offline', () => {
+  it.each(['offline', 'locked'] as const)('shows a literal sleep marker when %s', (state) => {
     // Not decoration — a keyframe would be flattened by the reduced-motion
     // guard, and this text is what remains for those visitors (and in a
-    // screenshot, and on paper).
-    const { container } = render(<Duck state="offline" />);
+    // screenshot, and on paper). Both resting states nap; colour is what tells
+    // a dead connection from a closed room.
+    const { container } = render(<Duck state={state} />);
     expect(container.textContent).toContain('z');
   });
 
   it('shows no sleep marker in any other state', () => {
-    for (const state of ['idle', 'urgent', 'locked', 'card'] as const) {
+    for (const state of ['idle', 'urgent', 'card'] as const) {
       const { container, unmount } = render(<Duck state={state} />);
       expect(container.textContent, `${state} should not read as asleep`).toBe('');
       unmount();
@@ -61,11 +62,33 @@ describe('the resting rig', () => {
     expect(body?.querySelectorAll('img')).toHaveLength(3);
   });
 
-  it('waddles in on every mount, from the base rule', () => {
-    // Driven by CSS rather than JS precisely so an export opened from disk gets
-    // it too, with no hook and no boot payload.
+  it('waddles in on every mount, and asks its caller for nothing', () => {
+    // A bare `<Duck />` arrives — an export opened from disk gets the entrance
+    // with no hook and no boot payload, same as a live board.
+    const { container } = render(<Duck />);
+    expect(container.querySelector('[data-enter="true"]')).toBeTruthy();
+  });
+
+  it('holds the entrance on the mount attribute, not the base rule', () => {
+    // On the base rule, the states that cancel it to hold a static transform
+    // re-arm it on the way out — unlocking a board replayed the whole waddle
+    // instead of the duck turning back around.
     const base = /\.duck\s*\{([^}]*)\}/.exec(duckCss)?.[1] ?? '';
-    expect(base).toMatch(/animation\s*:\s*duck-waddle-in/);
+    expect(base).not.toMatch(/animation\s*:\s*duck-waddle-in/);
+    expect(duckCss).toMatch(/\.duck\[data-enter=['"]true['"]\]\s*\{[^}]*duck-waddle-in/);
+  });
+
+  it('does not re-arm the entrance when a state is left', () => {
+    // Leaving `locked` is a transform change on a node running nothing.
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(<Duck state="locked" />);
+      act(() => void vi.advanceTimersByTime(2000));
+      rerender(<Duck state="idle" />);
+      expect(container.querySelector('[data-enter="true"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each(['locked', 'offline'])('cancels the entrance for %s', (state) => {

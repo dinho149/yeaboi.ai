@@ -27,11 +27,20 @@
   /* Everything below animates transform/opacity only, so the duck never
      triggers layout on a board that is already re-rendering on every poll. */
   will-change: transform;
-  /* Arrival. Every mount waddles in — the gate, both boards, an export opened
-     from disk — because the first half-second is the only one where a visitor is
-     looking at the duck rather than through it. The states below that own
-     `.duck`'s transform all override this, which is why it can live on the base
-     rule rather than being triggered from JS. */
+  /* The states that own this node's transform are entered and left, and leaving
+     one is a change of transform like any other — so the turn out of `locked`
+     eases back the way it eased away. Reduced motion flattens it and the duck
+     still ends up facing the right way. */
+  transition: transform var(--dur-base) var(--ease);
+}
+
+/* Arrival. Every mount waddles in — the gate, both boards, an export opened from
+   disk — because the first half-second is the only one where a visitor is
+   looking at the duck rather than through it.
+   Held on an attribute Duck.tsx drops after one play, not on the base rule: the
+   states below cancel this to keep their static transform, and off the base rule
+   *leaving* one of them re-arms it, so unlocking a board replayed the arrival. */
+.duck[data-enter='true'] {
   animation: duck-waddle-in 1.4s var(--ease) 1;
 }
 
@@ -52,10 +61,8 @@
        instead of being overwritten by whichever animation is running. A
        transform here would be the exact contention the layer split exists to
        avoid.
-     - Composing is what keeps `locked` honest. That state means "turned away",
-       expressed as `scaleX(-1)` on `.duck`; multiplied by this it comes out at
-       +1 and the duck faces the sprite's original direction. So the turn is
-       still a turn, and the state rules below need no change. */
+     - The states below set `transform` on `.duck`, so the facing has to live
+       somewhere they cannot reach. Here it survives every one of them. */
   scale: -1 1;
 }
 
@@ -218,25 +225,30 @@
 }
 
 /* ── locked: the host closed the board ───────────────────────────────
-   The duck turns its back. A plain transform, NOT a keyframe: the global
-   reduced-motion guard flattens every animation to 0.01ms, so a state encoded
-   as one would simply not exist for those visitors. Same for `offline` below.
-   This is the rule for any duck state that carries meaning. */
+   The duck naps, and says so with a literal "z". A plain transform, NOT a
+   keyframe: the global reduced-motion guard flattens every animation to 0.01ms,
+   so a state encoded as one would simply not exist for those visitors. Same for
+   `offline` below. This is the rule for any duck state that carries meaning.
+
+   It keeps its colour, which is the whole difference from `offline`: nothing is
+   wrong, the room is closed. */
 .duck[data-state="locked"] {
-  transform: scaleX(-1);
-  /* Cancels the base arrival animation. An animation — even one that has already
-     finished — takes the element's transform, so without this the turned back
-     would be overridden for the first 1.4s of a mount, which is exactly when
-     someone opening a locked board is looking. `none` is not a keyframe, so the
-     rule this file is built on still holds. */
+  transform: rotate(7deg) translateY(6%);
+  /* Cancels the arrival. An animation — even one that has already finished —
+     takes the element's transform, so without this the nap would be overridden
+     for the first 1.4s of a mount, which is exactly when someone opening a
+     locked board is looking. `none` is not a keyframe, so the rule this file is
+     built on still holds. */
   animation: none;
 }
 .duck[data-state="locked"] .body,
+.duck[data-state="locked"] .wing,
 .duck[data-state="locked"] .glasses {
   animation: none;
 }
 .duck[data-state="locked"] .glasses {
-  opacity: 0;
+  /* Shades slid down over closed eyes. */
+  transform: translateY(9%) rotate(-3deg);
 }
 
 /* ── offline: the long-poll is failing ───────────────────────────────
