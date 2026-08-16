@@ -2751,7 +2751,7 @@ dialog._modal_tn15v_693 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_2oazq_32 {
+._app_o8vqg_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2761,7 +2761,7 @@ dialog._modal_tn15v_693 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_2oazq_42 {
+._scroll_o8vqg_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2771,7 +2771,7 @@ dialog._modal_tn15v_693 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_2oazq_52 {
+._layout_o8vqg_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2800,7 +2800,7 @@ dialog._modal_tn15v_693 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_2oazq_81 {
+._main_o8vqg_81 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2816,7 +2816,7 @@ dialog._modal_tn15v_693 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_2oazq_52 {
+  ._layout_o8vqg_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2824,7 +2824,7 @@ dialog._modal_tn15v_693 {
 }
 
 @media (max-width: 699px) {
-  ._layout_2oazq_52 {
+  ._layout_o8vqg_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2833,7 +2833,7 @@ dialog._modal_tn15v_693 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_2oazq_114 {
+._rail_o8vqg_114 {
   min-height: 0;
   overflow-y: auto;
   /* The same inset the console carries, so the board's two outer columns hold
@@ -2841,7 +2841,7 @@ dialog._modal_tn15v_693 {
   padding: var(--s2);
 }
 
-._railHead_2oazq_122 {
+._railHead_o8vqg_122 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2849,7 +2849,7 @@ dialog._modal_tn15v_693 {
 }
 
 /* The board's scope heads the list it scopes; the count sits under it. */
-._railScope_2oazq_130 {
+._railScope_o8vqg_130 {
   margin: 0;
   font-size: var(--fs-m);
   font-weight: 600;
@@ -2857,7 +2857,7 @@ dialog._modal_tn15v_693 {
   color: var(--text);
 }
 
-._railList_2oazq_138 {
+._railList_o8vqg_138 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2866,7 +2866,7 @@ dialog._modal_tn15v_693 {
   gap: 2px;
 }
 
-._railItem_2oazq_147 {
+._railItem_o8vqg_147 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2883,12 +2883,12 @@ dialog._modal_tn15v_693 {
   cursor: pointer;
 }
 
-._railItem_2oazq_147:hover {
+._railItem_o8vqg_147:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_2oazq_169 {
+._railDot_o8vqg_169 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2896,30 +2896,30 @@ dialog._modal_tn15v_693 {
   background: var(--line-strong);
 }
 
-._railCurrent_2oazq_177 {
+._railCurrent_o8vqg_177 {
   background: transparent;
   color: var(--accent);
 }
 
-._railCurrent_2oazq_177 ._railDot_2oazq_169 {
+._railCurrent_o8vqg_177 ._railDot_o8vqg_169 {
   background: var(--accent);
 }
 
-._railPeeking_2oazq_186 {
+._railPeeking_o8vqg_186 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_2oazq_191 ._railDot_2oazq_169 {
+._railDone_o8vqg_191 ._railDot_o8vqg_169 {
   background: var(--ok);
 }
 
-._railDone_2oazq_191 ._railText_2oazq_195 {
+._railDone_o8vqg_191 ._railText_o8vqg_195 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_2oazq_195 {
+._railText_o8vqg_195 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2927,29 +2927,29 @@ dialog._modal_tn15v_693 {
   white-space: nowrap;
 }
 
-._railKey_2oazq_208 {
+._railKey_o8vqg_208 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_2oazq_214 {
+._railPts_o8vqg_214 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_2oazq_221 {
+._railToggle_o8vqg_221 {
   display: none;
 }
 
-._railBackdrop_2oazq_225 {
+._railBackdrop_o8vqg_225 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_2oazq_114 {
+  ._rail_o8vqg_114 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2963,15 +2963,15 @@ dialog._modal_tn15v_693 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_2oazq_244 {
+  ._railOpen_o8vqg_244 {
     transform: translateX(0);
   }
 
-  ._railToggle_2oazq_221 {
+  ._railToggle_o8vqg_221 {
     display: inline-flex;
   }
 
-  ._railBackdrop_2oazq_225 {
+  ._railBackdrop_o8vqg_225 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2982,7 +2982,7 @@ dialog._modal_tn15v_693 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_2oazq_263 {
+._ticket_o8vqg_263 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2993,13 +2993,13 @@ dialog._modal_tn15v_693 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_2oazq_274 {
+._ticketPeek_o8vqg_274 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_2oazq_280 {
+._tkrow_o8vqg_280 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3007,23 +3007,23 @@ dialog._modal_tn15v_693 {
   margin-bottom: var(--s2);
 }
 
-._key_2oazq_288 {
+._key_o8vqg_288 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_2oazq_288 a {
+._key_o8vqg_288 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_2oazq_288 a:hover {
+._key_o8vqg_288 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_2oazq_304 {
+._phaseTag_o8vqg_304 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3034,13 +3034,13 @@ dialog._modal_tn15v_693 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_2oazq_315 {
+._phaseTagOn_o8vqg_315 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_2oazq_321 {
+._phaseTagPeek_o8vqg_321 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
@@ -3048,14 +3048,14 @@ dialog._modal_tn15v_693 {
 /* The pager sits at the end of the key row, hard right. Bordered rather than
    bare: it moves the whole room, which is not a thing to leave looking like
    furniture. */
-._tknav_2oazq_329 {
+._tknav_o8vqg_329 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
   margin-left: auto;
 }
 
-._tkpos_2oazq_336 {
+._tkpos_o8vqg_336 {
   min-width: 4ch;
   text-align: center;
   font-family: var(--font-mono);
@@ -3064,7 +3064,7 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._tkSummary_2oazq_345 {
+._tkSummary_o8vqg_345 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -3075,9 +3075,9 @@ dialog._modal_tn15v_693 {
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-._editTitle_2oazq_356,
-._editBody_2oazq_357,
-._editPoints_2oazq_358 {
+._editTitle_o8vqg_356,
+._editBody_o8vqg_357,
+._editPoints_o8vqg_358 {
   width: 100%;
   background: none;
   border: 0;
@@ -3093,16 +3093,16 @@ dialog._modal_tn15v_693 {
   transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._editTitle_2oazq_356:focus,
-._editBody_2oazq_357:focus,
-._editPoints_2oazq_358:focus {
+._editTitle_o8vqg_356:focus,
+._editBody_o8vqg_357:focus,
+._editPoints_o8vqg_358:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* Restates the display type rather than inheriting it: `font: inherit` above
    resets the size, and both classes sit on the same element. */
-._editTitle_2oazq_356 {
+._editTitle_o8vqg_356 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -3112,7 +3112,7 @@ dialog._modal_tn15v_693 {
   overflow: hidden;
 }
 
-._editBody_2oazq_357 {
+._editBody_o8vqg_357 {
   resize: none;
   min-height: 0;
   max-height: none;
@@ -3120,21 +3120,21 @@ dialog._modal_tn15v_693 {
   box-shadow: none;
 }
 
-._editBody_2oazq_357:focus {
+._editBody_o8vqg_357:focus {
   box-shadow: none;
 }
 
-._editPoints_2oazq_358 {
+._editPoints_o8vqg_358 {
   width: 4em;
 }
 
 /* Wide enough that a picker does not resize the row it sits in as the value
    changes — the properties keep their columns while being edited. */
-._propPick_2oazq_411 {
+._propPick_o8vqg_411 {
   min-width: 9em;
 }
 
-._editNote_2oazq_415 {
+._editNote_o8vqg_415 {
   margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
@@ -3142,7 +3142,7 @@ dialog._modal_tn15v_693 {
 
 /* Up in the identifying row, hard right — the ticket is saved from the row it
    is named in. */
-._editActions_2oazq_423 {
+._editActions_o8vqg_423 {
   display: flex;
   gap: var(--s2);
   margin-left: auto;
@@ -3150,20 +3150,20 @@ dialog._modal_tn15v_693 {
 
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
-._props_2oazq_431 {
+._props_o8vqg_431 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3) var(--s6);
   margin: var(--s4) 0 var(--s5);
 }
 
-._prop_2oazq_411 {
+._prop_o8vqg_411 {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-._propLabel_2oazq_444 {
+._propLabel_o8vqg_444 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3171,22 +3171,22 @@ dialog._modal_tn15v_693 {
   color: var(--dim);
 }
 
-._propValue_2oazq_452 {
+._propValue_o8vqg_452 {
   margin: 0;
   font-size: var(--fs-s);
   color: var(--text);
 }
 
-._propOk_2oazq_458 {
+._propOk_o8vqg_458 {
   color: var(--ok);
 }
 
-._bodyLabel_2oazq_462 {
+._bodyLabel_o8vqg_462 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_2oazq_467 {
+._desc_o8vqg_467 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -3195,25 +3195,25 @@ dialog._modal_tn15v_693 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_2oazq_467 {
+._desc_o8vqg_467 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_2oazq_483 {
+._descClipped_o8vqg_483 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_2oazq_490 {
+._descFade_o8vqg_490 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_2oazq_494 {
+._descToggle_o8vqg_494 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -3225,13 +3225,13 @@ dialog._modal_tn15v_693 {
   cursor: pointer;
 }
 
-._descEmpty_2oazq_506 {
+._descEmpty_o8vqg_506 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_2oazq_512 {
+._peekBanner_o8vqg_512 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3245,7 +3245,7 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._peekActions_2oazq_526 {
+._peekActions_o8vqg_526 {
   display: flex;
   gap: var(--s2);
 }
@@ -3253,21 +3253,21 @@ dialog._modal_tn15v_693 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_2oazq_534 {
+._pkbtnGo_o8vqg_534 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_2oazq_541 {
+._results_o8vqg_541 {
   padding: var(--s4) var(--s1) 0;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
 }
 
-._resultsHead_2oazq_548 {
+._resultsHead_o8vqg_548 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3275,18 +3275,18 @@ dialog._modal_tn15v_693 {
   flex-wrap: wrap;
 }
 
-._resultsSum_2oazq_556 {
+._resultsSum_o8vqg_556 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_2oazq_556 b {
+._resultsSum_o8vqg_556 b {
   color: var(--accent);
 }
 
-._dist_2oazq_567 {
+._dist_o8vqg_567 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3295,7 +3295,7 @@ dialog._modal_tn15v_693 {
   gap: var(--s1);
 }
 
-._drow_2oazq_576 {
+._drow_o8vqg_576 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -3306,52 +3306,52 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._dval_2oazq_587 {
+._dval_o8vqg_587 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_2oazq_592 {
+._dtrack_o8vqg_592 {
   height: 4px;
   background: var(--hairline);
   overflow: hidden;
 }
 
-._dbar_2oazq_598 {
+._dbar_o8vqg_598 {
   display: block;
   height: 100%;
   background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_2oazq_605 ._dbar_2oazq_598 {
+._drowTop_o8vqg_605 ._dbar_o8vqg_598 {
   background: var(--accent);
 }
 
-._drowTop_2oazq_605 ._dval_2oazq_587 {
+._drowTop_o8vqg_605 ._dval_o8vqg_587 {
   color: var(--accent);
 }
 
-._dcount_2oazq_613 {
+._dcount_o8vqg_613 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
 /* No panel: the other half of the results, on the same ground. */
-._ainote_2oazq_620 {
+._ainote_o8vqg_620 {
   padding-top: var(--s1);
 }
 
 /* Eyebrows that can be clicked, so the pair reads as one label with a switch in
    it rather than as a strip of buttons above the results. */
-._rtabs_2oazq_626 {
+._rtabs_o8vqg_626 {
   display: flex;
   align-items: baseline;
   gap: var(--s4);
 }
 
-._rtab_2oazq_626 {
+._rtab_o8vqg_626 {
   padding: 0;
   border: 0;
   background: none;
@@ -3364,88 +3364,88 @@ dialog._modal_tn15v_693 {
   transition: color var(--dur-fast) var(--ease);
 }
 
-._rtab_2oazq_626:hover {
+._rtab_o8vqg_626:hover {
   color: var(--muted);
 }
 
-._rtabOn_2oazq_649 {
+._rtabOn_o8vqg_649 {
   color: var(--text);
 }
 
 /* One cell for both panels: the taller one sets the height, so the tabs above
    stay where they are whichever is showing. The perspective is nearly always
    the taller, so the spread sits centred in the space it leaves. */
-._rpanel_2oazq_656 {
+._rpanel_o8vqg_656 {
   display: grid;
   align-items: center;
 }
 
-._rpanel_2oazq_656 > * {
+._rpanel_o8vqg_656 > * {
   grid-area: 1 / 1;
 }
 
-._rpanelOff_2oazq_665 {
+._rpanelOff_o8vqg_665 {
   visibility: hidden;
   pointer-events: none;
 }
 
-._aiBody_2oazq_670 {
+._aiBody_o8vqg_670 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_2oazq_676 {
+._conf_o8vqg_676 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: var(--track-eyebrow);
 }
 
-._conf-high_2oazq_683 {
+._conf-high_o8vqg_683 {
   color: var(--ok);
 }
 
-._conf-medium_2oazq_687 {
+._conf-medium_o8vqg_687 {
   color: var(--warn);
 }
 
-._conf-low_2oazq_691 {
+._conf-low_o8vqg_691 {
   color: var(--danger);
 }
 
-._ev_2oazq_695 {
+._ev_o8vqg_695 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_2oazq_702 {
+._sug_o8vqg_702 {
   margin: var(--s1) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
 /* Holds its space and its line breaks, and is simply not on the page yet. */
-._aiUnwritten_2oazq_709 {
+._aiUnwritten_o8vqg_709 {
   opacity: 0;
   transition: opacity var(--dur-base) var(--ease);
 }
 
-._sug_2oazq_702 b {
+._sug_o8vqg_702 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_2oazq_721 ._aiBody_2oazq_670::after {
+._ainotePending_o8vqg_721 ._aiBody_o8vqg_670::after {
   content: '…';
-  animation: _dots_2oazq_1 1.2s steps(4, end) infinite;
+  animation: _dots_o8vqg_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_2oazq_1 {
+@keyframes _dots_o8vqg_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -3458,14 +3458,14 @@ dialog._modal_tn15v_693 {
 
 /* A tab panel of the results now, not a card under them: the strip above says
    what it is, so it needs no frame of its own to be found. */
-._duel_2oazq_739 {
+._duel_o8vqg_739 {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   padding-top: var(--s1);
 }
 
-._duelHead_2oazq_746 {
+._duelHead_o8vqg_746 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3477,13 +3477,13 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._duelBody_2oazq_758 {
+._duelBody_o8vqg_758 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_2oazq_764 {
+._duelTranscript_o8vqg_764 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -3492,41 +3492,41 @@ dialog._modal_tn15v_693 {
   overflow-y: auto;
 }
 
-._recind_2oazq_773 {
+._recind_o8vqg_773 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_2oazq_780 {
+._recDot_o8vqg_780 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_2oazq_1 1.4s ease-in-out infinite;
+  animation: _recpulse_o8vqg_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_2oazq_1 {
+@keyframes _recpulse_o8vqg_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_2oazq_794 {
+._norec_o8vqg_794 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_2oazq_800 {
+._dualrow_o8vqg_800 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_2oazq_807 {
+._duelist_o8vqg_807 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3538,31 +3538,31 @@ dialog._modal_tn15v_693 {
   text-align: center;
 }
 
-._duelistSpeaking_2oazq_819 {
+._duelistSpeaking_o8vqg_819 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_2oazq_824 {
+._duelFace_o8vqg_824 {
   font-size: var(--fs-xl);
 }
 
-._duelName_2oazq_828 {
+._duelName_o8vqg_828 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_2oazq_833 {
+._duelValue_o8vqg_833 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_2oazq_833 b {
+._duelValue_o8vqg_833 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_2oazq_843 {
+._duelFloor_o8vqg_843 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3570,12 +3570,12 @@ dialog._modal_tn15v_693 {
   color: var(--accent);
 }
 
-._duelMic_2oazq_851 {
+._duelMic_o8vqg_851 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_2oazq_856 {
+._vs_o8vqg_856 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -3583,7 +3583,7 @@ dialog._modal_tn15v_693 {
   color: var(--dim);
 }
 
-._youup_2oazq_864 {
+._youup_o8vqg_864 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -3593,7 +3593,7 @@ dialog._modal_tn15v_693 {
   font-size: var(--fs-s);
 }
 
-._micRow_2oazq_874 {
+._micRow_o8vqg_874 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3601,7 +3601,7 @@ dialog._modal_tn15v_693 {
   margin-top: var(--s3);
 }
 
-._micBtn_2oazq_882 {
+._micBtn_o8vqg_882 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -3613,7 +3613,7 @@ dialog._modal_tn15v_693 {
   cursor: pointer;
 }
 
-._hint_2oazq_894 {
+._hint_o8vqg_894 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -3624,41 +3624,45 @@ dialog._modal_tn15v_693 {
    another card. */
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
-._main_2oazq_81 {
+._main_o8vqg_81 {
   --deck-w: calc(10 * 72px + 9 * var(--s2));
 }
 
-._table_2oazq_909 {
+._table_o8vqg_909 {
   margin-top: auto;
   width: min(100%, var(--deck-w));
   margin-inline: auto;
 }
 
-._tableHead_2oazq_915 {
+._tableHead_o8vqg_915 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_2oazq_922 {
+._tableWait_o8vqg_922 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_2oazq_928 {
+._vempty_o8vqg_928 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_2oazq_934 {
+._vrow_o8vqg_934 {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
+  /* Spread across the table's width rather than stacked against its left edge:
+     the hand below is centred on the same width, and a table of two people
+     hard against one side does not read as a table. */
+  justify-content: space-around;
   gap: var(--s4);
 }
 
@@ -3667,19 +3671,19 @@ dialog._modal_tn15v_693 {
 /* The card hangs off the face rather than sitting beside it: in flow it made
    the seat 66px wide while the eye still read the 44px circle as the middle, so
    every name looked shifted. Out of flow, the face is the seat. */
-._seatFace_2oazq_948 {
+._seatFace_o8vqg_952 {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-._seatFace_2oazq_948 ._vcard_2oazq_955 {
+._seatFace_o8vqg_952 ._vcard_o8vqg_959 {
   margin-left: -6px;
 }
 
 /* A seat: face over name. */
-._voter_2oazq_960 {
+._voter_o8vqg_964 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3690,7 +3694,7 @@ dialog._modal_tn15v_693 {
   max-width: 160px;
 }
 
-._face_2oazq_971 {
+._face_o8vqg_975 {
   position: relative;
   display: grid;
   place-items: center;
@@ -3703,7 +3707,7 @@ dialog._modal_tn15v_693 {
   font-size: var(--fs-l);
 }
 
-._tick_2oazq_263 {
+._tick_o8vqg_263 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3726,7 +3730,7 @@ dialog._modal_tn15v_693 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_2oazq_955 {
+._vcard_o8vqg_959 {
   position: absolute;
   left: calc(100% - 4px);
   display: grid;
@@ -3742,18 +3746,18 @@ dialog._modal_tn15v_693 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  animation: _flip_2oazq_1 320ms var(--ease) both;
+  animation: _flip_o8vqg_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_2oazq_1 {
+@keyframes _flip_o8vqg_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_2oazq_1034 {
+._nm_o8vqg_1038 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3764,7 +3768,7 @@ dialog._modal_tn15v_693 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_2oazq_1045 {
+._deckZone_o8vqg_1049 {
   /* How far the hand goes down once voting closes. */
   --deck-drop: 80px;
   position: sticky;
@@ -3806,13 +3810,13 @@ dialog._modal_tn15v_693 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_2oazq_32[data-host='true'] {
+  ._app_o8vqg_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_2oazq_1093 {
+._deckStatus_o8vqg_1097 {
   /* A fixed line box, and deliberately NOT a flex one: the locked line carries
      a glyph and the open one does not, so without a floor the deck — and the
      table above it — moved every time the host turned the lock. Flex would
@@ -3825,11 +3829,11 @@ dialog._modal_tn15v_693 {
   text-align: center;
 }
 
-._deckMine_2oazq_1106 {
+._deckMine_o8vqg_1110 {
   color: var(--accent);
 }
 
-._deck_2oazq_1045 {
+._deck_o8vqg_1049 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3843,7 +3847,7 @@ dialog._modal_tn15v_693 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_2oazq_1124 {
+._pcard_o8vqg_1128 {
   position: relative;
   /* Where this card sits along the closed hand's arc; Deck.tsx overrides it. */
   --fan: 0;
@@ -3867,20 +3871,20 @@ dialog._modal_tn15v_693 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_2oazq_1124:hover:not(:disabled) {
+._pcard_o8vqg_1128:hover:not(:disabled) {
   transition-duration: var(--dur-fast);
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
 }
 
-._pcard_2oazq_1124:disabled {
+._pcard_o8vqg_1128:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_2oazq_1161 {
+._pcardSel_o8vqg_1165 {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--accent);
@@ -3891,7 +3895,7 @@ dialog._modal_tn15v_693 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_2oazq_1172 {
+._pcardWait_o8vqg_1176 {
   border-style: dashed;
 }
 
@@ -3907,7 +3911,7 @@ dialog._modal_tn15v_693 {
  * further than the middle, which is the curve, and the pivot at the card's base
  * keeps the fan from sliding the outer cards sideways.
  */
-._deckZone_2oazq_1045[data-state='closed'] {
+._deckZone_o8vqg_1049[data-state='closed'] {
   /* Still sticky — switching to static mid-transition snaps the hand up before
      the column has finished coming down. The inset moves instead: sticky's
      clamp is what would otherwise hold the hand at the edge it is hanging past,
@@ -3916,7 +3920,7 @@ dialog._modal_tn15v_693 {
   margin-bottom: calc(var(--deck-drop) * -1);
 }
 
-._deckZone_2oazq_1045[data-state='closed'] ._pcard_2oazq_1124 {
+._deckZone_o8vqg_1049[data-state='closed'] ._pcard_o8vqg_1128 {
   transform: translateY(calc(var(--fan) * var(--fan) * 12px)) rotate(calc(var(--fan) * 7deg));
   transform-origin: 50% 100%;
   transition:
@@ -3924,7 +3928,7 @@ dialog._modal_tn15v_693 {
     opacity var(--dur-base) var(--ease);
 }
 
-._ci_2oazq_1205 {
+._ci_o8vqg_1209 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3933,7 +3937,7 @@ dialog._modal_tn15v_693 {
   color: var(--dim);
 }
 
-._ciFlip_2oazq_1214 {
+._ciFlip_o8vqg_1218 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3941,14 +3945,14 @@ dialog._modal_tn15v_693 {
   transform: rotate(180deg);
 }
 
-._cv_2oazq_1222 {
+._cv_o8vqg_1226 {
   font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_2oazq_1229 {
+._console_o8vqg_1233 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -3961,13 +3965,13 @@ dialog._modal_tn15v_693 {
   gap: var(--s3);
 }
 
-._cbar_2oazq_1242 {
+._cbar_o8vqg_1246 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_2oazq_1248 {
+._cphase_o8vqg_1252 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3975,13 +3979,13 @@ dialog._modal_tn15v_693 {
   color: var(--accent);
 }
 
-._cbody_2oazq_1256 {
+._cbody_o8vqg_1260 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_2oazq_1262 {
+._cgroup_o8vqg_1266 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4004,7 +4008,7 @@ dialog._modal_tn15v_693 {
  * Matched on a substring because the class is hashed by CSS modules and the
  * button belongs to another one; the dock reaches its own the same way.
  */
-._app_2oazq_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])) {
+._app_o8vqg_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])) {
   border-radius: var(--r-m);
   border-color: var(--hairline);
   background: var(--panel);
@@ -4020,17 +4024,17 @@ dialog._modal_tn15v_693 {
 
 /* Nothing rises on hover — a panel of controls that all lift as the pointer
    crosses them is a panel that will not sit still. The press is the feedback. */
-._app_2oazq_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):hover:not(:disabled) {
+._app_o8vqg_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):hover:not(:disabled) {
   border-color: var(--hairline-strong);
 }
 
-._app_2oazq_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):active:not(:disabled) {
+._app_o8vqg_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):active:not(:disabled) {
   transform: translateY(1px);
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
 /* Unavailable, not invisible: it keeps its outline and a readable label. */
-._app_2oazq_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):disabled {
+._app_o8vqg_32 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):disabled {
   opacity: 1;
   background: none;
   border-color: var(--hairline);
@@ -4040,7 +4044,7 @@ dialog._modal_tn15v_693 {
 
 /* A filled control keeps its colour when it is spent — the accent is how you
    find the round's one action, and it should not move around the panel. */
-._app_2oazq_32 [class*='btnPrimary']:disabled {
+._app_o8vqg_32 [class*='btnPrimary']:disabled {
   background: var(--accent);
   border-color: transparent;
   color: var(--ink);
@@ -4048,19 +4052,19 @@ dialog._modal_tn15v_693 {
 }
 
 /* The one live action wherever it appears. */
-._app_2oazq_32 [class*='btnPrimary']:not(:disabled) {
+._app_o8vqg_32 [class*='btnPrimary']:not(:disabled) {
   border-color: transparent;
   background: var(--accent);
   color: var(--ink);
 }
 
-._app_2oazq_32 [class*='btnPrimary']:hover:not(:disabled) {
+._app_o8vqg_32 [class*='btnPrimary']:hover:not(:disabled) {
   border-color: transparent;
   filter: brightness(1.06);
 }
 
-._crow_2oazq_1340,
-._navrow_2oazq_1341 {
+._crow_o8vqg_1344,
+._navrow_o8vqg_1345 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4071,18 +4075,18 @@ dialog._modal_tn15v_693 {
    console. */
 /* A `0fr` → `1fr` track, because `height: auto` cannot be interpolated. The
    content is in flow inside it, so the console grows and shrinks with it. */
-._duelSlot_2oazq_1352 {
+._duelSlot_o8vqg_1356 {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows var(--dur-base) var(--ease);
 }
 
-._duelSlot_2oazq_1352[data-open='true'] {
+._duelSlot_o8vqg_1356[data-open='true'] {
   grid-template-rows: 1fr;
 }
 
 /* One cell, so a panel leaving and one arriving do not stack. */
-._duelSlot_2oazq_1352 > * {
+._duelSlot_o8vqg_1356 > * {
   grid-area: 1 / 1;
   min-height: 0;
   overflow: hidden;
@@ -4090,11 +4094,11 @@ dialog._modal_tn15v_693 {
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._duelSlot_2oazq_1352[data-open='true'] > * {
+._duelSlot_o8vqg_1356[data-open='true'] > * {
   opacity: 1;
 }
 
-._duelInline_2oazq_1375 {
+._duelInline_o8vqg_1379 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4105,12 +4109,12 @@ dialog._modal_tn15v_693 {
   box-shadow: var(--edge);
 }
 
-._seg_2oazq_1386 {
+._seg_o8vqg_1390 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_2oazq_1391 {
+._preset_o8vqg_1395 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--hairline);
@@ -4130,17 +4134,17 @@ dialog._modal_tn15v_693 {
     transform var(--dur-fast) var(--ease);
 }
 
-._preset_2oazq_1391:hover {
+._preset_o8vqg_1395:hover {
   border-color: var(--hairline-strong);
 }
 
-._preset_2oazq_1391:active {
+._preset_o8vqg_1395:active {
   transform: translateY(1px);
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
-._clabel_2oazq_1420,
-._finlab_2oazq_1421 {
+._clabel_o8vqg_1424,
+._finlab_o8vqg_1425 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -4148,21 +4152,21 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._chint_2oazq_1429,
-._cnotice_2oazq_1430 {
+._chint_o8vqg_1433,
+._cnotice_o8vqg_1434 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_2oazq_1430 {
+._cnotice_o8vqg_1434 {
   color: var(--warn);
 }
 
 /* Label left, value right — the three decision rows read as a column of
    numbers rather than three sentences of different lengths. */
-._readout_2oazq_1443 {
+._readout_o8vqg_1447 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -4172,13 +4176,13 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._readout_2oazq_1443 b {
+._readout_o8vqg_1447 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_2oazq_1459 {
+._finrow_o8vqg_1463 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4187,7 +4191,7 @@ dialog._modal_tn15v_693 {
 
 /* A rule under the number, like the ticket editor's fields — a box with a
    stepper in it is the browser's idea of a form, not this board's. */
-._finInput_2oazq_1468 {
+._finInput_o8vqg_1472 {
   width: 4ch;
   min-height: var(--tap);
   padding: 0 0 2px;
@@ -4205,28 +4209,28 @@ dialog._modal_tn15v_693 {
   transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._finInput_2oazq_1468::-webkit-outer-spin-button,
-._finInput_2oazq_1468::-webkit-inner-spin-button {
+._finInput_o8vqg_1472::-webkit-outer-spin-button,
+._finInput_o8vqg_1472::-webkit-inner-spin-button {
   appearance: none;
   margin: 0;
 }
 
-._finInput_2oazq_1468:focus {
+._finInput_o8vqg_1472:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* No rule when there is nothing to type into: the underline is the offer. */
-._finInput_2oazq_1468:disabled {
+._finInput_o8vqg_1472:disabled {
   box-shadow: none;
 }
 
-._finSrc_2oazq_1502 {
+._finSrc_o8vqg_1506 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_2oazq_1507 {
+._cpos_o8vqg_1511 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -4236,7 +4240,7 @@ dialog._modal_tn15v_693 {
 }
 
 @media (max-width: 1099px) {
-  ._console_2oazq_1229 {
+  ._console_o8vqg_1233 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -4246,24 +4250,24 @@ dialog._modal_tn15v_693 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_2oazq_1242 {
+  ._cbar_o8vqg_1246 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_2oazq_1256 {
+  ._cbody_o8vqg_1260 {
     display: none;
   }
 
-  ._consoleOpen_2oazq_1537 ._cbody_2oazq_1256 {
+  ._consoleOpen_o8vqg_1541 ._cbody_o8vqg_1260 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_2oazq_1544 {
+._identity_o8vqg_1548 {
   /* The room's cards hang off this, not off the chip that opens them: they line
      up with the name in the bar rather than with the count at the far end. */
   position: relative;
@@ -4275,7 +4279,7 @@ dialog._modal_tn15v_693 {
 
 /* Who you are, as one quiet control: the avatar carries the identity and the
    pencil only shows up when you go looking for it. */
-._meChip_2oazq_1556 {
+._meChip_o8vqg_1560 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -4294,12 +4298,12 @@ dialog._modal_tn15v_693 {
   cursor: pointer;
 }
 
-._meChip_2oazq_1556:hover {
+._meChip_o8vqg_1560:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
 
-._meName_2oazq_1580 {
+._meName_o8vqg_1584 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4307,24 +4311,24 @@ dialog._modal_tn15v_693 {
   font-weight: 500;
 }
 
-._pen_2oazq_1588 {
+._pen_o8vqg_1592 {
   display: inline-flex;
   color: var(--dim);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._meChip_2oazq_1556:hover ._pen_2oazq_1588,
-._meChip_2oazq_1556:focus-visible ._pen_2oazq_1588 {
+._meChip_o8vqg_1560:hover ._pen_o8vqg_1592,
+._meChip_o8vqg_1560:focus-visible ._pen_o8vqg_1592 {
   opacity: 1;
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
-._room_2oazq_1601 {
+._room_o8vqg_1605 {
   position: static;
 }
 
-._presenceChip_2oazq_1605 {
+._presenceChip_o8vqg_1609 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -4340,8 +4344,8 @@ dialog._modal_tn15v_693 {
   line-height: 1;
 }
 
-._room_2oazq_1601:hover ._presenceChip_2oazq_1605,
-._room_2oazq_1601:has(:focus-visible) ._presenceChip_2oazq_1605 {
+._room_o8vqg_1605:hover ._presenceChip_o8vqg_1609,
+._room_o8vqg_1605:has(:focus-visible) ._presenceChip_o8vqg_1609 {
   border-color: var(--accent);
 }
 
@@ -4352,7 +4356,7 @@ dialog._modal_tn15v_693 {
  * chip's bottom edge to the bar's, so clipping it away puts the cut where the
  * bar ends. Everything above that line is behind the bar as far as the eye is
  * concerned. The other three sides are held clear of the shadows. */
-._roomList_2oazq_1633 {
+._roomList_o8vqg_1637 {
   position: absolute;
   top: 100%;
   /* Pulled left by whatever the card's own padding exceeds the identity chip's,
@@ -4380,7 +4384,7 @@ dialog._modal_tn15v_693 {
   pointer-events: none;
 }
 
-._roomCard_2oazq_1661 {
+._roomCard_o8vqg_1665 {
   /* Its place in the deal; Room.tsx overrides it. A definite height is what
      lets the start position be computed from it. */
   --i: 0;
@@ -4409,14 +4413,14 @@ dialog._modal_tn15v_693 {
     box-shadow var(--dur-base) var(--ease);
 }
 
-._roomName_2oazq_1690 {
+._roomName_o8vqg_1694 {
   flex: 1;
 }
 
 /* One after another on the way in. Leaving, they go together — a staggered
    exit reads as the list being reluctant. */
-._room_2oazq_1601:hover ._roomCard_2oazq_1661,
-._room_2oazq_1601:has(:focus-visible) ._roomCard_2oazq_1661 {
+._room_o8vqg_1605:hover ._roomCard_o8vqg_1665,
+._room_o8vqg_1605:has(:focus-visible) ._roomCard_o8vqg_1665 {
   transform: none;
   box-shadow:
     var(--edge),
@@ -4425,12 +4429,12 @@ dialog._modal_tn15v_693 {
   transition-delay: calc(var(--i) * 45ms);
 }
 
-._room_2oazq_1601:hover ._roomList_2oazq_1633,
-._room_2oazq_1601:has(:focus-visible) ._roomList_2oazq_1633 {
+._room_o8vqg_1605:hover ._roomList_o8vqg_1637,
+._room_o8vqg_1605:has(:focus-visible) ._roomList_o8vqg_1637 {
   pointer-events: auto;
 }
 
-._roomYou_2oazq_1711 {
+._roomYou_o8vqg_1715 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -4438,23 +4442,23 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._roomEmpty_2oazq_1719 {
+._roomEmpty_o8vqg_1723 {
   color: var(--dim);
 }
 
 /* The headcount is a number, so it is set as one. */
-._roomCount_2oazq_1724 {
+._roomCount_o8vqg_1728 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   font-weight: 600;
 }
 
-._offline_2oazq_1731 {
+._offline_o8vqg_1735 {
   color: var(--warn);
 }
 
-._popNote_2oazq_1735 {
+._popNote_o8vqg_1739 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -4463,7 +4467,7 @@ dialog._modal_tn15v_693 {
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-._musicBanner_2oazq_1744 {
+._musicBanner_o8vqg_1748 {
   margin: 0;
   width: 100%;
   padding: var(--s2) var(--s4);
@@ -4481,12 +4485,12 @@ dialog._modal_tn15v_693 {
 }
 
 /* The deck's own status line says it, in the colour of the thing that did it. */
-._deckStatusLocked_2oazq_1762 {
+._deckStatusLocked_o8vqg_1766 {
   color: var(--warn);
 }
 
 /* No robot, no panel: the model said nothing, so this is a note about that. */
-._aiFallback_2oazq_1767 {
+._aiFallback_o8vqg_1771 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--dim);
@@ -4495,7 +4499,7 @@ dialog._modal_tn15v_693 {
 /* `vertical-align: top` and an inherited line height: an inline-flex run sits
    on its own baseline otherwise, which made the locked line 1.13px taller than
    the open one and moved the deck — and the table above it — on every lock. */
-._deckReason_2oazq_1776 {
+._deckReason_o8vqg_1780 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -4503,18 +4507,18 @@ dialog._modal_tn15v_693 {
   line-height: 1.6;
 }
 
-._musicBanner_2oazq_1744 {
+._musicBanner_o8vqg_1748 {
   color: var(--accent);
   cursor: pointer;
 }
 
-._musicBanner_2oazq_1744:hover {
+._musicBanner_o8vqg_1748:hover {
   background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_2oazq_1795 {
+._flabel_o8vqg_1799 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -4524,7 +4528,7 @@ dialog._modal_tn15v_693 {
   color: var(--muted);
 }
 
-._field_2oazq_1805 {
+._field_o8vqg_1809 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -4536,24 +4540,24 @@ dialog._modal_tn15v_693 {
   font-size: var(--fs-s);
 }
 
-textarea._field_2oazq_1805 {
+textarea._field_o8vqg_1809 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_2oazq_1822 {
+._editWarn_o8vqg_1826 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_2oazq_415 {
+._editNote_o8vqg_415 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_2oazq_1834 {
+._editSave_o8vqg_1838 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -4568,7 +4572,7 @@ textarea._field_2oazq_1805 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_2oazq_1849 {
+._srOnly_o8vqg_1853 {
   position: absolute;
   width: 1px;
   height: 1px;

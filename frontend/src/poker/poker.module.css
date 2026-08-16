@@ -937,6 +937,10 @@
   padding: 0;
   display: flex;
   flex-wrap: wrap;
+  /* Spread across the table's width rather than stacked against its left edge:
+     the hand below is centred on the same width, and a table of two people
+     hard against one side does not read as a table. */
+  justify-content: space-around;
   gap: var(--s4);
 }
 
