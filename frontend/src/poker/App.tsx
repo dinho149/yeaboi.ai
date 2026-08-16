@@ -333,9 +333,10 @@ export function App({ boot }: { boot: PokerBoot }) {
   const estimated = snapshot?.progress.estimated ?? 0;
 
   return (
-    // `data-host` drives one CSS rule: lifting the sticky deck clear of the
-    // console's bottom sheet on a phone. Read from the same flag that renders
-    // the console, so a guest never gets the offset for a bar they do not have.
+    // `data-host` drives the room the board leaves for the console: at the foot
+    // of the ticket list below --bp-m, and across the whole column below --bp-s.
+    // Read from the same flag that renders it, so a guest never gets the gap for
+    // a panel they do not have.
     <PageShell
       chrome={boot.chrome}
       variant="app"

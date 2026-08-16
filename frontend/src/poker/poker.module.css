@@ -1130,36 +1130,6 @@
   overflow-clip-margin: 24px;
 }
 
-/*
- * Clear the console sheet.
- *
- * Below --bp-m the console is `position: fixed` at the bottom with a higher
- * z-index. Two things would otherwise end up behind it: the deck's last row
- * (the ☕, once ten cards wrap to two lines), and the credit in the shell's
- * final grid row.
- *
- * One fix for both, declared once. `--app-inset-bottom` is the shell's hook for
- * exactly this: it shortens the viewport-tall region, so the deck sticks to the
- * bottom of a scroll area that ends above the sheet. Reusing the same value as
- * padding on this element then does the other half — the credit is the last
- * thing in the document, and without it the end of the scroll would put the
- * credit under the sheet too.
- *
- * It used to be an offset on `.deckZone` itself, which was wrong: the deck is
- * sticky and parks against its scroll container, so an offset there fought the
- * layout instead of describing it.
- *
- * Only for the host, because only the host has a console. `data-host` is set by
- * App from the same flag that renders it, so the two cannot disagree — it
- * reaches this element through PageShell's `data` prop.
- */
-@media (max-width: 1099px) {
-  .app[data-host='true'] {
-    --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
-    padding-bottom: var(--app-inset-bottom);
-  }
-}
-
 .deckStatus {
   /* A fixed line box, and deliberately NOT a flex one: the locked line carries
      a glyph and the open one does not, so without a floor the deck — and the
@@ -1634,23 +1604,51 @@
 }
 
 @media (max-width: 1099px) {
+  /*
+   * Still a column, just a shorter one.
+   *
+   * The console is the board's third column on a wide screen; there is no room
+   * for a third here, so it goes to the foot of the first — the rail's cell,
+   * aligned to its end, with the ticket list scrolling behind it. Across the
+   * whole bottom edge it was a sheet over the board rather than a part of it,
+   * and open it covered the ticket, the table and the hand at once.
+   *
+   * A panel now, so it needs to look like one: the same material as the bar at
+   * the top of the screen, and opaque, because the rail runs underneath.
+   */
+  /* Every column placed by hand once one of them shares a cell: auto-placement
+     flows around an explicitly placed item and put the board in the rail's
+     column. */
+  .rail {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .console {
-    position: fixed;
-    inset: auto 0 0 0;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
     z-index: var(--z-console);
-    max-height: 70dvh;
-    /* A sheet over the board needs to be a surface. As a column it inherits the
-       board's ground and needs none — fixed over the ticket, the table and the
-       hand, a transparent one puts the host's controls straight through the
-       board they are controlling. Same material as the bar at the top of the
-       screen, cast the other way. */
+    max-height: 100%;
     background: var(--panel);
-    border-top: 1px solid var(--hairline);
-    border-radius: var(--r-l) var(--r-l) 0 0;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-l);
     box-shadow:
       var(--edge),
-      0 -6px 20px rgb(0 0 0 / 22%);
-    padding: var(--s3) var(--s4) max(var(--s3), env(safe-area-inset-bottom));
+      0 1px 1px rgb(0 0 0 / 12%),
+      0 4px 12px rgb(0 0 0 / 10%);
+    padding: var(--s3);
+  }
+
+  /* Room to scroll the last ticket clear of the collapsed console — for the
+     host only, because a guest has no console and would get the hole anyway. */
+  .app[data-host='true'] .rail {
+    padding-bottom: calc(var(--tap) + var(--s5));
   }
 
   .cbar {
@@ -1672,6 +1670,44 @@
      edge — so the one that is being read takes the layer above while it is up. */
   .consoleOpen {
     z-index: var(--z-popover);
+  }
+}
+
+/* One column, and the rail has left the grid for a drawer — so the board takes
+   the only column there is. After the placement above, which it undoes. */
+@media (max-width: 699px) {
+  .main {
+    grid-column: 1;
+  }
+
+  /*
+   * And with only one column, the console is back across the foot of it — so
+   * the board has to stop short of it. `--app-inset-bottom` is the shell's hook
+   * for exactly that: it shortens the viewport-tall region, so the sticky deck
+   * parks above the console rather than under it, and the same value as padding
+   * keeps the credit at the end of the document clear as well.
+   *
+   * Only for the host, because only the host has a console. `data-host` is set
+   * by App from the same flag that renders it, so the two cannot disagree.
+   */
+  .app[data-host='true'] {
+    --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+    padding-bottom: var(--app-inset-bottom);
+  }
+
+  /* Out of the column and onto the bottom edge: with one column the console
+     would otherwise sit in the board's own cell, on top of the hand, and no
+     amount of clearance moves them apart — they would move together. */
+  .console {
+    position: fixed;
+    inset: auto 0 0 0;
+    max-height: 70dvh;
+    border-width: 1px 0 0;
+    border-radius: var(--r-l) var(--r-l) 0 0;
+    padding: var(--s3) var(--s4) max(var(--s3), env(safe-area-inset-bottom));
+    box-shadow:
+      var(--edge),
+      0 -6px 20px rgb(0 0 0 / 22%);
   }
 }
 
