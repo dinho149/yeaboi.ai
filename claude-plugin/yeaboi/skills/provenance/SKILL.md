@@ -16,7 +16,12 @@ involved anywhere in this pipeline.
    record's checksum, link, and sequence number verified across the WHOLE
    chain, not just the window. If it is `false`, `breaks` lists each failure —
    `checksum_mismatch` means a record was edited in place, `chain_break` means
-   one was deleted or renumbered. Say so plainly; that is the finding.
+   one was deleted or renumbered, and `truncated_tail` means the newest
+   records were removed (the walk fell short of the head anchor every append
+   updates in the same transaction). Say so plainly; that is the finding. One
+   honest caveat if asked: the chain is a local file with no external anchor,
+   so an adversary who rewrites the rows *and* the anchor together is beyond
+   what it can prove — it makes tampering visible, not impossible.
 
 2. **Read what was decided**: `recent` lists the window's decisions newest
    first (capped at 50 — a warning names the overflow), and `records_by_type`

@@ -1528,7 +1528,9 @@ class ProvenanceAuditReport:
     records_by_type: tuple[tuple[str, int], ...] = ()  # (entity_type, count), whole chain
     recent: tuple[ProvenanceDecisionRow, ...] = ()  # newest first, capped
     # (sequence_id, entity_id, reason) per verification failure — reason is
-    # "checksum_mismatch" (edited row) or "chain_break" (deleted/renumbered).
+    # "checksum_mismatch" (edited row), "chain_break" (deleted/renumbered),
+    # or "truncated_tail" (newest rows removed; the walk fell short of the
+    # head anchor).
     breaks: tuple[tuple[int, str, str], ...] = ()
     warnings: tuple[str, ...] = ()
 

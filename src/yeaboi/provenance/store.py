@@ -18,11 +18,17 @@ untouched.
 
 What makes it tamper-evident (the part worth reading twice): every record's
 checksum covers its ``previous_checksum``, sequence ids are assigned head+1
-under a writer lock, and ``verify`` re-walks the whole chain checking all
-three invariants. An edited row fails its own checksum; a deleted row leaves a
-sequence gap AND orphans its successor's ``previous_checksum``; a renumbered
-row breaks the arithmetic. None of that *prevents* tampering — sqlite is a
-local file — it makes tampering visible, which is what an audit trail is for.
+under a writer lock, and ``verify`` re-walks the whole chain checking the
+three row invariants plus the persisted head anchor. An edited row fails its
+own checksum; a deleted middle row leaves a sequence gap AND orphans its
+successor's ``previous_checksum``; a renumbered row breaks the arithmetic;
+and a truncated *tail* — which satisfies all three row invariants by
+construction — falls short of ``provenance_head``, the (max sequence_id,
+checksum) marker written in the same transaction as every append. None of
+that *prevents* tampering — sqlite is a local file, and an adversary who
+rewrites the rows and the anchor together is outside what a purely local
+file can prove — it makes tampering visible, which is what an audit trail
+is for.
 """
 
 from __future__ import annotations
@@ -68,6 +74,11 @@ CREATE TABLE IF NOT EXISTS provenance_records (
     detail TEXT NOT NULL DEFAULT '',
     extras TEXT NOT NULL DEFAULT '[]',
     previous_checksum TEXT NOT NULL DEFAULT '',
+    checksum TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provenance_head (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    sequence_id INTEGER NOT NULL,
     checksum TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_provenance_entity ON provenance_records(entity_id);
@@ -254,6 +265,14 @@ class ProvenanceChain:
             f"VALUES ({', '.join('?' for _ in _COLUMNS)})",
             _record_to_row(stamped),
         )
+        # The head anchor advances in the SAME transaction as the row: a
+        # truncated tail satisfies every row invariant by construction, and
+        # this marker is what lets verify() see the rows that are missing.
+        self._conn.execute(
+            "INSERT INTO provenance_head (id, sequence_id, checksum) VALUES (1, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET sequence_id = excluded.sequence_id, checksum = excluded.checksum",
+            (stamped.sequence_id, stamped.checksum),
+        )
         return stamped
 
     def invalidate(self, entity_id: str, *, agent_id: str, reason: str = "", agent_type: str = "") -> DecisionRecord:
@@ -354,11 +373,16 @@ class ProvenanceChain:
     # -- verification ------------------------------------------------------
 
     def verify(self) -> ChainVerification:
-        """Walk the whole chain and check all three tamper invariants.
+        """Walk the whole chain and check the row invariants plus the anchor.
 
         State advances from each record's *stored* fields whether or not it
         was flagged, so one corrupted row reports once instead of cascading
-        into N spurious breaks (upstream got this right; kept).
+        into N spurious breaks (upstream got this right; kept). The final
+        check compares the walk's last record against ``provenance_head``:
+        the three row invariants are all relative to the rows present, so a
+        truncated tail (``DELETE … WHERE sequence_id > n``, or the whole
+        table) satisfies every one of them — only the anchor, written in the
+        same transaction as each append, can see the rows that are missing.
         """
         broken: list[ChainBreak] = []
         previous: DecisionRecord | None = None
@@ -404,4 +428,19 @@ class ProvenanceChain:
                     )
                 )
             previous = record
+
+        anchor = self._conn.execute("SELECT sequence_id, checksum FROM provenance_head WHERE id = 1").fetchone()
+        if anchor is not None:
+            expected_seq = int(anchor["sequence_id"])
+            if previous is None or previous.sequence_id != expected_seq or previous.checksum != anchor["checksum"]:
+                broken.append(
+                    ChainBreak(
+                        sequence_id=previous.sequence_id if previous is not None else 0,
+                        entity_id=previous.entity_id if previous is not None else "",
+                        reason="truncated_tail",
+                        expected_previous_checksum=str(anchor["checksum"]),
+                        actual_previous_checksum=previous.checksum if previous is not None else "",
+                        expected_sequence_id=expected_seq,
+                    )
+                )
         return ChainVerification(valid=not broken, total_records=count, broken=tuple(broken))

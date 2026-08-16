@@ -83,7 +83,7 @@ class ChainBreak:
 
     sequence_id: int = 0
     entity_id: str = ""
-    reason: str = ""  # "checksum_mismatch" | "chain_break"
+    reason: str = ""  # "checksum_mismatch" | "chain_break" | "truncated_tail"
     expected_previous_checksum: str = ""
     actual_previous_checksum: str = ""
     expected_sequence_id: int = 0
@@ -93,10 +93,11 @@ class ChainBreak:
 class ChainVerification:
     """The verdict ``ProvenanceChain.verify`` returns.
 
-    ``valid`` means all three invariants held for every record: the stored
-    checksum recomputes, each ``previous_checksum`` matches its predecessor's
-    checksum, and sequence ids run 1..N with no gap — so an edited row, a
-    deleted row, and a renumbered row are each detectable.
+    ``valid`` means every invariant held: the stored checksum recomputes,
+    each ``previous_checksum`` matches its predecessor's checksum, sequence
+    ids run 1..N with no gap, and the last record matches the persisted head
+    anchor — so an edited row, a deleted row, a renumbered row, and a
+    truncated tail are each detectable.
     """
 
     valid: bool = True

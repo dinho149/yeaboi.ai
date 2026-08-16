@@ -542,16 +542,23 @@ def build_standup_markdown(report: StandupReport) -> str:
     if conflict_cards:
         lines += ["", "## Conflicts", ""]
         for card in conflict_cards:
-            lines.append(f"- **{card.title}**")
-            lines.append(f"  {card.detail}")
+            # Everything here embeds tracker/PR text an outsider can author
+            # (a PR title travels inside card.detail), and this Markdown lands
+            # on Notion/Confluence/Slack where `[x](url)` becomes a live link.
+            # _md_label neutralises the bracket syntax on every raw string —
+            # only _md_link may mint a link, behind its scheme allowlist.
+            lines.append(f"- **{_md_label(card.title)}**")
+            lines.append(f"  {_md_label(card.detail)}")
             claim_bits = " vs ".join(
-                f"{_md_link(label, url)} ({source}: {value})" if url else f"{label} ({source}: {value})"
+                f"{_md_link(label, url)} ({_md_label(source)}: {_md_label(value)})"
+                if url
+                else f"{_md_label(label)} ({_md_label(source)}: {_md_label(value)})"
                 for source, value, label, url in card.claims
             )
             if claim_bits:
                 lines.append(f"  - {claim_bits}")
             if card.recommended_action:
-                lines.append(f"  - _{card.recommended_action}_")
+                lines.append(f"  - _{_md_label(card.recommended_action)}_")
 
     # Zero-activity members compress to one shared line after the sections: a
     # full section per quiet member said "No activity detected" three ways each.

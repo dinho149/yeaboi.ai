@@ -1423,3 +1423,23 @@ class TestConflictCards:
 
     def test_markdown_has_no_section_on_a_clean_day(self):
         assert "## Conflicts" not in export.build_standup_markdown(_report())
+
+    def test_markdown_neutralises_link_syntax_in_card_text(self):
+        # A PR title is attacker-authored text that travels inside card.detail,
+        # and this Markdown lands on Notion/Slack where [x](url) is a live
+        # link. The bracket syntax must come out neutralised.
+        from yeaboi.agent.state import ConflictCard
+
+        card = ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done, while “[Approve access](https://evil.example)” still names it.",
+            entity_id="YEA-12",
+            claims=(("jira", "Done", "[click](https://evil.example)", ""),),
+            recommended_action="Reopen [YEA-12](https://evil.example) maybe.",
+        )
+        md = export.build_standup_markdown(_report(conflicts=(card,)))
+        assert "[Approve access](https://evil.example)" not in md
+        assert "[click](https://evil.example)" not in md
+        assert "[YEA-12](https://evil.example)" not in md
+        assert "\\[Approve access\\]" in md

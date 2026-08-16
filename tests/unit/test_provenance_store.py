@@ -218,3 +218,48 @@ class TestSharedDatabase:
         store = SessionStore(db)
         assert store.schema_mismatch is False
         store.close()
+
+
+class TestHeadAnchor:
+    """The truncated-tail case: every row invariant is satisfied by
+    construction, so only the head anchor — advanced in the same transaction
+    as each append — can see the rows that are missing."""
+
+    def _seed(self, chain, n=5):
+        for i in range(1, n + 1):
+            chain.append(_decision(f"e{i}"))
+
+    def test_detects_a_truncated_tail(self, chain, db_path):
+        self._seed(chain)
+        conn = sqlite3.connect(db_path)
+        conn.execute("DELETE FROM provenance_records WHERE sequence_id > 3")
+        conn.commit()
+        conn.close()
+        verdict = chain.verify()
+        assert verdict.valid is False
+        tail = [b for b in verdict.broken if b.reason == "truncated_tail"]
+        assert len(tail) == 1
+        assert tail[0].expected_sequence_id == 5
+        assert tail[0].sequence_id == 3  # where the surviving chain ends
+
+    def test_detects_a_dropped_table(self, chain, db_path):
+        # Deleting every row must NOT read as a fresh install.
+        self._seed(chain)
+        conn = sqlite3.connect(db_path)
+        conn.execute("DELETE FROM provenance_records")
+        conn.commit()
+        conn.close()
+        verdict = chain.verify()
+        assert verdict.valid is False
+        assert verdict.total_records == 0
+        assert any(b.reason == "truncated_tail" for b in verdict.broken)
+
+    def test_fresh_empty_chain_has_no_anchor_and_stays_valid(self, chain):
+        assert chain.verify().valid is True
+
+    def test_anchor_tracks_every_append_and_invalidation(self, chain):
+        self._seed(chain, 2)
+        chain.invalidate("e1", agent_id="alice")
+        verdict = chain.verify()
+        assert verdict.valid is True
+        assert verdict.total_records == 3
