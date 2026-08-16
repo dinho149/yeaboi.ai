@@ -954,7 +954,10 @@
   flex-direction: column;
   align-items: center;
   gap: var(--s1);
-  width: 84px;
+  /* Wide enough for the face and its card, and then as wide as the name needs.
+     The cap is what stops one long name from setting the whole row's rhythm. */
+  min-width: 84px;
+  max-width: 160px;
 }
 
 .face {
@@ -1220,7 +1223,9 @@
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 0 0 var(--s2);
+  /* Even, and not only on the left: a scrollport clips both axes, and the
+     attention ring is a 4px spread the panel would otherwise cut flat. */
+  padding: var(--s2);
   display: flex;
   flex-direction: column;
   gap: var(--s3);
