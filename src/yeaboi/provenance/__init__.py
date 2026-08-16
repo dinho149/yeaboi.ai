@@ -7,6 +7,15 @@ say that?" has a durable, verifiable answer — and so does "has anyone edited
 that answer since".
 """
 
+from yeaboi.provenance.conflicts import (
+    Claim,
+    Conflict,
+    Resolution,
+    ResolutionStrategy,
+    Severity,
+    find_conflict,
+    resolve,
+)
 from yeaboi.provenance.integrity import compute_checksum, verify_checksum
 from yeaboi.provenance.records import (
     AGENT_PERSON,
@@ -26,8 +35,15 @@ __all__ = [
     "KIND_INVALIDATION",
     "ChainBreak",
     "ChainVerification",
+    "Claim",
+    "Conflict",
     "DecisionRecord",
     "ProvenanceChain",
+    "Resolution",
+    "ResolutionStrategy",
+    "Severity",
     "compute_checksum",
+    "find_conflict",
+    "resolve",
     "verify_checksum",
 ]
