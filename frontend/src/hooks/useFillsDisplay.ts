@@ -10,9 +10,7 @@
  * `(display-mode: fullscreen)` is the obvious way to ask, and it is not reliable
  * here: it stayed true in a plainly windowed Chrome, so the curve never came off.
  * `not all and (…)` is worse — long-standing hack territory that does not mean
- * "every case except this one". So this measures the thing that is actually being
- * decided: browser chrome occupies vertical space between the screen and the
- * viewport, and when it is gone that gap closes.
+ * "every case except this one". So this measures instead.
  *
  * Unlike the neighbouring `useMediaQuery` this does *not* read during render —
  * see `useFillsDisplay` below. A media query is authoritative the moment it is
@@ -22,56 +20,52 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Slack allowed between the window and its viewport before we call it "chrome
- * present".
+ * How far down the display the viewport may start and still count as the top.
  *
- * Not zero, because the two are not required to agree exactly, and not large,
- * because they must not be allowed to. A tab strip alone is ~35px and the
- * omnibox another ~40 before a bookmarks bar is even considered, so real chrome
- * clears this by an order of magnitude and there is no need to cut it fine in
- * either direction.
+ * Small, because the real gap is not close: the least chrome any browser window
+ * has above its page is a tab strip, and on a Mac there is a menu bar above that
+ * — well over a hundred pixels between the two answers.
  */
 const CHROME_SLACK_PX = 8;
 
 /**
- * Measured against the window itself, deliberately.
+ * One number, not a difference of two.
  *
- * The first version of this compared `screen.height` to `innerHeight`, which is
- * the wrong pair: `screen` is the physical display, so display scaling, a second
- * monitor, or a window that is merely *maximised* all move that number
- * independently of the browser's furniture. On a scaled Retina display it never
- * closed, and the curve did not appear even in fullscreen.
+ * `screenY` is where the page's own viewport starts on the display, and every
+ * piece of the browser — menu bar, tab strip, omnibox, bookmarks — is above that
+ * line. So it *is* the question, and it is a fact the window manager already
+ * knows: nothing has to lay out or settle before it is true, and page zoom,
+ * display scaling and a merely-maximised window all leave it alone.
  *
- * `outerHeight - innerHeight` is the chrome and nothing else — the window minus
- * what the page got. It is zero in fullscreen on any display, at any scale.
+ * Two pairs were tried before it and both are wrong for the same reason — they
+ * ask about sizes when the question is about position. `screen.height` against
+ * `innerHeight` moves with display scaling and never closed on a Retina;
+ * `outerHeight` against `innerHeight` is the chrome only while both are settled
+ * and unzoomed, and a page zoomed out reports *less* than nothing.
  */
 export function fillsDisplay(): boolean {
   if (typeof window === 'undefined') return false;
   // The Fullscreen API is a direct answer where it applies (the deck's `f` key),
   // so take it before measuring anything.
   if (typeof document !== 'undefined' && document.fullscreenElement) return true;
-  // jsdom defaults both to the same value, so the gap is 0 and this would report
-  // fullscreen for every component test. Require the pair to be real first: a
-  // headless environment has no window furniture to measure and should get the
-  // square screen.
-  if (!window.outerHeight || !window.innerHeight) return false;
-  const chrome = window.outerHeight - window.innerHeight;
-  // A viewport taller than the window it is inside is not a window with no
-  // chrome, it is a reading that means nothing — page zoom scales `innerHeight`
-  // and leaves `outerHeight` alone, so a zoomed-out page reports a negative gap
-  // while sitting under a full tab strip. `<= slack` called that fullscreen.
-  if (chrome < 0) return false;
-  return chrome <= CHROME_SLACK_PX;
+  // jsdom reports a screen with no height, and so does anything else with no
+  // display behind it. There is nothing to fill.
+  if (!window.screen?.height) return false;
+  const above = window.screenY;
+  // Below zero is a window on a display above the primary one — somewhere else,
+  // not a page that owns its screen.
+  if (!Number.isFinite(above) || above < 0) return false;
+  return above <= CHROME_SLACK_PX;
 }
 
 /**
  * When to look again after mounting, in ms.
  *
- * The first reading is the one that goes wrong, and until now nothing looked
- * again until the window was resized — so a board that read itself as fullscreen
- * on a hard refresh stayed curved for as long as you left it alone. These are
- * cheap (two integer reads and a `setState` that usually bails) and bounded, so
- * a bad first read costs a second rather than the session.
+ * A window that has just been restored out of fullscreen is still moving when
+ * the first document of a reload runs, and nothing else is guaranteed to ask
+ * again — a board that read itself wrong stayed that way until the next resize.
+ * These are cheap (one property read and a `setState` that usually bails) and
+ * bounded, so a bad first read costs a second rather than the session.
  */
 const SETTLE_MS = [60, 250, 1000];
 
@@ -80,10 +74,8 @@ const SETTLE_MS = [60, 250, 1000];
  * `useMediaQuery` does it.
  *
  * `useSyncExternalStore` reads during render, which is right for a media query
- * and wrong here: on a hard refresh the window's metrics are not settled at first
- * render, the gap measured 0, and a windowed board painted its top corners
- * rounded and kept them until the next resize. Toggling fullscreen fixed it,
- * which is exactly the signature of a bad first read rather than bad logic.
+ * and wrong here: a measurement of a window is only as good as the moment it is
+ * taken, and the moment a document first renders is the worst one available.
  *
  * So the initial value is a flat `false` rather than a measurement. The two
  * possible mistakes are not equal: starting square and adding the curve a frame
