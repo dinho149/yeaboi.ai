@@ -671,6 +671,57 @@ def azdevops_fetch_active_iteration(project: str = "") -> str:
         return f"Error: {e}"
 
 
+def fetch_team_iterations_meta(
+    org_url: str | None = None,
+    token: str | None = None,
+    project: str = "",
+) -> list[dict]:
+    """Return the team's iterations with time frames, as plain dicts.
+
+    Each item: {name, path, time_frame ("past"|"current"|"future"), start_date,
+    finish_date} (dates "YYYY-MM-DD" or ""). The time frame is derived from the
+    iteration's dates against now (attributes.time_frame is unreliable across
+    API versions); undated iterations count as "future" so they are never
+    treated as closed. Plain helper (not a @tool) shared by the batch sync and
+    the planning intake. Raises on connection/config errors — callers degrade.
+    """
+    from datetime import datetime as _dt
+
+    from azure.devops.v7_1.work.models import TeamContext
+
+    project = project or get_azure_devops_project() or ""
+    _, work_client = _make_azdo_clients(org_url, token)
+    team = get_azure_devops_team() or f"{project} Team"
+    team_context = TeamContext(project=project, team=team)
+    now = _dt.now(UTC)
+
+    items: list[dict] = []
+    for it in work_client.get_team_iterations(team_context) or []:
+        attrs = getattr(it, "attributes", None)
+        start = getattr(attrs, "start_date", None)
+        finish = getattr(attrs, "finish_date", None)
+        if start and finish:
+            if finish < now:
+                time_frame = "past"
+            elif start <= now <= finish:
+                time_frame = "current"
+            else:
+                time_frame = "future"
+        else:
+            time_frame = "future"
+        items.append(
+            {
+                "name": it.name or "",
+                "path": getattr(it, "path", "") or "",
+                "time_frame": time_frame,
+                "start_date": start.strftime("%Y-%m-%d") if start else "",
+                "finish_date": finish.strftime("%Y-%m-%d") if finish else "",
+            }
+        )
+    logger.debug("fetch_team_iterations_meta: project=%s → %d iteration(s)", project, len(items))
+    return items
+
+
 # ---------------------------------------------------------------------------
 # Write tools — create work items (require user confirmation)
 # ---------------------------------------------------------------------------

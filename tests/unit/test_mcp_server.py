@@ -695,6 +695,7 @@ class TestPlanSync:
                 stories_created={"s1": "PROJ-2"},
                 tasks_created={},
                 sprints_created={"sp1": "17"},
+                sprints_updated={"sp2": "18"},
                 errors=["Sprint 2 board missing"],
                 skipped=1,
             )
@@ -705,6 +706,7 @@ class TestPlanSync:
         assert payload["ok"] is True
         assert payload["data"]["epic"] == "PROJ-1"
         assert payload["data"]["stories_created"] == {"s1": "PROJ-2"}
+        assert payload["data"]["sprints_updated"] == {"sp2": "18"}
         assert payload["data"]["skipped_existing"] == 1
         assert payload["warnings"] == ["Sprint 2 board missing"]
         assert captured["stories_in_state"] > 0

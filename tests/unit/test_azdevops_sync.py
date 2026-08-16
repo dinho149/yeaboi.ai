@@ -35,6 +35,7 @@ from yeaboi.azdevops_sync import (
     _map_priority_to_azdo,
     is_azdevops_board_configured,
     sync_all_to_azdevops,
+    sync_iterations_to_azdevops,
     sync_stories_to_azdevops,
     sync_tasks_to_azdevops,
 )
@@ -380,6 +381,79 @@ class TestSyncAllToAzdevops:
         assert "story-1" in result.stories_created
         assert "task-1" in result.tasks_created
         assert "sprint-1" in result.iterations_created
+
+
+# ---------------------------------------------------------------------------
+# Tests: sync_iterations_to_azdevops — numbering, past-iteration guard, reuse
+# ---------------------------------------------------------------------------
+
+
+def _iter_meta(name, time_frame, path=""):
+    return {
+        "name": name,
+        "path": path or f"MyProject\\{name}",
+        "time_frame": time_frame,
+        "start_date": "",
+        "finish_date": "",
+    }
+
+
+@patch("yeaboi.azdevops_sync.get_azure_devops_project", return_value="MyProject")
+@patch("yeaboi.azdevops_sync.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+@patch("yeaboi.azdevops_sync.get_azure_devops_token", return_value="token")
+class TestSyncIterationsToAzdevops:
+    def _state(self, **overrides):
+        base = _make_graph_state(
+            azdevops_story_keys={"story-1": "101"},
+            sprint_length_weeks=2,
+            sprint_start_date="2026-03-16",
+        )
+        base.update(overrides)
+        return base
+
+    def test_minus_one_sentinel_continues_sequence(self, *_):
+        meta = [_iter_meta("Sprint 5", "past"), _iter_meta("Sprint 6", "current")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 7") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    result, _ = sync_iterations_to_azdevops(self._state(starting_sprint_number=-1))
+
+        assert not result.errors
+        assert mock_iter.call_args.args[3] == "Sprint 7"
+
+    def test_past_iteration_never_reused(self, *_):
+        """A configured start landing on a past iteration's name renumbers past the max."""
+        meta = [_iter_meta("Sprint 5", "past"), _iter_meta("Sprint 6", "past")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 7") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    result, _ = sync_iterations_to_azdevops(self._state(starting_sprint_number=5))
+
+        assert mock_iter.call_args.args[3] == "Sprint 7"
+        assert result.iterations_updated == {}
+
+    def test_dates_do_not_overlap(self, *_):
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=[]):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 1") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    sync_iterations_to_azdevops(self._state())
+
+        kwargs = mock_iter.call_args.kwargs
+        assert kwargs["start_date"] == "2026-03-16"
+        assert kwargs["finish_date"] == "2026-03-29"  # start + 2 weeks − 1 day
+
+    def test_current_same_named_iteration_reused_not_created(self, *_):
+        meta = [_iter_meta("Sprint 6", "current")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, new_state = sync_iterations_to_azdevops(self._state(starting_sprint_number=6))
+
+        assert not mock_iter.called
+        assert result.iterations_created == {}
+        assert result.iterations_updated == {"sprint-1": "MyProject\\Sprint 6"}
+        assert new_state["azdevops_iteration_keys"]["sprint-1"] == "MyProject\\Sprint 6"
+        mock_add.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

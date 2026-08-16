@@ -52,6 +52,7 @@ class AzDevOpsSyncResult:
     stories_created: dict[str, str] = field(default_factory=dict)  # internal_id → work_item_id
     tasks_created: dict[str, str] = field(default_factory=dict)
     iterations_created: dict[str, str] = field(default_factory=dict)  # internal_id → iteration_path
+    iterations_updated: dict[str, str] = field(default_factory=dict)  # existing iterations that gained items
     errors: list[str] = field(default_factory=list)
     skipped: int = 0
 
@@ -340,13 +341,20 @@ def sync_iterations_to_azdevops(
     # Cascade: create stories first if not done
     story_keys = state.get("azdevops_story_keys", {})
     stories = state.get("stories", [])
+    cascade_stories: dict[str, str] = {}
+    cascade_errors: list[str] = []
     if stories and not story_keys:
         story_result, state = sync_stories_to_azdevops(state, on_progress)
         story_keys = state.get("azdevops_story_keys", {})
         if story_result.errors and not story_keys:
             return story_result, state
+        cascade_stories = dict(story_result.stories_created)
+        cascade_errors = list(story_result.errors)
 
     result = AzDevOpsSyncResult(epic_id=state.get("azdevops_epic_id"))
+    # Cascade-created stories are reported in the stories bucket, not silently dropped.
+    result.stories_created.update(cascade_stories)
+    result.errors.extend(cascade_errors)
 
     project = get_azure_devops_project() or ""
     org_url = get_azure_devops_org_url() or ""
@@ -355,38 +363,40 @@ def sync_iterations_to_azdevops(
     sprints = state.get("sprints", [])
     existing_iteration_keys: dict[str, str] = dict(state.get("azdevops_iteration_keys", {}))
 
-    # Detect existing iteration naming convention (same pattern as jira_sync.py)
-    iteration_name_prefix = ""
-    max_existing_number = 0
+    # Detect existing iteration naming convention (same consensus derivation as
+    # jira_sync.py); "past" iterations map onto the closed-sprint guard.
+    from yeaboi.sync_naming import advance_past_closed, derive_board_numbering, resolve_starting_number
+
+    time_frame_to_state = {"past": "closed", "current": "active", "future": "future"}
+    iteration_meta: list[dict] = []
     try:
-        from yeaboi.tools.azure_devops import _make_azdo_clients
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
 
-        _, work_client = _make_azdo_clients(org_url, token)
-        from azure.devops.v7_1.work.models import TeamContext
-
-        from yeaboi.config import get_azure_devops_team
-
-        team = get_azure_devops_team() or f"{project} Team"
-        team_context = TeamContext(project=project, team=team)
-        existing_iters = work_client.get_team_iterations(team_context) or []
-        for it in existing_iters:
-            match = re.match(r"^(.+?)(\d+)\s*$", it.name or "")
-            if match:
-                num = int(match.group(2))
-                if num > max_existing_number:
-                    max_existing_number = num
-                    iteration_name_prefix = match.group(1)
-        if iteration_name_prefix:
-            logger.debug(
-                "Detected iteration naming pattern: '%sN' (max: %d)", iteration_name_prefix, max_existing_number
-            )
+        iteration_meta = fetch_team_iterations_meta(org_url, token, project)
     except Exception as e:
         logger.debug("Could not detect iteration naming pattern: %s", e)
 
-    # Determine starting number for new iterations
-    starting_number = state.get("starting_sprint_number", 0)
-    if not starting_number and max_existing_number > 0:
-        starting_number = max_existing_number + 1
+    numbering = derive_board_numbering(
+        (it["name"], time_frame_to_state.get(it["time_frame"], "future")) for it in iteration_meta
+    )
+    iteration_name_prefix = numbering.prefix
+
+    # Determine starting number for new iterations. The intake's -1 "no tracker
+    # sprint picked" sentinel falls through to max+1, and a batch that would
+    # land on a past iteration's name is shifted forward as one block.
+    starting_number = resolve_starting_number(state.get("starting_sprint_number", 0), numbering)
+    starting_number, closed_warn = advance_past_closed(starting_number, len(sprints), numbering)
+    if closed_warn:
+        logger.warning("%s", closed_warn)
+        if on_progress:
+            on_progress(0, len(sprints), closed_warn)
+    if iteration_name_prefix:
+        logger.info(
+            "Iteration naming: prefix=%r max_existing=%d starting_number=%d",
+            iteration_name_prefix,
+            numbering.max_number,
+            starting_number,
+        )
 
     sprint_length_weeks = state.get("sprint_length_weeks", 2)
     sprint_start_date_str = state.get("sprint_start_date", "")
@@ -420,45 +430,62 @@ def sync_iterations_to_azdevops(
             continue
 
         try:
-            # Compute iteration dates
-            start_date = ""
-            finish_date = ""
-            if sprint_start_date_str:
-                from datetime import datetime, timedelta
-
-                start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
-                end = start + timedelta(weeks=sprint_length_weeks)
-                start_date = start.strftime("%Y-%m-%d")
-                finish_date = end.strftime("%Y-%m-%d")
-
-            # Create iteration as a classification node via REST API
-            iteration_path = _create_iteration_node(
-                org_url,
-                token,
-                project,
-                sprint_name,
-                start_date=start_date,
-                finish_date=finish_date,
+            # Reuse a same-named iteration only while it can still take items —
+            # past iterations are never a target (mirrors the Jira closed-sprint
+            # guard; numbered collisions were already renumbered above).
+            matched = next(
+                (it for it in iteration_meta if it["name"] == sprint_name and it["time_frame"] != "past"),
+                None,
             )
+            if matched:
+                iteration_path = matched["path"].lstrip("\\") or f"{project}\\{sprint_name}"
+                result.iterations_updated[sprint.id] = iteration_path
+                progress_label = f"Iteration reused: {sprint_name}"
+                logger.info("Reusing existing AzDO Iteration: %s → %s", sprint_name, iteration_path)
+            else:
+                # Compute iteration dates. End is inclusive (start + length − 1
+                # day) so consecutive iterations don't overlap — same convention
+                # as reporting/sprints.py and the Jira sync.
+                start_date = ""
+                finish_date = ""
+                if sprint_start_date_str:
+                    from datetime import datetime, timedelta
+
+                    start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
+                    end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)
+                    start_date = start.strftime("%Y-%m-%d")
+                    finish_date = end.strftime("%Y-%m-%d")
+
+                # Create iteration as a classification node via REST API
+                iteration_path = _create_iteration_node(
+                    org_url,
+                    token,
+                    project,
+                    sprint_name,
+                    start_date=start_date,
+                    finish_date=finish_date,
+                )
+                result.iterations_created[sprint.id] = iteration_path
+                progress_label = f"Iteration created: {sprint_name}"
+                logger.info("Created AzDO Iteration: %s → %s", sprint_name, iteration_path)
 
             new_iteration_keys[sprint.id] = iteration_path
-            result.iterations_created[sprint.id] = iteration_path
 
             # Assign stories to iteration
             issue_ids = [story_keys[sid] for sid in sprint.story_ids if sid in story_keys]
             if issue_ids:
                 add_work_items_to_iteration(issue_ids, iteration_path, project)
 
-            logger.info("Created AzDO Iteration: %s → %s", sprint_name, iteration_path)
             time.sleep(0.1)
         except Exception as e:
             err = f"Iteration '{sprint_name}': {e}"
             logger.error("AzDO sync failed — %s", err)
             result.errors.append(err)
+            progress_label = f"Iteration failed: {sprint_name}"
 
         current += 1
         if on_progress:
-            on_progress(current, total, f"Iteration created: {sprint_name}")
+            on_progress(current, total, progress_label)
 
     merged_iteration_keys = {**existing_iteration_keys, **new_iteration_keys}
     state["azdevops_iteration_keys"] = merged_iteration_keys
@@ -495,6 +522,8 @@ def sync_all_to_azdevops(
     if state.get("sprints"):
         iter_result, state = sync_iterations_to_azdevops(state, on_progress)
         aggregated.iterations_created.update(iter_result.iterations_created)
+        aggregated.iterations_updated.update(iter_result.iterations_updated)
+        aggregated.stories_created.update(iter_result.stories_created)
         aggregated.errors.extend(iter_result.errors)
         aggregated.skipped += iter_result.skipped
 

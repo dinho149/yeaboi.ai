@@ -197,6 +197,7 @@ def _plan_sync(session_id: str, destination: str, on_progress=None) -> dict:
         "stories_created": dict(result.stories_created),
         "tasks_created": dict(result.tasks_created),
         "sprints_created": dict(result.sprints_created if destination == "jira" else result.iterations_created),
+        "sprints_updated": dict(result.sprints_updated if destination == "jira" else result.iterations_updated),
         "skipped_existing": result.skipped,
         "warnings": list(result.errors),
     }

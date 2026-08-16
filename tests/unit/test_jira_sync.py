@@ -12,6 +12,7 @@ Tests cover:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from yeaboi.agent.state import (
@@ -32,6 +33,7 @@ from yeaboi.jira_sync import (
     _format_task_description,
     is_jira_configured,
     sync_all_to_jira,
+    sync_sprints_to_jira,
     sync_stories_to_jira,
     sync_tasks_to_jira,
 )
@@ -392,6 +394,172 @@ class TestSyncAllToJira:
         assert len(result.stories_created) == 1
         assert len(result.tasks_created) == 1
         assert len(result.sprints_created) == 1
+
+
+# ---------------------------------------------------------------------------
+# sync_sprints_to_jira — board numbering, renaming, and reuse
+# ---------------------------------------------------------------------------
+
+
+def _board_sprint(id, name):
+    """A real-shaped board sprint object (SimpleNamespace: MagicMock treats name= specially)."""
+    return SimpleNamespace(id=id, name=name)
+
+
+def _sprint_capable_jira(board_sprints_by_state, boards=None):
+    """A mock JIRA client whose boards()/sprints() return real-shaped data."""
+    mock_jira = MagicMock()
+    mock_jira.boards.return_value = (
+        boards if boards is not None else [SimpleNamespace(id=10, name="Board", type="scrum")]
+    )
+
+    def _sprints(board_id, state=None, **kwargs):
+        assert kwargs.get("maxResults") is False, "board sprints must be fetched fully paginated (maxResults=False)"
+        return board_sprints_by_state.get(state, [])
+
+    mock_jira.sprints.side_effect = _sprints
+    created = []
+
+    def _create_sprint(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(id=100 + len(created), name=kwargs.get("name", ""))
+
+    mock_jira.create_sprint.side_effect = _create_sprint
+    mock_jira._created_sprints = created
+    return mock_jira
+
+
+class TestSyncSprintsToJira:
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_minus_one_sentinel_continues_board_sequence(self, mock_key):
+        """starting_sprint_number=-1 (no tracker pick) must yield max+1, never 'Sprint -1'."""
+        mock_jira = _sprint_capable_jira(
+            {
+                "closed": [_board_sprint(1, "PSOT Sprint 105"), _board_sprint(2, "PSOT Sprint 106")],
+                "active": [_board_sprint(3, "PSOT Sprint 107")],
+                "future": [],
+            }
+        )
+        state = _make_graph_state(starting_sprint_number=-1, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            result, new_state = sync_sprints_to_jira(state)
+
+        assert not result.errors
+        names = [kw["name"] for kw in mock_jira._created_sprints]
+        assert names == ["PSOT Sprint 108"]
+        assert "sprint-1" in result.sprints_created
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_outlier_name_does_not_hijack_prefix(self, mock_key):
+        """A stray 'Hardening 2024' must not beat the consensus 'PSOT Sprint N' convention."""
+        closed = [_board_sprint(n, f"PSOT Sprint {n}") for n in (104, 105, 106)]
+        closed.append(_board_sprint(999, "Hardening 2024"))
+        mock_jira = _sprint_capable_jira({"closed": closed, "active": [], "future": []})
+        state = _make_graph_state(starting_sprint_number=-1, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            sync_sprints_to_jira(state)
+
+        names = [kw["name"] for kw in mock_jira._created_sprints]
+        assert names == ["PSOT Sprint 107"]
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_scrum_board_preferred_over_kanban(self, mock_key):
+        """The type='scrum' board query wins; a kanban board listed first must not."""
+        mock_jira = _sprint_capable_jira({"closed": [], "active": [], "future": []})
+        kanban = SimpleNamespace(id=1, name="Kanban", type="kanban")
+        scrum = SimpleNamespace(id=2, name="Scrum", type="scrum")
+
+        def _boards(**kwargs):
+            return [scrum] if kwargs.get("type") == "scrum" else [kanban, scrum]
+
+        mock_jira.boards.side_effect = _boards
+        state = _make_graph_state(jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            sync_sprints_to_jira(state)
+
+        assert mock_jira._created_sprints[0]["board_id"] == 2
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_user_pick_landing_on_closed_sprints_renumbers(self, mock_key):
+        """A configured start whose names are closed sprints shifts the batch past the max."""
+        mock_jira = _sprint_capable_jira(
+            {
+                "closed": [
+                    _board_sprint(1, "Sprint 105"),
+                    _board_sprint(2, "Sprint 106"),
+                    _board_sprint(3, "Sprint 107"),
+                ],
+                "active": [],
+                "future": [],
+            }
+        )
+        state = _make_graph_state(starting_sprint_number=105, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            result, _ = sync_sprints_to_jira(state)
+
+        names = [kw["name"] for kw in mock_jira._created_sprints]
+        assert names == ["Sprint 108"]
+        # The closed sprint was never targeted for reuse.
+        assert not mock_jira.add_issues_to_sprint.called or all(
+            call.args[0] not in (1, 2, 3) for call in mock_jira.add_issues_to_sprint.call_args_list
+        )
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_active_same_named_sprint_reused_not_created(self, mock_key):
+        """A same-named active sprint is reused (sprints_updated), never re-created."""
+        mock_jira = _sprint_capable_jira(
+            {
+                "closed": [_board_sprint(1, "Sprint 103")],
+                "active": [_board_sprint(2, "Sprint 104")],
+                "future": [],
+            }
+        )
+        state = _make_graph_state(starting_sprint_number=104, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            with patch("yeaboi.tools.jira.add_issues_to_sprint") as mock_add:
+                result, new_state = sync_sprints_to_jira(state)
+
+        assert not mock_jira.create_sprint.called
+        assert result.sprints_created == {}
+        assert result.sprints_updated == {"sprint-1": "2"}
+        assert new_state["jira_sprint_keys"]["sprint-1"] == "2"
+        mock_add.assert_called_once()
+        assert mock_add.call_args.args[1] == 2
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_created_sprint_dates_are_iso_datetimes_without_overlap(self, mock_key):
+        """Dates go to Jira as ISO-8601 datetimes; end is inclusive (start + length − 1 day)."""
+        sprint2 = _make_sprint(id="sprint-2", story_ids=())
+        mock_jira = _sprint_capable_jira({"closed": [], "active": [], "future": []})
+        state = _make_graph_state(
+            sprints=[_make_sprint(), sprint2],
+            starting_sprint_number=1,
+            jira_story_keys={"story-1": "PROJ-2"},
+        )
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            sync_sprints_to_jira(state)
+
+        first, second = mock_jira._created_sprints
+        assert first["startDate"] == "2026-03-16T00:00:00.000+00:00"
+        assert first["endDate"] == "2026-03-29T00:00:00.000+00:00"  # start + 2 weeks − 1 day
+        assert second["startDate"] == "2026-03-30T00:00:00.000+00:00"  # no overlap with first end
+
+    @patch("yeaboi.jira_sync.get_jira_project_key", return_value="PROJ")
+    def test_unnumbered_board_keeps_plan_names(self, mock_key):
+        """No numbered sprints on the board → the plan's own names are used as-is."""
+        mock_jira = _sprint_capable_jira({"closed": [_board_sprint(1, "Kickoff")], "active": [], "future": []})
+        state = _make_graph_state(starting_sprint_number=-1, jira_story_keys={"story-1": "PROJ-2"})
+
+        with patch("yeaboi.tools.jira._make_jira_client", return_value=mock_jira):
+            sync_sprints_to_jira(state)
+
+        assert [kw["name"] for kw in mock_jira._created_sprints] == ["Sprint 1"]
 
 
 # ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jira import JIRAError
@@ -51,6 +51,7 @@ class JiraSyncResult:
     stories_created: dict[str, str] = field(default_factory=dict)  # internal_id → jira_key
     tasks_created: dict[str, str] = field(default_factory=dict)
     sprints_created: dict[str, str] = field(default_factory=dict)  # internal_id → jira_sprint_id
+    sprints_updated: dict[str, str] = field(default_factory=dict)  # existing sprints that gained issues
     errors: list[str] = field(default_factory=list)
     skipped: int = 0
 
@@ -404,10 +405,13 @@ def sync_sprints_to_jira(
 
     Returns (result, updated_graph_state).
     """
+    from yeaboi.sync_naming import advance_past_closed, derive_board_numbering, resolve_starting_number
     from yeaboi.tools.jira import (
         _jira_error_msg,
         _make_jira_client,
         add_issues_to_sprint,
+        fetch_board_sprints,
+        find_scrum_board_id,
     )
 
     state = dict(graph_state)
@@ -420,8 +424,16 @@ def sync_sprints_to_jira(
         story_keys = state.get("jira_story_keys", {})
         if story_result.errors and not story_keys:
             return story_result, state
+        result_stories: dict[str, str] = dict(story_result.stories_created)
+        result_story_errors: list[str] = list(story_result.errors)
+    else:
+        result_stories = {}
+        result_story_errors = []
 
     result = JiraSyncResult(epic_key=state.get("jira_epic_key"))
+    # Cascade-created stories are reported in the stories bucket, not silently dropped.
+    result.stories_created.update(result_stories)
+    result.errors.extend(result_story_errors)
 
     jira = _make_jira_client()
     if jira is None:
@@ -436,59 +448,45 @@ def sync_sprints_to_jira(
     sprints = state.get("sprints", [])
     existing_sprint_keys: dict[str, str] = dict(state.get("jira_sprint_keys", {}))
 
-    # Discover board ID
+    # Discover the scrum board — a kanban board cannot host sprints.
     try:
-        boards = jira.boards(projectKeyOrID=project_key)
-        if not boards:
+        board_id = find_scrum_board_id(jira, project_key)
+        if board_id is None:
             result.errors.append(f"No Jira board found for project '{project_key}'.")
             return result, state
-        board_id = boards[0].id
     except JIRAError as e:
         result.errors.append(f"Board discovery failed: {_jira_error_msg(e)}")
         return result, state
 
-    # Fetch all existing sprints on the board so we can match by name
-    # and reuse instead of always creating new ones.
-    existing_board_sprints: dict[str, int] = {}  # name → sprint_id
+    # Fetch all existing sprints on the board (fully paginated) so we can match
+    # by name and reuse instead of always creating new ones.
+    existing_board_sprints: dict[str, tuple[int, str]] = {}  # name → (sprint_id, state)
     try:
-        for sprint_state in ("future", "active", "closed"):
-            try:
-                board_sprints = jira.sprints(board_id, state=sprint_state)
-                for bs in board_sprints:
-                    existing_board_sprints[bs.name] = bs.id
-            except JIRAError:
-                pass  # some states may not be available
+        for item in fetch_board_sprints(jira, board_id):
+            existing_board_sprints[item["name"]] = (item["id"], item["state"])
         logger.debug("Found %d existing sprints on board %s", len(existing_board_sprints), board_id)
     except Exception as e:
         logger.warning("Could not fetch existing sprints: %s — will create new ones", e)
 
-    # Detect the board's sprint naming pattern (e.g. "PSOT Sprint {N}") so we
-    # can rename LLM-generated sprint names to match the convention.
-    # The LLM may generate "Sprint 1", "Sprint 2" but the board uses
-    # "PSOT Sprint 107", "PSOT Sprint 108".
-    sprint_name_prefix = ""
-    max_existing_number = 0
-    for name in existing_board_sprints:
-        match = re.match(r"^(.+?)(\d+)\s*$", name)
-        if match:
-            prefix_candidate = match.group(1)
-            num = int(match.group(2))
-            if num > max_existing_number:
-                max_existing_number = num
-                sprint_name_prefix = prefix_candidate
+    # Derive the board's naming convention by consensus (e.g. "PSOT Sprint {N}")
+    # so the plan's generic "Sprint 1", "Sprint 2" are renamed to continue the
+    # board's real sequence, then resolve where that sequence starts. The
+    # intake's -1 "no tracker sprint picked" sentinel falls through to max+1.
+    numbering = derive_board_numbering((name, st) for name, (_id, st) in existing_board_sprints.items())
+    sprint_name_prefix = numbering.prefix
+    starting_number = resolve_starting_number(state.get("starting_sprint_number", 0), numbering)
+    starting_number, closed_warn = advance_past_closed(starting_number, len(sprints), numbering)
+    if closed_warn:
+        logger.warning("%s", closed_warn)
+        if on_progress:
+            on_progress(0, len(sprints), closed_warn)
     if sprint_name_prefix:
-        logger.debug(
-            "Detected sprint naming pattern: '%sN' (max existing: %d)",
+        logger.info(
+            "Sprint naming: prefix=%r max_existing=%d starting_number=%d",
             sprint_name_prefix,
-            max_existing_number,
+            numbering.max_number,
+            starting_number,
         )
-
-    # Determine the starting sprint number for new sprints.
-    # Use the state's starting_sprint_number if set, otherwise increment
-    # from the highest existing sprint number on the board.
-    starting_number = state.get("starting_sprint_number", 0)
-    if not starting_number and max_existing_number > 0:
-        starting_number = max_existing_number + 1
 
     sprint_length_weeks = state.get("sprint_length_weeks", 2)
     sprint_start_date_str = state.get("sprint_start_date", "")
@@ -522,33 +520,42 @@ def sync_sprints_to_jira(
             continue
 
         try:
-            # Check if a sprint with this name already exists on the board
-            existing_jira_sprint_id = existing_board_sprints.get(sprint_name)
+            # Reuse a same-named sprint only while it can still take issues —
+            # Jira rejects adding issues to a completed sprint.
+            matched = existing_board_sprints.get(sprint_name)
+            existing_jira_sprint_id = matched[0] if matched and matched[1] in ("future", "active") else None
 
             if existing_jira_sprint_id:
                 # Sprint exists — reuse it, just assign stories
                 sprint_id_str = str(existing_jira_sprint_id)
                 logger.info("Reusing existing Jira Sprint: %s (ID: %s)", sprint_name, sprint_id_str)
                 progress_label = f"Sprint reused: {sprint_name}"
+                result.sprints_updated[sprint.id] = sprint_id_str
             else:
                 # Sprint doesn't exist — create it
                 kwargs: dict[str, Any] = {"name": sprint_name, "board_id": board_id}
                 if sprint.goal:
                     kwargs["goal"] = sprint.goal
                 if sprint_start_date_str:
-                    start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
-                    end = start + timedelta(weeks=sprint_length_weeks)
-                    kwargs["startDate"] = start.strftime("%Y-%m-%d")
-                    kwargs["endDate"] = end.strftime("%Y-%m-%d")
+                    # The Jira Agile API expects ISO-8601 datetimes with an offset,
+                    # not bare dates. End is inclusive (start + length − 1 day) so
+                    # consecutive sprints don't overlap — same convention as
+                    # reporting/sprints.py.
+                    start = datetime.fromisoformat(sprint_start_date_str).replace(tzinfo=UTC) + timedelta(
+                        weeks=sprint_length_weeks * idx
+                    )
+                    end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)
+                    kwargs["startDate"] = start.isoformat(timespec="milliseconds")
+                    kwargs["endDate"] = end.isoformat(timespec="milliseconds")
 
                 jira_sprint = jira.create_sprint(**kwargs)
                 sprint_id_str = str(jira_sprint.id)
                 existing_jira_sprint_id = int(jira_sprint.id)
                 logger.info("Created Jira Sprint: %s → %s", sprint_name, sprint_id_str)
                 progress_label = f"Sprint created: {sprint_name}"
+                result.sprints_created[sprint.id] = sprint_id_str
 
             new_sprint_keys[sprint.id] = sprint_id_str
-            result.sprints_created[sprint.id] = sprint_id_str
 
             # Assign stories to sprint (whether new or existing)
             issue_keys = [story_keys[sid] for sid in sprint.story_ids if sid in story_keys]
@@ -605,8 +612,9 @@ def sync_all_to_jira(
     # Sprints
     if state.get("sprints"):
         sprint_result, state = sync_sprints_to_jira(state, on_progress)
-        aggregated.sprints_created.update(sprint_result.stories_created)
+        aggregated.stories_created.update(sprint_result.stories_created)
         aggregated.sprints_created.update(sprint_result.sprints_created)
+        aggregated.sprints_updated.update(sprint_result.sprints_updated)
         aggregated.errors.extend(sprint_result.errors)
         aggregated.skipped += sprint_result.skipped
 
