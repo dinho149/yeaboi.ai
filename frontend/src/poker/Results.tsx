@@ -16,7 +16,9 @@ import { useEffect, useState } from 'react';
 
 import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
-import type { AiPerspective } from '../types/board';
+import type { AiPerspective, DuelSlice } from '../types/board';
+import { Duel } from './Duel';
+import type { DuelMic } from './useDuelMic';
 import { fmtPoints } from './points';
 import styles from './poker.module.css';
 
@@ -26,19 +28,25 @@ export interface ResultsProps {
   median: number | null;
   suggestion: number | null;
   ai: AiPerspective;
+  /** The open floor, when there is one. Null the rest of the time. */
+  duel: DuelSlice | null;
+  mic: DuelMic;
   /** True once votes are public — `revealed` or `duel`. */
   revealed: boolean;
 }
 
-export function Results({ distribution, median, suggestion, ai, revealed }: ResultsProps) {
+export function Results({ distribution, median, suggestion, ai, duel, mic, revealed }: ResultsProps) {
   const entries = Object.entries(distribution);
   const hasAi = ai.pending || Boolean(ai.note);
-  const show = revealed || hasAi;
+  const hasFloor = Boolean(duel);
+  const show = revealed || hasAi || hasFloor;
 
-  // Asking for the perspective is a deliberate act, so it opens on the answer.
-  // Once it is here, the tab is the reader's to move.
+  // Each of these arrives because somebody asked for it, so it opens on the
+  // answer. Once it is here, the tab is the reader's to move. The floor comes
+  // last because it is the one that is live and on a clock.
   const [tab, setTab] = useState<Tab>('spread');
   useEffect(() => setTab(hasAi ? 'ai' : 'spread'), [hasAi]);
+  useEffect(() => setTab(hasFloor ? 'floor' : 'spread'), [hasFloor]);
 
   if (!show) return null;
 
@@ -46,7 +54,10 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   /* Null when the vote ties, so a split table is not drawn as two winners. */
   const mode = entries.filter(([, count]) => count === max).length === 1 ? max : null;
+  const tabbed = hasAi || hasFloor;
   const onAi = hasAi && tab === 'ai';
+  const onFloor = hasFloor && tab === 'floor';
+  const onSpread = !onAi && !onFloor;
 
   return (
     <section className={styles['results']} aria-label="Results">
@@ -54,20 +65,27 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
         {/* One eyebrow until there are two things to show, then two tabs in its
             place — the AI's read is long enough to push the table off screen if
             it stacks under the spread. */}
-        {hasAi ? (
+        {tabbed ? (
           <div className={styles['rtabs']} role="tablist" aria-label="Results view">
             <Tabbed id="spread" tab={tab} onPick={setTab}>
               Results
             </Tabbed>
-            <Tabbed id="ai" tab={tab} onPick={setTab}>
-              AI perspective
-            </Tabbed>
+            {hasAi ? (
+              <Tabbed id="ai" tab={tab} onPick={setTab}>
+                AI perspective
+              </Tabbed>
+            ) : null}
+            {hasFloor ? (
+              <Tabbed id="floor" tab={tab} onPick={setTab}>
+                The floor
+              </Tabbed>
+            ) : null}
           </div>
         ) : (
           <Eyebrow>Results</Eyebrow>
         )}
 
-        {onAi ? (
+        {onFloor ? null : onAi ? (
           ai.confidence ? (
             <span className={cx(styles['conf'], styles[`conf-${ai.confidence}`])}>{ai.confidence} confidence</span>
           ) : null
@@ -90,10 +108,10 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
           what takes it out of the accessibility tree. */}
       <div className={styles['rpanel']}>
         <div
-          role={hasAi ? 'tabpanel' : undefined}
+          role={tabbed ? 'tabpanel' : undefined}
           id="results-spread"
           aria-labelledby="results-tab-spread"
-          className={cx(onAi && styles['rpanelOff'])}
+          className={cx(!onSpread && styles['rpanelOff'])}
         >
           {revealed && entries.length ? (
             <ul className={styles['dist']}>
@@ -127,12 +145,23 @@ export function Results({ distribution, median, suggestion, ai, revealed }: Resu
             <AiNote ai={ai} />
           </div>
         ) : null}
+
+        {duel ? (
+          <div
+            role="tabpanel"
+            id="results-floor"
+            aria-labelledby="results-tab-floor"
+            className={cx(!onFloor && styles['rpanelOff'])}
+          >
+            <Duel duel={duel} mic={mic} />
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-type Tab = 'spread' | 'ai';
+type Tab = 'spread' | 'ai' | 'floor';
 
 function Tabbed({ id, tab, onPick, children }: { id: Tab; tab: Tab; onPick(next: Tab): void; children: string }) {
   return (

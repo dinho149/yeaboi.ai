@@ -58,9 +58,6 @@ export function Duel({ duel, mic }: DuelProps) {
   if (duel.status === 'transcribing') {
     return (
       <div className={styles['duel']} role="status">
-        <div className={styles['duelHead']}>
-          <Icon name="swords" /> Duel
-        </div>
         <p className={styles['duelBody']}>
           Transcribing the debate… (the first run may download the speech model)
         </p>
@@ -72,7 +69,7 @@ export function Duel({ duel, mic }: DuelProps) {
     return (
       <div className={styles['duel']}>
         <div className={styles['duelHead']}>
-          <Icon name="swords" /> Duel — {duel.low.name} vs {duel.high.name}
+{duel.low.name} vs {duel.high.name}
         </div>
         <p className={styles['duelTranscript']}>{duel.transcript}</p>
       </div>
@@ -82,9 +79,6 @@ export function Duel({ duel, mic }: DuelProps) {
   if (duel.status !== 'live') {
     return (
       <div className={styles['duel']}>
-        <div className={styles['duelHead']}>
-          <Icon name="swords" /> Duel
-        </div>
         <p className={styles['duelBody']}>{duel.error || 'Recording failed.'}</p>
       </div>
     );
@@ -97,7 +91,6 @@ export function Duel({ duel, mic }: DuelProps) {
   return (
     <div className={styles['duel']}>
       <div className={styles['duelHead']}>
-        <Icon name="swords" /> The floor is open
         {anyRecording ? (
           <span className={styles['recind']}>
             <span className={styles['recDot']} aria-hidden="true" />

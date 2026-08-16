@@ -734,11 +734,13 @@
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
+/* A tab panel of the results now, not a card under them: the strip above says
+   what it is, so it needs no frame of its own to be found. */
 .duel {
-  background: var(--panel);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
-  border-radius: var(--r-m);
-  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-top: var(--s1);
 }
 
 .duelHead {

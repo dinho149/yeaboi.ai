@@ -66,7 +66,6 @@ import { createPokerActions, type TicketEdit, type TrackerOptions } from './acti
 import type { PokerBoot } from './boot';
 import { Console } from './Console';
 import { Deck } from './Deck';
-import { Duel } from './Duel';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
@@ -514,10 +513,10 @@ export function App({ boot }: { boot: PokerBoot }) {
             median={snapshot?.median ?? null}
             suggestion={snapshot?.suggestion ?? null}
             ai={snapshot?.ai ?? { pending: false, from_llm: false, note: '', suggested: null, confidence: '', evidence: [] }}
+            duel={duel}
+            mic={mic}
             revealed={revealed}
           />
-
-          {duel ? <Duel duel={duel} mic={mic} /> : null}
 
           <Table votes={votes} revealed={revealed} />
 
