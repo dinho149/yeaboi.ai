@@ -24,21 +24,11 @@ export interface TableProps {
 }
 
 export function Table({ votes, revealed }: TableProps) {
-  const waiting = votes.filter((vote) => !vote.voted).length;
-
   return (
     <section className={styles['table']} aria-label="The table">
-      {/* No label: the row of faces is unmistakably the table, and the section
-          carries the name for anything that cannot see them. What is left is
-          the one thing the faces do not say — who the room is still waiting
-          for. */}
-      {!revealed && votes.length ? (
-        <div className={styles['tableHead']}>
-          <span className={styles['tableWait']}>
-            {waiting === 0 ? 'everyone is in' : `${waiting} still to vote`}
-          </span>
-        </div>
-      ) : null}
+      {/* No label and no status: the row of faces is unmistakably the table,
+          the section carries its name for anything that cannot see them, and
+          who the round is waiting for is said on the deck's own line. */}
 
       {votes.length === 0 ? (
         <p className={styles['vempty']}>

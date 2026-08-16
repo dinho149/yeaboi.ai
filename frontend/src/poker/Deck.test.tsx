@@ -15,7 +15,7 @@ import { Deck } from './Deck';
 
 function renderDeck(props: Partial<Parameters<typeof Deck>[0]> = {}) {
   const onVote = vi.fn();
-  const view = render(<Deck mine="" pending={false} disabled={false} reason="" locked={false} onVote={onVote} {...props} />);
+  const view = render(<Deck mine="" pending={false} disabled={false} reason="" locked={false} waiting={0} onVote={onVote} {...props} />);
   return { ...view, onVote };
 }
 
@@ -75,7 +75,7 @@ describe('Deck', () => {
     const waiting = screen.getByRole('button', { name: 'Withdraw your vote of 3' });
     expect(waiting.className).toContain('pcardWait');
 
-    rerender(<Deck mine="3" pending={false} disabled={false} reason="" locked={false} onVote={vi.fn()} />);
+    rerender(<Deck mine="3" pending={false} disabled={false} reason="" locked={false} waiting={0} onVote={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Withdraw your vote of 3' }).className).not.toContain('pcardWait');
   });
 });

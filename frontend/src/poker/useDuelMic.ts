@@ -33,7 +33,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { apiUrl, type Session } from '../runtime/api';
+import { apiUrl, postJSON, type Session } from '../runtime/api';
 import type { DuelSlice } from '../types/board';
 
 /** Containers to try, best first. Safari has neither webm option. */
@@ -91,6 +91,21 @@ async function upload(session: Session, blob: Blob, turn: number, attempt = 1): 
   }
 }
 
+/**
+ * Tell the room the light should be on, or out.
+ *
+ * The host's mic records the session, so it is board state and goes to the
+ * admin route; a duelist's browser mic is one source inside a live duel, and
+ * the board maps their pid to a role. Best-effort either way: a failure costs a
+ * stale light until the round ends, which is not worth surfacing to somebody
+ * who has just started talking.
+ */
+function announce(session: Session, on: boolean): void {
+  // `postJSON`, not a hand-rolled fetch: it is what merges `admin` into the
+  // body, and the admin route is the whole reason this one has two paths.
+  void postJSON(session, session.admin ? '/api/admin/mic' : '/api/duel/mic', { on });
+}
+
 export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState('');
@@ -122,14 +137,7 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     for (const track of stream.current.getTracks()) track.stop();
     stream.current = null;
     setArmed(false);
-    // Best-effort: tell the room the indicator should go out. A failure here
-    // costs a stale 🎙 on other screens until the duel ends, which is not worth
-    // surfacing to someone who has just stopped talking.
-    void fetch(apiUrl(sessionRef.current, '/api/duel/mic'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: sessionRef.current.pid, on: false }),
-    }).catch(() => {});
+    void announce(sessionRef.current, false);
   }, [stopRecorder]);
 
   const startRecorder = useCallback((turnNo: number) => {
@@ -170,11 +178,7 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     }
     setError('');
     setArmed(true);
-    void fetch(apiUrl(sessionRef.current, '/api/duel/mic'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: sessionRef.current.pid, on: true }),
-    }).catch(() => {});
+    void announce(sessionRef.current, true);
   }, [capable]);
 
   const live = duel?.status === 'live';

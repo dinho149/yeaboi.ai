@@ -346,6 +346,8 @@ export interface PokerState {
   broadcast: BroadcastSlice;
   /** Host froze voting for everyone. */
   locked: boolean;
+  /** The host is recording the session, whether or not a floor is open. */
+  room_mic: boolean;
   /** Last tracker-write error. Rendered to the host only. */
   notice: string;
 }

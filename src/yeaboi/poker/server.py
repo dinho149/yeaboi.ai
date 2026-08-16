@@ -443,6 +443,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
             "/api/admin/duel/next",
             "/api/admin/duel/close",
             "/api/duel/mic",
+            "/api/admin/mic",
             "/api/admin/broadcast",
             "/api/admin/lock",
         )
@@ -531,6 +532,13 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
         if path == "/api/admin/duel/close":
             self._duel_close(pid)
+            return
+
+        if path == "/api/admin/mic":
+            # The host's session recording. Not a duel flag: it is armed before
+            # there is a duel and stays on across rounds.
+            self._board.set_room_mic(bool(payload.get("on")))
+            self._send_json(200, {"ok": True, "state": _state()})
             return
 
         if path == "/api/duel/mic":

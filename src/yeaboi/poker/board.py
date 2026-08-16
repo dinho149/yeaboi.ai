@@ -198,6 +198,10 @@ class PokerBoard:
         # duel section below for the dict shape. The pids inside NEVER go on
         # the wire — state_snapshot ships a names-only projection.
         self._duel: dict | None = None
+        # The host's mic, which records the session rather than one duel. Board
+        # state, not duel state: it is armed before there is a duel to record,
+        # and every participant is shown that it is on.
+        self._room_mic = False
         self._notice = ""  # last tracker-write error, shown to the admin
         self._revision = 0
         self._lock = threading.Lock()
@@ -551,6 +555,20 @@ class PokerBoard:
         logger.info("poker board: duel recording %s=%s", source, bool(flag))
         return True
 
+    def set_room_mic(self, flag: bool) -> None:
+        """Turn the host's session recording on or off.
+
+        Unlike :meth:`set_duel_recording` this is not tied to a live duel — the
+        host arms it whenever, and the light every participant sees comes from
+        here as well as from the duel's own flags.
+        """
+        with self._lock:
+            if self._room_mic == bool(flag):
+                return
+            self._room_mic = bool(flag)
+            self._revision += 1
+        logger.info("poker board: room mic %s", "on" if flag else "off")
+
     def duel_pid_role(self, pid: str) -> str:
         """Return "low"/"high" if ``pid`` is a duelist, else "". Upload auth check.
 
@@ -901,6 +919,7 @@ class PokerBoard:
                 "timer": self._timer_locked(),
                 "broadcast": {"theme": self._broadcast["theme"], "music": self._broadcast["music"]},
                 "locked": self._locked,
+                "room_mic": self._room_mic,
                 "notice": self._notice,
             }
 

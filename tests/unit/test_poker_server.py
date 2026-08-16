@@ -101,6 +101,7 @@ class TestServerRouting:
             "timer",
             "broadcast",
             "locked",
+            "room_mic",
             "notice",
         } == set(data)
         assert data["ticket_count"] == 3

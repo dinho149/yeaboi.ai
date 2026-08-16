@@ -208,18 +208,16 @@ export function Console({
           {mic.capable ? (
             <Button
               active={mic.armed}
-              title={mic.armed ? 'Stop recording the debate' : 'Record the debate from this device'}
+              title={mic.armed ? 'Stop recording the session' : 'Record the session from this device'}
               onClick={() => (mic.armed ? mic.disable() : void mic.enable())}
             >
-              {/* Armed is not recording: nothing is captured until there is a
-                  floor to capture, and the bar's light says which it is. */}
               {mic.armed ? (
                 <>
-                  <span className={styles['recDot']} aria-hidden="true" /> {dueling ? 'Recording' : 'Mic on'}
+                  <span className={styles['recDot']} aria-hidden="true" /> Recording session
                 </>
               ) : (
                 <>
-                  <Icon name="mic" /> Start the room mic
+                  <Icon name="mic" /> Record session
                 </>
               )}
             </Button>

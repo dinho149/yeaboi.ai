@@ -597,7 +597,7 @@
   transform: scale(1.14);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 699px) {
   .avatarGrid {
     grid-template-columns: repeat(6, 1fr);
   }

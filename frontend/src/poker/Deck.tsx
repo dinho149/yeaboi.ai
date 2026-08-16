@@ -37,10 +37,12 @@ export interface DeckProps {
   reason: string;
   /** The host closed it deliberately — the one reason worth colouring. */
   locked: boolean;
+  /** How many people at the table have not voted yet. */
+  waiting: number;
   onVote(value: string): void;
 }
 
-export function Deck({ mine, pending, disabled, reason, locked, onVote }: DeckProps) {
+export function Deck({ mine, pending, disabled, reason, locked, waiting, onVote }: DeckProps) {
   return (
     <div className={styles['deckZone']} data-state={disabled ? 'closed' : 'open'}>
       <p className={cx(styles['deckStatus'], locked && styles['deckStatusLocked'])} role="status">
@@ -51,12 +53,22 @@ export function Deck({ mine, pending, disabled, reason, locked, onVote }: DeckPr
             {locked ? <Icon name="lock" size={12} /> : null}
             {reason}
           </span>
-        ) : mine ? (
-          <>
-            Your vote: <b className={styles['deckMine']}>{mine}</b> — tap it again to withdraw
-          </>
         ) : (
-          'Voting open — pick a card'
+          <>
+            {mine ? (
+              <>
+                Your vote: <b className={styles['deckMine']}>{mine}</b> — tap it again to withdraw
+              </>
+            ) : (
+              'Voting open — pick a card'
+            )}
+            {/* Who the round is waiting for, on the line that says the round is
+                open — it is the same fact, and it had a heading of its own
+                above the table for no better reason than that it fitted. */}
+            <span className={styles['deckWait']}>
+              {waiting === 0 ? 'everyone is in' : `${waiting} still to vote`}
+            </span>
+          </>
         )}
       </p>
 

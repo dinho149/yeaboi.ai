@@ -61,6 +61,7 @@
     "total": 2
   },
   "revision": 6,
+  "room_mic": false,
   "suggestion": 8.0,
   "ticket": {
     "acceptance_text": "Updates land in under a second.",

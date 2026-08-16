@@ -1175,6 +1175,17 @@
   color: var(--accent);
 }
 
+/* Set apart from the instruction it follows: one is what to do, the other is
+   what the room is waiting on. */
+.deckWait::before {
+  /* Margins, not spaces in the content: whitespace in generated content
+     collapses against the text either side of it and the separator lands
+     flush. */
+  content: '·';
+  margin: 0 0.5ch;
+  color: var(--line-strong);
+}
+
 .deck {
   display: flex;
   flex-wrap: wrap;

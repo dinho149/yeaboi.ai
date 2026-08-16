@@ -119,7 +119,8 @@ export function App({ boot }: { boot: PokerBoot }) {
   const duel = snapshot?.duel ?? null;
   const ticketIndex = snapshot?.ticket_index ?? 0;
   const ticketCount = snapshot?.ticket_count ?? 0;
-  const recording = Boolean(duel && (duel.recording.host || duel.recording.low || duel.recording.high));
+  const recording =
+    Boolean(snapshot?.room_mic) || Boolean(duel && (duel.recording.host || duel.recording.low || duel.recording.high));
 
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
@@ -544,6 +545,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             disabled={deckClosed}
             reason={deckReason}
             locked={locked}
+            waiting={votes.filter((seat) => !seat.voted).length}
             onVote={castVote}
           />
         </main>
