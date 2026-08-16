@@ -61,11 +61,18 @@ rule is in [house-rules.md](house-rules.md); the arithmetic is
 
 ## What arrives in Slack, and what does not
 
-Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is two to four
-channel messages a day**, worst case about six, plus thread replies. Two of them bookend the day
+Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is three to six
+channel messages a day**, worst case about eight, plus thread replies. Two of them bookend the day
 and always arrive; the rest are exceptions reporting themselves. Every message opens with a
 title line carrying a fixed emoji, so a message is identifiable from its notification preview
 before it is opened.
+
+**Every message is about one area, with one deliberate exception.** 🗳️ spans all seventeen
+workstreams because it is the daily digest and the one message that *asks* rather than tells; a
+reader answering it wants everything waiting on them in one place. Everything else names its area
+in the title line and stays inside it. That was not true until 2026-08-16: the evening post was one
+roll-up grouped by *type*, so a fix in `analysis/` arrived as a `[bug]` line between a go-migration
+wave and a platform chore, and the twelve areas with no other voice had no voice at all.
 
 **Every run also checks in, and the budget above is unchanged, because a check-in is a reply.**
 Each routine closes with two lines under that morning's 📅 message — worked or not, what it did,
@@ -85,7 +92,8 @@ of its lines.
 | Daily 05:45 UTC | 📅 **Today** — what runs today and when, in local time | never — a schedule that goes quiet is a schedule you cannot trust |
 | Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
 | Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, plus ⏸️ **Held** and 🛠️ **Queued** — what the fleet owes you, which asks nothing | nothing is waiting, and neither fault fired |
-| Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release, and 🔴 which routines never ran | nothing shipped, building, stuck — and nothing missing |
+| Daily 18:00 UTC | **one message per area that moved today** — what merged there, what proved it, what is building, what is stuck | that area merged nothing, opened nothing and got stuck on nothing today |
+| Daily 18:00 UTC | 🩺 **Fleet health** — the routines that were due and never checked in | the schedule and the check-ins agree, which is most days |
 | Mondays 09:00 UTC | 🏷️ **Promote X.Y.Z?** — the weekly release ask | nothing is promotable |
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
 | A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
@@ -116,6 +124,65 @@ Three things follow from that table, and they are the whole design:
 - **🤖 is not decoration either.** The relay reacts 🤖 onto a message to record that it is handled,
   and reads it back the same way. Reacting 🤖 to a digest item yourself hides that item from every
   future run.
+
+## The area glyphs
+
+One glyph per workstream, and it is the same glyph in every message that speaks for that area. This
+table is the source of truth: `scripts/cowork_setup.py --glyphs` parses it, `make cowork-check`
+fails if it and `workstreams/` disagree, and `.claude/agents/cowork-scribe.md` reads it rather than
+choosing. The point is the notification preview — 🔬 tells you the message is about team analysis
+before you open it, and a glyph that moved would silently retrain a reader who had learnt it.
+
+| Glyph | Workstream | In a title line |
+|---|---|---|
+| 📋 | `planning` | Planning |
+| 🌅 | `standup` | Standup |
+| 🔬 | `analysis` | Analysis |
+| 📈 | `reporting` | Reporting |
+| 🃏 | `poker` | Poker |
+| 🪞 | `retro` | Retro |
+| 🎯 | `performance` | Performance |
+| 🔭 | `roadmap` | Roadmap |
+| 🧭 | `agents` | Agents |
+| 🔗 | `artifacts-sharing` | Artifacts |
+| 🐚 | `tui-ux` | Terminal UI |
+| 🌐 | `web-ux` | Web UI |
+| 🧰 | `platform` | Platform |
+| 🦺 | `security` | Security |
+| 🧩 | `integrations` | Integrations |
+| 🐹 | `go-migration` | Go Migration |
+| 🪛 | `fleet` | Fleet |
+
+The third column is there because the slug is not a name: title-casing `tui-ux`
+gives "Tui Ux", which is what a reader would have met in the channel every week.
+It is the display name and nothing else — the *label* stays `workstream:tui-ux`,
+and no code joins on the third column.
+
+**Two are grandfathered, and that is the rule working rather than an exception to it.** 🧭 and 🐹
+already led the title lines of `cron/agents-standup.md` and `cron/go-migration-progress.md` before
+this table existed, and both of those messages speak for exactly the workstream the glyph now
+names. So an area can post twice in a day under one glyph — 🧭 at 06:15 about what other agents
+shipped, 🧭 in the evening about what the fleet changed in `agentwatch/` — and both are about
+agents, which is what the glyph promises. The clause after the em-dash is what tells them apart.
+
+**One carve-out: 🔐 is not security's area glyph.** It stays reserved for the disclosure lane, which
+is an ALERT that wants a decision and is answerable with ✅ at the top level — the one message in
+the fleet where that works. Security's area glyph is 🦺 — the guardrails, not the lock, because 🔐
+is that disclosure and 🔒 heads the digest's Security *section*, and a routine TELL that looked like
+either in a preview is the one confusion here that costs something.
+
+Three rules bound the rest, and each one has already been paid for elsewhere:
+
+- an area glyph may coincide with a **title-line** emoji only when that emoji already belongs to
+  the same workstream, and may never coincide with a **section** emoji. That is why `integrations`
+  is 🧩 rather than the obvious 🔌 — 🔌 heads the digest's Integration *section*, and a glyph meaning
+  "area" on one line and "section" on the next means neither;
+- **no variation sequences.** Every glyph here is a single codepoint with no trailing U+FE0F, the
+  same rule `SECTION_EMOJI` follows in `scripts/cowork_setup.py` and for the same reason: a
+  presentation selector one client honours and another drops is a title line that renders two ways.
+  It is why `tui-ux` is 🐚 and not ⌨️, `platform` 🧰 and not ⚙️;
+- **a glyph is never reused for a second meaning**, including against ✅ / ❌ / 🤖, which are verbs,
+  and 🟢 / 🟡 / 🔴, which are check-in statuses.
 
 ## Where things live
 

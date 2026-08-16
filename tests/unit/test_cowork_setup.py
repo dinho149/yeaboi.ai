@@ -3375,6 +3375,164 @@ class TestSlackTemplates:
             )
 
 
+class TestAreaGlyphs:
+    """``cowork/README.md``'s **The area glyphs** table, and everything that
+    would silently be wrong if it drifted.
+
+    The table is what makes a channel message identifiable from its notification
+    preview — 🔬 means team analysis before you open it. Nothing at run time
+    would notice a duplicate, a missing area, or a glyph that already means
+    something else: `cowork-scribe` would post whatever the table says, and the
+    reader is the one who finds out.
+
+    Every check here is over the *parsed* table rather than the prose beside it,
+    for the same reason ``TestTheConstitutionIsOutsideEveryCharter`` asserts
+    resolved paths: a reworded sentence reads fine and proves nothing.
+    """
+
+    def test_every_workstream_has_a_glyph(self):
+        assert set(setup.parse_workstream_glyphs()) == set(setup.parse_workstreams())
+
+    def test_every_workstream_has_a_display_name(self):
+        """A slug is not a name: title-casing `tui-ux` gives "Tui Ux"."""
+        names = setup.parse_workstream_names()
+        assert set(names) == set(setup.parse_workstreams())
+        assert names["tui-ux"] == "Terminal UI"
+        assert names["web-ux"] == "Web UI"
+
+    def test_no_two_areas_share_a_glyph(self):
+        glyphs = list(setup.parse_workstream_glyphs().values())
+        assert len(glyphs) == len(set(glyphs))
+
+    def test_none_is_a_variation_sequence(self):
+        """A trailing U+FE0F is a presentation selector one client honours and
+        another drops, so the title line renders two ways. ``SECTION_EMOJI``
+        follows the same rule and says so."""
+        for name, glyph in sorted(setup.parse_workstream_glyphs().items()):
+            assert len(glyph) == 1, f"{name}: {glyph!r} is {len(glyph)} codepoints"
+
+    def test_none_collides_with_a_section_or_a_verb(self):
+        """The digest's twelve section emoji, the agenda's four, and the six that
+        carry a verb. A title line wearing one of those reads as a heading, or
+        invites somebody to answer a message that asks nothing."""
+        taken = set(setup.RESERVED_GLYPHS) | set(setup.SECTION_EMOJI.values()) | setup.digest_section_glyphs()
+        for name, glyph in sorted(setup.parse_workstream_glyphs().items()):
+            if setup.GRANDFATHERED_GLYPHS.get(name) == glyph:
+                continue
+            assert glyph not in taken, f"{name}'s glyph {glyph} already means something else"
+
+    def test_the_digest_sections_are_read_rather_than_re_spelled(self):
+        """So a section added there closes the door here without anybody
+        remembering to. Twelve, as `cron/digest.md`'s own table lists them."""
+        found = setup.digest_section_glyphs()
+        assert len(found) == 12
+        assert {"🔒", "🐛", "🧹", "📖", "🔌", "💡"} <= found
+
+    def test_the_disclosure_glyph_belongs_to_no_area(self):
+        """🔐 is answerable with ✅ at the top level — the one message in the
+        fleet where that works. Security's area glyph is 🦺."""
+        glyphs = setup.parse_workstream_glyphs()
+        assert "🔐" not in glyphs.values()
+        assert glyphs["security"] == "🦺"
+
+    def test_the_two_grandfathered_glyphs_still_lead_their_own_routines(self):
+        """🧭 and 🐹 predate the table and speak for exactly the workstream they
+        now name, which is why an area may post twice a day under one glyph."""
+        for name, glyph in sorted(setup.GRANDFATHERED_GLYPHS.items()):
+            assert setup.parse_workstream_glyphs()[name] == glyph
+        assert "🧭 **Agents**" in (setup.ROUTINES_DIR / "cron" / "agents-standup.md").read_text(encoding="utf-8")
+        assert "🐹 **Go Migration**" in (setup.ROUTINES_DIR / "cron" / "go-migration-progress.md").read_text(
+            encoding="utf-8"
+        )
+
+    def test_the_scribe_is_pointed_at_the_table_rather_than_choosing(self):
+        text = (setup.REPO_ROOT / ".claude" / "agents" / "cowork-scribe.md").read_text(encoding="utf-8")
+        assert "The area glyphs" in text
+        assert "🔐 is not an area glyph" in text
+
+    @pytest.mark.parametrize(
+        ("swap", "expected"),
+        [
+            (("| 🔭 | `roadmap`", "| 🔬 | `roadmap`"), "share the glyph"),
+            (("| 🦺 | `security`", "| 🔒 | `security`"), "already means something else"),
+            (("| 🐚 | `tui-ux`", "| ⌨️ | `tui-ux`"), "not a single codepoint"),
+        ],
+    )
+    def test_the_check_actually_fires(self, tmp_path, monkeypatch, swap, expected):
+        """A guard nobody has watched fail is a guard nobody knows the shape of."""
+        original, replacement = swap
+        readme = tmp_path / "README.md"
+        readme.write_text(setup.README.read_text(encoding="utf-8").replace(original, replacement), encoding="utf-8")
+        monkeypatch.setattr(setup, "README", readme)
+        assert any(expected in problem for problem in setup.check_glyphs())
+
+    def test_a_missing_area_is_caught(self, tmp_path, monkeypatch):
+        readme = tmp_path / "README.md"
+        readme.write_text(
+            setup.README.read_text(encoding="utf-8").replace("| 🪛 | `fleet` | Fleet |\n", ""),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(setup, "README", readme)
+        assert any("no area glyph: fleet" in problem for problem in setup.check_glyphs())
+
+    def test_the_table_is_clean_right_now(self):
+        assert setup.check_glyphs() == []
+
+
+class TestTheEveningFanOut:
+    """``cron/shipped-standup.md`` posts one message per area, not one message.
+
+    Everything asserted here is prose a model reads at run time, and the two
+    failure modes it guards are the ones the fan-out introduced: a run that posts
+    a mixed roll-up again, and a run that posts an area twice.
+    """
+
+    @property
+    def routine(self) -> str:
+        return (setup.ROUTINES_DIR / "cron" / "shipped-standup.md").read_text(encoding="utf-8")
+
+    def test_it_renders_rather_than_composes(self):
+        """A model deciding *how many* messages and *which* is a model that can
+        post the same area twice or drop one silently."""
+        assert "scripts/cowork_evening.py" in self.routine
+        assert "compose nothing" in self.routine.lower()
+
+    def test_it_forbids_a_second_message_for_one_area(self):
+        assert "never a second for the same area" in self.routine
+
+    def test_it_still_reports_nothing_about_proposals(self):
+        """The split that keeps 🗳️ readable. Decisions belong to the digest."""
+        assert "Report nothing about proposals" in self.routine
+
+    def test_it_still_posts_no_thread_replies(self):
+        """The digest owns threads because its replies are parsed as inputs."""
+        assert "No thread replies" in self.routine
+
+    def test_a_silent_evening_is_still_allowed(self):
+        """A daily message saying "no changes today" is how a channel gets
+        muted, and a muted channel is worse than no channel."""
+        assert "post nothing" in self.routine
+
+    def test_the_health_message_is_a_channel_message_not_a_thread_reply(self):
+        """A thread reply does not notify, and this is the fault nobody would go
+        looking for — on 2026-08-06 a sweep died and nothing said so for a week."""
+        assert "🩺 **Fleet health**" in self.routine
+        assert "does not notify" in self.routine
+
+    def test_the_sweeps_are_still_silent(self):
+        """The fan-out speaks *for* them; it did not give them a voice of their
+        own, and `sweep-procedure.md` is constitution."""
+        procedure = (setup.COWORK / "sweep-procedure.md").read_text(encoding="utf-8")
+        assert "a sweep still posts no channel message" in procedure
+
+    def test_the_readme_promises_a_budget_the_fan_out_can_keep(self):
+        """N messages instead of one is a real cost, and a promise that quietly
+        became untrue is worse than a bigger number."""
+        readme = setup.README.read_text(encoding="utf-8")
+        assert "three to six" in readme
+        assert "two to four" not in readme
+
+
 class TestProposalSlots:
     """The proposal cap, which is the only thing bounding the propose lane.
 
@@ -3812,6 +3970,10 @@ class TestTheQueueContract:
     def digest(self) -> str:
         return self._read(setup.ROUTINES_DIR / "cron" / "digest.md")
 
+    @property
+    def scout(self) -> str:
+        return self._read(setup.SCOUT_AGENT)
+
     def test_the_house_rules_name_the_label(self):
         """The rule is written in two places — prose a routine reads and the
         constant it obeys — so they are pinned together, exactly as the cap is."""
@@ -3854,14 +4016,52 @@ class TestTheQueueContract:
         backlog it was seeded to drain sits there looking like a clean codebase."""
         assert "--queued" in self.sweep
 
+    @property
+    def age_out_step(self) -> str:
+        step = self.digest.partition("4. **Lapse, then age out**")[2].split("\n5.")[0]
+        assert step, "step 4 is no longer findable by its heading"
+        return step
+
     def test_the_digest_never_ages_out_a_queued_issue(self):
-        """The single most destructive thing in this design if it goes wrong: the
-        age-out closes the issue, both dedupe passes read that as a rejection, and
-        the find is suppressed permanently with its write-up gone."""
-        step = self.digest.partition("4. **Age out**")[2].split("\n5.")[0]
-        assert step, "the age-out step is no longer findable by its heading"
-        assert setup.QUEUE_LABEL in step
-        assert "claude-implement" in step
+        """The single most destructive thing in this design if it goes wrong: a
+        close is read by both dedupe passes as a rejection, and the find is
+        suppressed permanently with its write-up gone."""
+        assert setup.QUEUE_LABEL in self.age_out_step
+        assert "claude-implement" in self.age_out_step
+
+    def test_the_fourteen_day_clock_lapses_rather_than_closes(self):
+        """The defect the docstring above used to describe as merely a risk.
+
+        The clock *did* close the issue, and both dedupe passes read a closing off
+        the issue's **state** — `a closing is a rejection and a rejection is
+        durable`. The marker that was supposed to separate a human's decision from
+        a timer's absence is written into a comment, and `cowork_metrics.py` is
+        its only reader and runs on a human's terminal. So every proposal nobody
+        had time to answer was destroyed, permanently, by a clock, and no routine
+        could tell that apart from a rejection.
+
+        Lapsing removes the label and leaves the issue open, which reopens the
+        slot — `open_proposals` filters by label — without any routine reading a
+        rejection nobody made.
+        """
+        step = self.age_out_step
+        assert f"--remove-label {setup.PROPOSAL_LABEL}" in step, "the fourteen-day clock must lapse, not close"
+        # Phrase, not sentence: the prose is hard-wrapped, so an assertion on a
+        # full sentence pins the line width rather than the rule.
+        assert "Do not close" in step
+        assert "<!-- lapsed: reason=unanswered -->" in step
+
+    def test_a_lapsed_issue_is_re_askable_by_both_dedupe_passes(self):
+        """A lapse only beats a close if something can bring the find back.
+
+        An open issue carrying neither label is invisible to every query in step
+        4 of the sweep and step 5 of the scout, which is how a lapsed find would
+        become a silent one: nothing lists it, nothing re-asks it, and a scout
+        that re-found it would file a duplicate write-up under a new number.
+        """
+        for doc, name in ((self.sweep, "sweep-procedure.md"), (self.scout, "cowork-scout.md")):
+            assert "neither" in doc, f"{name} has no outcome for an issue carrying neither label"
+            assert "lapsed" in doc, f"{name} never names the lapsed state"
 
     def test_the_digest_reports_the_queue_it_no_longer_lists(self):
         """The risk this design creates. Four structurally-empty type sections mean
@@ -3892,6 +4092,95 @@ class TestTheQueueContract:
         cap on it at all, since the cap counts proposals."""
         rules = self._read(setup.COWORK / "house-rules.md")
         assert "drain-only" in rules
+
+
+class TestOwnerOf:
+    """Which charter claims a path — the routing `house-rules.md` always specified.
+
+    *Stay in your paths* has always said a find outside your charter "becomes a
+    proposal issue labelled for the owning workstream", and `cowork-scout.md`
+    has always returned an `owner` field for one. Nothing resolved it, so the
+    label stayed the finder's: issue #170 is a `test_surface_parity.py` find —
+    platform's file — filed as `workstream:analysis`, where it held one of
+    analysis's two slots for ten days over a file analysis may not open.
+    """
+
+    def test_it_routes_a_file_to_the_charter_that_names_it(self):
+        assert setup.owner_of("tests/unit/test_surface_parity.py")["workstream"] == "platform"
+        assert setup.owner_of("src/yeaboi/analysis/ai_usage.py")["workstream"] == "analysis"
+
+    def test_the_narrower_claim_wins(self):
+        """`fleet` owns `cowork/`, and `go-migration` owns `cowork/migration/`.
+
+        Depth is taken from the *matching claim* rather than from the path, so a
+        charter naming a subdirectory beats one naming its parent without either
+        charter having to say so — which is what the two of them already assume
+        in prose.
+        """
+        assert setup.owner_of("cowork/workstreams/platform.md")["workstream"] == "fleet"
+        assert setup.owner_of("cowork/migration/program.md")["workstream"] == "go-migration"
+
+    def test_the_constitution_belongs_to_nobody_and_says_so(self):
+        """Not an oversight to be tidied up: a find in the constitution is a
+        human's, and reporting it as unclaimed would invite somebody to claim it.
+        """
+        for path in setup.CONSTITUTION + setup.CONSTITUTION_GUARDS:
+            answer = setup.owner_of(path)
+            assert answer["workstream"] is None, path
+            assert answer["reason"] == "constitution", path
+
+    def test_an_unclaimed_path_is_never_guessed_at(self):
+        """The rule `proposal_slots` applies to a queue it could not read: an
+        answer nobody can stand behind is not spoken as a clean one. A routed
+        find that cannot be routed belongs in front of a person."""
+        answer = setup.owner_of("README.md")
+        assert answer["workstream"] is None
+        assert answer["reason"] == "no charter claims it"
+        assert setup.owner_of("/etc/hosts")["reason"] == "outside this repository"
+
+    def test_a_reads_path_is_not_an_owns_path(self):
+        """The #170 guard, stated directly.
+
+        `analysis.md` and `roadmap.md` both declare a standing job over
+        `test_surface_parity.py` and both now declare it under `**Reads**`.
+        Ownership is parsed from the `**Owns**` block alone, so the declaration
+        routes the find without either charter acquiring the file — and if a
+        `**Reads**` paragraph ever leaked into ownership, this is what fails.
+        """
+        for reader in ("analysis", "roadmap"):
+            charter = (setup.WORKSTREAMS_DIR / f"{reader}.md").read_text(encoding="utf-8")
+            assert "**Reads**" in charter, f"{reader}.md no longer declares what it may look at"
+            assert "test_surface_parity.py" in charter
+        assert setup.owner_of("tests/unit/test_surface_parity.py")["workstream"] == "platform"
+
+
+class TestDeclaredPaths:
+    """A find's `**Paths**` section, read back out for routing."""
+
+    def test_it_reads_only_the_paths_section(self):
+        """A proposal body quotes file names throughout — in its evidence, in the
+        rule it cites, in the sibling it contrasts itself with. Routing on all of
+        them would route an issue by what it argued rather than by what it would
+        change."""
+        body = "**What** — fix `src/yeaboi/a.py`\n\n**Paths** — `src/yeaboi/b.py`\n\n**Evidence** — `src/yeaboi/c.py`"
+        assert setup.declared_paths(body) == ["src/yeaboi/b.py"]
+
+    def test_no_paths_section_is_no_paths(self):
+        assert setup.declared_paths("**Evidence** — `src/yeaboi/c.py`") == []
+        assert setup.declared_paths(None) == []
+
+    def test_the_first_resolvable_token_is_the_owner(self):
+        """#170 names the file it would fix and then the rule it is quoting, in
+        one sentence. The section is written primary-site-first, so the first
+        token that resolves is the fix site."""
+        body = (
+            "**Paths** — `tests/unit/test_surface_parity.py` (outside `analysis`, see `cowork/workstreams/analysis.md`)"
+        )
+
+        def resolve(token: str) -> str | None:
+            return setup.owner_of(token)["workstream"]
+
+        assert setup.routed_owner(body, resolve) == "platform"
 
 
 class TestMigrateProposals:
@@ -4045,6 +4334,60 @@ class TestMigrateProposals:
         )
         assert rows["counts"] == {"queue": 1, "hold": 1, "skip": 1, "repair": 0}
         assert sum(rows["counts"].values()) == len(rows["planned"])
+
+
+class TestMigrateProposalsRouting:
+    """The one auto-lane condition a mechanical backfill can actually check.
+
+    Everything else `migration_plan` waves through is a judgement it is content
+    to get wrong: `cowork:queued` grants nothing and `sweep-procedure.md` step 5
+    bounces what fails, at a cost of one comment. **Stay in your paths** is
+    different in two ways — it is mechanical, so there is no excuse for guessing
+    it, and getting it wrong hands one workstream's file to another workstream's
+    builder, which is the one bounce that costs more than a comment.
+    """
+
+    WORKSTREAMS = ("analysis", "platform", "fleet")
+
+    @staticmethod
+    def _issue(number, workstream, paths):
+        # An `**Evidence**` section on every fixture, because the routing hold
+        # sits last: an issue with nothing to reproduce is held for that first,
+        # and a fixture without one would pass this class while proving nothing.
+        return {
+            "number": number,
+            "title": "t",
+            "body": f"**Evidence** — src/x.py:1\n\n**Paths** — {paths}",
+            "labels": [{"name": n} for n in ("cowork:proposal", f"workstream:{workstream}", "type:docs")],
+        }
+
+    def _plan(self, *issues):
+        return setup.migration_plan(issues, workstreams=self.WORKSTREAMS)["planned"]
+
+    def test_a_find_declaring_another_workstreams_paths_is_held(self):
+        row = self._plan(self._issue(170, "analysis", "`tests/unit/test_surface_parity.py`"))[0]
+        assert row["action"] == "hold"
+        assert "platform" in row["reason"] and "analysis" in row["reason"]
+
+    def test_a_find_inside_its_own_paths_still_queues(self):
+        row = self._plan(self._issue(1, "analysis", "`src/yeaboi/analysis/ai_usage.py`"))[0]
+        assert row["action"] == "queue"
+
+    def test_an_unroutable_path_does_not_block_the_queue(self):
+        """A path no charter claims says nothing about whether the label is
+        wrong, and holding on it would turn every find whose `**Paths**` line
+        names a new file into a question. Silence from the resolver is silence."""
+        row = self._plan(self._issue(2, "analysis", "`README.md`"))[0]
+        assert row["action"] == "queue"
+
+    def test_the_resolver_is_injectable(self):
+        """`migration_plan` is pure given its inputs, which is what lets a test
+        state a fleet rather than stand in one."""
+        rows = self._plan_with(lambda token: "platform", self._issue(3, "analysis", "`x/y.py`"))
+        assert rows[0]["action"] == "hold"
+
+    def _plan_with(self, resolve, *issues):
+        return setup.migration_plan(issues, workstreams=self.WORKSTREAMS, resolve_owner=resolve)["planned"]
 
 
 class TestMigrateProposalsApply:

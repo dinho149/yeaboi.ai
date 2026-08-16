@@ -849,7 +849,7 @@ class TestTheReasonVocabularyIsClosed:
     worse than no marker — it reads as a rejection that never happened.
     """
 
-    MARKER = re.compile(r"<!--\s*(rejected|bounced):\s*reason=([a-z-]+)")
+    MARKER = re.compile(r"<!--\s*(rejected|bounced|lapsed):\s*reason=([a-z-]+)")
 
     def _documented(self, kind: str) -> set[str]:
         found: set[str] = set()
@@ -867,6 +867,25 @@ class TestTheReasonVocabularyIsClosed:
         # ever writes: a vocabulary entry no site emits is a metric that will
         # read zero forever and look like good news.
         assert set(relay.REJECTION_REASONS) == self._documented("rejected")
+
+    def test_every_documented_lapse_reason_is_in_the_tuple(self) -> None:
+        assert self._documented("lapsed") <= set(relay.LAPSE_REASONS)
+
+    def test_every_lapse_reason_is_documented_somewhere(self) -> None:
+        # Both directions, like the rejections above. The third family exists
+        # because closing was doing two jobs: `digest.md` step 4 used to close an
+        # unanswered proposal, and both dedupe passes read a closing as a durable
+        # rejection off the issue's **state** — so a timer was casting a human's
+        # vote and the marker that said otherwise sat in a comment nothing but
+        # this repo's terminal tooling reads.
+        assert set(relay.LAPSE_REASONS) == self._documented("lapsed")
+
+    def test_a_lapse_is_not_a_rejection_or_a_bounce(self) -> None:
+        # The three vocabularies name three different failures — a human said no,
+        # the fleet misclassified, nobody answered — and an entry appearing in two
+        # of them would collapse exactly the distinction this family was added for.
+        assert not set(relay.LAPSE_REASONS) & set(relay.REJECTION_REASONS)
+        assert not set(relay.LAPSE_REASONS) & set(relay.BOUNCE_REASONS)
 
     def test_the_bounce_reasons_mirror_the_allowlist_conditions(self) -> None:
         # Not a second taxonomy: a find fails on exactly the conditions it had to

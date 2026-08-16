@@ -68,7 +68,7 @@ workstream and any per-run focus; everything else is here.
    (`integration-campaign.md`), approved by provider rather than by find. Nothing found is a
    normal outcome: exit silently.
 
-4. **Deduplicate — four outcomes, not one.** `gh issue list --label "workstream:<name>" --state
+4. **Deduplicate — five outcomes, not one.** `gh issue list --label "workstream:<name>" --state
    open` and `gh issue list --label "workstream:<name>" --state closed --limit 50`. For a find that
    restates an issue you already have, what happens depends on that issue's label *and* on the lane
    you put the find in:
@@ -79,6 +79,13 @@ workstream and any per-run focus; everything else is here.
      and do not drop it: carry that issue's number into step 5.
    - restates an open **`cowork:proposal`** issue and your find is **`propose`** → **drop it.** The
      question is already in front of a human; asking it twice does not answer it.
+   - restates an **open** issue carrying **neither** label → **that is a lapsed question, and it
+     is yours to re-ask or to build.** `cron/digest.md` step 4 strips `cowork:proposal` at fourteen
+     days and leaves the issue open precisely so this outcome exists: the question stopped being
+     asked, the find was never rejected. Re-label it in place rather than filing a second write-up —
+     `cowork:proposal` if your find is `propose` (it takes one slot, and it keeps its number, its
+     body and its history), `cowork:queued` if your find is `auto`, carried into step 5 like any
+     other. Add before you remove, and never `gh api` with `PUT .../labels`, exactly as above.
    - restates an open **`cowork:proposal`** issue and your find is **`auto`** → **reclassify that
      issue in place**, and carry it into step 5:
 
@@ -245,10 +252,35 @@ workstream and any per-run focus; everything else is here.
    that line is the only place a single run is legible; `cron/digest.md` reports the standing
    picture from the same command.
 
+   **A find carrying `owner:` is filed for the owner, and against the owner's slots.** The scout
+   sets that field on anything outside your `**Owns**` (`cowork-scout.md`, step 2) and it returned
+   in the payload and was read by nobody: the label recipe below said `workstream:<name>`,
+   `<name>` was always *yours*, and [house-rules.md](house-rules.md)'s *a find outside your
+   charter's paths becomes a proposal issue labelled for the owning workstream* was true in prose
+   and false in practice. Issue #170 is a `tests/unit/test_surface_parity.py` find — **platform**'s
+   file — labelled `workstream:analysis`. It held one of analysis's two slots for a file analysis
+   may not open, and froze the workstream that found it for ten days.
+
+   So for a routed find: resolve the owner rather than reading the charter by eye, ask *its* slots,
+   and file under its name.
+
+   ```bash
+   uv run python scripts/cowork_setup.py --owner <the find's primary path>
+   uv run python scripts/cowork_setup.py --proposal-slots <owner>
+   ```
+
+   `--owner` answers `workstream: null` when no charter claims the path, when two claim it equally,
+   or when it is the constitution — **never a guess**, the same rule `--proposal-slots` applies to a
+   queue it could not read. A find nothing can route is one to leave in front of a person: file it
+   under your own name and say in the run log that it is unrouted. If the owner has no slot,
+   **drop it** — the ordinary rule, unchanged. Your own slots are untouched either way; a find you
+   routed away is not one you asked about.
+
    Each filed find goes to `cowork-scribe` (`standard`), one GitHub issue each (`cowork:proposal` +
-   `workstream:<name>` + `type:<type>`). **No Linear ticket, and no Slack post.** The issue is the
-   queue; the digest is the only thing that talks to Slack about proposals; and Linear is opened at
-   approval, not at proposal — see [definition-of-done.md](definition-of-done.md).
+   `workstream:<owner>` + `type:<type>`, where `<owner>` is yours unless the find was routed).
+   **No Linear ticket, and no Slack post.** The issue is the queue; the digest is the only thing
+   that talks to Slack about proposals; and Linear is opened at approval, not at proposal — see
+   [definition-of-done.md](definition-of-done.md).
 
 7. **Stop.** Do not follow interesting threads outside your charter. File them as proposals for the
    owning workstream and move on.

@@ -13,7 +13,13 @@ A find may skip the proposal step and go straight to a PR only when **every** co
 - confined to the paths your charter declares
 - no public API, schema, or state-field change
 - no prompt change (`src/yeaboi/prompts/`)
-- no new capability — i.e. it needs no `test_surface_parity.py` registry edit
+- no new capability — i.e. it needs no `test_surface_parity.py` registry edit, **with one
+  carve-out: correcting an `Exempt` whose stated reason contradicts the code** is documentation
+  drift (category 5) and stays in the lane. That file is self-guarding in a way the others are
+  not — every check in it is two-way set equality, so an entry claiming a surface that does not
+  actually cover it fails the required `Unit tests` context. It is the one edit to a registry where
+  "is this right?" is a question the suite answers rather than a judgement a human has to make.
+  Registering a capability, adding an `Exempt`, or widening one still proposes.
 - no change to user-facing wording or labels
 
 That last one is the line, and it is narrower than it looks: **behaviour may change, copy may
@@ -357,7 +363,12 @@ become the route by which an exploit gets published.
   `gh pr list --label "workstream:<name>" --state open`. If one is open, drive *that* PR to green
   and stop. Do not open a second.
 - **Stay in your paths.** A find outside your charter's paths becomes a proposal issue labelled for
-  the owning workstream. Never edit another workstream's files — this is what keeps two routines off
+  the owning workstream — **and counted against that workstream's slots, not yours.** Resolve the
+  owner with `scripts/cowork_setup.py --owner <path>` rather than by eye; an unroutable path is one
+  to leave in front of a person, never one to guess at. The slot follows the label because
+  `--proposal-slots` counts by label, so counting a routed find against the finder would put the
+  arithmetic and the reality on two different workstreams with nothing able to notice. Never edit
+  another workstream's files — this is what keeps two routines off
   `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface). The single
   exception is a campaign run appending a provider at an `**Extends**` site — bounded by site and by
   operation, declared on both sides, and never on that file. See **The campaign lane**.

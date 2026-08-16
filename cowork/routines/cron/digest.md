@@ -262,7 +262,11 @@ The single decision point. It is the only routine that posts proposals to Slack.
      📊 **Calibration** from step 6 under a divider of its own.
    - last, under a final divider, the reminder that approval is ✅ on an item's thread reply
      (relayed within the hour — or `/cowork run slack-relay` for right now) or adding
-     `claude-implement` on GitHub, and rejection is ❌ or closing the issue. Its own divider because
+     `claude-implement` on GitHub, and rejection is ❌ or closing the issue — **and the third
+     outcome, which is what happens if neither verb arrives: after 14 days the question lapses,
+     the issue stays open, and the find returns only if a sweep still sees it.** Silence is an
+     outcome a reader is choosing, and a list of verbs that omits the default one lets them choose
+     it without knowing. Its own divider because
      it is instructions rather than content, and it should not read as one more section of backlog.
      The digest still names the verbs, because a reader who has forgotten them has nowhere else to
      look.
@@ -326,21 +330,44 @@ The single decision point. It is the only routine that posts proposals to Slack.
    was lane-blind, so an unanswered proposal about a bug *suppressed* the auto-lane find that would
    have fixed it, and the digest asked about forty-two of them.
 
-4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
-   "closed unapproved after 14 days — re-file if still relevant", ending with the marker
-   `<!-- rejected: reason=aged-out -->` on its own line. Never touch an issue that carries
-   `claude-implement`, and **never touch one that carries `cowork:queued`.**
+4. **Lapse, then age out** — two steps, because a clock may release a *slot* and may never make a
+   *decision*.
 
-   The marker is what separates the two ways a proposal dies. A human closing one is a *decision*;
-   this clock running out is an *absence* of one, and counting them together would report a
-   workstream nobody had time to read as a workstream pointed at the wrong thing. Step 6's
-   calibration rate is the number that would be wrong, and `scripts/cowork_metrics.py` splits them
-   on this marker.
+   **At 14 days, lapse it.** For any `cowork:proposal` issue whose age passes fourteen days:
 
-   A queued item is work waiting on the fleet, not a question waiting on a human, so a fourteen-day
-   clock is measuring the wrong thing on it — and closing it would be worse than pointless. Both
-   dedupe passes read a closing as "a human said no", so the find would be suppressed permanently
-   *and* the write-up would be gone. Nothing must produce that signal on the fleet's behalf.
+   ```bash
+   gh issue edit <n> --remove-label cowork:proposal
+   gh issue comment <n> --body "lapsed after 14 days unanswered — still open, and the find returns if the next sweep still sees it"
+   ```
+
+   ending that comment with `<!-- lapsed: reason=unanswered -->` on its own line. **Do not close
+   it.** The issue leaves step 1's query so it stops filling the digest; `open_proposals` filters
+   by label so the slot reopens with no arithmetic anywhere changing; and because nothing closed,
+   no dedupe pass reads a rejection nobody made.
+
+   **That last clause is the whole reason this step is shaped this way.** Closing was never the
+   neutral act it looked like. Both dedupe passes — `sweep-procedure.md` step 4 and
+   `cowork-scout.md` step 5 — say *a closing is a rejection and a rejection is durable; do not
+   re-file rejected ideas*, and they read an issue's **state**, not its comments. The
+   `<!-- rejected: reason=aged-out -->` marker that was supposed to tell the two apart lives in a
+   comment, and `scripts/cowork_metrics.py` is its only reader and runs on a human's terminal. So a
+   find nobody had time to look at was destroyed by a timer, permanently and unrecoverably, and the
+   fleet recorded the difference in the one place nothing it runs can see.
+
+   **At 30 days lapsed, close it** — same comment shape, ending
+   `<!-- rejected: reason=aged-out -->`, the marker unchanged and now honestly earned. By then the
+   owning workstream's scout has surveyed that surface at least once more and did not bring the
+   find back, which is the fleet saying it stopped mattering. That is a decision made on evidence
+   rather than on silence, and it is the only thing that may spend the rejection marker.
+
+   Never lapse and never close an issue carrying `claude-implement`, and **never touch one carrying
+   `cowork:queued`.** A queued item is work waiting on the fleet, not a question waiting on a human,
+   so a fourteen-day clock is measuring the wrong thing on it.
+
+   **Never lapse a `codeql:` issue either.** `codeql-triage.yml` dedupes by searching for the rule
+   id among issues it can see; a lapsed one is a security question that silently stops being asked
+   and then gets re-opened next week under a new number. Those close on the human's verb or not at
+   all.
 
    **And age a bounced proposal from when it came back, not from when it was filed.** A proposal
    that was queued and then bounced (`sweep-procedure.md` step 5) keeps its original `createdAt`,
@@ -355,12 +382,12 @@ The single decision point. It is the only routine that posts proposals to Slack.
 
    A human comment does **not** exempt an issue. Commenting "not now" is the natural way to say no,
    and exempting commented issues would make every explicit rejection immortal while silence — the
-   weaker signal — was the only thing that worked. Closing is the rejection; both dedup passes then
-   suppress the find permanently.
+   weaker signal — was the only thing that worked. Closing is the rejection, and it is a human's to
+   make.
 
-   **Never age out a `feature-candidate` issue.** Those were written by a person about their own
-   experience, not generated by a scout, and closing someone's bug report on a timer is not triage.
-   They stay open until a human acts.
+   **Never lapse or age out a `feature-candidate` issue.** Those were written by a person about
+   their own experience, not generated by a scout, and putting someone's bug report on a timer is
+   not triage. They stay open until a human acts.
 
 5. **Report the health lines** — if any workstream has filed nothing in 21 days, say so in the
    digest. A silent scout is usually a broken scout, not a clean codebase.
@@ -408,9 +435,16 @@ The single decision point. It is the only routine that posts proposals to Slack.
    - **Held** — a workstream at its proposal cap. `uv run python scripts/cowork_setup.py
      --proposal-slots` with no argument answers for all seventeen at once; list every row with
      `slots` of 0. Line one is `**<workstream>**` and the count, `— <n> open proposals, cap 2`;
-     line two is `— ` and the oldest blocking issues by number and age, from the row's `blocking`
-     list, e.g. `— holding on #146 (7d), #152 (6d)`. Those are the issues to answer, and answering
-     one is what reopens the slot.
+     line two is `— ` and the oldest blocking issues by number, age **and lapse date**, from the
+     row's `blocking` list, e.g. `— holding on #146 (7d, lapses 23 Aug), #152 (6d, lapses 24 Aug)`.
+     Those are the issues to answer, and answering one is what reopens the slot.
+
+     **The date is the part that carries information a re-read does not.** This section is posted
+     every morning, and a bare age on the same five issues is the same message with one number
+     moved — a reader learns nothing from the second one. The date says when step 4 will take the
+     question away, which is the fact a person needs to decide whether today is the day. It is a
+     lapse and not a death (step 4): the issue stays open and the find comes back if the surface
+     still has it, so the line must not read as a deadline before deletion.
 
      **A held workstream is not a silent one and must not be listed as both.** It is scouting
      normally and finding things; it simply has nowhere to put them, and its finds are dropped
