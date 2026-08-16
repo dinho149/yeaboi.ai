@@ -161,6 +161,9 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/agent/",
             "src/yeaboi/prompts/",
             "src/yeaboi/ui/session/",
+            # The plan's back half: a story from the sprint plan driven through
+            # a supervised coding agent to a PR.
+            "src/yeaboi/ship/",
             "src/yeaboi/questionnaire_io.py",
             "src/yeaboi/transcript.py",
             "src/yeaboi/json_exporter.py",
@@ -191,6 +194,9 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_ollama_control.py",
             "tests/unit/test_duck_*.py",
             "tests/unit/test_session_handoff.py",
+            # test_ship_gate.py (the /ship command guard) also matches this
+            # glob; it lives in ALWAYS, and a double claim is harmless.
+            "tests/unit/test_ship_*.py",
         ),
     ),
     Area(
