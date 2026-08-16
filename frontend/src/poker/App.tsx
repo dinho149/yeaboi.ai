@@ -378,7 +378,9 @@ export function App({ boot }: { boot: PokerBoot }) {
             trigger={
               <>
                 <Icon name="timer" size={16} />
-                <TimerReadout remaining={remaining} />
+                {/* Not while the floor is open: the count belongs between
+                    the two people it is counting for. */}
+                <TimerReadout remaining={phase === 'duel' ? null : remaining} />
               </>
             }
             label="Timer"
@@ -515,6 +517,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             ai={snapshot?.ai ?? { pending: false, from_llm: false, note: '', suggested: null, confidence: '', evidence: [] }}
             duel={duel}
             mic={mic}
+            remaining={remaining}
             revealed={revealed}
           />
 

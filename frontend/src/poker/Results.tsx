@@ -31,11 +31,13 @@ export interface ResultsProps {
   /** The open floor, when there is one. Null the rest of the time. */
   duel: DuelSlice | null;
   mic: DuelMic;
+  /** Seconds left on the board timer, for the turn clock between the two. */
+  remaining: number | null;
   /** True once votes are public — `revealed` or `duel`. */
   revealed: boolean;
 }
 
-export function Results({ distribution, median, suggestion, ai, duel, mic, revealed }: ResultsProps) {
+export function Results({ distribution, median, suggestion, ai, duel, mic, remaining, revealed }: ResultsProps) {
   const entries = Object.entries(distribution);
   const hasAi = ai.pending || Boolean(ai.note);
   const hasFloor = Boolean(duel);
@@ -153,7 +155,7 @@ export function Results({ distribution, median, suggestion, ai, duel, mic, revea
             aria-labelledby="results-tab-floor"
             className={cx(!onFloor && styles['rpanelOff'])}
           >
-            <Duel duel={duel} mic={mic} />
+            <Duel duel={duel} mic={mic} remaining={remaining} />
           </div>
         ) : null}
       </div>

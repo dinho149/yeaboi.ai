@@ -22,6 +22,7 @@
  */
 
 import { cx } from '../runtime/cx';
+import { fmtClock } from '../runtime/format';
 import type { DuelSlice } from '../types/board';
 import type { DuelMic } from './useDuelMic';
 import styles from './poker.module.css';
@@ -30,6 +31,8 @@ import { Icon } from '../design/primitives';
 export interface DuelProps {
   duel: DuelSlice;
   mic: DuelMic;
+  /** Seconds left on the turn, shown between the two of them. */
+  remaining: number | null;
 }
 
 function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
@@ -54,7 +57,7 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   );
 }
 
-export function Duel({ duel, mic }: DuelProps) {
+export function Duel({ duel, mic, remaining }: DuelProps) {
   if (duel.status === 'transcribing') {
     return (
       <div className={styles['duel']} role="status">
@@ -103,9 +106,15 @@ export function Duel({ duel, mic }: DuelProps) {
 
       <div className={styles['dualrow']}>
         <Duelist duel={duel} role="low" />
-        <span className={styles['vs']} aria-hidden="true">
-          VS
-        </span>
+        {/* The clock stands between them, because that is what it counts down:
+            whose turn it is, not how long the board has been open. */}
+        {remaining === null ? (
+          <span className={styles['vs']} aria-hidden="true">
+            VS
+          </span>
+        ) : (
+          <span className={cx(styles['vs'], styles['vsClock'])}>{fmtClock(remaining)}</span>
+        )}
         <Duelist duel={duel} role="high" />
       </div>
 
