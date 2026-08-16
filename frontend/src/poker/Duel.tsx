@@ -89,22 +89,10 @@ export function Duel({ duel, remaining, isHost, onNextTurn, onCloseDuel }: DuelP
     );
   }
 
-  const anyRecording = duel.recording.host || duel.recording.low || duel.recording.high;
   const myTurn = duel.mine_role !== '' && duel.turn === duel.mine_role;
 
   return (
     <div className={styles['duel']}>
-      {/* Only when there is something to say. The other half of this — that
-          nothing is being recorded — is the host's console's to report: they
-          are the one who can close the floor and run it again with a mic. */}
-      {anyRecording ? (
-        <div className={styles['duelHead']}>
-          <span className={styles['recind']}>
-            <span className={styles['recDot']} aria-hidden="true" />
-            RECORDING
-          </span>
-        </div>
-      ) : null}
 
       <div className={styles['dualrow']}>
         <Duelist duel={duel} role="low" />

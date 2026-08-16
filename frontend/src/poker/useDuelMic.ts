@@ -199,12 +199,6 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     return () => stopRecorder();
   }, [armed, myTurn, roomMic, turnNo, startRecorder, stopRecorder]);
 
-  // The floor closed — mid-turn or not. `stopRecorder` before `release` is what
-  // flushes a turn that was still running when the host closed the floor.
-  useEffect(() => {
-    if (!live && armed) release();
-  }, [live, armed, release]);
-
   // Unmount: never leave the hardware held. Held in a ref so this runs on
   // unmount only, rather than every time `release` is re-created.
   const releaseRef = useRef(release);

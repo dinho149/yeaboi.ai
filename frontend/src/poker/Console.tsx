@@ -200,28 +200,32 @@ export function Console({
           {/* One mic, and it is the host's. The room is usually on a call
               together, so a second device recording the same conversation adds
               a duplicate track rather than a missing voice — and the host is
-              the one person certainly present for both turns. */}
-          {dueling ? (
-            mic.capable ? (
-              <Button
-                active={mic.armed}
-                title={mic.armed ? 'Stop recording the debate' : 'Record the debate from this device'}
-                onClick={() => (mic.armed ? mic.disable() : void mic.enable())}
-              >
-                {mic.armed ? (
-                  <>
-                    <span className={styles['recDot']} aria-hidden="true" /> Recording
-                  </>
-                ) : (
-                  <>
-                    <Icon name="mic" /> Start the room mic
-                  </>
-                )}
-              </Button>
-            ) : (
-              <p className={styles['chint']}>This browser can&rsquo;t record on this connection.</p>
-            )
-          ) : null}
+              the one person certainly present for both turns.
+
+              Always here, not only while the floor is open: consent is worth
+              asking for before the moment it is needed, and a browser will only
+              prompt for it on a gesture. */}
+          {mic.capable ? (
+            <Button
+              active={mic.armed}
+              title={mic.armed ? 'Stop recording the debate' : 'Record the debate from this device'}
+              onClick={() => (mic.armed ? mic.disable() : void mic.enable())}
+            >
+              {/* Armed is not recording: nothing is captured until there is a
+                  floor to capture, and the bar's light says which it is. */}
+              {mic.armed ? (
+                <>
+                  <span className={styles['recDot']} aria-hidden="true" /> {dueling ? 'Recording' : 'Mic on'}
+                </>
+              ) : (
+                <>
+                  <Icon name="mic" /> Start the room mic
+                </>
+              )}
+            </Button>
+          ) : (
+            <p className={styles['chint']}>This browser can&rsquo;t record on this connection.</p>
+          )}
           {mic.error ? <p className={styles['cnotice']}>{mic.error}</p> : null}
 
           {/* One slot: the preset picker and the live controls swap inside it,
