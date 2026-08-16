@@ -278,6 +278,40 @@
   border-radius: var(--r-m);
 }
 
+/* ── The ticket reads itself in ───────────────────────────────────────
+   Its text arrives rather than appearing. The same `floorIn` the duel rows use,
+   on the same 70ms step, walked down the ticket's four blocks — key row,
+   summary, properties, body — so the eye is led through them instead of being
+   handed all four at once.
+
+   `both` is load-bearing: without it each block paints at full opacity, waits
+   out its delay, and only then animates. That is a flash, not an entrance. With
+   it the `from` state is held through the delay.
+
+   An animation rather than a transition, deliberately. The global guard in
+   tokens.css flattens animations to 0.01ms, so for anyone who asked for reduced
+   motion this decoration simply does not happen and the text is just there —
+   which is the correct outcome for an entrance and would not follow from a
+   transition. */
+.ticket > * {
+  animation: floorIn var(--dur-base) var(--ease) both;
+}
+.ticket > *:nth-child(2) {
+  animation-delay: 70ms;
+}
+.ticket > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+.ticket > *:nth-child(4) {
+  animation-delay: 210ms;
+}
+/* Anything past the fourth block lands with it rather than trailing further —
+   an editor form or an extra body section must not push the stagger into the
+   half-second range, where it stops reading as one movement. */
+.ticket > *:nth-child(n + 5) {
+  animation-delay: 210ms;
+}
+
 .tkrow {
   display: flex;
   align-items: center;

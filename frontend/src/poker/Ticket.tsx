@@ -346,6 +346,15 @@ function TicketBody({ ticket, tag, onEdit, nav }: BodyProps) {
 export interface TicketPanelProps {
   /** The live ticket, or null when the batch is empty. */
   ticket: PokerTicket | null;
+  /**
+   * Whether a board state has arrived at all.
+   *
+   * `ticket` is null both before the first `/api/state` lands and when the batch
+   * is genuinely empty, and those two need to look nothing alike: reading the
+   * first as the second flashed "No tickets loaded." on every single load, for
+   * as long as the first poll took, on a board that had tickets all along.
+   */
+  loaded: boolean;
   phase: PokerPhase;
   index: number;
   count: number;
@@ -373,6 +382,7 @@ export interface TicketPanelProps {
 
 export function TicketPanel({
   ticket,
+  loaded,
   phase,
   index,
   count,
@@ -424,7 +434,13 @@ export function TicketPanel({
   if (!ticket) {
     return (
       <section className={styles['ticket']} aria-label="Ticket">
-        <p className={styles['vempty']}>No tickets loaded.</p>
+        {/* Nothing at all until a state has actually arrived. "No tickets
+            loaded." is a real answer to a real question, and before the first
+            poll lands we do not have the answer — rendering it anyway flashed a
+            contradiction on every load of a board that was fine. An empty
+            section holds the same space, so nothing below it moves when the
+            ticket appears. */}
+        {loaded ? <p className={styles['vempty']}>No tickets loaded.</p> : null}
       </section>
     );
   }

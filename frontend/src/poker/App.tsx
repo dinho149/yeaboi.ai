@@ -504,6 +504,7 @@ export function App({ boot }: { boot: PokerBoot }) {
         <main className={styles['main']}>
           <TicketPanel
             ticket={ticket}
+            loaded={snapshot !== null}
             phase={phase}
             index={ticketIndex}
             count={ticketCount}

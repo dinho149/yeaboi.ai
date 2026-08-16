@@ -968,7 +968,7 @@ svg._wordmark_1yckr_223 {
  * `animation: none` so a static transform is not overridden for 1.4s.
  */
 
-._duck_1mh3f_9 {
+._duck_1p71r_9 {
   position: relative;
   display: block;
   flex: none;
@@ -981,25 +981,39 @@ svg._wordmark_1yckr_223 {
      looking at the duck rather than through it. The states below that own
      `.duck`'s transform all override this, which is why it can live on the base
      rule rather than being triggered from JS. */
-  animation: _duck-waddle-in_1mh3f_1 1.4s var(--ease) 1;
+  animation: _duck-waddle-in_1p71r_1 1.4s var(--ease) 1;
 }
 
 /* The continuous layer. Split out from `.duck` for the reason in the header: the
    entrance and the resting bob are both body-level transforms, and one node
    cannot run two. */
-._body_1mh3f_10 {
+._body_1p71r_10 {
   position: relative;
   display: block;
-  animation: _duck-idle-bob_1mh3f_1 3.1s ease-in-out infinite;
+  animation: _duck-idle-bob_1p71r_1 3.1s ease-in-out infinite;
   will-change: transform;
+  /* Facing. The sprite is drawn looking left; the duck reads better looking
+     into the page, and it now waddles in from the left rather than reversing on
+     arrival.
+     `scale` rather than `transform: scaleX(-1)`, and on this layer rather than
+     `.duck`, for two reasons the rest of this file already implies:
+     - `scale` is its own property, so it composes with the bob and the tilt
+       instead of being overwritten by whichever animation is running. A
+       transform here would be the exact contention the layer split exists to
+       avoid.
+     - Composing is what keeps `locked` honest. That state means "turned away",
+       expressed as `scaleX(-1)` on `.duck`; multiplied by this it comes out at
+       +1 and the duck faces the sprite's original direction. So the turn is
+       still a turn, and the state rules below need no change. */
+  scale: -1 1;
 }
 
-@keyframes _duck-idle-bob_1mh3f_1 {
+@keyframes _duck-idle-bob_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-3.5%) rotate(-1.2deg); }
 }
 
-._duck_1mh3f_9 img {
+._duck_1p71r_9 img {
   display: block;
   width: 100%;
   height: auto;
@@ -1011,35 +1025,35 @@ svg._wordmark_1yckr_223 {
   -webkit-user-drag: none;
 }
 
-._base_1mh3f_65 {
+._base_1p71r_79 {
   filter: drop-shadow(0 5px 4px rgb(0 0 0 / 45%));
 }
 
-._wing_1mh3f_11,
-._glasses_1mh3f_11 {
+._wing_1p71r_11,
+._glasses_1p71r_11 {
   position: absolute;
   inset: 0;
 }
 
 /* Rotating about the shoulder rather than the sprite's centre is what makes
    the flap read as a wing instead of a wobble. */
-._wing_1mh3f_11 {
+._wing_1p71r_11 {
   transform-origin: 42% 55%;
-  animation: _wing-flap_1mh3f_1 1.4s ease-in-out infinite;
+  animation: _wing-flap_1p71r_1 1.4s ease-in-out infinite;
 }
-._glasses_1mh3f_11 {
-  animation: _glasses-bob_1mh3f_1 2.6s ease-in-out infinite;
+._glasses_1p71r_11 {
+  animation: _glasses-bob_1p71r_1 2.6s ease-in-out infinite;
 }
 
 /* Amplitudes are deliberately larger than they first shipped. At -2.2%/-2.5deg
    the flap was technically running and read as a still image at any normal
    viewing distance, which defeated the point: the duck is the board's only
    indication that it is still live. */
-@keyframes _wing-flap_1mh3f_1 {
+@keyframes _wing-flap_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-4.5%) rotate(-5deg); }
 }
-@keyframes _glasses-bob_1mh3f_1 {
+@keyframes _glasses-bob_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(3%) rotate(0.8deg); }
 }
@@ -1058,44 +1072,44 @@ svg._wordmark_1yckr_223 {
    transform belongs to arrival and to the states. */
 
 /* A slow head-tilt, the "still listening" gesture. */
-._duck_1mh3f_9[data-idle="tilt"] ._body_1mh3f_10 {
-  animation: _duck-tilt_1mh3f_1 1.4s ease-in-out 1;
+._duck_1p71r_9[data-idle="tilt"] ._body_1p71r_10 {
+  animation: _duck-tilt_1p71r_1 1.4s ease-in-out 1;
 }
-@keyframes _duck-tilt_1mh3f_1 {
+@keyframes _duck-tilt_1p71r_1 {
   0%, 100% { transform: rotate(0deg) translateY(0); }
   35%, 60% { transform: rotate(-7deg) translateY(-2%); }
 }
 
 /* Shades down the bill, a look over the top, and back. */
-._duck_1mh3f_9[data-idle="peek"] ._glasses_1mh3f_11 {
-  animation: _glasses-peek_1mh3f_1 1.2s ease-in-out 1;
+._duck_1p71r_9[data-idle="peek"] ._glasses_1p71r_11 {
+  animation: _glasses-peek_1p71r_1 1.2s ease-in-out 1;
 }
-@keyframes _glasses-peek_1mh3f_1 {
+@keyframes _glasses-peek_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   30%, 65% { transform: translateY(9%) rotate(-2deg); }
 }
 
 /* Two quick flaps, a settle, and back to the resting rhythm. */
-._duck_1mh3f_9[data-idle="preen"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out 3;
+._duck_1p71r_9[data-idle="preen"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out 3;
 }
 
 /* ── urgent: the last ten seconds on the clock ───────────────────────
    Motion-only, and that is acceptable here where it is not for the states
    below: the timer readout is aria-live and announces the same ten seconds. */
-._duck_1mh3f_9[data-state="urgent"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out infinite;
+._duck_1p71r_9[data-state="urgent"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out infinite;
 }
-._duck_1mh3f_9[data-state="urgent"] ._glasses_1mh3f_11 {
-  animation: _glasses-jitter_1mh3f_1 0.18s steps(2) infinite;
+._duck_1p71r_9[data-state="urgent"] ._glasses_1p71r_11 {
+  animation: _glasses-jitter_1p71r_1 0.18s steps(2) infinite;
 }
 /* Has to clear the resting flap by enough to read as a change, and the resting
    flap is now -4.5%/-5deg. */
-@keyframes _wing-flap-hard_1mh3f_1 {
+@keyframes _wing-flap-hard_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-8%) rotate(-11deg); }
 }
-@keyframes _glasses-jitter_1mh3f_1 {
+@keyframes _glasses-jitter_1p71r_1 {
   0% { transform: translate(0, 0); }
   100% { transform: translate(-0.6%, 0.8%); }
 }
@@ -1103,15 +1117,15 @@ svg._wordmark_1yckr_223 {
 /* ── card: a peer's card just landed ─────────────────────────────────
    One hard flap, then back. Deliberately small — this fires on every card and
    anything bigger becomes noise in the second half of a retro. */
-._duck_1mh3f_9[data-state="card"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out 3;
+._duck_1p71r_9[data-state="card"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out 3;
 }
 
 /* ── joined: someone arrived ─────────────────────────────────────── */
-._duck_1mh3f_9[data-state="joined"] {
-  animation: _duck-waddle-in_1mh3f_1 1.4s var(--ease) 1;
+._duck_1p71r_9[data-state="joined"] {
+  animation: _duck-waddle-in_1p71r_1 1.4s var(--ease) 1;
 }
-@keyframes _duck-waddle-in_1mh3f_1 {
+@keyframes _duck-waddle-in_1p71r_1 {
   0% { transform: translateX(-140%) rotate(0deg); }
   15% { transform: translateX(-100%) rotate(-4deg); }
   30% { transform: translateX(-65%) rotate(4deg); }
@@ -1126,16 +1140,16 @@ svg._wordmark_1yckr_223 {
    with an overshoot. This is the docs site's cursor-dodge reaction, reused on
    the one screen where something has actually gone wrong — it turns the join
    gate's failure state into the most memorable thing on the page. */
-._duck_1mh3f_9[data-state="startled"] {
-  animation: _duck-hop_1mh3f_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
+._duck_1p71r_9[data-state="startled"] {
+  animation: _duck-hop_1p71r_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
 }
-._duck_1mh3f_9[data-state="startled"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out infinite;
+._duck_1p71r_9[data-state="startled"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out infinite;
 }
-._duck_1mh3f_9[data-state="startled"] ._glasses_1mh3f_11 {
-  animation: _glasses-pop_1mh3f_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
+._duck_1p71r_9[data-state="startled"] ._glasses_1p71r_11 {
+  animation: _glasses-pop_1p71r_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
 }
-@keyframes _duck-hop_1mh3f_1 {
+@keyframes _duck-hop_1p71r_1 {
   0% { transform: translateY(0) rotate(0deg); }
   28% { transform: translateY(-34%) rotate(-4deg); }
   46% { transform: translateY(-38%) rotate(0deg); }
@@ -1143,7 +1157,7 @@ svg._wordmark_1yckr_223 {
   82% { transform: translateY(-6%) rotate(0deg); }
   100% { transform: translateY(0) rotate(0deg); }
 }
-@keyframes _glasses-pop_1mh3f_1 {
+@keyframes _glasses-pop_1p71r_1 {
   0% { transform: translateY(0) rotate(0deg); }
   10% { transform: translateY(-10%) rotate(-7deg); }
   52% { transform: translateY(-8.5%) rotate(-5deg); }
@@ -1157,7 +1171,7 @@ svg._wordmark_1yckr_223 {
    reduced-motion guard flattens every animation to 0.01ms, so a state encoded
    as one would simply not exist for those visitors. Same for `offline` below.
    This is the rule for any duck state that carries meaning. */
-._duck_1mh3f_9[data-state="locked"] {
+._duck_1p71r_9[data-state="locked"] {
   transform: scaleX(-1);
   /* Cancels the base arrival animation. An animation — even one that has already
      finished — takes the element's transform, so without this the turned back
@@ -1166,11 +1180,11 @@ svg._wordmark_1yckr_223 {
      rule this file is built on still holds. */
   animation: none;
 }
-._duck_1mh3f_9[data-state="locked"] ._body_1mh3f_10,
-._duck_1mh3f_9[data-state="locked"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="locked"] ._body_1p71r_10,
+._duck_1p71r_9[data-state="locked"] ._glasses_1p71r_11 {
   animation: none;
 }
-._duck_1mh3f_9[data-state="locked"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="locked"] ._glasses_1p71r_11 {
   opacity: 0;
 }
 
@@ -1178,7 +1192,7 @@ svg._wordmark_1yckr_223 {
    The one state that is genuinely load-bearing. Before the duck there was no
    indication at all that a board had stopped updating — a dead tunnel and a
    quiet room looked identical. */
-._duck_1mh3f_9[data-state="offline"] {
+._duck_1p71r_9[data-state="offline"] {
   transform: rotate(7deg) translateY(6%);
   filter: saturate(0.35) brightness(0.85);
   /* Same reason as `locked` above — and more important here, because this is the
@@ -1186,19 +1200,19 @@ svg._wordmark_1yckr_223 {
      on a board whose long-poll is already dead is worse than no indicator. */
   animation: none;
 }
-._duck_1mh3f_9[data-state="offline"] ._body_1mh3f_10,
-._duck_1mh3f_9[data-state="offline"] ._wing_1mh3f_11,
-._duck_1mh3f_9[data-state="offline"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="offline"] ._body_1p71r_10,
+._duck_1p71r_9[data-state="offline"] ._wing_1p71r_11,
+._duck_1p71r_9[data-state="offline"] ._glasses_1p71r_11 {
   animation: none;
 }
-._duck_1mh3f_9[data-state="offline"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="offline"] ._glasses_1p71r_11 {
   /* Shades slid down over closed eyes. */
   transform: translateY(9%) rotate(-3deg);
 }
 
 /* A literal letter, so the state survives reduced motion, a screenshot, and a
    printout — none of which a keyframe does. */
-._zzz_1mh3f_252 {
+._zzz_1p71r_266 {
   position: absolute;
   top: -14%;
   right: -8%;
@@ -1207,9 +1221,9 @@ svg._wordmark_1yckr_223 {
   font-weight: 700;
   line-height: 1;
   color: var(--muted);
-  animation: _zzz-drift_1mh3f_1 2.4s ease-in-out infinite;
+  animation: _zzz-drift_1p71r_1 2.4s ease-in-out infinite;
 }
-@keyframes _zzz-drift_1mh3f_1 {
+@keyframes _zzz-drift_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.55; }
   50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
 }
@@ -2344,7 +2358,7 @@ dialog._modal_6ng5l_693 {
  * break across a page mid-card.
  */
 
-._page_1chqc_16 {
+._page_3rbw1_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -2353,26 +2367,46 @@ dialog._modal_6ng5l_693 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_1chqc_25 {
+._shellApp_3rbw1_25 {
   max-width: none;
   padding: 0;
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  /* The screen's edge is its shape, not a line: the board's ground against the
-     void outside the curve is what draws the corner. */
-  border-radius: var(--screen-radius);
+  /* Bottom corners always, top corners only when they have earned it.
+     `--screen-void` showing through a corner is what draws the shape, and it
+     reads as a device edge only when what sits behind it is one. Nothing of the
+     browser is ever *below* the viewport, so the bottom pair is always right.
+     The top pair is the pair that lands against a tab strip and a bookmarks bar,
+     where the same notch reads as a rendering fault — so it is opt-in, from
+     `.shellCurved`. */
+  border-radius: 0 0 var(--screen-radius) var(--screen-radius);
   background: var(--bg);
   box-shadow: 0 0 0 50vmax var(--screen-void);
   /* Clips the children to the curve. */
   overflow: hidden;
 }
 
+/* The top corners, once the page owns the whole display. The bottom pair is on
+ * the base rule and never in question; this adds the two that were sitting
+ * against browser chrome.
+ *
+ * Gated by a class from `useFillsDisplay` rather than by a media query. Two
+ * media features were tried first and both failed on a plainly windowed Chrome:
+ * `not all and (display-mode: fullscreen)` never matched at all — `not all` is
+ * hack territory, not a negation — and the positive `(display-mode: fullscreen)`
+ * matched when it should not have, so the notches stayed either way. The hook
+ * measures the browser's own furniture instead of asking the browser to describe
+ * itself, which is the thing actually being decided here. */
+._shellCurved_3rbw1_38 {
+  border-radius: var(--screen-radius);
+}
+
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_1chqc_44 {
+._appRegion_3rbw1_64 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2382,7 +2416,7 @@ dialog._modal_6ng5l_693 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_1chqc_54 {
+._barSticky_3rbw1_74 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2390,7 +2424,7 @@ dialog._modal_6ng5l_693 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_1chqc_62 {
+._masthead_3rbw1_82 {
   margin-bottom: var(--s5);
 }
 
@@ -2403,7 +2437,7 @@ dialog._modal_6ng5l_693 {
  * dock upward, and an element anchored by its top would need its offset
  * recomputed every frame of that growth.
  */
-._dockApp_1chqc_75 {
+._dockApp_3rbw1_95 {
   position: fixed;
   z-index: var(--z-console);
   display: flex;
@@ -2430,7 +2464,7 @@ dialog._modal_6ng5l_693 {
   visibility: var(--dock-vis, hidden);
 }
 
-._dockPlaced_1chqc_102 {
+._dockPlaced_3rbw1_122 {
   /* Coming back down: a spring that overshoots, so the dock has some weight to
      it rather than sliding to a stop. Also the curve the wall-to-wall drag
      lands on, which is the same motion at a different scale. */
@@ -2439,7 +2473,7 @@ dialog._modal_6ng5l_693 {
 
 
 /* The controls themselves. */
-._dockRow_1chqc_111 {
+._dockRow_3rbw1_131 {
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -2458,7 +2492,7 @@ dialog._modal_6ng5l_693 {
  * out the panel is still there for one beat, and it is the track that has to
  * start collapsing under it.
  */
-._dockDrawer_1chqc_130 {
+._dockDrawer_3rbw1_150 {
   position: absolute;
   left: 0;
   bottom: calc(100% + var(--s2));
@@ -2475,7 +2509,7 @@ dialog._modal_6ng5l_693 {
     opacity var(--dur-fast) var(--ease);
 }
 
-._dockDrawer_1chqc_130[data-open='true'] {
+._dockDrawer_3rbw1_150[data-open='true'] {
   grid-template-rows: 1fr;
   opacity: 1;
   pointer-events: auto;
@@ -2484,7 +2518,7 @@ dialog._modal_6ng5l_693 {
 /* All in the one cell, so a panel on its way out and one on its way in do not
    stack the drawer to the height of both. Its chrome is `popoverDocked`'s own —
    a border on the collapsed track would be a line across the board. */
-._dockDrawer_1chqc_130 > * {
+._dockDrawer_3rbw1_150 > * {
   grid-area: 1 / 1;
   min-height: 0;
   min-width: 0;
@@ -2493,7 +2527,7 @@ dialog._modal_6ng5l_693 {
 
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_1chqc_165 {
+._dockDragging_3rbw1_185 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
@@ -2501,12 +2535,12 @@ dialog._modal_6ng5l_693 {
 
 /* The handle, and the only part of the dock that is not a control — so it
    spans the dock's height rather than being a 3px mark. */
-._dockItem_1chqc_173 {
+._dockItem_3rbw1_193 {
   display: inline-flex;
   align-items: center;
 }
 
-._dockGrip_1chqc_178 {
+._dockGrip_3rbw1_198 {
   flex: none;
   align-self: stretch;
   width: 14px;
@@ -2519,12 +2553,12 @@ dialog._modal_6ng5l_693 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._dockGrip_1chqc_178:hover {
+._dockGrip_3rbw1_198:hover {
   background-color: var(--panel-2);
 }
 
-._dockApp_1chqc_75:hover ._dockGrip_1chqc_178,
-._dockDragging_1chqc_165 ._dockGrip_1chqc_178 {
+._dockApp_3rbw1_95:hover ._dockGrip_3rbw1_198,
+._dockDragging_3rbw1_185 ._dockGrip_3rbw1_198 {
   opacity: 1;
 }
 
@@ -2534,13 +2568,13 @@ dialog._modal_6ng5l_693 {
 /* The one filled control in the notch is a pill, like the presence chip it
    sits opposite. Two class matches, so it outranks a surface's own button
    material rather than depending on which stylesheet the bundler wrote last. */
-._dockApp_1chqc_75 [class*='btnPrimary'][class*='btn'] {
+._dockApp_3rbw1_95 [class*='btnPrimary'][class*='btn'] {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
-._dockRow_1chqc_111 > [class*='dockItem'] > button:not([class*='btnPrimary']),
-._dockRow_1chqc_111 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockRow_3rbw1_131 > [class*='dockItem'] > button:not([class*='btnPrimary']),
+._dockRow_3rbw1_131 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
   /* And no edge: a surface may give its own buttons a raised material, but the
@@ -2548,8 +2582,8 @@ dialog._modal_6ng5l_693 {
   box-shadow: none;
 }
 
-._dockRow_1chqc_111 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockRow_1chqc_111 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockRow_3rbw1_131 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockRow_3rbw1_131 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -2566,20 +2600,20 @@ dialog._modal_6ng5l_693 {
  * Same shape of selector as the rule above, or that one's `background: none`
  * wins on specificity and only the glyph changes.
  */
-._dockRow_1chqc_111 > [class*='dockItem'] > button[aria-pressed='true'] {
+._dockRow_3rbw1_131 > [class*='dockItem'] > button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   border-color: transparent;
   box-shadow: none;
   color: var(--accent);
 }
 
-._dockRow_1chqc_111 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
+._dockRow_3rbw1_131 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 34%, transparent);
   border-color: transparent;
 }
 
-._dockRow_1chqc_111 > [class*='dockItem'] > button[aria-expanded='true'],
-._dockRow_1chqc_111 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+._dockRow_3rbw1_131 > [class*='dockItem'] > button[aria-expanded='true'],
+._dockRow_3rbw1_131 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -2588,7 +2622,7 @@ dialog._modal_6ng5l_693 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_1chqc_260 {
+._chromeApp_3rbw1_280 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2611,19 +2645,19 @@ dialog._modal_6ng5l_693 {
    which would also clip every popover opening out of it. Only the outer ones:
    two rounded corners meeting in the middle leave a gap the bar's top edge
    shows through, which reads as a notch cut out of it. */
-._chromeApp_1chqc_260 > * {
+._chromeApp_3rbw1_280 > * {
   border-radius: 0;
 }
-._chromeApp_1chqc_260 > *:first-child {
+._chromeApp_3rbw1_280 > *:first-child {
   border-start-start-radius: inherit;
   border-end-start-radius: inherit;
 }
-._chromeApp_1chqc_260 > *:last-child {
+._chromeApp_3rbw1_280 > *:last-child {
   border-start-end-radius: inherit;
   border-end-end-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_1chqc_260 > *:last-child {
+._chromeApp_3rbw1_280 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2632,16 +2666,16 @@ dialog._modal_6ng5l_693 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_1chqc_304 h1 {
+  ._headMainApp_3rbw1_324 h1 {
     display: none;
   }
-  ._mastheadApp_1chqc_307 {
+  ._mastheadApp_3rbw1_327 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_1chqc_307 {
+._mastheadApp_3rbw1_327 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2650,53 +2684,53 @@ dialog._modal_6ng5l_693 {
   background: var(--panel);
 }
 
-._head_1chqc_304 {
+._head_3rbw1_324 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_1chqc_329 {
+._headApp_3rbw1_349 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_1chqc_304 {
+._headMain_3rbw1_324 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_1chqc_304 {
+._headMainApp_3rbw1_324 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_1chqc_304 ._wordmark_1chqc_346 {
+._headMainApp_3rbw1_324 ._wordmark_3rbw1_366 {
   margin-bottom: 0;
 }
-._headMainApp_1chqc_304 h1 {
+._headMainApp_3rbw1_324 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_1chqc_346 {
+._wordmark_3rbw1_366 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_1chqc_363 {
+._wordmarkCompact_3rbw1_383 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_1chqc_368 {
+._title_3rbw1_388 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2706,30 +2740,30 @@ dialog._modal_6ng5l_693 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_1chqc_378 {
+._titleCompact_3rbw1_398 {
   font-size: var(--fs-l);
 }
 
-._subtitle_1chqc_382 {
+._subtitle_3rbw1_402 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_1chqc_388 {
+._facts_3rbw1_408 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_1chqc_395 {
+._themes_3rbw1_415 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_1chqc_401 {
+._toc_3rbw1_421 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2746,36 +2780,36 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_1chqc_401 a {
+._toc_3rbw1_421 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_1chqc_401 a:hover {
+._toc_3rbw1_421 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_1chqc_428 > * + * {
+._container_3rbw1_448 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_1chqc_435 {
+._containerApp_3rbw1_455 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_1chqc_435 > * + * {
+._containerApp_3rbw1_455 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_1chqc_447 {
+._footer_3rbw1_467 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2791,7 +2825,7 @@ dialog._modal_6ng5l_693 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_1chqc_463 {
+._footerSlim_3rbw1_483 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2801,17 +2835,17 @@ dialog._modal_6ng5l_693 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_1chqc_395,
-  ._toc_1chqc_401 {
+  ._themes_3rbw1_415,
+  ._toc_3rbw1_421 {
     display: none;
   }
-  ._page_1chqc_16 {
+  ._page_3rbw1_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_1chqc_25 {
+  ._shellApp_3rbw1_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2819,26 +2853,26 @@ dialog._modal_6ng5l_693 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_1chqc_44 {
+  ._appRegion_3rbw1_64 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_1chqc_54 {
+  ._barSticky_3rbw1_74 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_1chqc_16 ._masthead_1chqc_62 {
+  ._page_3rbw1_16 ._masthead_3rbw1_82 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_1chqc_447 {
+  ._footer_3rbw1_467 {
     color: var(--muted);
   }
 }

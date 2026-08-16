@@ -17,6 +17,7 @@
 import { Children, Fragment, isValidElement, useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
+import { useFillsDisplay } from '../hooks/useFillsDisplay';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
@@ -122,6 +123,11 @@ export function PageShell({
   const badges = chrome.badges ?? [];
   const nav = chrome.nav ?? [];
   const app = variant === 'app';
+  /* The rounded screen is only right when nothing of the browser is on screen —
+     see useFillsDisplay for why this is measured instead of asked via
+     `display-mode`. Read here rather than in CSS so the curve is a class the
+     shell either has or does not, which is inspectable in one place. */
+  const curved = useFillsDisplay();
 
   const body = (
     <>
@@ -180,7 +186,10 @@ export function PageShell({
   );
 
   return (
-    <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
+    <div
+      className={cx(styles['page'], app && styles['shellApp'], app && curved && styles['shellCurved'], className)}
+      {...data}
+    >
       {/* Divs, not <header>: a second unlabelled `banner` landmark fails axe. */}
       {app ? (
         <div className={styles['chromeApp']}>

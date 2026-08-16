@@ -29,13 +29,33 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  /* The screen's edge is its shape, not a line: the board's ground against the
-     void outside the curve is what draws the corner. */
-  border-radius: var(--screen-radius);
+  /* Bottom corners always, top corners only when they have earned it.
+     `--screen-void` showing through a corner is what draws the shape, and it
+     reads as a device edge only when what sits behind it is one. Nothing of the
+     browser is ever *below* the viewport, so the bottom pair is always right.
+     The top pair is the pair that lands against a tab strip and a bookmarks bar,
+     where the same notch reads as a rendering fault — so it is opt-in, from
+     `.shellCurved`. */
+  border-radius: 0 0 var(--screen-radius) var(--screen-radius);
   background: var(--bg);
   box-shadow: 0 0 0 50vmax var(--screen-void);
   /* Clips the children to the curve. */
   overflow: hidden;
+}
+
+/* The top corners, once the page owns the whole display. The bottom pair is on
+ * the base rule and never in question; this adds the two that were sitting
+ * against browser chrome.
+ *
+ * Gated by a class from `useFillsDisplay` rather than by a media query. Two
+ * media features were tried first and both failed on a plainly windowed Chrome:
+ * `not all and (display-mode: fullscreen)` never matched at all — `not all` is
+ * hack territory, not a negation — and the positive `(display-mode: fullscreen)`
+ * matched when it should not have, so the notches stayed either way. The hook
+ * measures the browser's own furniture instead of asking the browser to describe
+ * itself, which is the thing actually being decided here. */
+.shellCurved {
+  border-radius: var(--screen-radius);
 }
 
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it

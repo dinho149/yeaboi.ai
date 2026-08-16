@@ -43,6 +43,20 @@
   display: block;
   animation: duck-idle-bob 3.1s ease-in-out infinite;
   will-change: transform;
+  /* Facing. The sprite is drawn looking left; the duck reads better looking
+     into the page, and it now waddles in from the left rather than reversing on
+     arrival.
+     `scale` rather than `transform: scaleX(-1)`, and on this layer rather than
+     `.duck`, for two reasons the rest of this file already implies:
+     - `scale` is its own property, so it composes with the bob and the tilt
+       instead of being overwritten by whichever animation is running. A
+       transform here would be the exact contention the layer split exists to
+       avoid.
+     - Composing is what keeps `locked` honest. That state means "turned away",
+       expressed as `scaleX(-1)` on `.duck`; multiplied by this it comes out at
+       +1 and the duck faces the sprite's original direction. So the turn is
+       still a turn, and the state rules below need no change. */
+  scale: -1 1;
 }
 
 @keyframes duck-idle-bob {

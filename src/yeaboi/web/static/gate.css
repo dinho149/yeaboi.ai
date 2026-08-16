@@ -968,7 +968,7 @@ svg._wordmark_1yckr_223 {
  * `animation: none` so a static transform is not overridden for 1.4s.
  */
 
-._duck_1mh3f_9 {
+._duck_1p71r_9 {
   position: relative;
   display: block;
   flex: none;
@@ -981,25 +981,39 @@ svg._wordmark_1yckr_223 {
      looking at the duck rather than through it. The states below that own
      `.duck`'s transform all override this, which is why it can live on the base
      rule rather than being triggered from JS. */
-  animation: _duck-waddle-in_1mh3f_1 1.4s var(--ease) 1;
+  animation: _duck-waddle-in_1p71r_1 1.4s var(--ease) 1;
 }
 
 /* The continuous layer. Split out from `.duck` for the reason in the header: the
    entrance and the resting bob are both body-level transforms, and one node
    cannot run two. */
-._body_1mh3f_10 {
+._body_1p71r_10 {
   position: relative;
   display: block;
-  animation: _duck-idle-bob_1mh3f_1 3.1s ease-in-out infinite;
+  animation: _duck-idle-bob_1p71r_1 3.1s ease-in-out infinite;
   will-change: transform;
+  /* Facing. The sprite is drawn looking left; the duck reads better looking
+     into the page, and it now waddles in from the left rather than reversing on
+     arrival.
+     `scale` rather than `transform: scaleX(-1)`, and on this layer rather than
+     `.duck`, for two reasons the rest of this file already implies:
+     - `scale` is its own property, so it composes with the bob and the tilt
+       instead of being overwritten by whichever animation is running. A
+       transform here would be the exact contention the layer split exists to
+       avoid.
+     - Composing is what keeps `locked` honest. That state means "turned away",
+       expressed as `scaleX(-1)` on `.duck`; multiplied by this it comes out at
+       +1 and the duck faces the sprite's original direction. So the turn is
+       still a turn, and the state rules below need no change. */
+  scale: -1 1;
 }
 
-@keyframes _duck-idle-bob_1mh3f_1 {
+@keyframes _duck-idle-bob_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-3.5%) rotate(-1.2deg); }
 }
 
-._duck_1mh3f_9 img {
+._duck_1p71r_9 img {
   display: block;
   width: 100%;
   height: auto;
@@ -1011,35 +1025,35 @@ svg._wordmark_1yckr_223 {
   -webkit-user-drag: none;
 }
 
-._base_1mh3f_65 {
+._base_1p71r_79 {
   filter: drop-shadow(0 5px 4px rgb(0 0 0 / 45%));
 }
 
-._wing_1mh3f_11,
-._glasses_1mh3f_11 {
+._wing_1p71r_11,
+._glasses_1p71r_11 {
   position: absolute;
   inset: 0;
 }
 
 /* Rotating about the shoulder rather than the sprite's centre is what makes
    the flap read as a wing instead of a wobble. */
-._wing_1mh3f_11 {
+._wing_1p71r_11 {
   transform-origin: 42% 55%;
-  animation: _wing-flap_1mh3f_1 1.4s ease-in-out infinite;
+  animation: _wing-flap_1p71r_1 1.4s ease-in-out infinite;
 }
-._glasses_1mh3f_11 {
-  animation: _glasses-bob_1mh3f_1 2.6s ease-in-out infinite;
+._glasses_1p71r_11 {
+  animation: _glasses-bob_1p71r_1 2.6s ease-in-out infinite;
 }
 
 /* Amplitudes are deliberately larger than they first shipped. At -2.2%/-2.5deg
    the flap was technically running and read as a still image at any normal
    viewing distance, which defeated the point: the duck is the board's only
    indication that it is still live. */
-@keyframes _wing-flap_1mh3f_1 {
+@keyframes _wing-flap_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-4.5%) rotate(-5deg); }
 }
-@keyframes _glasses-bob_1mh3f_1 {
+@keyframes _glasses-bob_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(3%) rotate(0.8deg); }
 }
@@ -1058,44 +1072,44 @@ svg._wordmark_1yckr_223 {
    transform belongs to arrival and to the states. */
 
 /* A slow head-tilt, the "still listening" gesture. */
-._duck_1mh3f_9[data-idle="tilt"] ._body_1mh3f_10 {
-  animation: _duck-tilt_1mh3f_1 1.4s ease-in-out 1;
+._duck_1p71r_9[data-idle="tilt"] ._body_1p71r_10 {
+  animation: _duck-tilt_1p71r_1 1.4s ease-in-out 1;
 }
-@keyframes _duck-tilt_1mh3f_1 {
+@keyframes _duck-tilt_1p71r_1 {
   0%, 100% { transform: rotate(0deg) translateY(0); }
   35%, 60% { transform: rotate(-7deg) translateY(-2%); }
 }
 
 /* Shades down the bill, a look over the top, and back. */
-._duck_1mh3f_9[data-idle="peek"] ._glasses_1mh3f_11 {
-  animation: _glasses-peek_1mh3f_1 1.2s ease-in-out 1;
+._duck_1p71r_9[data-idle="peek"] ._glasses_1p71r_11 {
+  animation: _glasses-peek_1p71r_1 1.2s ease-in-out 1;
 }
-@keyframes _glasses-peek_1mh3f_1 {
+@keyframes _glasses-peek_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   30%, 65% { transform: translateY(9%) rotate(-2deg); }
 }
 
 /* Two quick flaps, a settle, and back to the resting rhythm. */
-._duck_1mh3f_9[data-idle="preen"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out 3;
+._duck_1p71r_9[data-idle="preen"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out 3;
 }
 
 /* ── urgent: the last ten seconds on the clock ───────────────────────
    Motion-only, and that is acceptable here where it is not for the states
    below: the timer readout is aria-live and announces the same ten seconds. */
-._duck_1mh3f_9[data-state="urgent"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out infinite;
+._duck_1p71r_9[data-state="urgent"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out infinite;
 }
-._duck_1mh3f_9[data-state="urgent"] ._glasses_1mh3f_11 {
-  animation: _glasses-jitter_1mh3f_1 0.18s steps(2) infinite;
+._duck_1p71r_9[data-state="urgent"] ._glasses_1p71r_11 {
+  animation: _glasses-jitter_1p71r_1 0.18s steps(2) infinite;
 }
 /* Has to clear the resting flap by enough to read as a change, and the resting
    flap is now -4.5%/-5deg. */
-@keyframes _wing-flap-hard_1mh3f_1 {
+@keyframes _wing-flap-hard_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-8%) rotate(-11deg); }
 }
-@keyframes _glasses-jitter_1mh3f_1 {
+@keyframes _glasses-jitter_1p71r_1 {
   0% { transform: translate(0, 0); }
   100% { transform: translate(-0.6%, 0.8%); }
 }
@@ -1103,15 +1117,15 @@ svg._wordmark_1yckr_223 {
 /* ── card: a peer's card just landed ─────────────────────────────────
    One hard flap, then back. Deliberately small — this fires on every card and
    anything bigger becomes noise in the second half of a retro. */
-._duck_1mh3f_9[data-state="card"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out 3;
+._duck_1p71r_9[data-state="card"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out 3;
 }
 
 /* ── joined: someone arrived ─────────────────────────────────────── */
-._duck_1mh3f_9[data-state="joined"] {
-  animation: _duck-waddle-in_1mh3f_1 1.4s var(--ease) 1;
+._duck_1p71r_9[data-state="joined"] {
+  animation: _duck-waddle-in_1p71r_1 1.4s var(--ease) 1;
 }
-@keyframes _duck-waddle-in_1mh3f_1 {
+@keyframes _duck-waddle-in_1p71r_1 {
   0% { transform: translateX(-140%) rotate(0deg); }
   15% { transform: translateX(-100%) rotate(-4deg); }
   30% { transform: translateX(-65%) rotate(4deg); }
@@ -1126,16 +1140,16 @@ svg._wordmark_1yckr_223 {
    with an overshoot. This is the docs site's cursor-dodge reaction, reused on
    the one screen where something has actually gone wrong — it turns the join
    gate's failure state into the most memorable thing on the page. */
-._duck_1mh3f_9[data-state="startled"] {
-  animation: _duck-hop_1mh3f_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
+._duck_1p71r_9[data-state="startled"] {
+  animation: _duck-hop_1p71r_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
 }
-._duck_1mh3f_9[data-state="startled"] ._wing_1mh3f_11 {
-  animation: _wing-flap-hard_1mh3f_1 0.3s ease-in-out infinite;
+._duck_1p71r_9[data-state="startled"] ._wing_1p71r_11 {
+  animation: _wing-flap-hard_1p71r_1 0.3s ease-in-out infinite;
 }
-._duck_1mh3f_9[data-state="startled"] ._glasses_1mh3f_11 {
-  animation: _glasses-pop_1mh3f_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
+._duck_1p71r_9[data-state="startled"] ._glasses_1p71r_11 {
+  animation: _glasses-pop_1p71r_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
 }
-@keyframes _duck-hop_1mh3f_1 {
+@keyframes _duck-hop_1p71r_1 {
   0% { transform: translateY(0) rotate(0deg); }
   28% { transform: translateY(-34%) rotate(-4deg); }
   46% { transform: translateY(-38%) rotate(0deg); }
@@ -1143,7 +1157,7 @@ svg._wordmark_1yckr_223 {
   82% { transform: translateY(-6%) rotate(0deg); }
   100% { transform: translateY(0) rotate(0deg); }
 }
-@keyframes _glasses-pop_1mh3f_1 {
+@keyframes _glasses-pop_1p71r_1 {
   0% { transform: translateY(0) rotate(0deg); }
   10% { transform: translateY(-10%) rotate(-7deg); }
   52% { transform: translateY(-8.5%) rotate(-5deg); }
@@ -1157,7 +1171,7 @@ svg._wordmark_1yckr_223 {
    reduced-motion guard flattens every animation to 0.01ms, so a state encoded
    as one would simply not exist for those visitors. Same for `offline` below.
    This is the rule for any duck state that carries meaning. */
-._duck_1mh3f_9[data-state="locked"] {
+._duck_1p71r_9[data-state="locked"] {
   transform: scaleX(-1);
   /* Cancels the base arrival animation. An animation — even one that has already
      finished — takes the element's transform, so without this the turned back
@@ -1166,11 +1180,11 @@ svg._wordmark_1yckr_223 {
      rule this file is built on still holds. */
   animation: none;
 }
-._duck_1mh3f_9[data-state="locked"] ._body_1mh3f_10,
-._duck_1mh3f_9[data-state="locked"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="locked"] ._body_1p71r_10,
+._duck_1p71r_9[data-state="locked"] ._glasses_1p71r_11 {
   animation: none;
 }
-._duck_1mh3f_9[data-state="locked"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="locked"] ._glasses_1p71r_11 {
   opacity: 0;
 }
 
@@ -1178,7 +1192,7 @@ svg._wordmark_1yckr_223 {
    The one state that is genuinely load-bearing. Before the duck there was no
    indication at all that a board had stopped updating — a dead tunnel and a
    quiet room looked identical. */
-._duck_1mh3f_9[data-state="offline"] {
+._duck_1p71r_9[data-state="offline"] {
   transform: rotate(7deg) translateY(6%);
   filter: saturate(0.35) brightness(0.85);
   /* Same reason as `locked` above — and more important here, because this is the
@@ -1186,19 +1200,19 @@ svg._wordmark_1yckr_223 {
      on a board whose long-poll is already dead is worse than no indicator. */
   animation: none;
 }
-._duck_1mh3f_9[data-state="offline"] ._body_1mh3f_10,
-._duck_1mh3f_9[data-state="offline"] ._wing_1mh3f_11,
-._duck_1mh3f_9[data-state="offline"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="offline"] ._body_1p71r_10,
+._duck_1p71r_9[data-state="offline"] ._wing_1p71r_11,
+._duck_1p71r_9[data-state="offline"] ._glasses_1p71r_11 {
   animation: none;
 }
-._duck_1mh3f_9[data-state="offline"] ._glasses_1mh3f_11 {
+._duck_1p71r_9[data-state="offline"] ._glasses_1p71r_11 {
   /* Shades slid down over closed eyes. */
   transform: translateY(9%) rotate(-3deg);
 }
 
 /* A literal letter, so the state survives reduced motion, a screenshot, and a
    printout — none of which a keyframe does. */
-._zzz_1mh3f_252 {
+._zzz_1p71r_266 {
   position: absolute;
   top: -14%;
   right: -8%;
@@ -1207,9 +1221,9 @@ svg._wordmark_1yckr_223 {
   font-weight: 700;
   line-height: 1;
   color: var(--muted);
-  animation: _zzz-drift_1mh3f_1 2.4s ease-in-out infinite;
+  animation: _zzz-drift_1p71r_1 2.4s ease-in-out infinite;
 }
-@keyframes _zzz-drift_1mh3f_1 {
+@keyframes _zzz-drift_1p71r_1 {
   0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.55; }
   50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
 }
