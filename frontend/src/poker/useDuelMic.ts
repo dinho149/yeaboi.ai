@@ -100,13 +100,17 @@ async function upload(session: Session, blob: Blob, turn: number, attempt = 1): 
  * stale light until the round ends, which is not worth surfacing to somebody
  * who has just started talking.
  */
+function micPath(session: Session): string {
+  return session.admin ? '/api/admin/mic' : '/api/duel/mic';
+}
+
 function announce(session: Session, on: boolean): void {
   // `postJSON`, not a hand-rolled fetch: it is what merges `admin` into the
   // body, and the admin route is the whole reason this one has two paths.
-  void postJSON(session, session.admin ? '/api/admin/mic' : '/api/duel/mic', { on });
+  void postJSON(session, micPath(session), { on });
 }
 
-export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
+export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRecording = false): DuelMic {
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState('');
   const [capable] = useState(micCapable);
@@ -202,6 +206,35 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     startRecorder(turnNo);
     return () => stopRecorder();
   }, [armed, myTurn, roomMic, turnNo, startRecorder, stopRecorder]);
+
+  /*
+   * The light must not outlive the recording.
+   *
+   * A tab that is closed or reloaded takes the microphone with it, and a
+   * `fetch` started during unload is cancelled with the document — so the flag
+   * would stay on and every other screen would keep showing a red light for a
+   * recording that stopped. `sendBeacon` is the one request the browser
+   * promises to deliver after the page is gone.
+   */
+  useEffect(() => {
+    if (!armed) return undefined;
+    const clear = (): void => {
+      const body = JSON.stringify({ pid: session.pid, admin: session.admin, on: false });
+      navigator.sendBeacon?.(apiUrl(session, micPath(session)), new Blob([body], { type: 'application/json' }));
+    };
+    window.addEventListener('pagehide', clear);
+    return () => window.removeEventListener('pagehide', clear);
+  }, [armed, session]);
+
+  /*
+   * And the belt to that pair of braces: if the board says the room is being
+   * recorded and this browser is not the one doing it, it is not being
+   * recorded. Only the host reconciles, because only the host can set it.
+   */
+  useEffect(() => {
+    if (!session.admin || !boardSaysRecording || armed) return;
+    announce(session, false);
+  }, [session, boardSaysRecording, armed]);
 
   // Unmount: never leave the hardware held. Held in a ref so this runs on
   // unmount only, rather than every time `release` is re-created.

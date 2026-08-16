@@ -167,7 +167,7 @@ export function App({ boot }: { boot: PokerBoot }) {
     onAutoplayBlocked: setMusicBlocked,
   });
 
-  const mic = useDuelMic(session, duel);
+  const mic = useDuelMic(session, duel, Boolean(snapshot?.room_mic));
 
   // ── Peek: reading a ticket the room is not voting on ───────────────────
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
