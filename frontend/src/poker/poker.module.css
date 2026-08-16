@@ -953,6 +953,7 @@
 .tableHead {
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }

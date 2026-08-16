@@ -13,7 +13,7 @@
  * than ten simultaneous flips — and the App announces it to assistive tech.
  */
 
-import { Eyebrow, Icon } from '../design/primitives';
+import { Icon } from '../design/primitives';
 import type { PokerVote } from '../types/board';
 import styles from './poker.module.css';
 
@@ -28,16 +28,17 @@ export function Table({ votes, revealed }: TableProps) {
 
   return (
     <section className={styles['table']} aria-label="The table">
-      <div className={styles['tableHead']}>
-        {/* The head carries one number, never two: while voting that is the
-            outstanding count, and only once revealed is it the headcount. */}
-        <Eyebrow value={revealed ? votes.length || undefined : undefined}>The table</Eyebrow>
-        {!revealed && votes.length ? (
+      {/* No label: the row of faces is unmistakably the table, and the section
+          carries the name for anything that cannot see them. What is left is
+          the one thing the faces do not say — who the room is still waiting
+          for. */}
+      {!revealed && votes.length ? (
+        <div className={styles['tableHead']}>
           <span className={styles['tableWait']}>
             {waiting === 0 ? 'everyone is in' : `${waiting} still to vote`}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {votes.length === 0 ? (
         <p className={styles['vempty']}>
