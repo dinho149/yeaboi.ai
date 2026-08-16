@@ -44,7 +44,7 @@ export function Room({ people, meName }: RoomProps) {
           people.map((person, index) => (
             <li key={person.name} className={styles['roomCard']} style={{ '--i': index } as never}>
               <span aria-hidden="true">{person.avatar}</span>
-              <span>{person.name}</span>
+              <span className={styles['roomName']}>{person.name}</span>
               {person.name === meName ? <span className={styles['roomYou']}>you</span> : null}
             </li>
           ))

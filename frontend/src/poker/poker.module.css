@@ -1487,31 +1487,42 @@
   border-color: var(--accent);
 }
 
-/* Dealt out under the chip, one card per person and no panel behind them. The
-   top padding is the bridge: without it the pointer leaves the room on its way
-   from the chip to the first card. */
+/* Dealt out from under the bar, one card per person and no panel behind them.
+ *
+ * The top padding does two jobs: it is the bridge the pointer crosses on its
+ * way from the chip to the first card, and it is exactly the distance from the
+ * chip's bottom edge to the bar's, so clipping it away puts the cut where the
+ * bar ends. Everything above that line is behind the bar as far as the eye is
+ * concerned. The other three sides are held clear of the shadows. */
 .roomList {
   position: absolute;
   top: 100%;
   right: 0;
   z-index: var(--z-popover);
   margin: 0;
-  padding: var(--s2) 0 0;
+  padding: var(--s3) 0 0;
+  clip-path: inset(var(--s3) -40px -40px -40px);
   list-style: none;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  /* One width for all of them, set by the longest name. */
+  width: max-content;
+  min-width: 160px;
+  align-items: stretch;
   gap: var(--s1);
   pointer-events: none;
 }
 
 .roomCard {
-  /* Its place in the deal; Room.tsx overrides it. */
+  /* Its place in the deal; Room.tsx overrides it. A definite height is what
+     lets the start position be computed from it. */
   --i: 0;
+  --card-h: 32px;
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s1) var(--s3);
+  height: var(--card-h);
+  padding: 0 var(--s3);
   white-space: nowrap;
   border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
@@ -1521,11 +1532,14 @@
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
   font-size: var(--fs-s);
-  opacity: 0;
-  transform: translateY(-6px);
-  transition:
-    opacity var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
+  /* Every card starts in the same place — one card-height above the cut, which
+     is to say under the bar — and slides down to its own. */
+  transform: translateY(calc((var(--i) + 1) * (var(--card-h) + var(--s1)) * -1));
+  transition: transform var(--dur-base) var(--ease);
+}
+
+.roomName {
+  flex: 1;
 }
 
 /* One after another on the way in. Leaving, they go together — a staggered
@@ -1533,7 +1547,6 @@
 .room:hover .roomCard,
 .room:focus-within .roomCard,
 .roomOn .roomCard {
-  opacity: 1;
   transform: none;
   transition-delay: calc(var(--i) * 45ms);
 }
