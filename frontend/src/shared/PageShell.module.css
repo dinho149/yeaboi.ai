@@ -103,10 +103,12 @@
   flex-direction: column;
   align-items: stretch;
   /* The bar at the top of the screen, upside down: same hairline, same three
-     shadows, and the same inset off the edge it is anchored to. Its ends are
-     rounded off entirely, which is what tells it apart from the top bar. */
+     shadows, the same inset off the edge it is anchored to, and the same corner.
+     Squarer than a pill, because a pill reads as a control and this is the other
+     end of the same piece of furniture — what tells them apart is where they
+     are anchored and that this one can be picked up. */
   border: 1px solid var(--hairline);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-l);
   background: var(--panel);
   box-shadow:
     var(--edge),
