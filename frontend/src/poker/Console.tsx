@@ -36,6 +36,9 @@ import styles from './poker.module.css';
 /** Turn lengths the host can open the floor with. Server clamps to 15..600s. */
 export const DUEL_PRESETS = [60, 90, 120] as const;
 
+/** Matches `--dur-base`, which drives the slot's collapse. */
+const SLOT_EXIT_MS = 200;
+
 export interface ConsoleProps {
   state: PokerState;
   /** Everyone present has voted — the cue to reveal. */
@@ -103,6 +106,20 @@ export function Console({
   useEffect(() => {
     if (dueling) setDuelOpen(false);
   }, [dueling]);
+
+  // What the slot holds, and what it held for one last beat. The slot animates
+  // shut under its own content, so the content has to outlive the state that
+  // asked for it.
+  const slot = dueling ? 'live' : duelOpen ? 'presets' : null;
+  const [slotHeld, setSlotHeld] = useState(slot);
+  useEffect(() => {
+    if (slot) {
+      setSlotHeld(slot);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setSlotHeld(null), SLOT_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [slot]);
 
   // Nobody has voted yet: there is nothing to reveal, and revealing anyway
   // ends the round on an empty table and needs a re-vote to undo.
@@ -180,10 +197,10 @@ export function Console({
             <Icon name="swords" /> Open the floor
           </Button>
 
-          {/* One reserved slot: the preset picker and the live controls swap
-              inside it, so the console never grows or shrinks mid-round. */}
-          <div className={styles['duelSlot']}>
-            {duelOpen && !dueling ? (
+          {/* One slot: the preset picker and the live controls swap inside it,
+              and it opens and shuts on a track rather than appearing. */}
+          <div className={styles['duelSlot']} data-open={slot ? 'true' : 'false'}>
+            {slotHeld === 'presets' ? (
               <div className={styles['duelInline']}>
                 <span className={styles['clabel']}>Turn length</span>
                 <div className={styles['seg']}>
@@ -200,7 +217,7 @@ export function Console({
               </div>
             ) : null}
 
-            {dueling ? (
+            {slotHeld === 'live' ? (
               <div className={styles['crow']}>
                 <Button
                   disabled={duel?.turn !== 'low'}

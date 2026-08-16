@@ -85,7 +85,9 @@ function AiNote({ ai }: { ai: AiPerspective }) {
   if (ai.pending) {
     return (
       <div className={cx(styles['ainote'], styles['ainotePending'])} role="status">
-        <div className={styles['aiHead']}>🤖 AI perspective</div>
+        <div className={styles['aiHead']}>
+          <Eyebrow>AI perspective</Eyebrow>
+        </div>
         <p className={styles['aiBody']}>Thinking</p>
       </div>
     );
@@ -104,7 +106,7 @@ function AiNote({ ai }: { ai: AiPerspective }) {
   return (
     <div className={styles['ainote']}>
       <div className={styles['aiHead']}>
-        🤖 AI perspective
+        <Eyebrow>AI perspective</Eyebrow>
         {ai.confidence ? (
           <span className={cx(styles['conf'], styles[`conf-${ai.confidence}`])}>{ai.confidence} confidence</span>
         ) : null}

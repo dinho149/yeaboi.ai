@@ -598,23 +598,18 @@
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
+/* No panel: another section of the results, on the same ground and led by an
+   eyebrow like the spread above it. */
 .ainote {
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--accent2);
-  border-radius: var(--r-s);
-  padding: var(--s3);
-  background: var(--panel-2);
+  padding-top: var(--s1);
 }
 
 .aiHead {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-eyebrow);
-  color: var(--muted);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
 }
 
 .aiBody {
@@ -624,10 +619,10 @@
 }
 
 .conf {
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  border-radius: var(--r-pill);
-  padding: 1px var(--s2);
-  border: 1px solid currentcolor;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
 }
 
 .conf-high {
@@ -1162,8 +1157,29 @@
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-.duelSlot:not(:empty) {
-  min-height: var(--tap);
+/* A `0fr` → `1fr` track, because `height: auto` cannot be interpolated. The
+   content is in flow inside it, so the console grows and shrinks with it. */
+.duelSlot {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease);
+}
+
+.duelSlot[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+/* One cell, so a panel leaving and one arriving do not stack. */
+.duelSlot > * {
+  grid-area: 1 / 1;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.duelSlot[data-open='true'] > * {
+  opacity: 1;
 }
 
 .duelInline {

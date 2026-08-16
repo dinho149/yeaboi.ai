@@ -2203,7 +2203,7 @@ dialog._modal_49o9r_670 {
  * break across a page mid-card.
  */
 
-._page_1dxpw_16 {
+._page_1i7h1_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -2212,7 +2212,7 @@ dialog._modal_49o9r_670 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_1dxpw_25 {
+._shellApp_1i7h1_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -2231,7 +2231,7 @@ dialog._modal_49o9r_670 {
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_1dxpw_44 {
+._appRegion_1i7h1_44 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2241,7 +2241,7 @@ dialog._modal_49o9r_670 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_1dxpw_54 {
+._barSticky_1i7h1_54 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2249,7 +2249,7 @@ dialog._modal_49o9r_670 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_1dxpw_62 {
+._masthead_1i7h1_62 {
   margin-bottom: var(--s5);
 }
 
@@ -2262,7 +2262,7 @@ dialog._modal_49o9r_670 {
  * dock upward, and an element anchored by its top would need its offset
  * recomputed every frame of that growth.
  */
-._dockApp_1dxpw_75 {
+._dockApp_1i7h1_75 {
   --lift: var(--r-m);
   position: fixed;
   z-index: var(--z-console);
@@ -2288,12 +2288,12 @@ dialog._modal_49o9r_670 {
   visibility: var(--dock-vis, hidden);
 }
 
-._dockPlaced_1dxpw_101 {
+._dockPlaced_1i7h1_101 {
   transition: transform var(--dur-base) var(--ease);
 }
 
 /* The controls themselves. */
-._dockRow_1dxpw_106 {
+._dockRow_1i7h1_106 {
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -2312,7 +2312,7 @@ dialog._modal_49o9r_670 {
  * out the panel is still there for one beat, and it is the track that has to
  * start collapsing under it.
  */
-._dockDrawer_1dxpw_125 {
+._dockDrawer_1i7h1_125 {
   display: grid;
   grid-template-rows: 0fr;
   grid-template-columns: 0fr;
@@ -2321,14 +2321,14 @@ dialog._modal_49o9r_670 {
     grid-template-columns var(--dur-base) var(--ease);
 }
 
-._dockDrawer_1dxpw_125[data-open='true'] {
+._dockDrawer_1i7h1_125[data-open='true'] {
   grid-template-rows: 1fr;
   grid-template-columns: 1fr;
 }
 
 /* All in the one cell, so a panel on its way out and one on its way in do not
    stack the drawer to the height of both. */
-._dockDrawer_1dxpw_125 > * {
+._dockDrawer_1i7h1_125 > * {
   grid-area: 1 / 1;
   min-height: 0;
   min-width: 0;
@@ -2337,7 +2337,7 @@ dialog._modal_49o9r_670 {
 
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_1dxpw_150 {
+._dockDragging_1i7h1_150 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
@@ -2345,12 +2345,12 @@ dialog._modal_49o9r_670 {
 
 /* The handle, and the only part of the dock that is not a control — so it
    spans the dock's height rather than being a 3px mark. */
-._dockItem_1dxpw_158 {
+._dockItem_1i7h1_158 {
   display: inline-flex;
   align-items: center;
 }
 
-._dockGrip_1dxpw_163 {
+._dockGrip_1i7h1_163 {
   flex: none;
   align-self: stretch;
   width: 14px;
@@ -2363,12 +2363,12 @@ dialog._modal_49o9r_670 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._dockGrip_1dxpw_163:hover {
+._dockGrip_1i7h1_163:hover {
   background-color: var(--panel-2);
 }
 
-._dockApp_1dxpw_75:hover ._dockGrip_1dxpw_163,
-._dockDragging_1dxpw_150 ._dockGrip_1dxpw_163 {
+._dockApp_1i7h1_75:hover ._dockGrip_1i7h1_163,
+._dockDragging_1i7h1_150 ._dockGrip_1i7h1_163 {
   opacity: 1;
 }
 
@@ -2377,19 +2377,19 @@ dialog._modal_49o9r_670 {
    fill off things like the play button, which is how it went invisible. */
 /* The one filled control in the notch is a pill, like the presence chip it
    sits opposite. */
-._dockApp_1dxpw_75 [class*='btnPrimary'] {
+._dockApp_1i7h1_75 [class*='btnPrimary'] {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
-._dockRow_1dxpw_106 > [class*='dockItem'] > button:not([class*='btnPrimary']),
-._dockRow_1dxpw_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockRow_1i7h1_106 > [class*='dockItem'] > button:not([class*='btnPrimary']),
+._dockRow_1i7h1_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
 }
 
-._dockRow_1dxpw_106 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockRow_1dxpw_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockRow_1i7h1_106 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockRow_1i7h1_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -2406,20 +2406,20 @@ dialog._modal_49o9r_670 {
  * Same shape of selector as the rule above, or that one's `background: none`
  * wins on specificity and only the glyph changes.
  */
-._dockRow_1dxpw_106 > [class*='dockItem'] > button[aria-pressed='true'] {
+._dockRow_1i7h1_106 > [class*='dockItem'] > button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   border-color: transparent;
   box-shadow: none;
   color: var(--accent);
 }
 
-._dockRow_1dxpw_106 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
+._dockRow_1i7h1_106 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 34%, transparent);
   border-color: transparent;
 }
 
-._dockRow_1dxpw_106 > [class*='dockItem'] > button[aria-expanded='true'],
-._dockRow_1dxpw_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+._dockRow_1i7h1_106 > [class*='dockItem'] > button[aria-expanded='true'],
+._dockRow_1i7h1_106 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -2429,7 +2429,7 @@ dialog._modal_49o9r_670 {
 /* Lifted off the frame by a surface's own bottom sheet, it is no longer part of
    the border and has to close itself. */
 @media (max-width: 1099px) {
-  [data-host='true'] ._dockApp_1dxpw_75 {
+  [data-host='true'] ._dockApp_1i7h1_75 {
     bottom: calc(var(--s3) + var(--app-inset-bottom, 0px));
     border-bottom: 1px solid var(--hairline);
     border-radius: var(--r-m);
@@ -2438,7 +2438,7 @@ dialog._modal_49o9r_670 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_1dxpw_251 {
+._chromeApp_1i7h1_251 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -2455,12 +2455,22 @@ dialog._modal_49o9r_670 {
 }
 
 /* The bar's corners are clipped by its children rather than by `overflow`,
-   which would also clip every popover opening out of it. */
-._chromeApp_1dxpw_251 > * {
-  border-radius: inherit;
+   which would also clip every popover opening out of it. Only the outer ones:
+   two rounded corners meeting in the middle leave a gap the bar's top edge
+   shows through, which reads as a notch cut out of it. */
+._chromeApp_1i7h1_251 > * {
+  border-radius: 0;
+}
+._chromeApp_1i7h1_251 > *:first-child {
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+}
+._chromeApp_1i7h1_251 > *:last-child {
+  border-start-end-radius: inherit;
+  border-end-end-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_1dxpw_251 > *:last-child {
+._chromeApp_1i7h1_251 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -2469,16 +2479,16 @@ dialog._modal_49o9r_670 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_1dxpw_282 h1 {
+  ._headMainApp_1i7h1_292 h1 {
     display: none;
   }
-  ._mastheadApp_1dxpw_285 {
+  ._mastheadApp_1i7h1_295 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_1dxpw_285 {
+._mastheadApp_1i7h1_295 {
   flex: none;
   display: flex;
   align-items: center;
@@ -2487,53 +2497,53 @@ dialog._modal_49o9r_670 {
   background: var(--panel);
 }
 
-._head_1dxpw_282 {
+._head_1i7h1_292 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_1dxpw_307 {
+._headApp_1i7h1_317 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_1dxpw_282 {
+._headMain_1i7h1_292 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_1dxpw_282 {
+._headMainApp_1i7h1_292 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_1dxpw_282 ._wordmark_1dxpw_324 {
+._headMainApp_1i7h1_292 ._wordmark_1i7h1_334 {
   margin-bottom: 0;
 }
-._headMainApp_1dxpw_282 h1 {
+._headMainApp_1i7h1_292 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_1dxpw_324 {
+._wordmark_1i7h1_334 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_1dxpw_341 {
+._wordmarkCompact_1i7h1_351 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_1dxpw_346 {
+._title_1i7h1_356 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2543,30 +2553,30 @@ dialog._modal_49o9r_670 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_1dxpw_356 {
+._titleCompact_1i7h1_366 {
   font-size: var(--fs-l);
 }
 
-._subtitle_1dxpw_360 {
+._subtitle_1i7h1_370 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_1dxpw_366 {
+._facts_1i7h1_376 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_1dxpw_373 {
+._themes_1i7h1_383 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_1dxpw_379 {
+._toc_1i7h1_389 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2583,36 +2593,36 @@ dialog._modal_49o9r_670 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_1dxpw_379 a {
+._toc_1i7h1_389 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_1dxpw_379 a:hover {
+._toc_1i7h1_389 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_1dxpw_406 > * + * {
+._container_1i7h1_416 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_1dxpw_413 {
+._containerApp_1i7h1_423 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_1dxpw_413 > * + * {
+._containerApp_1i7h1_423 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_1dxpw_425 {
+._footer_1i7h1_435 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2628,7 +2638,7 @@ dialog._modal_49o9r_670 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_1dxpw_441 {
+._footerSlim_1i7h1_451 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2638,17 +2648,17 @@ dialog._modal_49o9r_670 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_1dxpw_373,
-  ._toc_1dxpw_379 {
+  ._themes_1i7h1_383,
+  ._toc_1i7h1_389 {
     display: none;
   }
-  ._page_1dxpw_16 {
+  ._page_1i7h1_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_1dxpw_25 {
+  ._shellApp_1i7h1_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -2656,26 +2666,26 @@ dialog._modal_49o9r_670 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_1dxpw_44 {
+  ._appRegion_1i7h1_44 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_1dxpw_54 {
+  ._barSticky_1i7h1_54 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_1dxpw_16 ._masthead_1dxpw_62 {
+  ._page_1i7h1_16 ._masthead_1i7h1_62 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_1dxpw_425 {
+  ._footer_1i7h1_435 {
     color: var(--muted);
   }
 }
@@ -2710,7 +2720,7 @@ dialog._modal_49o9r_670 {
    scroll-away masthead, a one-viewport region holding the sticky toolbar and
    this board, and a credit under it. What is left is the surface it is painted
    on. */
-._app_14lzq_32 {
+._app_8divg_32 {
   background: var(--bg);
   color: var(--text);
 }
@@ -2720,7 +2730,7 @@ dialog._modal_49o9r_670 {
    only far enough to take the masthead and the credit past. Everything else
    moves in here, which is what lets `deckZone` park against the bottom of the
    region rather than wherever the window happens to be. */
-._scroll_14lzq_42 {
+._scroll_8divg_42 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -2730,7 +2740,7 @@ dialog._modal_49o9r_670 {
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_14lzq_52 {
+._layout_8divg_52 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -2750,7 +2760,7 @@ dialog._modal_49o9r_670 {
 }
 
 /* Full height, so the deck can be pushed to the bottom of it. */
-._main_14lzq_72 {
+._main_8divg_72 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
@@ -2759,7 +2769,7 @@ dialog._modal_49o9r_670 {
 }
 
 @media (max-width: 1099px) {
-  ._layout_14lzq_52 {
+  ._layout_8divg_52 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2767,7 +2777,7 @@ dialog._modal_49o9r_670 {
 }
 
 @media (max-width: 699px) {
-  ._layout_14lzq_52 {
+  ._layout_8divg_52 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -2776,13 +2786,13 @@ dialog._modal_49o9r_670 {
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_14lzq_98 {
+._rail_8divg_98 {
   min-height: 0;
   overflow-y: auto;
   padding: 0 var(--s2) 0 0;
 }
 
-._railHead_14lzq_104 {
+._railHead_8divg_104 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
@@ -2790,7 +2800,7 @@ dialog._modal_49o9r_670 {
 }
 
 /* The board's scope heads the list it scopes; the count sits under it. */
-._railScope_14lzq_112 {
+._railScope_8divg_112 {
   margin: 0;
   font-size: var(--fs-m);
   font-weight: 600;
@@ -2798,7 +2808,7 @@ dialog._modal_49o9r_670 {
   color: var(--text);
 }
 
-._railList_14lzq_120 {
+._railList_8divg_120 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2807,7 +2817,7 @@ dialog._modal_49o9r_670 {
   gap: 2px;
 }
 
-._railItem_14lzq_129 {
+._railItem_8divg_129 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -2824,12 +2834,12 @@ dialog._modal_49o9r_670 {
   cursor: pointer;
 }
 
-._railItem_14lzq_129:hover {
+._railItem_8divg_129:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_14lzq_151 {
+._railDot_8divg_151 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -2837,30 +2847,30 @@ dialog._modal_49o9r_670 {
   background: var(--line-strong);
 }
 
-._railCurrent_14lzq_159 {
+._railCurrent_8divg_159 {
   background: transparent;
   color: var(--accent);
 }
 
-._railCurrent_14lzq_159 ._railDot_14lzq_151 {
+._railCurrent_8divg_159 ._railDot_8divg_151 {
   background: var(--accent);
 }
 
-._railPeeking_14lzq_168 {
+._railPeeking_8divg_168 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_14lzq_173 ._railDot_14lzq_151 {
+._railDone_8divg_173 ._railDot_8divg_151 {
   background: var(--ok);
 }
 
-._railDone_14lzq_173 ._railText_14lzq_177 {
+._railDone_8divg_173 ._railText_8divg_177 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_14lzq_177 {
+._railText_8divg_177 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2868,29 +2878,29 @@ dialog._modal_49o9r_670 {
   white-space: nowrap;
 }
 
-._railKey_14lzq_190 {
+._railKey_8divg_190 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_14lzq_196 {
+._railPts_8divg_196 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_14lzq_203 {
+._railToggle_8divg_203 {
   display: none;
 }
 
-._railBackdrop_14lzq_207 {
+._railBackdrop_8divg_207 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_14lzq_98 {
+  ._rail_8divg_98 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -2904,15 +2914,15 @@ dialog._modal_49o9r_670 {
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_14lzq_226 {
+  ._railOpen_8divg_226 {
     transform: translateX(0);
   }
 
-  ._railToggle_14lzq_203 {
+  ._railToggle_8divg_203 {
     display: inline-flex;
   }
 
-  ._railBackdrop_14lzq_207 {
+  ._railBackdrop_8divg_207 {
     display: block;
     position: fixed;
     inset: 0;
@@ -2923,7 +2933,7 @@ dialog._modal_49o9r_670 {
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_14lzq_245 {
+._ticket_8divg_245 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2934,13 +2944,13 @@ dialog._modal_49o9r_670 {
 
 /* A preview keeps its frame — it is the one state that has to look unlike the
    live ticket at a glance. */
-._ticketPeek_14lzq_256 {
+._ticketPeek_8divg_256 {
   padding: var(--s4);
   border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--r-m);
 }
 
-._tkrow_14lzq_262 {
+._tkrow_8divg_262 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2948,23 +2958,23 @@ dialog._modal_49o9r_670 {
   margin-bottom: var(--s2);
 }
 
-._key_14lzq_270 {
+._key_8divg_270 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_14lzq_270 a {
+._key_8divg_270 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_14lzq_270 a:hover {
+._key_8divg_270 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_14lzq_286 {
+._phaseTag_8divg_286 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2975,13 +2985,13 @@ dialog._modal_49o9r_670 {
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_14lzq_297 {
+._phaseTagOn_8divg_297 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_14lzq_303 {
+._phaseTagPeek_8divg_303 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
@@ -2989,14 +2999,14 @@ dialog._modal_49o9r_670 {
 /* The pager sits at the end of the key row, hard right. Bordered rather than
    bare: it moves the whole room, which is not a thing to leave looking like
    furniture. */
-._tknav_14lzq_311 {
+._tknav_8divg_311 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
   margin-left: auto;
 }
 
-._tkpos_14lzq_318 {
+._tkpos_8divg_318 {
   min-width: 4ch;
   text-align: center;
   font-family: var(--font-mono);
@@ -3005,7 +3015,7 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._tkSummary_14lzq_327 {
+._tkSummary_8divg_327 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -3016,9 +3026,9 @@ dialog._modal_49o9r_670 {
 /* ── Editing in place ─────────────────────────────────────────────────
    The fields are the ticket: same face, same size, same position, so the
    panel does not turn into a form sitting on top of what it edits. */
-._editTitle_14lzq_338,
-._editBody_14lzq_339,
-._editPoints_14lzq_340 {
+._editTitle_8divg_338,
+._editBody_8divg_339,
+._editPoints_8divg_340 {
   width: 100%;
   background: none;
   border: 0;
@@ -3034,16 +3044,16 @@ dialog._modal_49o9r_670 {
   transition: box-shadow var(--dur-fast) var(--ease);
 }
 
-._editTitle_14lzq_338:focus,
-._editBody_14lzq_339:focus,
-._editPoints_14lzq_340:focus {
+._editTitle_8divg_338:focus,
+._editBody_8divg_339:focus,
+._editPoints_8divg_340:focus {
   outline: none;
   box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* Restates the display type rather than inheriting it: `font: inherit` above
    resets the size, and both classes sit on the same element. */
-._editTitle_14lzq_338 {
+._editTitle_8divg_338 {
   margin: 0;
   font-size: var(--fs-display);
   line-height: 1.12;
@@ -3053,7 +3063,7 @@ dialog._modal_49o9r_670 {
   overflow: hidden;
 }
 
-._editBody_14lzq_339 {
+._editBody_8divg_339 {
   resize: none;
   min-height: 0;
   max-height: none;
@@ -3061,21 +3071,21 @@ dialog._modal_49o9r_670 {
   box-shadow: none;
 }
 
-._editBody_14lzq_339:focus {
+._editBody_8divg_339:focus {
   box-shadow: none;
 }
 
-._editPoints_14lzq_340 {
+._editPoints_8divg_340 {
   width: 4em;
 }
 
 /* Wide enough that a picker does not resize the row it sits in as the value
    changes — the properties keep their columns while being edited. */
-._propPick_14lzq_393 {
+._propPick_8divg_393 {
   min-width: 9em;
 }
 
-._editNote_14lzq_397 {
+._editNote_8divg_397 {
   margin: var(--s4) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
@@ -3083,7 +3093,7 @@ dialog._modal_49o9r_670 {
 
 /* Up in the identifying row, hard right — the ticket is saved from the row it
    is named in. */
-._editActions_14lzq_405 {
+._editActions_8divg_405 {
   display: flex;
   gap: var(--s2);
   margin-left: auto;
@@ -3091,20 +3101,20 @@ dialog._modal_49o9r_670 {
 
 /* The ticket's facts, under the title: a label and its value, not a pill.
    Each is a property with a value, so it is set as one. */
-._props_14lzq_413 {
+._props_8divg_413 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3) var(--s6);
   margin: var(--s4) 0 var(--s5);
 }
 
-._prop_14lzq_393 {
+._prop_8divg_393 {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-._propLabel_14lzq_426 {
+._propLabel_8divg_426 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3112,22 +3122,22 @@ dialog._modal_49o9r_670 {
   color: var(--dim);
 }
 
-._propValue_14lzq_434 {
+._propValue_8divg_434 {
   margin: 0;
   font-size: var(--fs-s);
   color: var(--text);
 }
 
-._propOk_14lzq_440 {
+._propOk_8divg_440 {
   color: var(--ok);
 }
 
-._bodyLabel_14lzq_444 {
+._bodyLabel_8divg_444 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_14lzq_449 {
+._desc_8divg_449 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -3136,25 +3146,25 @@ dialog._modal_49o9r_670 {
 
 /* Prose at a readable measure. Across a 1300px column the eye loses the line
    it is on, which is most of why the body read as unformatted. */
-._desc_14lzq_449 {
+._desc_8divg_449 {
   max-width: 74ch;
 }
 
 /* On whenever collapsed — it is what the overflow measurement reads against.
    Half the viewport, so the body uses the room the column actually has and
    only a description long enough to bury the acceptance criteria gets cut. */
-._descClipped_14lzq_465 {
+._descClipped_8divg_465 {
   max-height: 50vh;
   overflow: hidden;
 }
 
 /* Only once the text really overruns the clamp. A mask reads alpha only, so
    the token is for the literal-colour guard, not for the colour. */
-._descFade_14lzq_472 {
+._descFade_8divg_472 {
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_14lzq_476 {
+._descToggle_8divg_476 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -3166,13 +3176,13 @@ dialog._modal_49o9r_670 {
   cursor: pointer;
 }
 
-._descEmpty_14lzq_488 {
+._descEmpty_8divg_488 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_14lzq_494 {
+._peekBanner_8divg_494 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3186,7 +3196,7 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._peekActions_14lzq_508 {
+._peekActions_8divg_508 {
   display: flex;
   gap: var(--s2);
 }
@@ -3194,21 +3204,21 @@ dialog._modal_49o9r_670 {
 /* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
    go-there control is an accent outline, not a fill — it offers a move rather
    than confirming one. */
-._pkbtnGo_14lzq_516 {
+._pkbtnGo_8divg_516 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_14lzq_523 {
+._results_8divg_523 {
   padding: var(--s4) var(--s1) 0;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
 }
 
-._resultsHead_14lzq_530 {
+._resultsHead_8divg_530 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3216,18 +3226,18 @@ dialog._modal_49o9r_670 {
   flex-wrap: wrap;
 }
 
-._resultsSum_14lzq_538 {
+._resultsSum_8divg_538 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_14lzq_538 b {
+._resultsSum_8divg_538 b {
   color: var(--accent);
 }
 
-._dist_14lzq_549 {
+._dist_8divg_549 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3236,7 +3246,7 @@ dialog._modal_49o9r_670 {
   gap: var(--s1);
 }
 
-._drow_14lzq_558 {
+._drow_8divg_558 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -3247,108 +3257,103 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._dval_14lzq_569 {
+._dval_8divg_569 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_14lzq_574 {
+._dtrack_8divg_574 {
   height: 4px;
   background: var(--hairline);
   overflow: hidden;
 }
 
-._dbar_14lzq_580 {
+._dbar_8divg_580 {
   display: block;
   height: 100%;
   background: var(--muted);
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_14lzq_587 ._dbar_14lzq_580 {
+._drowTop_8divg_587 ._dbar_8divg_580 {
   background: var(--accent);
 }
 
-._drowTop_14lzq_587 ._dval_14lzq_569 {
+._drowTop_8divg_587 ._dval_8divg_569 {
   color: var(--accent);
 }
 
-._dcount_14lzq_595 {
+._dcount_8divg_595 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_14lzq_601 {
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--accent2);
-  border-radius: var(--r-s);
-  padding: var(--s3);
-  background: var(--panel-2);
+/* No panel: another section of the results, on the same ground and led by an
+   eyebrow like the spread above it. */
+._ainote_8divg_603 {
+  padding-top: var(--s1);
 }
 
-._aiHead_14lzq_609 {
+._aiHead_8divg_607 {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-eyebrow);
-  color: var(--muted);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
 }
 
-._aiBody_14lzq_620 {
+._aiBody_8divg_615 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_14lzq_626 {
+._conf_8divg_621 {
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  border-radius: var(--r-pill);
-  padding: 1px var(--s2);
-  border: 1px solid currentcolor;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
 }
 
-._conf-high_14lzq_633 {
+._conf-high_8divg_628 {
   color: var(--ok);
 }
 
-._conf-medium_14lzq_637 {
+._conf-medium_8divg_632 {
   color: var(--warn);
 }
 
-._conf-low_14lzq_641 {
+._conf-low_8divg_636 {
   color: var(--danger);
 }
 
-._ev_14lzq_645 {
+._ev_8divg_640 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_14lzq_652 {
+._sug_8divg_647 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_14lzq_652 b {
+._sug_8divg_647 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_14lzq_665 ._aiBody_14lzq_620::after {
+._ainotePending_8divg_660 ._aiBody_8divg_615::after {
   content: '…';
-  animation: _dots_14lzq_1 1.2s steps(4, end) infinite;
+  animation: _dots_8divg_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_14lzq_1 {
+@keyframes _dots_8divg_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -3359,14 +3364,14 @@ dialog._modal_49o9r_670 {
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_14lzq_681 {
+._duel_8divg_676 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_14lzq_688 {
+._duelHead_8divg_683 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3378,13 +3383,13 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._duelBody_14lzq_700 {
+._duelBody_8divg_695 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_14lzq_706 {
+._duelTranscript_8divg_701 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -3393,41 +3398,41 @@ dialog._modal_49o9r_670 {
   overflow-y: auto;
 }
 
-._recind_14lzq_715 {
+._recind_8divg_710 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_14lzq_722 {
+._recDot_8divg_717 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_14lzq_1 1.4s ease-in-out infinite;
+  animation: _recpulse_8divg_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_14lzq_1 {
+@keyframes _recpulse_8divg_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_14lzq_736 {
+._norec_8divg_731 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_14lzq_742 {
+._dualrow_8divg_737 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_14lzq_749 {
+._duelist_8divg_744 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3439,31 +3444,31 @@ dialog._modal_49o9r_670 {
   text-align: center;
 }
 
-._duelistSpeaking_14lzq_761 {
+._duelistSpeaking_8divg_756 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_14lzq_766 {
+._duelFace_8divg_761 {
   font-size: var(--fs-xl);
 }
 
-._duelName_14lzq_770 {
+._duelName_8divg_765 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_14lzq_775 {
+._duelValue_8divg_770 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_14lzq_775 b {
+._duelValue_8divg_770 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_14lzq_785 {
+._duelFloor_8divg_780 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3471,12 +3476,12 @@ dialog._modal_49o9r_670 {
   color: var(--accent);
 }
 
-._duelMic_14lzq_793 {
+._duelMic_8divg_788 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_14lzq_798 {
+._vs_8divg_793 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -3484,7 +3489,7 @@ dialog._modal_49o9r_670 {
   color: var(--dim);
 }
 
-._youup_14lzq_806 {
+._youup_8divg_801 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -3494,7 +3499,7 @@ dialog._modal_49o9r_670 {
   font-size: var(--fs-s);
 }
 
-._micRow_14lzq_816 {
+._micRow_8divg_811 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3502,7 +3507,7 @@ dialog._modal_49o9r_670 {
   margin-top: var(--s3);
 }
 
-._micBtn_14lzq_824 {
+._micBtn_8divg_819 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -3514,7 +3519,7 @@ dialog._modal_49o9r_670 {
   cursor: pointer;
 }
 
-._hint_14lzq_836 {
+._hint_8divg_831 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
@@ -3525,36 +3530,36 @@ dialog._modal_49o9r_670 {
    another card. */
 /* Ten cards and the nine gaps between them — the deck's own width, so the
    table above it lines up rather than floating at the column's edge. */
-._main_14lzq_72 {
+._main_8divg_72 {
   --deck-w: calc(10 * 72px + 9 * var(--s2));
 }
 
-._table_14lzq_851 {
+._table_8divg_846 {
   margin-top: auto;
   width: min(100%, var(--deck-w));
   margin-inline: auto;
 }
 
-._tableHead_14lzq_857 {
+._tableHead_8divg_852 {
   display: flex;
   align-items: baseline;
   gap: var(--s3);
   margin-bottom: var(--s3);
 }
 
-._tableWait_14lzq_864 {
+._tableWait_8divg_859 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Empty state, shared by the table and the ticket. */
-._vempty_14lzq_870 {
+._vempty_8divg_865 {
   color: var(--muted);
   font-size: var(--fs-s);
   padding: var(--s4) 0;
 }
 
-._vrow_14lzq_876 {
+._vrow_8divg_871 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3565,18 +3570,18 @@ dialog._modal_49o9r_670 {
 
 /* The avatar and, once revealed, the card that was played — tucked against it
    so the pair reads as one seat. */
-._seatFace_14lzq_887 {
+._seatFace_8divg_882 {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-._seatFace_14lzq_887 ._vcard_14lzq_893 {
+._seatFace_8divg_882 ._vcard_8divg_888 {
   margin-left: -6px;
 }
 
 /* A seat: face over name. */
-._voter_14lzq_898 {
+._voter_8divg_893 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3584,7 +3589,7 @@ dialog._modal_49o9r_670 {
   width: 84px;
 }
 
-._face_14lzq_906 {
+._face_8divg_901 {
   position: relative;
   display: grid;
   place-items: center;
@@ -3597,7 +3602,7 @@ dialog._modal_49o9r_670 {
   font-size: var(--fs-l);
 }
 
-._tick_14lzq_245 {
+._tick_8divg_245 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3620,7 +3625,7 @@ dialog._modal_49o9r_670 {
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_14lzq_893 {
+._vcard_8divg_888 {
   display: grid;
   place-items: center;
   width: 22px;
@@ -3634,18 +3639,18 @@ dialog._modal_49o9r_670 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  animation: _flip_14lzq_1 320ms var(--ease) both;
+  animation: _flip_8divg_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_14lzq_1 {
+@keyframes _flip_8divg_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_14lzq_967 {
+._nm_8divg_962 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3656,7 +3661,7 @@ dialog._modal_49o9r_670 {
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_14lzq_978 {
+._deckZone_8divg_973 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -3688,13 +3693,13 @@ dialog._modal_49o9r_670 {
  * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1099px) {
-  ._app_14lzq_32[data-host='true'] {
+  ._app_8divg_32[data-host='true'] {
     --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
     padding-bottom: var(--app-inset-bottom);
   }
 }
 
-._deckStatus_14lzq_1016 {
+._deckStatus_8divg_1011 {
   /* A fixed line box, and deliberately NOT a flex one: the locked line carries
      a glyph and the open one does not, so without a floor the deck — and the
      table above it — moved every time the host turned the lock. Flex would
@@ -3707,11 +3712,11 @@ dialog._modal_49o9r_670 {
   text-align: center;
 }
 
-._deckMine_14lzq_1029 {
+._deckMine_8divg_1024 {
   color: var(--accent);
 }
 
-._deck_14lzq_978 {
+._deck_8divg_973 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3725,7 +3730,7 @@ dialog._modal_49o9r_670 {
    board is the single thing that read most like a toy — and the accent is
    supposed to be the only chromatic thing on a working surface. What tells the
    cards apart is the number, which is what you are reading anyway. */
-._pcard_14lzq_1047 {
+._pcard_8divg_1042 {
   position: relative;
   /* Ten cards and their gaps have to fit the middle column on one line at the
      wide breakpoint — a hand that wraps reads as eleven cards. */
@@ -3745,19 +3750,19 @@ dialog._modal_49o9r_670 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._pcard_14lzq_1047:hover:not(:disabled) {
+._pcard_8divg_1042:hover:not(:disabled) {
   transform: translateY(-6px);
   border-color: var(--muted);
   box-shadow: var(--shadow-hover);
 }
 
-._pcard_14lzq_1047:disabled {
+._pcard_8divg_1042:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 /* The one place the accent belongs on this row: the card you played. */
-._pcardSel_14lzq_1079 {
+._pcardSel_8divg_1074 {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--accent);
@@ -3768,11 +3773,11 @@ dialog._modal_49o9r_670 {
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_14lzq_1090 {
+._pcardWait_8divg_1085 {
   border-style: dashed;
 }
 
-._ci_14lzq_1094 {
+._ci_8divg_1089 {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -3781,7 +3786,7 @@ dialog._modal_49o9r_670 {
   color: var(--dim);
 }
 
-._ciFlip_14lzq_1103 {
+._ciFlip_8divg_1098 {
   top: auto;
   left: auto;
   right: 8px;
@@ -3789,14 +3794,14 @@ dialog._modal_49o9r_670 {
   transform: rotate(180deg);
 }
 
-._cv_14lzq_1111 {
+._cv_8divg_1106 {
   font-size: var(--fs-2xl);
   font-weight: 600;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_14lzq_1118 {
+._console_8divg_1113 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -3807,13 +3812,13 @@ dialog._modal_49o9r_670 {
   gap: var(--s3);
 }
 
-._cbar_14lzq_1129 {
+._cbar_8divg_1124 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_14lzq_1135 {
+._cphase_8divg_1130 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3821,20 +3826,20 @@ dialog._modal_49o9r_670 {
   color: var(--accent);
 }
 
-._cbody_14lzq_1143 {
+._cbody_8divg_1138 {
   display: flex;
   flex-direction: column;
   gap: var(--s5);
 }
 
-._cgroup_14lzq_1149 {
+._cgroup_8divg_1144 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._crow_14lzq_1155,
-._navrow_14lzq_1156 {
+._crow_8divg_1150,
+._navrow_8divg_1151 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3843,11 +3848,32 @@ dialog._modal_49o9r_670 {
 /* Only reserves height once there is something to put in it — an empty slot
    was holding a tap target's worth of nothing open in the middle of the
    console. */
-._duelSlot_14lzq_1165:not(:empty) {
-  min-height: var(--tap);
+/* A `0fr` → `1fr` track, because `height: auto` cannot be interpolated. The
+   content is in flow inside it, so the console grows and shrinks with it. */
+._duelSlot_8divg_1162 {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease);
 }
 
-._duelInline_14lzq_1169 {
+._duelSlot_8divg_1162[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+/* One cell, so a panel leaving and one arriving do not stack. */
+._duelSlot_8divg_1162 > * {
+  grid-area: 1 / 1;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+._duelSlot_8divg_1162[data-open='true'] > * {
+  opacity: 1;
+}
+
+._duelInline_8divg_1185 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3856,12 +3882,12 @@ dialog._modal_49o9r_670 {
   border-radius: var(--r-s);
 }
 
-._seg_14lzq_1178 {
+._seg_8divg_1194 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_14lzq_1183 {
+._preset_8divg_1199 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -3873,8 +3899,8 @@ dialog._modal_49o9r_670 {
   cursor: pointer;
 }
 
-._clabel_14lzq_1195,
-._finlab_14lzq_1196 {
+._clabel_8divg_1211,
+._finlab_8divg_1212 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -3882,21 +3908,21 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._chint_14lzq_1204,
-._cnotice_14lzq_1205 {
+._chint_8divg_1220,
+._cnotice_8divg_1221 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_14lzq_1205 {
+._cnotice_8divg_1221 {
   color: var(--warn);
 }
 
 /* Label left, value right — the three decision rows read as a column of
    numbers rather than three sentences of different lengths. */
-._readout_14lzq_1218 {
+._readout_8divg_1234 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3906,20 +3932,20 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._readout_14lzq_1218 b {
+._readout_8divg_1234 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_14lzq_1234 {
+._finrow_8divg_1250 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
 }
 
-._finInput_14lzq_1241 {
+._finInput_8divg_1257 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -3931,12 +3957,12 @@ dialog._modal_49o9r_670 {
   font-size: var(--fs-s);
 }
 
-._finSrc_14lzq_1253 {
+._finSrc_8divg_1269 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_14lzq_1258 {
+._cpos_8divg_1274 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -3946,7 +3972,7 @@ dialog._modal_49o9r_670 {
 }
 
 @media (max-width: 1099px) {
-  ._console_14lzq_1118 {
+  ._console_8divg_1113 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -3956,24 +3982,24 @@ dialog._modal_49o9r_670 {
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_14lzq_1129 {
+  ._cbar_8divg_1124 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_14lzq_1143 {
+  ._cbody_8divg_1138 {
     display: none;
   }
 
-  ._consoleOpen_14lzq_1288 ._cbody_14lzq_1143 {
+  ._consoleOpen_8divg_1304 ._cbody_8divg_1138 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_14lzq_1295 {
+._identity_8divg_1311 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3982,7 +4008,7 @@ dialog._modal_49o9r_670 {
 
 /* Who you are, as one quiet control: the avatar carries the identity and the
    pencil only shows up when you go looking for it. */
-._meChip_14lzq_1304 {
+._meChip_8divg_1320 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -4001,12 +4027,12 @@ dialog._modal_49o9r_670 {
   cursor: pointer;
 }
 
-._meChip_14lzq_1304:hover {
+._meChip_8divg_1320:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
 
-._meName_14lzq_1328 {
+._meName_8divg_1344 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4014,37 +4040,37 @@ dialog._modal_49o9r_670 {
   font-weight: 500;
 }
 
-._pen_14lzq_1336 {
+._pen_8divg_1352 {
   display: inline-flex;
   color: var(--dim);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-._meChip_14lzq_1304:hover ._pen_14lzq_1336,
-._meChip_14lzq_1304:focus-visible ._pen_14lzq_1336 {
+._meChip_8divg_1320:hover ._pen_8divg_1352,
+._meChip_8divg_1320:focus-visible ._pen_8divg_1352 {
   opacity: 1;
 }
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
-._presenceChip_14lzq_1349 {
+._presenceChip_8divg_1365 {
   border-radius: var(--r-pill);
   border-color: transparent;
 }
 
 /* The headcount is a number, so it is set as one. */
-._roomCount_14lzq_1355 {
+._roomCount_8divg_1371 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   font-weight: 600;
 }
 
-._offline_14lzq_1362 {
+._offline_8divg_1378 {
   color: var(--warn);
 }
 
-._popNote_14lzq_1366 {
+._popNote_8divg_1382 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -4053,7 +4079,7 @@ dialog._modal_49o9r_670 {
 /* A notice is a line of type under a rule, not a tinted band across the board.
    The semantic colour stays on the words, where it is legible in every theme —
    a 16% mix against `--panel` lands on cream in the light one. */
-._musicBanner_14lzq_1375 {
+._musicBanner_8divg_1391 {
   margin: 0;
   width: 100%;
   padding: var(--s2) var(--s4);
@@ -4071,12 +4097,12 @@ dialog._modal_49o9r_670 {
 }
 
 /* The deck's own status line says it, in the colour of the thing that did it. */
-._deckStatusLocked_14lzq_1393 {
+._deckStatusLocked_8divg_1409 {
   color: var(--warn);
 }
 
 /* No robot, no panel: the model said nothing, so this is a note about that. */
-._aiFallback_14lzq_1398 {
+._aiFallback_8divg_1414 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--dim);
@@ -4085,7 +4111,7 @@ dialog._modal_49o9r_670 {
 /* `vertical-align: top` and an inherited line height: an inline-flex run sits
    on its own baseline otherwise, which made the locked line 1.13px taller than
    the open one and moved the deck — and the table above it — on every lock. */
-._deckReason_14lzq_1407 {
+._deckReason_8divg_1423 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -4093,18 +4119,18 @@ dialog._modal_49o9r_670 {
   line-height: 1.6;
 }
 
-._musicBanner_14lzq_1375 {
+._musicBanner_8divg_1391 {
   color: var(--accent);
   cursor: pointer;
 }
 
-._musicBanner_14lzq_1375:hover {
+._musicBanner_8divg_1391:hover {
   background: var(--panel-2);
 }
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_14lzq_1426 {
+._flabel_8divg_1442 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -4114,7 +4140,7 @@ dialog._modal_49o9r_670 {
   color: var(--muted);
 }
 
-._field_14lzq_1436 {
+._field_8divg_1452 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -4126,24 +4152,24 @@ dialog._modal_49o9r_670 {
   font-size: var(--fs-s);
 }
 
-textarea._field_14lzq_1436 {
+textarea._field_8divg_1452 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_14lzq_1453 {
+._editWarn_8divg_1469 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_14lzq_397 {
+._editNote_8divg_397 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_14lzq_1465 {
+._editSave_8divg_1481 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -4158,7 +4184,7 @@ textarea._field_14lzq_1436 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_14lzq_1480 {
+._srOnly_8divg_1496 {
   position: absolute;
   width: 1px;
   height: 1px;

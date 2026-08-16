@@ -265,9 +265,19 @@
 }
 
 /* The bar's corners are clipped by its children rather than by `overflow`,
-   which would also clip every popover opening out of it. */
+   which would also clip every popover opening out of it. Only the outer ones:
+   two rounded corners meeting in the middle leave a gap the bar's top edge
+   shows through, which reads as a notch cut out of it. */
 .chromeApp > * {
-  border-radius: inherit;
+  border-radius: 0;
+}
+.chromeApp > *:first-child {
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+}
+.chromeApp > *:last-child {
+  border-start-end-radius: inherit;
+  border-end-end-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
 .chromeApp > *:last-child {
