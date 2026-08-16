@@ -1897,6 +1897,11 @@ class ScrumState(_RequiredState, total=False):
     # field, not a driver attribute, because the end-to-end chat path
     # (stop_after_intake=False) still auto-accepts reviews while it is set.
     _chat_fast_forward: bool
+    # Which prior-art candidate the chat's carousel is previewing (0-based).
+    # Presentation-only and driver-owned: the card renderer reads it, no graph
+    # node ever does, and the driver pops it when the batch submits or a size
+    # switch resets the sub-loop. Serializes harmlessly mid-browse.
+    _prior_art_preview: int
 
     # Project analysis — structured synthesis of intake answers.
     # Set once by project_analyzer node; no reducer needed (single value).

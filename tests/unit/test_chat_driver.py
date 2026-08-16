@@ -1891,6 +1891,22 @@ class TestPriorArtCarousel:
         driver.choices.banned = {0}
         assert driver._input_loop() == "2 !1"
 
+    def test_a_rejected_answer_surfaces_the_grammar_hint_as_prose(self):
+        # The node re-prompts with the grammar on a parse failure; swallowing
+        # it behind the static card+prompt would make a rejected "yes" read
+        # as a no-op.
+        from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+        state = {
+            "messages": [HumanMessage(content="yes"), AIMessage(content=_PRIOR_ART_GRAMMAR_HINT)],
+            "_chat_greeting_done": True,
+            "questionnaire": self._qs(),
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._append_reply(streamed="")
+        bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
+        assert "Reply with the numbers" in bubble.text
+
     def test_rebuild_readds_the_card_mid_batch(self):
         state = {
             "messages": [

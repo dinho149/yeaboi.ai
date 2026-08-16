@@ -183,6 +183,12 @@ class TestParseGrammar:
         assert _parse_prior_art_answer("what?", 3) is None
         assert _parse_prior_art_answer("!x", 3) is None
 
+    def test_unicode_digits_reprompt_rather_than_raise(self):
+        # "²".isdigit() is True but int("²") raises — the parser must treat
+        # it as an unknown token, not blow up the turn.
+        assert _parse_prior_art_answer("²", 3) is None
+        assert _parse_prior_art_answer("!²", 3) is None
+
 
 class TestBatchVerdicts:
     def _state(self, reply, qs):

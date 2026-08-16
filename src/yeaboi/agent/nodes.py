@@ -4060,7 +4060,9 @@ def _parse_prior_art_answer(text: str, count: int) -> tuple[set[int], set[int]] 
             continue
         is_ban = word.startswith("!")
         digits = word[1:] if is_ban else word
-        if not digits.isdigit():
+        # isdecimal, not isdigit: isdigit accepts superscripts ("²") that
+        # int() then refuses, turning a typo into a raised turn error.
+        if not digits.isdecimal():
             return None
         index = int(digits) - 1
         if not 0 <= index < count:

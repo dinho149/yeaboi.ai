@@ -124,7 +124,10 @@ def _fit_hint(pairs: list[tuple[str, str]], extras: str, avail: int) -> tuple[li
         extras = ""
         if _hint_cells(pairs, extras) <= budget:
             return pairs, extras
-    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "X", "←/→", "Space", "↑/↓ ←/→", "↑/↓"):
+    # "↑/↓ ←/→" is the carousel's combined browse pair (there is no separate
+    # "←/→" key); it outlives Space because once Space is gone it is the only
+    # navigation hint left on the row.
+    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "X", "Space", "↑/↓ ←/→", "↑/↓"):
         if _hint_cells(pairs, extras) <= budget:
             break
         pairs = [pair for pair in pairs if pair[0] != victim]

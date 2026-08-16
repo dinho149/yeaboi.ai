@@ -828,6 +828,15 @@ class _ChatDriver:
         # contains the numbered shortlist and the answer grammar; the card
         # renders the same data properly and the choice rows carry the keys.
         if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
+            # Lazy for the same reason as apply_size_switch: nodes is heavy.
+            from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+            if reply.strip() == _PRIOR_ART_GRAMMAR_HINT:
+                # The node rejected a typed answer. Swallowing this and
+                # re-posting the same card would read as a no-op — the one
+                # chat turn where the node's own words must go out as prose.
+                self._say(reply)
+                return
             self.transcript.add_artifact("prior_art")
             self._say(_prior_art_verdict_prompt(qs))
             return

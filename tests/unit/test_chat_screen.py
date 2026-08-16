@@ -285,8 +285,8 @@ class TestHintRow:
         assert "←/→" in out and "browse" in out
 
     def test_carousel_row_never_ellipsizes(self):
-        # X and the browse keys are sacrificed before Space — the core toggle
-        # — and the row must still finish its sentences at 80 columns.
+        # X is sacrificed before Space (the core toggle), and the combined
+        # browse pair last — the row must still finish its sentences at 80.
         choices = ChoiceRows(options=[("acme/auth", False)], highlight=0, multi=True, carousel=True)
         for width in (80, 100, 120, 160):
             out = _ANSI.sub("", _render(_screen(width=width, console=_console(width), choices=choices), width=width))
