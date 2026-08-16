@@ -75,6 +75,7 @@ export function Console({
   const revealed = phase === 'revealed';
   const dueling = phase === 'duel';
   const transcribing = duel?.status === 'transcribing';
+  const recording = Boolean(duel && (duel.recording.host || duel.recording.low || duel.recording.high));
   const hasTicket = Boolean(ticket);
 
   const [open, setOpen] = useState(false);
@@ -272,6 +273,14 @@ export function Console({
           {notice ? (
             <p className={styles['cnotice']} role="status">
               {notice}
+            </p>
+          ) : null}
+
+          {/* A floor with no mic anywhere produces no transcript, and the host
+              does not find out until they close it and get an empty verdict. */}
+          {dueling && !recording ? (
+            <p className={styles['cnotice']} role="status">
+              No mic recording — the debate won&rsquo;t be transcribed.
             </p>
           ) : null}
         </div>

@@ -93,16 +93,17 @@ export function Duel({ duel, mic, remaining }: DuelProps) {
 
   return (
     <div className={styles['duel']}>
-      <div className={styles['duelHead']}>
-        {anyRecording ? (
+      {/* Only when there is something to say. The other half of this — that
+          nothing is being recorded — is the host's console's to report: they
+          are the one who can close the floor and run it again with a mic. */}
+      {anyRecording ? (
+        <div className={styles['duelHead']}>
           <span className={styles['recind']}>
             <span className={styles['recDot']} aria-hidden="true" />
             RECORDING
           </span>
-        ) : (
-          <span className={styles['norec']}>no mic recording — the debate won&rsquo;t be transcribed</span>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <div className={styles['dualrow']}>
         <Duelist duel={duel} role="low" />
