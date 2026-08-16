@@ -119,6 +119,7 @@ export function App({ boot }: { boot: PokerBoot }) {
   const duel = snapshot?.duel ?? null;
   const ticketIndex = snapshot?.ticket_index ?? 0;
   const ticketCount = snapshot?.ticket_count ?? 0;
+  const recording = Boolean(duel && (duel.recording.host || duel.recording.low || duel.recording.high));
 
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
@@ -434,6 +435,17 @@ export function App({ boot }: { boot: PokerBoot }) {
         }
       >
         <div className={styles['identity']}>
+          {/* Everyone's to see, not the host's: the one person who knows a mic
+              is open is the one who opened it, and the rest of the room is who
+              is being recorded. `role="status"` so it is announced once when it
+              starts rather than read as part of the toolbar. */}
+          {recording ? (
+            <span className={styles['recBadge']} role="status">
+              <span className={styles['recDot']} aria-hidden="true" />
+              Recording
+            </span>
+          ) : null}
+
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
