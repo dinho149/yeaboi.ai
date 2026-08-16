@@ -50,7 +50,7 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "key": "agents",
         "title": "Agents",
         "verb": "Watch your AI agents work",
-        "capabilities": ["cost", "daily digests", "security posture"],
+        "capabilities": ["cost", "recoverable spend", "daily digests", "security posture"],
         "color": AGENTS_THEME.accent,
         "bright": AGENTS_THEME.accent_bright,
         "dim": "rgb(50,88,115)",

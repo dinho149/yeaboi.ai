@@ -96,6 +96,21 @@ class TestMechanisms:
         report = waste_audit.audit_files([_write_transcript(tmp_path, "s.jsonl", lines)])
         assert report.linenum_overhead_bytes == len("     1\t") + len("     2\t")
 
+    def test_scaffolding_not_double_counted_on_classified_reads(self, tmp_path):
+        # Regression: an identical repeat's bytes already include its cat -n
+        # prefix; counting the prefix again would double-bill it in the
+        # recoverable sum. Only the unclassified first read contributes.
+        content = "     1\tfoo\n" + BIG_A
+        lines = [
+            _assistant(1, [_tool_use("t1", "Read", file_path="/j.py")]),
+            _result("t1", content),
+            _assistant(2, [_tool_use("t2", "Read", file_path="/j.py")]),
+            _result("t2", content),
+        ]
+        report = waste_audit.audit_files([_write_transcript(tmp_path, "s.jsonl", lines)])
+        assert report.dedup_identical_calls == 1
+        assert report.linenum_overhead_bytes == len("     1\t")
+
     def test_small_reads_stay_below_the_floor(self, tmp_path):
         lines = [
             _assistant(1, [_tool_use("t1", "Read", file_path="/k.py")]),
@@ -125,6 +140,26 @@ class TestCacheSignals:
         assert report.sessions_with_gap == 1
         # The Read at assistant turn 1 stays in context for 2 more turns.
         assert report.residency_median == 2
+
+    def test_residency_counts_turns_not_lines(self, tmp_path):
+        # Regression: one API response spans several JSONL lines sharing a
+        # requestId (the same split collector.py dedupes). Counting lines
+        # inflated residency by exactly that split factor.
+        def _assistant_req(req: str, blocks: list) -> str:
+            return json.dumps({"requestId": req, "message": {"role": "assistant", "content": blocks}})
+
+        lines = [
+            _assistant_req("r1", [_tool_use("t1", "Read", file_path="/f.py")]),
+            _result("t1", BIG_A),
+            # The same API response, continued across two more lines.
+            _assistant_req("r2", [{"type": "text", "text": "thinking"}]),
+            _assistant_req("r2", [{"type": "text", "text": "more"}]),
+            _assistant_req("r2", [_tool_use("t2", "Bash", command="ls")]),
+            _result("t2", "files"),
+        ]
+        report = waste_audit.audit_files([_write_transcript(tmp_path, "s.jsonl", lines)])
+        # Two turns (r1, r2), so the Read from turn 1 has residency 1 — not 3.
+        assert report.residency_median == 1
 
     def test_tool_bytes_attribution(self, tmp_path):
         lines = [

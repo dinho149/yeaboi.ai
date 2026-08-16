@@ -1,10 +1,10 @@
 """Routing and pages for the Agents family (agentwatch) in the TUI.
 
-One dispatch entry (:func:`route_agent_mode`) instead of three more branches in
+One dispatch entry (:func:`route_agent_mode`) instead of four more branches in
 ``select_mode``'s routing chain. Each mode wraps itself in ``mode_log`` (its own
 log file under ~/.yeaboi/logs/agentwatch/) and its one-time beta notice.
 
-All three pages share one threaded-engine loop: the page opens instantly on
+All four pages share one threaded-engine loop: the page opens instantly on
 the last saved report (age-stamped) while the pipeline runs on a daemon
 thread feeding a phase checklist / refresh banner, then the capped fresh
 result swaps in (r re-runs behind the visible report, esc backs out).

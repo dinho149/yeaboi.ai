@@ -24,7 +24,9 @@ What it sizes, per mechanism:
 - **stale** — Reads of files later edited in the same session (recoverable
   only with staleness-aware context handling, so the engine reports it as
   context rather than summing it into the recoverable headline).
-- **line-number scaffolding** — ``cat -n`` prefix bytes inside Read output.
+- **line-number scaffolding** — ``cat -n`` prefix bytes inside Read output,
+  counted only for reads not already charged to a whole-read class above
+  (those rows contain their scaffolding; counting it again would double-bill).
 - **context residency** — how many assistant turns each Read stays in context
   (the multiplier on its prefix-cache read cost).
 - **cache-death windows** — inter-message gaps exceeding the provider cache
@@ -122,11 +124,15 @@ def _audit_session(path: Path, agg: _Agg) -> None:
     read_events: list[tuple[str, int, int, bool]] = []  # (file, size, at, deduped)
     edit_files_at: list[tuple[int, str]] = []
     assistant_idx = 0
+    # One Claude Code API response spans several JSONL lines sharing a
+    # requestId (see collector.py's dedup) — residency is measured in
+    # assistant *turns*, so the index advances once per request, not per line.
+    seen_requests: set[str] = set()
     prev_ts: float | None = None
     had_gap = False
 
     with path.open(errors="replace") as f:
-        for raw in f:
+        for line_no, raw in enumerate(f, start=1):
             try:
                 line = json.loads(raw)
             except json.JSONDecodeError:
@@ -152,7 +158,10 @@ def _audit_session(path: Path, agg: _Agg) -> None:
                 prev_ts = ts
 
             if role == "assistant" and isinstance(content, list):
-                assistant_idx += 1
+                request_id = str(line.get("requestId") or line.get("uuid") or f"line:{line_no}")
+                if request_id not in seen_requests:
+                    seen_requests.add(request_id)
+                    assistant_idx += 1
                 for b in content:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
                         name = b.get("name", "")
@@ -183,22 +192,30 @@ def _audit_session(path: Path, agg: _Agg) -> None:
                     is_partial = inp.get("offset") is not None or inp.get("limit") is not None
                     if size < MIN_SIZE:
                         r.read_calls_small += 1
-                    r.linenum_overhead_bytes += sum(len(m.group(0)) for m in _LINE_NUM_RE.finditer(text))
 
                     h = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
                     deduped = False
+                    classified = False
                     if size >= MIN_SIZE and fp:
                         prior = file_reads[fp]
                         if any(ph == h for ph, _ in prior):
                             r.dedup_identical_bytes += size
                             r.dedup_identical_calls += 1
-                            deduped = True
+                            deduped = classified = True
                         elif is_partial and text and any(text in pc for _, pc in prior if len(pc) > len(text)):
                             r.subset_bytes += size
                             r.subset_calls += 1
+                            classified = True
                         elif any(text.strip() and w.strip() and text.strip() in w for w in file_writes.get(fp, [])):
                             r.write_readback_bytes += size
                             r.write_readback_calls += 1
+                            classified = True
+                    # Scaffolding bytes only for reads NOT already charged to one
+                    # of the whole-read classes above — those rows contain their
+                    # scaffolding, and counting it again double-bills the byte
+                    # in the recoverable sum.
+                    if not classified:
+                        r.linenum_overhead_bytes += sum(len(m.group(0)) for m in _LINE_NUM_RE.finditer(text))
                     if fp:
                         file_reads[fp].append((h, text))
                     read_events.append((fp, size, assistant_idx, deduped))

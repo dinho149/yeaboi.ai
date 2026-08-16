@@ -810,7 +810,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     agents_p = subparsers.add_parser(
         "agents",
-        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
+        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
         description=AGENTWATCH_BETA_NOTICE,
     )
     agents_sub = agents_p.add_subparsers(

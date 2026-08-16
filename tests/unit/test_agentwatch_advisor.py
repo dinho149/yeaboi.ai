@@ -158,6 +158,49 @@ class TestPipeline:
         assert any("AI output unavailable" in w for w in report.warnings)
         assert report.insights  # deterministic fallback lines
 
+    def test_blended_rate_weights_by_input_share(self, tmp_path, db_path):
+        transcript = _transcript_with_identical_repeat(tmp_path)
+        _seed_session(
+            db_path,
+            transcript,
+            # 3M opus-5 input at $5 + 1M haiku input at $1 → (15+1)/4 = $4/Mtok.
+            model_usage={
+                "claude-opus-5": {"input": 3_000_000, "output": 0, "calls": 1},
+                "claude-haiku-4-5": {"input": 1_000_000, "output": 0, "calls": 1},
+            },
+        )
+        report = advisor.run_agent_advisor(window_days=30, db_path=db_path, today=TODAY, dry_run=True)
+        assert report.effective_input_rate_per_mtok == pytest.approx(4.0)
+        assert report.unknown_rate_share == 0.0
+
+    def test_cache_only_window_flags_the_fallback_rate(self, tmp_path, db_path):
+        # Regression: a window with sessions but no input tokens prices the
+        # whole audit at the fallback tier — that must be flagged, not silent.
+        transcript = _transcript_with_identical_repeat(tmp_path)
+        _seed_session(
+            db_path,
+            transcript,
+            model_usage={"claude-opus-5": {"input": 0, "output": 0, "cache_read": 2_000_000, "calls": 1}},
+        )
+        report = advisor.run_agent_advisor(window_days=30, db_path=db_path, today=TODAY, dry_run=True)
+        assert report.unknown_rate_share == pytest.approx(1.0)
+
+    def test_recoverable_headline_capped_at_window_spend(self, tmp_path, db_path):
+        # Regression: waste priced at fresh-input rates can exceed a cheap
+        # cache-heavy window's measured spend; "$9 recoverable of $4" must not
+        # render. Tiny spend, big transcript → the cap fires with a warning.
+        transcript = _transcript_with_identical_repeat(tmp_path)
+        _seed_session(
+            db_path,
+            transcript,
+            model_usage={"claude-opus-5": {"input": 10, "output": 0, "calls": 1}},
+        )
+        report = advisor.run_agent_advisor(window_days=30, db_path=db_path, today=TODAY, dry_run=True)
+        assert report.total_cost_usd > 0
+        assert report.recoverable_usd == report.total_cost_usd
+        assert report.recoverable_share == pytest.approx(1.0)
+        assert any("capped" in w.lower() for w in report.warnings)
+
     def test_unknown_model_flags_the_rate(self, tmp_path, db_path):
         transcript = _transcript_with_identical_repeat(tmp_path)
         _seed_session(
@@ -180,6 +223,18 @@ class TestPrivacy:
         serialized = json.dumps(asdict(report))
         assert PLANTED_SECRET not in serialized
         assert BIG[:40] not in serialized
+        # Family convention (test_agentwatch_collector): the whole database is
+        # scanned too, not just the artifact — the run also persisted history.
+        import sqlite3
+
+        conn = sqlite3.connect(db_path)
+        try:
+            for (table,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+                for row in conn.execute(f"SELECT * FROM {table}"):  # noqa: S608 — test over its own tmp DB
+                    for value in row:
+                        assert PLANTED_SECRET not in str(value), f"secret leaked into {table}"
+        finally:
+            conn.close()
 
 
 class TestPrefixScan:
@@ -207,5 +262,5 @@ class TestPrefixScan:
         assert signals[0].location == str(volatile)
         assert signals[0].total == 2
         assert dict(signals[0].counts) == {"uuid": "1", "iso8601": "1"}
-        assert score == 80
+        assert score == 90  # per-file penalty: min(20, 2*5)
         assert "3f2b8a9e" not in json.dumps([asdict(s) for s in signals])

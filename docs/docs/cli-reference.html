@@ -83,7 +83,7 @@ yeaboi &lt;subcommand&gt; [OPTIONS]</code></pre>
           <tr><td><code>yeaboi poker</code></td><td>Read past poker sessions (the live voting board runs in the TUI)</td></tr>
           <tr><td><code>yeaboi analyze</code></td><td>Analyse team board history into a calibration profile</td></tr>
           <tr><td><code>yeaboi perf</code> <span class="beta-pill">Beta</span></td><td>1:1 prep and completion, six-month reviews, and notes — <code>roster</code>, <code>prep</code>, <code>complete</code>, <code>review</code>, <code>note</code></td></tr>
-          <tr><td><code>yeaboi agents</code> <span class="beta-pill">Beta</span></td><td>Monitor your AI coding agents — <code>cost</code>, <code>standup</code>, <code>security</code></td></tr>
+          <tr><td><code>yeaboi agents</code> <span class="beta-pill">Beta</span></td><td>Monitor your AI coding agents — <code>cost</code>, <code>advisor</code>, <code>standup</code>, <code>security</code></td></tr>
         </tbody>
       </table>
       <p>Every subcommand takes <code>--help</code>. Most take <code>--format {text,json}</code>, and the headless ones take <code>--strict</code>, which exits <code>3</code> when the run was degraded (warnings present, or no data found) so a scheduled job can tell a quiet success from a quiet failure.</p>
@@ -94,6 +94,7 @@ yeaboi &lt;subcommand&gt; [OPTIONS]</code></pre>
         <thead><tr><th>Command</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>yeaboi agents cost</code></td><td>What your agents cost. <code>--window-days N</code> (default 30), <code>--project NAME</code> (substring), <code>--source claude_code</code></td></tr>
+          <tr><td><code>yeaboi agents advisor</code></td><td>The recoverable share of agent spend and prompt-cache health. <code>--window-days N</code> (default 30)</td></tr>
           <tr><td><code>yeaboi agents standup</code></td><td>Daily digest of agent work. <code>--days N</code> (default: since the previous working day), <code>--tracker-sources [github azdo]</code>, <code>--github-owners</code>, <code>--azdo-projects</code>, <code>--no-local-sessions</code>, <code>--deliver</code></td></tr>
           <tr><td><code>yeaboi agents security</code></td><td>Audit the agent setup. <code>--deep</code> re-scans every transcript rather than only changed ones</td></tr>
         </tbody>
@@ -243,6 +244,7 @@ yeaboi --dry-run                                  # TUI with mock data</code></p
       <ul>
         <li><a href="/docs/agents/index.html">Overview</a></li>
         <li><a href="/docs/agents/usage.html">Agent Usage</a></li>
+        <li><a href="/docs/agents/advisor.html">Agent Advisor</a></li>
         <li><a href="/docs/agents/standup.html">Agent Standup</a></li>
         <li><a href="/docs/agents/security.html">Agent Security</a></li>
       </ul>

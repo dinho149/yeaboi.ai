@@ -43,9 +43,13 @@ LABEL_ISO8601 = "iso8601"
 LABEL_JWT = "jwt"
 LABEL_HEX_HASH = "hex_hash"
 
-# Flat per-finding penalty for the 0-100 alignment score — a coarse dashboard
-# signal, same weighting as upstream.
-_SCORE_PENALTY_PER_FINDING = 10
+# Alignment-score weights. Upstream uses a flat 10 points per finding, which
+# saturates to 0/100 the moment one file carries ten dated changelog lines —
+# and a score that is always 0 stops being read. Per-file, capped: each file
+# costs 5 points per finding up to 20, so one noisy file cannot claim the
+# whole scale and a genuinely clean setup still scores 100.
+_SCORE_PENALTY_PER_FINDING = 5
+_SCORE_MAX_PENALTY_PER_FILE = 20
 
 
 def _is_uuid(token: str) -> bool:
@@ -74,19 +78,28 @@ def _is_iso8601(token: str) -> bool:
 
 
 def _is_jwt_shape(token: str) -> bool:
-    """True when ``token`` has the three-segment base64url shape of a JWT."""
+    """True when ``token`` has the three-segment base64url shape of a JWT.
+
+    Beyond upstream's segment checks, the first segment must decode to JSON
+    (start with ``{``) — a real JWT header always does (the familiar ``eyJ``
+    prefix IS base64 of ``{"``), and without it any dotted identifier whose
+    parts happen to be base64url-decodable (``yeaboi.agentwatch.advisor``,
+    ``make.test.scoped``) classifies as a JWT and the cache-health signal
+    fires on every module path in a CLAUDE.md.
+    """
     segments = token.split(".")
     if len(segments) != _JWT_SEGMENT_COUNT:
         return False
+    decoded: list[bytes] = []
     for seg in segments:
         if len(seg) < _JWT_MIN_SEGMENT_BYTES:
             return False
         padded = seg + "=" * (-len(seg) % 4)
         try:
-            base64.urlsafe_b64decode(padded.encode("ascii"))
+            decoded.append(base64.urlsafe_b64decode(padded.encode("ascii")))
         except (binascii.Error, ValueError, UnicodeEncodeError):
             return False
-    return True
+    return decoded[0].startswith(b"{")
 
 
 def _is_hex_hash(token: str) -> bool:
@@ -135,6 +148,11 @@ def count_volatile(content: str) -> dict[str, int]:
     return counts
 
 
-def alignment_score(total_findings: int) -> int:
-    """0-100 cache-alignment score: flat penalty per finding, clamped."""
-    return max(0, min(100, 100 - total_findings * _SCORE_PENALTY_PER_FINDING))
+def alignment_score(per_file_totals: list[int] | tuple[int, ...]) -> int:
+    """0-100 cache-alignment score from each scanned file's finding count.
+
+    Per-file penalty, capped per file (see the weight constants) — a coarse
+    dashboard signal, deliberately hard to saturate.
+    """
+    penalty = sum(min(_SCORE_MAX_PENALTY_PER_FILE, n * _SCORE_PENALTY_PER_FINDING) for n in per_file_totals)
+    return max(0, min(100, 100 - penalty))

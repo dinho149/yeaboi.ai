@@ -38,6 +38,13 @@ class TestClassifiers:
         for token in ("hello", "make", "test-scoped", "v1.2.3", "12345"):
             assert cache_signals._classify_token(token) is None
 
+    def test_dotted_identifiers_are_not_jwts(self):
+        # Regression: any three base64url-decodable segments used to classify
+        # as a JWT, so every module path in a CLAUDE.md fired the signal. A
+        # real JWT's first segment decodes to JSON; these do not.
+        for token in ("yeaboi.agentwatch.advisor", "make.test.scoped", "one.two.three"):
+            assert cache_signals._classify_token(token) is None
+
 
 class TestCountVolatile:
     def test_counts_by_label_and_strips_punctuation(self):
@@ -57,7 +64,13 @@ class TestCountVolatile:
 
 
 class TestAlignmentScore:
-    def test_flat_penalty_clamped(self):
-        assert cache_signals.alignment_score(0) == 100
-        assert cache_signals.alignment_score(2) == 80
-        assert cache_signals.alignment_score(50) == 0
+    def test_per_file_penalty(self):
+        assert cache_signals.alignment_score([]) == 100
+        assert cache_signals.alignment_score([2]) == 90
+        assert cache_signals.alignment_score([2, 1]) == 85
+
+    def test_one_noisy_file_cannot_claim_the_whole_scale(self):
+        # A single file with 50 dated lines caps at 20 points — the score must
+        # not saturate to 0 over one changelog, or it stops being read.
+        assert cache_signals.alignment_score([50]) == 80
+        assert cache_signals.alignment_score([50, 50, 50, 50, 50]) == 0

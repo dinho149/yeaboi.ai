@@ -325,8 +325,8 @@ def get_anonymize_export_dir(project_key: str) -> Path:
 def get_agentwatch_export_dir(kind_key: str) -> Path:
     """Return the agentwatch export directory for a report kind, creating it if needed.
 
-    ``kind_key`` is the report kind ("usage", "standup", "security"), so the
-    three agent modes' exports stay separated the way per-project modes are.
+    ``kind_key`` is the report kind ("usage", "advisor", "standup", "security"),
+    so the agent modes' exports stay separated the way per-project modes are.
     """
     d = AGENTWATCH_EXPORTS_DIR / _safe_key(kind_key, "report")
     d.mkdir(parents=True, exist_ok=True)

@@ -96,8 +96,11 @@ def _blended_input_rate(sessions: list[dict]) -> tuple[float, float]:
             if not matched:
                 unknown += tokens
     if total == 0:
-        # No input traffic to weight — fall back to the table's fallback tier.
-        return lookup_price("")[0].input_per_mtok, 0.0
+        # No input traffic to weight — the whole audit prices at the table's
+        # fallback tier, and that must be FLAGGED, not silent: with sessions in
+        # the window this is the least-trustworthy pricing case, not a clean
+        # one. An empty window flags nothing because nothing was priced.
+        return lookup_price("")[0].input_per_mtok, 1.0 if sessions else 0.0
     return weighted / total, unknown / total
 
 
@@ -137,6 +140,11 @@ def _prefix_files(sessions: list[dict], *, home: Path | None = None) -> list[Pat
     The home CLAUDE.md plus each windowed project's CLAUDE.md variants — the
     files an agent loads into its prompt prefix on every session, where
     volatile content translates directly into cache-prefix churn.
+
+    This reads OUTSIDE the fs_policy builtin roots (~/.claude): a project's
+    CLAUDE.md lives in the user's own repository. Deliberate and read-only —
+    the projects come from the user's own session history, only counts leave
+    the scan, and like the collector this path never writes.
     """
     resolved_home = home or Path.home()
     candidates: list[Path] = [resolved_home / ".claude" / "CLAUDE.md"]
@@ -172,17 +180,15 @@ def _scan_prefix_files(paths: list[Path]) -> tuple[tuple[VolatileFileSignal, ...
     does (cache_signals.count_volatile returns labels and counts, no samples).
     """
     signals: list[VolatileFileSignal] = []
-    total_findings = 0
     for path in paths:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")[:_MAX_PREFIX_BYTES]
+            text = path.read_bytes()[:_MAX_PREFIX_BYTES].decode("utf-8", errors="replace")
         except OSError:
             continue
         counts = cache_signals.count_volatile(text)
         total = sum(counts.values())
         if not total:
             continue
-        total_findings += total
         signals.append(
             VolatileFileSignal(
                 location=str(path),
@@ -191,7 +197,7 @@ def _scan_prefix_files(paths: list[Path]) -> tuple[tuple[VolatileFileSignal, ...
             )
         )
     signals.sort(key=lambda s: s.total, reverse=True)
-    return tuple(signals), cache_signals.alignment_score(total_findings)
+    return tuple(signals), cache_signals.alignment_score([s.total for s in signals])
 
 
 def _fallback_advisor_prose(report: AgentAdvisorReport) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -258,7 +264,10 @@ def run_agent_advisor(
         sessions = store.list_sessions(since=period_start)
 
     # One audit per transcript file: rollup rows are keyed per file, so the
-    # distinct source paths ARE the window's transcript set.
+    # distinct source paths ARE the window's transcript set. A session is
+    # windowed by its ended_at and its WHOLE transcript is audited, so waste
+    # from turns before period_start can be measured against in-window spend —
+    # one more reason every figure here is an estimate, not an invoice.
     paths = sorted({s["source_path"] for s in sessions if s["source_path"]})
     audit_paths = [p for p in (Path(raw) for raw in paths) if p.suffix == ".jsonl"]
 
@@ -288,6 +297,19 @@ def run_agent_advisor(
     line_items = _line_items(audit, rate)
     recoverable_usd = round(sum(i.est_usd for i in line_items if i.recoverable), 4)
     total_cost = round(sum(_session_cost(s["model_usage"])[0] for s in sessions), 4)
+    # Waste is priced at the fresh-input rate, but a re-read that hit the
+    # prompt cache actually billed at the (10x cheaper) cache-read rate — so on
+    # a cache-heavy window the raw estimate can exceed the window's measured
+    # spend, and "$9 recoverable of $4" is not a claim worth rendering. Cap the
+    # headline at what was actually spent and say the cap fired; the per-item
+    # figures keep their raw values, labelled estimates.
+    if total_cost > 0 and recoverable_usd > total_cost:
+        warnings.append(
+            f"Recoverable estimate (${recoverable_usd:,.2f}) exceeded the window's measured spend — "
+            "waste is priced at fresh-input rates while cached re-reads billed cheaper. "
+            "Headline capped at the window total; treat it as an upper bound."
+        )
+        recoverable_usd = total_cost
 
     _emit(on_progress, "signals", "running", label="Check cache health")
     volatile_signals, score = _scan_prefix_files(_prefix_files(sessions))
