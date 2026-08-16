@@ -125,8 +125,8 @@ decisions, or these conventions is not.
   the Go renderer reproduces them byte-for-byte.
 
 ### Dual maintenance & the freeze mechanism
-- CLAUDE.md's "REQUIRED: Go sidecar dual maintenance" gains **one bullet per wave** (Python files
-  ↔ Go package + the gate). Go files keep naming their Python twin in headers.
+- CLAUDE.md's "REQUIRED: Go sidecar dual maintenance" gains **one table row per wave** (family
+  ↔ Python files ↔ Go package). Go files keep naming their Python twin in headers.
 - **Reference flip + freeze**: Python stays the reference for an area until the *next* wave merges
   cleanly on top. Then the area's files enter `FROZEN_SURFACES` in a new
   `tests/unit/test_migration_freeze.py` (`{path: sha256}`); the test fails when a frozen file
@@ -148,7 +148,7 @@ decisions, or these conventions is not.
 All ten items of `cowork/definition-of-done.md` (Linear ticket, tests, lint, security,
 observability, Notion, Slack, pr-feedback gate), plus:
 1. Wave gate green **unskipped** in CI (parity job env vars extended as needed).
-2. CLAUDE.md dual-maintenance bullet added; freeze-table entry added for the *previous* wave's area.
+2. CLAUDE.md dual-maintenance table row added; freeze-table entry added for the *previous* wave's area.
 3. `contracts/` updated iff the RPC surface changed; `binaryVersion` bumped iff methods added;
    schema-ceiling lockstep honored (W9+).
 4. `make go-test`, `make go-lint`, `make parity` in the verification list.
@@ -240,7 +240,7 @@ timestamps enable full-document goldens for the first time).
 `binaryVersion` 0.5.0 + methods list + dispatch arms; `packaging/yeaboi-core` 0.5.0; root
 `core = ["yeaboi-core>=0.5.0,<0.6"]`; add `TestExportsPrivacyInvariant` (no-log-import) to
 `test_gocore_packaging.py` (the method-set lockstep updates itself from main.go/rpc.md/schemas);
-CLAUDE.md dual-maintenance gains a fourth bullet — load-bearing, because `html_theme.py` and
+CLAUDE.md dual-maintenance gains a fourth table row — load-bearing, because `html_theme.py` and
 `render.py` are shared with five other exporters and changes there now need the Go twin.
 
 ### Phase commits

@@ -5293,11 +5293,6 @@ class TestTheDocsCountTheFleetCorrectly:
     # exclusion nobody can read is how a check stops meaning anything.
     ALLOWED = {
         (
-            "CLAUDE.md",
-            "twenty",
-            "routines",
-        ): "`RemoteTrigger list` returns twenty routines per page — the API's page size, not the fleet's size",
-        (
             "scripts/cowork_setup.py",
             "seventeen",
             "labels",

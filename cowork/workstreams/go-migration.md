@@ -22,7 +22,7 @@ and the dual-maintenance record in the same commit that moves the code, and thos
 platform's. The grant is by site and by operation, exactly as the campaign lane's:
 the version line in `packaging/yeaboi-core/pyproject.toml` — **platform**;
 the `core = ["yeaboi-core>=X.Y,<X.Y+1"]` extra pin in `pyproject.toml` — **platform**;
-appending one dual-maintenance bullet per wave (and flipping an area's reference-direction
+appending one dual-maintenance table row per wave (and flipping an area's reference-direction
 wording per the program doc's §5) in `CLAUDE.md` — **platform**;
 the `go-*`/`parity` targets in `Makefile` — **platform**;
 the parity job's env vars and scope globs in `.github/workflows/ci.yml`, never its

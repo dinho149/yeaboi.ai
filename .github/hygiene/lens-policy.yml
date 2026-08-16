@@ -269,8 +269,9 @@ lenses:
         instead: "`read_asset` / `render_page` from `src/yeaboi/web/assets.py`"
         exempt: ["src/yeaboi/web/assets.py"]
         why: >-
-          CLAUDE.md: "Python reaches the bundles only through
-          `src/yeaboi/web/assets.py`. Never read from `static/` directly."
+          `.claude/skills/web-frontend/SKILL.md`: "Python reaches the
+          bundles only through `src/yeaboi/web/assets.py` … Never read from
+          `static/` directly."
           `read_asset` is `lru_cache`d and every path into the committed bundles
           is meant to share that cache; a second reader is how `make web` starts
           serving a stale file to one surface and a fresh one to the next.
