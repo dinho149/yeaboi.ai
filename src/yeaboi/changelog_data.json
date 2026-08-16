@@ -2,6 +2,44 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.13.0",
+      "date": "2026-08-16",
+      "summary": "The Agent Advisor joins the Agents family as the fourth agentwatch mode, turning the cost meter into a cost advisor that answers \"how much of what my agents cost was avoidable, and why\". The mode audits waste in your local agent transcripts \u2014 re-reads, subset reads, write read-backs, and stale reads \u2014 priced at your actual blended cache-aware rate, and surfaces structural markers of cache volatility in CLAUDE.md prefixes (UUIDs, timestamps, JWTs) that cause premature cache evictions. Full surface parity brings the advisor to the TUI as a new Advisor card and page, CLI `yeaboi agents advisor`, MCP tools for RPC-driven analysis, and a plugin skill for AI-assistant integration. Privacy is preserved: transcripts and prefix files are read locally; only counts, totals and file paths reach the artifact and database.",
+      "highlights": [
+        {
+          "text": "New Agent Advisor mode audits recoverable spend in local Claude Code transcripts with honest pricing at your blended cache rate",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Waste detection catches re-reads, subset re-reads, write read-backs, and stale reads with deterministic mechanism fixtures",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Cache health scoring detects volatile content in CLAUDE.md prefixes (UUIDs, timestamps, JWTs) that cause premature evictions",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Full surface parity: TUI Advisor card and page, CLI subcommand, MCP tools, and Claude Code plugin skill",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "Privacy preserved: transcripts and prefix files read locally; only counts, totals and paths reach artifacts and storage",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.12.1",
       "date": "2026-08-15",
       "summary": "Faster, more reliable release pipeline with internal improvements to the fleet feedback loop and verification gate. The ship gate now runs 2.5\u00d7 faster (full test suite in 120s instead of 289s) by parallelizing unit tests, and it verifies the correct tree by fetching before rebase. The fleet gained a feedback system that records every rejection reason for calibration, hygiene lenses to surface high-impact sweeps, and self-tightening rules that make the fleet quieter without human intervention. No user-facing feature changes.",
