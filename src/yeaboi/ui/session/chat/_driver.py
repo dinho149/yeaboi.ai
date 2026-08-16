@@ -1701,10 +1701,26 @@ class _ChatDriver:
         # Only the "ask" stage gets the card; "empty" went out as prose, and a
         # legacy "reason" reply has no card to rebuild (the node re-asks the
         # batch on the next input, which posts a fresh one).
+        # The card belongs to the newest reply that is NOT the grammar hint:
+        # a rejected typed answer leaves [..., AI(batch prompt), Human, AI(hint)],
+        # and pinning to the newest reply outright would card the one-liner
+        # while the batch-prompt wall above it replayed raw.
         prior_art_at = -1
         qs = self._qs()
         if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask" and qs._prior_art_candidates:
-            prior_art_at = newest_reply_at
+            from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+            prior_art_at = max(
+                (
+                    i
+                    for i, m in enumerate(messages)
+                    if isinstance(m, AIMessage)
+                    and isinstance(m.content, str)
+                    and m.content
+                    and m.content.strip() != _PRIOR_ART_GRAMMAR_HINT
+                ),
+                default=-1,
+            )
         for i, message in enumerate(messages):
             if isinstance(message, HumanMessage) and isinstance(message.content, str):
                 self.transcript.add_user(message.content)

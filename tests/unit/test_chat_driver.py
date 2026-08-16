@@ -1907,6 +1907,33 @@ class TestPriorArtCarousel:
         bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
         assert "Reply with the numbers" in bubble.text
 
+    def test_rebuild_after_a_rejected_answer_cards_the_prompt_not_the_hint(self):
+        # A rejected typed answer leaves the transcript ending
+        # [AI(batch prompt), Human("auth"), AI(grammar hint)]. The card must
+        # replace the batch prompt — carding the newest reply outright would
+        # attach it to the one-line hint and replay the markdown wall raw.
+        from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+        batch_prompt = "**Prior art** — you already have 2 repositories that might be relevant."
+        state = {
+            "messages": [
+                HumanMessage(content="desc"),
+                AIMessage(content=batch_prompt),
+                HumanMessage(content="auth"),
+                AIMessage(content=_PRIOR_ART_GRAMMAR_HINT),
+            ],
+            "_chat_greeting_done": True,
+            "questionnaire": self._qs(),
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._rebuild_transcript()
+        roles = [(m.role, m.artifact_kind) for m in driver.transcript.messages]
+        assert ("artifact", "prior_art") in roles
+        texts = [m.text for m in driver.transcript.messages]
+        assert not any("already have 2 repositories" in t for t in texts)
+        # The hint replays as prose, mirroring the live turn.
+        assert any("Reply with the numbers" in t for t in texts)
+
     def test_rebuild_readds_the_card_mid_batch(self):
         state = {
             "messages": [
