@@ -112,9 +112,7 @@ export function PageShell({
     [drag],
   );
   const readDock = useCallback(() => dockEl.current, []);
-  // Not while it is being dragged: the pointer is holding it, and two things
-  // moving one element is a fight.
-  const tilt = useDockLift(readDock, !drag.dragging);
+  const tilt = useDockLift(readDock, drag.dragging);
   // The dock's drawer, once it exists. Every dock popover renders into it, so
   // opening one grows the dock itself rather than floating a panel over it.
   const [drawer, setDrawer] = useState<HTMLDivElement | null>(null);
@@ -211,7 +209,6 @@ export function PageShell({
             className={cx(
               styles['dockApp'],
               drag.placed && styles['dockPlaced'],
-              tilt.following && styles['dockLifted'],
               drag.dragging && styles['dockDragging'],
             )}
             style={
