@@ -46,7 +46,6 @@ export interface ConsoleProps {
   onRevote(): void;
   onAskAi(): void;
   onOpenDuel(seconds: number): void;
-  onNextTurn(): void;
   onCloseDuel(): void;
   onFinalize(points: number): void;
   /** A refusal from the server, or a local validation message. */
@@ -66,7 +65,6 @@ export function Console({
   onRevote,
   onAskAi,
   onOpenDuel,
-  onNextTurn,
   onCloseDuel,
   onFinalize,
   notice,
@@ -215,20 +213,6 @@ export function Console({
               </div>
             ) : null}
 
-            {slotHeld === 'live' ? (
-              <div className={styles['crow']}>
-                <Button
-                  disabled={duel?.turn !== 'low'}
-                  title="Hand the floor to the high voter"
-                  onClick={onNextTurn}
-                >
-                  Next turn ›
-                </Button>
-                <Button onClick={onCloseDuel}>
-                  Close the floor
-                </Button>
-              </div>
-            ) : null}
           </div>
         </div>
 

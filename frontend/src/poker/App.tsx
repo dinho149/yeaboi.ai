@@ -518,6 +518,9 @@ export function App({ boot }: { boot: PokerBoot }) {
             duel={duel}
             mic={mic}
             remaining={remaining}
+            isHost={isHost}
+            onNextTurn={() => run(actions.nextTurn())}
+            onCloseDuel={() => run(actions.closeDuel())}
             revealed={revealed}
           />
 
@@ -542,7 +545,6 @@ export function App({ boot }: { boot: PokerBoot }) {
             onRevote={() => run(actions.revote())}
             onAskAi={() => run(actions.askAi())}
             onOpenDuel={(seconds) => run(actions.openDuel(seconds))}
-            onNextTurn={() => run(actions.nextTurn())}
             onCloseDuel={() => run(actions.closeDuel())}
             onFinalize={(points) => run(actions.finalize(points))}
           />

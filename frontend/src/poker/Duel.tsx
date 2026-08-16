@@ -27,12 +27,16 @@ import type { DuelSlice } from '../types/board';
 import type { DuelMic } from './useDuelMic';
 import styles from './poker.module.css';
 import { Icon } from '../design/primitives';
+import { Button } from '../shared';
 
 export interface DuelProps {
   duel: DuelSlice;
   mic: DuelMic;
   /** Seconds left on the turn, shown between the two of them. */
   remaining: number | null;
+  isHost: boolean;
+  onNextTurn(): void;
+  onCloseDuel(): void;
 }
 
 function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
@@ -57,7 +61,7 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   );
 }
 
-export function Duel({ duel, mic, remaining }: DuelProps) {
+export function Duel({ duel, mic, remaining, isHost, onNextTurn, onCloseDuel }: DuelProps) {
   if (duel.status === 'transcribing') {
     return (
       <div className={styles['duel']} role="status">
@@ -107,15 +111,26 @@ export function Duel({ duel, mic, remaining }: DuelProps) {
 
       <div className={styles['dualrow']}>
         <Duelist duel={duel} role="low" />
-        {/* The clock stands between them, because that is what it counts down:
-            whose turn it is, not how long the board has been open. */}
-        {remaining === null ? (
-          <span className={styles['vs']} aria-hidden="true">
-            VS
-          </span>
-        ) : (
-          <span className={cx(styles['vs'], styles['vsClock'])}>{fmtClock(remaining)}</span>
-        )}
+        {/* Between them, because that is what all of it is about: the clock is
+            counting down whose turn it is, and the two controls hand the floor
+            over and close it. */}
+        <div className={styles['vs']}>
+          {remaining === null ? (
+            <span aria-hidden="true">VS</span>
+          ) : (
+            <span className={styles['vsClock']}>{fmtClock(remaining)}</span>
+          )}
+          {isHost ? (
+            <div className={styles['vsActs']}>
+              <Button size="s" disabled={duel.turn !== 'low'} title="Hand the floor to the high voter" onClick={onNextTurn}>
+                Next turn ›
+              </Button>
+              <Button size="s" onClick={onCloseDuel}>
+                Close the floor
+              </Button>
+            </div>
+          ) : null}
+        </div>
         <Duelist duel={duel} role="high" />
       </div>
 

@@ -33,11 +33,27 @@ export interface ResultsProps {
   mic: DuelMic;
   /** Seconds left on the board timer, for the turn clock between the two. */
   remaining: number | null;
+  /** The floor's own controls are host-only, and they live inside it. */
+  isHost: boolean;
+  onNextTurn(): void;
+  onCloseDuel(): void;
   /** True once votes are public — `revealed` or `duel`. */
   revealed: boolean;
 }
 
-export function Results({ distribution, median, suggestion, ai, duel, mic, remaining, revealed }: ResultsProps) {
+export function Results({
+  distribution,
+  median,
+  suggestion,
+  ai,
+  duel,
+  mic,
+  remaining,
+  isHost,
+  onNextTurn,
+  onCloseDuel,
+  revealed,
+}: ResultsProps) {
   const entries = Object.entries(distribution);
   const hasAi = ai.pending || Boolean(ai.note);
   const hasFloor = Boolean(duel);
@@ -155,7 +171,14 @@ export function Results({ distribution, median, suggestion, ai, duel, mic, remai
             aria-labelledby="results-tab-floor"
             className={cx(!onFloor && styles['rpanelOff'])}
           >
-            <Duel duel={duel} mic={mic} remaining={remaining} />
+            <Duel
+              duel={duel}
+              mic={mic}
+              remaining={remaining}
+              isHost={isHost}
+              onNextTurn={onNextTurn}
+              onCloseDuel={onCloseDuel}
+            />
           </div>
         ) : null}
       </div>

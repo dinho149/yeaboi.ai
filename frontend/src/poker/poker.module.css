@@ -885,10 +885,24 @@
 
 .vs {
   align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-eyebrow);
   color: var(--dim);
+}
+
+.vsActs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  /* The slot is mono because it holds a clock; a button in it is still prose.
+     `.btn` inherits its face, so the reset belongs here. */
+  font-family: var(--font-sans);
+  letter-spacing: normal;
 }
 
 /* The same slot, carrying a number instead of a word. */
