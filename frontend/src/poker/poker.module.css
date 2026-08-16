@@ -1516,9 +1516,15 @@
   top: 100%;
   left: 0;
   z-index: var(--z-popover);
+  /* The cut is where the bar ends; the drop is how far below it the stack
+     settles. They are separate, or lowering the cards would move the cut with
+     them and they would appear out of thin air instead of out of the bar. */
+  --room-cut: var(--s3);
+  --room-drop: var(--s2);
+  --room-gap: var(--s2);
   margin: 0;
-  padding: var(--s3) 0 0;
-  clip-path: inset(var(--s3) -40px -40px -40px);
+  padding: calc(var(--room-cut) + var(--room-drop)) 0 0;
+  clip-path: inset(var(--room-cut) -40px -40px -40px);
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -1526,7 +1532,7 @@
   width: max-content;
   min-width: 160px;
   align-items: stretch;
-  gap: var(--s1);
+  gap: var(--room-gap);
   pointer-events: none;
 }
 
@@ -1551,7 +1557,9 @@
   font-size: var(--fs-s);
   /* Every card starts in the same place — one card-height above the cut, which
      is to say under the bar — and slides down to its own. */
-  transform: translateY(calc((var(--i) + 1) * (var(--card-h) + var(--s1)) * -1));
+  transform: translateY(
+    calc((var(--room-drop) + var(--i) * (var(--card-h) + var(--room-gap)) + var(--card-h) + 2px) * -1)
+  );
   transition: transform var(--dur-base) var(--ease);
 }
 
