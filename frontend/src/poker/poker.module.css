@@ -1253,7 +1253,10 @@
 }
 
 /*
- * Every control on the board, in one material.
+ * Every control on the board, in one material — except the two that declare
+ * themselves chromeless: a bare button (the ticket's Edit) and a pill (the
+ * deck's arrows) are meant to be glyphs, and giving them a panel is how the
+ * pencil stopped being something you only notice when you look for it.
  *
  * The shared button is a form control: a flat fill, a one-pixel outline and a
  * small radius, which is what a browser draws when nobody has decided anything.
@@ -1263,7 +1266,7 @@
  * Matched on a substring because the class is hashed by CSS modules and the
  * button belongs to another one; the dock reaches its own the same way.
  */
-.app [class*='btn'] {
+.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']) {
   border-radius: var(--r-m);
   border-color: var(--hairline);
   background: var(--panel);
@@ -1279,17 +1282,17 @@
 
 /* Nothing rises on hover — a panel of controls that all lift as the pointer
    crosses them is a panel that will not sit still. The press is the feedback. */
-.app [class*='btn']:hover:not(:disabled) {
+.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):hover:not(:disabled) {
   border-color: var(--hairline-strong);
 }
 
-.app [class*='btn']:active:not(:disabled) {
+.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):active:not(:disabled) {
   transform: translateY(1px);
   box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
 }
 
 /* Unavailable, not invisible: it keeps its outline and a readable label. */
-.app [class*='btn']:disabled {
+.app [class*='btn']:not([class*='btnBare']):not([class*='btnPill']):disabled {
   opacity: 1;
   background: none;
   border-color: var(--hairline);
@@ -1646,13 +1649,10 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
   background: var(--panel);
-  /* Cast only while it is moving. At rest a dozen of these stack their shadows
-     into a grey column; a card that has arrived is a pill on the board, and the
-     border is enough to hold it there. */
-  box-shadow:
-    var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%),
-    0 4px 12px rgb(0 0 0 / 10%);
+  /* Nothing while it is parked. A card under the bar is clipped but its shadow
+     is not, so a dozen of them stack into a grey smudge along the bar's bottom
+     edge with the room shut. It takes its shadow on the way out. */
+  box-shadow: none;
   font-size: var(--fs-s);
   /* Every card starts in the same place — one card-height above the cut, which
      is to say under the bar — and slides down to its own. */
@@ -1673,7 +1673,10 @@
 .room:hover .roomCard,
 .room:has(:focus-visible) .roomCard {
   transform: none;
-  box-shadow: none;
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
   transition-delay: calc(var(--i) * 45ms);
 }
 
