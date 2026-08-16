@@ -3929,9 +3929,13 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
 # ---------------------------------------------------------------------------
 # See docs: "Project Intake Questionnaire" — prior art
 
-_PRIOR_ART_ACCEPT = "Yes, relevant"
-_PRIOR_ART_REJECT = "Not relevant"
-_PRIOR_ART_SKIP = "Skip the rest"
+# The one grammar every surface answers in — the chat widget submits it, and
+# REPL / form / headless / typed-chat users type it against the numbered list
+# the prompt shows. Documented in _prior_art_prompt and _PRIOR_ART_GRAMMAR_HINT.
+_PRIOR_ART_GRAMMAR_HINT = (
+    'Reply with the numbers that are relevant (e.g. "1 3"), "all", or "none". '
+    'Prefix ! to never suggest a repo again (e.g. "1 !2").'
+)
 
 
 def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
@@ -3944,7 +3948,7 @@ def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
 def _start_prior_art(questionnaire: QuestionnaireState) -> str | None:
     """Run the scan and open the sub-loop. None means "nothing to ask".
 
-    Returns the first candidate's prompt when there is a shortlist. When there
+    Returns the one batch prompt when there is a shortlist. When there
     is not, the stage is closed out and the reason recorded so the card can say
     which of "no profile" / "profile too old" / "nothing matched" happened —
     going quiet would leave the user unable to tell a gap from a verdict.
@@ -4003,65 +4007,78 @@ def _accepted_prior_art(questionnaire: QuestionnaireState) -> tuple:
     return tuple(refs)
 
 
-def _prior_art_current(questionnaire: QuestionnaireState) -> dict | None:
-    """The candidate currently on screen, or None when the list is exhausted."""
-    index = questionnaire._prior_art_index
-    candidates = questionnaire._prior_art_candidates
-    return candidates[index] if 0 <= index < len(candidates) else None
-
-
 def _prior_art_prompt(questionnaire: QuestionnaireState) -> str:
-    """The question for the current candidate, pitch and all."""
-    candidate = _prior_art_current(questionnaire)
-    if candidate is None:
+    """The one batch question listing every shortlisted repository.
+
+    All candidates appear numbered with condensed pitches, because this same
+    markdown is the whole interface on the text surfaces (REPL, form intake,
+    typed chat) — the answer grammar it documents is what
+    _parse_prior_art_answer accepts, so nothing depends on the chat widget.
+    """
+    candidates = questionnaire._prior_art_candidates
+    if not candidates:
         return ""
-    total = len(questionnaire._prior_art_candidates)
-    position = questionnaire._prior_art_index + 1
+    plural = "repository" if len(candidates) == 1 else "repositories"
     lines = [
-        f"**Prior art {position} of {total}** — you already have **{candidate.get('name', '')}**.",
+        f"**Prior art** — you already have {len(candidates)} {plural} that might be relevant.",
         "",
     ]
-    for bullet in candidate.get("pitch") or ():
-        lines.append(f"- {bullet}")
-    stack = candidate.get("stack") or candidate.get("languages") or ()
-    if stack:
-        lines.append("")
-        lines.append(f"_{', '.join(stack)}_")
-    lines += [
-        "",
-        "Is it relevant to this project?",
-        "",
-        f"[1] {_PRIOR_ART_ACCEPT}",
-        f"[2] {_PRIOR_ART_REJECT}",
-        f"[3] {_PRIOR_ART_SKIP}",
-    ]
-    # Say that answering is what reaches the rest. The candidates are asked
-    # about one at a time on every surface, so "1 of 3" on its own reads as a
-    # pager offering no way to reach 2 and 3.
-    remaining = total - position
-    if remaining:
-        lines += ["", f"_Answering brings up the next — {remaining} more after this._"]
+    for position, candidate in enumerate(candidates, start=1):
+        stack = candidate.get("stack") or candidate.get("languages") or ()
+        title = f"**{position}. {candidate.get('name', '')}**"
+        if stack:
+            title += f" _({', '.join(stack)})_"
+        lines.append(title)
+        for bullet in (candidate.get("pitch") or ())[:2]:
+            lines.append(f"   - {bullet}")
+    lines += ["", _PRIOR_ART_GRAMMAR_HINT]
     return "\n".join(lines)
 
 
-def _prior_art_advance(questionnaire: QuestionnaireState) -> dict:
-    """Move to the next candidate, or finish the sub-loop.
+def _parse_prior_art_answer(text: str, count: int) -> tuple[set[int], set[int]] | None:
+    """Parse a batch verdict into 0-based (relevant, banned) index sets.
 
-    Finishing writes the rejections to the global ledger and hands back to the
-    funnel, which shows the summary the accepted references now appear in.
+    Grammar (case-insensitive, tokens split on commas/whitespace):
+      - ``N``            → relevant (1-based against the prompt's numbering)
+      - ``!N``           → banned — never suggest again (permanent ledger write)
+      - ``all``          → every candidate relevant
+      - ``none``/``skip``/empty → nothing relevant, nothing banned
+    A ban wins over a select of the same index. Any out-of-range digit or
+    unrecognised token returns None so the caller can re-prompt — silently
+    dropping half an answer would record a verdict the user never gave.
     """
-    questionnaire._prior_art_index += 1
-    questionnaire._prior_art_stage = "ask"
-    if _prior_art_current(questionnaire) is not None:
-        return {
-            "questionnaire": questionnaire,
-            "messages": [AIMessage(content=_prior_art_prompt(questionnaire))],
-        }
-    return _finish_prior_art(questionnaire)
+    words = [w for w in re.split(r"[,\s]+", text.strip().lower()) if w]
+    relevant: set[int] = set()
+    banned: set[int] = set()
+    for word in words:
+        if word in ("none", "skip"):
+            # An explicit "nothing" — inert beside other tokens rather than an
+            # error, so "none" typed after second thoughts still parses.
+            continue
+        if word == "all":
+            relevant.update(range(count))
+            continue
+        is_ban = word.startswith("!")
+        digits = word[1:] if is_ban else word
+        # isdecimal, not isdigit: isdigit accepts superscripts ("²") that
+        # int() then refuses, turning a typo into a raised turn error.
+        if not digits.isdecimal():
+            return None
+        index = int(digits) - 1
+        if not 0 <= index < count:
+            return None
+        (banned if is_ban else relevant).add(index)
+    return relevant - banned, banned
 
 
 def _finish_prior_art(questionnaire: QuestionnaireState) -> dict:
-    """Close the sub-loop: persist rejections, then show the summary."""
+    """Close the sub-loop: persist verdicts, then show the summary.
+
+    Only explicit verdicts reach the permanent ledger: accepted → up, banned
+    (``!N``) → down. A candidate the user simply did not tick is passed over
+    for this project only and appears in neither list — writing it down would
+    make one quick Enter silently blacklist the whole shortlist forever.
+    """
     from yeaboi.agent import prior_art_feedback
 
     questionnaire._prior_art_stage = "done"
@@ -4081,7 +4098,7 @@ def _finish_prior_art(questionnaire: QuestionnaireState) -> dict:
             project=str(questionnaire.answers.get(1, ""))[:120],
         )
     logger.info(
-        "prior_art: %d accepted, %d rejected",
+        "prior_art: %d accepted, %d banned",
         len(questionnaire._prior_art_accepted),
         len(questionnaire._prior_art_rejected),
     )
@@ -5277,57 +5294,46 @@ def project_intake(state: ScrumState) -> dict:
             return _show_summary_or_pto(questionnaire)
 
         if questionnaire._prior_art_stage in ("ask", "reason"):
-            user_text = last_msg.content.strip()
-            candidate = _prior_art_current(questionnaire)
-            if candidate is None:
+            candidates = questionnaire._prior_art_candidates
+            if not candidates:
                 # Defensive: the list emptied underneath us (a resumed session
                 # drops the transients). Close out rather than loop.
                 return _finish_prior_art(questionnaire)
 
             if questionnaire._prior_art_stage == "reason":
-                # Empty is a legitimate answer — "no" without a "why" is still
-                # a rejection, and demanding a reason would train people to
-                # accept things to get past the prompt.
-                questionnaire._prior_art_rejected.append(
-                    {
-                        "key": candidate.get("key", ""),
-                        "name": candidate.get("name", ""),
-                        "reason": "" if user_text.lower() in ("skip", "-") else user_text,
-                    }
-                )
-                return _prior_art_advance(questionnaire)
-
-            choice = user_text.lower()
-            if choice in ("1", "y", "yes", _PRIOR_ART_ACCEPT.lower()):
-                questionnaire._prior_art_accepted.append(candidate)
-                return _prior_art_advance(questionnaire)
-            if choice in ("2", "n", "no", _PRIOR_ART_REJECT.lower()):
-                questionnaire._prior_art_stage = "reason"
+                # Legacy tolerance: "reason" was the per-repo "why isn't it
+                # relevant?" free-text stage, which only a session serialized
+                # by an older build can still be in. The user's text answers a
+                # question this build no longer asks, so re-ask the whole
+                # batch rather than guess what the words meant.
+                questionnaire._prior_art_stage = "ask"
                 return {
                     "questionnaire": questionnaire,
-                    "messages": [
-                        AIMessage(
-                            content=(
-                                f"Why isn't **{candidate.get('name', '')}** relevant? "
-                                "I'll stop suggesting it. (Enter to skip)"
-                            )
-                        )
-                    ],
+                    "messages": [AIMessage(content=_prior_art_prompt(questionnaire))],
                 }
-            if choice in ("3", "skip", "skip the rest", _PRIOR_ART_SKIP.lower()):
-                # Bailing out is not a rejection — nothing is written to the
-                # ledger for the candidates never seen.
-                return _finish_prior_art(questionnaire)
-            return {
-                "questionnaire": questionnaire,
-                "messages": [
-                    AIMessage(
-                        content=(
-                            f"Please choose [1] {_PRIOR_ART_ACCEPT}, [2] {_PRIOR_ART_REJECT} or [3] {_PRIOR_ART_SKIP}:"
-                        )
-                    )
-                ],
-            }
+
+            parsed = _parse_prior_art_answer(last_msg.content, len(candidates))
+            if parsed is None:
+                return {
+                    "questionnaire": questionnaire,
+                    "messages": [AIMessage(content=_PRIOR_ART_GRAMMAR_HINT)],
+                }
+            relevant, banned = parsed
+            # The submission is the whole verdict: both lists are re-derived
+            # from it, so a half-answered legacy loop carried in by a resumed
+            # session cannot double-write its earlier per-repo answers.
+            questionnaire._prior_art_accepted = [candidates[i] for i in sorted(relevant)]
+            questionnaire._prior_art_rejected = [
+                {"key": candidates[i].get("key", ""), "name": candidates[i].get("name", ""), "reason": ""}
+                for i in sorted(banned)
+            ]
+            logger.info(
+                "prior_art: batch verdict — %d relevant, %d banned, %d passed over",
+                len(relevant),
+                len(banned),
+                len(candidates) - len(relevant) - len(banned),
+            )
+            return _finish_prior_art(questionnaire)
 
         # ── Velocity choice menu handler ─────────────────────────────
         # "1" or "accept" → accept computed/overridden velocity

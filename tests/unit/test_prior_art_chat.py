@@ -3,7 +3,9 @@
 The two guards are the point: both the prior-art sub-loop and the confirmation
 gate run with awaiting_confirmation set and current_question past the last
 question, so without an explicit ordering the Accept/Edit menu renders over the
-prior-art card and the summary card is posted mid-loop.
+prior-art card and the summary card is posted mid-loop. The step is one batch
+now: a multi-select row per candidate, a card that previews whichever row the
+carousel highlights, and a submission in the node's index grammar.
 """
 
 from __future__ import annotations
@@ -11,12 +13,10 @@ from __future__ import annotations
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
 from yeaboi.ui.session.chat._question_view import (
     CONFIRM_ACCEPT,
-    PRIOR_ART_NO,
-    PRIOR_ART_SKIP,
-    PRIOR_ART_YES,
+    PRIOR_ART_CONTINUE,
     derive_question_view,
 )
-from yeaboi.ui.session.chat._screen import _placeholder
+from yeaboi.ui.session.chat._screen import ChoiceRows, _placeholder
 from yeaboi.ui.session.chat._transcript import _ARTIFACT_TITLES, _artifact_renderable
 
 
@@ -40,15 +40,23 @@ def _qs(stage=""):
 
 
 class TestChoiceRows:
-    def test_ask_stage_offers_the_three_verdicts(self):
+    def test_ask_stage_offers_one_multi_row_per_candidate(self):
         view = derive_question_view({"questionnaire": _qs("ask")})
-        assert [label for label, _ in view.choices] == [PRIOR_ART_YES, PRIOR_ART_NO, PRIOR_ART_SKIP]
-        assert view.auto_submit is True
-        assert view.multi_select is False
+        assert [label for label, _ in view.choices] == ["acme/auth", "acme/pay"]
+        assert view.multi_select is True
+        assert view.auto_submit is False
+        assert view.prior_art is True
 
-    def test_yes_is_preselected(self):
+    def test_nothing_starts_checked_on_a_fresh_run(self):
+        # Relevance is opt-in — a quick Enter must accept nothing by accident.
         view = derive_question_view({"questionnaire": _qs("ask")})
-        assert view.choices[0][1] is True
+        assert all(checked is False for _, checked in view.choices)
+
+    def test_a_legacy_half_loop_resumes_with_its_verdicts_pre_checked(self):
+        qs = _qs("ask")
+        qs._prior_art_accepted = [dict(qs._prior_art_candidates[1])]
+        view = derive_question_view({"questionnaire": qs})
+        assert [checked for _, checked in view.choices] == [False, True]
 
     def test_the_confirm_menu_does_not_render_over_the_card(self):
         # The guard this test exists for.
@@ -56,65 +64,66 @@ class TestChoiceRows:
         assert CONFIRM_ACCEPT not in [label for label, _ in view.choices]
 
     def test_reason_stage_has_no_menu_so_the_composer_owns_it(self):
+        # Legacy tolerance: only a session serialized by an older build can
+        # still be in "reason"; its first input triggers the node's re-ask.
         assert derive_question_view({"questionnaire": _qs("reason")}).choices is None
 
     def test_the_confirm_menu_returns_once_prior_art_is_done(self):
         view = derive_question_view({"questionnaire": _qs("done")})
         assert CONFIRM_ACCEPT in [label for label, _ in view.choices]
+        assert view.prior_art is False
 
     def test_untouched_when_prior_art_never_ran(self):
         view = derive_question_view({"questionnaire": _qs("")})
         assert CONFIRM_ACCEPT in [label for label, _ in view.choices]
 
+    def test_empty_stage_offers_continue(self):
+        view = derive_question_view({"questionnaire": _qs("empty")})
+        assert [label for label, _ in view.choices] == [PRIOR_ART_CONTINUE]
+
 
 class TestPlaceholder:
-    def test_reason_stage_says_enter_skips(self):
-        text = _placeholder("intake", {"questionnaire": _qs("reason"), "messages": ["x"]}, None)
-        assert "Enter to skip" in text
+    def test_the_carousel_ghost_teaches_the_keys_and_the_grammar(self):
+        rows = ChoiceRows(options=[("acme/auth", False)], multi=True, carousel=True)
+        text = _placeholder("intake", {"questionnaire": _qs("ask"), "messages": ["x"]}, rows)
+        assert "Space" in text and "X" in text
+        assert "all" in text
 
-    def test_other_stages_are_unaffected(self):
-        text = _placeholder("intake", {"questionnaire": _qs("done"), "messages": ["x"]}, None)
-        assert "Enter to skip" not in text
+    def test_ordinary_menus_keep_their_ghost(self):
+        rows = ChoiceRows(options=[("Accept", True)])
+        text = _placeholder("intake", {"questionnaire": _qs("done"), "messages": ["x"]}, rows)
+        assert "↑/↓" in text
 
 
 class TestCard:
+    def _out(self, qs, preview=None, width=70):
+        from rich.console import Console
+
+        graph_state = {"questionnaire": qs}
+        if preview is not None:
+            graph_state["_prior_art_preview"] = preview
+        console = Console(width=width, record=True)
+        console.print(_artifact_renderable("prior_art", graph_state, width - 2))
+        return console.export_text()
+
     def test_registered_with_a_title(self):
         assert _ARTIFACT_TITLES["prior_art"] == "You already have this"
 
-    def test_renders_the_current_candidate_with_position(self):
-        from rich.console import Console
-
-        console = Console(width=70, record=True)
-        console.print(_artifact_renderable("prior_art", {"questionnaire": _qs("ask")}, 68))
-        out = console.export_text()
+    def test_renders_the_first_candidate_by_default(self):
+        out = self._out(_qs("ask"))
         assert "acme/auth" in out
         assert "does OIDC" in out
-        assert "1 of 2" in out
 
-    def test_follows_the_index(self):
-        from rich.console import Console
+    def test_the_preview_index_drives_the_card(self):
+        # The carousel: the driver publishes the highlight and the card
+        # follows it — node state never moves.
+        out = self._out(_qs("ask"), preview=1)
+        assert "takes cards" in out
+        assert "does OIDC" not in out
 
-        qs = _qs("ask")
-        qs._prior_art_index = 1
-        console = Console(width=70, record=True)
-        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, 68))
-        out = console.export_text()
-        assert "acme/pay" in out and "2 of 2" in out
-
-    def test_exhausted_index_shows_the_verdicts_rather_than_vanishing(self):
-        """A renderer that returns None prints "(<title> unavailable)" in the
-        card's place, so the card the user just worked through would decay into
-        an error string. It becomes the record of what was decided instead."""
-        from rich.console import Console
-
-        qs = _qs("ask")
-        qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
-        qs._prior_art_index = 99
-        console = Console(width=70, record=True)
-        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, 68))
-        out = console.export_text()
-        assert "Reviewed 2" in out
-        assert "kept" in out
+    def test_an_out_of_range_preview_clamps_instead_of_crashing(self):
+        out = self._out(_qs("ask"), preview=99)
+        assert "takes cards" in out
 
     def test_a_card_with_no_candidates_still_renders_nothing(self):
         qs = _qs("ask")
@@ -126,47 +135,41 @@ class TestCard:
 
 
 class TestRoster:
-    """The card replaces itself as the loop advances, so the roster is the only
-    evidence the other candidates exist — without it "1 of 3" reads as a pager
-    with no pager keys."""
+    """The card details one repo at a time, so the roster is the evidence the
+    others exist — and the footer names the browse keys."""
 
-    def _out(self, qs, width=70):
+    def _out(self, qs, preview=0, width=70):
         from rich.console import Console
 
         console = Console(width=width, record=True)
-        console.print(_artifact_renderable("prior_art", {"questionnaire": qs}, width - 2))
+        console.print(
+            _artifact_renderable("prior_art", {"questionnaire": qs, "_prior_art_preview": preview}, width - 2)
+        )
         return console.export_text()
 
-    def test_every_candidate_is_listed_not_just_the_current_one(self):
+    def test_every_candidate_is_listed_not_just_the_previewed_one(self):
         out = self._out(_qs("ask"))
         assert "acme/auth" in out
         assert "acme/pay" in out
 
-    def test_the_current_one_is_marked_as_being_decided(self):
-        assert "deciding now" in self._out(_qs("ask"))
+    def test_the_footer_names_the_browse_keys(self):
+        out = self._out(_qs("ask"))
+        assert "2 repositories" in out
+        assert "browse" in out
 
-    def test_a_decided_candidate_carries_its_verdict(self):
+    def test_no_verdicts_on_the_card(self):
+        # Selection lives in the checkboxes below, bans in their ✗ rows — a ✓
+        # here would duplicate (and race) the widget state.
         qs = _qs("ask")
         qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
-        qs._prior_art_index = 1
-        out = self._out(qs)
-        assert "kept" in out
-
-    def test_a_rejected_candidate_says_so(self):
-        qs = _qs("ask")
-        qs._prior_art_rejected = [{"key": "github:acme/auth", "name": "acme/auth", "reason": "too old"}]
-        qs._prior_art_index = 1
-        out = self._out(qs)
-        assert "not relevant" in out
+        out = self._out(qs, preview=1)
+        assert "kept" not in out
 
     def test_a_lone_candidate_gets_no_roster(self):
-        """One row that says "deciding now" under a card about that one repo is
-        noise, not orientation."""
         qs = _qs("ask")
         qs._prior_art_candidates = qs._prior_art_candidates[:1]
         out = self._out(qs)
-        assert "1 of 1" in out
-        assert "deciding now" not in out
+        assert "browse" not in out
 
 
 class TestClosedCard:
@@ -184,22 +187,19 @@ class TestClosedCard:
     def test_a_done_stage_shows_the_verdicts(self):
         qs = _qs("done")
         qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
-        qs._prior_art_rejected = [{"key": "github:acme/pay", "name": "acme/pay", "reason": "retiring it"}]
+        qs._prior_art_rejected = [{"key": "github:acme/pay", "name": "acme/pay", "reason": ""}]
         out = self._out(qs)
         assert "Reviewed 2" in out
         assert "kept" in out
-        assert "not relevant" in out
-        assert "deciding now" not in out
+        assert "never suggest" in out
 
-    def test_skip_the_rest_leaves_the_untouched_ones_marked_not_reviewed(self):
-        """ "Skip the rest" ends the loop without moving the index, so keying off
-        the index alone would freeze the card on the skipped candidate, still
-        marked as the one being decided."""
+    def test_an_unpicked_candidate_reads_not_this_time(self):
+        # Unchecked is a pass for this project only — distinguishable from
+        # the permanent ✗ ban.
         qs = _qs("done")
         qs._prior_art_accepted = [dict(qs._prior_art_candidates[0])]
         out = self._out(qs)
-        assert "not reviewed" in out
-        assert "deciding now" not in out
+        assert "not this time" in out
 
 
 class TestSizeSwitchDropsTheCard:
@@ -223,6 +223,7 @@ class TestSizeSwitchDropsTheCard:
             "apply_size_switch clears the prior-art transients, so the card has "
             "nothing left to render from and would show as '(… unavailable)'"
         )
+        assert "_prior_art_preview" in source, "the stale preview index must not outlive the reset loop"
 
 
 class TestSummaryCard:
@@ -251,25 +252,13 @@ class TestSummaryCard:
 
 
 class TestVerdictPrompt:
-    def _prompt(self, index, total):
+    def test_one_static_line_names_the_keys_and_the_grammar(self):
         from yeaboi.ui.session.chat._driver import _prior_art_verdict_prompt
 
-        qs = _qs("ask")
-        qs._prior_art_candidates = [{"key": f"k{i}", "name": f"r{i}"} for i in range(total)]
-        qs._prior_art_index = index
-        return _prior_art_verdict_prompt(qs)
-
-    def test_more_than_one_left_names_the_count(self):
-        assert "next of 2 more" in self._prompt(0, 3)
-
-    def test_exactly_one_left_says_last(self):
-        assert "the last one" in self._prompt(1, 3)
-
-    def test_the_final_candidate_promises_nothing_further(self):
-        assert "This is the last one." in self._prompt(2, 3)
-
-    def test_the_pick_instructions_survive(self):
-        assert "**yes**" in self._prompt(0, 3)
+        prompt = _prior_art_verdict_prompt(_qs("ask"))
+        assert "**Space**" in prompt
+        assert "**X**" in prompt
+        assert "**all**" in prompt
 
 
 class TestDriverGuards:
@@ -289,7 +278,7 @@ class TestDriverGuards:
     def test_summary_card_returns_once_the_subloop_is_done(self):
         assert self._driver(_qs("done"))._at_intake_summary() is True
 
-    def test_at_prior_art_tracks_the_two_live_stages(self):
+    def test_at_prior_art_tracks_the_live_stages(self):
         assert self._driver(_qs("ask"))._at_prior_art() is True
         assert self._driver(_qs("reason"))._at_prior_art() is True
         assert self._driver(_qs("done"))._at_prior_art() is False
@@ -299,34 +288,40 @@ class TestPickMapping:
     def _driver(self):
         from yeaboi.ui.session.chat._driver import _ChatDriver
 
-        return object.__new__(_ChatDriver)
+        driver = object.__new__(_ChatDriver)
+        driver.state = {"_prior_art_preview": 1}
+        return driver
 
-    def test_labels_map_to_the_digits_the_node_reads(self):
-        driver = self._driver()
-        assert driver._prior_art_pick(PRIOR_ART_YES) == "1"
-        assert driver._prior_art_pick(PRIOR_ART_NO) == "2"
-        assert driver._prior_art_pick(PRIOR_ART_SKIP) == "3"
+    def test_continue_maps_to_the_nodes_ok(self):
+        assert self._driver()._prior_art_pick(PRIOR_ART_CONTINUE) == "ok"
 
-    def test_free_text_passes_through_untouched(self):
-        # Including text that starts with a digit — a reason is prose, and
-        # parsing it would turn "3 years old and unmaintained" into a skip.
+    def test_grammar_strings_pass_through_untouched(self):
+        # The widget already submits the node's index grammar, and a typed
+        # answer is the same grammar — there is nothing left to map.
         driver = self._driver()
-        assert driver._prior_art_pick("3 years old and unmaintained") == "3 years old and unmaintained"
+        assert driver._prior_art_pick("1 3 !2") == "1 3 !2"
+        assert driver._prior_art_pick("none") == "none"
         assert driver._prior_art_pick("") == ""
+
+    def test_the_preview_dies_with_the_menu(self):
+        driver = self._driver()
+        driver._prior_art_pick("none")
+        assert "_prior_art_preview" not in driver.state
 
 
 class TestHeadless:
-    def test_the_subloop_is_skipped_rather_than_answered(self):
+    def test_the_batch_is_answered_none(self):
         from yeaboi.agent.headless import _next_auto_input
 
         # Accepting on the user's behalf would put unvetted repos in a plan;
-        # rejecting would write a permanent suppression. Bailing does neither.
-        assert _next_auto_input({"questionnaire": _qs("ask")}) == "3"
+        # "none" writes nothing to the ledger, so nothing is suppressed either.
+        assert _next_auto_input({"questionnaire": _qs("ask")}) == "none"
 
-    def test_a_reason_prompt_is_answered_with_silence(self):
+    def test_a_legacy_reason_stage_gets_none_too(self):
         from yeaboi.agent.headless import _next_auto_input
 
-        assert _next_auto_input({"questionnaire": _qs("reason")}) == ""
+        # The node turns that into a batch re-ask; the next pass answers it.
+        assert _next_auto_input({"questionnaire": _qs("reason")}) == "none"
 
     def test_confirm_still_works_once_prior_art_is_done(self):
         from yeaboi.agent.headless import _next_auto_input

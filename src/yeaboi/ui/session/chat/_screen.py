@@ -124,7 +124,10 @@ def _fit_hint(pairs: list[tuple[str, str]], extras: str, avail: int) -> tuple[li
         extras = ""
         if _hint_cells(pairs, extras) <= budget:
             return pairs, extras
-    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "Space", "↑/↓"):
+    # "↑/↓ ←/→" is the carousel's combined browse pair (there is no separate
+    # "←/→" key); it outlives Space because once Space is gone it is the only
+    # navigation hint left on the row.
+    for victim in ("/", "PgUp/PgDn", "Ctrl+U", "X", "Space", "↑/↓ ←/→", "↑/↓"):
         if _hint_cells(pairs, extras) <= budget:
             break
         pairs = [pair for pair in pairs if pair[0] != victim]
@@ -143,12 +146,20 @@ class ChoiceRows:
     stroke. Only for menus whose labels are commands (the size question, the
     review verdict) — never for data-entry questions, where a typed "12"
     must stay free text.
+
+    carousel: the prior-art browse menu — ←/→ also move the highlight (the
+    detail card above follows it), X toggles a permanent "never suggest"
+    ban on the highlighted row, and the driver submits the node's index
+    grammar instead of the joined labels. banned holds those row indices;
+    a banned row draws ✗ and is always unchecked.
     """
 
     options: list[tuple[str, bool]] = field(default_factory=list)
     highlight: int = 0
     multi: bool = False
     auto_submit: bool = False
+    carousel: bool = False
+    banned: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -249,6 +260,8 @@ def _stage_dot(stage: str, graph_state: dict) -> int:
 def _placeholder(stage: str, graph_state: dict, choices: ChoiceRows | None) -> str:
     """Ghost text for the empty composer — tells the user what fits here now."""
     if choices is not None and choices.options:
+        if choices.carousel:
+            return "Space picks · X hides forever · Enter confirms — or type e.g. 1 3, all, none…"
         if stage == "intake" and not graph_state.get("messages"):
             if len(choices.options) >= 3:
                 # The greeting's third row is the form preference.
@@ -257,11 +270,6 @@ def _placeholder(stage: str, graph_state: dict, choices: ChoiceRows | None) -> s
         return "Pick with ↑/↓ — or just type your answer…"
     if stage == "intake" and not graph_state.get("messages"):
         return "Describe your project — a few sentences is enough…"
-    # The prior-art "why isn't it relevant" reply has no menu, so the ghost
-    # text is the only thing telling the user Enter alone is a valid answer.
-    qs = graph_state.get("questionnaire")
-    if stage == "intake" and getattr(qs, "_prior_art_stage", "") == "reason":
-        return "Why isn't it relevant? I'll stop suggesting it — or Enter to skip…"
     if stage == "intake":
         return "Type an answer — /skip /defaults /form /finish all work…"
     if stage in ("review", "epic"):
@@ -413,13 +421,20 @@ def build_chat_screen(
     if command_menu:
         pairs.append(("Tab", "complete"))
     if choices is not None and choices.options:
-        pairs.append(("↑/↓", "choose"))
+        if choices.carousel:
+            # ←/→ browse too, and the card above follows — one combined
+            # keycap keeps the row short enough to survive 80 columns.
+            pairs.append(("↑/↓ ←/→", "browse"))
+        else:
+            pairs.append(("↑/↓", "choose"))
         # Arrows belong to the menu while one is up, so name the keys that
         # still reach the transcript — a menu usually sits under something
         # the answer depends on (the intake summary is 30 rows of it).
         pairs.append(("PgUp/PgDn", "scroll"))
         if choices.multi:
             pairs.append(("Space", "toggle"))
+        if choices.carousel:
+            pairs.append(("X", "never suggest"))
     pairs += [("Enter", "send"), (NEWLINE_KEY, "newline"), ("Ctrl+U", "clear"), ("/", "commands")]
     extras = (_voice_hint() + _image_hint()).strip()
     # The drawer gets every pair whatever the width; only the inline row sheds.
@@ -454,6 +469,14 @@ def build_chat_screen(
         for i, (label, checked) in enumerate(choices.options):
             row = Text("  ")
             row.append("❯ " if i == choices.highlight else "  ", style=f"bold {theme.accent_bright}")
+            if i in choices.banned:
+                # A banned row is out of the running: ✗ replaces the checkbox
+                # (it is always unchecked) and the label dims. X un-bans it.
+                row.append("✗   ", style=theme.muted)
+                row.append(f"{i + 1}. {label}", style="dim")
+                row.append("  never suggest", style="dim")
+                lines.append(row)
+                continue
             if choices.multi:
                 row.append("[x] " if checked else "[ ] ", style=theme.accent if checked else "dim")
             row.append(f"{i + 1}. {label}", style="bold white" if i == choices.highlight else "white")

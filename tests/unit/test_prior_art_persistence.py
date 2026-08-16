@@ -72,6 +72,18 @@ class TestSessionStoreRoundTrip:
             loaded = store.load_state("sess-2")
         assert not loaded.get("prior_art")
 
+    def test_a_stray_preview_index_round_trips_harmlessly(self, tmp_path):
+        # _prior_art_preview is the chat driver's presentation-only carousel
+        # cursor. It is popped on submit, but a session saved mid-browse still
+        # carries it — loading must neither crash nor lose it.
+        from yeaboi.sessions import SessionStore
+
+        with SessionStore(tmp_path / "s.db") as store:
+            store.create_session("sess-3", "mid-browse save")
+            store.save_state("sess-3", {"messages": [], "_prior_art_preview": 2})
+            loaded = store.load_state("sess-3")
+        assert loaded["_prior_art_preview"] == 2
+
 
 class TestExports:
     def test_markdown_carries_prior_art(self):

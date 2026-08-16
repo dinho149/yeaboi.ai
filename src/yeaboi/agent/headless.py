@@ -141,14 +141,16 @@ def _next_auto_input(graph_state: dict) -> str | None:
 
     if isinstance(qs, QuestionnaireState) and qs.awaiting_confirmation:
         # Prior-art sub-loop — the intake is asking which existing repositories
-        # are relevant. Headless has nobody to ask, so it bails out of the whole
-        # list ("3") rather than answering for the user: accepting on their
-        # behalf would put repositories into a plan nobody vetted, and rejecting
-        # would write verdicts to a ledger that suppresses them forever. Callers
+        # are relevant. Headless has nobody to ask, so it answers "none":
+        # accepting on the user's behalf would put repositories into a plan
+        # nobody vetted, and "none" writes nothing to the ledger — an unpicked
+        # batch is passed over for this run only, never suppressed. Callers
         # that DO know pass them in via run_planning_pipeline(prior_art=...).
+        # A legacy "reason" stage (resumed old session) gets "none" too: the
+        # node re-asks the batch on that input and the next pass answers it.
         if qs._prior_art_stage in ("ask", "reason"):
             logger.info("Headless: skipping the prior-art step (no user to ask)")
-            return "3" if qs._prior_art_stage == "ask" else ""
+            return "none"
 
         # Intake summary shown — confirm it. Skipped/defaulted questions were
         # already resolved by build_questionnaire_from_answers().
