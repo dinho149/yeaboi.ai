@@ -112,33 +112,43 @@
 }
 
 /*
- * Where an open tool renders — the notch's own content, not a panel over it.
+ * Where an open tool renders — its own panel, standing above the notch rather
+ * than growing out of it.
  *
- * A `0fr` → `1fr` track on both axes is what makes the dock's *box* animate:
- * the drawer is in flow, so the dock takes its size, and a fractional track
- * interpolates where `height: auto` cannot. The panel inside clips while the
- * track is short, which is why it needs `min-*: 0` and `overflow: hidden`.
+ * A `0fr` → `1fr` row is what makes it unfold: `height: auto` cannot be
+ * interpolated, and a fractional track can. The panel inside clips while the
+ * track is short, which is why it needs `min-height: 0` and `overflow: hidden`.
  *
  * Driven by `data-open` rather than by whether a panel is present: on the way
  * out the panel is still there for one beat, and it is the track that has to
  * start collapsing under it.
  */
 .dockDrawer {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--s2));
+  /* As wide as it needs, and never narrower than the notch it stands on. */
+  width: max-content;
+  min-width: 100%;
+  max-width: 90vw;
   display: grid;
   grid-template-rows: 0fr;
-  grid-template-columns: 0fr;
+  opacity: 0;
+  pointer-events: none;
   transition:
     grid-template-rows var(--dur-base) var(--ease),
-    grid-template-columns var(--dur-base) var(--ease);
+    opacity var(--dur-fast) var(--ease);
 }
 
 .dockDrawer[data-open='true'] {
   grid-template-rows: 1fr;
-  grid-template-columns: 1fr;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* All in the one cell, so a panel on its way out and one on its way in do not
-   stack the drawer to the height of both. */
+   stack the drawer to the height of both. Its chrome is `popoverDocked`'s own —
+   a border on the collapsed track would be a line across the board. */
 .dockDrawer > * {
   grid-area: 1 / 1;
   min-height: 0;

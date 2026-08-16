@@ -10,8 +10,6 @@
  * and a phone has no hover.
  */
 
-import { useState } from 'react';
-
 import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { Participant } from '../shared';
@@ -24,17 +22,12 @@ export interface RoomProps {
 }
 
 export function Room({ people, meName }: RoomProps) {
-  const [pinned, setPinned] = useState(false);
-
   return (
-    <div className={cx(styles['room'], pinned && styles['roomOn'])}>
-      <button
-        type="button"
-        className={styles['presenceChip']}
-        aria-expanded={pinned}
-        aria-label="Who is in the room"
-        onClick={() => setPinned(!pinned)}
-      >
+    <div className={styles['room']}>
+      {/* Focusable, and nothing more: a click has no state to leave behind, so
+          moving the pointer away closes the room again. Keyboard focus opens it
+          through `:has(:focus-visible)`, which a click does not set. */}
+      <button type="button" className={styles['presenceChip']} aria-label="Who is in the room">
         <Icon name="users" />
         <span className={styles['roomCount']}>{Math.max(1, people.length)}</span>
       </button>

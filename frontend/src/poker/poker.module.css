@@ -1305,6 +1305,21 @@
   font: inherit;
   font-size: var(--fs-2xs);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.preset:hover {
+  border-color: var(--accent);
+  background: var(--panel);
+  color: var(--accent);
+}
+
+.preset:active {
+  transform: scale(0.97);
 }
 
 .clabel,
@@ -1408,6 +1423,9 @@
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
 .identity {
+  /* The room's cards hang off this, not off the chip that opens them: they line
+     up with the name in the bar rather than with the count at the far end. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -1462,7 +1480,7 @@
 
 /* The headcount sits opposite the notch's Invite, so it is the same shape. */
 .room {
-  position: relative;
+  position: static;
 }
 
 .presenceChip {
@@ -1482,8 +1500,7 @@
 }
 
 .room:hover .presenceChip,
-.room:focus-within .presenceChip,
-.roomOn .presenceChip {
+.room:has(:focus-visible) .presenceChip {
   border-color: var(--accent);
 }
 
@@ -1497,7 +1514,7 @@
 .roomList {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: 0;
   z-index: var(--z-popover);
   margin: 0;
   padding: var(--s3) 0 0;
@@ -1522,7 +1539,7 @@
   align-items: center;
   gap: var(--s2);
   height: var(--card-h);
-  padding: 0 var(--s3);
+  padding: 0 var(--s3) 0 var(--s1);
   white-space: nowrap;
   border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
@@ -1545,15 +1562,13 @@
 /* One after another on the way in. Leaving, they go together — a staggered
    exit reads as the list being reluctant. */
 .room:hover .roomCard,
-.room:focus-within .roomCard,
-.roomOn .roomCard {
+.room:has(:focus-visible) .roomCard {
   transform: none;
   transition-delay: calc(var(--i) * 45ms);
 }
 
 .room:hover .roomList,
-.room:focus-within .roomList,
-.roomOn .roomList {
+.room:has(:focus-visible) .roomList {
   pointer-events: auto;
 }
 

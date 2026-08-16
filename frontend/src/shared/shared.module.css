@@ -157,7 +157,10 @@
 .btnDim { opacity: 0.72; }
 .btnDim:hover, .btnDim:focus-visible { opacity: 1; }
 
-.iconGlyph { font-size: var(--fs-m); line-height: 1; }
+/* Flex, so the glyph is centred rather than set on a baseline: an inline SVG
+   picks up `vertical-align` and lands on a fractional row, which is the whole
+   of why a vector icon can look out of focus. */
+.iconGlyph { display: inline-flex; align-items: center; font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
@@ -179,12 +182,19 @@
   cursor: pointer;
   transition:
     border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease);
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 .preset:hover {
   border-color: var(--accent);
+  background: var(--panel);
   color: var(--accent);
+}
+
+.preset:active {
+  transform: scale(0.97);
 }
 
 /* ── Credit ───────────────────────────────────────────────────────
@@ -244,14 +254,19 @@
 
 /* Rendered into a host that already is a panel — the dock's drawer. It keeps
    only its padding: the ground, the border and the animation are the host's. */
+/* Docked: a panel of its own standing above the notch, wearing the same
+   hairline and the same three shadows as the notch and the top bar. */
 .popoverDocked {
   position: static;
   min-width: 240px;
   max-height: min(60vh, 420px);
-  background: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
 }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */

@@ -13,6 +13,11 @@
  * The grid is 24x24 with a 2px round-capped stroke, which is why the default
  * `stroke-width` thins as the icon shrinks — a 2px stroke on a 14px icon reads
  * as a blob.
+ *
+ * The default is derived from the size rather than picked, so that the painted
+ * stroke is a whole CSS pixel: the grid is scaled by `size / 24`, and a weight
+ * that does not survive that scaling lands between pixels and reads as a
+ * slightly out-of-focus icon at every size but one.
  */
 
 import { createElement, type ReactElement } from 'react';
@@ -113,7 +118,7 @@ export function Icon({ name, size = 16, strokeWidth, className }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={strokeWidth ?? (size >= 20 ? 2 : 1.75)}
+      strokeWidth={strokeWidth ?? (24 / size) * (size >= 20 ? 2 : 1)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

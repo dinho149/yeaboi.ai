@@ -345,7 +345,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           <Visualizer playing={music.playing} analyser={music.analyser} />
 
           <IconButton
-            icon={<Icon name="menu" size={15} />}
+            icon={<Icon name="menu" size={16} />}
             label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
             active={railOpen}
             className={styles['railToggle']}
@@ -354,14 +354,14 @@ export function App({ boot }: { boot: PokerBoot }) {
 
           {isHost ? (
             <IconButton
-              icon={<Icon name={locked ? 'lock' : 'lock-open'} size={15} />}
+              icon={<Icon name={locked ? 'lock' : 'lock-open'} size={16} />}
               label={locked ? 'Unlock voting' : 'Lock voting'}
               active={locked}
               onClick={() => run(actions.setLocked(!locked))}
             />
           ) : null}
 
-          <Popover trigger={<Icon name="music" size={15} />} label="Music" placement="above">
+          <Popover trigger={<Icon name="music" size={16} />} label="Music" placement="above">
             <MusicPlayer
               music={music}
               channels={boot.musicChannels}
@@ -378,7 +378,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           <Popover
             trigger={
               <>
-                <Icon name="timer" size={15} />
+                <Icon name="timer" size={16} />
                 <TimerReadout remaining={remaining} />
               </>
             }
@@ -396,7 +396,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             )}
           </Popover>
 
-          <Popover trigger={<Icon name="contrast" size={15} />} label="Theme" placement="above">
+          <Popover trigger={<Icon name="contrast" size={16} />} label="Theme" placement="above">
             <ThemeSwitcher
               value={theme}
               onChange={chooseTheme}
@@ -411,7 +411,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           </Popover>
 
           <IconButton
-            icon={<Icon name="mail" size={14} />}
+            icon={<Icon name="mail" size={16} />}
             label="Invite the team"
             tone="primary"
             compact
