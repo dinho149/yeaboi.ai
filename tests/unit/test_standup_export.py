@@ -1401,6 +1401,7 @@ class TestConflictCards:
         assert ("conflicts", "Conflicts") in args["nav"]
         cards = args["report"]["conflicts"]
         assert len(cards) == 1
+        assert cards[0]["fingerprint"] == "YEA-12:status:status_conflict"  # the stable list key
         assert cards[0]["severity"] == "medium"  # a word, never a colour
         assert cards[0]["action"] == "Reopen YEA-12, or merge the pull request."
         assert cards[0]["claims"][0] == {"source": "jira", "value": "Done", "label": "YEA-12", "url": "https://j/12"}

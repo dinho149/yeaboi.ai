@@ -81,8 +81,11 @@ def run_provenance_audit(
         warnings.append(
             "No decisions recorded yet — run a standup or a performance workflow and the audit trail starts itself."
         )
-    if window_count > _RECENT_CAP:
-        warnings.append(f"Showing the newest {_RECENT_CAP} of {window_count} window record(s).")
+    # The recent-list cap is NOT a warning: it is structural (window_records
+    # vs len(recent)) and the renderers announce it. `--strict` promises to
+    # fire on a broken or empty chain, and a healthy busy chain crosses the
+    # cap within days — a truncation notice in `warnings` would make strict
+    # mode fail exactly when the feature is being used.
 
     report = ProvenanceAuditReport(
         generated_at=datetime.now(UTC).isoformat(),

@@ -52,10 +52,14 @@ def record_prep(db_path, prep: OneOnOnePrep, *, activity: EngineerActivity | Non
             source_document=_SOURCE,
             detail=f"1:1 prep for {prep.engineer}: {len(prep.talking_points)} talking point(s), "
             f"{len(prep.carried_action_items)} carried action item(s).",
-            inputs=_activity_inputs(activity) + tuple(prep.carried_action_items),
+            # Ticket keys only. Carried action items are distilled from a 1:1
+            # transcript, and the chain is the one store that can never be
+            # scrubbed — they ride as a count, exactly like record_completion.
+            inputs=_activity_inputs(activity),
             extras=(
                 ("engineer", prep.engineer),
                 ("talking_points", str(len(prep.talking_points))),
+                ("carried_actions", str(len(prep.carried_action_items))),
                 ("llm", "yes" if used_llm else "fallback"),
             ),
         ),

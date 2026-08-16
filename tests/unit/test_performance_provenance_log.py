@@ -35,7 +35,10 @@ class TestPrep:
             assert record is not None
             assert record.entity_type == "one-on-one-prep"
             assert "jira:YEA-1" in record.inputs
-            assert "carry: refactor tests" in record.inputs
+            # Carried action items are transcript distillations: they ride as
+            # a COUNT, never as text — the chain can never be scrubbed.
+            assert "carry: refactor tests" not in record.inputs
+            assert ("carried_actions", "1") in record.extras
             assert ("llm", "yes") in record.extras
             assert chain.verify().valid is True
 

@@ -230,6 +230,9 @@ export interface StandupPractice {
  * with a muted fallback — no colour crosses the wire.
  */
 export interface StandupConflict {
+  /** Stable id (`entity:property:type`) — the list key, and the handle a
+   * future correction flow would vote on. */
+  fingerprint: string;
   title: string;
   detail: string;
   severity: string;

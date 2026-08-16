@@ -53,6 +53,20 @@ class TestChecksum:
         two = compute_checksum(_record(agent_id="a", agent_type="bc"))
         assert one != two
 
+    def test_extras_pair_boundary_is_not_malleable(self):
+        # A joined "key=value" form would hash ("m", "x=y") and ("m=x", "y")
+        # identically — an in-place edit moving the `=` would be undetectable.
+        one = compute_checksum(_record(extras=(("m", "x=y"),)))
+        two = compute_checksum(_record(extras=(("m=x", "y"),)))
+        assert one != two
+
+    def test_composite_tokens_cannot_swap_into_scalar_fields(self):
+        # A separator-joined inputs list let an empty trailing token trade
+        # places with the adjacent scalar field without changing the hash.
+        one = compute_checksum(_record(inputs=("a", "b", ""), parent_entity_id="x", previous_version_id=""))
+        two = compute_checksum(_record(inputs=("a", "b"), parent_entity_id="", previous_version_id="x"))
+        assert one != two
+
     def test_canonical_form_is_stable(self):
         # The chain's integrity depends on this string never changing shape
         # for the same record.

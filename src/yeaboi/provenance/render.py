@@ -53,10 +53,13 @@ def format_audit_lines(report: ProvenanceAuditReport) -> list[str]:
         lines += [f"  • {kind}: {count}" for kind, count in report.records_by_type]
         lines.append("")
     if report.recent:
+        shown = report.recent[:_MAX_LISTED]
         lines.append("Recent decisions (newest first):")
-        lines += [_row_line(row) for row in report.recent[:_MAX_LISTED]]
-        if len(report.recent) > _MAX_LISTED:
-            lines.append(f"  …and {len(report.recent) - _MAX_LISTED} more in the window")
+        lines += [_row_line(row) for row in shown]
+        # Announced from window_records, not len(recent): the engine also caps
+        # what it carries, and a silently truncated list reads as complete.
+        if report.window_records > len(shown):
+            lines.append(f"  …and {report.window_records - len(shown)} more in the window")
         lines.append("")
     if report.warnings:
         lines.append("⚠ Notices:")
@@ -87,11 +90,12 @@ def format_audit_rich(report: ProvenanceAuditReport, *, accent: str = _ACCENT) -
             body.append(Text(f"  • {kind}: {count}"))
         body.append(Text(""))
     if report.recent:
+        shown = report.recent[:_MAX_LISTED]
         body.append(Text("Recent decisions (newest first)", style=f"bold {accent}"))
-        for row in report.recent[:_MAX_LISTED]:
+        for row in shown:
             body.append(Text(_row_line(row)))
-        if len(report.recent) > _MAX_LISTED:
-            body.append(Text(f"  …and {len(report.recent) - _MAX_LISTED} more in the window", style="dim"))
+        if report.window_records > len(shown):
+            body.append(Text(f"  …and {report.window_records - len(shown)} more in the window", style="dim"))
         body.append(Text(""))
     for w in report.warnings:
         body.append(Text(f"⚠ {w}", style="yellow"))

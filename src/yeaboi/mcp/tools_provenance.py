@@ -42,7 +42,10 @@ def register(app) -> None:
         reviews) is chained with its evidence, and this audit re-verifies every
         link — an edited, deleted, or renumbered record is reported, never
         hidden. Deterministic and local; no LLM is involved."""
-        return await run_engine(ctx, _audit, window_days)
+        # needs_llm=False: the pipeline is deliberately LLM-free, so a machine
+        # with no provider configured must not be told the audit is a
+        # "deterministic fallback" — the deterministic path is the only path.
+        return await run_engine(ctx, _audit, window_days, needs_llm=False)
 
     @app.tool()
     async def provenance_trace(entity_id: str, depth: int = 2) -> dict:

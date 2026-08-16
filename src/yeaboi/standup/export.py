@@ -1016,6 +1016,7 @@ def standup_export_args(
             # bundle maps it to a tone — no colour crosses the wire).
             "conflicts": [
                 {
+                    "fingerprint": card.fingerprint,
                     "title": card.title,
                     "detail": card.detail,
                     "severity": card.severity,

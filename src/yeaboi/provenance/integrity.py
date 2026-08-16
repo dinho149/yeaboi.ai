@@ -17,22 +17,34 @@ breaks the link its successor stored.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from yeaboi.provenance.records import DecisionRecord
 
-# ASCII unit separator: cannot appear in any sane field value, so joined
-# fields can never collide across a boundary.
+# ASCII unit separator between top-level fields — cannot appear in any sane
+# scalar value, so scalar fields can never collide across a boundary.
 _SEP = "\x1f"
+
+
+def _composite(value) -> str:
+    """Unambiguous encoding for tuple fields (``inputs``, ``extras``).
+
+    JSON, not a joined string: quoting and escaping make every token boundary
+    explicit, so an ``extras`` pair cannot trade an ``=`` across its key/value
+    boundary, and an empty ``inputs`` token cannot swap places with an
+    adjacent scalar field. Separator-joining had exactly those two collisions,
+    and a local edit that moves a boundary without changing the bytes hashed
+    is precisely this module's threat model.
+    """
+    return json.dumps([list(v) if isinstance(v, tuple) else v for v in value], ensure_ascii=False)
 
 
 def canonical_form(record: DecisionRecord) -> str:
     """The exact byte-stable string the checksum is computed over.
 
     Everything except ``checksum`` itself is included, in a fixed order.
-    ``confidence`` goes through ``repr`` so 1.0 and 1 cannot alias, and the
-    tuple fields flatten with the same separator as the top level — a value
-    containing the separator would be a hashing bug, not a collision vector,
-    because no yeaboi field carries control characters.
+    ``confidence`` goes through ``repr`` so 1.0 and 1 cannot alias; the tuple
+    fields go through ``_composite`` so no boundary is malleable.
     """
     parts = (
         record.entity_id,
@@ -46,12 +58,12 @@ def canonical_form(record: DecisionRecord) -> str:
         record.source_document,
         record.timestamp,
         repr(float(record.confidence)),
-        _SEP.join(record.inputs),
+        _composite(record.inputs),
         record.parent_entity_id,
         record.previous_version_id,
         record.derived_from_id,
         record.detail,
-        _SEP.join(f"{key}={value}" for key, value in record.extras),
+        _composite(record.extras),
         repr(int(record.sequence_id)),
         record.previous_checksum,
     )

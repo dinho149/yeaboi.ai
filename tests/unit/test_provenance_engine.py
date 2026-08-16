@@ -74,7 +74,14 @@ class TestAudit:
         report = run_provenance_audit(window_days=30, db_path=db, today=TODAY)
         assert len(report.recent) == 50
         assert report.window_records == 60
-        assert any("newest 50 of 60" in w for w in report.warnings)
+        # `--strict` maps warnings to exit 3 and its help promises "broken or
+        # empty chain" — a healthy busy chain crossing the cap must not trip
+        # it. Truncation is structural; the renderers announce it.
+        assert report.warnings == ()
+
+        from yeaboi.provenance.render import format_audit_lines
+
+        assert any("more in the window" in line for line in format_audit_lines(report))
 
 
 class TestTrace:

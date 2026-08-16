@@ -586,7 +586,7 @@ function ConflictCards({ conflicts }: { conflicts: StandupConflict[] }) {
       <h2 className={styles['h2']}>Conflicts</h2>
       <ul className={styles['conflictList']}>
         {conflicts.map((conflict) => (
-          <li key={conflict.title} className={styles['conflict']}>
+          <li key={conflict.fingerprint} className={styles['conflict']}>
             <p className={styles['conflictTitle']}>
               <Chip tone={tone(CONFLICT_TONE, conflict.severity)}>{conflict.severity}</Chip>
               <strong>{conflict.title}</strong>
