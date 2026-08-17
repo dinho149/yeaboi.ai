@@ -146,3 +146,35 @@ class TestRestraint:
         dispatch = renderer(resolved())
         assert dispatch.title
         assert dispatch.summary
+
+
+class TestLocalStamp:
+    """The ledger stores UTC; a ceremony's ``at`` is local. Display must convert.
+
+    Slicing the stored string showed a run at 17:13 for a ceremony scheduled at
+    18:13, which reads as a bug in the scheduler rather than a timezone in the
+    renderer — it was caught by firing one for real, not by a unit test.
+    """
+
+    def test_a_utc_stamp_is_shown_in_local_time(self, monkeypatch):
+        import os
+        import time
+
+        from yeaboi.ceremonies.render import local_stamp
+
+        monkeypatch.setenv("TZ", "Europe/London")
+        time.tzset()
+        try:
+            # 17:13 UTC in August is 18:13 in London.
+            assert local_stamp("2026-08-17T17:13:00+00:00") == "2026-08-17 18:13"
+            assert local_stamp("2026-08-17T17:13:00+00:00", with_date=False) == "08-17 18:13"
+        finally:
+            os.environ.pop("TZ", None)
+            time.tzset()
+
+    def test_an_unparseable_stamp_is_shown_rather_than_raising(self):
+        from yeaboi.ceremonies.render import local_stamp
+
+        # A history row with an odd stamp is still a row worth showing.
+        assert local_stamp("not a time") == "not a time"
+        assert local_stamp("") == ""

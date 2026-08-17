@@ -24,7 +24,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.agent.state import Ceremony, CeremonyRun
-from yeaboi.ceremonies.render import _OUTCOME_STYLE, next_fire
+from yeaboi.ceremonies.render import _OUTCOME_STYLE, local_stamp, next_fire
 from yeaboi.ui.shared._components import (
     CEREMONIES_THEME,
     PAD,
@@ -64,7 +64,7 @@ def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
     # keeping. A successful run needs no word — the tick already said it.
     if run.outcome != "ok":
         cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
-    cell.append(run.fired_at[5:16].replace("T", " "), style=theme.muted)
+    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
     return cell
 
 

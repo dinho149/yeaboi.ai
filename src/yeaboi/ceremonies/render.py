@@ -18,6 +18,25 @@ from yeaboi.agent.state import Ceremony, CeremonyRun
 from yeaboi.ceremonies.catalog import CATALOG, UNSCHEDULABLE, lookup
 from yeaboi.ceremonies.scheduler import weekday_spec_label
 
+
+def local_stamp(fired_at: str, *, with_date: bool = True) -> str:
+    """An ISO timestamp as local wall-clock time, for display only.
+
+    The ledger stores UTC (with its offset), but a ceremony's ``at`` is local —
+    launchd and cron fire in local time. Slicing the stored string would show a
+    run at 17:13 for a ceremony the user scheduled at 18:13, which reads as a
+    bug in the scheduler rather than a timezone in the renderer.
+
+    Unparseable input is returned trimmed rather than raising: a history row
+    with an odd stamp is still a row worth showing.
+    """
+    try:
+        moment = datetime.fromisoformat(fired_at).astimezone()
+    except (TypeError, ValueError):
+        return (fired_at or "")[:16].replace("T", " ")
+    return moment.strftime("%Y-%m-%d %H:%M" if with_date else "%m-%d %H:%M")
+
+
 # Outcome → (glyph, style). A skip is amber, not red: it is a decision the
 # guards made, and colouring it like a failure teaches people to ignore both.
 _OUTCOME_STYLE = {
@@ -34,7 +53,7 @@ def outcome_chip(run: CeremonyRun | None) -> Text:
     if run is None:
         return Text("— never run", style="dim")
     glyph, style = _OUTCOME_STYLE.get(run.outcome, ("?", "dim"))
-    when = run.fired_at[:16].replace("T", " ")
+    when = local_stamp(run.fired_at)
     return Text(f"{glyph} {run.outcome} · {when}", style=style)
 
 
@@ -86,7 +105,7 @@ def format_history_rich(runs: list[CeremonyRun]) -> Group:
         glyph, style = _OUTCOME_STYLE.get(run.outcome, ("?", "dim"))
         delivered = ", ".join(f"{ch}{'' if ok else ' ✗'}" for ch, ok in run.delivery) or "—"
         table.add_row(
-            run.fired_at[:16].replace("T", " "),
+            local_stamp(run.fired_at),
             run.ceremony,
             Text(f"{glyph} {run.outcome}", style=style),
             f"${run.cost_usd:.2f}" if run.cost_usd else "—",
