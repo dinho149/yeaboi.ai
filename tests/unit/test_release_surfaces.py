@@ -95,7 +95,7 @@ class TestIntegrationAngles:
             assert item.label in reached, f"{item.label} unreachable via {patterns[0]}"
 
     def test_no_provider_means_no_integration_session(self):
-        """Empty, not baseline-only: `required_tracks` reads empty as 'never asked'."""
+        """Empty, not baseline-only: `batch_view` reads empty as 'never asked'."""
         assert surfaces.campaign_providers(["src/yeaboi/ui/x.py"]) == ()
         assert surfaces.integration_checklist((), ["src/yeaboi/ui/x.py"]) == []
 

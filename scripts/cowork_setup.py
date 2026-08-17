@@ -50,7 +50,7 @@ Usage::
     # …and the shell half of teardown (routines are /cowork teardown's job):
     uv run python scripts/cowork_setup.py --teardown --labels --variables --yes
 
-Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 3 reads to
+Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 4 reads to
 decide whether to keep going:
 
     0   applied, or nothing needed applying
@@ -136,29 +136,17 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # business editing a file, and narrowing it says so where the grant is
     # reviewed.
     "shipped-standup": ("Bash", "Read", "Glob", "Grep", "Task", "TodoWrite"),
-    # The routine that asks may not answer: no `gh issue edit`, so it cannot apply
-    # `release:promote` to its own ask. Same shape as the sweeps' inability to
-    # apply `claude-implement`.
+    # The routine that asks may not answer — and under the batch model the
+    # answer is a MERGE, so the grant withholds every verb in that direction:
+    # no `gh pr merge`, no `gh pr review`, no `gh pr ready`, no `gh pr edit`,
+    # no `gh api` (which can PUT a merge), and no `gh issue edit`. This routine
+    # reads what is waiting — gate-green fleet PRs, the open batch PR — and
+    # posts one Slack reminder through the scribe. It cannot assemble a batch
+    # (that is `batch_assemble.py`, run by a human locally) and it cannot ship
+    # one. Same shape as the sweeps' inability to apply `claude-implement`.
     "release-promote-ask": (
-        "Bash(gh issue list:*)",
-        "Bash(gh issue create:*)",
-        "Bash(gh issue view:*)",
-        "Bash(gh issue comment:*)",
-        # Closing supersedes a stale ask. `gh issue edit` stays out: it is the verb
-        # that could apply `release:promote`, and the routine that asks may not
-        # answer. Closing cannot label anything.
-        #
-        # The reasoning is narrower than it looks, so it is written down rather
-        # than left to read as complete: `gh issue create` accepts `--label` too,
-        # so this grant does not make applying `release:promote` *impossible* —
-        # only impossible on an issue that already exists. Whether a label set at
-        # creation even fires the `labeled` webhook `publish.yml` listens for is
-        # unverified. What actually holds is the routine's own stop condition,
-        # plus `publish.yml` requiring `release:promotion`, which the ask applies
-        # to itself and which is therefore no barrier here either. Treat this
-        # grant as defence in depth, not as the lock.
-        "Bash(gh issue close:*)",
-        "Bash(uv run python scripts/release_channel.py:*)",
+        "Bash(gh pr list:*)",
+        "Bash(gh pr view:*)",
         # Every routine checks in (`cowork/check-in.md`), and a scoped shell has to
         # say so: the command is named in the shared contract, not in this file, so
         # nothing here would otherwise reveal that the grant is missing. A run that
@@ -291,10 +279,10 @@ DEPLOY_ROUTINE = "cd-deploy"
 # ``feedback-override`` is the escape hatch on the ``pr-feedback`` merge gate
 # (``.github/workflows/pr-feedback.yml``). Deleting either breaks a live gate
 # silently — applying a label that does not exist simply does nothing.
-# ``release:promotion`` and ``release:promote`` join them for the same reason:
-# ``publish.yml`` fires on the second landing on an issue that already carries the
-# first, so a teardown that deleted either would disarm the only path that can cut
-# an official release, and nothing would say so.
+# ``release:promotion`` joins them for the same reason: it is how
+# ``scripts/beta_signoff.py`` finds the live batch PR — the only path fleet work
+# has to an official release — so a teardown that deleted it would strand an
+# open batch unfindable, and nothing would say so.
 # One issue per month, holding one comment per run. Deliberately outside the
 # `cowork:*` family: those names are the queue, and this is a record. Nothing in
 # the fleet reads it — see `scripts/cowork_checkin.py` for why that is the whole
@@ -311,7 +299,10 @@ KEEP_LABELS = frozenset(
         "implement-blocked",
         "feedback-override",
         "release:promotion",
-        "release:promote",
+        # `auto-version.yml` — not a cowork workflow — reads this to skip the
+        # per-PR bump; deleting it would put a version bump back on every fleet
+        # PR branch and break the next batch assembly, silently.
+        "semver:none",
         "integration:approved",
         # Teardown stops the fleet; it does not erase what the fleet did. Deleting
         # this label leaves every monthly ledger issue intact and unfindable, which
@@ -782,15 +773,25 @@ def expected_labels() -> list[Label]:
         # issue at all, and removing it would hide the failure rather than name it.
         Label("implement-blocked", "d93f0b", "The implement job produced no PR — a human has to look"),
         Label("feedback-override", "b60205", "Clears the pr-feedback merge gate — a human's call, recorded on the PR"),
-        # The promotion pair. `release:promotion` marks the weekly ask issue and is
-        # applied only by `cron/release-promote-ask.md`; `release:promote` is the
-        # human's ✅, carried by the relay. `publish.yml` requires BOTH, so the
-        # first is what stops a crafted issue title from routing a ✅ onto an issue
-        # nobody meant — see the note on PROMOTE_RE in `scripts/cowork_relay.py`.
-        Label("release:promotion", "c2e0c6", "The weekly ask: promote the accumulated pre-releases?"),
-        Label("release:promote", "0e8a16", "Approved — publish.yml cuts the official release"),
-        # The campaign pair, shaped exactly like the promotion pair above and for
-        # the same reason. `integration:candidate` marks a shortlisted provider and
+        # The batch label. `release:promotion` marks the live batch PR — the
+        # assembled fleet work awaiting a human's hand-test and merge — and is
+        # applied only by `scripts/batch_assemble.py` at creation.
+        # `beta_signoff.py` finds the batch by it, and the reminder routine
+        # (`cron/release-promote-ask.md`) reports it. There is no companion
+        # `release:promote` any more: releasing became merging the batch PR, and
+        # no label can do that.
+        Label(
+            "release:promotion", "c2e0c6", "The open release batch — fleet work awaiting a human's hand-test and merge"
+        ),
+        # Every fleet PR carries this, applied at `gh pr create`. It tells
+        # `auto-version.yml` to bump nothing on the PR branch: the release batch
+        # that ships the PR gets the one bump, and a per-PR bump would collide
+        # with every other constituent in `pyproject.toml` and
+        # `changelog_data.json` the moment `batch_assemble.py` squashed them
+        # together. `auto-version.yml` already reads the label; this row is what
+        # makes it exist to be applied.
+        Label("semver:none", "ededed", "No version bump on this PR — fleet work; the release batch carries the bump"),
+        # The campaign pair. `integration:candidate` marks a shortlisted provider and
         # is applied only by `cron/integrations-campaign.md`; `integration:approved`
         # is the human's ✅, carried by the relay, and is what the next campaign run
         # reads to know which provider it is building.
@@ -4930,7 +4931,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
     if not report.ok:
-        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 3 reads.
+        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 4 reads.
         # 1 here means the GitHub apply degraded, which has no bearing on a
         # routine's trigger body — those are built from these same files, and
         # these files are fine. 2 means the files are not, and nothing further

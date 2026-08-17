@@ -5,9 +5,10 @@
 **Workstream** — none; this routine speaks for every workstream, one message each.
 **Model** — `standard` ([models.md](../../models.md))
 
-Security, bugs and chores merge without asking anybody. This is the message that makes that
-legible: a post saying what actually shipped, what proved it, and which pre-release it is in — so
-an unattended fleet is something you can read rather than something you have to trust.
+Security, bugs and chores are built without asking anybody, and wait gate-green for the release
+batch. This is the message that makes that legible: a post saying what moved, what proved it, and
+whether it has shipped or is still waiting for a batch — so an unattended fleet is something you
+can read rather than something you have to trust.
 
 **It is one message per area, not one message.** Until 2026-08-16 this was a single roll-up grouped
 by *type*, and a fix in `analysis/` arrived as a `[bug]` line between a go-migration wave and a

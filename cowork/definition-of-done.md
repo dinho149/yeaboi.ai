@@ -13,7 +13,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 | 6 | **Observability** — the three pillars from `CLAUDE.md`: `logger.info()` on every user action, log paths from `paths.py`, tests | review |
 | 7 | **Web bundles** — anything under `frontend/` ⇒ `make web` and the rebuilt `src/yeaboi/web/static/` committed in the *same* commit | CI `web` job |
 | 8 | **Notion** — page created or updated under 🤙 yeaboi for any user-facing change | scribe |
-| 9 | **Slack** — the merge appears in the day's `cron/shipped-standup.md` post: what shipped, what proved it, which pre-release it is in | scribe |
+| 9 | **Slack** — the work appears in the day's `cron/shipped-standup.md` post: what moved, what proved it, whether it shipped or waits for the release batch | scribe |
 | 10 | **Review feedback** — every finding the PR's reviewers rated blocker or should-fix is fixed or answered, **and said so in a reply**, and every human review thread is resolved by someone who replied to it | the `pr-feedback` commit status (`scripts/pr_feedback.py`), required by the `main-branch` ruleset |
 
 ## Rules
@@ -114,8 +114,9 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   waiting for. `MAX_REVIEW_ROUNDS` remains the point the reviewer stops writing at all.
 
   Unresolved *human* threads and a requested-changes review are never capped: a person waiting for
-  an answer is not a loop. What makes the cap safe is that an *unattended* merge does not reach
-  users; it publishes a pre-release, and the weekly promotion is where a human looks. (A human's
+  an answer is not a loop. What makes the cap safe is that fleet work does not reach users on its
+  own at all: the PR waits gate-green for the release batch, and the human's hand-test and merge
+  of that batch is where somebody looks ([release-signoff.md](release-signoff.md)). (A human's
   own merge does cut a release — but that is a lane with a human in it by construction, which is
   the condition this cap exists to substitute for.)
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a

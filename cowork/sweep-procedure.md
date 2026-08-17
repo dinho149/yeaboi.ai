@@ -10,7 +10,11 @@ workstream and any per-run focus; everything else is here.
    for. No heading for your workstream means nothing is recorded, which is the normal state.
 
 2. **Check for work in flight** — `gh pr list --label "workstream:<name>" --state open --json
-   number,createdAt,url`. If a PR is open: drive it to green and **stop**. That is the whole run.
+   number,createdAt,url`. If a PR is open and not yet green: drive it to green and **stop**. That
+   is the whole run. If it is open and **green, it is waiting for the next release batch** — the
+   healthy steady state, not a stall: a human's `make batch-assemble` will fold it in
+   ([release-signoff.md](release-signoff.md)). Stop quietly; one open PR per workstream still
+   means this workstream builds nothing new until it ships.
    Green means both halves:
    - **CI** — `gh pr checks <n>`, then fix what is red.
    - **Feedback** — `make pr-feedback PR=<n>`, then follow the procedure in
@@ -32,10 +36,14 @@ workstream and any per-run focus; everything else is here.
      Same rule on the resolve button: reply in a thread before you resolve it. A thread this
      PR's author resolved with nothing from them in it comes back as an open item.
 
-   If that PR is already green and more than 7 days old, comment once on it saying the workstream has
-   been blocked on it since `<date>` and has scouted nothing in the meantime. One open PR per
-   workstream plus a weekly cadence means an unmerged PR stops this workstream indefinitely, and
-   without that comment the digest would report the silence as if the scout had found nothing.
+   If that PR is already green and more than 14 days old, comment once on it saying the workstream
+   has been waiting on it since `<date>` and has scouted nothing in the meantime. Under weekly
+   batches a green PR routinely waits up to a week — that is the design — but fourteen days means
+   it missed a batch, usually because `batch_assemble.py` skipped it for a conflict; a rebase is
+   what puts it in the next one, and without the comment the digest would report the silence as if
+   the scout had found nothing. A rebase resets nothing in the review round count
+   (`scripts/pr_feedback.py` counts rounds, not pushes), so drive a rebased PR back to green
+   promptly rather than letting it sit.
 
 3. **Run your lenses, then scout.** If your routine file has a `## Lenses` section, run each one
    named there first and hand the output to the scout as evidence:
@@ -210,8 +218,11 @@ workstream and any per-run focus; everything else is here.
    - **you** then spawn `code-reviewer` (`deep`) on `git diff main...HEAD` with a one-paragraph
      description of the find — the builder does not review its own work, and agents do not nest
    - **fix** every `blocker` and `should-fix` finding, then have the builder open the PR labelled
-     `cowork` + `workstream:<name>` + the find's `type:<type>` — the daily standup reads the type
-     off the PR, so a PR without one ships untagged. A finding you cannot fix, or think is wrong,
+     `cowork` + `workstream:<name>` + the find's `type:<type>` + `semver:none` — the daily standup
+     reads the type off the PR, so a PR without one ships untagged, and `semver:none` is what stops
+     `auto-version.yml` bumping the version on every fleet branch: the release batch that ships
+     this PR carries the one bump, and a per-PR bump collides with every other constituent the
+     moment `scripts/batch_assemble.py` squashes them together. A finding you cannot fix, or think is wrong,
      ends the auto lane for this find: close the branch, file it as a proposal quoting the finding,
      and stop. Nothing here may overrule a reviewer
    - once the PR exists, spawn `cowork-scribe` (`standard`) again to attach it to the Linear ticket
@@ -219,23 +230,14 @@ workstream and any per-run focus; everything else is here.
      to Done on merge. **When you built a queued item, the PR body also carries `Closes #<n>`** for
      its GitHub issue. The merge is the only thing that closes a queue entry; without that line the
      queue only grows
-   - **arm auto-merge, but only if the gate is actually armed.** Check the ruleset first, exactly
-     as `.github/workflows/codeql-triage.yml` does — this is a fact to read, not a judgement to
-     make:
-
-     ```bash
-     gh api "repos/$REPO/rules/branches/main" \
-       --jq 'any(.[]; .type=="required_status_checks" and any(.parameters.required_status_checks[]; .context=="pr-feedback"))'
-     ```
-
-     `true` → `gh pr merge <n> --auto --squash`. The ruleset then merges it once every required
-     check is green, which is what makes this lane unattended.
-
-     `false` → **do not arm it.** Say so in the run log: `pr-feedback` is not a required status
-     check, so `--auto` would merge on CI alone, with no review in the loop — which is precisely
-     the thing the auto lane is trading a human approval for. Leave the PR open for a human to
-     merge. The automation is real either way; the unattended *merge* is not, until that context is
-     added ([house-rules.md](house-rules.md), **The gate**).
+   - **leave the PR open — never merge, never arm auto-merge.** A gate-green fleet PR is FINISHED
+     from this sweep's point of view: it waits, with every other fleet PR, for the next release
+     batch. A human runs `make batch-assemble`, which folds every gate-green fleet PR into one
+     `batch/<date>` PR, hand-tests the assembled build, and merges it — that merge is the
+     sign-off, and it is the only way fleet work reaches `main` and users
+     ([release-signoff.md](release-signoff.md)). `gh pr merge` in any form — including `--auto` —
+     is not this routine's to run: the auto lane's "unattended" ends at the open PR, and an open
+     green PR here is the healthy steady state, not a stall.
 
 6. **Propose lane — file into the slots you have, and no further.** Ask how many there are; do not
    count the queue by eye:

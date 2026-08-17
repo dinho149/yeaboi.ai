@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """The release channel's arithmetic: which pre-release this commit is, and what is in it.
 
-Merging to `main` no longer ships to users. `publish-beta.yml` publishes a PyPI
-*pre-release* (``X.Y.ZrcN``) on every release-worthy merge, and those accumulate
-until a human promotes the batch; `publish.yml` then publishes the plain
-``X.Y.Z``. Both need the same three facts — the last final tag, the version
-`pyproject.toml` is heading for, and what sits between them — and none of the
-three is a judgement call. Deriving them here rather than in a prompt keeps the
-routine in ``cowork/routines/cron/release-promote-ask.md`` out of the arithmetic,
-the same argument ``cowork_relay.py`` makes about diffing by eye.
+**Partly superseded by the batch release model, and slated for retirement with
+it.** Fleet work now ships via a batch PR a human assembles, hand-tests and
+merges (`scripts/batch_assemble.py` + `scripts/beta_signoff.py`, see
+`cowork/release-signoff.md`); the promotion-issue machinery this module rendered
+markers for is gone, and `beta_signoff.py` no longer imports it — the `tracks`
+plumbing in `pending()` has no sign-off consumer left. What still runs:
+`publish-beta.yml` calls `--next-rc`/`--write`, `publish.yml` calls
+`--check-promotable` and `--release-notes`, and `cowork_evening.py` reads
+`pending()` for the digest footer. Once the beta channel retires (one full batch
+cycle after cutover, per the ci-and-release skill), the pre-release half of this
+file goes with it.
+
+`publish-beta.yml` publishes a PyPI *pre-release* (``X.Y.ZrcN``) on every
+release-worthy merge to `main` — all human-lane now; `publish.yml` publishes the
+plain ``X.Y.Z``. Both need the same three facts — the last final tag, the
+version `pyproject.toml` is heading for, and what sits between them — and none
+of the three is a judgement call.
 
 Two invariants everything below rests on:
 
@@ -291,10 +300,11 @@ def _tracks(commits: list[str], changed: list[str]) -> dict:
     * subjects (backup) — `integration(<provider>):`, which is the only way a reach
       angle shows up at all, since it touches no provider module.
 
-    ``required`` is what `beta_signoff.promote` refuses on, and it is False for a
-    track with nothing in it. A week with no campaign must not block promotion on a
-    test session whose checklist is empty, because an empty checklist reads as
-    "signed off" when it means "never asked".
+    ``required`` was what the issue-era `beta_signoff.promote` refused on; the
+    batch-model sign-off computes its own required set from the batch PR's diff
+    and no longer reads this. It is kept accurate while the module lives (the
+    digest still renders `tracks`), and it is False for a track with nothing in
+    it — an empty checklist reads as "signed off" when it means "never asked".
 
     ``carried_forward`` is conservative on purpose: a track carries only when
     *both* signals agree nothing of its shape landed since its own floor. Either
@@ -359,12 +369,11 @@ def pending(ref: str = "HEAD", since: str | None = None) -> dict:
     # and falling back to the full batch is the right answer there — a marker
     # naming a deleted or misspelled tag must widen the review, never narrow it.
     seen = resolve_beta(since) if since else None
-    # A `tested:` marker naming an ALREADY-PROMOTED pre-release would otherwise set
-    # the floor below the last final and widen the span past the release boundary.
-    # `resolve_beta` searches the unfiltered tag list, and `newest_tested` scans
-    # closed asks — including the one that was promoted, which carries exactly such
-    # a marker. Mostly masked while promotion pinned to the newest rc; per-track
-    # floors unmask it, because a quiet track keeps a stale marker as its newest.
+    # A `since` naming an ALREADY-PROMOTED pre-release would otherwise set the
+    # floor below the last final and widen the span past the release boundary.
+    # `resolve_beta` searches the unfiltered tag list, and historical `tested:`
+    # markers on closed issue-era asks name exactly such tags. The ancestry
+    # check keeps a stale floor from widening the batch.
     if seen is not None and name and _is_ancestor(seen["sha"], name):
         seen = None
     floor = seen["sha"] if seen else name
@@ -476,11 +485,11 @@ def _checklist_markdown(batch: dict) -> list[str]:
 def markdown(batch: dict, *, asking: bool = True) -> str:
     """The batch, rendered. One renderer, two audiences.
 
-    ``asking=True`` is the promotion issue body and the text the Slack ask quotes:
-    it opens with the question, carries the sign-off checklist, and closes with the
-    ✅/❌ verbs and the two markers `publish.yml` reads — `<!-- promote: X.Y.Z -->`
-    for what was asked and `<!-- beta: beta/X.Y.ZrcN -->` for which commit to cut
-    it from.
+    ``asking=True`` was the issue-era promotion ask body — question, checklist,
+    ✅/❌ verbs, and the `<!-- promote: -->`/`<!-- beta: -->` markers the old
+    `publish.yml` read. Nothing renders it in production any more (the batch PR
+    body is `batch_assemble._body`); it survives for `--markdown` callers and
+    dies with the module's pre-release half.
 
     ``asking=False`` is the **released** notes, and the difference is not
     cosmetic. `publish.yml` publishes this as the GitHub Release body, which is

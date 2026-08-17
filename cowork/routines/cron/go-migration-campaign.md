@@ -54,14 +54,16 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
    opens the Linear ticket when the wave branch is created, and it satisfies the rest of the
    Definition of Done's comms items.
 
-5. **Arm the merge, never make it.** Probe the ruleset first:
-
-   `gh api "repos/{owner}/{repo}/rules/branches/main" --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("pr-feedback")'`
-
-   Non-null → `gh pr merge --auto --squash`. Null → do not arm it, and say plainly in the run
-   log that `pr-feedback` is not a required context, so waves advance one per human merge. The
-   parity hold rides that context; without it the unattended premise of this whole lane is
-   gone — report it, never work around it.
+5. **Leave the wave PR open — never merge, never arm auto-merge.** A gate-green wave waits,
+   with every other fleet PR, for the next release batch: a human's `make batch-assemble` folds
+   it in and the human's merge of the batch PR ships it
+   ([release-signoff.md](../../release-signoff.md)). The parity hold still rides the
+   `pr-feedback` context on the wave PR itself, unchanged. Waves therefore advance one per
+   batch cycle — wave N+1 branches off `main`, which gains wave N only when the batch ships —
+   which is the program's one-wave-at-a-time cadence with the shipping made human. Label the
+   wave PR `semver:none` like every fleet PR; the batch carries the bump, and a wave that bumps
+   `packaging/yeaboi-core` still publishes its core wheel only when the batch merge lands the
+   bump on `main`.
 
 6. **Post nothing to the channel.** The Tuesday progress post and the wave-merged post carry
    this lane's story; a building routine that also narrates is two voices for one fact.

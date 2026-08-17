@@ -59,8 +59,32 @@ test has ever seen.
    Deploy what is on `origin/main` and nothing else: a feature branch's `cowork/` edits are not
    deployable, because nobody has reviewed them.
 
-2. **`uv run python scripts/cowork_setup.py --check --local`** — abort on non-zero, reporting to
-   Slack. This is not redundant with CI: it is what stops step 4 composing a prompt that points at a
+2. **Can this run reconcile at all? Ask before spending anything.** If `RemoteTrigger` is not in
+   this session's toolset, go straight to [If `RemoteTrigger` is
+   unavailable](#if-remotetrigger-is-unavailable) and do what it says — **skipping steps 3 to 7
+   entirely**. No `--check --local`, no `--strict`, no plan. What still runs is the say-it-once
+   gate in step 8 (`--blocked-report`, one query) and the check-in in step 9 — and the scribe only
+   if that gate answers `false`, which is the first occurrence of a fault and nothing else. On the
+   ordinary firing this run reads one issue query, posts nothing, and ends.
+
+   **This check used to sit inside the reconcile step, and its position was costing about a pound
+   a push.** The webhook fires on every push to every branch and cannot be filtered to `main`, this
+   repo runs many worktrees, and the tool has been absent from every firing since 2026-08-10 — so
+   each push bought a full session that ran two scripts, reached the reconcile, discovered it could
+   not reconcile, and reported a gap already tracked in an open issue. On 2026-08-17 five of them
+   fired in three minutes. Nothing downstream of this line can run without the tool, so nothing
+   upstream of it should be paid for.
+
+   **What skipping steps 3–7 gives up, said plainly: nothing that is not applied elsewhere.** Step
+   3 validates the files that step 5 would build a prompt from, and step 5 is not running. The
+   labels and variables of step 4 are applied by `.github/workflows/cowork-repo-setup.yml` on the
+   same merge, on a runner with no proxy and with admin scope this session does not have — this
+   run's copy of that work was a second opinion, not the only one. Steps 5 to 7 need the missing
+   tool. Step 8 reports, and the report is a standing fault its own say-it-once gate has already
+   silenced.
+
+3. **`uv run python scripts/cowork_setup.py --check --local`** — abort on non-zero, reporting to
+   Slack. This is not redundant with CI: it is what stops step 5 composing a prompt that points at a
    file which does not exist. A README row naming a missing routine file registers a routine that
    wakes up, cannot read its own instructions, and does something unpredictable — and it would be
    *this* run that did it.
@@ -68,12 +92,12 @@ test has ever seen.
    **`--local`, not the full `make cowork-check`, and the flag is load-bearing.** The full check also
    asks GitHub whether every label exists and every `YEABOI_MODEL_*` matches `models.md`, and a
    missing label is a `check: 1 problem(s)` — so a run deploying a *new* workstream or a changed
-   model id would abort here, one step before step 3 creates the very thing it just failed on. That
+   model id would abort here, one step before step 4 creates the very thing it just failed on. That
    is the same halted-deploy this routine was repaired for, moved earlier. The GitHub half belongs to
-   step 3, which applies rather than merely reports, and which prints the `pr-feedback` merge-gate
+   step 4, which applies rather than merely reports, and which prints the `pr-feedback` merge-gate
    probe on its way through.
 
-3. **`uv run python scripts/cowork_setup.py --strict`** — the GitHub labels and the four
+4. **`uv run python scripts/cowork_setup.py --strict`** — the GitHub labels and the four
    `YEABOI_MODEL_*` repository variables. `--strict` is the point: without it a rejected write is a
    note on a stream nobody is reading, and "created no labels, exited 0" reads exactly like success.
    The script reaches GitHub through `gh` when it is there and the REST API with `GH_TOKEN` when it
@@ -93,10 +117,10 @@ test has ever seen.
 
    - **2 — stop.** `cowork/` disagrees with itself. Report and stop: registering anything from
      files in that state is how a routine ends up pointing at instructions that do not exist.
-   - **1 — note it and carry on to step 4.** A GitHub write degraded: a label was not created, or
+   - **1 — note it and carry on to step 5.** A GitHub write degraded: a label was not created, or
      — the ordinary case — the variables were refused by the proxy. Record the exact note text and
-     carry it into the step 7 post — but do **not** stop. A label has no bearing on a trigger
-     body: those are built from the `cowork/` files step 2 just validated, not from anything this
+     carry it into the step 8 post — but do **not** stop. A label has no bearing on a trigger
+     body: those are built from the `cowork/` files step 3 just validated, not from anything this
      step touches. This step used to stop the run outright, and a routine session with no `gh`
      binary therefore halted every automatic deploy at this line while reporting a clean repo.
 
@@ -106,17 +130,15 @@ test has ever seen.
      the same reason an empty plan posts nothing at all.
    - **0 — carry on.**
 
-   This is deliberately not step 4's rule, where exit 1 *does* stop the run. The difference is what
+   This is deliberately not step 5's rule, where exit 1 *does* stop the run. The difference is what
    the exit code is about: there, a degraded plan is untrustworthy input to a POST, and applying it
    would write the fleet from a snapshot the script itself declined to stand behind. Here, nothing
    downstream reads the labels.
 
-4. **Reconcile the routines.** **First, check the tool is here at all.** If `RemoteTrigger` is not in
-   this session's toolset, stop and follow [If `RemoteTrigger` is
-   unavailable](#if-remotetrigger-is-unavailable) below — that is a standing environment gap rather
-   than a failed call, and it is reported *once* rather than once per firing.
+5. **Reconcile the routines.** Step 2 already established that `RemoteTrigger` is here; a run that
+   reaches this line has the tool.
 
-   Otherwise: `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
+   `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
    scratch file, then
    `uv run python scripts/cowork_setup.py --plan --strict --no-create --triggers <file>`.
    - **If the response says `"has_more": true`, that page is not the fleet.** The API returns twenty
@@ -144,13 +166,13 @@ test has ever seen.
    - Under `--no-create` every create is blocked, so this run applies updates only. Anything in
      `creates_blocked` goes in the Slack post as "needs `/cowork deploy`", named.
 
-5. **Webhooks: report, never post.** A webhook may only be attached to a routine that provably holds
+6. **Webhooks: report, never post.** A webhook may only be attached to a routine that provably holds
    none, and the only proof available is having created that routine seconds earlier — which this
    run never does. So every `webhooks[]` entry arrives `blocked`, with an empty body, and there is
    nothing here to POST. Name anything in `webhooks_blocked` in the Slack post and move on; it is the
    normal steady state, not a problem to solve. Wiring one is `/cowork deploy`'s job.
 
-6. **Record the URLs.** `--urls --triggers <file>` — the script edits `cowork/README.md` itself.
+7. **Record the URLs.** `--urls --triggers <file>` — the script edits `cowork/README.md` itself.
    If the file changed, open a PR for it; **never push to `main`**. This run creates nothing, so a
    changed README here means an earlier `/cowork deploy` registered something without recording it —
    uncommon, and worth the PR when it happens. The house rules apply to that PR like any other:
@@ -164,11 +186,15 @@ test has ever seen.
      not an exemption.
    - Merging it is itself a `cowork/` change on `main`, so it fires this routine again. That run
      finds a plan with nothing to create and a README with nothing to fill, and exits silently at
-     step 4. Converging on the second pass is expected, not a loop.
+     step 5. Converging on the second pass is expected, not a loop.
 
-7. **Report.** Spawn `cowork-scribe` for the Linear `workstream:*` label mirroring and one
+8. **Report.** Spawn `cowork-scribe` for the Linear `workstream:*` label mirroring and one
    `#yeaboi-claude` post. **Which of two shapes depends on the run, not on the routine** — this is
    the routine `cowork-scribe.md` names when it says intent is a property of the run.
+
+   **A run that short-circuited at step 2 spawns nothing unless the say-it-once gate below says
+   this fault has never been reported.** That is once, ever, per marker — the scribe is the
+   expensive part of this step, and a standing environment gap does not need writing up twice.
 
    **A run that reconciled something** is a TELL. Every field that changed, named:
 
@@ -188,7 +214,7 @@ test has ever seen.
    thing a human can do:
 
    ```slack
-   🚨 **cd-deploy** — blocked at step 3 · `4576bcb`
+   🚨 **cd-deploy** — blocked at step 4 · `4576bcb`
 
    **Blocked** repo variables — the proxy refused `POST /actions/variables`
    **Applied** nothing · the fleet is unchanged, not half-applied
@@ -197,7 +223,7 @@ test has ever seen.
 
    Both carry the commit, because "which tree was this?" is the first question either one raises.
    Report `creates_blocked` as `/cowork deploy`, orphans by name, blocked webhooks by name, and
-   **any labels or variables step 3 could not apply** — named, with the reason. That last one is
+   **any labels or variables step 4 could not apply** — named, with the reason. That last one is
    the price of no longer stopping on it: a scope gap nobody ever reads about is a scope gap that
    never gets fixed, and unlike the fleet reconciliation there is nothing else in the day that
    would mention it.
@@ -269,8 +295,22 @@ test has ever seen.
    exists when something actually changed — and a TELL names what it changed, so two of them are
    never the same message twice.
 
-8. **Check in.** Whatever happened above — including nothing — close the run by following
-   [check-in.md](../../check-in.md). It is the last thing you do.
+9. **Check in.** Whatever happened above — including nothing — close the run by following
+   [check-in.md](../../check-in.md), and **pass `--quiet-repeat`** to `cowork_checkin.py`:
+
+   ```bash
+   uv run python scripts/cowork_checkin.py --line --record --quiet-repeat
+   ```
+
+   This routine and `slack-relay` are the two that fire often enough to need it. A push webhook
+   that cannot be scoped to a branch means one firing per push to any branch here; five in three
+   minutes has happened, and five identical 🟡 lines in the 📅 thread bury the run that says
+   something. With the flag the first check-in of the day at a given status posts and the rest
+   record silently, so "did it fire, and how often" is answered by the ledger and `make
+   cowork-metrics` — which is where a count belongs — while the thread keeps one line per day.
+
+   **If the script prints nothing on stdout, post nothing.** That is the whole protocol; do not
+   reconstruct the line from the stderr note, and do not fall back to a channel message.
 
 ## If `RemoteTrigger` is unavailable
 
@@ -281,14 +321,19 @@ does not add a tool the execution environment does not ship, so `cowork: cd-depl
 there — while no such tool exists in the session that runs. That is the observed state, not a
 hypothetical: every firing from 2026-08-10 onward reported it.
 
-When it happens, steps 4–6 cannot run at all. There is no degraded reconcile to attempt — without a
+When it happens, steps 5–7 cannot run at all. There is no degraded reconcile to attempt — without a
 snapshot there is no plan, and without a plan there is nothing this routine is permitted to POST.
 
 So:
 
-- **Do not stop at step 3.** Steps 2 and 3 are independent of the tool and their result is worth
-  keeping; report what they did.
-- **Report through the say-it-once gate in step 7.** The marker is exactly:
+- **Stop at step 2, before the scripts run.** This used to say the opposite — "do not stop at step
+  3, steps 2 and 3 are independent of the tool and their result is worth keeping" — and it was
+  right about the independence and wrong about the price. The GitHub half it kept is applied again
+  by `.github/workflows/cowork-repo-setup.yml` on the same merge, with admin scope this session
+  does not have, so what those two steps bought was a duplicate of work already done, at a session
+  per push to any branch in the repo. Keeping it cost more in a week than the fleet spends on some
+  of its sweeps.
+- **Report through the say-it-once gate in step 8.** The marker is exactly:
 
   `cd-deploy: RemoteTrigger absent from the routine session`
 
@@ -306,16 +351,22 @@ goes quiet — which is the whole point of going quiet.
 ## Stop conditions
 
 - **Nothing to do is the common outcome**, and by design it is *most* runs — the webhook fires on
-  every push to every branch, and all but a few of those reach step 4 and find a fleet that already
+  every push to every branch, and all but a few of those reach step 5 and find a fleet that already
   matches. An empty plan posts nothing to Slack at all. A routine that reports every morning is a
-  routine nobody reads by Thursday. The one thing that breaks the silence without a plan is a step 3
+  routine nobody reads by Thursday. The one thing that breaks the silence without a plan is a step 4
   degradation: a label or variable that could not be applied is posted even when the fleet needed no
-  change, because nothing else in the day would mention it — **once**, per step 7's say-it-once
+  change, because nothing else in the day would mention it — **once**, per step 8's say-it-once
   rule, under the marker `cd-deploy: repo variables refused by the egress proxy`, and then not
   again while that issue stays open. **Not "until the commit changes"**: the gate is keyed on the
   marker alone, because a standing environment fault is the same fault on every commit and keying
   it on the tree meant re-announcing it once per merge forever. "Nothing else would mention it" is
   an argument for saying it, not for saying it on every push.
+- **One check-in a day per status, not one per firing.** This routine holds the second of the two
+  exemptions [check-in.md](../../check-in.md) grants, for the same reason `slack-relay` holds the
+  first: it fires far more often than a heartbeat needs to be heard, and a thread of identical
+  lines is where the one that differs goes unread. It is enforced by `--quiet-repeat` rather than
+  by judgement — never decide in the moment that this firing is worth a line the flag suppressed,
+  and never post a line the script did not print.
 - **Never compose a request body.** Only bodies that came out of `--plan` are ever POSTed. In
   particular never send `{"enabled": …}`: the plan never carries it, because `pause` is a supported
   verb and a deploy that silently un-paused the fleet would undo a human's decision with nothing
@@ -324,6 +375,6 @@ goes quiet — which is the whole point of going quiet.
   do to every routine.
 - **You cannot fix yourself.** If a bad `cd-deploy` prompt or tool grant lands on `main`, this
   routine is the thing that would have to repair it, and it is the thing that is broken. There is no
-  automatic recovery: the escape hatch is `/cowork deploy` from a local session, and step 2 exists to
+  automatic recovery: the escape hatch is `/cowork deploy` from a local session, and step 3 exists to
   make the case rare. Say this in the Slack post if `self_update` ever fires — the human wants to
   know before the next merge, not after.

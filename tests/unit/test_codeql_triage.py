@@ -117,37 +117,25 @@ class TestTriageWorkflow:
         assert "vars.YEABOI_MODEL_DEEP" in args
         assert "YEABOI_MODEL_HEAVY" not in args
 
-    def test_merges_only_via_auto_merge(self):
-        """`--auto` defers to the required checks; a direct merge would not.
+    def test_it_never_merges_and_never_arms_auto_merge(self):
+        """Fleet PRs ship inside a human's release batch, never on their own.
 
-        The invariant is about the *invocation*: `--admin` appears in this file
-        on purpose, in the sentence forbidding it, so asserting its absence
-        would be asserting the prose stayed unhelpful.
+        This job's PR waits gate-green for `make batch-assemble`; any merge
+        invocation surviving here — `--auto` included — would put a machine
+        merge back on a fleet PR, which is the one thing the batch model exists
+        to withhold. The prompt is allowed to *forbid* merging by name; the
+        runnable spelling must be absent.
         """
         text = TRIAGE_WORKFLOW.read_text()
-        assert "--auto --squash" in text
-        assert not re.search(r"gh pr merge[^\n]*--admin", text), (
-            "an admin merge bypasses the main-branch ruleset, which is the only thing "
-            "standing between this job and an unreviewed merge"
-        )
+        for line in text.splitlines():
+            if re.search(r"gh pr merge[^\n]*--(auto|admin)", line):
+                assert re.search(r"\bNEVER\b|\bnever\b|\bnot\b", line), f"merge invocation survives: {line.strip()}"
+        assert "wait" in text and "batch" in text, "the prompt must say the PR waits for the release batch"
 
-    def test_automerge_is_gated_on_pr_feedback_being_required(self):
-        """`--auto` is only a review gate while `pr-feedback` is a required check.
-
-        Adding that context to the ruleset is a manual step (cowork/README.md
-        lists it among the things no script can do), so it can be absent — and
-        with it absent, auto-merge lands the PR the moment the five CI contexts
-        go green, with no review involved. The job must detect that and refuse
-        to arm auto-merge, rather than merge on CI alone and call it reviewed.
-        """
-        text = TRIAGE_WORKFLOW.read_text()
-        assert "rules/branches/main" in text and '.context=="pr-feedback"' in text, (
-            "the survey step must check whether pr-feedback is actually required"
-        )
-        assert "automerge=false" in text and "automerge=true" in text
-        assert "steps.detect.outputs.automerge" in text, (
-            "the prompt must branch on the check rather than always merging"
-        )
+    def test_the_pr_is_labelled_semver_none(self):
+        """Without it, auto-version bumps the fix branch and the batch assembly
+        conflicts in pyproject.toml on the second constituent."""
+        assert "semver:none" in TRIAGE_WORKFLOW.read_text()
 
     def test_reads_alerts_and_can_open_a_pr(self):
         perms = _triage()["permissions"]

@@ -20,17 +20,30 @@ lives in `yeaboi agents cost` and the TUI, on the machine that has the history.
 1. From the repo root, run:
 
    ```bash
-   uv run python -m yeaboi.cli agents standup \
-     --no-local-sessions --tracker-sources github --github-owners dinho149 --format json
+   STANDUP_GITHUB_REPO=dinho149/yeaboi.ai uv run python -m yeaboi.cli agents standup \
+     --no-local-sessions --tracker-sources github --format json
    ```
 
-   **`--github-owners` is passed explicitly and must stay that way.** The owners otherwise come
-   from `TEAM_ANALYSIS_GITHUB_OWNERS`, falling back to the owner of `STANDUP_GITHUB_REPO` — both
-   environment variables, and a cloud routine has no `.env` to read them from. Unset, the scan
-   resolves no estate and returns nothing *every* day, writing the reason into `coverage_notes`
-   while the digest itself reads like a quiet week. The token needs no such help: a routine
-   session is handed `GITHUB_TOKEN`, and the REST reads this scan makes are on the egress
-   proxy's allowlist (`tests/fixtures/cowork_github_access_live.json`).
+   **The scope is set as a repository, and `--github-owners` must not come back.** A cloud routine
+   has no `.env`, so something has to name the estate or the scan resolves nothing *every* day and
+   the digest reads like a quiet week. This used to pass `--github-owners dinho149`, and that is
+   the one shape this session cannot serve: an owner has to be expanded into repositories first,
+   which is `GET /users/{owner}/repos`, and the egress proxy refuses every path that is not
+   repository-scoped — `sessions are bound to their configured repositories. Use repository-scoped
+   endpoints (repos/{owner}/{repo}/...)`, 403, observed 2026-08-17. The refusal then arrived in
+   Slack as a raw provider string under a headline saying the agents did nothing.
+
+   Naming the repository skips discovery entirely: `collect_ai_activity` takes
+   `STANDUP_GITHUB_REPO` as a one-repository inventory when no owner scope is passed, and every
+   read after that is `GET /repos/{slug}/…`, which *is* on the allowlist
+   (`tests/fixtures/cowork_github_access_live.json`). The token needs no help — a routine session
+   is handed `GITHUB_TOKEN`.
+
+   **What this gives up, and it belongs in the post rather than in a footnote here:** the digest
+   now covers one repository instead of an owner's estate. That is the whole of the agents' work
+   today, and it is honest in a way the owner scan never got to be — but if agent work starts
+   landing in a second repository, this line is what has to change, and the digest will not notice
+   on its own. Widening it means naming the repositories, never re-adding the owner scan.
 
    Trackers are this routine's whole input now, so a scan that reached nothing is not a degraded
    run — it is no run at all. Step 4 says what to post in that case, and it is never the quiet line.
@@ -98,8 +111,21 @@ lives in `yeaboi agents cost` and the TUI, on the machine that has the history.
    Absence of evidence is not idleness — never phrase it as "the agents did nothing", and never
    pad the line into a four-line message with empty sections to look like the normal shape. One
    quiet line is the honest report. If a coverage note or warning explains the emptiness (no
-   token, no owners configured, a tracker unreachable), **that note is the message** and the
+   token, no repository configured, a tracker unreachable), **that note is the message** and the
    quiet line is wrong: nothing was scanned, so nothing being found is not a fact about agents.
+
+   **Say that in the headline, not only underneath it.** On 2026-08-17 the quiet line went out
+   with a proxy 403 hanging below it, so the message read as a quiet day with a paragraph of API
+   error stapled on, and the two halves contradicted each other. When the scan reached nothing,
+   the whole message is one line naming that:
+
+   ```slack
+   🧭 **Agents** — <DATE> · GitHub scan reached nothing — <first coverage note, verbatim>
+   ```
+
+   The note stays verbatim, because a model rewording a provider's error is how a cause gets
+   lost. What changes is the headline it sits under: a run that could not look must not open with
+   a sentence about what it saw.
 
 5. **Check in.** Whatever happened above — including nothing — close the run by following
    [check-in.md](../../check-in.md). It is the last thing you do.

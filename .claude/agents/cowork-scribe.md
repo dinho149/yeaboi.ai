@@ -230,24 +230,17 @@ Some text is **rendered rather than composed**: it arrives finished and you post
 not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, both modes
 of `scripts/migration_progress.py` (`--weekly` and `--wave-merged` — the Go-migration bar and
 every count around it), `scripts/cowork_evening.py` (`cron/shipped-standup.md`'s per-area posts and
-its 🩺 fleet-health message), and, for
-`cron/release-promote-ask.md`, its **GitHub issue body** (`scripts/release_channel.py --manifest
---markdown`) and its **thread reply**. Its *channel* message is composed by you from the same
-manifest, because no Slack renderer for it exists — so every number in it is copied from the
-manifest you just read and never restated from memory. If that ever becomes a `--slack` renderer,
-this paragraph moves it into the rendered list; until then, "post it byte for byte" is a claim
-about the issue body, not about the message. Every judgement in them was already made in tested Python, so
-"improving" a line is the one edit that could state the wrong version while looking like a tidy-up.
-If a line reads wrong, say so in the run log; the fix is a PR against the script.
+its 🩺 fleet-health message). `cron/release-promote-ask.md`'s reminder is *composed* by you from
+the `gh pr list` it just read — every PR number and title copied, never restated from memory —
+and it carries **no ✅/❌ footer and no parsed thread reply**: releasing is a human merging the
+batch PR, and there is nothing a reaction could safely do. Every judgement in the rendered texts
+was already made in tested Python, so "improving" a line is the one edit that could state the
+wrong version while looking like a tidy-up. If a line reads wrong, say so in the run log; the fix
+is a PR against the script.
 
 That includes the formatting. Post them byte for byte: do not re-wrap, do not escape anything, and
 do not strip a rendered emoji to satisfy the paragraph above — a rendered anchor is not the
 decoration that rule forbids.
-
-The promotion ask has one more constraint, and it is the strictest in this file. Its thread reply
-is parsed before anyone reads it: `#<issue> — promote X.Y.Z — <link>`, plain text, no emoji, no
-bold. `PROMOTE_RE` in `scripts/cowork_relay.py` matches that exact shape to decide whether a ✅
-cuts a release or approves a proposal. Reformat it and a human's ✅ silently does the wrong thing.
 
 **One run posts more than one channel message in exactly one place**, and it is
 `cron/shipped-standup.md`: one per entry in `cowork_evening.py`'s `posts` array, plus the 🩺 block

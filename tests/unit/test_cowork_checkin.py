@@ -381,8 +381,170 @@ class TestTheLedger:
         run's state. Appending to a record nobody consults does not touch that;
         a routine that *read* this would have quietly given the fleet a memory,
         and the failure mode of that is a run whose decision nobody can reproduce.
+
+        ``--quiet-repeat`` is the one read, and it is deliberately not here: it
+        lives in the script, it is keyed on the run's own name, and the only
+        thing it can change is whether a duplicate heartbeat is *printed*. No
+        work, no write and no decision hangs off it — ``TestQuietRepeat``
+        pins that the record happens either way. A routine that grew a branch
+        on the ledger would still be the bug this test names.
         """
         for path in (ROOT / "cowork" / "routines").rglob("*.md"):
             text = path.read_text(encoding="utf-8")
             assert "fleet-ledger" not in text, f"{path.name} reads the ledger"
             assert "fleet ledger" not in text, f"{path.name} reads the ledger"
+
+
+class TestQuietRepeat:
+    """``--quiet-repeat``: one heartbeat a day from a routine woken by every push.
+
+    `cron/cd-deploy.md` is fired by a push webhook that cannot be scoped to a
+    branch (`tests/fixtures/cowork_webhook_live.json` records the rejections), so
+    in a repo running many worktrees it fires once per push — five times in three
+    minutes on 2026-08-17, each firing posting the same 🟡 line about the same
+    tracked environment gap. The flag suppresses the *line* and nothing else.
+    """
+
+    ROW = {"name": "cd-deploy", "status": "degraded", "note": "reconcile skipped"}
+
+    def _ledger(self, monkeypatch, comments: list, *, issues: list | None = None, queries: list | None = None):
+        """Stub the two reads the gate makes: find the month's issue, list today's comments."""
+        monkeypatch.setenv(checkin.RUN_SESSION_ENV, "cse_test")
+        monkeypatch.setattr(checkin.transport, "resolve_slug", lambda *a, **k: "o/r")
+
+        def _paged(path, key=None):
+            if queries is not None:
+                queries.append(path)
+            if "/comments" in path:
+                return checkin.transport.ApiResult(True, comments)
+            return checkin.transport.ApiResult(
+                True, issues if issues is not None else [{"number": 7, "title": "fleet ledger 2026-08"}]
+            )
+
+        monkeypatch.setattr(checkin.transport, "api_paged", _paged)
+        monkeypatch.setattr(
+            checkin.transport, "api", lambda *a, **k: pytest.fail("the gate is a read; it must write nothing")
+        )
+
+    def _comment(self, name: str, status: str) -> dict:
+        return {"body": checkin.ledger_body({"name": name, "status": status, "note": "n"}, {})}
+
+    def test_a_second_firing_at_the_same_status_is_a_repeat(self, monkeypatch):
+        self._ledger(monkeypatch, [self._comment("cd-deploy", "degraded")])
+        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC)) == (
+            True,
+            "",
+        )
+
+    def test_a_different_status_still_speaks(self, monkeypatch):
+        """The gate is keyed on (name, status). A run that starts failing is heard
+        the same day the quiet ones were suppressed — which is the whole reason
+        status is in the key and the note is not."""
+        self._ledger(monkeypatch, [self._comment("cd-deploy", "degraded")])
+        assert checkin.already_checked_in("cd-deploy", "failed", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+
+    def test_another_routine_s_check_in_is_not_this_one_s(self, monkeypatch):
+        self._ledger(monkeypatch, [self._comment("digest", "degraded")])
+        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+
+    def test_prose_on_the_ledger_is_not_a_check_in(self, monkeypatch):
+        # A human answering in the issue must not silence a routine.
+        self._ledger(monkeypatch, [{"body": "cd-deploy looks degraded again"}])
+        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+
+    def test_only_today_is_asked_for(self, monkeypatch):
+        """The window is the display day, not the UTC day — the thread a reader
+        scans is rendered in `DISPLAY_TZ`, and a gate on the UTC day would open a
+        fresh day in the middle of a London morning."""
+        queries: list = []
+        self._ledger(monkeypatch, [], queries=queries)
+        checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, 9, tzinfo=UTC))
+        comment_query = [q for q in queries if "/comments" in q][0]
+        assert f"since={checkin._day_start(datetime(2026, 8, 17, 9, tzinfo=UTC)):%Y-%m-%dT%H:%M:%SZ}" in comment_query
+
+    def test_no_month_issue_yet_is_not_a_repeat_and_creates_nothing(self, monkeypatch):
+        # The gate reads before anything has been written this month. Opening the
+        # month's ledger from a *lookup* would be a write on a run that may then
+        # print nothing and record nothing.
+        self._ledger(monkeypatch, [], issues=[])
+        assert checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 9, 1, tzinfo=UTC)) == (False, "")
+
+    def test_outside_a_routine_nothing_is_a_repeat(self, monkeypatch):
+        monkeypatch.delenv(checkin.RUN_SESSION_ENV, raising=False)
+        monkeypatch.setattr(
+            checkin.transport, "resolve_slug", lambda *a, **k: pytest.fail("must not reach the network")
+        )
+        assert checkin.already_checked_in("cd-deploy", "ok") == (False, "")
+
+    def test_an_unreadable_ledger_answers_not_a_repeat(self, monkeypatch):
+        """The asymmetry with `--proposal-slots`, which reads an unreadable queue
+        as zero slots. A duplicated heartbeat is noise; a suppressed one is a
+        routine that looks dead, so every failure here prints the line."""
+        monkeypatch.setenv(checkin.RUN_SESSION_ENV, "cse_test")
+        monkeypatch.setattr(checkin.transport, "resolve_slug", lambda *a, **k: "o/r")
+        monkeypatch.setattr(
+            checkin.transport, "api_paged", lambda path, key=None: checkin.transport.ApiResult(False, error="403")
+        )
+        seen, error = checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, tzinfo=UTC))
+        assert seen is False
+        assert error == "403"
+
+    def test_a_suppressed_line_is_still_recorded(self, monkeypatch, capsys):
+        """The invariant that keeps the ledger a complete count of firings: the
+        flag governs the thread, never the record. `make cowork-metrics` answers
+        "how often" and would answer it wrongly if a quiet firing vanished."""
+        recorded: list = []
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "already_checked_in", lambda *a, **k: (True, ""))
+        monkeypatch.setattr(checkin, "record", lambda facts, usage: (recorded.append(facts), (True, ""))[1])
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(self.ROW)))
+        assert checkin.main(["--line", "--record", "--quiet-repeat"]) == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "repeat" in captured.err
+        assert [f["name"] for f in recorded] == ["cd-deploy"]
+
+    def test_without_the_flag_the_gate_is_never_asked(self, monkeypatch, capsys):
+        # Every other routine checks in on every run, and the gate is an opt-in
+        # written into two routines' stop conditions rather than a fleet default.
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "already_checked_in", lambda *a, **k: pytest.fail("not asked without the flag"))
+        monkeypatch.setattr(checkin, "record", lambda *a, **k: (True, ""))
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(self.ROW)))
+        assert checkin.main(["--line", "--record"]) == 0
+        assert "**cd-deploy**" in capsys.readouterr().out
+
+    def test_a_first_firing_prints_as_usual(self, monkeypatch, capsys):
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "already_checked_in", lambda *a, **k: (False, ""))
+        monkeypatch.setattr(checkin, "record", lambda *a, **k: (True, ""))
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(self.ROW)))
+        assert checkin.main(["--line", "--record", "--quiet-repeat"]) == 0
+        assert "**cd-deploy**" in capsys.readouterr().out
+
+    def test_bad_facts_fail_the_same_way_with_the_gate_on(self, monkeypatch):
+        # The line is composed before the gate is asked, so an unknown status is
+        # still the non-zero exit `check-in.md` tells a routine to key off.
+        monkeypatch.setattr(checkin, "usage_report", lambda root=None: {})
+        monkeypatch.setattr(checkin, "already_checked_in", lambda *a, **k: pytest.fail("composed first"))
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"name": "x", "status": "sideways"})))
+        assert checkin.main(["--line", "--quiet-repeat"]) == 1
+
+    def test_the_row_regex_agrees_with_the_reader(self):
+        """`cowork_metrics.py` keeps its own copy of this pattern. Two regexes that
+        must agree are one rename away from disagreeing silently — the gate would
+        stop matching and every firing would post again."""
+        metrics = (ROOT / "scripts" / "cowork_metrics.py").read_text(encoding="utf-8")
+        assert 'LEDGER_JSON = re.compile(r"```json\\n(.*?)\\n```", re.S)' in metrics
+        body = checkin.ledger_body({"name": "x", "status": "ok", "note": "n"}, {})
+        assert json.loads(checkin.LEDGER_JSON.search(body).group(1))["name"] == "x"
+
+    def test_a_raising_transport_is_not_a_failed_check_in(self, monkeypatch, capsys):
+        """The gate runs inside the block that turns a raised error into exit 1,
+        which `check-in.md` reads as "post nothing". A DNS failure inside a
+        heartbeat's dedup query must not become the routine posting nothing."""
+        monkeypatch.setenv(checkin.RUN_SESSION_ENV, "cse_test")
+        monkeypatch.setattr(checkin.transport, "resolve_slug", lambda *a, **k: (_ for _ in ()).throw(OSError("dns")))
+        seen, error = checkin.already_checked_in("cd-deploy", "ok")
+        assert seen is False
+        assert "OSError" in error

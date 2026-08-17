@@ -85,22 +85,18 @@ five weekdays already carry a `0 7` sweep, and `slack-relay` fires on the hour.
       never reviews its own work — and every blocker and should-fix is fixed before the PR opens.
 
    d. The PR is titled `integration(<provider>): <angle>` and labelled `cowork`,
-      `workstream:integrations` and its `type:`. The title prefix is a **corroborating** signal for
-      `scripts/release_channel.py`'s track split; the changed paths are the primary one, so a
-      forgotten prefix costs a redundant checklist row and never a wrong release.
+      `workstream:integrations`, its `type:`, and `semver:none` — fleet PRs never bump the
+      version; the release batch that ships them carries the one bump. The title prefix is a
+      **corroborating** signal for the sign-off's track split (`scripts/beta_signoff.py` reads it
+      off the batch PR's constituent lines); the changed paths are the primary one, so a forgotten
+      prefix costs a redundant checklist row and never a wrong release.
 
-   e. Probe the ruleset before arming anything:
-
-      ```bash
-      gh api repos/$REPO/rules/branches/main --jq '[.[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context]|index("pr-feedback")'
-      ```
-
-      Non-null → `gh pr merge --auto --squash`. Null → **do not arm it**, and say plainly in the run
-      log that `pr-feedback` is not a required check, so this campaign advances one angle per human
-      merge rather than one per day. That setting is the difference between a five-day campaign and
-      a five-week one, and it fails silently: every PR opens, goes green, arms nothing and waits.
-      It is the single highest-value manual prerequisite in this design, and it is not this
-      routine's to fix — report it, do not work around it.
+   e. **Leave the PR open — never merge, never arm auto-merge.** Gate-green campaign PRs wait,
+      with every other fleet PR, for the next release batch: a human's `make batch-assemble`
+      folds them in, and the human's hand-test of the INTEGRATION track is what signs the
+      campaign's work off ([release-signoff.md](../../release-signoff.md)). The campaign
+      therefore advances one angle per *run*, and ships one batch per sign-off — the build is
+      unattended, the shipping never is.
 
    f. `cowork-scribe` attaches the PR and moves the ticket to In Review, then comments the angle and
       its PR on the campaign issue — **a record, never the state**.

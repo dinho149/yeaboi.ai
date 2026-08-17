@@ -39,6 +39,15 @@ and `≈`, once, in the message — never re-derived per run. Measured 2026-08-1
 against `yeaboi agents cost` over the same 856 transcripts: $8,644.91 here to
 $8,645.27 there, the whole gap being the seconds between the two reads.
 
+**One routine can fire dozens of times a day, and `--quiet-repeat` is for it.**
+`cron/cd-deploy.md` is woken by a push webhook that cannot be scoped to a branch
+(`tests/fixtures/cowork_webhook_live.json`), so a busy afternoon of worktree
+pushes wakes it once per push — five firings in three minutes on 2026-08-17, each
+one reporting the same tracked environment gap in the same 🟡 line. With the flag,
+the second and later firings of a day record to the ledger and print nothing: the
+heartbeat is one line a day per status, and the *count* of firings is answered by
+the ledger, which is where "how often" belongs.
+
 Content never leaves: token counts, filenames and model ids only, which is the
 privacy invariant `agentwatch/collector.py` already holds.
 """
@@ -346,6 +355,11 @@ def check_in_line(facts: dict, usage: dict) -> str:
 # a run that never happened.
 LEDGER_MARKER = "<!-- fleet-run -->"
 
+# The row inside a ledger comment, spelled the same way `cowork_metrics.py` reads
+# it. Duplicated rather than imported because that script is a reader with its own
+# copy already; two regexes that must agree are pinned by `TestQuietRepeat`.
+LEDGER_JSON = re.compile(r"```json\n(.*?)\n```", re.S)
+
 
 def ledger_title(now: datetime | None = None) -> str:
     """The month's issue title. Monthly rather than one-forever because a year of
@@ -385,8 +399,13 @@ def ledger_body(facts: dict, usage: dict) -> str:
     return f"{headline}\n\n```json\n{json.dumps(row, indent=2, sort_keys=True)}\n```\n\n{LEDGER_MARKER}"
 
 
-def _ledger_issue(slug: str, title: str) -> tuple[int | None, str]:
+def _ledger_issue(slug: str, title: str, *, create: bool = True) -> tuple[int | None, str]:
     """The month's issue number, creating it if this is the month's first run.
+
+    ``create=False`` looks without opening one: the repeat gate below reads the
+    ledger before anything has been written to it, and a read that creates an
+    issue would open the month's ledger from a *lookup* — on a run that may then
+    print nothing and record nothing.
 
     Whichever run fires first in a month opens that month's issue, and every run
     after it finds one. Deliberately not pre-created by a scheduled routine: that
@@ -407,6 +426,8 @@ def _ledger_issue(slug: str, title: str) -> tuple[int | None, str]:
         # `/issues` answers with pull requests too, and a PR is never a ledger.
         if isinstance(issue, dict) and issue.get("title") == title and "pull_request" not in issue:
             return int(issue["number"]), ""
+    if not create:
+        return None, ""
     made = transport.api(
         "POST",
         f"/repos/{slug}/issues",
@@ -428,6 +449,80 @@ def _ledger_issue(slug: str, title: str) -> tuple[int | None, str]:
     if not made.ok:
         return None, made.error
     return int(made.data["number"]), ""
+
+
+def _day_start(now: datetime | None = None) -> datetime:
+    """Midnight of the current display day, as UTC.
+
+    The display zone, not UTC, because "already checked in today" is a claim
+    about the thread a human is reading, and `local_time` renders that thread in
+    `DISPLAY_TZ`. Keying the gate on the UTC day would open a fresh day in the
+    middle of a London morning.
+    """
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
+    zone, _ = display_zone()
+    local = moment.astimezone(zone) if zone else moment
+    return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+
+
+def already_checked_in(name: str, status: str, *, now: datetime | None = None) -> tuple[bool, str]:
+    """Has this routine already posted a check-in of this status today?
+
+    Returns ``(seen, error)``. **Every failure answers ``False``** — an unreadable
+    ledger must not silence a heartbeat, which is the opposite of the rule
+    `blocked_report` follows for an unreadable *queue*. The asymmetry is the point:
+    a duplicated check-in is noise, and a suppressed one is a routine that looks
+    dead.
+
+    The key is ``(name, status)`` and deliberately not the note. A repeat firing's
+    note is written by a model and varies in wording between runs, so keying on it
+    would let the same standing fault through every time. What that costs: a
+    *second*, genuinely different degradation on the same day is not heard here.
+    It is still heard where it matters — `cd-deploy`'s channel ALERT is gated on
+    its own marker, not on this, so a new fault posts a new message.
+
+    **Read-then-write, with no lock to take.** Two firings seconds apart both read
+    a ledger neither has written to and both print. Thirty lines a day become two
+    or three rather than one, which is the same limit the `[blocked]` issue gate
+    has and the same reason: what a gate like this fixes is the recurrence.
+    """
+    if not os.environ.get(RUN_SESSION_ENV, "").strip():
+        # A laptop has no ledger to read (see `record`), so nothing is a repeat.
+        return False, ""
+    try:
+        return _look_for_today_s_check_in(name, status, now)
+    except Exception as exc:  # noqa: BLE001 — see the contract above: never raise, never silence
+        # `main` runs this inside the block that turns a raised error into exit 1,
+        # which `check-in.md` reads as "post nothing" — the one outcome this gate
+        # must never cause by accident.
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _look_for_today_s_check_in(name: str, status: str, now: datetime | None) -> tuple[bool, str]:
+    slug = transport.resolve_slug(ROOT)
+    if not slug:
+        return False, "could not resolve the repository slug"
+    number, error = _ledger_issue(slug, ledger_title(now), create=False)
+    if number is None:
+        return False, error
+    since = _day_start(now).strftime("%Y-%m-%dT%H:%M:%SZ")
+    found = transport.api_paged(f"/repos/{slug}/issues/{number}/comments?since={since}")
+    if not found.ok:
+        return False, found.error
+    for comment in found.data if isinstance(found.data, list) else []:
+        body = str(comment.get("body", "")) if isinstance(comment, dict) else ""
+        if LEDGER_MARKER not in body:
+            continue
+        block = LEDGER_JSON.search(body)
+        if not block:
+            continue
+        try:
+            row = json.loads(block.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("name") == name and row.get("status") == status:
+            return True, ""
+    return False, ""
 
 
 def record(facts: dict, usage: dict, *, now: datetime | None = None) -> tuple[bool, str]:
@@ -480,6 +575,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="with --record: print what would be posted, write nothing"
     )
+    parser.add_argument(
+        "--quiet-repeat",
+        action="store_true",
+        help="print no line when this routine already checked in with the same status today (still records)",
+    )
     args = parser.parse_args(argv)
 
     if not args.usage and not args.line and not args.record:
@@ -493,7 +593,24 @@ def main(argv: list[str] | None = None) -> int:
     try:
         facts = _read_facts(args.facts)
         if args.line:
-            print(check_in_line(facts, usage))
+            line = check_in_line(facts, usage)
+            # Composed first, printed second: composing validates the facts, and a
+            # bad `status` must fail the same way whether or not the gate is on.
+            repeat, repeat_error = (
+                already_checked_in(str(facts.get("name") or ""), str(facts.get("status") or "ok"))
+                if args.quiet_repeat
+                else (False, "")
+            )
+            if repeat_error:
+                print(f"[checkin] repeat gate: {repeat_error}", file=sys.stderr)
+            if repeat:
+                # Silence on stdout is the instruction: `check-in.md` tells a
+                # routine to post exactly what this printed, so printing nothing
+                # is how it is told to post nothing. The run is still recorded
+                # below — the ledger counts firings, the thread carries one a day.
+                print("[checkin] repeat: already checked in with this status today — posting nothing", file=sys.stderr)
+            else:
+                print(line)
     except (ValueError, OSError) as exc:
         # Non-zero on purpose, and it is the *signal*, not a verdict on the run:
         # `cowork/check-in.md` reads a failure here as "post nothing rather than
