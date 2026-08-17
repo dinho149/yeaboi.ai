@@ -170,6 +170,69 @@
 .statusCarried { border-left-color: var(--warn); }
 .statusMuted { border-left-color: var(--muted); opacity: 0.7; }
 
+/* ── Walkthrough ──────────────────────────────────────────────────────── */
+/*
+ * Who is up, in the notch. Faces and counts rather than a list of names: the
+ * two questions a facilitator is answering here are who has not been round yet
+ * and how much they have to get through.
+ */
+.walk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 15rem;
+  max-width: min(20rem, 72vw);
+}
+.walkGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s2);
+}
+.walkPerson {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.walkPerson:hover {
+  border-color: var(--hairline-strong);
+}
+/* Coloured, not ringed — the same "this is what is happening" the notch uses. */
+.walkPersonOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+}
+.walkName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.walkCount {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.walkPersonOn .walkCount {
+  color: inherit;
+}
+
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {
   flex: 1;

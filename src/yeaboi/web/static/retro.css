@@ -1530,7 +1530,7 @@ svg._wordmark_hoxc3_223 {
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_16scp_17 {
+._appbar_1l2ir_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1542,13 +1542,13 @@ svg._wordmark_hoxc3_223 {
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_16scp_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_16scp_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_1l2ir_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_1l2ir_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_16scp_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_16scp_35 {
+._brandTitle_1l2ir_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_1l2ir_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1557,13 +1557,13 @@ svg._wordmark_hoxc3_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_16scp_44 { flex: 1; }
-._tools_16scp_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_1l2ir_44 { flex: 1; }
+._tools_1l2ir_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_16scp_50 {
+._btn_1l2ir_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1585,49 +1585,49 @@ svg._wordmark_hoxc3_223 {
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_16scp_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_1l2ir_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_16scp_50:disabled { opacity: 0.45; cursor: default; }
+._btn_1l2ir_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_16scp_79 {
+._btnS_1l2ir_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_16scp_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_1l2ir_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_16scp_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_1l2ir_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_16scp_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_16scp_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_16scp_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_1l2ir_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_1l2ir_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_1l2ir_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_16scp_95 {
+._btnPill_1l2ir_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_16scp_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_1l2ir_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_16scp_107 {
+._btnBare_1l2ir_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_16scp_107:hover:not(:disabled), ._btnBare_16scp_107:focus-visible {
+._btnBare_1l2ir_107:hover:not(:disabled), ._btnBare_1l2ir_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
@@ -1639,15 +1639,15 @@ svg._wordmark_hoxc3_223 {
    which sat next to a ↩ it had become identical to. Two classes, so it beats
    `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
    where it happens to sit in the file. */
-._btnBare_16scp_107._btnDanger_16scp_91 { color: var(--danger); }
-._btnBare_16scp_107._btnDanger_16scp_91:hover:not(:disabled),
-._btnBare_16scp_107._btnDanger_16scp_91:focus-visible { color: var(--danger); border-color: transparent; }
+._btnBare_1l2ir_107._btnDanger_1l2ir_91 { color: var(--danger); }
+._btnBare_1l2ir_107._btnDanger_1l2ir_91:hover:not(:disabled),
+._btnBare_1l2ir_107._btnDanger_1l2ir_91:focus-visible { color: var(--danger); border-color: transparent; }
 
-._btnActive_16scp_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_1l2ir_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_16scp_107._btnActive_16scp_124 {
+._btnBare_1l2ir_107._btnActive_1l2ir_124 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1657,45 +1657,45 @@ svg._wordmark_hoxc3_223 {
 /* The raised rendition of the delete confirmation. Three classes, because
    `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
    `--text` at the exact moment it is asking about a destructive action. */
-._btnBare_16scp_107._btnActive_16scp_124._btnDanger_16scp_91 { color: var(--danger); }
+._btnBare_1l2ir_107._btnActive_1l2ir_124._btnDanger_1l2ir_91 { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_16scp_148:not(:disabled) { animation: _btnPulse_16scp_1 1.6s ease-in-out infinite; }
+._btnAttention_1l2ir_148:not(:disabled) { animation: _btnPulse_1l2ir_1 1.6s ease-in-out infinite; }
 /* Both ends spelled out, and one shadow at each: a surface that gives its
    buttons a raised shadow leaves the base as a list of two, and a list of two
    cannot interpolate to a list of one — the ring switches on and off instead of
    breathing. */
-@keyframes _btnPulse_16scp_1 {
+@keyframes _btnPulse_1l2ir_1 {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 28%, transparent); }
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_16scp_158 { width: 100%; }
+._btnBlock_1l2ir_158 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_16scp_162 { opacity: 0.72; }
-._btnDim_16scp_162:hover, ._btnDim_16scp_162:focus-visible { opacity: 1; }
+._btnDim_1l2ir_162 { opacity: 0.72; }
+._btnDim_1l2ir_162:hover, ._btnDim_1l2ir_162:focus-visible { opacity: 1; }
 /* Except when it is filled: the fill is the whole point of a primary, and
    dimming it turns the accent into a wash. */
-._btnDim_16scp_162._btnPrimary_16scp_87 { opacity: 1; }
+._btnDim_1l2ir_162._btnPrimary_1l2ir_87 { opacity: 1; }
 
 /* Flex, so the glyph is centred rather than set on a baseline: an inline SVG
    picks up `vertical-align` and lands on a fractional row, which is the whole
    of why a vector icon can look out of focus. */
-._iconGlyph_16scp_171 { display: inline-flex; align-items: center; font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_1l2ir_171 { display: inline-flex; align-items: center; font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._presetRow_16scp_176 {
+._presetRow_1l2ir_176 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--s2);
 }
 
-._preset_16scp_176 {
+._preset_1l2ir_176 {
   min-height: var(--tap);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
@@ -1711,38 +1711,18 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._preset_16scp_176:hover {
+._preset_1l2ir_176:hover {
   border-color: var(--accent);
   background: var(--panel);
   color: var(--accent);
 }
 
-._preset_16scp_176:active {
+._preset_1l2ir_176:active {
   transform: scale(0.97);
 }
 
-/* The same presets when there is a variable number of them and they carry
-   words rather than a fixed four numbers — names, in the walkthrough. */
-._presetWrap_16scp_210 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-}
-._presetWrap_16scp_210 ._preset_16scp_176 {
-  padding: 0 var(--s3);
-  font-family: var(--font-sans);
-}
-
-/* The one that is on. Coloured rather than ringed, like every other "this is
-   what is happening" state on a board. */
-._presetOn_16scp_222 {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
-  color: var(--accent);
-}
-
 /* A sentence inside a panel, rather than a control. */
-._panelNote_16scp_229 {
+._panelNote_1l2ir_209 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1754,20 +1734,20 @@ svg._wordmark_hoxc3_223 {
    surface was already showing and becoming clickable should not make it louder.
    The underline is held back to hover for the same reason: on a slide deck's
    corner and a board's status strip it would read as a fifth rule line. */
-._credit_16scp_241 {
+._credit_1l2ir_221 {
   color: inherit;
   text-decoration: none;
 }
-._credit_16scp_241:hover,
-._credit_16scp_241:focus-visible {
+._credit_1l2ir_221:hover,
+._credit_1l2ir_221:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_16scp_252 { display: contents; }
-._popoverAnchor_16scp_253 { position: relative; display: inline-flex; }
-._tbtn_16scp_254 {
+._popoverGroup_1l2ir_232 { display: contents; }
+._popoverAnchor_1l2ir_233 { position: relative; display: inline-flex; }
+._tbtn_1l2ir_234 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1782,10 +1762,10 @@ svg._wordmark_hoxc3_223 {
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_16scp_254:hover { border-color: var(--accent); }
-._tbtnOpen_16scp_270 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_1l2ir_234:hover { border-color: var(--accent); }
+._tbtnOpen_1l2ir_250 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_16scp_252 {
+._popover_1l2ir_232 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1801,13 +1781,13 @@ svg._wordmark_hoxc3_223 {
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_16scp_288 { right: auto; left: 0; }
+._popoverLeft_1l2ir_268 { right: auto; left: 0; }
 
 /* Rendered into a host that already is a panel — the dock's drawer. It keeps
    only its padding: the ground, the border and the animation are the host's. */
 /* Docked: a panel of its own standing above the notch, wearing the same
    hairline and the same three shadows as the notch and the top bar. */
-._popoverDocked_16scp_294 {
+._popoverDocked_1l2ir_274 {
   position: static;
   min-width: 240px;
   max-height: min(60vh, 420px);
@@ -1821,18 +1801,18 @@ svg._wordmark_hoxc3_223 {
 }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_16scp_308 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_16scp_252[hidden] { display: none; }
+._popoverAbove_1l2ir_288 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_1l2ir_232[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_16scp_312 {
+._fieldLabel_1l2ir_292 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--dim);
 }
-._textInput_16scp_319, ._numberInput_16scp_319 {
+._textInput_1l2ir_299, ._numberInput_1l2ir_299 {
   min-width: 0;
   flex: 1;
   min-height: var(--tap);
@@ -1846,16 +1826,16 @@ svg._wordmark_hoxc3_223 {
   transition: border-color var(--dur-fast) var(--ease);
 }
 
-._textInput_16scp_319:focus-visible, ._numberInput_16scp_319:focus-visible {
+._textInput_1l2ir_299:focus-visible, ._numberInput_1l2ir_299:focus-visible {
   outline: none;
   border-color: var(--accent);
 }
-._textInput_16scp_319 { flex: 1; min-width: 0; }
-._numberInput_16scp_319 { width: 5.5rem; font-family: var(--font-mono); }
+._textInput_1l2ir_299 { flex: 1; min-width: 0; }
+._numberInput_1l2ir_299 { width: 5.5rem; font-family: var(--font-mono); }
 /* Drawn rather than tinted: `accent-color` colours the thumb and leaves a
    grey groove, so the control shows where the handle is and not what the
    value is. `--fill` is set by the component from the value itself. */
-._range_16scp_342 {
+._range_1l2ir_322 {
   width: 100%;
   height: 20px;
   appearance: none;
@@ -1863,7 +1843,7 @@ svg._wordmark_hoxc3_223 {
   cursor: pointer;
 }
 
-._range_16scp_342::-webkit-slider-runnable-track {
+._range_1l2ir_322::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1873,7 +1853,7 @@ svg._wordmark_hoxc3_223 {
   );
 }
 
-._range_16scp_342::-moz-range-track {
+._range_1l2ir_322::-moz-range-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1883,7 +1863,7 @@ svg._wordmark_hoxc3_223 {
   );
 }
 
-._range_16scp_342::-webkit-slider-thumb {
+._range_1l2ir_322::-webkit-slider-thumb {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -1894,7 +1874,7 @@ svg._wordmark_hoxc3_223 {
   box-shadow: var(--shadow-1);
 }
 
-._range_16scp_342::-moz-range-thumb {
+._range_1l2ir_322::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: 0;
@@ -1908,13 +1888,13 @@ svg._wordmark_hoxc3_223 {
    mono label above each control, one full-width action at the foot. The three
    panels were three layouts — a label beside a select, a bare row of buttons,
    a row of coloured squares — which is why they read as unrelated. */
-._panelForm_16scp_395 {
+._panelForm_1l2ir_375 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._field_16scp_312 {
+._field_1l2ir_292 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -1922,23 +1902,23 @@ svg._wordmark_hoxc3_223 {
   flex: 1;
 }
 
-._inputRow_16scp_409 {
+._inputRow_1l2ir_389 {
   display: flex;
   gap: var(--s2);
 }
 
-._inputAction_16scp_414 {
+._inputAction_1l2ir_394 {
   flex: none;
 }
 
-._panelAction_16scp_418 {
+._panelAction_1l2ir_398 {
   width: 100%;
   justify-content: center;
 }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicHead_16scp_424 { display: flex; align-items: flex-end; gap: var(--s3); }
-._musicPlay_16scp_425 {
+._musicHead_1l2ir_404 { display: flex; align-items: flex-end; gap: var(--s3); }
+._musicPlay_1l2ir_405 {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1953,16 +1933,16 @@ svg._wordmark_hoxc3_223 {
   transition: transform var(--dur-fast) var(--ease);
 }
 
-._musicPlay_16scp_425:hover {
+._musicPlay_1l2ir_405:hover {
   transform: scale(1.06);
 }
 
 /* Waiting on the stream. Suppressed by the global reduced-motion guard. */
-._musicPlayBusy_16scp_445 {
-  animation: _musicWait_16scp_1 1.1s ease-in-out infinite;
+._musicPlayBusy_1l2ir_425 {
+  animation: _musicWait_1l2ir_1 1.1s ease-in-out infinite;
 }
 
-@keyframes _musicWait_16scp_1 {
+@keyframes _musicWait_1l2ir_1 {
   50% {
     opacity: 0.55;
   }
@@ -1973,12 +1953,12 @@ svg._wordmark_hoxc3_223 {
 /* A dock stood on end has no room for a word beside the glyph. Keyed on the
    attribute, not the class, because the dock's class is hashed into another
    module. */
-[data-edge='left'] ._iconLabel_16scp_460,
-[data-edge='right'] ._iconLabel_16scp_460 {
+[data-edge='left'] ._iconLabel_1l2ir_440,
+[data-edge='right'] ._iconLabel_1l2ir_440 {
   display: none;
 }
 
-._viz_16scp_465 {
+._viz_1l2ir_445 {
   flex: none;
   width: 0;
   height: 22px;
@@ -1991,7 +1971,7 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-base) var(--ease);
 }
 
-._vizOn_16scp_478 {
+._vizOn_1l2ir_458 {
   width: 34px;
   opacity: 1;
   transform: none;
@@ -2001,7 +1981,7 @@ svg._wordmark_hoxc3_223 {
 /* Unfolds like the visualiser does. Without it the dock's width snapped the
    moment a timer started and then eased back into place — two motions where
    there should be one. */
-._timerReadout_16scp_488 {
+._timerReadout_1l2ir_468 {
   display: inline-block;
   overflow: hidden;
   max-width: 6ch;
@@ -2010,10 +1990,10 @@ svg._wordmark_hoxc3_223 {
   font-weight: 700;
   color: var(--accent);
   text-align: right;
-  animation: _readoutIn_16scp_1 var(--dur-base) var(--ease) both;
+  animation: _readoutIn_1l2ir_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _readoutIn_16scp_1 {
+@keyframes _readoutIn_1l2ir_1 {
   from {
     max-width: 0;
     opacity: 0;
@@ -2023,18 +2003,18 @@ svg._wordmark_hoxc3_223 {
 
 /* And back out the same way, including the flex gap its parent holds for it —
    which is a gap around nothing once the text is gone. */
-._readoutOut_16scp_510 {
-  animation: _readoutOut_16scp_510 200ms var(--ease) forwards;
+._readoutOut_1l2ir_490 {
+  animation: _readoutOut_1l2ir_490 200ms var(--ease) forwards;
 }
 
-@keyframes _readoutOut_16scp_510 {
+@keyframes _readoutOut_1l2ir_490 {
   to {
     max-width: 0;
     opacity: 0;
     margin-left: calc(var(--s2) * -1);
   }
 }
-._confetti_16scp_521 {
+._confetti_1l2ir_501 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -2046,13 +2026,13 @@ svg._wordmark_hoxc3_223 {
 /* ── Themes ───────────────────────────────────────────────────────
    A theme is a ground and an accent, so a swatch shows both — and its own
    name, because "the dark blue one" is not how anyone asks for Solarized. */
-._swatches_16scp_533 {
+._swatches_1l2ir_513 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   gap: var(--s2);
 }
 
-._swatch_16scp_533 {
+._swatch_1l2ir_513 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2070,16 +2050,16 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._swatch_16scp_533:hover {
+._swatch_1l2ir_513:hover {
   transform: translateY(-1px);
 }
 
-._swatchOn_16scp_561 {
+._swatchOn_1l2ir_541 {
   border-color: var(--swatch-accent, var(--accent));
   box-shadow: 0 0 0 1px var(--swatch-accent, var(--accent));
 }
 
-._swatchName_16scp_566 {
+._swatchName_1l2ir_546 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: var(--track-label);
@@ -2087,24 +2067,24 @@ svg._wordmark_hoxc3_223 {
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_16scp_574 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_16scp_575 { display: inline-flex; align-items: center; }
-._stacked_16scp_576 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_16scp_576:first-child { margin-left: 0; }
-._presenceMore_16scp_578 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_16scp_579 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_1l2ir_554 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_1l2ir_555 { display: inline-flex; align-items: center; }
+._stacked_1l2ir_556 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_1l2ir_556:first-child { margin-left: 0; }
+._presenceMore_1l2ir_558 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_1l2ir_559 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_16scp_581 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_16scp_582 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_16scp_583 { flex: 1; }
-._rosterYou_16scp_584 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_16scp_585 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_1l2ir_561 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_1l2ir_562 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_1l2ir_563 { flex: 1; }
+._rosterYou_1l2ir_564 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_1l2ir_565 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
 /* An even grid rather than a wrapping row: the last line of a wrap is short
    and the block reads as ragged next to a full-width field above it. Eight
    columns, square cells, the same gutter in both directions. */
-._avatarGrid_16scp_591 {
+._avatarGrid_1l2ir_571 {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: var(--s2);
@@ -2113,7 +2093,7 @@ svg._wordmark_hoxc3_223 {
 /* The emoji, and nothing else — no box, no disc, no ground. The chosen one is
    the one at full strength and slightly forward; the rest step back. Nothing
    is conveyed by that alone: each is a `role="radio"` carrying `aria-checked`. */
-._avatarChoice_16scp_600 {
+._avatarChoice_1l2ir_580 {
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -2130,25 +2110,25 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._avatarChoice_16scp_600:hover {
+._avatarChoice_1l2ir_580:hover {
   opacity: 1;
   transform: scale(1.1);
 }
 
-._avatarChoiceOn_16scp_622 {
+._avatarChoiceOn_1l2ir_602 {
   opacity: 1;
   transform: scale(1.14);
 }
 
 @media (max-width: 699px) {
-  ._avatarGrid_16scp_591 {
+  ._avatarGrid_1l2ir_571 {
     grid-template-columns: repeat(6, 1fr);
   }
 }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_16scp_634 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
-._qr_16scp_635 {
+._invite_1l2ir_614 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
+._qr_1l2ir_615 {
   width: 280px;
   height: 280px;
   max-width: 100%;
@@ -2157,18 +2137,18 @@ svg._wordmark_hoxc3_223 {
   background: var(--paper);
   padding: var(--s3);
 }
-._inviteCode_16scp_644 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_16scp_645 {
+._inviteCode_1l2ir_624 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_1l2ir_625 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_16scp_652 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_1l2ir_632 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_16scp_655 {
+._copyField_1l2ir_635 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -2182,7 +2162,7 @@ svg._wordmark_hoxc3_223 {
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_16scp_669 {
+._copyValue_1l2ir_649 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -2190,10 +2170,10 @@ svg._wordmark_hoxc3_223 {
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_16scp_677 { flex: none; }
+._copyBtn_1l2ir_657 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_16scp_680 {
+._toast_1l2ir_660 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -2205,10 +2185,10 @@ svg._wordmark_hoxc3_223 {
   color: var(--text);
   font-size: var(--fs-2xs);
   text-align: center;
-  animation: _toastIn_16scp_1 var(--dur-base) var(--ease) both;
+  animation: _toastIn_1l2ir_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _toastIn_16scp_1 {
+@keyframes _toastIn_1l2ir_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -2217,11 +2197,11 @@ svg._wordmark_hoxc3_223 {
 
 /* Folds rather than blinks: the height and the margin go with the opacity, so
    the panel closes the gap instead of jumping when it leaves. */
-._toastOut_16scp_704 {
-  animation: _toastOut_16scp_704 220ms var(--ease) forwards;
+._toastOut_1l2ir_684 {
+  animation: _toastOut_1l2ir_684 220ms var(--ease) forwards;
 }
 
-@keyframes _toastOut_16scp_704 {
+@keyframes _toastOut_1l2ir_684 {
   to {
     opacity: 0;
     max-height: 0;
@@ -2236,7 +2216,7 @@ svg._wordmark_hoxc3_223 {
 /* `dialog.modal`, not `.modal`: the element qualifier outranks the global
    `* { margin: 0 }` reset and every `.x > * + *` stacking rule, both of which
    override the UA `margin: auto` that centres an open dialog. */
-dialog._modal_16scp_720 {
+dialog._modal_1l2ir_700 {
   margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
@@ -2248,59 +2228,59 @@ dialog._modal_16scp_720 {
   width: min(92vw, 520px);
   box-shadow: var(--shadow-2);
 }
-._modal_16scp_720::backdrop {
+._modal_1l2ir_700::backdrop {
   background: rgb(0 0 0 / 55%);
-  animation: _modalVeil_16scp_1 var(--dur-base) var(--ease) both;
+  animation: _modalVeil_1l2ir_1 var(--dur-base) var(--ease) both;
 }
 
-._modal_16scp_720[open] {
-  animation: _modalIn_16scp_1 var(--dur-base) var(--ease) both;
+._modal_1l2ir_700[open] {
+  animation: _modalIn_1l2ir_1 var(--dur-base) var(--ease) both;
 }
 
 /* Held open for this long by the component — a `<dialog>` that closes itself
    leaves the box tree with no frame left to animate in. */
-._modalOut_16scp_746[open],
-._modalOut_16scp_746[open]::backdrop {
-  animation: _modalOut_16scp_746 180ms var(--ease) forwards;
+._modalOut_1l2ir_726[open],
+._modalOut_1l2ir_726[open]::backdrop {
+  animation: _modalOut_1l2ir_726 180ms var(--ease) forwards;
 }
 
-@keyframes _modalOut_16scp_746 {
+@keyframes _modalOut_1l2ir_726 {
   to {
     opacity: 0;
     transform: translateY(6px) scale(0.99);
   }
 }
 
-@keyframes _modalIn_16scp_1 {
+@keyframes _modalIn_1l2ir_1 {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
 
-@keyframes _modalVeil_16scp_1 {
+@keyframes _modalVeil_1l2ir_1 {
   from {
     opacity: 0;
   }
 }
-._modalBody_16scp_770 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
-._modalTitle_16scp_771 { font-size: var(--fs-l); margin: 0; }
+._modalBody_1l2ir_750 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
+._modalTitle_1l2ir_751 { font-size: var(--fs-l); margin: 0; }
 /* The dialog's action is the width of the dialog. Floated bottom-right it sat
    in a corner of its own, with the content it applies to nowhere near it. */
-._modalActions_16scp_774 {
+._modalActions_1l2ir_754 {
   display: flex;
   gap: var(--s2);
   margin-top: var(--s1);
 }
 
-._modalActions_16scp_774 > * {
+._modalActions_1l2ir_754 > * {
   flex: 1;
   justify-content: center;
 }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_16scp_787 {
+._srOnly_1l2ir_767 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -3885,7 +3865,7 @@ dialog._modal_16scp_720 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_axoru_24 {
+._app_4z31c_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3899,7 +3879,7 @@ dialog._modal_16scp_720 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_axoru_38 {
+._boardRegion_4z31c_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3910,13 +3890,13 @@ dialog._modal_16scp_720 {
   padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_axoru_49 { color: var(--warn); font-family: var(--font-sans); }
+._offline_4z31c_49 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
    cluster, so its cards line up with the chip above them. `--room-lead` is how
    far in the chip's own avatar sits, which is what they line up *with*. */
-._identity_axoru_55 {
+._identity_4z31c_55 {
   position: relative;
   --room-lead: var(--s1);
   display: flex;
@@ -3926,7 +3906,7 @@ dialog._modal_16scp_720 {
 
 /* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
    It is your own name, not a control you are meant to find. */
-._meChip_axoru_65 {
+._meChip_4z31c_65 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3943,23 +3923,23 @@ dialog._modal_16scp_720 {
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._meChip_axoru_65:hover {
+._meChip_4z31c_65:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
-._meName_axoru_86 {
+._meName_4z31c_86 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
-._pen_axoru_93 { display: inline-flex; color: var(--muted); }
-._roomCount_axoru_94 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._pen_4z31c_93 { display: inline-flex; color: var(--muted); }
+._roomCount_4z31c_94 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._musicBanner_axoru_98 {
+._musicBanner_4z31c_98 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
@@ -3978,12 +3958,12 @@ dialog._modal_16scp_720 {
   cursor: pointer;
 }
 
-._popNote_axoru_117 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_4z31c_117 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_axoru_120 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_axoru_121 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_axoru_122 {
+._carried_4z31c_120 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_4z31c_121 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_4z31c_122 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3997,14 +3977,14 @@ dialog._modal_16scp_720 {
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_axoru_136 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_axoru_137 { transform: rotate(90deg); }
-._carriedProgress_axoru_138 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_axoru_139 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_axoru_139[hidden] { display: none; }
-._carriedHint_axoru_141 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_axoru_142 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_axoru_143 {
+._chevron_4z31c_136 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_4z31c_137 { transform: rotate(90deg); }
+._carriedProgress_4z31c_138 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_4z31c_139 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_4z31c_139[hidden] { display: none; }
+._carriedHint_4z31c_141 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_4z31c_142 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_4z31c_143 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4018,8 +3998,8 @@ dialog._modal_16scp_720 {
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_axoru_157 { flex: 1; min-width: 0; }
-._carriedSelect_axoru_158 {
+._carriedText_4z31c_157 { flex: 1; min-width: 0; }
+._carriedSelect_4z31c_158 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -4028,14 +4008,77 @@ dialog._modal_16scp_720 {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_axoru_167 { border-left-color: var(--line); }
-._statusDone_axoru_168 { border-left-color: var(--ok); }
-._statusProgress_axoru_169 { border-left-color: var(--info); }
-._statusCarried_axoru_170 { border-left-color: var(--warn); }
-._statusMuted_axoru_171 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_4z31c_167 { border-left-color: var(--line); }
+._statusDone_4z31c_168 { border-left-color: var(--ok); }
+._statusProgress_4z31c_169 { border-left-color: var(--info); }
+._statusCarried_4z31c_170 { border-left-color: var(--warn); }
+._statusMuted_4z31c_171 { border-left-color: var(--muted); opacity: 0.7; }
+
+/* ── Walkthrough ──────────────────────────────────────────────────────── */
+/*
+ * Who is up, in the notch. Faces and counts rather than a list of names: the
+ * two questions a facilitator is answering here are who has not been round yet
+ * and how much they have to get through.
+ */
+._walk_4z31c_179 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 15rem;
+  max-width: min(20rem, 72vw);
+}
+._walkGrid_4z31c_186 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s2);
+}
+._walkPerson_4z31c_191 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+._walkPerson_4z31c_191:hover {
+  border-color: var(--hairline-strong);
+}
+/* Coloured, not ringed — the same "this is what is happening" the notch uses. */
+._walkPersonOn_4z31c_213 {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+}
+._walkName_4z31c_218 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+._walkCount_4z31c_226 {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+._walkPersonOn_4z31c_213 ._walkCount_4z31c_226 {
+  color: inherit;
+}
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_axoru_34 {
+._board_4z31c_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4053,13 +4096,13 @@ dialog._modal_16scp_720 {
 }
 
 @media (max-width: 1099px) {
-  ._board_axoru_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_4z31c_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_axoru_34 {
+  ._board_4z31c_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4069,14 +4112,14 @@ dialog._modal_16scp_720 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_axoru_34::-webkit-scrollbar { display: none; }
-  ._column_axoru_209 { scroll-snap-align: center; }
+  ._board_4z31c_34::-webkit-scrollbar { display: none; }
+  ._column_4z31c_272 { scroll-snap-align: center; }
 }
 
-._pager_axoru_212 { display: none; }
+._pager_4z31c_275 { display: none; }
 @media (max-width: 699px) {
-  ._pager_axoru_212 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_axoru_215 {
+  ._pager_4z31c_275 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_4z31c_278 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4085,7 +4128,7 @@ dialog._modal_16scp_720 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_axoru_215::after {
+  ._pagerDot_4z31c_278::after {
     content: "";
     display: block;
     width: 8px;
@@ -4094,7 +4137,7 @@ dialog._modal_16scp_720 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_axoru_233::after { background: var(--accent); }
+  ._pagerDotOn_4z31c_296::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4104,12 +4147,12 @@ dialog._modal_16scp_720 {
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_axoru_209 {
+._column_4z31c_272 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_axoru_248 {
+._columnHead_4z31c_311 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4118,7 +4161,7 @@ dialog._modal_16scp_720 {
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_axoru_257 {
+._columnTitle_4z31c_320 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4127,13 +4170,13 @@ dialog._modal_16scp_720 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_axoru_266 { color: var(--dim); }
-._columnCount_axoru_267 {
+._columnDot_4z31c_329 { color: var(--dim); }
+._columnCount_4z31c_330 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_axoru_272 {
+._cards_4z31c_335 {
   /* The containing block for an empty column's drop indicator. */
   position: relative;
   transition: background-color var(--dur-fast) var(--ease);
@@ -4147,20 +4190,20 @@ dialog._modal_16scp_720 {
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cardsOver_axoru_286 {
+._cardsOver_4z31c_349 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_axoru_292 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_4z31c_355 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._cardSlot_axoru_294 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._cardSlot_4z31c_357 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
    midpoints the drop index is computed against, which made the indicator
    oscillate between two slots at the boundary. */
-._dropLine_axoru_299 {
+._dropLine_4z31c_362 {
   position: absolute;
   left: 0;
   right: 0;
@@ -4169,17 +4212,17 @@ dialog._modal_16scp_720 {
   border-radius: var(--r-pill);
   background: var(--col-tone, var(--accent));
 }
-._dropLineTail_axoru_308 {
+._dropLineTail_4z31c_371 {
   top: auto;
   bottom: calc(var(--s2) / -2 - 1px);
 }
 /* Drawn from the middle out. It moves by being torn down in one slot and built
    in another, so an entrance is the only thing that can smooth the change. */
-._dropLine_axoru_299 {
-  animation: _dropIn_axoru_1 var(--dur-fast) var(--ease) both;
+._dropLine_4z31c_362 {
+  animation: _dropIn_4z31c_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _dropIn_axoru_1 {
+@keyframes _dropIn_4z31c_1 {
   from {
     opacity: 0;
     transform: scaleX(0.4);
@@ -4195,7 +4238,7 @@ dialog._modal_16scp_720 {
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_axoru_272 {
+._card_4z31c_335 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4210,21 +4253,21 @@ dialog._modal_16scp_720 {
      animation after the landing rather than as feedback. */
   transition: border-color var(--dur-fast) var(--ease);
 }
-._card_axoru_272:hover {
+._card_4z31c_335:hover {
   border-color: var(--hairline-strong);
 }
-._card_axoru_272:active { cursor: grabbing; }
+._card_4z31c_335:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
    underneath it — and a sweep across the board would otherwise light up every
    card it crossed. */
-._board_axoru_34[data-dragging='true'] ._card_axoru_272:hover {
+._board_4z31c_34[data-dragging='true'] ._card_4z31c_335:hover {
   border-color: var(--hairline);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_axoru_360 { cursor: default; }
+._cardLocked_4z31c_423 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_axoru_363 { border-left: 3px solid var(--accent2); }
+._cardAI_4z31c_426 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4232,16 +4275,16 @@ dialog._modal_16scp_720 {
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_axoru_371 {
+._cardDragging_4z31c_434 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_axoru_371 > * { opacity: 0; }
+._cardDragging_4z31c_434 > * { opacity: 0; }
 
-._dragLayer_axoru_380 {
+._dragLayer_4z31c_443 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4250,7 +4293,7 @@ dialog._modal_16scp_720 {
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_axoru_389 {
+._dragCard_4z31c_452 {
   position: absolute;
   top: 0;
   left: 0;
@@ -4268,19 +4311,19 @@ dialog._modal_16scp_720 {
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_axoru_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_4z31c_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_axoru_1 {
+@keyframes _cardLift_4z31c_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
 /* A card you wrote opens for editing where you read it. `text`, because that is
    what the pointer is over and what it is about to do. */
-._cardTextMine_axoru_415 {
+._cardTextMine_4z31c_478 {
   cursor: text;
 }
 
-._cardText_axoru_415 {
+._cardText_4z31c_478 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4291,16 +4334,16 @@ dialog._modal_16scp_720 {
 
 /* `min-height` because the carried copy of a card carries no controls, and
    without it the card in the air is a different size from the one it becomes. */
-._cardMeta_axoru_430 {
+._cardMeta_4z31c_493 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
   margin-top: var(--s2);
 }
-._metaSpacer_axoru_437 { flex: 1; }
-._author_axoru_438 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_axoru_439 {
+._metaSpacer_4z31c_500 { flex: 1; }
+._author_4z31c_501 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_4z31c_502 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4308,8 +4351,8 @@ dialog._modal_16scp_720 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_axoru_447 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_axoru_448 {
+._aiBadge_4z31c_510 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_4z31c_511 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4319,8 +4362,8 @@ dialog._modal_16scp_720 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_axoru_458 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_axoru_459 {
+._confirmRow_4z31c_521 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_4z31c_522 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4328,18 +4371,18 @@ dialog._modal_16scp_720 {
   text-transform: uppercase;
 }
 
-._gripWrap_axoru_467 { position: relative; display: inline-flex; }
+._gripWrap_4z31c_530 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_axoru_467 {
+._grip_4z31c_530 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_axoru_467:active { cursor: grabbing; }
+._grip_4z31c_530:active { cursor: grabbing; }
 
-._moveMenu_axoru_478 {
+._moveMenu_4z31c_541 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4353,7 +4396,7 @@ dialog._modal_16scp_720 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_axoru_492 {
+._moveItem_4z31c_555 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4365,11 +4408,11 @@ dialog._modal_16scp_720 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_axoru_492:hover { background: var(--panel-2); }
+._moveItem_4z31c_555:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_axoru_507 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_axoru_508 {
+._editor_4z31c_570 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_4z31c_571 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -4380,7 +4423,7 @@ dialog._modal_16scp_720 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_axoru_519 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_4z31c_582 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
@@ -4389,7 +4432,7 @@ dialog._modal_16scp_720 {
 /* `nowrap` and a floor of zero: the row is the card's last line and must stay
    one line whatever is in it, so a card with eight reactions scrolls them
    rather than growing a second row and pushing the board about. */
-._reactions_axoru_528 {
+._reactions_4z31c_591 {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -4398,13 +4441,13 @@ dialog._modal_16scp_720 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._reactions_axoru_528::-webkit-scrollbar {
+._reactions_4z31c_591::-webkit-scrollbar {
   display: none;
 }
-._rxChip_axoru_540 {
+._rxChip_4z31c_603 {
   flex: none;
 }
-._rxChip_axoru_540, ._rxPick_axoru_543 {
+._rxChip_4z31c_603, ._rxPick_4z31c_606 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4423,44 +4466,44 @@ dialog._modal_16scp_720 {
   cursor: pointer;
 }
 /* A ground only under the pointer, in the tray. */
-._rxPick_axoru_543:hover, ._rxPick_axoru_543:focus-visible {
+._rxPick_4z31c_606:hover, ._rxPick_4z31c_606:focus-visible {
   background: var(--panel-2);
 }
 /* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
    an emoji is a second shape competing with the one that carries the meaning. */
-._rxGlyph_axoru_567 {
+._rxGlyph_4z31c_630 {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
 
 /* A reaction is somebody pressing a button, so it arrives and it leaves. The
    `scale` property rather than a transform, so nothing here has to know what
    else may be transforming the chip. Neither changes the row's height. */
-._rxChipIn_axoru_574 {
-  animation: _rxIn_axoru_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+._rxChipIn_4z31c_637 {
+  animation: _rxIn_4z31c_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
-._rxChipOut_axoru_577 {
-  animation: _rxOut_axoru_1 150ms var(--ease) both;
+._rxChipOut_4z31c_640 {
+  animation: _rxOut_4z31c_1 150ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _rxIn_axoru_1 {
+@keyframes _rxIn_4z31c_1 {
   from {
     opacity: 0;
     scale: 0.4;
   }
 }
 
-@keyframes _rxOut_axoru_1 {
+@keyframes _rxOut_4z31c_1 {
   to {
     opacity: 0;
     scale: 0.4;
   }
 }
-._rxChip_axoru_540:hover { border-color: var(--accent); }
-._rxPick_axoru_543:hover { border-color: transparent; }
-._rxChip_axoru_540:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_axoru_598 { border-color: var(--accent); }
-._rxCount_axoru_599 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_4z31c_603:hover { border-color: var(--accent); }
+._rxPick_4z31c_606:hover { border-color: transparent; }
+._rxChip_4z31c_603:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_4z31c_661 { border-color: var(--accent); }
+._rxCount_4z31c_662 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
@@ -4470,7 +4513,7 @@ dialog._modal_16scp_720 {
  * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
  * size, not a ragged last line.
  */
-._rxTray_axoru_609 {
+._rxTray_4z31c_672 {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -4484,30 +4527,30 @@ dialog._modal_16scp_720 {
   border: 0;
   border-radius: var(--r-l);
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  animation: _trayIn_axoru_1 var(--dur-fast) var(--ease) both;
+  animation: _trayIn_4z31c_1 var(--dur-fast) var(--ease) both;
 }
 
 /* Without the filter there is nothing behind the emoji at all, so the ground
    comes back rather than the tray being unreadable over a card. */
 @supports not (backdrop-filter: blur(1px)) {
-  ._rxTray_axoru_609 {
+  ._rxTray_4z31c_672 {
     background: var(--panel);
   }
 }
 
-._rxTrayOut_axoru_634 {
-  animation: _trayOut_axoru_1 140ms var(--ease) both;
+._rxTrayOut_4z31c_697 {
+  animation: _trayOut_4z31c_1 140ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _trayOut_axoru_1 {
+@keyframes _trayOut_4z31c_1 {
   to {
     opacity: 0;
     transform: translateY(-4px);
   }
 }
 
-@keyframes _trayIn_axoru_1 {
+@keyframes _trayIn_4z31c_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -4527,7 +4570,7 @@ dialog._modal_16scp_720 {
 /* Holds the two states in one box: the invitation, and the draft that folds
    over it. Relative so the folding box can leave the flow on its way out and
    let the invitation back underneath it. */
-._composeSlot_axoru_666 {
+._composeSlot_4z31c_729 {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -4535,7 +4578,7 @@ dialog._modal_16scp_720 {
   min-height: var(--tap);
 }
 
-._composeArea_axoru_674 {
+._composeArea_4z31c_737 {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
   display: grid;
@@ -4547,7 +4590,7 @@ dialog._modal_16scp_720 {
   font: inherit;
   cursor: pointer;
 }
-._composeHint_axoru_686 {
+._composeHint_4z31c_749 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4556,18 +4599,18 @@ dialog._modal_16scp_720 {
   font-size: var(--fs-xs);
   transition: opacity var(--dur-fast) var(--ease);
 }
-._composeArea_axoru_674:hover ._composeHint_axoru_686,
-._composeArea_axoru_674:focus-visible ._composeHint_axoru_686 {
+._composeArea_4z31c_737:hover ._composeHint_4z31c_749,
+._composeArea_4z31c_737:focus-visible ._composeHint_4z31c_749 {
   opacity: 1;
 }
 /* Nothing invites a card while one is in the air. */
-._board_axoru_34[data-dragging='true'] ._composeHint_axoru_686 { opacity: 0; }
+._board_4z31c_34[data-dragging='true'] ._composeHint_4z31c_749 { opacity: 0; }
 
 /* The draft is a card: the same ground, hairline, corner and shadows as the
    one it is about to become, with the column's tone on its edge. The box
    inside it is bare — a second bordered field inside a bordered card is two
    objects for one thing. */
-._columnCompose_axoru_706 {
+._columnCompose_4z31c_769 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4580,24 +4623,24 @@ dialog._modal_16scp_720 {
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
-._columnCompose_axoru_706:focus-within {
+._columnCompose_4z31c_769:focus-within {
   border-color: var(--col-tone, var(--accent));
 }
 /* Unfolds where the card will be, and folds back into it. `both` holds the
    `from` state through the delay so the box does not flash at full size first. */
-._columnCompose_axoru_706 {
-  animation: _draftIn_axoru_1 180ms var(--ease) both;
+._columnCompose_4z31c_769 {
+  animation: _draftIn_4z31c_1 180ms var(--ease) both;
 }
-._columnComposeOut_axoru_727 {
+._columnComposeOut_4z31c_790 {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  animation: _draftOut_axoru_1 160ms var(--ease) both;
+  animation: _draftOut_4z31c_1 160ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _draftIn_axoru_1 {
+@keyframes _draftIn_4z31c_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
@@ -4605,14 +4648,14 @@ dialog._modal_16scp_720 {
   }
 }
 
-@keyframes _draftOut_axoru_1 {
+@keyframes _draftOut_4z31c_1 {
   to {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
     transform-origin: 50% 0%;
   }
 }
-._composeBox_axoru_751 {
+._composeBox_4z31c_814 {
   width: 100%;
   min-height: 3lh;
   max-height: 8rem;
@@ -4625,12 +4668,12 @@ dialog._modal_16scp_720 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeBox_axoru_751::placeholder {
+._composeBox_4z31c_814::placeholder {
   color: var(--dim);
 }
-._composeActions_axoru_767 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_4z31c_830 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
-._srOnly_axoru_769 {
+._srOnly_4z31c_832 {
   position: absolute;
   width: 1px;
   height: 1px;

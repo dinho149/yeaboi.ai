@@ -51,7 +51,6 @@ import {
   Toast,
   Toolbar,
   Visualizer,
-  Walkthrough,
 } from '../shared';
 import { cx } from '../runtime/cx';
 import { boardStyles as kit, Room } from '../shared/board';
@@ -61,6 +60,7 @@ import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
 import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/board';
 import { createRetroActions } from './actions';
 import { Board } from './Board';
+import { Walkthrough } from './Walkthrough';
 import { CarriedStrip } from './CarriedStrip';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
@@ -234,6 +234,17 @@ export function App({ boot }: { boot: RetroBoot }) {
     return [...set].sort();
   }, [cards]);
 
+  /** The same people, with a face and a card count — what the panel shows. */
+  const roster = useMemo(
+    () =>
+      authors.map((name) => ({
+        name,
+        avatar: avatarsByName.get(name),
+        cards: cards.filter((card) => card.author === name && card.origin !== 'ai').length,
+      })),
+    [authors, avatarsByName, cards]
+  );
+
   // An author who has left mid-walkthrough would otherwise leave every column
   // filtered to nothing, with no obvious way back.
   useEffect(() => {
@@ -380,7 +391,7 @@ export function App({ boot }: { boot: RetroBoot }) {
               trigger={<Icon name="user" size={16} />}
               label="Walk through one person at a time"
             >
-              <Walkthrough people={authors} current={focus} onPick={setFocus} onExit={() => setFocus('')} />
+              <Walkthrough people={roster} current={focus} onPick={setFocus} onExit={() => setFocus('')} />
             </Popover>
 
             {isHost ? (
