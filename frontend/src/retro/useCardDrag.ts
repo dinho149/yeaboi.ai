@@ -313,7 +313,11 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
       let lastX = originX;
       let armTimer: ReturnType<typeof setTimeout> | undefined;
 
-      if (!hold) event.preventDefault();
+      // Not `preventDefault` on the press: cancelling pointerdown cancels the
+      // compatibility mouse events with it, and the click that never fires is
+      // the one that opens a card for editing. The gesture is claimed on the
+      // first move that crosses the threshold instead, and the selection it
+      // would otherwise paint is stopped by `user-select` at the same moment.
 
       const pick = (e: PointerEvent): void => {
         started = true;

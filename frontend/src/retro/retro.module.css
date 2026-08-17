@@ -422,6 +422,12 @@
   from { scale: 1; }
   to { scale: 1.03; }
 }
+/* A card you wrote opens for editing where you read it. `text`, because that is
+   what the pointer is over and what it is about to do. */
+.cardTextMine {
+  cursor: text;
+}
+
 .cardText {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
@@ -592,6 +598,17 @@
  * A real button, so the keyboard and a screen reader reach it — it just draws
  * nothing until the pointer is over it.
  */
+/* Holds the two states in one box: the invitation, and the draft that folds
+   over it. Relative so the folding box can leave the flow on its way out and
+   let the invitation back underneath it. */
+.composeSlot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+}
+
 .composeArea {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
@@ -639,6 +656,35 @@
 }
 .columnCompose:focus-within {
   border-color: var(--col-tone, var(--accent));
+}
+/* Unfolds where the card will be, and folds back into it. `both` holds the
+   `from` state through the delay so the box does not flash at full size first. */
+.columnCompose {
+  animation: draftIn 180ms var(--ease) both;
+}
+.columnComposeOut {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  animation: draftOut 160ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes draftIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
+}
+
+@keyframes draftOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
 }
 .composeBox {
   width: 100%;

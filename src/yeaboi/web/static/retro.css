@@ -3858,7 +3858,7 @@ dialog._modal_6ng5l_693 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_ni0nb_24 {
+._app_1vo9h_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3872,7 +3872,7 @@ dialog._modal_6ng5l_693 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_ni0nb_38 {
+._boardRegion_1vo9h_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3883,13 +3883,13 @@ dialog._modal_6ng5l_693 {
   padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_ni0nb_49 { color: var(--warn); font-family: var(--font-sans); }
+._offline_1vo9h_49 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
    cluster, so its cards line up with the chip above them. `--room-lead` is how
    far in the chip's own avatar sits, which is what they line up *with*. */
-._identity_ni0nb_55 {
+._identity_1vo9h_55 {
   position: relative;
   --room-lead: var(--s3);
   display: flex;
@@ -3897,7 +3897,7 @@ dialog._modal_6ng5l_693 {
   gap: var(--s3);
 }
 
-._meChip_ni0nb_63 {
+._meChip_1vo9h_63 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3911,22 +3911,22 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._meChip_ni0nb_63:hover { border-color: var(--accent); }
-._meName_ni0nb_78 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._pen_ni0nb_79 { display: inline-flex; color: var(--muted); }
-._roomCount_ni0nb_80 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._meChip_1vo9h_63:hover { border-color: var(--accent); }
+._meName_1vo9h_78 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_1vo9h_79 { display: inline-flex; color: var(--muted); }
+._roomCount_1vo9h_80 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._lockBanner_ni0nb_84, ._musicBanner_ni0nb_84 {
+._lockBanner_1vo9h_84, ._musicBanner_1vo9h_84 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
   border-bottom: 1px solid var(--line);
 }
-._lockBanner_ni0nb_84 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-._musicBanner_ni0nb_84 {
+._lockBanner_1vo9h_84 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_1vo9h_84 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -3937,12 +3937,12 @@ dialog._modal_6ng5l_693 {
   cursor: pointer;
 }
 
-._popNote_ni0nb_103 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_1vo9h_103 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_ni0nb_106 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_ni0nb_107 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_ni0nb_108 {
+._carried_1vo9h_106 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_1vo9h_107 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_1vo9h_108 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3956,14 +3956,14 @@ dialog._modal_6ng5l_693 {
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_ni0nb_122 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_ni0nb_123 { transform: rotate(90deg); }
-._carriedProgress_ni0nb_124 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_ni0nb_125 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_ni0nb_125[hidden] { display: none; }
-._carriedHint_ni0nb_127 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_ni0nb_128 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_ni0nb_129 {
+._chevron_1vo9h_122 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_1vo9h_123 { transform: rotate(90deg); }
+._carriedProgress_1vo9h_124 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_1vo9h_125 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_1vo9h_125[hidden] { display: none; }
+._carriedHint_1vo9h_127 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_1vo9h_128 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_1vo9h_129 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3977,8 +3977,8 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_ni0nb_143 { flex: 1; min-width: 0; }
-._carriedSelect_ni0nb_144 {
+._carriedText_1vo9h_143 { flex: 1; min-width: 0; }
+._carriedSelect_1vo9h_144 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -3987,14 +3987,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_ni0nb_153 { border-left-color: var(--line); }
-._statusDone_ni0nb_154 { border-left-color: var(--ok); }
-._statusProgress_ni0nb_155 { border-left-color: var(--info); }
-._statusCarried_ni0nb_156 { border-left-color: var(--warn); }
-._statusMuted_ni0nb_157 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_1vo9h_153 { border-left-color: var(--line); }
+._statusDone_1vo9h_154 { border-left-color: var(--ok); }
+._statusProgress_1vo9h_155 { border-left-color: var(--info); }
+._statusCarried_1vo9h_156 { border-left-color: var(--warn); }
+._statusMuted_1vo9h_157 { border-left-color: var(--muted); opacity: 0.7; }
 
 /* ── Walkthrough bar ──────────────────────────────────────────────────── */
-._focusBar_ni0nb_160 {
+._focusBar_1vo9h_160 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -4002,7 +4002,7 @@ dialog._modal_6ng5l_693 {
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
-._focusStep_ni0nb_168 {
+._focusStep_1vo9h_168 {
   width: var(--tap);
   height: var(--tap);
   display: inline-grid;
@@ -4014,13 +4014,13 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   cursor: pointer;
 }
-._focusStep_ni0nb_168:disabled { opacity: 0.4; cursor: default; }
-._focusWho_ni0nb_181 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-._focusName_ni0nb_182 { font-size: var(--fs-m); }
-._focusCount_ni0nb_183 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._focusStep_1vo9h_168:disabled { opacity: 0.4; cursor: default; }
+._focusWho_1vo9h_181 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_1vo9h_182 { font-size: var(--fs-m); }
+._focusCount_1vo9h_183 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_ni0nb_34 {
+._board_1vo9h_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4038,13 +4038,13 @@ dialog._modal_6ng5l_693 {
 }
 
 @media (max-width: 1099px) {
-  ._board_ni0nb_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_1vo9h_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_ni0nb_34 {
+  ._board_1vo9h_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4054,14 +4054,14 @@ dialog._modal_6ng5l_693 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_ni0nb_34::-webkit-scrollbar { display: none; }
-  ._column_ni0nb_221 { scroll-snap-align: center; }
+  ._board_1vo9h_34::-webkit-scrollbar { display: none; }
+  ._column_1vo9h_221 { scroll-snap-align: center; }
 }
 
-._pager_ni0nb_224 { display: none; }
+._pager_1vo9h_224 { display: none; }
 @media (max-width: 699px) {
-  ._pager_ni0nb_224 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_ni0nb_227 {
+  ._pager_1vo9h_224 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_1vo9h_227 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4070,7 +4070,7 @@ dialog._modal_6ng5l_693 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_ni0nb_227::after {
+  ._pagerDot_1vo9h_227::after {
     content: "";
     display: block;
     width: 8px;
@@ -4079,7 +4079,7 @@ dialog._modal_6ng5l_693 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_ni0nb_245::after { background: var(--accent); }
+  ._pagerDotOn_1vo9h_245::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4089,12 +4089,12 @@ dialog._modal_6ng5l_693 {
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_ni0nb_221 {
+._column_1vo9h_221 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_ni0nb_260 {
+._columnHead_1vo9h_260 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4103,7 +4103,7 @@ dialog._modal_6ng5l_693 {
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_ni0nb_269 {
+._columnTitle_1vo9h_269 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4112,13 +4112,13 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_ni0nb_278 { color: var(--dim); }
-._columnCount_ni0nb_279 {
+._columnDot_1vo9h_278 { color: var(--dim); }
+._columnCount_1vo9h_279 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_ni0nb_284 {
+._cards_1vo9h_284 {
   /* The containing block for an empty column's drop indicator. */
   position: relative;
   transition: background-color var(--dur-fast) var(--ease);
@@ -4132,20 +4132,20 @@ dialog._modal_6ng5l_693 {
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cardsOver_ni0nb_298 {
+._cardsOver_1vo9h_298 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_ni0nb_304 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_1vo9h_304 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._cardSlot_ni0nb_306 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._cardSlot_1vo9h_306 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
    midpoints the drop index is computed against, which made the indicator
    oscillate between two slots at the boundary. */
-._dropLine_ni0nb_311 {
+._dropLine_1vo9h_311 {
   position: absolute;
   left: 0;
   right: 0;
@@ -4154,17 +4154,17 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-pill);
   background: var(--col-tone, var(--accent));
 }
-._dropLineTail_ni0nb_320 {
+._dropLineTail_1vo9h_320 {
   top: auto;
   bottom: calc(var(--s2) / -2 - 1px);
 }
 /* Drawn from the middle out. It moves by being torn down in one slot and built
    in another, so an entrance is the only thing that can smooth the change. */
-._dropLine_ni0nb_311 {
-  animation: _dropIn_ni0nb_1 var(--dur-fast) var(--ease) both;
+._dropLine_1vo9h_311 {
+  animation: _dropIn_1vo9h_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _dropIn_ni0nb_1 {
+@keyframes _dropIn_1vo9h_1 {
   from {
     opacity: 0;
     transform: scaleX(0.4);
@@ -4180,7 +4180,7 @@ dialog._modal_6ng5l_693 {
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_ni0nb_284 {
+._card_1vo9h_284 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4195,21 +4195,21 @@ dialog._modal_6ng5l_693 {
      animation after the landing rather than as feedback. */
   transition: border-color var(--dur-fast) var(--ease);
 }
-._card_ni0nb_284:hover {
+._card_1vo9h_284:hover {
   border-color: var(--hairline-strong);
 }
-._card_ni0nb_284:active { cursor: grabbing; }
+._card_1vo9h_284:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
    underneath it — and a sweep across the board would otherwise light up every
    card it crossed. */
-._board_ni0nb_34[data-dragging='true'] ._card_ni0nb_284:hover {
+._board_1vo9h_34[data-dragging='true'] ._card_1vo9h_284:hover {
   border-color: var(--hairline);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_ni0nb_372 { cursor: default; }
+._cardLocked_1vo9h_372 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_ni0nb_375 { border-left: 3px solid var(--accent2); }
+._cardAI_1vo9h_375 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4217,16 +4217,16 @@ dialog._modal_6ng5l_693 {
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_ni0nb_383 {
+._cardDragging_1vo9h_383 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_ni0nb_383 > * { opacity: 0; }
+._cardDragging_1vo9h_383 > * { opacity: 0; }
 
-._dragLayer_ni0nb_392 {
+._dragLayer_1vo9h_392 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4235,7 +4235,7 @@ dialog._modal_6ng5l_693 {
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_ni0nb_401 {
+._dragCard_1vo9h_401 {
   position: absolute;
   top: 0;
   left: 0;
@@ -4253,13 +4253,19 @@ dialog._modal_6ng5l_693 {
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_ni0nb_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_1vo9h_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_ni0nb_1 {
+@keyframes _cardLift_1vo9h_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
-._cardText_ni0nb_425 {
+/* A card you wrote opens for editing where you read it. `text`, because that is
+   what the pointer is over and what it is about to do. */
+._cardTextMine_1vo9h_427 {
+  cursor: text;
+}
+
+._cardText_1vo9h_427 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4270,16 +4276,16 @@ dialog._modal_6ng5l_693 {
 
 /* `min-height` because the carried copy of a card carries no controls, and
    without it the card in the air is a different size from the one it becomes. */
-._cardMeta_ni0nb_436 {
+._cardMeta_1vo9h_442 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
   margin-top: var(--s2);
 }
-._metaSpacer_ni0nb_443 { flex: 1; }
-._author_ni0nb_444 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_ni0nb_445 {
+._metaSpacer_1vo9h_449 { flex: 1; }
+._author_1vo9h_450 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_1vo9h_451 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4287,8 +4293,8 @@ dialog._modal_6ng5l_693 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_ni0nb_453 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_ni0nb_454 {
+._aiBadge_1vo9h_459 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_1vo9h_460 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4298,8 +4304,8 @@ dialog._modal_6ng5l_693 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_ni0nb_464 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_ni0nb_465 {
+._confirmRow_1vo9h_470 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_1vo9h_471 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4307,18 +4313,18 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
 }
 
-._gripWrap_ni0nb_473 { position: relative; display: inline-flex; }
+._gripWrap_1vo9h_479 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_ni0nb_473 {
+._grip_1vo9h_479 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_ni0nb_473:active { cursor: grabbing; }
+._grip_1vo9h_479:active { cursor: grabbing; }
 
-._moveMenu_ni0nb_484 {
+._moveMenu_1vo9h_490 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4332,7 +4338,7 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_ni0nb_498 {
+._moveItem_1vo9h_504 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4344,11 +4350,11 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_ni0nb_498:hover { background: var(--panel-2); }
+._moveItem_1vo9h_504:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_ni0nb_513 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_ni0nb_514 {
+._editor_1vo9h_519 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_1vo9h_520 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -4359,14 +4365,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_ni0nb_525 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_1vo9h_531 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-._reactions_ni0nb_531 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-._rxChip_ni0nb_532, ._rxPick_ni0nb_532 {
+._reactions_1vo9h_537 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+._rxChip_1vo9h_538, ._rxPick_1vo9h_538 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4382,10 +4388,10 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._rxChip_ni0nb_532:hover, ._rxPick_ni0nb_532:hover { border-color: var(--accent); }
-._rxChip_ni0nb_532:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_ni0nb_550 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-._rxCount_ni0nb_551 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_1vo9h_538:hover, ._rxPick_1vo9h_538:hover { border-color: var(--accent); }
+._rxChip_1vo9h_538:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_1vo9h_556 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_1vo9h_557 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
@@ -4395,7 +4401,7 @@ dialog._modal_6ng5l_693 {
  * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
  * size, not a ragged last line.
  */
-._rxTray_ni0nb_561 {
+._rxTray_1vo9h_567 {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -4409,10 +4415,10 @@ dialog._modal_6ng5l_693 {
     var(--edge),
     0 1px 1px rgb(0 0 0 / 12%),
     0 8px 24px rgb(0 0 0 / 22%);
-  animation: _trayIn_ni0nb_1 var(--dur-fast) var(--ease) both;
+  animation: _trayIn_1vo9h_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _trayIn_ni0nb_1 {
+@keyframes _trayIn_1vo9h_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -4429,7 +4435,18 @@ dialog._modal_6ng5l_693 {
  * A real button, so the keyboard and a screen reader reach it — it just draws
  * nothing until the pointer is over it.
  */
-._composeArea_ni0nb_595 {
+/* Holds the two states in one box: the invitation, and the draft that folds
+   over it. Relative so the folding box can leave the flow on its way out and
+   let the invitation back underneath it. */
+._composeSlot_1vo9h_604 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+}
+
+._composeArea_1vo9h_612 {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
   display: grid;
@@ -4441,7 +4458,7 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   cursor: pointer;
 }
-._composeHint_ni0nb_607 {
+._composeHint_1vo9h_624 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4450,18 +4467,18 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-xs);
   transition: opacity var(--dur-fast) var(--ease);
 }
-._composeArea_ni0nb_595:hover ._composeHint_ni0nb_607,
-._composeArea_ni0nb_595:focus-visible ._composeHint_ni0nb_607 {
+._composeArea_1vo9h_612:hover ._composeHint_1vo9h_624,
+._composeArea_1vo9h_612:focus-visible ._composeHint_1vo9h_624 {
   opacity: 1;
 }
 /* Nothing invites a card while one is in the air. */
-._board_ni0nb_34[data-dragging='true'] ._composeHint_ni0nb_607 { opacity: 0; }
+._board_1vo9h_34[data-dragging='true'] ._composeHint_1vo9h_624 { opacity: 0; }
 
 /* The draft is a card: the same ground, hairline, corner and shadows as the
    one it is about to become, with the column's tone on its edge. The box
    inside it is bare — a second bordered field inside a bordered card is two
    objects for one thing. */
-._columnCompose_ni0nb_627 {
+._columnCompose_1vo9h_644 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4474,10 +4491,39 @@ dialog._modal_6ng5l_693 {
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
-._columnCompose_ni0nb_627:focus-within {
+._columnCompose_1vo9h_644:focus-within {
   border-color: var(--col-tone, var(--accent));
 }
-._composeBox_ni0nb_643 {
+/* Unfolds where the card will be, and folds back into it. `both` holds the
+   `from` state through the delay so the box does not flash at full size first. */
+._columnCompose_1vo9h_644 {
+  animation: _draftIn_1vo9h_1 180ms var(--ease) both;
+}
+._columnComposeOut_1vo9h_665 {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  animation: _draftOut_1vo9h_1 160ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes _draftIn_1vo9h_1 {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
+}
+
+@keyframes _draftOut_1vo9h_1 {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
+}
+._composeBox_1vo9h_689 {
   width: 100%;
   min-height: 3lh;
   max-height: 8rem;
@@ -4490,32 +4536,32 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeBox_ni0nb_643::placeholder {
+._composeBox_1vo9h_689::placeholder {
   color: var(--dim);
 }
-._composeActions_ni0nb_659 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_1vo9h_705 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
-._floatLayer_ni0nb_662 {
+._floatLayer_1vo9h_708 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
   pointer-events: none;
   overflow: hidden;
 }
-._floater_ni0nb_669 {
+._floater_1vo9h_715 {
   position: absolute;
   bottom: 0;
-  animation: _rise_ni0nb_1 2.6s ease-out forwards;
+  animation: _rise_1vo9h_1 2.6s ease-out forwards;
 }
 
-@keyframes _rise_ni0nb_1 {
+@keyframes _rise_1vo9h_1 {
   from { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   to { transform: translateY(-70vh); opacity: 0; }
 }
 
-._srOnly_ni0nb_681 {
+._srOnly_1vo9h_727 {
   position: absolute;
   width: 1px;
   height: 1px;

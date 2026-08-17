@@ -125,6 +125,9 @@ function CardViewBase({
   const [confirming, setConfirming] = useState(false);
 
   const cardRef = useRef<HTMLElement | null>(null);
+  // Where the press that a click came from landed. A drag ends in a click too,
+  // on whatever the pointer is over, and that must not open an editor.
+  const pressAt = useRef<{ x: number; y: number } | null>(null);
   const confirmRef = useRef<HTMLSpanElement | null>(null);
   const trayTriggerRef = useRef<HTMLButtonElement>(null);
   const trayRef = useRef<HTMLDivElement | null>(null);
@@ -185,7 +188,28 @@ function CardViewBase({
         // pre-wrap, not a markdown or linkify pass: card text is whatever a
         // teammate typed and is rendered as a text child, so there is no path
         // by which it becomes markup. Newlines still survive.
-        <p className={styles['cardText']}>{card.text}</p>
+        //
+        // Your own text is the way into the editor — the card is the handle for
+        // a drag, and a press that never moves is a click on what it landed on.
+        // The pencil beside it is the same action for a keyboard.
+        <p
+          className={cx(styles['cardText'], canModify && styles['cardTextMine'])}
+          {...(canModify
+            ? {
+                onPointerDown: (event: { clientX: number; clientY: number }) => {
+                  pressAt.current = { x: event.clientX, y: event.clientY };
+                },
+                onClick: (event: { clientX: number; clientY: number }) => {
+                  const at = pressAt.current;
+                  pressAt.current = null;
+                  if (!at || Math.hypot(event.clientX - at.x, event.clientY - at.y) > 4) return;
+                  setEditing(true);
+                },
+              }
+            : {})}
+        >
+          {card.text}
+        </p>
       )}
 
       <div className={styles['cardMeta']}>

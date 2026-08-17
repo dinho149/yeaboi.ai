@@ -31,8 +31,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Icon } from '../design/primitives';
+import { cx } from '../runtime/cx';
 import { Button } from '../shared';
 import styles from './retro.module.css';
+
+/** How long the draft takes to fold away. Matches `draftOut` in the sheet. */
+const DRAFT_OUT_MS = 160;
 
 export interface ColumnComposerProps {
   /** The column's human label, for the accessible names. */
@@ -64,11 +68,24 @@ export function ColumnComposer({
   onTyping,
 }: ColumnComposerProps) {
   const [text, setText] = useState('');
+  // Held open for the length of the exit. A box that is unmounted the moment it
+  // closes has nothing left to animate — the draft would simply vanish.
+  const [leaving, setLeaving] = useState(false);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  const wasOpen = useRef(open);
 
   useEffect(() => {
     if (open && focusNonce > 0) boxRef.current?.focus();
   }, [open, focusNonce]);
+
+  useEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = open;
+    if (open || !was) return undefined;
+    setLeaving(true);
+    const timer = window.setTimeout(() => setLeaving(false), DRAFT_OUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   const submit = (): void => {
     if (!text.trim()) return;
@@ -79,65 +96,75 @@ export function ColumnComposer({
     boxRef.current?.focus();
   };
 
-  if (!open) {
-    // The rest of the column, as one control. Nothing is drawn until the
-    // pointer is over it, so the board is cards and nothing else at rest.
-    return (
-      <button
-        type="button"
-        className={styles['composeArea']}
-        aria-label={`Add a card to ${label}`}
-        onClick={onOpen}
-      >
-        <span className={styles['composeHint']}>
-          <Icon name="plus" size={14} /> Add a card
-        </span>
-      </button>
-    );
-  }
-
   return (
-    <div className={styles['columnCompose']}>
-      <textarea
-        ref={boxRef}
-        className={styles['composeBox']}
-        rows={2}
-        value={text}
-        placeholder={`Add to ${label}…`}
-        aria-label={`Add a card to ${label}`}
-        onInput={(event) => {
-          setText((event.target as HTMLTextAreaElement).value);
-          onTyping();
-        }}
-        onKeyDown={(event) => {
-          // ⌘/Ctrl-Enter, not bare Enter: cards are frequently multi-line and
-          // a bare Enter that submitted would make writing a second line
-          // impossible.
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            submit();
-          } else if (event.key === 'Escape') {
-            // Stopped, or this also exits a walkthrough — App binds Escape at
-            // the document while one is running.
-            event.stopPropagation();
-            setText('');
-            onClose();
-          }
-        }}
-      />
-      <div className={styles['composeActions']}>
-        <Button
-          onClick={() => {
-            setText('');
-            onClose();
-          }}
+    <div className={styles['composeSlot']}>
+      {/* The rest of the column, as one control. Nothing is drawn until the
+          pointer is over it, so the board is cards and nothing else at rest.
+          It stays put underneath the box, which is what the box folds back
+          into — and what is clickable again the moment it starts to. */}
+      {open ? null : (
+        <button
+          type="button"
+          className={styles['composeArea']}
+          aria-label={`Add a card to ${label}`}
+          onClick={onOpen}
         >
-          Cancel
-        </Button>
-        <Button tone="primary" disabled={!text.trim()} onClick={submit}>
-          Add
-        </Button>
-      </div>
+          <span className={styles['composeHint']}>
+            <Icon name="plus" size={14} /> Add a card
+          </span>
+        </button>
+      )}
+
+      {open || leaving ? (
+        // On the way out it is a picture of itself: out of the accessibility
+        // tree and out of reach, because a box that has been dismissed must not
+        // still be announced or tabbed into while it folds away.
+        <div
+          className={cx(styles['columnCompose'], !open && styles['columnComposeOut'])}
+          {...(open ? {} : { 'aria-hidden': true, inert: true })}
+        >
+          <textarea
+            ref={boxRef}
+            className={styles['composeBox']}
+            rows={2}
+            value={text}
+            placeholder={`Add to ${label}…`}
+            aria-label={`Add a card to ${label}`}
+            onInput={(event) => {
+              setText((event.target as HTMLTextAreaElement).value);
+              onTyping();
+            }}
+            onKeyDown={(event) => {
+              // ⌘/Ctrl-Enter, not bare Enter: cards are frequently multi-line
+              // and a bare Enter that submitted would make writing a second
+              // line impossible.
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                submit();
+              } else if (event.key === 'Escape') {
+                // Stopped, or this also exits a walkthrough — App binds Escape
+                // at the document while one is running.
+                event.stopPropagation();
+                setText('');
+                onClose();
+              }
+            }}
+          />
+          <div className={styles['composeActions']}>
+            <Button
+              onClick={() => {
+                setText('');
+                onClose();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button tone="primary" disabled={!text.trim()} onClick={submit}>
+              Add
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
