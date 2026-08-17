@@ -4,7 +4,7 @@
     {
       "version": "3.18.1",
       "date": "2026-08-17",
-      "summary": "Ship mode hardening and safety improvements prevent agent capability creep, tighten consent checks, and show you the exact changes before approval. The agent's Bash tool is now completely denied (not just git/gh commands), closing permission-bypass risks from other shell features. Consent is checked against the git toplevel where worktree setup actually lands, so approval names the directory that is actually touched. The approval gate now renders a scrollable patch pane showing your complete diff alongside validation results, with measured button positioning that never leaves buttons off-screen on minimum terminals. Gates answer only their own run by capturing the run id immediately, preventing concurrent runs from presenting stale diffs to the wrong user. Session IDs now carry a random suffix preventing same-second collisions, and removal operations report correctly whether they found an entry.",
+      "summary": "Ship mode hardening and safety improvements prevent agent capability creep, tighten consent checks, and show you the exact changes before approval. The agent's Bash tool is now completely denied (not just git/gh commands), closing permission-bypass risks from other shell features. Consent is checked against the git toplevel where worktree setup actually lands, so approval names the directory that is actually touched. The approval gate now renders a scrollable patch pane showing your complete diff alongside validation results, with measured button positioning that never leaves buttons off-screen on minimum terminals. Gates answer only their own run by capturing the run id immediately, preventing concurrent runs from presenting stale diffs to the wrong user. Run IDs now carry a random suffix preventing same-second collisions, and removal operations report correctly whether they found an entry.",
       "highlights": [
         {
           "text": "Agent permissions hardened: Bash tool is completely denied, not just git/gh commands, closing permission bypasses",
@@ -27,7 +27,7 @@
           ]
         },
         {
-          "text": "Gate buttons stay on screen at minimum terminal size (84x40); elastic sections (findings, stats) yield space gracefully",
+          "text": "The approval buttons always stay on screen, however long the diff or failure log; supporting detail yields space first",
           "areas": [
             "planning"
           ]
