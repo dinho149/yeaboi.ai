@@ -13,6 +13,7 @@ from yeaboi.agent.state import (
     OutputFormat,
     Priority,
     ProjectAnalysis,
+    PromptQualityRating,
     QuestionnaireState,
     ReviewDecision,
     Sprint,
@@ -381,6 +382,71 @@ class TestDeserializeState:
         assert isinstance(state["project_analysis"], ProjectAnalysis)
         assert state["project_analysis"].project_name == "X"
         assert state["project_analysis"].goals == ("g1",)
+
+    def test_reconstructs_prompt_quality(self):
+        """Regression: prompt_quality used to be dropped on --resume.
+
+        _serialize_state writes the nested rating out via asdict(), but
+        _dict_to_analysis never read it back, so the dataclass default (None)
+        silently replaced a real rating on every resume.
+        """
+        quality = PromptQualityRating(
+            score_pct=75,
+            grade="B",
+            answered_count=10,
+            extracted_count=3,
+            defaulted_count=2,
+            skipped_count=1,
+            probed_count=4,
+            suggestions=("Add more detail",),
+            low_confidence_areas=("Q3",),
+        )
+        pa = ProjectAnalysis(
+            project_name="X",
+            project_description="Desc",
+            project_type="greenfield",
+            goals=("g1",),
+            end_users=("u1",),
+            target_state="done",
+            tech_stack=("Python",),
+            integrations=(),
+            constraints=(),
+            sprint_length_weeks=2,
+            target_sprints=4,
+            risks=(),
+            out_of_scope=(),
+            assumptions=(),
+            prompt_quality=quality,
+        )
+        serialized = _serialize_state({"messages": [], "project_analysis": pa})
+        restored = _deserialize_state(serialized)["project_analysis"]
+        assert isinstance(restored.prompt_quality, PromptQualityRating)
+        assert restored.prompt_quality == quality
+        # asdict() flattens tuples to lists — they must come back as tuples.
+        assert restored.prompt_quality.suggestions == ("Add more detail",)
+        assert restored.prompt_quality.low_confidence_areas == ("Q3",)
+
+    def test_prompt_quality_stays_none_when_never_computed(self):
+        """A session saved before the analyzer ran has no rating — it stays None."""
+        pa = ProjectAnalysis(
+            project_name="X",
+            project_description="Desc",
+            project_type="greenfield",
+            goals=(),
+            end_users=(),
+            target_state="done",
+            tech_stack=(),
+            integrations=(),
+            constraints=(),
+            sprint_length_weeks=2,
+            target_sprints=4,
+            risks=(),
+            out_of_scope=(),
+            assumptions=(),
+        )
+        serialized = _serialize_state({"messages": [], "project_analysis": pa})
+        restored = _deserialize_state(serialized)["project_analysis"]
+        assert restored.prompt_quality is None
 
     def test_reconstructs_feature(self):
         feature = Feature(id="f-1", title="T", description="D", priority=Priority.CRITICAL)

@@ -1215,6 +1215,30 @@ def architecture_from_dict(raw: object) -> ArchitectureDecision | None:
     )
 
 
+def prompt_quality_from_dict(raw: object) -> PromptQualityRating | None:
+    """Rebuild a PromptQualityRating from its asdict() form (or return None).
+
+    Same shape and contract as architecture_from_dict above: sessions.py stores
+    the rating nested inside the serialized ProjectAnalysis, and without this a
+    resumed session got the dataclass default (None) instead of the rating it
+    saved. Counts are coerced to int and the two list fields back to tuples —
+    asdict() flattens tuples to lists on the way out.
+    """
+    if not isinstance(raw, dict):
+        return raw if isinstance(raw, PromptQualityRating) else None
+    return PromptQualityRating(
+        score_pct=int(raw.get("score_pct", 0)),
+        grade=raw.get("grade", ""),
+        answered_count=int(raw.get("answered_count", 0)),
+        extracted_count=int(raw.get("extracted_count", 0)),
+        defaulted_count=int(raw.get("defaulted_count", 0)),
+        skipped_count=int(raw.get("skipped_count", 0)),
+        probed_count=int(raw.get("probed_count", 0)),
+        suggestions=tuple(raw.get("suggestions", ())),
+        low_confidence_areas=tuple(raw.get("low_confidence_areas", ())),
+    )
+
+
 @dataclass(frozen=True)
 class ProjectAnalysis:
     """Structured synthesis of all 30 intake answers.

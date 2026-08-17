@@ -32,6 +32,7 @@ from yeaboi.agent.state import (
     UserStory,
     _merge_dicts,
     architecture_from_dict,
+    prompt_quality_from_dict,
 )
 
 # ── Enum tests ─────────────────────────────────────────────────────────
@@ -571,6 +572,65 @@ class TestPromptQualityRating:
         assert d["score_pct"] == 70
         assert d["grade"] == "B"
         assert isinstance(d["suggestions"], (list, tuple))
+
+
+class TestPromptQualityFromDict:
+    """Rebuilding PromptQualityRating from its asdict() form on resume."""
+
+    def _rating(self) -> PromptQualityRating:
+        return PromptQualityRating(
+            score_pct=75,
+            grade="B",
+            answered_count=10,
+            extracted_count=3,
+            defaulted_count=2,
+            skipped_count=1,
+            probed_count=4,
+            suggestions=("Add more detail",),
+            low_confidence_areas=("Q3",),
+        )
+
+    def test_round_trip_from_asdict(self):
+        rating = self._rating()
+        rebuilt = prompt_quality_from_dict(asdict(rating))
+        assert rebuilt == rating
+        # asdict() flattens tuples to lists — they come back as tuples.
+        assert isinstance(rebuilt.suggestions, tuple)
+        assert isinstance(rebuilt.low_confidence_areas, tuple)
+
+    def test_non_dict_non_rating_returns_none(self):
+        assert prompt_quality_from_dict("not a dict") is None
+        assert prompt_quality_from_dict(None) is None
+        assert prompt_quality_from_dict(42) is None
+
+    def test_rating_instance_passes_through_unchanged(self):
+        rating = self._rating()
+        assert prompt_quality_from_dict(rating) is rating
+
+    def test_missing_keys_default(self):
+        rebuilt = prompt_quality_from_dict({})
+        assert rebuilt.score_pct == 0
+        assert rebuilt.grade == ""
+        assert rebuilt.suggestions == ()
+        assert rebuilt.low_confidence_areas == ()
+
+    def test_pre_low_confidence_areas_dict(self):
+        """A session saved before low_confidence_areas existed still rebuilds."""
+        rebuilt = prompt_quality_from_dict(
+            {
+                "score_pct": 60,
+                "grade": "C",
+                "answered_count": 8,
+                "extracted_count": 0,
+                "defaulted_count": 5,
+                "skipped_count": 3,
+                "probed_count": 1,
+                "suggestions": ["Answer Q6"],
+            }
+        )
+        assert rebuilt.grade == "C"
+        assert rebuilt.suggestions == ("Answer Q6",)
+        assert rebuilt.low_confidence_areas == ()
 
 
 # ── QuestionnaireState tests ──────────────────────────────────────────

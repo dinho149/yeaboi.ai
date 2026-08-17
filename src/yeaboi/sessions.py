@@ -297,10 +297,11 @@ def _dict_to_analysis(d: dict) -> ProjectAnalysis:
 
     Lists → tuples for frozen dataclass tuple[str, ...] fields.
     """
-    from yeaboi.agent.state import architecture_from_dict
+    from yeaboi.agent.state import architecture_from_dict, prompt_quality_from_dict
 
     return ProjectAnalysis(
         architecture=architecture_from_dict(d.get("architecture")),
+        prompt_quality=prompt_quality_from_dict(d.get("prompt_quality")),
         project_name=d["project_name"],
         project_description=d["project_description"],
         project_type=d["project_type"],
