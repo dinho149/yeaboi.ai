@@ -108,10 +108,10 @@ export function HostRail({
         </div>
       </section>
 
-      {carried.length ? (
-        <section key={`carried-${at}`}>
-          <Eyebrow value={`${reviewed}/${carried.length}`}>Last retro</Eyebrow>
-          <ul className={kit['railList']}>
+      <section>
+        <Eyebrow value={carried.length ? `${reviewed}/${carried.length}` : 'nothing'}>Last retro</Eyebrow>
+        {carried.length ? (
+          <ul key={`carried-${at}`} className={cx(kit['railList'], styles['railSwap'])}>
             {carried.map((item) => {
               const status = (item.status || 'pending') as CarriedStatuses;
               return (
@@ -132,17 +132,19 @@ export function HostRail({
               );
             })}
           </ul>
-        </section>
-      ) : null}
+        ) : (
+          <p className={cx(styles['railNote'], styles['railSwap'])}>No action items came over.</p>
+        )}
+      </section>
 
       {/* One of N, with the neutral option in the list rather than implied by
           nothing being lit — otherwise the only clue the rows do anything is
           clicking one. The role is on the section, not the `<ul>`: a role there
           replaces list semantics and orphans every `<li>`. */}
       {people.length ? (
-        <section key={`who-${at}`} role="group" aria-label="Show one person's cards">
+        <section role="group" aria-label="Show one person's cards">
           <Eyebrow value={focus || 'everyone'}>Showing</Eyebrow>
-          <ul className={kit['railList']}>
+          <ul key={`who-${at}`} className={cx(kit['railList'], styles['railSwap'])}>
             <li>
               <button
                 type="button"

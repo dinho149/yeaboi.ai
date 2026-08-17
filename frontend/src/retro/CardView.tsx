@@ -66,37 +66,66 @@ function CardEditor({
   // that `initial` is a starting value, not a binding — later snapshots for
   // this card change the prop and must not change what you have typed.
   const [text, setText] = useState(() => initial);
+  // Guards the blur that a save or a cancel causes from committing a second time.
+  const done = useRef(false);
+
+  const commit = (next: string): void => {
+    if (done.current) return;
+    done.current = true;
+    const trimmed = next.trim();
+    // An empty card is not a delete — the server refuses it, and ✕ is how you
+    // mean it. Leaving the field empty is a change of mind.
+    if (!trimmed || trimmed === initial.trim()) onCancel();
+    else onSave(trimmed);
+  };
+
+  const grow = (el: HTMLTextAreaElement): void => {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  // Focused here rather than by `autoFocus`: the press that opened the editor is
+  // still being handled by the drag machinery on the card above, and the caret
+  // goes to the end so appending a word needs no click first.
+  const box = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    // Once, on open. Re-running would drag the caret back on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className={styles['editor']}>
-      <textarea
-        className={styles['editBox']}
-        rows={3}
-        value={text}
-        aria-label="Edit card"
-        autoFocus
-        // Caret at the end rather than selecting everything, so the common case
-        // — appending a word — does not need a click first.
-        ref={(el) => {
-          if (el) el.setSelectionRange(el.value.length, el.value.length);
-        }}
-        onInput={(event) => setText((event.target as HTMLTextAreaElement).value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.stopPropagation();
-            onCancel();
-          } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            onSave(text);
-          }
-        }}
-      />
-      <div className={styles['editActions']}>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button tone="primary" onClick={() => onSave(text)}>
-          Save
-        </Button>
-      </div>
-    </div>
+    <textarea
+      className={cx(styles['cardText'], styles['editBox'])}
+      rows={1}
+      value={text}
+      aria-label="Edit card"
+      ref={(el) => {
+        box.current = el;
+        if (el) grow(el);
+      }}
+      onInput={(event) => {
+        const el = event.target as HTMLTextAreaElement;
+        setText(el.value);
+        grow(el);
+      }}
+      // Clicking away is a commit: there is no Save button to reach instead.
+      onBlur={() => commit(text)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          done.current = true;
+          onCancel();
+        } else if (event.key === 'Enter' && !event.shiftKey) {
+          // Enter saves; Shift-Enter is the newline. A card is a sentence.
+          event.preventDefault();
+          commit(text);
+        }
+      }}
+    />
   );
 }
 

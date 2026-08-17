@@ -20,6 +20,7 @@ import { ColumnComposer } from './ColumnComposer';
 import { GRID_TONE } from './gridTone';
 import type { DropTarget } from './useCardDrag';
 import motion from '../motion/motion.module.css';
+import { useEdgeFade } from './useEdgeFade';
 import styles from './retro.module.css';
 
 const NO_REACTIONS: ReadonlySet<string> = new Set();
@@ -82,6 +83,7 @@ export function Column({
 }: ColumnProps) {
   const label = RETRO_GRID_LABELS[grid];
   const visible = focus ? cards.filter((card) => card.author === focus) : cards;
+  const [scroller, edges] = useEdgeFade<HTMLDivElement>(visible.length);
 
   // Drop positions skip the card being dragged, matching `indexAt` in
   // useCardDrag — count it and the indicator sits one slot off whenever you
@@ -150,7 +152,12 @@ export function Column({
         <Ticker value={visible.length} className={styles['columnCount']} />
       </header>
 
-      <div className={cx(styles['cards'], dropAt && styles['cardsOver'])} data-grid={grid}>
+      <div
+        ref={scroller}
+        data-fade={edges}
+        className={cx(styles['cards'], dropAt && styles['cardsOver'])}
+        data-grid={grid}
+      >
         {typing.length > 0 ? (
           // A ghost card where the real one is about to land. The server has
           // always tracked typing; it used to be rendered only as a line of

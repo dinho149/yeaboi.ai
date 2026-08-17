@@ -173,6 +173,9 @@
 .rail > section:nth-child(3) { animation-delay: 120ms; }
 .rail > section:nth-child(4) { animation-delay: 180ms; }
 
+/* Keyed on which retro is open, so it replays on a switch and never on a poll. */
+.railSwap { animation: railIn 240ms var(--ease) both; }
+
 @keyframes railIn {
   from {
     opacity: 0;
@@ -245,6 +248,7 @@
   height: 20px;
   color: var(--muted);
 }
+.railNote { margin: var(--s2); color: var(--dim); font-size: var(--fs-xs); }
 .railName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .railCount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .railAction { display: flex; flex-direction: column; gap: var(--s2); }
@@ -387,6 +391,14 @@
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
 .cards::-webkit-scrollbar { display: none; }
+/* Fades only on the edges that have something past them — `data-fade` is set
+   from the scroll position, because an always-on mask dims the top of the first
+   card in a column holding one. */
+.cards[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, #000 var(--s5)); }
+.cards[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, #000 var(--s5)); }
+.cards[data-fade='both'] {
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent);
+}
 .cardsOver {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
@@ -608,19 +620,24 @@
 .moveItem:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-.editor { display: flex; flex-direction: column; gap: var(--s2); }
+/* Editing happens where the text is. No frame, no ground, no buttons: the only
+   thing that changes when you click your own card is that a caret appears in
+   it. Enter commits, Shift-Enter is the newline, clicking away commits too. */
 .editBox {
+  display: block;
   width: 100%;
-  resize: vertical;
-  padding: var(--s2);
-  background: var(--panel-2);
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: none;
   color: var(--text);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
+  line-height: inherit;
+  caret-color: var(--accent);
 }
-.editActions { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
@@ -652,7 +669,7 @@
   min-width: var(--tap-min);
   justify-content: center;
   padding: 0 var(--s1);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--r-pill);
   /* No ground. A counted reaction is a mark on the card, not a control sitting
      on it, and the ring is enough to say which ones are yours. */
@@ -696,10 +713,11 @@
     scale: 0.4;
   }
 }
-.rxChip:hover { border-color: var(--accent); }
-.rxPick:hover { border-color: transparent; }
 .rxChip:disabled { opacity: 0.5; cursor: default; }
-.rxChipMine { border-color: var(--accent); }
+/* Yours, without a pill around the glyph: the count carries it. The ring used
+   to, and it could not survive a reload — the server never sends raw pids, so
+   "did I react" is only knowable from the toggle that answered. */
+.rxChipMine .rxCount { color: var(--accent); font-weight: 600; }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
