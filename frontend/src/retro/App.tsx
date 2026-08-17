@@ -61,7 +61,7 @@ import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/b
 import { createRetroActions } from './actions';
 import { Board } from './Board';
 import { CarriedStrip } from './CarriedStrip';
-import { FocusBar } from './FocusBar';
+import { FocusControls } from './FocusBar';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
 
@@ -376,13 +376,20 @@ export function App({ boot }: { boot: RetroBoot }) {
         <>
             <Visualizer playing={music.playing} />
 
-            <IconButton
-              icon={<Icon name="user" size={16} />}
+            <Popover
+              trigger={<Icon name="user" size={16} />}
               label="Walk through one person at a time"
-              active={Boolean(focus)}
-              disabled={!authors.length}
-              onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
-            />
+              triggerClassName={cx(focus && styles['toolOn'])}
+            >
+              <FocusControls
+                authors={authors}
+                current={focus}
+                avatars={avatarsByName}
+                onStep={stepFocus}
+                onStart={() => setFocus(authors[0] ?? '')}
+                onExit={() => setFocus('')}
+              />
+            </Popover>
 
             {isHost ? (
               <IconButton
@@ -458,11 +465,13 @@ export function App({ boot }: { boot: RetroBoot }) {
           board, which takes the rest — the same relationship they had when
           `.app` itself was the flex column. */}
       <div className={styles['boardRegion']}>
-      {locked ? (
-        <p className={styles['lockBanner']} role="alert">
-          <span aria-hidden="true">🔒</span> The host locked the board.
-        </p>
-      ) : null}
+      {/* No banner for the lock. The notch's padlock is lit, every composer is
+          gone and every control is disabled — a stripe across the board says
+          the same thing a fourth time, and costs a row to say it. It is still
+          announced, once, to a screen reader. */}
+      <p className={styles['srOnly']} role="status" aria-live="polite">
+        {locked ? 'The host locked the board.' : ''}
+      </p>
 
       {musicBlocked ? (
         <button
@@ -470,7 +479,7 @@ export function App({ boot }: { boot: RetroBoot }) {
           className={styles['musicBanner']}
           onClick={() => void music.play().then(() => setMusicBlocked(false)).catch(() => {})}
         >
-          <span aria-hidden="true">▶</span> The host started music — tap to listen
+          <Icon name="play" size={14} /> The host started music — tap to listen
         </button>
       ) : null}
 
@@ -480,15 +489,6 @@ export function App({ boot }: { boot: RetroBoot }) {
         onSetStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_ as CarriedStatuses)}
       />
 
-      {focus ? (
-        <FocusBar
-          authors={authors}
-          current={focus}
-          avatars={avatarsByName}
-          onStep={stepFocus}
-          onExit={() => setFocus('')}
-        />
-      ) : null}
 
       <Board
         cards={cards}

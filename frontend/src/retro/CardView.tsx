@@ -305,22 +305,18 @@ function CardViewBase({
         )}
       </div>
 
-      {/* In the flow, below the row that opened it — see the note in
-          ReactionBar.tsx about the column clipping a floating panel. */}
-      {trayOpen && !locked ? (
-        <ReactionTray
-          id={trayId}
-          anchorRef={trayTriggerRef}
-          trayRef={trayRef}
-          mine={myReactions}
-          onPick={(emoji) => {
-            onReact(card.id, emoji);
-            setTrayOpen(false);
-            trayTriggerRef.current?.focus();
-          }}
-        />
-      ) : null}
-
+      <ReactionTray
+        open={trayOpen && !locked}
+        id={trayId}
+        anchorRef={trayTriggerRef}
+        trayRef={trayRef}
+        mine={myReactions}
+        onPick={(emoji) => {
+          onReact(card.id, emoji);
+          setTrayOpen(false);
+          trayTriggerRef.current?.focus();
+        }}
+      />
     </article>
   );
 }

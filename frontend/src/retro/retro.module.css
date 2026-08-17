@@ -95,15 +95,15 @@
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-.lockBanner, .musicBanner {
+.musicBanner {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
-  border-bottom: 1px solid var(--line);
-}
-.lockBanner { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-.musicBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -170,21 +170,27 @@
 .statusCarried { border-left-color: var(--warn); }
 .statusMuted { border-left-color: var(--muted); opacity: 0.7; }
 
-/* ── Walkthrough bar ──────────────────────────────────────────────────── */
-.focusBar {
+/* ── Walkthrough ──────────────────────────────────────────────────────── */
+/* A panel in the notch, with the other tools. It was a bar across the top of
+   the board, which is a row of chrome the ceremony pays for the whole time it
+   is running. */
+.focusPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.focusRow {
   display: flex;
   align-items: center;
-  gap: var(--s3);
-  padding: var(--s2) var(--s4);
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-  border-bottom: 1px solid var(--line);
+  gap: var(--s2);
 }
 .focusStep {
   width: var(--tap);
   height: var(--tap);
+  flex: none;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
   border-radius: var(--r-s);
   background: var(--panel);
   color: var(--text);
@@ -192,9 +198,15 @@
   cursor: pointer;
 }
 .focusStep:disabled { opacity: 0.4; cursor: default; }
-.focusWho { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+.focusWho { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; min-width: 0; }
 .focusName { font-size: var(--fs-m); }
 .focusCount { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+/* A tool that is doing something, in the notch's own idiom: coloured, not
+   ringed — the dock's `active` styling, reached from a Popover trigger. */
+.toolOn {
+  color: var(--accent);
+}
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {
@@ -593,6 +605,31 @@
 .rxGlyph {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
+
+/* A reaction is somebody pressing a button, so it arrives and it leaves. The
+   `scale` property rather than a transform, so nothing here has to know what
+   else may be transforming the chip. Neither changes the row's height. */
+.rxChipIn {
+  animation: rxIn 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+.rxChipOut {
+  animation: rxOut 150ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes rxIn {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+@keyframes rxOut {
+  to {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
 .rxChip:hover { border-color: var(--accent); }
 .rxPick:hover { border-color: transparent; }
 .rxChip:disabled { opacity: 0.5; cursor: default; }
@@ -629,6 +666,18 @@
 @supports not (backdrop-filter: blur(1px)) {
   .rxTray {
     background: var(--panel);
+  }
+}
+
+.rxTrayOut {
+  animation: trayOut 140ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes trayOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
   }
 }
 

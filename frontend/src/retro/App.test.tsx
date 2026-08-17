@@ -154,10 +154,11 @@ describe('retro App', () => {
     await screen.findByText('Pairing paid off');
 
     await user.click(screen.getByRole('button', { name: /Walk through one person/ }));
+    await user.click(screen.getByRole('button', { name: /Start with Ada/ }));
     // Ada is first alphabetically, so hers stay and Grace's go.
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
     expect(screen.queryByText('Zero flaky tests')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Walkthrough' }).textContent).toContain('1 of 2');
+    expect(screen.getByRole('group', { name: 'Walkthrough' }).textContent).toContain('1 of 2');
 
     // → and Escape are bound at the document, so they step without the bar
     // holding focus — which is the point, since you are reading the cards.
@@ -166,7 +167,7 @@ describe('retro App', () => {
     expect(screen.queryByText('Pairing paid off')).toBeNull();
 
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('region', { name: 'Walkthrough' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Walkthrough' })).toBeNull();
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
   });
 
@@ -175,8 +176,9 @@ describe('retro App', () => {
     vi.stubGlobal('fetch', fakeServer(state({ ...SNAPSHOT, revision: 5, locked: true })));
     render(<App boot={BOOT} />);
 
-    await screen.findByRole('alert');
-    expect(screen.getByRole('alert').textContent).toContain('locked');
+    // A status, not a banner: the notch's padlock lights, every composer goes,
+    // and a stripe across the board would say the same thing a fourth time.
+    await screen.findByText('The host locked the board.');
     expect(screen.queryByRole('textbox', { name: /Add a card/ })).toBeNull();
     // The invitation goes with the box. A lock that left four "Add a card" rows
     // on screen would be a board that looks writable and is not.

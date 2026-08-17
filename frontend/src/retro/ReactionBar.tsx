@@ -30,7 +30,7 @@
  * state, because it is also what closes the tray on a click elsewhere.
  */
 
-import { useLayoutEffect, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Icon } from '../design/primitives';
@@ -51,31 +51,82 @@ export interface ReactionChipsProps {
 
 export function ReactionChips({ reactions, mine, onReact, disabled }: ReactionChipsProps) {
   const counted = REACTION_EMOJIS.filter((emoji) => (reactions[emoji] ?? 0) > 0);
+  const key = counted.join('');
+
+  // Which chips are on their way out, and which have never been drawn before.
+  // A reaction is somebody pressing a button — it should arrive and leave, not
+  // blink — but the set that is already there when the card first renders is
+  // not an arrival and must not pop in on every load.
+  type Reaction = (typeof REACTION_EMOJIS)[number];
+  const [leaving, setLeaving] = useState<readonly Reaction[]>([]);
+  const previous = useRef<readonly Reaction[] | null>(null);
+  const timers = useRef(new Map<Reaction, ReturnType<typeof setTimeout>>());
+
+  // Layout, not effect: an ordinary effect runs after paint, so a chip that was
+  // removed would be gone for one frame and then come back to fade.
+  useLayoutEffect(() => {
+    const was = previous.current;
+    previous.current = counted;
+    if (was === null) return;
+    const gone = was.filter((emoji) => !counted.includes(emoji));
+    if (gone.length === 0) return;
+    setLeaving((current) => [...new Set([...current, ...gone])]);
+    for (const emoji of gone) {
+      clearTimeout(timers.current.get(emoji));
+      timers.current.set(
+        emoji,
+        setTimeout(() => {
+          timers.current.delete(emoji);
+          setLeaving((current) => current.filter((held) => held !== emoji));
+        }, CHIP_OUT_MS)
+      );
+    }
+    // `key`, not `counted`: a new array every render would re-run this forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending.values()) clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
+
+  const first = previous.current === null;
+  const shown = REACTION_EMOJIS.filter((emoji) => counted.includes(emoji) || leaving.includes(emoji));
+
   // The whole row, not just its contents. An empty flex row still occupies its
   // gap and padding, which is what left a strip of dead space under every card.
-  if (counted.length === 0) return null;
+  if (shown.length === 0) return null;
 
   return (
     <div className={styles['reactions']}>
-      {counted.map((emoji) => {
+      {shown.map((emoji) => {
         const isMine = mine.has(emoji);
+        const going = !counted.includes(emoji);
         return (
           <button
             key={emoji}
             type="button"
-            className={cx(styles['rxChip'], isMine && styles['rxChipMine'])}
-            disabled={disabled}
+            className={cx(
+              styles['rxChip'],
+              isMine && styles['rxChipMine'],
+              going ? styles['rxChipOut'] : !first && styles['rxChipIn']
+            )}
+            disabled={disabled || going}
+            {...(going ? { 'aria-hidden': true, tabIndex: -1 } : {})}
             // "Remove"/"Add" rather than a bare emoji: a toggle whose label does
             // not say which way it toggles is a coin flip for anyone who cannot
             // see the highlight that distinguishes the two states.
-            aria-label={`${isMine ? 'Remove' : 'Add'} ${emoji} reaction (${reactions[emoji]})`}
+            aria-label={`${isMine ? 'Remove' : 'Add'} ${emoji} reaction (${reactions[emoji] ?? 0})`}
             aria-pressed={isMine}
             onClick={() => onReact(emoji)}
           >
             <span aria-hidden="true" className={styles['rxGlyph']}>
               {emoji}
             </span>
-            <span className={styles['rxCount']}>{reactions[emoji]}</span>
+            <span className={styles['rxCount']}>{reactions[emoji] ?? 0}</span>
           </button>
         );
       })}
@@ -115,6 +166,8 @@ export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }:
 }
 
 export interface ReactionTrayProps {
+  /** Open. Going false plays the exit rather than removing it. */
+  open: boolean;
   id: string;
   mine: ReadonlySet<string>;
   onPick(emoji: string): void;
@@ -124,18 +177,28 @@ export interface ReactionTrayProps {
   trayRef: RefObject<HTMLDivElement | null>;
 }
 
+/** How long a chip takes to shrink away. Matches `rxOut` in the sheet. */
+const CHIP_OUT_MS = 150;
+
+/** How long the tray takes to fade back into the trigger. Matches `trayOut`. */
+const TRAY_OUT_MS = 140;
+
 /** The tray's own box, in px. Placement needs it before it exists. */
 const TRAY_W = 268;
 const TRAY_H = 96;
 
-export function ReactionTray({ id, mine, onPick, anchorRef, trayRef }: ReactionTrayProps) {
+export function ReactionTray({ open, id, mine, onPick, anchorRef, trayRef }: ReactionTrayProps) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  // Held open for the length of the exit, for the same reason the composer is:
+  // a panel unmounted the moment it closes has nothing left to animate.
+  const [leaving, setLeaving] = useState(false);
+  const wasOpen = useRef(open);
 
   // Layout, not effect: measured and placed before the browser paints, or the
   // tray shows for one frame in the top-left corner.
   useLayoutEffect(() => {
     const anchor = anchorRef.current;
-    if (!anchor) return;
+    if (!open || !anchor) return;
     const rect = anchor.getBoundingClientRect();
     const gap = 8;
     const width = Math.min(TRAY_W, window.innerWidth - gap * 2);
@@ -145,16 +208,28 @@ export function ReactionTray({ id, mine, onPick, anchorRef, trayRef }: ReactionT
     const below = window.innerHeight - rect.bottom;
     const top = below < TRAY_H + gap ? rect.top - TRAY_H - gap : rect.bottom + gap;
     setAt({ top: Math.max(gap, top), left });
-  }, [anchorRef]);
+  }, [open, anchorRef]);
+
+  useLayoutEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = open;
+    if (open || !was) return undefined;
+    setLeaving(true);
+    const timer = window.setTimeout(() => setLeaving(false), TRAY_OUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  if (!open && !leaving) return null;
 
   return createPortal(
     <div
       ref={trayRef as RefObject<HTMLDivElement>}
       id={id}
-      className={styles['rxTray']}
+      className={cx(styles['rxTray'], !open && styles['rxTrayOut'])}
       role="menu"
       aria-label="Reactions"
       style={at ? { top: `${at.top}px`, left: `${at.left}px`, width: `${TRAY_W}px` } : { opacity: 0 }}
+      {...(open ? {} : { 'aria-hidden': true, inert: true })}
     >
       {REACTION_EMOJIS.map((emoji) => (
         <button
