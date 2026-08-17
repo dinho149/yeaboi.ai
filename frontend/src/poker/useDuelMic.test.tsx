@@ -81,10 +81,10 @@ function duel(overrides: Partial<DuelSlice> = {}): DuelSlice {
 }
 
 /** Drives the hook and exposes it, so a test can call `enable()` directly. */
-function harness(initial: DuelSlice | null) {
+function harness(initial: DuelSlice | null, session: Session = SESSION) {
   const seen: ReturnType<typeof useDuelMic>[] = [];
   function Probe({ slice }: { slice: DuelSlice | null }) {
-    seen.push(useDuelMic(SESSION, slice));
+    seen.push(useDuelMic(session, slice));
     return null;
   }
   const view = render(<Probe slice={initial} />);
@@ -167,6 +167,36 @@ describe('useDuelMic', () => {
     expect(uploads).toEqual([{ turn: '1' }]);
     expect(tracks.stopped).toBe(1);
     expect(mic().armed).toBe(false);
+  });
+
+  it("hands a duelist's mic back when the floor closes, light and all", async () => {
+    // The recorder stopping is not the hardware going back: the tracks stay
+    // open and so does the indicator in the browser's own chrome, for someone
+    // who has nothing left to record.
+    const { mic, setDuel } = harness(duel({ turn: 'low', mine_role: 'low' }));
+    await act(async () => {
+      await mic().enable();
+    });
+    expect(tracks.stopped).toBe(0);
+
+    await act(async () => setDuel(duel({ status: 'done', mine_role: 'low' })));
+    expect(tracks.stopped).toBe(1);
+    expect(mic().armed).toBe(false);
+  });
+
+  it("holds the host's across the floor closing, because it is the session's", async () => {
+    // The other half of the same rule, and the one that breaks quietly: a room
+    // mic released when a floor closes stops recording the session it was armed
+    // for, and nothing says so until the next verdict comes back empty.
+    const host: Session = { token: 't', admin: 'secret', pid: 'pid-host' };
+    const { mic, setDuel } = harness(duel({ turn: 'low', mine_role: '' }), host);
+    await act(async () => {
+      await mic().enable();
+    });
+
+    await act(async () => setDuel(duel({ status: 'done', mine_role: '' })));
+    expect(tracks.stopped).toBe(0);
+    expect(mic().armed).toBe(true);
   });
 
   it('releases the mic on unmount, even mid-turn', async () => {

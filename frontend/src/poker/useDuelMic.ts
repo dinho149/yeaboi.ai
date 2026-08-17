@@ -26,9 +26,14 @@
  * ## Lifetime
  *
  * The stream is a hardware handle and a recording indicator in the user's
- * browser chrome. It is released when the duel ends, when the component
- * unmounts, and on any path that stops the recorder — never left open between
- * rounds, which is the failure people actually notice.
+ * browser chrome, and the two people holding one have different claims on it.
+ *
+ * A **duelist** armed theirs to argue, so it goes back when the floor closes —
+ * along with the light, which is the failure people actually notice. The
+ * **host's** is the room's mic and is held across tickets until they stop it or
+ * leave: that is what "Recording session" means, and the board shows the room
+ * that light on purpose. Both are released on unmount, and on any path that
+ * calls `disable`.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -210,6 +215,8 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
      catching both turns is the whole recording — and the host is the only
      person who is certainly there for all of it. */
   const roomMic = live && Boolean(session.admin);
+  /* A floor that has been and gone, as opposed to one that never opened. */
+  const floorOver = Boolean(duel) && !live;
 
   // Record my turn, or every turn if this is the room's mic. Keyed on the turn
   // number so the cleanup flushes each turn as its own clip: `onstop` is what
@@ -223,6 +230,27 @@ export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRe
     startRecorder(turnNo);
     return () => stopRecorder();
   }, [armed, myTurn, roomMic, turnNo, startRecorder, stopRecorder]);
+
+  /*
+   * A duelist's mic belongs to the floor; the host's belongs to the session.
+   *
+   * Stopping the recorder above is not handing the hardware back: the tracks
+   * stay open and so does the indicator in the browser's own chrome. For a
+   * guest who armed their mic to argue, the floor closing is the end of
+   * everything they had to record, and leaving the light on afterwards is the
+   * failure people actually notice.
+   *
+   * The host's is deliberately not released here — "Recording session" means
+   * armed once and held across tickets, which is the whole point of it, and the
+   * room is shown that light on purpose.
+   *
+   * `floorOver` rather than `!live`, so arming before the host opens the floor
+   * is not immediately undone by the effect that is meant to clean up after it.
+   */
+  useEffect(() => {
+    if (!armed || session.admin || !floorOver) return;
+    release();
+  }, [armed, session.admin, floorOver, release]);
 
   /*
    * The light must not outlive the recording.
