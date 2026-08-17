@@ -109,7 +109,6 @@ REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
 ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable copies of any mode's output
 AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / standup / security reports
-SHIP_EXPORTS_DIR = EXPORTS_DIR / "ship"  # supervised coding-agent run summaries
 
 # ---------------------------------------------------------------------------
 # Ship (supervised coding-agent runs)
@@ -483,13 +482,6 @@ def get_ship_dir() -> Path:
     SHIP_DIR.mkdir(parents=True, exist_ok=True)
     restrict_permissions(SHIP_DIR, mode=0o700)
     return SHIP_DIR
-
-
-def get_ship_export_dir(run_key: str) -> Path:
-    """Return the ship export directory for a run, creating it if needed."""
-    d = SHIP_EXPORTS_DIR / _safe_key(run_key, "run")
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def get_bin_dir() -> Path:

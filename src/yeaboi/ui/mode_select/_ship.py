@@ -121,9 +121,9 @@ def run_ship_page(console: Console, live, read_key, frame_time: float, supports_
                 return
             continue
         if key == "up":
-            selected = (selected - 1) % min(len(stories), 8)
+            selected = (selected - 1) % len(stories)
         elif key == "down":
-            selected = (selected + 1) % min(len(stories), 8)
+            selected = (selected + 1) % len(stories)
         elif key == "r":
             edit_field, edit["buf"], edit["cur"] = "repo", repo, len(repo)
         elif key == "c":

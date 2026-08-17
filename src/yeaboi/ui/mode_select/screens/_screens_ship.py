@@ -93,8 +93,15 @@ def _build_ship_pick_screen(
             Text("Generate a plan in Planning first — Ship implements its stories.", style="dim", justify="center")
         )
     else:
-        shown = stories[:_MAX_STORY_ROWS]
-        for index, story in enumerate(shown):
+        # A window that follows the selection, not a hard cap: a sprint plan
+        # routinely has more than eight stories and every one must be
+        # launchable from here.
+        start = max(0, min(selected - _MAX_STORY_ROWS // 2, len(stories) - _MAX_STORY_ROWS))
+        shown = stories[start : start + _MAX_STORY_ROWS]
+        if start:
+            parts.append(Text(f"{PAD}… {start} earlier", style="dim"))
+        for offset, story in enumerate(shown):
+            index = start + offset
             row = Text()
             row.append(PAD)
             marker = "▸ " if index == selected else "  "
@@ -108,8 +115,9 @@ def _build_ship_pick_screen(
             if points is not None:
                 row.append(f"  · {int(points)} pts", style=theme.muted)
             parts.append(row)
-        if len(stories) > _MAX_STORY_ROWS:
-            parts.append(Text(f"{PAD}… and {len(stories) - _MAX_STORY_ROWS} more", style="dim"))
+        remaining = len(stories) - (start + len(shown))
+        if remaining > 0:
+            parts.append(Text(f"{PAD}… and {remaining} more", style="dim"))
         parts.append(Text(""))
         parts.append(
             _field_row("Repo", edit_buf if edit_field == "repo" else repo, editing=edit_field == "repo", theme=theme)

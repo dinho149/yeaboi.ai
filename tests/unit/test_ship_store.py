@@ -75,6 +75,17 @@ class TestSaveRun:
             assert not store.save_run(ShipRun(run_id="run-1", status="failed"), expect_status="running")
             assert store.get_run("run-1").status == "awaiting_approval"
 
+    def test_unconditional_save_of_an_unrecorded_run_inserts_it(self, db_path):
+        # A setup failure aborts before record_run; its terminal artifact must
+        # still reach history — an UPDATE matching zero rows must not count
+        # as "persisted".
+        with ShipStore(db_path) as store:
+            assert store.save_run(ShipRun(run_id="run-x", status="failed", warnings=("dirty repo",)))
+            stored = store.get_run("run-x")
+        assert stored is not None
+        assert stored.status == "failed"
+        assert stored.warnings == ("dirty repo",)
+
     def test_unknown_status_is_rejected_loudly(self, db_path):
         with ShipStore(db_path) as store:
             with pytest.raises(ValueError, match="unknown ship status"):

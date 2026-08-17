@@ -60,7 +60,8 @@ class TestBuildPrompt:
         assert "Given a plan, when I run ship, then a PR opens." in prompt
         assert "You are implementing the wiring." in prompt
         assert "Test plan: run the tests" in prompt
-        assert "Do NOT push" in prompt
+        assert "do not attempt git or gh commands" in prompt
+        assert "no shell" in prompt
 
     def test_rework_prompt_carries_the_reviewers_words_and_the_failure(self):
         validation = ShipValidation(configured=True, command="make test", passed=False, exit_code=2, output_tail="boom")

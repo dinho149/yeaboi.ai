@@ -138,6 +138,14 @@ def _validate_owned(path_str: str) -> Path:
     return resolved
 
 
+def _branch_exists(repo: Path | str, branch: str) -> bool:
+    try:
+        _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    except WorktreeError:
+        return False
+    return True
+
+
 def is_dirty(repo: Path | str) -> bool:
     """Whether the target repo has uncommitted changes (untracked included)."""
     return bool(_git(repo, "status", "--porcelain"))
@@ -164,6 +172,15 @@ def prepare(run_id: str, repo: Path | str, *, base_ref: str = "HEAD") -> Worktre
         )
     base_sha = _git(repo_top, "rev-parse", base_ref)
     branch = f"ship/{run_id}"
+    # Refuse, don't reuse: a pre-existing branch with this name belongs to a
+    # previous run (a lost registry, a hand-pruned worktree) and may hold
+    # unpushed commits. Failing here also keeps the rollback below honest —
+    # it only ever deletes a branch this call created.
+    if _branch_exists(repo_top, branch):
+        raise WorktreeError(
+            f"branch {branch} already exists in {repo_top} — a previous run left it; "
+            "delete it (or push it) and retry, or use a different run id"
+        )
     checkout = _checkout_path(repo_top, run_id)
     checkout.parent.mkdir(parents=True, exist_ok=True)
     try:

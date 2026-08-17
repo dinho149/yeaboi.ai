@@ -98,7 +98,9 @@ def _dict_to_run(data: dict) -> ShipRun:
         diff_stat=str(data.get("diff_stat", "")),
         cost_usd=float(data.get("cost_usd", 0.0)),
         transcript_findings=tuple(
-            (str(f[0]), str(f[1]), str(f[2])) for f in data.get("transcript_findings") or () if len(f) >= 3
+            (str(f[0]), str(f[1]), str(f[2]))
+            for f in data.get("transcript_findings") or ()
+            if isinstance(f, list | tuple) and len(f) >= 3
         ),
         transcript_path=str(data.get("transcript_path", "")),
         pr_url=str(data.get("pr_url", "")),
@@ -180,10 +182,27 @@ class ShipStore:
                 if row is None or row[0] != expect_status:
                     self._conn.execute("ROLLBACK")
                     return False
-            self._conn.execute(
+            cursor = self._conn.execute(
                 "UPDATE ship_runs SET status = ?, gate_resolution = ?, run_json = ?, updated_at = ? WHERE run_id = ?",
                 (stamped.status, stamped.gate_resolution, _run_to_json(stamped), stamped.updated_at, stamped.run_id),
             )
+            if cursor.rowcount == 0:
+                # A terminal state for a run that never reached record_run
+                # (setup failed before the row existed). An UPDATE matching
+                # zero rows "succeeding" is how failures vanish from history,
+                # so the unconditional path inserts instead.
+                self._conn.execute(
+                    "INSERT INTO ship_runs (run_id, status, gate_resolution, run_json, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        stamped.run_id,
+                        stamped.status,
+                        stamped.gate_resolution,
+                        _run_to_json(stamped),
+                        stamped.created_at or stamped.updated_at,
+                        stamped.updated_at,
+                    ),
+                )
             self._conn.execute("COMMIT")
         except Exception:
             self._conn.execute("ROLLBACK")

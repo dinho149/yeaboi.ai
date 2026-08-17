@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 MAX_REJECTION_ATTEMPTS = 3  # after this many gate rejections the run is terminal
 _GATE_POLL_S = 1.0
+_HEARTBEAT_S = 300.0  # budget-permit refresh cadence; well under budget.ACTIVE_STALE_S
 
 
 class _RunAbortError(Exception):
@@ -191,8 +192,21 @@ def run_ship(
     if not decision.allowed:
         return _failed(run, f"launch budget denied: {decision.reason}")
     permit = decision.permit_id
-    store = ShipStore(db_path)
+    # A whole run (agent + validation + an unbounded gate wait) can outlive
+    # the budget's stale-permit cutoff; the heartbeat keeps the concurrency
+    # slot honest for as long as this run actually lives.
+    stop_heartbeat = threading.Event()
+
+    def _keep_permit_alive() -> None:
+        while not stop_heartbeat.wait(_HEARTBEAT_S):
+            budget.heartbeat(permit)
+
+    threading.Thread(target=_keep_permit_alive, name="ship-budget-heartbeat", daemon=True).start()
+    store: ShipStore | None = None
     try:
+        # Inside the try: a locked/corrupt sessions.db must fail the run, not
+        # raise past the contract — and must not leak the permit for 30 min.
+        store = ShipStore(db_path)
         return _run_phases(
             store,
             run,
@@ -209,14 +223,17 @@ def run_ship(
     except Exception as exc:  # noqa: BLE001 — the engine contract: never raise
         logger.exception("Ship run %s crashed", run_id)
         failed = _failed(run, f"unexpected failure: {exc}")
-        try:
-            store.save_run(failed)
-        except Exception:
-            pass
+        if store is not None:
+            try:
+                store.save_run(failed)
+            except Exception:
+                pass
         return failed
     finally:
+        stop_heartbeat.set()
         budget.release(permit)
-        store.close()
+        if store is not None:
+            store.close()
 
 
 def _run_phases(
@@ -337,6 +354,12 @@ def _run_phases(
     _phase_done("finalize", outcome.detail, started)
     run = replace(run, status="approved", pr_url=outcome.pr_url, updated_at=_now_iso())
     run = _save(store, run, expect_status="awaiting_approval")
+    # The work is on origin now; the checkout has served its purpose. The
+    # branch is kept (delete_branch defaults False) — it IS the record. On
+    # every non-approved terminal path the checkout is kept too, for
+    # inspection of what the agent actually did.
+    if not worktree.remove(run.run_id):
+        logger.warning("Could not clean up worktree for %s; remove it by hand", run.run_id)
     _report(on_progress, "ship-finalize", "Pushing branch and opening PR", "completed", detail=outcome.pr_url)
     logger.info("Ship run %s finished: %s", run.run_id, outcome.detail)
     return run

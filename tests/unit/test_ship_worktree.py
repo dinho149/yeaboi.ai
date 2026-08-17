@@ -93,6 +93,21 @@ class TestPrepare:
         with pytest.raises(worktree.WorktreeError):
             worktree.prepare("run-1", plain)
 
+    def test_refuses_a_preexisting_branch_instead_of_reusing_it(self, ship_home, target_repo):
+        # A leftover ship/<id> branch may hold a previous run's unpushed
+        # commits; prepare must refuse — and the refusal is also what keeps
+        # the rollback honest (it only deletes branches this call created).
+        _run_git(target_repo, "branch", "ship/run-1")
+        with pytest.raises(worktree.WorktreeError, match="already exists"):
+            worktree.prepare("run-1", target_repo)
+        branches = subprocess.run(
+            ["git", "-C", str(target_repo), "branch", "--list", "ship/run-1"],
+            capture_output=True,
+            text=True,
+            env=git_subprocess_env(),
+        ).stdout
+        assert "ship/run-1" in branches  # untouched
+
     def test_failed_add_rolls_the_branch_back(self, ship_home, target_repo):
         # Pre-fill the checkout target so `git worktree add` fails after the
         # branch bookkeeping began.

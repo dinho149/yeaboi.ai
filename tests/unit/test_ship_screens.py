@@ -77,6 +77,14 @@ class TestPickScreen:
         assert "US-011" not in out
         assert "and 4 more" in out
 
+    def test_the_window_follows_a_late_selection(self):
+        # Story 9+ must be reachable, not just counted — the window slides.
+        stories = [_story(f"US-{n:03d}") for n in range(12)]
+        out = _render(_build_ship_pick_screen(stories, 11, repo="/p", check_command=""))
+        assert "US-011" in out
+        assert "▸ US-011" in out
+        assert "earlier" in out
+
     def test_edit_mode_shows_the_live_buffer(self):
         out = _render(
             _build_ship_pick_screen(

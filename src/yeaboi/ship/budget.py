@@ -65,9 +65,15 @@ _LOCK_POLL_S = 0.025
 _RECEIPTS_MAX_BYTES = 512 * 1024
 _RECEIPTS_KEEP_LINES = 200
 
-# Matched ONLY against the error output of a failed launch.
+# Matched ONLY against the error output of a failed launch — but that output
+# is the agent's own stdout tail, which can echo the user's code. So every
+# alternative here requires an error *shape*, never a bare topic word: an
+# agent that failed while WORKING ON rate-limiting code must not trip a
+# user-global hour-long pause.
 _QUOTA_ERROR_RE = re.compile(
-    r"\b429\b|rate[\s_-]?limit|usage[\s_-]?limit|quota|too many requests|overloaded_error",
+    r"\b429\b|rate[\s_-]?limit(?:ed|_error|s? (?:hit|reached|exceeded))"
+    r"|usage[\s_-]?limit|quota[\s_-]?(?:exceeded|reached|exhausted)"
+    r"|too many requests|overloaded_error",
     re.IGNORECASE,
 )
 
@@ -113,7 +119,10 @@ def _int_env(name: str, default: int) -> int:
         value = int(raw)
     except ValueError:
         return default
-    return value if value > 0 else default
+    # Zero is honoured, not "corrected": setting a limit to 0 is the user
+    # saying deny everything, which is the one direction a fail-closed fuse
+    # must always respect. Only nonsense (negatives) falls back.
+    return value if value >= 0 else default
 
 
 def limits() -> tuple[int, int, int, int]:
@@ -300,6 +309,32 @@ def reserve(*, kind: str = "ship") -> BudgetDecision:
     logger.info("Budget reserved %s (%d/%d this hour)", permit, hour_count + 1, per_hour)
     _receipt("launch", kind=kind, permit=permit)
     return BudgetDecision(allowed=True, permit_id=permit)
+
+
+def heartbeat(permit_id: str) -> None:
+    """Refresh a live permit's timestamp so the stale-reaper leaves it alone.
+
+    A whole ship run — agent, validation, an unbounded human gate wait — can
+    outlive ``ACTIVE_STALE_S``; without this the concurrency slot would be
+    reaped mid-run and a second launch allowed, silently breaking the
+    "1 concurrent" invariant. One permit also deliberately covers a run's
+    rework attempts: the budget counts *runs started*, not agent invocations.
+    Never raises.
+    """
+    if not permit_id or permit_id.startswith("bypass_"):
+        return
+    try:
+        with _Lock(SHIP_BUDGET_LOCK):
+            data = _read_ledger(SHIP_BUDGET_FILE)
+            touched = False
+            for entry in data.get("active", []):
+                if isinstance(entry, dict) and entry.get("permit") == permit_id:
+                    entry["at"] = _now()
+                    touched = True
+            if touched:
+                _write_ledger(SHIP_BUDGET_FILE, data)
+    except Exception as exc:
+        logger.warning("Budget heartbeat failed (slot may expire early): %s", exc)
 
 
 def release(permit_id: str) -> None:

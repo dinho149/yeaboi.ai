@@ -54,6 +54,22 @@ _TAIL_LINES = 400
 # knows. yeaboi is routinely launched from one, so the child must not inherit.
 _SESSION_ENV_VARS = ("CLAUDE_SESSION_ID", "CLAUDE_PARENT_SESSION_ID", "CLAUDECODE")
 
+# The agent's capability envelope, and it is MECHANICAL, not prose:
+# `acceptEdits` lets file edits land without a prompt (a headless --print run
+# cannot answer one, so the default mode would leave the agent unable to edit
+# at all), while Bash and every other gated tool stay denied — the agent
+# cannot run git, so it physically cannot push, commit, or open a PR; the
+# pipeline commits its work and pushes only after the human gate. The
+# disallow list is belt and braces on top: an explicit deny outranks every
+# permission mode if one is ever passed.
+_PERMISSION_ARGS = (
+    "--permission-mode",
+    "acceptEdits",
+    "--disallowedTools",
+    "Bash(git push:*)",
+    "Bash(gh:*)",
+)
+
 
 @dataclass(frozen=True)
 class DriverResult:
@@ -185,7 +201,7 @@ class ClaudeCodeDriver:
         warnings: list[str] = []
         try:
             proc = subprocess.Popen(  # noqa: S603 — fixed binary + flags; prompt over stdin
-                [self._binary, "--print", "--output-format", "json"],
+                [self._binary, "--print", "--output-format", "json", *_PERMISSION_ARGS],
                 cwd=str(cwd),
                 env=self._child_env(),
                 stdin=subprocess.PIPE,
@@ -202,12 +218,18 @@ class ClaudeCodeDriver:
         logger.info("Agent run started (pid %s, cwd %s)", proc.pid, cwd)
 
         tail: deque[str] = deque(maxlen=_TAIL_LINES)
+        # The pump may still be appending when the supervisor snapshots (a
+        # grandchild that inherited stdout can hold the pipe open after claude
+        # exits), and iterating a mutating deque raises — so every touch of
+        # ``tail`` happens under this lock.
+        tail_lock = threading.Lock()
 
         def _pump() -> None:
             assert proc.stdout is not None
             for raw_line in proc.stdout:
                 line = raw_line.rstrip("\n")
-                tail.append(line)
+                with tail_lock:
+                    tail.append(line)
                 if on_line is not None:
                     try:
                         on_line(line)
@@ -237,10 +259,16 @@ class ClaudeCodeDriver:
                 _terminate_group(proc)
                 break
             time.sleep(_POLL_S)
-        proc.wait()
+        try:
+            # Bounded: after a kill ladder that logged "would not die" an
+            # unbounded wait would hang the supervisor thread forever.
+            proc.wait(timeout=_KILL_GRACE_S)
+        except subprocess.TimeoutExpired:
+            logger.error("Agent process %s survived the kill ladder; abandoning it", proc.pid)
         pump.join(timeout=_KILL_GRACE_S)
         duration = time.monotonic() - started
-        raw = "\n".join(tail)
+        with tail_lock:
+            raw = "\n".join(tail)
         envelope = _parse_envelope(raw)
         if not envelope and raw.strip():
             warnings.append("agent output was not the expected JSON envelope; using raw text")

@@ -114,6 +114,16 @@ class TestRun:
         assert not result.ok
         assert "could not launch" in result.error
 
+    def test_the_permission_envelope_is_mechanical_not_prose(self, tmp_path):
+        # The "nothing pushes without approval" guarantee rests on these argv
+        # flags: acceptEdits (files editable headlessly, Bash denied) plus an
+        # explicit git-push/gh deny list. Losing them would leave only a
+        # sentence in the prompt between the agent and `git push`.
+        body = "import sys, json; sys.stdin.read(); print(json.dumps({'result': ' '.join(sys.argv[1:])}))"
+        result = driver.ClaudeCodeDriver(binary=_make_shim(tmp_path, body)).run("go", tmp_path)
+        assert "--permission-mode acceptEdits" in result.output
+        assert "--disallowedTools Bash(git push:*) Bash(gh:*)" in result.output
+
 
 class TestAvailability:
     def test_missing_binary(self):

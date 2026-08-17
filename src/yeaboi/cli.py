@@ -1959,6 +1959,11 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
             cancel_event=cancel,
         )
 
+    with ShipStore() as preexisting:
+        # Runs that already exist belong to OTHER sessions (a TUI in another
+        # terminal, a stale process). Prompting for those would let this user
+        # approve a diff they are not looking at — and push it.
+        known = {r.run_id for r in preexisting.list_runs(limit=100)}
     worker = threading.Thread(target=_work, daemon=True)
     worker.start()
     try:
@@ -1971,7 +1976,7 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                 # stamps gate_resolution, and a rework clears it again — so the
                 # reopened gate prompts again by construction.
                 for run in store.list_runs(limit=3):
-                    if run.status != "awaiting_approval" or run.gate_resolution:
+                    if run.run_id in known or run.status != "awaiting_approval" or run.gate_resolution:
                         continue
                     console.print(format_run_rich(run))
                     try:

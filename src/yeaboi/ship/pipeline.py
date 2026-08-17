@@ -13,7 +13,9 @@ engine sequences these pieces and owns status transitions.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import signal
 import subprocess
 import urllib.parse
 from dataclasses import dataclass
@@ -80,7 +82,9 @@ def build_prompt(story: UserStory, tasks: list[Task]) -> str:
         "Run contract:",
         "- Work only inside this repository checkout.",
         "- Follow the repository's existing conventions and test layout.",
-        "- Commit your work with clear messages. Do NOT push, do NOT open PRs.",
+        "- You have file-edit permissions and no shell: edit files only. The",
+        "  pipeline runs validation, commits your work, and pushes only after",
+        "  a human approves the diff — do not attempt git or gh commands.",
         "- If you cannot complete the story, say why plainly and change nothing.",
     ]
     return "\n".join(lines)
@@ -137,24 +141,33 @@ def run_validation(record: WorktreeRecord, command: str) -> ShipValidation:
     if not command.strip():
         return ShipValidation(configured=False)
     try:
-        proc = subprocess.run(  # noqa: S602 — the user's own check command (e.g. `make test`), by design
+        # Popen + its own process group, not subprocess.run: on timeout run()
+        # kills only the shell, and then blocks in communicate() on the pipes
+        # the orphaned grandchildren (pytest under make) still hold open —
+        # the "timed out" path would hang the worker forever.
+        proc = subprocess.Popen(  # noqa: S602 — the user's own check command (e.g. `make test`), by design
             command,
             shell=True,
             cwd=record.path,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=VALIDATION_TIMEOUT_S,
             env=git_subprocess_env(),
+            start_new_session=True,
         )
-        tail = ((proc.stdout or "") + (proc.stderr or ""))[-_TAIL_CHARS:]
-        return ShipValidation(
-            configured=True,
-            command=command,
-            passed=proc.returncode == 0,
-            exit_code=proc.returncode,
-            output_tail=tail,
-        )
+    except OSError as exc:
+        return ShipValidation(configured=True, command=command, passed=False, exit_code=-1, output_tail=str(exc))
+    try:
+        out, _ = proc.communicate(timeout=VALIDATION_TIMEOUT_S)
     except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.error("Validation command would not die: %s", command)
         return ShipValidation(
             configured=True,
             command=command,
@@ -162,8 +175,13 @@ def run_validation(record: WorktreeRecord, command: str) -> ShipValidation:
             exit_code=-1,
             output_tail=f"validation timed out after {VALIDATION_TIMEOUT_S}s",
         )
-    except OSError as exc:
-        return ShipValidation(configured=True, command=command, passed=False, exit_code=-1, output_tail=str(exc))
+    return ShipValidation(
+        configured=True,
+        command=command,
+        passed=proc.returncode == 0,
+        exit_code=proc.returncode,
+        output_tail=(out or "")[-_TAIL_CHARS:],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +214,9 @@ def rework_prompt(comment: str, validation: ShipValidation) -> str:
         lines.append(f"Its output ended with:\n{validation.output_tail[-1500:]}")
     lines += [
         "",
-        "Address the feedback with further commits on this branch.",
-        "Commit your work. Do NOT push, do NOT open PRs.",
+        "Address the feedback by editing the files on this branch. You have",
+        "file-edit permissions and no shell; the pipeline re-validates and",
+        "commits your work — do not attempt git or gh commands.",
     ]
     return "\n".join(lines)
 

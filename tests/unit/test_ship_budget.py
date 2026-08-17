@@ -100,10 +100,19 @@ class TestCircuitBreaker:
     def test_quota_pattern_matches_real_quota_errors_only(self):
         assert budget.looks_like_quota_error("Error: HTTP 429")
         assert budget.looks_like_quota_error("rate_limit_error from API")
+        assert budget.looks_like_quota_error("You have been rate limited")
+        assert budget.looks_like_quota_error("rate limit exceeded")
         assert budget.looks_like_quota_error("overloaded_error")
         assert budget.looks_like_quota_error("usage limit reached")
+        assert budget.looks_like_quota_error("quota exhausted")
         assert not budget.looks_like_quota_error("all tests passed")
         assert not budget.looks_like_quota_error("")
+
+    def test_agent_prose_about_rate_limiting_does_not_trip_the_breaker(self):
+        # The error text is the agent's stdout tail, which can echo the user's
+        # own code — a topic word alone must never open a user-global pause.
+        assert not budget.looks_like_quota_error("I refactored the rate limiter in quota.py")
+        assert not budget.looks_like_quota_error("added a per-user quota field to the model")
 
 
 class TestFailClosed:
@@ -205,7 +214,33 @@ class TestLimitsEnv:
         monkeypatch.setenv("YEABOI_AI_MAX_PER_HOUR", "7")
         assert budget.limits()[:2] == (3, 7)
 
-    def test_garbage_and_nonpositive_env_falls_back_to_defaults(self, monkeypatch):
+    def test_garbage_and_negative_env_falls_back_to_defaults(self, monkeypatch):
         monkeypatch.setenv("YEABOI_AI_MAX_CONCURRENT", "banana")
-        monkeypatch.setenv("YEABOI_AI_MAX_PER_HOUR", "0")
+        monkeypatch.setenv("YEABOI_AI_MAX_PER_HOUR", "-1")
         assert budget.limits()[:2] == (budget.DEFAULT_MAX_CONCURRENT, budget.DEFAULT_MAX_PER_HOUR)
+
+    def test_zero_is_honoured_as_deny_everything(self, budget_dir, clock, monkeypatch):
+        # Fail-closed: 0 is the user saying "no launches", never "use the default".
+        monkeypatch.setenv("YEABOI_AI_MAX_CONCURRENT", "0")
+        denied = budget.reserve()
+        assert not denied.allowed
+        assert "global-concurrency" in denied.reason
+
+
+class TestHeartbeat:
+    def test_heartbeat_keeps_a_long_run_alive(self, budget_dir, clock):
+        first = budget.reserve()
+        assert first.allowed
+        clock[0] += budget.ACTIVE_STALE_S - 60
+        budget.heartbeat(first.permit_id)
+        clock[0] += budget.ACTIVE_STALE_S - 60
+        # Without the heartbeat the permit would have been reaped by now and
+        # this second reserve would (wrongly) be allowed.
+        second = budget.reserve()
+        assert not second.allowed
+        assert "global-concurrency" in second.reason
+
+    def test_heartbeat_on_unknown_or_bypass_permit_is_harmless(self, budget_dir, clock):
+        budget.heartbeat("permit_nonexistent")
+        budget.heartbeat("bypass_123")
+        assert not budget.SHIP_BUDGET_FILE.exists() or budget.reserve().allowed
