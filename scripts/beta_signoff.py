@@ -8,7 +8,7 @@ own CI ran on the assembled tree. What is left is the part no gate covers:
 somebody installing the actual wheel and using it. This module makes that a
 short ritual instead of an open-ended one.
 
-    make batch-assemble           build the batch branch + draft PR (batch_assemble.py)
+    make batch-assemble           build the batch branch + its PR (batch_assemble.py)
     make beta-check               what is in the batch, and what to exercise
     make beta-sign-<track>        record one track's sign-off on the batch PR
     make beta-promote             verify every track, mark ready, print the merge
@@ -21,7 +21,7 @@ is the honest reading, because the tree it names is not the tree that would
 merge.
 
 **Nothing here merges.** The merge is the sign-off, and it is a human's:
-`promote` verifies, flips the draft to ready, prints the `gh pr merge --merge`
+`promote` verifies, prints the `gh pr merge --merge`
 command, and stops. `publish.yml` then classifies the human's merge and cuts
 the official release from exactly the merged tree.
 
@@ -449,8 +449,20 @@ def promote(args: argparse.Namespace) -> int:
             print("[beta] not promoted.")
             return 1
 
-    if batch.get("isDraft") and _gh("pr", "ready", str(batch["number"])) is None:
-        print(f"[beta] could not mark #{batch['number']} ready — do it by hand: gh pr ready {batch['number']}")
+    if batch.get("isDraft"):
+        # `batch_assemble.py` opens the batch ready for exactly this reason, so a
+        # draft here was opened by hand. Flip it — a draft cannot be merged at all
+        # — but say what the flip costs: `claude-review.yml` skipped this head
+        # while it was a draft, `pr-feedback` stops forgiving a missing verdict the
+        # moment it is ready, and neither CI nor the review re-fires on
+        # `ready_for_review`. Re-running the CI workflow is what produces the
+        # verdict; pushing a commit would move the head sha and void every
+        # signature above.
+        if _gh("pr", "ready", str(batch["number"])) is None:
+            print(f"[beta] could not mark #{batch['number']} ready — do it by hand: gh pr ready {batch['number']}")
+        print("[beta] this batch was opened as a DRAFT, so Claude Review never reviewed this head.")
+        print("       Re-run this PR's CI before merging, or pr-feedback will hold it with no verdict to find.")
+        print("       `make batch-assemble` opens the batch ready precisely to avoid this.")
     print(BAR)
     print("  the batch is signed and ready. The merge is yours — nothing here merges:")
     print(f"      gh pr merge {batch['number']} --merge")

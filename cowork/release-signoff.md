@@ -31,7 +31,7 @@ make batch-assemble
 
 It selects every open fleet PR that is gate-green (CI green **and** `pr-feedback` success — a red
 or unreviewed PR is skipped and named), folds them into a `batch/<date>` branch — **one squash
-commit per PR**, so `main`'s history stays one commit per item — pushes it, opens a **draft PR**
+commit per PR**, so `main`'s history stays one commit per item — pushes it, opens a **PR**
 labelled `release:promotion`, and builds the wheel:
 
 - A constituent that **conflicts** (with `main` or with an earlier constituent) is skipped,
@@ -89,7 +89,7 @@ sha IS the batch's head — any commit after it (a re-assembly, a late constitue
 signature stale, because the tree it names is not the tree that would merge. Then:
 
 ```bash
-make beta-promote        # verifies, flips the draft to ready, prints the merge. STOPS.
+make beta-promote        # verifies, prints the merge command. STOPS.
 gh pr merge <n> --merge  # yours — the one command nothing here will run for you
 ```
 
@@ -112,11 +112,23 @@ uv run python scripts/batch_assemble.py --close <batch-pr-number>
 ```
 
 It refuses on an unmerged batch — closing constituents of a batch that never shipped reads as a
-pile of rejections to the next sweep's dedupe pass.
+pile of rejections to the next sweep's dedupe pass — and it refuses on a merged PR that is not a
+batch at all: the number you pass must carry the `<!-- batch: … -->` marker or the
+`release:promotion` label. `- <title> (#N)` is an ordinary bullet in an ordinary PR body, so
+without that check a mistyped number closes a set of unrelated open PRs, which the fleet then
+reads as rejections.
 
 **The batch PR's gate is the hand-test, not a re-review.** Every constituent was reviewed and
 gated individually; requiring a fresh review of the assembled diff would be a rubber stamp with a
 reviewer's name on it. Do not "fix" the batch by adding one.
+
+**But the batch PR is opened ready for review, never as a draft, and that is not a style
+choice.** `claude-review.yml` skips drafts, and `pr_feedback.py` forgives a missing review verdict
+only while a PR *is* a draft — so a draft batch that got flipped ready at sign-off time would fail
+the required `pr-feedback` context with no way to clear it: neither CI nor the review re-fires on
+`ready_for_review`, and the only commit that would re-trigger them moves the head sha and voids
+every signature you just collected. Opening it ready means the review lands on the first CI run,
+says its piece, and holds nothing (this is a human-lane branch, where the review is advisory).
 
 ## What each marker means
 

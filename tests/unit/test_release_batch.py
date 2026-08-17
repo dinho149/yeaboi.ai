@@ -199,6 +199,26 @@ class TestTheShipIsHumanLane:
                 f"{prefix!r} would swallow the batch namespace — the ship merge would release nothing"
             )
 
+    def test_the_batch_pr_is_a_shape_claude_review_will_review(self):
+        """The batch must not open as a draft, and the chain is worth spelling out
+        because every link is somebody else's file.
+
+        `claude-review.yml` skips drafts, so a draft batch earns no verdict on its
+        head. `pr_feedback.py` forgives a missing verdict only *while* the PR is a
+        draft, so the moment `beta-promote` flipped it ready the gate re-evaluated
+        with nothing to find and posted failure on a required context. Neither CI
+        nor the review re-fires on `ready_for_review`, and the one recovery that
+        exists — a commit to re-trigger CI — moves the head sha and voids every
+        `tested:` signature. The batch would have been unmergeable by the command
+        this whole model exists to make possible.
+        """
+        source = (ROOT / "scripts" / "batch_assemble.py").read_text(encoding="utf-8")
+        create = source[source.index('_gh(\n        "pr",\n        "create",') :]
+        create = create[: create.index("if created is None")]
+        assert '"--draft"' not in create, "the batch PR must not open as a draft — claude-review skips drafts"
+        review = (ROOT / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8")
+        assert "draft" in review, "this guard is pointless if claude-review stopped skipping drafts — recheck it"
+
     def test_the_assembler_refuses_a_fleet_shaped_batch(self):
         with pytest.raises(assemble_mod.AssembleError):
             assemble_mod.assert_human_lane("cowork/2026-08-17", [assemble_mod.PROMOTION_LABEL])
@@ -215,10 +235,50 @@ class TestCloseConstituents:
         monkeypatch.setattr(assemble_mod, "_gh", lambda *a: pytest.fail("must not write"))
         assert assemble_mod.close_constituents(301) == 1
 
+    def test_a_merged_pr_that_is_not_a_batch_closes_nothing(self, monkeypatch):
+        """`- <text> (#N)` is an ordinary bullet — changelog lists, "supersedes"
+        sections, release notes all use it. Without a proof of batch-ness, one
+        mistyped number on `--close` comments on and closes an arbitrary set of
+        open PRs, and the next sweep reads each closure as a rejection."""
+        monkeypatch.setattr(
+            assemble_mod,
+            "_json",
+            lambda *a: {"state": "MERGED", "body": "- a (#11)\n- b (#12)\n", "url": "u", "labels": []},
+        )
+        monkeypatch.setattr(assemble_mod, "_gh", lambda *a: pytest.fail("must not write"))
+        assert assemble_mod.close_constituents(999) == 1
+
+    def test_the_label_alone_proves_it(self, monkeypatch):
+        # A batch whose body a human rewrote (dropping the marker) is still a
+        # batch: either proof is enough, and the assembler writes both.
+        payloads = {
+            ("pr", "view", "301"): {
+                "state": "MERGED",
+                "body": "- a (#11)\n",
+                "url": "u",
+                "labels": [{"name": assemble_mod.PROMOTION_LABEL}],
+            },
+            ("pr", "view", "11"): {"state": "CLOSED"},
+        }
+        monkeypatch.setattr(assemble_mod, "_json", lambda *a: payloads.get(a[:3]))
+        monkeypatch.setattr(assemble_mod, "_gh", lambda *a: "ok")
+        assert assemble_mod.close_constituents(301) == 0
+
+    def test_the_marker_the_assembler_writes_is_the_one_close_looks_for(self):
+        """Two spellings of the same contract, one file apart — pinned by
+        round-trip so a reformat of the body cannot quietly disarm `--close`."""
+        body = assemble_mod._body([pr(11, "a")], [], ["src/yeaboi/cli.py"], "2026-08-17")
+        assert assemble_mod.BATCH_MARKER_RE.search(body)
+
     def test_it_closes_each_open_constituent_with_a_pointer(self, monkeypatch, capsys):
         sent = []
         payloads = {
-            ("pr", "view", "301"): {"state": "MERGED", "body": "- a (#11)\n- b (#12)\n", "url": "u"},
+            ("pr", "view", "301"): {
+                "state": "MERGED",
+                "body": "- a (#11)\n- b (#12)\n<!-- batch: 2026-08-17 -->",
+                "url": "u",
+                "labels": [],
+            },
             ("pr", "view", "11"): {"state": "OPEN"},
             ("pr", "view", "12"): {"state": "CLOSED"},
         }

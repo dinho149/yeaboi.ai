@@ -187,18 +187,18 @@ bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 # different things to sit down and exercise.
 #
 # `batch-assemble` builds the `batch/<date>` branch (one squash commit per fleet
-# PR), opens the draft batch PR, and builds the wheel to test. `beta-check` only
+# PR), opens the batch PR, and builds the wheel to test. `beta-check` only
 # reports. Each `beta-sign-*` records that track's sign-off as a marker comment
 # on the batch PR, pinned to the head sha that was tested; the LAST one writes
 # the bare completion marker — which is what stops a half-signed batch being
-# promoted. `beta-promote` verifies, flips the draft to ready, and prints the
+# promoted. `beta-promote` verifies and prints the
 # merge command. THE MERGE IS YOURS: `gh pr merge <n> --merge` (never squash),
 # and publish.yml cuts the official X.Y.Z from your merge.
 #
 # Two sign targets rather than `make beta-sign <track>`: Make reads a bare word
 # as a second goal, so that spelling fails with "No rule to make target …".
 
-batch-assemble: ## Assemble the gate-green fleet PRs into a batch branch + draft PR
+batch-assemble: ## Assemble the gate-green fleet PRs into a batch branch + PR
 	@$(UV) run python scripts/batch_assemble.py
 
 beta-check: ## What is in the open batch, and what to exercise by hand

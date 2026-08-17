@@ -7,9 +7,11 @@ accumulate open against `main`, each individually CI-green and reviewed, and
 this script folds them into a `batch/<date>` branch: one squash commit per PR,
 built in a throwaway worktree off fresh `origin/main`, so `main`'s history stays
 one commit per item exactly as it did when the fleet merged directly. The batch
-opens as a **draft PR** labelled `release:promotion`; CI then runs on the
-assembled tree — the first time the constituents are tested *together* — and
-`auto-version.yml` gives the whole batch its one version bump.
+opens as a PR labelled `release:promotion` — **ready for review, never a draft**,
+because `claude-review.yml` skips drafts and `pr-feedback` would then find no
+verdict the moment the batch was readied, with nothing able to produce one. CI
+runs on the assembled tree — the first time the constituents are tested
+*together* — and `auto-version.yml` gives the whole batch its one version bump.
 
 Shipping is a human merging that PR with `--merge` (never squash: the announce
 routine and `release_channel.py` both walk `git log <prev-tag>..<tag>`, and a
@@ -20,7 +22,7 @@ tested. This script REFUSES to open a batch that would classify `fleet` — that
 mistake would make the ship a silent no-op, with only a `::notice::unattended
 merge` line to show for it.
 
-    make batch-assemble          build the branch, open the draft PR, build the wheel
+    make batch-assemble          build the branch, open the batch PR, build the wheel
     ... --dry-run                assemble locally; push nothing, open nothing
     ... --close <batch-pr>       after the batch merges: close its constituents
 
@@ -43,6 +45,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,6 +71,14 @@ BATCH_PREFIX = "batch/"
 # `--close` and by `beta_signoff.py`'s provider detection — a contract, so it is
 # a module constant rather than two spellings.
 CONSTITUENT_RE = re.compile(r"^- (?P<title>.+) \(#(?P<number>\d+)\)$", re.MULTILINE)
+
+# What proves a PR is a batch this script wrote, written by `_body` and required
+# by `--close` before it closes anything. `CONSTITUENT_RE` alone is not proof:
+# `- <text> (#N)` is an ordinary bullet in an ordinary PR body here, so a
+# mistyped number on `--close` would comment on and close a set of unrelated open
+# PRs — and the next sweep reads a closure as a rejection, which is the very
+# failure the merged-only check beside it exists to prevent.
+BATCH_MARKER_RE = re.compile(r"<!--\s*batch:\s*\d{4}-\d{2}-\d{2}\s*-->")
 
 # `Closes #N` / `Closes YEA-NN` lines lifted verbatim from constituent bodies
 # into the batch body, so queued issues and Linear tickets close on the batch
@@ -205,14 +216,21 @@ def assemble(prs: list[dict], *, date: str) -> tuple[Path, str, list[dict], list
     the PR and keep going — one bad item never blocks the batch.
     """
     branch = f"{BATCH_PREFIX}{date}"
-    worktree = ROOT / ".git" / "batch-worktrees" / date
+    # Outside the repository, and predictable rather than random so the human can
+    # find the checkout they are hand-testing. It used to live under `ROOT/.git`,
+    # which put a full checkout plus `uv build` output inside the object store's
+    # directory, kept it there until a run reused the same date — and could not be
+    # created at all from one of this repo's own worktrees, where `.git` is a file.
+    worktree = Path(tempfile.gettempdir()) / f"yeaboi-batch-{date}"
     if worktree.exists():
         _git("worktree", "remove", "--force", str(worktree))
         shutil.rmtree(worktree, ignore_errors=True)
-        # If `remove` failed (a locked worktree) the rmtree above deleted the
-        # directory but left it REGISTERED, and the `worktree add` below then
-        # refuses the path forever. Prune makes a re-run self-healing.
-        _git("worktree", "prune")
+    # Unconditional, and that is the fix rather than an accident: the case this
+    # repairs is "rmtree succeeded, the registration survived", where the
+    # directory is gone by the next run — so a prune guarded by `exists()` never
+    # runs in the one situation it was written for, and `worktree add` refuses
+    # that path forever.
+    _git("worktree", "prune")
     fetched = _git("fetch", "origin", "--quiet")
     if fetched.returncode != 0:
         raise AssembleError(f"git fetch origin failed:\n{fetched.stderr.strip()}")
@@ -322,12 +340,24 @@ def close_constituents(batch_number: int) -> int:
     Refuses on an unmerged batch — closing constituents of a batch that never
     shipped reads as sixteen rejections to the next sweep's dedupe pass.
     """
-    batch = _json("pr", "view", str(batch_number), "--json", "state,body,url")
+    batch = _json("pr", "view", str(batch_number), "--json", "state,body,url,labels")
     if not isinstance(batch, dict):
         print(f"[batch] could not read PR #{batch_number} — gh is missing or refused.", file=sys.stderr)
         return 2
     if str(batch.get("state", "")).upper() != "MERGED":
         print(f"[batch] PR #{batch_number} is not merged — refusing to close its constituents.", file=sys.stderr)
+        return 1
+    labels = [entry.get("name") for entry in batch.get("labels") or [] if isinstance(entry, dict)]
+    if not BATCH_MARKER_RE.search(str(batch.get("body") or "")) and PROMOTION_LABEL not in labels:
+        # A mistyped number is the whole reason for this check: without it, any
+        # merged PR whose body happens to carry `- something (#123)` bullets —
+        # changelog lists, "supersedes" sections, release notes — nominates those
+        # numbers for closure.
+        print(
+            f"[batch] PR #{batch_number} is not a batch: no `<!-- batch: … -->` marker and no "
+            f"`{PROMOTION_LABEL}` label. Refusing to close anything.",
+            file=sys.stderr,
+        )
         return 1
     numbers = constituents_of(str(batch.get("body") or ""))
     if not numbers:
@@ -381,10 +411,18 @@ def run_assemble(*, dry_run: bool) -> int:
         return 2
     body_file = worktree / ".batch-body.md"
     body_file.write_text(body, encoding="utf-8")
+    # NOT a draft, and that is load-bearing rather than a preference.
+    # `claude-review.yml` skips drafts outright, so a draft batch PR earns no
+    # review verdict on its head — and `pr_feedback.py` only forgives that *while*
+    # it is a draft. Flipping it ready at promote time therefore re-evaluated the
+    # gate with no verdict to find and posted failure on the required context, with
+    # nothing able to fix it: `claude-review` fires on CI's `workflow_run`, and
+    # `ci.yml` does not list `ready_for_review`, so readying re-runs neither. The
+    # only exit left moved the head sha, which invalidates every `tested:` marker.
+    # Opening it ready means the review lands on the first CI run, like any PR.
     created = _gh(
         "pr",
         "create",
-        "--draft",
         "--base",
         "main",
         "--head",
@@ -405,11 +443,11 @@ def run_assemble(*, dry_run: bool) -> int:
             print(f"[batch] batch PR already open — the push refreshed it: {existing[0].get('url', '')}")
         else:
             print("[batch] pushed, but the batch PR could not be opened — gh is missing or refused.", file=sys.stderr)
-            print(f"        open it by hand: gh pr create --draft --base main --head {branch} \\", file=sys.stderr)
+            print(f"        open it by hand: gh pr create --base main --head {branch} \\", file=sys.stderr)
             print(f"          --title {title!r} --label {PROMOTION_LABEL} --body-file {body_file}", file=sys.stderr)
             return 2
     else:
-        print(f"[batch] opened draft PR: {created.strip()}")
+        print(f"[batch] opened batch PR: {created.strip()}")
 
     wheel = _build_wheel(worktree)
     if wheel:

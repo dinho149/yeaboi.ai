@@ -347,7 +347,7 @@ def integration_checklist(providers: tuple[str, ...], changed_paths: list[str]) 
 
     Empty when no provider is in the batch — that is the no-integration-work week,
     and it must produce an empty list rather than a baseline-only one, because
-    `required_tracks` reads emptiness as "this track was never asked for".
+    `beta_signoff.batch_view` reads emptiness as "this track was never asked for".
     """
     if not providers:
         return []
