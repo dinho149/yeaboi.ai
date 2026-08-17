@@ -232,13 +232,6 @@
 .dockApp [class*='btnPrimary'][class*='btn'] {
   border-radius: var(--r-pill);
   border-color: transparent;
-  /* Sized to the glyphs beside it rather than to a page's primary action: it is
-     the one filled thing in a row of 32px tools, and at a form control's height
-     it was the tallest thing in the notch and set the notch's own height. */
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  gap: var(--s2);
-  font-size: var(--fs-s);
 }
 
 .dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']),

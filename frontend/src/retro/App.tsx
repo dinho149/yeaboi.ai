@@ -443,7 +443,13 @@ export function App({ boot }: { boot: RetroBoot }) {
               />
             </Popover>
 
-            <IconButton icon={<Icon name="mail" size={16} />} label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+            <IconButton
+              icon={<Icon name="mail" size={16} />}
+              label="Invite the team"
+              tone="primary"
+              compact
+              onClick={() => setInviteOpen(true)}
+            >
               Invite
             </IconButton>
         </>

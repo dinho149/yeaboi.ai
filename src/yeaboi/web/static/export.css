@@ -3551,7 +3551,7 @@ dialog._modal_6ng5l_693 {
  * break across a page mid-card.
  */
 
-._page_1k7nc_16 {
+._page_zyzlh_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
@@ -3560,7 +3560,7 @@ dialog._modal_6ng5l_693 {
 /* ── App variant ──────────────────────────────────────────────────
    A live board is one screen: masthead strip, sticky bar, board, credit.
    Fixed rather than in flow, so the document has nothing to scroll. */
-._shellApp_1k7nc_25 {
+._shellApp_zyzlh_25 {
   max-width: none;
   padding: 0;
   position: fixed;
@@ -3596,14 +3596,14 @@ dialog._modal_6ng5l_693 {
  * matched when it should not have, so the notches stayed either way. The hook
  * measures the browser's own furniture instead of asking the browser to describe
  * itself, which is the thing actually being decided here. */
-._shellCurved_1k7nc_38 {
+._shellCurved_zyzlh_38 {
   border-radius: var(--screen-radius);
 }
 
 /* The board: whatever height the masthead strip left. `min-height: 0` lets it
    be shorter than its content, so the inner scrollers engage.
    `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
-._appRegion_1k7nc_68 {
+._appRegion_zyzlh_68 {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -3613,7 +3613,7 @@ dialog._modal_6ng5l_693 {
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
    rule — so it needs no treatment beyond the offset and a layer to sit in. */
-._barSticky_1k7nc_78 {
+._barSticky_zyzlh_78 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -3621,7 +3621,7 @@ dialog._modal_6ng5l_693 {
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_1k7nc_86 {
+._masthead_zyzlh_86 {
   margin-bottom: var(--s5);
 }
 
@@ -3634,7 +3634,7 @@ dialog._modal_6ng5l_693 {
  * dock upward, and an element anchored by its top would need its offset
  * recomputed every frame of that growth.
  */
-._dockApp_1k7nc_99 {
+._dockApp_zyzlh_99 {
   position: fixed;
   z-index: var(--z-console);
   display: flex;
@@ -3663,7 +3663,7 @@ dialog._modal_6ng5l_693 {
   visibility: var(--dock-vis, hidden);
 }
 
-._dockPlaced_1k7nc_128 {
+._dockPlaced_zyzlh_128 {
   /* Coming back down: a spring that overshoots, so the dock has some weight to
      it rather than sliding to a stop. Also the curve the wall-to-wall drag
      lands on, which is the same motion at a different scale. */
@@ -3672,7 +3672,7 @@ dialog._modal_6ng5l_693 {
 
 
 /* The controls themselves. */
-._dockRow_1k7nc_137 {
+._dockRow_zyzlh_137 {
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -3691,7 +3691,7 @@ dialog._modal_6ng5l_693 {
  * out the panel is still there for one beat, and it is the track that has to
  * start collapsing under it.
  */
-._dockDrawer_1k7nc_156 {
+._dockDrawer_zyzlh_156 {
   position: absolute;
   left: 0;
   bottom: calc(100% + var(--s2));
@@ -3708,7 +3708,7 @@ dialog._modal_6ng5l_693 {
     opacity var(--dur-fast) var(--ease);
 }
 
-._dockDrawer_1k7nc_156[data-open='true'] {
+._dockDrawer_zyzlh_156[data-open='true'] {
   grid-template-rows: 1fr;
   opacity: 1;
   pointer-events: auto;
@@ -3717,7 +3717,7 @@ dialog._modal_6ng5l_693 {
 /* All in the one cell, so a panel on its way out and one on its way in do not
    stack the drawer to the height of both. Its chrome is `popoverDocked`'s own —
    a border on the collapsed track would be a line across the board. */
-._dockDrawer_1k7nc_156 > * {
+._dockDrawer_zyzlh_156 > * {
   grid-area: 1 / 1;
   min-height: 0;
   min-width: 0;
@@ -3726,7 +3726,7 @@ dialog._modal_6ng5l_693 {
 
 /* Free of the edge while held, so it follows the pointer exactly. */
 /* Held: exact tracking, because easing a pointer drag reads as lag. */
-._dockDragging_1k7nc_191 {
+._dockDragging_zyzlh_191 {
   transition: none;
   cursor: grabbing;
   box-shadow: var(--shadow-hover);
@@ -3734,12 +3734,12 @@ dialog._modal_6ng5l_693 {
 
 /* The handle, and the only part of the dock that is not a control — so it
    spans the dock's height rather than being a 3px mark. */
-._dockItem_1k7nc_199 {
+._dockItem_zyzlh_199 {
   display: inline-flex;
   align-items: center;
 }
 
-._dockGrip_1k7nc_204 {
+._dockGrip_zyzlh_204 {
   flex: none;
   align-self: stretch;
   width: 14px;
@@ -3752,12 +3752,12 @@ dialog._modal_6ng5l_693 {
     background-color var(--dur-fast) var(--ease);
 }
 
-._dockGrip_1k7nc_204:hover {
+._dockGrip_zyzlh_204:hover {
   background-color: var(--panel-2);
 }
 
-._dockApp_1k7nc_99:hover ._dockGrip_1k7nc_204,
-._dockDragging_1k7nc_191 ._dockGrip_1k7nc_204 {
+._dockApp_zyzlh_99:hover ._dockGrip_zyzlh_204,
+._dockDragging_zyzlh_191 ._dockGrip_zyzlh_204 {
   opacity: 1;
 }
 
@@ -3767,20 +3767,13 @@ dialog._modal_6ng5l_693 {
 /* The one filled control in the notch is a pill, like the presence chip it
    sits opposite. Two class matches, so it outranks a surface's own button
    material rather than depending on which stylesheet the bundler wrote last. */
-._dockApp_1k7nc_99 [class*='btnPrimary'][class*='btn'] {
+._dockApp_zyzlh_99 [class*='btnPrimary'][class*='btn'] {
   border-radius: var(--r-pill);
   border-color: transparent;
-  /* Sized to the glyphs beside it rather than to a page's primary action: it is
-     the one filled thing in a row of 32px tools, and at a form control's height
-     it was the tallest thing in the notch and set the notch's own height. */
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  gap: var(--s2);
-  font-size: var(--fs-s);
 }
 
-._dockRow_1k7nc_137 > [class*='dockItem'] > button:not([class*='btnPrimary']),
-._dockRow_1k7nc_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+._dockRow_zyzlh_137 > [class*='dockItem'] > button:not([class*='btnPrimary']),
+._dockRow_zyzlh_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
   background: none;
   border-color: transparent;
   /* And no edge: a surface may give its own buttons a raised material, but the
@@ -3788,8 +3781,8 @@ dialog._modal_6ng5l_693 {
   box-shadow: none;
 }
 
-._dockRow_1k7nc_137 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
-._dockRow_1k7nc_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+._dockRow_zyzlh_137 > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+._dockRow_zyzlh_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
   background: var(--panel-2);
   border-color: transparent;
 }
@@ -3806,20 +3799,20 @@ dialog._modal_6ng5l_693 {
  * Same shape of selector as the rule above, or that one's `background: none`
  * wins on specificity and only the glyph changes.
  */
-._dockRow_1k7nc_137 > [class*='dockItem'] > button[aria-pressed='true'] {
+._dockRow_zyzlh_137 > [class*='dockItem'] > button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   border-color: transparent;
   box-shadow: none;
   color: var(--accent);
 }
 
-._dockRow_1k7nc_137 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
+._dockRow_zyzlh_137 > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 34%, transparent);
   border-color: transparent;
 }
 
-._dockRow_1k7nc_137 > [class*='dockItem'] > button[aria-expanded='true'],
-._dockRow_1k7nc_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+._dockRow_zyzlh_137 > [class*='dockItem'] > button[aria-expanded='true'],
+._dockRow_zyzlh_137 > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -3828,7 +3821,7 @@ dialog._modal_6ng5l_693 {
 
 /* Identity and toolbar in one row, as a panel floating clear of the screen
    edges. */
-._chromeApp_1k7nc_293 {
+._chromeApp_zyzlh_286 {
   flex: none;
   display: flex;
   align-items: stretch;
@@ -3851,19 +3844,19 @@ dialog._modal_6ng5l_693 {
    which would also clip every popover opening out of it. Only the outer ones:
    two rounded corners meeting in the middle leave a gap the bar's top edge
    shows through, which reads as a notch cut out of it. */
-._chromeApp_1k7nc_293 > * {
+._chromeApp_zyzlh_286 > * {
   border-radius: 0;
 }
-._chromeApp_1k7nc_293 > *:first-child {
+._chromeApp_zyzlh_286 > *:first-child {
   border-start-start-radius: inherit;
   border-end-start-radius: inherit;
 }
-._chromeApp_1k7nc_293 > *:last-child {
+._chromeApp_zyzlh_286 > *:last-child {
   border-start-end-radius: inherit;
   border-end-end-radius: inherit;
 }
 /* The bar takes the rest of the row, and the panel's edge is its closing rule. */
-._chromeApp_1k7nc_293 > *:last-child {
+._chromeApp_zyzlh_286 > *:last-child {
   flex: 1;
   min-width: 0;
   border-bottom: none;
@@ -3872,16 +3865,16 @@ dialog._modal_6ng5l_693 {
 /* Below --bp-s one row cannot hold both, so the title goes and the wordmark
    alone carries the identity. */
 @media (max-width: 699px) {
-  ._headMainApp_1k7nc_337 h1 {
+  ._headMainApp_zyzlh_330 h1 {
     display: none;
   }
-  ._mastheadApp_1k7nc_340 {
+  ._mastheadApp_zyzlh_333 {
     padding: var(--s2) var(--s4);
   }
 }
 
 /* The identity: wordmark and title, closed by a rule against the bar. */
-._mastheadApp_1k7nc_340 {
+._mastheadApp_zyzlh_333 {
   flex: none;
   display: flex;
   align-items: center;
@@ -3890,53 +3883,53 @@ dialog._modal_6ng5l_693 {
   background: var(--panel);
 }
 
-._head_1k7nc_337 {
+._head_zyzlh_330 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headApp_1k7nc_362 {
+._headApp_zyzlh_355 {
   align-items: center;
   gap: var(--s3);
   /* A wrap would double the strip's height; the title ellipsizes instead. */
   flex-wrap: nowrap;
 }
-._headMain_1k7nc_337 {
+._headMain_zyzlh_330 {
   min-width: 0;
   flex: 1 1 320px;
 }
 /* Wordmark and title on one line, centred against each other. */
-._headMainApp_1k7nc_337 {
+._headMainApp_zyzlh_330 {
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex: 1 1 auto;
 }
-._headMainApp_1k7nc_337 ._wordmark_1k7nc_379 {
+._headMainApp_zyzlh_330 ._wordmark_zyzlh_372 {
   margin-bottom: 0;
 }
-._headMainApp_1k7nc_337 h1 {
+._headMainApp_zyzlh_330 h1 {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._wordmark_1k7nc_379 {
+._wordmark_zyzlh_372 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_1k7nc_396 {
+._wordmarkCompact_zyzlh_389 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_1k7nc_401 {
+._title_zyzlh_394 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -3946,30 +3939,30 @@ dialog._modal_6ng5l_693 {
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_1k7nc_411 {
+._titleCompact_zyzlh_404 {
   font-size: var(--fs-l);
 }
 
-._subtitle_1k7nc_415 {
+._subtitle_zyzlh_408 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_1k7nc_421 {
+._facts_zyzlh_414 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_1k7nc_428 {
+._themes_zyzlh_421 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_1k7nc_434 {
+._toc_zyzlh_427 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -3986,36 +3979,36 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_1k7nc_434 a {
+._toc_zyzlh_427 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_1k7nc_434 a:hover {
+._toc_zyzlh_427 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_1k7nc_461 > * + * {
+._container_zyzlh_454 > * + * {
   margin-top: var(--s5);
 }
 
 /* The board. Takes the viewport the bar left over, and must be allowed to be
    shorter than its content — that is what lets the columns scroll inside it
    rather than growing past it. */
-._containerApp_1k7nc_468 {
+._containerApp_zyzlh_461 {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_1k7nc_468 > * + * {
+._containerApp_zyzlh_461 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_1k7nc_480 {
+._footer_zyzlh_473 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -4031,7 +4024,7 @@ dialog._modal_6ng5l_693 {
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_1k7nc_496 {
+._footerSlim_zyzlh_489 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -4041,17 +4034,17 @@ dialog._modal_6ng5l_693 {
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_1k7nc_428,
-  ._toc_1k7nc_434 {
+  ._themes_zyzlh_421,
+  ._toc_zyzlh_427 {
     display: none;
   }
-  ._page_1k7nc_16 {
+  ._page_zyzlh_16 {
     max-width: none;
     padding: 0;
   }
   /* Printed, a board is a document: release it from the viewport, or it comes
      out as one clipped screen. The frame goes with it. */
-  ._shellApp_1k7nc_25 {
+  ._shellApp_zyzlh_25 {
     position: static;
     display: block;
     overflow: visible;
@@ -4059,26 +4052,26 @@ dialog._modal_6ng5l_693 {
     border-radius: 0;
     background: none;
   }
-  ._appRegion_1k7nc_68 {
+  ._appRegion_zyzlh_68 {
     flex: none;
     height: auto;
     display: block;
     margin-bottom: 0;
   }
-  ._barSticky_1k7nc_78 {
+  ._barSticky_zyzlh_78 {
     position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_1k7nc_16 ._masthead_1k7nc_86 {
+  ._page_zyzlh_16 ._masthead_zyzlh_86 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_1k7nc_480 {
+  ._footer_zyzlh_473 {
     color: var(--muted);
   }
 }

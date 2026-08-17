@@ -50,8 +50,15 @@
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
-   cluster, so its cards line up with the chip above them. */
-.identity { position: relative; display: flex; align-items: center; gap: var(--s3); }
+   cluster, so its cards line up with the chip above them. `--room-lead` is how
+   far in the chip's own avatar sits, which is what they line up *with*. */
+.identity {
+  position: relative;
+  --room-lead: var(--s3);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
 
 .meChip {
   display: inline-flex;

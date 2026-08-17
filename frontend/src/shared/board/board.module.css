@@ -245,12 +245,14 @@
   position: absolute;
   top: 100%;
   /* Pulled left by whatever the card's own padding exceeds the identity chip's,
-     so the avatars and the names still sit on the row above's two columns.
+     so the avatars and the names sit on the row above's two columns. A surface
+     whose chip is padded differently says so with `--room-lead`.
+
      Measured from the identity cluster, which must therefore be
      `position: relative` — with no positioned ancestor this resolves against
      whatever the shell provides, which on an app shell is the whole fixed,
      clipped viewport. */
-  left: calc(var(--s1) - var(--room-pad));
+  left: calc(var(--room-lead, var(--s1)) - var(--room-pad));
   z-index: var(--z-popover);
   /* The cut is where the bar ends; the drop is how far below it the stack
      settles. They are separate, or lowering the cards would move the cut with
