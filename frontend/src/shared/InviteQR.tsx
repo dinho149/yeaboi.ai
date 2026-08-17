@@ -46,6 +46,10 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProp
   // The endpoint answers 503 until the tunnel is up, and a broken image with
   // its alt text showing is the worst of the three things it could do.
   const [unavailable, setUnavailable] = useState(false);
+  // The QR having failed is the one signal from in here that the board is not
+  // shared. Not `!inviteUrl`, which is also true for the first frame after the
+  // panel opens, while both are still in flight.
+  const pending = unavailable || !src;
 
   return (
     <div className={cx(styles['invite'], className)}>
@@ -60,8 +64,12 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProp
         />
       ) : null}
 
-      {unavailable ? (
-        <p className={styles['panelNote']}>The board is not shared yet, so there is nothing to scan.</p>
+      {pending ? (
+        <p className={styles['panelNote']}>
+          No link yet — the board is only on this machine. The terminal running it sets up the shared link
+          when the board opens, which takes up to a minute; this panel fills in on its own once it is ready.
+          If it stays empty, the terminal will say why and offer to retry.
+        </p>
       ) : null}
 
       {/* Every field renders only once the values are in. They arrive from
