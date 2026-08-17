@@ -174,10 +174,13 @@
 /* A panel in the notch, with the other tools. It was a bar across the top of
    the board, which is a row of chrome the ceremony pays for the whole time it
    is running. */
+/* A ceiling, because a docked panel is as wide as its widest unwrapped line
+   and the notch sits against the right edge of the screen. */
 .focusPanel {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+  max-width: min(18rem, 70vw);
 }
 .focusRow {
   display: flex;

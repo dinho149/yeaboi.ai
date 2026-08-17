@@ -34,7 +34,7 @@ export function FocusControls({ authors, current, avatars, onStep, onStart, onEx
   if (!current) {
     return (
       <div className={styles['focusPanel']}>
-        <p className={styles['popNote']}>Show one person&rsquo;s cards at a time, and step through the room.</p>
+        <p className={styles['popNote']}>One person&rsquo;s cards at a time.</p>
         <Button tone="primary" onClick={onStart}>
           Start with {authors[0]}
         </Button>
