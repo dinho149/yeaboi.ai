@@ -53,12 +53,15 @@ def _poker_report_to_json(report: PokerReport) -> str:
     return json.dumps(asdict(report), ensure_ascii=False)
 
 
-def _dict_to_poker_report(d: dict) -> PokerReport:
+def report_from_dict(d: dict) -> PokerReport:
     """Reconstruct a PokerReport from a JSON-parsed dict.
 
     Uses ``.get()`` with defaults for every field so reports serialized by an
     older version (missing keys) still deserialize — see CLAUDE.md
-    "Frozen dataclass backward compatibility".
+    "Frozen dataclass backward compatibility". Public because the export seam
+    (``poker/export.py``'s ``build_poker_export``) rebuilds its report through
+    this exact round-trip — the reference implementation and a stored report
+    must deserialize identically.
     """
 
     def _float_or_none(v):
@@ -98,6 +101,11 @@ def _dict_to_poker_report(d: dict) -> PokerReport:
         participants=tuple(d.get("participants", ())),
         generated_at=d.get("generated_at", ""),
     )
+
+
+# The pre-seam name, kept because `artifacts/registry.py` resolves the
+# deserializer by string and external readers import it directly.
+_dict_to_poker_report = report_from_dict
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +190,7 @@ class PokerStore:
         if row is None or not row[0]:
             return None
         try:
-            return _dict_to_poker_report(json.loads(row[0]))
+            return report_from_dict(json.loads(row[0]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize poker report for %s: %s", session_id, exc)
             return None
@@ -222,7 +230,7 @@ class PokerStore:
         if row is None or not row[0]:
             return None
         try:
-            return _dict_to_poker_report(json.loads(row[0]))
+            return report_from_dict(json.loads(row[0]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize poker run id=%s: %s", run_id, exc)
             return None
