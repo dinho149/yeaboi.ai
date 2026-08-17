@@ -110,6 +110,39 @@
   cursor: pointer;
 }
 
+/* Bottom middle, clear of the dock on the right. Glass rather than a panel:
+   it sits over the columns and must not read as another one. */
+.lockNote {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: var(--shadow-1);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+  animation: lockNoteIn 220ms var(--ease) both;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .lockNote { background: var(--panel); }
+}
+
+@keyframes lockNoteIn {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
 .popNote { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Switching sprints ────────────────────────────────────────────────── */

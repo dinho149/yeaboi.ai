@@ -481,10 +481,18 @@ export function App({ boot }: { boot: RetroBoot }) {
           board, which takes the rest — the same relationship they had when
           `.app` itself was the flex column. */}
       <div className={styles['boardRegion']}>
-      {/* No banner for the lock. The notch's padlock is lit, every composer is
-          gone and every control is disabled — a stripe across the board says
-          the same thing a fourth time, and costs a row to say it. It is still
-          announced, once, to a screen reader. */}
+      {/* Why nothing can be written, at the bottom middle where the composers
+          were. Not a stripe across the top: it is a footnote to a board you can
+          still read, not a headline. `aria-hidden`, because the same sentence is
+          in the live region below and announcing it twice is announcing it
+          wrong. */}
+      {readOnly ? (
+        <p className={styles['lockNote']} aria-hidden="true">
+          <Icon name={locked ? 'lock' : 'rotate-ccw'} size={13} />
+          {locked ? 'The host locked the board' : 'A retro that already happened'}
+        </p>
+      ) : null}
+
       {/* A sighted user reads "which retro" off the rail's picker, which goes
           accent-coloured on a past one. Said out loud here for everyone else. */}
       <p className={styles['srOnly']} role="status" aria-live="polite">
