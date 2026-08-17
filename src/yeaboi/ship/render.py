@@ -7,11 +7,31 @@ is load-bearing; the JSON format carries the same facts.
 
 from __future__ import annotations
 
+import re
+
 from rich.console import Group
 from rich.text import Text
 
 from yeaboi.agent.state import ShipRun
 from yeaboi.ship.budget import BudgetStatus
+
+# Every C0 control and DEL except tab and newline — notably ESC (0x1b), which
+# rich does NOT strip (``STRIP_CONTROL_CODES`` is only BEL/BS/VT/FF/CR) and
+# which reaches the terminal verbatim inside a Text segment.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def safe_console_text(text: str) -> str:
+    """Strip control characters from agent-authored text before it is drawn.
+
+    The patch and the validation tail are written by the coding agent, and the
+    gate is the only control before a push — so a file containing escape
+    sequences could move the cursor and repaint over what the reviewer is
+    reading, and they would approve what they saw rather than what is on disk.
+    Newlines survive: callers split on them to build rows.
+    """
+    return _CONTROL_RE.sub("", text)
+
 
 _STATUS_STYLE = {
     "approved": "bold green",
@@ -27,7 +47,7 @@ _STATUS_STYLE = {
 def format_diff_rich(diff: str) -> Group:
     """The patch, tinted. Additions green, removals red, hunk headers cyan."""
     lines: list[Text] = []
-    for raw in diff.splitlines():
+    for raw in safe_console_text(diff).splitlines():
         if raw.startswith("+++") or raw.startswith("---"):
             style = "bold"
         elif raw.startswith("+"):
@@ -64,14 +84,15 @@ def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
     if run.diff_stat:
         # The gate wants every file; a status line wants the totals. A 60-file
         # run should not print 60 rows every time someone asks what happened.
-        stat_lines = run.diff_stat.splitlines() if show_diff else run.diff_stat.splitlines()[-1:]
+        stat_all = safe_console_text(run.diff_stat).splitlines()
+        stat_lines = stat_all if show_diff else stat_all[-1:]
         for index, stat_line in enumerate(stat_lines):
             label = "diff     " if index == 0 else "         "
             lines.append(Text(f"  {label} {stat_line.strip()}"))
     if run.validation.configured:
         verdict = "passed" if run.validation.passed else f"FAILED (exit {run.validation.exit_code})"
         style = "green" if run.validation.passed else "red"
-        lines.append(Text(f"  checks    {run.validation.command} — {verdict}", style=style))
+        lines.append(Text(f"  checks    {safe_console_text(run.validation.command)} — {verdict}", style=style))
     else:
         lines.append(Text("  checks    none configured — nothing was proven", style="yellow"))
     if run.cost_usd:

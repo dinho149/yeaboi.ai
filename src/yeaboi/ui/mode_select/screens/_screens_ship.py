@@ -23,10 +23,12 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.agent.state import ShipRun
+from yeaboi.ship.render import safe_console_text
 from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_progress_body, _fmt_elapsed
 from yeaboi.ui.shared._components import (
     PAD,
     SHIP_THEME,
+    TITLE_ROWS,
     build_action_buttons,
     build_page_panel,
     build_reveal_subtitle,
@@ -44,8 +46,12 @@ _MAX_DIFF_ROWS = 8
 _MAX_TAIL_ROWS = 6
 _MAX_FINDING_ROWS = 4
 _MIN_DIFF_PANE_ROWS = 3  # below this the pane is dropped, never overlapped onto the buttons
-_TITLE_ROWS = 6  # the ASCII wordmark's own height
 PANEL_CHROME_ROWS = 4  # build_page_panel's border (2) + padding (2), same as calc_viewport's
+# Inner content width: the border (2) plus build_page_panel's padding=(1, 2) (4).
+# Every row the gate draws is clipped to this and marked no_wrap, because a row
+# that wraps is a row the layout did not count — and uncounted rows are what
+# push the buttons off a fixed-height Panel.
+_PANEL_SIDE_COLS = 6
 
 # The engine's component ids (ship/engine.py emits these); the screen owns
 # what "pending" looks like.
@@ -172,11 +178,24 @@ def _build_ship_progress_screen(
     return build_page_panel(Group(*parts), theme=theme, height=height)
 
 
-def _gate_line(label: str, value: str, *, style: str = "rgb(200,200,210)") -> Text:
-    row = Text()
-    row.append(PAD)
-    row.append(f"{label}  ", style="rgb(110,110,125)")
-    row.append(value, style=style)
+def _one_row(text: str, *, width: int, style: str = "") -> Text:
+    """One row that is guaranteed to stay one row.
+
+    ``no_wrap`` + ``crop`` rather than arithmetic alone: a wrapped row is a row
+    the layout did not count, and uncounted rows crop the buttons off the
+    bottom of a fixed-height Panel. (``no_wrap`` only takes effect when the
+    Text is rendered inside a Panel/Group, which is how every gate row is
+    drawn — a bare ``console.print`` of the same Text would ignore it.)
+    """
+    return Text(
+        safe_console_text(text)[: max(20, width - _PANEL_SIDE_COLS)], style=style, no_wrap=True, overflow="crop"
+    )
+
+
+def _gate_line(label: str, value: str, *, style: str = "rgb(200,200,210)", width: int = 80) -> Text:
+    row = _one_row(f"{PAD}{label}  ", width=width, style="rgb(110,110,125)")
+    row.append(safe_console_text(value), style=style)
+    row.truncate(max(20, width - _PANEL_SIDE_COLS), overflow="ellipsis")
     return row
 
 
@@ -189,18 +208,19 @@ def _diff_row(line: str, *, width: int, theme) -> Text:
     }.get(line[:1], "rgb(160,160,175)")
     if line.startswith(("+++", "---", "diff --git")):
         style = "bold rgb(200,200,210)"
-    return Text(f"{PAD}  {line[: max(20, width - 10)]}", style=style)
+    return _one_row(f"{PAD}  {line}", width=width, style=style)
 
 
 def _rows_of(parts: list) -> int:
     """How many terminal rows ``parts`` occupies.
 
-    Every entry is a single ``Text`` row except the ASCII wordmark. The gate
-    needs an exact count, not an estimate: a row too many crops the button
-    block off the bottom of a fixed-height Panel, and a gate whose buttons are
-    off screen still answers Enter with "Approve" — which is a push.
+    Every entry is a single ``Text`` row except the ASCII wordmark, which is
+    ``TITLE_ROWS`` tall — the shared constant, never a second copy of the
+    number. The gate needs an exact count, not an estimate: a row too many
+    crops the button block off the bottom of a fixed-height Panel, and a gate
+    whose buttons are off screen still answers Enter with "Approve".
     """
-    return sum(_TITLE_ROWS if isinstance(part, Text) and "█" in part.plain else 1 for part in parts)
+    return sum(TITLE_ROWS if isinstance(part, Text) and "█" in part.plain else 1 for part in parts)
 
 
 def _diff_viewport(run: ShipRun, *, width: int, rows: int, offset: int, theme) -> tuple[object, int, int]:
@@ -250,34 +270,35 @@ def _build_ship_gate_screen(
     loop's offset can never run past what is on screen.
     """
     theme = SHIP_THEME
-    clip = max(20, width - 10)
     head: list = [
         Text(""),
         ship_title(None, width=width),
         build_reveal_subtitle("Review the diff like a stranger wrote it — one did", None, justify="center"),
         Text(""),
-        _gate_line("Story ", run.story_id),
-        _gate_line("Branch", run.branch, style=theme.id),
+        _gate_line("Story ", run.story_id, width=width),
+        _gate_line("Branch", run.branch, style=theme.id, width=width),
     ]
     if run.worktree:
         # Where to look when the pane is not enough — the patch is capped, the
         # checkout is not.
-        head.append(_gate_line("Tree  ", run.worktree, style="rgb(140,140,155)"))
+        head.append(_gate_line("Tree  ", run.worktree, style="rgb(140,140,155)", width=width))
 
     # The elastic sections, each with a floor it may not drop below. When the
     # window cannot hold everything these give way, in this order, so the
     # fixed rows and the buttons always survive: losing the tail of a failure
     # log is a far cheaper loss than losing the controls.
-    stat_rows = [Text(f"{PAD}  {line[:clip]}", style="rgb(160,160,175)") for line in run.diff_stat.splitlines()]
+    stat_rows = [
+        _one_row(f"{PAD}  {line}", width=width, style="rgb(160,160,175)") for line in run.diff_stat.splitlines()
+    ]
     tail_rows: list = []
     check_rows: list = []
     if run.validation.configured:
         state = "✓ passed" if run.validation.passed else f"✗ FAILED (exit {run.validation.exit_code})"
         style = theme.good if run.validation.passed else theme.bad
-        check_rows.append(_gate_line("Checks", f"{run.validation.command} — {state}", style=style))
+        check_rows.append(_gate_line("Checks", f"{run.validation.command} — {state}", style=style, width=width))
         if not run.validation.passed:
             tail_rows = [
-                Text(f"{PAD}  {line[:clip]}", style="rgb(140,120,120)")
+                _one_row(f"{PAD}  {line}", width=width, style="rgb(140,120,120)")
                 for line in run.validation.output_tail.splitlines()[-_MAX_TAIL_ROWS:]
             ]
     else:
@@ -285,17 +306,19 @@ def _build_ship_gate_screen(
     finding_rows: list = []
     if run.transcript_findings:
         finding_rows.append(
-            _gate_line("Safety", f"{len(run.transcript_findings)} transcript finding(s):", style=theme.warn)
+            _gate_line(
+                "Safety", f"{len(run.transcript_findings)} transcript finding(s):", style=theme.warn, width=width
+            )
         )
         finding_rows += [
-            Text(f"{PAD}  {severity}: {label} ({kind})", style=theme.warn)
+            _one_row(f"{PAD}  {severity}: {label} ({kind})", width=width, style=theme.warn)
             for kind, severity, label in run.transcript_findings[:_MAX_FINDING_ROWS]
         ]
     extra_rows: list = []
     if run.cost_usd:
-        extra_rows.append(_gate_line("Cost  ", f"${run.cost_usd:.2f}"))
+        extra_rows.append(_gate_line("Cost  ", f"${run.cost_usd:.2f}", width=width))
     if run.rejection_count:
-        extra_rows.append(_gate_line("Rework", f"attempt {run.rejection_count + 1} after your feedback"))
+        extra_rows.append(_gate_line("Rework", f"attempt {run.rejection_count + 1} after your feedback", width=width))
 
     # Everything below the pane is fixed, so build it first: what is left over
     # decides how much elastic content — and then how much patch — fits.
@@ -307,7 +330,9 @@ def _build_ship_gate_screen(
         prompt.append(comment_edit, style="bold white")
         prompt.append("▏", style=theme.accent_bright)
         foot.append(prompt)
-        foot.append(Text(f"{PAD}enter sends the feedback to the agent · esc keeps reviewing", style="dim"))
+        foot.append(
+            _one_row(f"{PAD}enter sends the feedback to the agent · esc keeps reviewing", width=width, style="dim")
+        )
     foot.append(Text(message, style=theme.warn if message else "", justify="center"))
     foot.append(Text(""))
     foot.extend(build_action_buttons(SHIP_GATE_ACTIONS, action_sel))
@@ -323,19 +348,29 @@ def _build_ship_gate_screen(
         - _rows_of(foot)
         - 2  # the spacer below the stat and the one above the buttons
     )
-    label = Text(f"{PAD}the change itself  ↑↓ pgup/pgdn home/end scroll", style="rgb(110,110,125)")
+    label = _one_row(f"{PAD}the change itself  ↑↓ pgup/pgdn home/end scroll", width=width, style="rgb(110,110,125)")
+
+    # Which END a section sheds from is not arbitrary: a failure tail's LAST
+    # lines are the actual error, and the stat's last line is the "N files
+    # changed" total. Both shed from the front so the row that carries the
+    # meaning is the one that survives.
+    def _shed(rows: list, floor: int, wanted: int) -> int:
+        while wanted > 0 and len(rows) > floor:
+            rows.pop(0)
+            wanted -= 1
+        return wanted
+
+    elastic = ((tail_rows, 0), (finding_rows, 1), (stat_rows, 1))
     pane_rows = 0
     if comment_edit is None:
         pane_rows = budget - len(stat_rows) - len(tail_rows) - len(finding_rows) - 1  # 1 for the label row
-        for rows, floor in ((tail_rows, 0), (finding_rows, 1), (stat_rows, 1)):
+        for rows, floor in elastic:
             while len(rows) > floor and pane_rows < _MIN_DIFF_PANE_ROWS:
-                rows.pop()
+                rows.pop(0)
                 pane_rows += 1
     over = len(stat_rows) + len(tail_rows) + len(finding_rows) + max(0, pane_rows) - budget
-    for rows, floor in ((tail_rows, 0), (finding_rows, 1), (stat_rows, 1)):
-        while over > 0 and len(rows) > floor:
-            rows.pop()
-            over -= 1
+    for rows, floor in elastic:
+        over = _shed(rows, floor, over)
 
     parts: list = [*head, *stat_rows, Text(""), *check_rows, *tail_rows, *extra_rows, *finding_rows, Text("")]
     if comment_edit is None and pane_rows >= _MIN_DIFF_PANE_ROWS:

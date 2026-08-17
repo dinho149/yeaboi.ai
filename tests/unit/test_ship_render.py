@@ -73,6 +73,20 @@ class TestFormatRun:
         run = ShipRun(run_id="r", story_id="US-1", diff_text="@@ -1 +1 @@\n+leaked into the summary\n")
         assert "leaked into the summary" not in _render(format_run_rich(run))
 
+    def test_control_characters_in_the_patch_never_reach_the_terminal(self):
+        # rich's Text strips BEL/BS/VT/FF/CR but not ESC, and the patch is
+        # agent-authored: an escape sequence at the CLI gate could repaint over
+        # what the approver is reading before they answer the prompt.
+        run = ShipRun(
+            run_id="r",
+            story_id="US-1",
+            diff_stat="1 file changed",
+            diff_text="+innocent\n+\x1b[2J\x1b[Hwiped\n",
+        )
+        out = _render(format_run_rich(run, show_diff=True))
+        assert "\x1b[2J" not in out
+        assert "wiped" in out
+
     def test_an_unreadable_patch_is_a_warning_at_the_gate(self):
         run = ShipRun(run_id="r", story_id="US-1", diff_stat="1 file changed", diff_text="")
         out = _render(format_run_rich(run, show_diff=True))

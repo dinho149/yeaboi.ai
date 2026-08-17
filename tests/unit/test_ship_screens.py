@@ -221,6 +221,45 @@ class TestGateScreen:
             assert "Approve" in out, f"buttons cropped at {width}x{height}"
             assert "Reject" in out, f"buttons cropped at {width}x{height}"
 
+    def test_full_width_patch_lines_and_a_real_worktree_path_do_not_crop_the_buttons(self):
+        # A wrapped row is a row the layout did not count. Patch lines at this
+        # repo's own 120-column limit and a real ~/.yeaboi worktree path are
+        # the normal case, not the edge one.
+        run = self._run(
+            worktree="/Users/somebody/.yeaboi/ship/worktrees/yeaboi-ai/us-001-20260817083000-a1b2c3",
+            branch="ship/us-001-20260817083000-a1b2c3",
+            diff_stat="src/some/deeply/nested/module_with_a_very_long_name.py | 40 +++++++++-----\n1 file changed",
+            diff_text="\n".join("+" + "x" * 118 for _ in range(200)),
+            validation=ShipValidation(
+                configured=True,
+                command="make test && make lint && make parity",
+                passed=False,
+                exit_code=1,
+                output_tail="\n".join("E   " + "y" * 116 for _ in range(6)),
+            ),
+        )
+        for width in (84, 100, 120):
+            out = self._gate(run, width=width)
+            assert "Approve" in out, f"buttons cropped at {width} columns"
+            body_rows = [line for line in out.splitlines() if line.startswith("│")]
+            assert len(body_rows) <= 40, f"panel overflowed its height at {width} columns"
+
+    def test_control_characters_in_agent_text_never_reach_the_terminal(self):
+        # The patch is written by the agent and this gate is the only control
+        # before a push: an escape sequence could repaint over what the
+        # reviewer is reading, so they approve what they saw and not what is
+        # on disk. Rich strips BEL/BS/VT/FF/CR but NOT ESC.
+        run = self._run(
+            diff_text="+innocent\n+\x1b[2J\x1b[Hwiped the screen\n",
+            validation=ShipValidation(
+                configured=True, command="make test", passed=False, exit_code=1, output_tail="\x1b[31mFAILED\x07"
+            ),
+        )
+        out = self._gate(run)
+        assert "\x1b[2J" not in out
+        assert "\x1b[31m" not in out
+        assert "wiped the screen" in out  # the text survives; only the controls go
+
     def test_a_window_too_short_for_both_drops_the_pane_and_says_where_to_look(self):
         run = self._run(diff_text="\n".join(f"+line {n}" for n in range(200)), worktree="/tmp/wt/run-1")
         out = self._gate(run, height=22)

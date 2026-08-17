@@ -169,12 +169,18 @@ def diff_text(record: WorktreeRecord, *, max_chars: int = DIFF_TEXT_CAP) -> str:
         logger.warning("Could not read the diff for %s: %s", record.run_id, exc)
         patch = ""
     finally:
-        # Stop git writing the rest into a pipe nobody drains, then reap it.
-        proc.stdout.close() if proc.stdout else None
+        # Stop git writing the rest into a pipe nobody drains, then reap it —
+        # including after the kill, or the dead child lingers as a zombie.
+        if proc.stdout is not None:
+            proc.stdout.close()
         try:
             proc.wait(timeout=_DIFF_REAP_S)
         except subprocess.TimeoutExpired:
             proc.kill()
+            try:
+                proc.wait(timeout=_DIFF_REAP_S)
+            except subprocess.TimeoutExpired:
+                logger.error("git diff for %s would not die", record.run_id)
     if proc.returncode not in (0, None) and not patch:
         logger.warning("git diff for %s exited %s", record.run_id, proc.returncode)
         return ""
