@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yeaboi-core/v1/retro.build_export.json",
+  "title": "retro.build_export params and result",
+  "description": "One retro document — the Markdown artifact and the HTML export args — as one pure function. Python freezes the report (asdict + json round-trip), the store history rows, the editable flag and a single now() capture into the params (build_retro_export_inputs); the sidecar rebuilds the report through the store-deserializer semantics (retro/store.py report_from_dict), renders build_retro_markdown and retro_export_args, and returns both. Python keeps rendering the HTML shell (export_page) around the returned args, and all filesystem writes stay Python-side. Result key order is contractual throughout: args is json.dumps-ed into the page boot payload, so every object keeps the reference implementation's dict-literal key order. Reference implementation: src/yeaboi/retro/export.py::build_retro_export (build_retro_export_inputs builds the params). Pure by contract: no DB, no network, no clock (generated_ts/generated_date carry the only nondeterminism), no logging — card text and author names cross the wire as params and never appear in an error or a log line (rpc.md rule 13).",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "required": ["report", "history", "editable", "generated_ts", "generated_date"],
+      "properties": {
+        "report": {
+          "type": "object",
+          "description": "asdict(RetroReport) after a json round-trip — the same plain-JSON shape a stored report takes. Deserialized with report_from_dict semantics: .get() defaults per field, reactions rebuilt as (str, int) pairs with rows not exactly two elements long dropped, annotations tolerant (state.annotations_from)."
+        },
+        "history": {
+          "type": "array",
+          "description": "RetroStore.get_history rows, newest-first, sent verbatim; feeds the card-volume trend (date key retro_date, value key card_count).",
+          "items": { "type": "object" }
+        },
+        "editable": {
+          "description": "Truthy when the document is being served editable: card payloads gain anchor + edit maps (rowAnchor/editMap over the card id). File exports always pass false so a downloaded report stays byte-identical.",
+          "type": "boolean"
+        },
+        "generated_ts": {
+          "type": "string",
+          "description": "The Markdown footer timestamp (YYYY-MM-DD HH:MM), captured once by the caller — the seam's only nondeterminism, always non-empty on this path (the reference's empty-means-now fallback is unreachable and unported)."
+        },
+        "generated_date": {
+          "type": "string",
+          "description": "The HTML footer date (YYYY-MM-DD), from the same now() capture as generated_ts."
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["contract_version", "markdown", "args"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "markdown": {
+          "type": "string",
+          "description": "build_retro_markdown's document, byte-for-byte: title, date/participants header, the four grids in board order (action items as task-list checkboxes, other grids as pipe tables through md_table_cell), carried action items with status labels, annotations, footer pinned to generated_ts."
+        },
+        "args": {
+          "type": "object",
+          "description": "retro_export_args' chrome + payload kwargs, key order contractual: mode, title, wordmark, facts (DATE/CARDS/PARTICIPANTS), report, footer. report keys: kind, columns (always exactly len(RETRO_GRIDS) = 4, in board order; unknown-grid cards are dropped from columns but still counted in CARDS and the trend's current point), participants, carried (key order status, text, then the editable payload merged in place — the text key keeps its position), trend (null — not omitted — under 2 points), and annotations appended last only when any survive the empty-text filter.",
+          "required": ["mode", "title", "wordmark", "facts", "report", "footer"]
+        }
+      }
+    }
+  }
+}

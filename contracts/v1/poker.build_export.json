@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yeaboi-core/v1/poker.build_export.json",
+  "title": "poker.build_export params and result",
+  "description": "One poker document — the Markdown artifact and the HTML export args — as one pure function, the sibling of retro.build_export. Python freezes the report (asdict + json round-trip), the store history rows and a single now() capture into the params (build_poker_export_inputs); the sidecar rebuilds the report through the store-deserializer semantics (poker/store.py report_from_dict — note _float_or_none widens wire integers to floats, so 3 on the wire renders 3.0 in the payload), renders build_poker_markdown and poker_export_args, and returns both. No editable flag — poker has no editable share. Result key order is contractual throughout: args is json.dumps-ed into the page boot payload. Reference implementation: src/yeaboi/poker/export.py::build_poker_export (build_poker_export_inputs builds the params). Pure by contract: no DB, no network, no clock, no logging — ticket summaries, voter names and duel transcripts cross the wire as params and never appear in an error or a log line; safe_url's Python-side warning on a dropped URL is an accepted Python-only deviation (rpc.md rule 13).",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "required": ["report", "history", "generated_ts", "generated_date"],
+      "properties": {
+        "report": {
+          "type": "object",
+          "description": "asdict(PokerReport) after a json round-trip. Deserialized with report_from_dict semantics: .get() defaults per field, initial_points/final_points through _float_or_none (unconvertible folds to null, never an error), estimated through bool()."
+        },
+        "history": {
+          "type": "array",
+          "description": "PokerStore.get_history rows, newest-first, sent verbatim; feeds the estimation trend (date key poker_date, value key estimated_count).",
+          "items": { "type": "object" }
+        },
+        "generated_ts": {
+          "type": "string",
+          "description": "The Markdown footer timestamp (YYYY-MM-DD HH:MM), captured once by the caller — the seam's only nondeterminism, always non-empty on this path."
+        },
+        "generated_date": {
+          "type": "string",
+          "description": "The HTML footer date (YYYY-MM-DD), from the same now() capture as generated_ts."
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["contract_version", "markdown", "args"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "markdown": {
+          "type": "string",
+          "description": "build_poker_markdown's document, byte-for-byte: title, header facts, the ticket pipe table (keys linked only through safe_url's allowlist, summaries and votes through md_table_cell, points through _pts, skipped tickets as _skipped_), AI perspectives and Duels sections only when present (duel transcripts split on Python's universal line terminators), footer pinned to generated_ts."
+        },
+        "args": {
+          "type": "object",
+          "description": "poker_export_args' chrome + payload kwargs, key order contractual: mode, title, wordmark, facts (SOURCE/SCOPE/DATE/ESTIMATED), nav (overview + tickets always; ai/duels appended only when a ticket carries them), report, footer. report keys: kind, tickets (per-ticket key order key, summary, before, final — forced null whenever estimated is false, even over a stale final_points — estimated, votes (empty-value votes filtered, values str()-ed), then url/aiNote/duel only when present), participants, trend (null — not omitted — under 2 points).",
+          "required": ["mode", "title", "wordmark", "facts", "nav", "report", "footer"]
+        }
+      }
+    }
+  }
+}
