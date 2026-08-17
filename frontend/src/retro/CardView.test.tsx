@@ -23,6 +23,7 @@ function renderCard(overrides: Parameters<typeof card>[0] = {}, props: Partial<P
     onReact: vi.fn(),
     onMoveTo: vi.fn(),
     onGripPointerDown: vi.fn(),
+    onCardPointerDown: vi.fn(),
   };
   const subject = card(overrides);
   const view = render(
@@ -52,6 +53,7 @@ describe('CardView', () => {
         onReact={vi.fn()}
         onMoveTo={vi.fn()}
         onGripPointerDown={vi.fn()}
+        onCardPointerDown={vi.fn()}
       />
     );
 

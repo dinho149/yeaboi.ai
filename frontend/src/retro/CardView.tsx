@@ -52,6 +52,8 @@ export interface CardViewProps {
   onReact(emoji: string): void;
   onMoveTo(grid: RetroGrids): void;
   onGripPointerDown(event: PointerEvent): void;
+  /** A press on the card body. Mice pick up at once, fingers hold first. */
+  onCardPointerDown(event: PointerEvent): void;
 }
 
 function CardEditor({
@@ -113,6 +115,7 @@ export function CardView({
   onReact,
   onMoveTo,
   onGripPointerDown,
+  onCardPointerDown,
 }: CardViewProps) {
   const [editing, setEditing] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -162,11 +165,17 @@ export function CardView({
       className={cx(
         styles['card'],
         isAI && styles['cardAI'],
+        locked && styles['cardLocked'],
         dragging && styles['cardDragging'],
         arrived && motion['arrived']
       )}
       data-card-id={card.id}
       aria-label={`Card by ${isAI ? 'AI' : card.author}`}
+      // The whole card is the handle; the hook decides what a press means from
+      // the pointer type and skips one that landed on a control.
+      onPointerDown={(event) => {
+        if (!editing && !locked) onCardPointerDown(event as unknown as PointerEvent);
+      }}
     >
       {editing ? (
         <CardEditor

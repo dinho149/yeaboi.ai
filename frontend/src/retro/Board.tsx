@@ -22,6 +22,7 @@ import { cx } from '../runtime/cx';
 import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { Column } from './Column';
+import { DragPreview } from './DragPreview';
 import { useCardDrag } from './useCardDrag';
 import { useFrozen } from './useFrozen';
 import styles from './retro.module.css';
@@ -67,7 +68,11 @@ export function Board({
   const [page, setPage] = useState(0);
 
   const gridLabel = useCallback((grid: RetroGrids) => RETRO_GRID_LABELS[grid], []);
-  const { drag, onGripPointerDown, announcement } = useCardDrag({ onMove, gridLabel, enabled: !locked });
+  const { drag, onGripPointerDown, onCardPointerDown, announcement } = useCardDrag({
+    onMove,
+    gridLabel,
+    enabled: !locked,
+  });
 
   // Hold the card list still for the duration of a drag. See useFrozen.
   const stable = useFrozen(cards, drag !== null);
@@ -77,6 +82,8 @@ export function Board({
     for (const card of stable) map.get(card.grid)?.push(card);
     return map;
   }, [stable]);
+
+  const dragged = drag ? (stable.find((card) => card.id === drag.cardId) ?? null) : null;
 
   const onTrackScroll = (): void => {
     const track = trackRef.current;
@@ -108,6 +115,7 @@ export function Board({
             onReact={onReact}
             onMoveTo={(cardId, target) => onMove(cardId, target, (byGrid.get(target) ?? []).length)}
             onGripPointerDown={onGripPointerDown}
+            onCardPointerDown={onCardPointerDown}
           />
         ))}
       </div>
@@ -130,6 +138,10 @@ export function Board({
           />
         ))}
       </div>
+
+      {dragged ? (
+        <DragPreview drag={drag as NonNullable<typeof drag>} card={dragged} authorAvatar={avatars.get(dragged.author)} />
+      ) : null}
 
       {/* The drag's running commentary. A pointer drag is invisible to a screen
           reader otherwise, and this is also what confirms a move landed. */}

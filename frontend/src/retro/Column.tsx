@@ -54,6 +54,8 @@ export interface ColumnProps {
   onReact(cardId: string, emoji: string): void;
   onMoveTo(cardId: string, grid: RetroGrids): void;
   onGripPointerDown(cardId: string, event: PointerEvent): void;
+  /** A press on the card body, which a mouse turns into a drag at once. */
+  onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
 
 /** Cards clustered by author, first-seen order preserved. */
@@ -87,6 +89,7 @@ export function Column({
   onReact,
   onMoveTo,
   onGripPointerDown,
+  onCardPointerDown,
 }: ColumnProps) {
   const [composing, setComposing] = useState(false);
   const [focusNonce, setFocusNonce] = useState(0);
@@ -125,6 +128,7 @@ export function Column({
         onReact={(emoji) => onReact(card.id, emoji)}
         onMoveTo={(target) => onMoveTo(card.id, target)}
         onGripPointerDown={(event) => onGripPointerDown(card.id, event)}
+        onCardPointerDown={(event) => onCardPointerDown(card.id, event)}
       />
     </div>
   );

@@ -373,17 +373,6 @@ export function App({ boot }: { boot: RetroBoot }) {
               the same thing twice and only fitted four of them. */}
           <Room people={presence} meName={name} />
         </div>
-
-        <div className={styles['viewCtl']}>
-          <IconButton
-            icon={<Icon name="user" size={16} />}
-            label="Walk through one person at a time"
-            active={Boolean(focus)}
-            disabled={!authors.length}
-            onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
-          />
-          <IconButton icon={<Icon name="rows" size={16} />} label="Group cards by author" active={grouped} onClick={toggleGrouped} />
-        </div>
     </Toolbar>
   );
 
@@ -396,6 +385,21 @@ export function App({ boot }: { boot: RetroBoot }) {
       dock={
         <>
             <Visualizer playing={music.playing} />
+
+            <IconButton
+              icon={<Icon name="user" size={16} />}
+              label="Walk through one person at a time"
+              active={Boolean(focus)}
+              disabled={!authors.length}
+              onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
+            />
+
+            <IconButton
+              icon={<Icon name="rows" size={16} />}
+              label="Group cards by author"
+              active={grouped}
+              onClick={toggleGrouped}
+            />
 
             {isHost ? (
               <IconButton

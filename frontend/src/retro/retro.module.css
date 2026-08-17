@@ -70,7 +70,6 @@
 .pen { display: inline-flex; color: var(--muted); }
 .roomCount { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-.viewCtl { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
 .lockBanner, .musicBanner {
@@ -239,25 +238,15 @@
 
 /* ── Column ───────────────────────────────────────────────────────────── */
 /*
- * A panel in the board's material — the same ground, hairline and top-edge
- * highlight as the bar, the dock and every control on it. It was a near-black
- * well with a hairline, which on a dark board reads as a hole rather than a
- * surface.
- *
- * `--col-tone` is set per column by Column.tsx from the typed map in
- * gridTone.ts. It says the column's identity once, on the head; the cards
- * inside are the board's, not the column's.
+ * A region, not an object: no fill, no border, no shadow. The cards are the
+ * only raised thing on the board, which is what lets a stack of them read as a
+ * stack. `--col-tone` is set per column by Column.tsx from the typed map in
+ * gridTone.ts, and says the column's identity once, on its head.
  */
 .column {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-l);
-  box-shadow:
-    var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%);
 }
 .columnHead {
   display: flex;
@@ -292,7 +281,14 @@
   flex-direction: column;
   gap: var(--s2);
 }
-.cardsOver { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+/* The only thing that draws the column's bounds, and only while a card is over
+   it — the region is otherwise unpainted. */
+.cardsOver {
+  background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: var(--r-l);
+}
 .columnEmpty { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
 .authorGroup { display: flex; flex-direction: column; gap: var(--s2); }
@@ -306,22 +302,88 @@
 }
 
 .cardSlot { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-.dropLine { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+.dropLine { height: 2px; border-radius: var(--r-pill); background: var(--col-tone, var(--accent)); }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
+/*
+ * The bar's material, and the dock's: same ground, same hairline, same corner,
+ * the same three shadows. They are the furniture of the board and a card is
+ * one more piece of it.
+ *
+ * The whole card is the drag handle, so it says so — `grab`, and it lifts a
+ * little under the pointer.
+ */
 .card {
-  background: var(--card);
+  background: var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-m);
+  border-radius: var(--r-l);
   padding: var(--s3);
   box-shadow:
     var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%);
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  cursor: grab;
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
+.card:hover {
+  border-color: var(--hairline-strong);
+  transform: translateY(-1px);
+  box-shadow:
+    var(--edge),
+    0 2px 2px rgb(0 0 0 / 12%),
+    0 8px 20px rgb(0 0 0 / 14%);
+}
+.card:active { cursor: grabbing; }
+/* A locked board is read-only, and a grab cursor over it is a lie. */
+.cardLocked { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
 .cardAI { border-left: 3px solid var(--accent2); }
-.cardDragging { opacity: 0.4; }
+
+/* ── Carried ──────────────────────────────────────────────────────────── */
+/*
+ * The card is gone from the list while it is in the air, and what is left is
+ * the hole it came out of. A faded copy of it was worse: two of the same card
+ * on screen, one of them under the pointer and one of them not.
+ */
+.cardDragging {
+  transform: none;
+  box-shadow: none;
+  background: none;
+  border-style: dashed;
+  border-color: var(--line);
+}
+.cardDragging > * { opacity: 0; }
+
+.dragLayer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  pointer-events: none;
+}
+/* Off the board and in the hand: bigger shadow, no hover transition to fight
+   the per-frame transform, and a transform origin near the pointer so the lean
+   pivots where it is being held rather than around the middle of the card. */
+.dragCard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: grabbing;
+  transform-origin: 50% 0%;
+  transition: none;
+  box-shadow:
+    var(--edge),
+    0 2px 4px rgb(0 0 0 / 18%),
+    0 18px 40px rgb(0 0 0 / 34%);
+  animation: cardLift var(--dur-fast) var(--ease) both;
+}
+@keyframes cardLift {
+  from { scale: 1; }
+  to { scale: 1.03; }
+}
 .cardText {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are

@@ -20,14 +20,15 @@
  * save 170 KB was the whole reason the runtime is what it is. The requirement
  * here is one card into one column at one index, not a general sortable tree.
  *
- * ## Why a handle
+ * ## Where a drag starts
  *
- * The drag starts from an explicit grip, not from the card body. On touch, a
- * pointer-based drag needs `touch-action: none` on the element it starts from,
- * and putting that on the whole card would kill scrolling the column — you
- * could no longer reach the cards further down. Confining it to a small grip
- * keeps the column scrollable, keeps text selectable, and makes the affordance
- * visible instead of something you have to discover.
+ * Anywhere on the card with a mouse, and from the grip or a short hold with a
+ * finger. The split is not a preference: a pointer drag needs the browser to
+ * stop treating the gesture as a scroll, and on touch the only moment that
+ * decision can be made is before the first move — so a card that grabbed the
+ * whole surface immediately would be a column you can no longer scroll. A hold
+ * is the gesture that says "this one", and the grip stays for anyone who would
+ * rather not wait for it.
  *
  * Keyboard users do not drag at all: the grip is a real button that opens a
  * "Move to…" menu (see CardView). Emulating a drag with arrow keys is a worse
@@ -40,10 +41,20 @@ import type { RetroGrids } from '../types/enums';
 
 /** Pixels of movement before a press becomes a drag, so a tap still taps. */
 const THRESHOLD = 4;
+/** How long a finger rests on a card before it can be carried, in ms. */
+const HOLD_MS = 300;
+/** How far a finger may stray during that hold and still arm the drag, in px. */
+const HOLD_SLOP = 8;
 /** Distance from a column's edge at which it starts auto-scrolling, in px. */
 const EDGE = 56;
 /** Auto-scroll speed at the very edge, in px per frame. */
 const SCROLL_RATE = 12;
+/** Degrees of lean at full tilt. */
+const TILT_MAX = 9;
+/** Horizontal speed, in px per event, that reaches it. */
+const TILT_SPEED = 14;
+/** Quiet time after which a carried card swings back upright, in ms. */
+const SETTLE_MS = 70;
 
 export interface DropTarget {
   grid: RetroGrids;
@@ -53,9 +64,16 @@ export interface DropTarget {
 
 export interface DragState {
   cardId: string;
-  /** Viewport coordinates of the pointer, for the floating preview. */
+  /** Viewport coordinates of the pointer. */
   x: number;
   y: number;
+  /** Where inside the card it was grabbed, so it hangs where it was picked up. */
+  grabX: number;
+  grabY: number;
+  /** The card's own width, so the carried copy is not a different object. */
+  width: number;
+  /** Lean, in degrees, from how fast it is being swung. */
+  tilt: number;
   target: DropTarget | null;
 }
 
@@ -70,6 +88,8 @@ export interface CardDrag {
   drag: DragState | null;
   /** Attach to the grip element of the card with this id. */
   onGripPointerDown(cardId: string, event: PointerEvent): void;
+  /** Attach to the card body. Mice pick up at once; fingers hold first. */
+  onCardPointerDown(cardId: string, event: PointerEvent): void;
   /** Live-region text describing the drag. Render it in an `aria-live` node. */
   announcement: string;
 }
@@ -146,35 +166,54 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
     }
   }, []);
 
-  const onGripPointerDown = useCallback(
-    (cardId: string, event: PointerEvent) => {
+  // Cleared on every move and re-armed, so it only fires once the pointer has
+  // actually stopped. That gap is the swing back to upright.
+  const settleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  /**
+   * One press, from either the grip or the card body.
+   *
+   * `hold` is the touch path: the drag arms on a timer instead of on movement,
+   * and until it does every move is left alone so the column still scrolls.
+   */
+  const begin = useCallback(
+    (cardId: string, event: PointerEvent, hold: boolean) => {
       // Secondary buttons open context menus; hijacking them would make
       // right-click-to-inspect start a drag instead.
       if (!enabled || (event.button !== undefined && event.button !== 0)) return;
-      event.preventDefault();
 
-      const grip = event.currentTarget;
+      const from = event.currentTarget;
+      const card = from instanceof Element ? from.closest<HTMLElement>('[data-card-id]') : null;
+      const rect = card?.getBoundingClientRect();
+      const grabX = rect ? event.clientX - rect.left : 0;
+      const grabY = rect ? event.clientY - rect.top : 0;
+      const width = rect?.width ?? 0;
+
       const originX = event.clientX;
       const originY = event.clientY;
       let started = false;
+      let lastX = originX;
+      let armTimer: ReturnType<typeof setTimeout> | undefined;
 
-      const move = (e: PointerEvent): void => {
-        if (e.pointerId !== event.pointerId) return;
-        if (!started) {
-          if (Math.hypot(e.clientX - originX, e.clientY - originY) < THRESHOLD) return;
-          started = true;
-          // Capture only once the drag is real. Capturing on pointerdown would
-          // swallow the click that a plain tap on the grip should produce — the
-          // tap is what opens the keyboard "Move to…" menu.
-          try {
-            if (grip instanceof Element) grip.setPointerCapture(e.pointerId);
-          } catch {
-            // No pointer capture (jsdom, or the pointer already ended). The
-            // document-level listeners below carry the drag either way.
-          }
-          setAnnouncement('Picked up. Drag to a column, or press Escape to cancel.');
+      if (!hold) event.preventDefault();
+
+      const pick = (e: PointerEvent): void => {
+        started = true;
+        // Capture only once the drag is real. Capturing on pointerdown would
+        // swallow the click that a plain tap on the grip should produce — the
+        // tap is what opens the keyboard "Move to…" menu.
+        try {
+          if (from instanceof Element) from.setPointerCapture(e.pointerId);
+        } catch {
+          // No pointer capture (jsdom, or the pointer already ended). The
+          // document-level listeners below carry the drag either way.
         }
+        // A drag across a board of text otherwise paints half of it blue.
+        document.body.style.userSelect = 'none';
+        setAnnouncement('Picked up. Drag to a column, or press Escape to cancel.');
+      };
 
+      const at = (e: PointerEvent, tilt: number): DragState => {
         const column = columnAt(e.clientX, e.clientY);
         let target: DropTarget | null = null;
         if (column) {
@@ -182,9 +221,38 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
           const grid = column.dataset['grid'] as RetroGrids | undefined;
           if (grid) target = { grid, index: indexAt(column, e.clientY, cardId) };
         }
-        const next: DragState = { cardId, x: e.clientX, y: e.clientY, target };
+        return { cardId, x: e.clientX, y: e.clientY, grabX, grabY, width, tilt, target };
+      };
+
+      const move = (e: PointerEvent): void => {
+        if (e.pointerId !== event.pointerId) return;
+        if (!started) {
+          if (hold) {
+            // Strayed before the hold elapsed: this was a scroll.
+            if (Math.hypot(e.clientX - originX, e.clientY - originY) > HOLD_SLOP) teardown();
+            return;
+          }
+          if (Math.hypot(e.clientX - originX, e.clientY - originY) < THRESHOLD) return;
+          pick(e);
+        }
+        // Armed: the gesture is ours, and the browser must not also scroll with it.
+        e.preventDefault();
+
+        const speed = e.clientX - lastX;
+        lastX = e.clientX;
+        const tilt = Math.max(-TILT_MAX, Math.min(TILT_MAX, (speed / TILT_SPEED) * TILT_MAX));
+        const next = at(e, tilt);
         active.current = next;
         setDrag(next);
+
+        clearTimeout(settleRef.current);
+        settleRef.current = setTimeout(() => {
+          const held = active.current;
+          if (!held) return;
+          const upright = { ...held, tilt: 0 };
+          active.current = upright;
+          setDrag(upright);
+        }, SETTLE_MS);
       };
 
       const up = (e: PointerEvent): void => {
@@ -208,6 +276,9 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
       };
 
       function teardown(): void {
+        document.body.style.userSelect = '';
+        clearTimeout(armTimer);
+        clearTimeout(settleRef.current);
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', up);
         document.removeEventListener('pointercancel', cancel);
@@ -215,7 +286,28 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
         teardownRef.current = null;
       }
 
-      document.addEventListener('pointermove', move);
+      if (hold) {
+        armTimer = setTimeout(() => {
+          if (started) return;
+          pick(event);
+          const next: DragState = {
+            cardId,
+            x: originX,
+            y: originY,
+            grabX,
+            grabY,
+            width,
+            tilt: 0,
+            target: null,
+          };
+          active.current = next;
+          setDrag(next);
+        }, HOLD_MS);
+      }
+
+      // `passive: false` on the move listener, or `preventDefault` above is
+      // ignored on touch and the column scrolls out from under the card.
+      document.addEventListener('pointermove', move, { passive: false });
       document.addEventListener('pointerup', up);
       document.addEventListener('pointercancel', cancel);
       document.addEventListener('keydown', key);
@@ -224,13 +316,29 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
     [enabled, finish]
   );
 
+  const onGripPointerDown = useCallback(
+    (cardId: string, event: PointerEvent) => begin(cardId, event, false),
+    [begin]
+  );
+
+  const onCardPointerDown = useCallback(
+    (cardId: string, event: PointerEvent) => {
+      // A press on a control inside the card is that control's, not a grab.
+      const from = event.target;
+      if (from instanceof Element && from.closest('button, a, input, textarea, select')) return;
+      begin(cardId, event, event.pointerType !== 'mouse');
+    },
+    [begin]
+  );
+
   useEffect(
     () => () => {
       teardownRef.current?.();
+      clearTimeout(settleRef.current);
       active.current = null;
     },
     []
   );
 
-  return { drag, onGripPointerDown, announcement };
+  return { drag, onGripPointerDown, onCardPointerDown, announcement };
 }
