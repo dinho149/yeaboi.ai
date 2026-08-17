@@ -90,6 +90,13 @@ _DOC_CACHE_TASK = "documentation_page_score"
 # Confluence/Notion readers), prose-only Flesch, wider owner detection, and the
 # AI-disclosure gate — cached v2 page scores were built from structure-less text
 # and must not be reused.
+#
+# This version is the cache's ONLY invalidation lever, and since the sidecar
+# seam the cache can hold Go-computed assets: the key carries no engine or
+# binary version, so a scoring fix on the Go side alone (a divergence the
+# parity fixtures missed) MUST bump this constant too, or the poisoned rows
+# are served forever — including after the user sets YEABOI_GO=0, because
+# the Python path reads the same cache.
 _DOC_SCORING_VERSION = "deterministic-v3"
 _EMPTY_BODY = "empty page body"
 
@@ -337,11 +344,20 @@ def _write_doc_cache(scoreable: list[dict], assets: list[dict], db_path) -> None
     """
     if db_path is None:
         return
-    # strict: a misaligned pair would write asset i+1 under page i's cache key
-    # and serve that wrong score from cache until _DOC_SCORING_VERSION bumps.
+    # A misaligned pair would write asset i+1 under page i's cache key and
+    # serve that wrong score until _DOC_SCORING_VERSION bumps — but a raise
+    # here would escape into run_doc_quality's blanket handler and zero the
+    # whole Documentation component, so a mismatch skips the write instead.
+    if len(scoreable) != len(assets):
+        logger.warning(
+            "Documentation cache write skipped — %d pages vs %d assets",
+            len(scoreable),
+            len(assets),
+        )
+        return
     fresh = [
         (page, asset)
-        for page, asset in zip(scoreable, assets, strict=True)
+        for page, asset in zip(scoreable, assets, strict=False)
         if not isinstance(page.get("asset"), dict) and isinstance(asset, dict)
     ]
     if not fresh:

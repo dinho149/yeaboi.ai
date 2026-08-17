@@ -493,6 +493,24 @@ class TestCollectDocPages:
         assert "asset" not in refetched[0]  # no version → no cache key → re-read
         assert refetched[1]["cache_status"] == "hit"
 
+    def test_cache_write_mismatch_skips_batch_instead_of_raising(self, tmp_path, caplog):
+        # The writer is best-effort: a page/asset length mismatch must not
+        # escape into run_doc_quality's blanket handler and zero the whole
+        # Documentation component — it skips the write and says so.
+        database = tmp_path / "analysis.db"
+        page = {"platform": "notion", "key": "p1", "version": "3", "title": "Guide", "text": _CLEAR_TEXT}
+
+        with caplog.at_level("WARNING"):
+            _write_doc_cache([page], [_analyse_page_asset(page), {"clarity": 1.0}], database)
+
+        assert any("cache write skipped" in message for message in caplog.messages)
+        refetched = _read_page_inventory(
+            [{"platform": "notion", "key": "p1", "version": "3", "title": "Guide"}],
+            {"notion": lambda _page_id: {"text": _CLEAR_TEXT, "truncated": False, "error": ""}},
+            db_path=database,
+        )
+        assert refetched[0].get("cache_status") != "hit"  # nothing was written
+
     def test_version_change_refetches_only_changed_page(self, tmp_path):
         database = tmp_path / "analysis.db"
         inventory = [

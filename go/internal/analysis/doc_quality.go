@@ -14,6 +14,12 @@ package analysis
 // tests/unit/test_doc_scoring.py pins the exact values mirrored by
 // doc_quality_test.go.
 //
+// Cache invalidation: Python persists this file's output under a cache key
+// versioned only by _DOC_SCORING_VERSION (doc_quality.py) — no engine or
+// binary component. A scoring fix HERE with no Python change (a divergence
+// the parity fixtures missed) MUST bump that Python constant, or the rows
+// this binary poisoned are served forever, even after YEABOI_GO=0.
+//
 // Privacy: nothing from the pages — titles, bodies, authors — is ever logged
 // (no log import anywhere in this package) and never appears in an error (no
 // error surface exists here at all).
