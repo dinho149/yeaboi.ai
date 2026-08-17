@@ -1,0 +1,157 @@
+{
+  "dump": {
+    "constants": {
+      "AGENTWATCH_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/agentwatch",
+      "AGENTWATCH_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/agentwatch",
+      "ANALYSIS_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/analysis",
+      "ANALYSIS_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/analysis",
+      "ANONYMIZE_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/anonymize",
+      "ATTACHMENTS_DIR": "{tmp}/données/yeaboi-путь/attachments",
+      "BIN_DIR": "{tmp}/données/yeaboi-путь/bin",
+      "CEREMONIES_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/ceremonies",
+      "DATA_DIR": "{tmp}/données/yeaboi-путь/data",
+      "DB_PATH": "{tmp}/données/yeaboi-путь/data/sessions.db",
+      "DEFAULT_ROOT_DIR": "{tmp}/home/.yeaboi",
+      "ENV_FILE": "{tmp}/home/.yeaboi/.env",
+      "EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports",
+      "LEGACY_DB_PATH": "{tmp}/données/yeaboi-путь/sessions.db",
+      "LEGACY_PROJECTS_FILE": "{tmp}/données/yeaboi-путь/projects.json",
+      "LEGACY_ROOT_DIR": "{tmp}/home/.scrum-agent",
+      "LEGACY_STATES_DIR": "{tmp}/données/yeaboi-путь/states",
+      "LEGACY_TUI_LOG": "{tmp}/données/yeaboi-путь/scrum-agent.log",
+      "LOGS_DIR": "{tmp}/données/yeaboi-путь/logs",
+      "MCP_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/mcp",
+      "PERFORMANCE_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/performance",
+      "PERFORMANCE_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/performance",
+      "PLANNING_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/planning",
+      "PLANNING_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/planning",
+      "POKER_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/poker",
+      "POKER_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/poker",
+      "PROJECTS_FILE": "{tmp}/données/yeaboi-путь/data/projects.json",
+      "REPL_HISTORY": "{tmp}/données/yeaboi-путь/repl-history",
+      "REPORTING_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/reporting",
+      "REPORTING_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/reporting",
+      "REPORTING_PREFS_FILE": "{tmp}/données/yeaboi-путь/data/reporting_prefs.json",
+      "REPORTING_THEMES_FILE": "{tmp}/données/yeaboi-путь/data/reporting_themes.json",
+      "RETRO_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/retro",
+      "RETRO_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/retro",
+      "ROADMAP_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/roadmap",
+      "ROADMAP_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/roadmap",
+      "ROOT_DIR": "{tmp}/données/yeaboi-путь",
+      "SCRUM_DOCS_DIR": "{tmp}/données/yeaboi-путь/scrum-docs",
+      "SHIP_BUDGET_FILE": "{tmp}/données/yeaboi-путь/ship/ai-budget.json",
+      "SHIP_BUDGET_LOCK": "{tmp}/données/yeaboi-путь/ship/ai-budget.lock",
+      "SHIP_BUDGET_RECEIPTS": "{tmp}/données/yeaboi-путь/ship/ai-budget-receipts.jsonl",
+      "SHIP_DIR": "{tmp}/données/yeaboi-путь/ship",
+      "SHIP_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/ship",
+      "SHIP_WORKTREES_DIR": "{tmp}/données/yeaboi-путь/ship/worktrees",
+      "SHIP_WORKTREE_REGISTRY": "{tmp}/données/yeaboi-путь/ship/worktrees.json",
+      "STANDUP_EXPORTS_DIR": "{tmp}/données/yeaboi-путь/exports/standup",
+      "STANDUP_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/standup",
+      "STATES_DIR": "{tmp}/données/yeaboi-путь/data/states",
+      "TRANSCRIPTS_DIR": "{tmp}/données/yeaboi-путь/transcripts",
+      "TUI_LOGS_DIR": "{tmp}/données/yeaboi-путь/logs/tui",
+      "VOICE_INSTALL_FILE": "{tmp}/données/yeaboi-путь/data/voice_install.json"
+    },
+    "helpers": {
+      "get_agentwatch_log_dir": "{tmp}/données/yeaboi-путь/logs/agentwatch",
+      "get_analysis_log_dir": "{tmp}/données/yeaboi-путь/logs/analysis",
+      "get_bin_dir": "{tmp}/données/yeaboi-путь/bin",
+      "get_ceremonies_log_dir": "{tmp}/données/yeaboi-путь/logs/ceremonies",
+      "get_db_path": "{tmp}/données/yeaboi-путь/data/sessions.db",
+      "get_mcp_log_dir": "{tmp}/données/yeaboi-путь/logs/mcp",
+      "get_performance_log_dir": "{tmp}/données/yeaboi-путь/logs/performance",
+      "get_planning_log_dir": "{tmp}/données/yeaboi-путь/logs/planning",
+      "get_poker_log_dir": "{tmp}/données/yeaboi-путь/logs/poker",
+      "get_reporting_log_dir": "{tmp}/données/yeaboi-путь/logs/reporting",
+      "get_reporting_prefs_path": "{tmp}/données/yeaboi-путь/data/reporting_prefs.json",
+      "get_reporting_themes_path": "{tmp}/données/yeaboi-путь/data/reporting_themes.json",
+      "get_retro_log_dir": "{tmp}/données/yeaboi-путь/logs/retro",
+      "get_roadmap_log_dir": "{tmp}/données/yeaboi-путь/logs/roadmap",
+      "get_ship_dir": "{tmp}/données/yeaboi-путь/ship",
+      "get_ship_log_dir": "{tmp}/données/yeaboi-путь/logs/ship",
+      "get_standup_log_dir": "{tmp}/données/yeaboi-путь/logs/standup",
+      "get_transcripts_dir": "{tmp}/données/yeaboi-путь/transcripts",
+      "get_tui_log_path": "{tmp}/données/yeaboi-путь/logs/tui/yeaboi.log",
+      "get_voice_install_path": "{tmp}/données/yeaboi-путь/data/voice_install.json"
+    },
+    "keyed_helpers": {
+      "get_agentwatch_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/agentwatch/report",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/agentwatch/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/agentwatch/i̇zmi̇r - ops"
+      },
+      "get_analysis_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/analysis/project",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/analysis/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/analysis/i̇zmi̇r - ops"
+      },
+      "get_anonymize_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/anonymize/output",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/anonymize/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/anonymize/i̇zmi̇r - ops"
+      },
+      "get_attachments_dir": {
+        "": "{tmp}/données/yeaboi-путь/attachments/misc",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/attachments/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/attachments/i̇zmi̇r - ops"
+      },
+      "get_performance_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/performance/engineer",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/performance/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/performance/i̇zmi̇r - ops"
+      },
+      "get_planning_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/planning/project",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/planning/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/planning/i̇zmi̇r - ops"
+      },
+      "get_poker_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/poker/project",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/poker/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/poker/i̇zmi̇r - ops"
+      },
+      "get_reporting_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/reporting/report",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/reporting/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/reporting/i̇zmi̇r - ops"
+      },
+      "get_retro_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/retro/project",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/retro/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/retro/i̇zmi̇r - ops"
+      },
+      "get_roadmap_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/roadmap/roadmap",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/roadmap/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/roadmap/i̇zmi̇r - ops"
+      },
+      "get_standup_export_dir": {
+        "": "{tmp}/données/yeaboi-путь/exports/standup/project",
+        "Team/Alpha": "{tmp}/données/yeaboi-путь/exports/standup/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/standup/i̇zmi̇r - ops"
+      }
+    },
+    "safe_key": {
+      "": "fb",
+      "  padded  ": "padded",
+      ".": "fb",
+      "...": "...",
+      "../../../etc/passwd": "etc-passwd",
+      "MiXeD CASE": "mixed case",
+      "PROJ.1": "proj.1",
+      "Team/Alpha": "team-alpha",
+      "a/./b/../c": "a-b-c",
+      "a//b": "a-b",
+      "a\\b\\c": "a-b-c",
+      "trailing/": "trailing",
+      " nbsp ": "nbsp",
+      "İstanbul CI": "i̇stanbul ci",
+      "🚀 Launch/Q3": "🚀 launch-q3"
+    }
+  },
+  "env": {
+    "HOME": "{tmp}/home",
+    "YEABOI_HOME": "{tmp}/données/yeaboi-путь"
+  }
+}

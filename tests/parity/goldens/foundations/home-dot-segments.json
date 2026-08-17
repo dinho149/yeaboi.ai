@@ -1,0 +1,157 @@
+{
+  "dump": {
+    "constants": {
+      "AGENTWATCH_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/agentwatch",
+      "AGENTWATCH_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/agentwatch",
+      "ANALYSIS_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/analysis",
+      "ANALYSIS_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/analysis",
+      "ANONYMIZE_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/anonymize",
+      "ATTACHMENTS_DIR": "{tmp}/custom/../elsewhere/attachments",
+      "BIN_DIR": "{tmp}/custom/../elsewhere/bin",
+      "CEREMONIES_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/ceremonies",
+      "DATA_DIR": "{tmp}/custom/../elsewhere/data",
+      "DB_PATH": "{tmp}/custom/../elsewhere/data/sessions.db",
+      "DEFAULT_ROOT_DIR": "{tmp}/home/.yeaboi",
+      "ENV_FILE": "{tmp}/home/.yeaboi/.env",
+      "EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports",
+      "LEGACY_DB_PATH": "{tmp}/custom/../elsewhere/sessions.db",
+      "LEGACY_PROJECTS_FILE": "{tmp}/custom/../elsewhere/projects.json",
+      "LEGACY_ROOT_DIR": "{tmp}/home/.scrum-agent",
+      "LEGACY_STATES_DIR": "{tmp}/custom/../elsewhere/states",
+      "LEGACY_TUI_LOG": "{tmp}/custom/../elsewhere/scrum-agent.log",
+      "LOGS_DIR": "{tmp}/custom/../elsewhere/logs",
+      "MCP_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/mcp",
+      "PERFORMANCE_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/performance",
+      "PERFORMANCE_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/performance",
+      "PLANNING_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/planning",
+      "PLANNING_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/planning",
+      "POKER_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/poker",
+      "POKER_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/poker",
+      "PROJECTS_FILE": "{tmp}/custom/../elsewhere/data/projects.json",
+      "REPL_HISTORY": "{tmp}/custom/../elsewhere/repl-history",
+      "REPORTING_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/reporting",
+      "REPORTING_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/reporting",
+      "REPORTING_PREFS_FILE": "{tmp}/custom/../elsewhere/data/reporting_prefs.json",
+      "REPORTING_THEMES_FILE": "{tmp}/custom/../elsewhere/data/reporting_themes.json",
+      "RETRO_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/retro",
+      "RETRO_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/retro",
+      "ROADMAP_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/roadmap",
+      "ROADMAP_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/roadmap",
+      "ROOT_DIR": "{tmp}/custom/../elsewhere",
+      "SCRUM_DOCS_DIR": "{tmp}/custom/../elsewhere/scrum-docs",
+      "SHIP_BUDGET_FILE": "{tmp}/custom/../elsewhere/ship/ai-budget.json",
+      "SHIP_BUDGET_LOCK": "{tmp}/custom/../elsewhere/ship/ai-budget.lock",
+      "SHIP_BUDGET_RECEIPTS": "{tmp}/custom/../elsewhere/ship/ai-budget-receipts.jsonl",
+      "SHIP_DIR": "{tmp}/custom/../elsewhere/ship",
+      "SHIP_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/ship",
+      "SHIP_WORKTREES_DIR": "{tmp}/custom/../elsewhere/ship/worktrees",
+      "SHIP_WORKTREE_REGISTRY": "{tmp}/custom/../elsewhere/ship/worktrees.json",
+      "STANDUP_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/standup",
+      "STANDUP_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/standup",
+      "STATES_DIR": "{tmp}/custom/../elsewhere/data/states",
+      "TRANSCRIPTS_DIR": "{tmp}/custom/../elsewhere/transcripts",
+      "TUI_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/tui",
+      "VOICE_INSTALL_FILE": "{tmp}/custom/../elsewhere/data/voice_install.json"
+    },
+    "helpers": {
+      "get_agentwatch_log_dir": "{tmp}/custom/../elsewhere/logs/agentwatch",
+      "get_analysis_log_dir": "{tmp}/custom/../elsewhere/logs/analysis",
+      "get_bin_dir": "{tmp}/custom/../elsewhere/bin",
+      "get_ceremonies_log_dir": "{tmp}/custom/../elsewhere/logs/ceremonies",
+      "get_db_path": "{tmp}/custom/../elsewhere/data/sessions.db",
+      "get_mcp_log_dir": "{tmp}/custom/../elsewhere/logs/mcp",
+      "get_performance_log_dir": "{tmp}/custom/../elsewhere/logs/performance",
+      "get_planning_log_dir": "{tmp}/custom/../elsewhere/logs/planning",
+      "get_poker_log_dir": "{tmp}/custom/../elsewhere/logs/poker",
+      "get_reporting_log_dir": "{tmp}/custom/../elsewhere/logs/reporting",
+      "get_reporting_prefs_path": "{tmp}/custom/../elsewhere/data/reporting_prefs.json",
+      "get_reporting_themes_path": "{tmp}/custom/../elsewhere/data/reporting_themes.json",
+      "get_retro_log_dir": "{tmp}/custom/../elsewhere/logs/retro",
+      "get_roadmap_log_dir": "{tmp}/custom/../elsewhere/logs/roadmap",
+      "get_ship_dir": "{tmp}/custom/../elsewhere/ship",
+      "get_ship_log_dir": "{tmp}/custom/../elsewhere/logs/ship",
+      "get_standup_log_dir": "{tmp}/custom/../elsewhere/logs/standup",
+      "get_transcripts_dir": "{tmp}/custom/../elsewhere/transcripts",
+      "get_tui_log_path": "{tmp}/custom/../elsewhere/logs/tui/yeaboi.log",
+      "get_voice_install_path": "{tmp}/custom/../elsewhere/data/voice_install.json"
+    },
+    "keyed_helpers": {
+      "get_agentwatch_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/agentwatch/report",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/agentwatch/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/agentwatch/i̇zmi̇r - ops"
+      },
+      "get_analysis_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/analysis/project",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/analysis/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/analysis/i̇zmi̇r - ops"
+      },
+      "get_anonymize_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/anonymize/output",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/anonymize/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/anonymize/i̇zmi̇r - ops"
+      },
+      "get_attachments_dir": {
+        "": "{tmp}/custom/../elsewhere/attachments/misc",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/attachments/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/attachments/i̇zmi̇r - ops"
+      },
+      "get_performance_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/performance/engineer",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/performance/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/performance/i̇zmi̇r - ops"
+      },
+      "get_planning_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/planning/project",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/planning/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/planning/i̇zmi̇r - ops"
+      },
+      "get_poker_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/poker/project",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/poker/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/poker/i̇zmi̇r - ops"
+      },
+      "get_reporting_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/reporting/report",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/reporting/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/reporting/i̇zmi̇r - ops"
+      },
+      "get_retro_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/retro/project",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/retro/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/retro/i̇zmi̇r - ops"
+      },
+      "get_roadmap_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/roadmap/roadmap",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/roadmap/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/roadmap/i̇zmi̇r - ops"
+      },
+      "get_standup_export_dir": {
+        "": "{tmp}/custom/../elsewhere/exports/standup/project",
+        "Team/Alpha": "{tmp}/custom/../elsewhere/exports/standup/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/custom/../elsewhere/exports/standup/i̇zmi̇r - ops"
+      }
+    },
+    "safe_key": {
+      "": "fb",
+      "  padded  ": "padded",
+      ".": "fb",
+      "...": "...",
+      "../../../etc/passwd": "etc-passwd",
+      "MiXeD CASE": "mixed case",
+      "PROJ.1": "proj.1",
+      "Team/Alpha": "team-alpha",
+      "a/./b/../c": "a-b-c",
+      "a//b": "a-b",
+      "a\\b\\c": "a-b-c",
+      "trailing/": "trailing",
+      " nbsp ": "nbsp",
+      "İstanbul CI": "i̇stanbul ci",
+      "🚀 Launch/Q3": "🚀 launch-q3"
+    }
+  },
+  "env": {
+    "HOME": "{tmp}/home",
+    "YEABOI_HOME": "{tmp}/./custom/../elsewhere"
+  }
+}

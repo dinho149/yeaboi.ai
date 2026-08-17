@@ -1,0 +1,157 @@
+{
+  "dump": {
+    "constants": {
+      "AGENTWATCH_EXPORTS_DIR": "{tmp}/nbsp-home/exports/agentwatch",
+      "AGENTWATCH_LOGS_DIR": "{tmp}/nbsp-home/logs/agentwatch",
+      "ANALYSIS_EXPORTS_DIR": "{tmp}/nbsp-home/exports/analysis",
+      "ANALYSIS_LOGS_DIR": "{tmp}/nbsp-home/logs/analysis",
+      "ANONYMIZE_EXPORTS_DIR": "{tmp}/nbsp-home/exports/anonymize",
+      "ATTACHMENTS_DIR": "{tmp}/nbsp-home/attachments",
+      "BIN_DIR": "{tmp}/nbsp-home/bin",
+      "CEREMONIES_LOGS_DIR": "{tmp}/nbsp-home/logs/ceremonies",
+      "DATA_DIR": "{tmp}/nbsp-home/data",
+      "DB_PATH": "{tmp}/nbsp-home/data/sessions.db",
+      "DEFAULT_ROOT_DIR": "{tmp}/home/.yeaboi",
+      "ENV_FILE": "{tmp}/home/.yeaboi/.env",
+      "EXPORTS_DIR": "{tmp}/nbsp-home/exports",
+      "LEGACY_DB_PATH": "{tmp}/nbsp-home/sessions.db",
+      "LEGACY_PROJECTS_FILE": "{tmp}/nbsp-home/projects.json",
+      "LEGACY_ROOT_DIR": "{tmp}/home/.scrum-agent",
+      "LEGACY_STATES_DIR": "{tmp}/nbsp-home/states",
+      "LEGACY_TUI_LOG": "{tmp}/nbsp-home/scrum-agent.log",
+      "LOGS_DIR": "{tmp}/nbsp-home/logs",
+      "MCP_LOGS_DIR": "{tmp}/nbsp-home/logs/mcp",
+      "PERFORMANCE_EXPORTS_DIR": "{tmp}/nbsp-home/exports/performance",
+      "PERFORMANCE_LOGS_DIR": "{tmp}/nbsp-home/logs/performance",
+      "PLANNING_EXPORTS_DIR": "{tmp}/nbsp-home/exports/planning",
+      "PLANNING_LOGS_DIR": "{tmp}/nbsp-home/logs/planning",
+      "POKER_EXPORTS_DIR": "{tmp}/nbsp-home/exports/poker",
+      "POKER_LOGS_DIR": "{tmp}/nbsp-home/logs/poker",
+      "PROJECTS_FILE": "{tmp}/nbsp-home/data/projects.json",
+      "REPL_HISTORY": "{tmp}/nbsp-home/repl-history",
+      "REPORTING_EXPORTS_DIR": "{tmp}/nbsp-home/exports/reporting",
+      "REPORTING_LOGS_DIR": "{tmp}/nbsp-home/logs/reporting",
+      "REPORTING_PREFS_FILE": "{tmp}/nbsp-home/data/reporting_prefs.json",
+      "REPORTING_THEMES_FILE": "{tmp}/nbsp-home/data/reporting_themes.json",
+      "RETRO_EXPORTS_DIR": "{tmp}/nbsp-home/exports/retro",
+      "RETRO_LOGS_DIR": "{tmp}/nbsp-home/logs/retro",
+      "ROADMAP_EXPORTS_DIR": "{tmp}/nbsp-home/exports/roadmap",
+      "ROADMAP_LOGS_DIR": "{tmp}/nbsp-home/logs/roadmap",
+      "ROOT_DIR": "{tmp}/nbsp-home",
+      "SCRUM_DOCS_DIR": "{tmp}/nbsp-home/scrum-docs",
+      "SHIP_BUDGET_FILE": "{tmp}/nbsp-home/ship/ai-budget.json",
+      "SHIP_BUDGET_LOCK": "{tmp}/nbsp-home/ship/ai-budget.lock",
+      "SHIP_BUDGET_RECEIPTS": "{tmp}/nbsp-home/ship/ai-budget-receipts.jsonl",
+      "SHIP_DIR": "{tmp}/nbsp-home/ship",
+      "SHIP_LOGS_DIR": "{tmp}/nbsp-home/logs/ship",
+      "SHIP_WORKTREES_DIR": "{tmp}/nbsp-home/ship/worktrees",
+      "SHIP_WORKTREE_REGISTRY": "{tmp}/nbsp-home/ship/worktrees.json",
+      "STANDUP_EXPORTS_DIR": "{tmp}/nbsp-home/exports/standup",
+      "STANDUP_LOGS_DIR": "{tmp}/nbsp-home/logs/standup",
+      "STATES_DIR": "{tmp}/nbsp-home/data/states",
+      "TRANSCRIPTS_DIR": "{tmp}/nbsp-home/transcripts",
+      "TUI_LOGS_DIR": "{tmp}/nbsp-home/logs/tui",
+      "VOICE_INSTALL_FILE": "{tmp}/nbsp-home/data/voice_install.json"
+    },
+    "helpers": {
+      "get_agentwatch_log_dir": "{tmp}/nbsp-home/logs/agentwatch",
+      "get_analysis_log_dir": "{tmp}/nbsp-home/logs/analysis",
+      "get_bin_dir": "{tmp}/nbsp-home/bin",
+      "get_ceremonies_log_dir": "{tmp}/nbsp-home/logs/ceremonies",
+      "get_db_path": "{tmp}/nbsp-home/data/sessions.db",
+      "get_mcp_log_dir": "{tmp}/nbsp-home/logs/mcp",
+      "get_performance_log_dir": "{tmp}/nbsp-home/logs/performance",
+      "get_planning_log_dir": "{tmp}/nbsp-home/logs/planning",
+      "get_poker_log_dir": "{tmp}/nbsp-home/logs/poker",
+      "get_reporting_log_dir": "{tmp}/nbsp-home/logs/reporting",
+      "get_reporting_prefs_path": "{tmp}/nbsp-home/data/reporting_prefs.json",
+      "get_reporting_themes_path": "{tmp}/nbsp-home/data/reporting_themes.json",
+      "get_retro_log_dir": "{tmp}/nbsp-home/logs/retro",
+      "get_roadmap_log_dir": "{tmp}/nbsp-home/logs/roadmap",
+      "get_ship_dir": "{tmp}/nbsp-home/ship",
+      "get_ship_log_dir": "{tmp}/nbsp-home/logs/ship",
+      "get_standup_log_dir": "{tmp}/nbsp-home/logs/standup",
+      "get_transcripts_dir": "{tmp}/nbsp-home/transcripts",
+      "get_tui_log_path": "{tmp}/nbsp-home/logs/tui/yeaboi.log",
+      "get_voice_install_path": "{tmp}/nbsp-home/data/voice_install.json"
+    },
+    "keyed_helpers": {
+      "get_agentwatch_export_dir": {
+        "": "{tmp}/nbsp-home/exports/agentwatch/report",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/agentwatch/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/agentwatch/i̇zmi̇r - ops"
+      },
+      "get_analysis_export_dir": {
+        "": "{tmp}/nbsp-home/exports/analysis/project",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/analysis/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/analysis/i̇zmi̇r - ops"
+      },
+      "get_anonymize_export_dir": {
+        "": "{tmp}/nbsp-home/exports/anonymize/output",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/anonymize/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/anonymize/i̇zmi̇r - ops"
+      },
+      "get_attachments_dir": {
+        "": "{tmp}/nbsp-home/attachments/misc",
+        "Team/Alpha": "{tmp}/nbsp-home/attachments/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/attachments/i̇zmi̇r - ops"
+      },
+      "get_performance_export_dir": {
+        "": "{tmp}/nbsp-home/exports/performance/engineer",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/performance/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/performance/i̇zmi̇r - ops"
+      },
+      "get_planning_export_dir": {
+        "": "{tmp}/nbsp-home/exports/planning/project",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/planning/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/planning/i̇zmi̇r - ops"
+      },
+      "get_poker_export_dir": {
+        "": "{tmp}/nbsp-home/exports/poker/project",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/poker/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/poker/i̇zmi̇r - ops"
+      },
+      "get_reporting_export_dir": {
+        "": "{tmp}/nbsp-home/exports/reporting/report",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/reporting/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/reporting/i̇zmi̇r - ops"
+      },
+      "get_retro_export_dir": {
+        "": "{tmp}/nbsp-home/exports/retro/project",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/retro/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/retro/i̇zmi̇r - ops"
+      },
+      "get_roadmap_export_dir": {
+        "": "{tmp}/nbsp-home/exports/roadmap/roadmap",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/roadmap/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/roadmap/i̇zmi̇r - ops"
+      },
+      "get_standup_export_dir": {
+        "": "{tmp}/nbsp-home/exports/standup/project",
+        "Team/Alpha": "{tmp}/nbsp-home/exports/standup/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/nbsp-home/exports/standup/i̇zmi̇r - ops"
+      }
+    },
+    "safe_key": {
+      "": "fb",
+      "  padded  ": "padded",
+      ".": "fb",
+      "...": "...",
+      "../../../etc/passwd": "etc-passwd",
+      "MiXeD CASE": "mixed case",
+      "PROJ.1": "proj.1",
+      "Team/Alpha": "team-alpha",
+      "a/./b/../c": "a-b-c",
+      "a//b": "a-b",
+      "a\\b\\c": "a-b-c",
+      "trailing/": "trailing",
+      " nbsp ": "nbsp",
+      "İstanbul CI": "i̇stanbul ci",
+      "🚀 Launch/Q3": "🚀 launch-q3"
+    }
+  },
+  "env": {
+    "HOME": "{tmp}/home",
+    "YEABOI_HOME": " {tmp}/nbsp-home "
+  }
+}
