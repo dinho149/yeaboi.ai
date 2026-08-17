@@ -72,7 +72,9 @@ export function ReactionChips({ reactions, mine, onReact, disabled }: ReactionCh
             aria-pressed={isMine}
             onClick={() => onReact(emoji)}
           >
-            <span aria-hidden="true">{emoji}</span>
+            <span aria-hidden="true" className={styles['rxGlyph']}>
+              {emoji}
+            </span>
             <span className={styles['rxCount']}>{reactions[emoji]}</span>
           </button>
         );

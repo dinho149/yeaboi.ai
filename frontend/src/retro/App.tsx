@@ -57,11 +57,10 @@ import { boardStyles as kit, Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
 import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
-import type { Participant, ReactionEvent, RetroCard, RetroState, TypingEntry } from '../types/board';
+import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/board';
 import { createRetroActions } from './actions';
 import { Board } from './Board';
 import { CarriedStrip } from './CarriedStrip';
-import { FloatingEmoji } from './FloatingEmoji';
 import { FocusBar } from './FocusBar';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
@@ -78,7 +77,6 @@ const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar' } as 
 const NO_CARDS: readonly RetroCard[] = [];
 const NO_PEOPLE: readonly Participant[] = [];
 const NO_TYPING: readonly TypingEntry[] = [];
-const NO_EVENTS: readonly ReactionEvent[] = [];
 
 export function App({ boot }: { boot: RetroBoot }) {
   // ── Identity and session ───────────────────────────────────────────────
@@ -511,7 +509,6 @@ export function App({ boot }: { boot: RetroBoot }) {
 
       {/* Overlays and modals are fixed-position, so they take no part in the
           layout above and can sit anywhere in the tree. */}
-      <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
       <ConfettiCanvas canvasRef={confettiRef} />
 
       <ProfileModal

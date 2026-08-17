@@ -576,24 +576,27 @@
   padding: 0 var(--s1);
   border: 1px solid transparent;
   border-radius: var(--r-pill);
-  background: var(--panel-2);
+  /* No ground. A counted reaction is a mark on the card, not a control sitting
+     on it, and the ring is enough to say which ones are yours. */
+  background: none;
   color: var(--text);
   font: inherit;
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-/* In the tray the emoji are the content, and sixteen pills behind them is
-   sixteen more objects than the panel needs. A ground only under the pointer. */
-.rxPick {
-  background: none;
-}
+/* A ground only under the pointer, in the tray. */
 .rxPick:hover, .rxPick:focus-visible {
   background: var(--panel-2);
+}
+/* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
+   an emoji is a second shape competing with the one that carries the meaning. */
+.rxGlyph {
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
 .rxChip:hover { border-color: var(--accent); }
 .rxPick:hover { border-color: transparent; }
 .rxChip:disabled { opacity: 0.5; cursor: default; }
-.rxChipMine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.rxChipMine { border-color: var(--accent); }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
@@ -751,26 +754,6 @@
   color: var(--dim);
 }
 .composeActions { display: flex; justify-content: flex-end; gap: var(--s2); }
-
-/* ── Floating reaction overlay ────────────────────────────────────────── */
-.floatLayer {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-banner);
-  pointer-events: none;
-  overflow: hidden;
-}
-.floater {
-  position: absolute;
-  bottom: 0;
-  animation: rise 2.6s ease-out forwards;
-}
-
-@keyframes rise {
-  from { transform: translateY(0); opacity: 0; }
-  15% { opacity: 1; }
-  to { transform: translateY(-70vh); opacity: 0; }
-}
 
 .srOnly {
   position: absolute;
