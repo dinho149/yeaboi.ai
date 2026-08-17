@@ -16,8 +16,8 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
 1. **Work in flight.** `gh pr list --label "workstream:go-migration" --state open`. If one is
    open, drive it to green on both halves — CI via `gh pr checks` (the `Go core` and
    `Python ↔ Go parity` checks must be present and green, not skipped), review via the
-   `pr-feedback` status — arm the merge per step 5, and **stop**. That is the whole run and
-   the normal weekday.
+   `pr-feedback` status — merge it per step 6 the moment both are green, and **stop**. That is
+   the whole run and the normal weekday.
 
 2. **Carry `main` forward.** With nothing in flight, merge `origin/main` into
    `chore/go-migration` and push. The integration branch is long-lived — thirteen waves live on
