@@ -16,7 +16,7 @@
  * and nothing else.
  */
 
-import { Avatar, Eyebrow, Icon } from '../design/primitives';
+import { Avatar, Dropdown, Eyebrow, Icon } from '../design/primitives';
 import { boardStyles as kit } from '../shared/board';
 import { Button } from '../shared';
 import { cx } from '../runtime/cx';
@@ -64,17 +64,18 @@ export function HostRail({
   const canBack = runs.length === 0 ? at === 0 : at < runs.length;
   const run = at > 0 ? runs[at - 1] : undefined;
   const reviewed = carried.filter((item) => item.status && item.status !== 'pending').length;
+  // The live board is an option in the list, not a separate control: going back
+  // to today is the same kind of move as going anywhere else.
+  const options = [liveLabel, ...runs.map(labelFor)];
 
   return (
     <aside className={cx(kit['rail'], styles['rail'])} aria-label="Facilitator">
       <section>
-        <div className={kit['railHead']}>
-          <p className={cx(kit['railScope'], at > 0 && styles['railPast'])}>
-            {at === 0 ? liveLabel : run ? labelFor(run) : '…'}
-          </p>
-          <Eyebrow value={at === 0 ? 'now' : (run?.retro_date ?? '')}>Retro</Eyebrow>
-        </div>
+        <Eyebrow value={at === 0 ? 'now' : (run?.retro_date ?? '')}>Retro</Eyebrow>
 
+        {/* The picker between the arrows: one control, read as one thing. The
+            arrows are for "the one before this", which is the step people take;
+            the picker is for the one they remember by name. */}
         <div className={styles['timeSwitch']} role="group" aria-label="Which retro">
           <button
             type="button"
@@ -85,6 +86,15 @@ export function HostRail({
           >
             <Icon name="chevron-left" size={14} />
           </button>
+
+          <Dropdown
+            label="Which retro"
+            value={options[at] ?? liveLabel}
+            options={options}
+            className={cx(styles['timePick'], at > 0 && styles['railPast'])}
+            onChange={(next) => history.go(options.indexOf(next))}
+          />
+
           <button
             type="button"
             className={styles['timeStep']}

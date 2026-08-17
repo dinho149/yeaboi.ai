@@ -189,11 +189,33 @@
 .rail::-webkit-scrollbar { display: none; }
 .railPast { color: var(--accent2); }
 
-/* Two arrows under the name they step through. */
+/* The picker between its two arrows, filling the rail's width. */
 .timeSwitch {
   display: flex;
   align-items: center;
   gap: var(--s1);
+  margin-top: var(--s1);
+}
+/* The rail is borderless, so the picker is too — it is a name you can change,
+   not a field you fill in. */
+.timePick {
+  flex: 1;
+  min-width: 0;
+}
+/* The underline goes with every other border in the rail — it is a name you
+   can change, not a field you fill in. */
+.timePick button {
+  width: 100%;
+  padding: 0 var(--s2);
+  min-height: var(--tap);
+  border-radius: var(--r-s);
+  box-shadow: none;
+  font-size: var(--fs-m);
+  font-weight: 600;
+}
+.timePick button:hover {
+  box-shadow: none;
+  background: var(--panel-2);
 }
 .timeStep {
   display: inline-grid;
