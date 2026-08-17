@@ -1795,16 +1795,16 @@ class Dispatch:
     """What a finished ceremony has to say, in a form every channel can send.
 
     Delivery used to be typed on ``StandupReport``, which is why nothing else
-    could be delivered. This is the mode-neutral payload that replaced it:
-    ``summary`` is the one-liner a desktop notification can hold, ``body`` is
-    the plaintext Slack/email/terminal version, and ``artifact`` points at an
-    already-exported file when the mode produced one.
+    could be delivered — the agent standup ended up re-implementing the Slack
+    POST rather than duck-typing another mode's report. This is the mode-neutral
+    payload that replaced it: ``summary`` is the one-liner a desktop
+    notification can hold, ``body`` is the plaintext Slack/email/terminal
+    version.
     """
 
     title: str = ""
     summary: str = ""
     body: str = ""
-    artifact: str = ""  # path to an exported file, "" when there is none
 
 
 # ---------------------------------------------------------------------------
