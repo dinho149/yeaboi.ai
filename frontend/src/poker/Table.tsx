@@ -18,6 +18,7 @@ import { useRef } from 'react';
 import { Icon } from '../design/primitives';
 import type { PokerVote } from '../types/board';
 import { useRowChoreography } from '../shared/board';
+import { boardStyles as kit } from '../shared/board';
 import styles from './poker.module.css';
 
 export interface TableProps {
@@ -91,7 +92,7 @@ export function Table({ votes, revealed, arguing = [] }: TableProps) {
               </span>
               {/* The seat's meaning, spelled out once per person: the tick and
                   the flipped card are both purely visual. */}
-              <span className={styles['srOnly']}>
+              <span className={kit['srOnly']}>
                 {revealed ? `voted ${person.value}` : person.voted ? 'has voted' : 'has not voted yet'}
               </span>
             </li>

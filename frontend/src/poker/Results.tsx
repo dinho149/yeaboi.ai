@@ -20,6 +20,7 @@ import type { AiPerspective, DuelSlice } from '../types/board';
 import { Panel, Panels, Tabs, Written } from '../shared/board';
 import { Duel } from './Duel';
 import { fmtPoints } from './points';
+import { boardStyles as kit } from '../shared/board';
 import styles from './poker.module.css';
 
 export interface ResultsProps {
@@ -128,7 +129,7 @@ export function Results({
                   <span className={styles['dcount']}>{count}</span>
                   {/* Pluralised on the total, not the count: "1 of 3 vote" is what
                       agreeing with `count` produces, and it is wrong. */}
-                  <span className={styles['srOnly']}>
+                  <span className={kit['srOnly']}>
                     {count} of {total} {total === 1 ? 'vote' : 'votes'}
                   </span>
                 </li>

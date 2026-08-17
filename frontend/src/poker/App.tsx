@@ -72,6 +72,7 @@ import { Results } from './Results';
 import { Table } from './Table';
 import { ticketOptions, TicketPanel } from './Ticket';
 import { useDuelMic } from './useDuelMic';
+import { boardStyles as kit } from '../shared/board';
 import styles from './poker.module.css';
 
 /** Storage keys. Unchanged from the page this replaces, so a live session survives. */
@@ -340,7 +341,7 @@ export function App({ boot }: { boot: PokerBoot }) {
     <PageShell
       chrome={boot.chrome}
       variant="app"
-      className={styles['app']}
+      className={kit['board']}
       data={{ 'data-host': isHost ? 'true' : undefined }}
       dock={
         <>
@@ -350,7 +351,7 @@ export function App({ boot }: { boot: PokerBoot }) {
             icon={<Icon name="menu" size={16} />}
             label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
             active={railOpen}
-            className={styles['railToggle']}
+            className={kit['railToggle']}
             onClick={() => setRailOpen(!railOpen)}
           />
 
@@ -461,7 +462,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           {recording ? (
             <span className={styles['recBadge']} role="status" title="The debate is being recorded">
               <span className={styles['recDot']} aria-hidden="true" />
-              <span className={styles['srOnly']}>Recording</span>
+              <span className={kit['srOnly']}>Recording</span>
             </span>
           ) : null}
         </div>
@@ -472,7 +473,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           inside row 3. `deckZone` is sticky at `bottom: 0`, so it parks against
           the bottom of this region rather than the viewport — which is where
           the credit begins, so the two no longer fight. */}
-      <div className={styles['scroll']}>
+      <div className={kit['scroll']}>
       {musicBlocked ? (
         <button
           type="button"
@@ -488,7 +489,7 @@ export function App({ boot }: { boot: PokerBoot }) {
         </button>
       ) : null}
 
-      <div className={styles['layout']}>
+      <div className={kit['layout']}>
         <Rail
           tickets={tickets}
           current={ticketIndex}
@@ -505,9 +506,9 @@ export function App({ boot }: { boot: PokerBoot }) {
         {/* Tapping outside the drawer closes it. A div rather than a button
             because it is a dismissal surface, not a control — the drawer's own
             toggle in the toolbar is the keyboard path. */}
-        {railOpen ? <div className={styles['railBackdrop']} onClick={() => setRailOpen(false)} /> : null}
+        {railOpen ? <div className={kit['railBackdrop']} onClick={() => setRailOpen(false)} /> : null}
 
-        <main className={styles['main']}>
+        <main className={kit['main']}>
           <TicketPanel
             ticket={ticket}
             loaded={snapshot !== null}
@@ -579,7 +580,7 @@ export function App({ boot }: { boot: PokerBoot }) {
       </div>
 
       {/* Phase changes are visual everywhere else on this page. */}
-      <div className={styles['srOnly']} role="status" aria-live="polite" aria-atomic="true">
+      <div className={kit['srOnly']} role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
 

@@ -31,6 +31,7 @@ import type { DuelSlice, PokerPhase, PokerState } from '../types/board';
 import { fmtPoints } from './points';
 import { Button } from '../shared';
 import type { DuelMic } from './useDuelMic';
+import { boardStyles as kit } from '../shared/board';
 import styles from './poker.module.css';
 
 /** Turn lengths the host can open the floor with. Server clamps to 15..600s. */
@@ -134,11 +135,11 @@ export function Console({
   };
 
   return (
-    <aside className={cx(styles['console'], open && styles['consoleOpen'])} data-phase={dueling ? 'duel' : phase}>
+    <aside className={cx(kit['aside'], open && kit['asideOpen'])} data-phase={dueling ? 'duel' : phase}>
       {/* The collapsed bar is the whole console on a phone: where we are, and
           the single next action. Tapping the chevron opens the rest. */}
-      <div className={styles['cbar']}>
-        <span className={styles['cphase']}>{duelLabel(duel, phase)}</span>
+      <div className={kit['asideBar']}>
+        <span className={kit['asideNow']}>{duelLabel(duel, phase)}</span>
         {dueling ? (
           <Button tone="primary" onClick={onCloseDuel}>
             Close the floor
@@ -165,8 +166,8 @@ export function Console({
         </Button>
       </div>
 
-      <div className={styles['cbody']}>
-        <div className={styles['cgroup']}>
+      <div className={kit['asideBody']}>
+        <div className={kit['asideGroup']}>
           <Eyebrow>Round</Eyebrow>
           {/* One primary per view: once the votes are up, the round's live
               action is Save & next, and this becomes a spent status. */}
@@ -183,7 +184,7 @@ export function Console({
           </Button>
         </div>
 
-        <div className={styles['cgroup']}>
+        <div className={kit['asideGroup']}>
           <Eyebrow>Insight</Eyebrow>
           <Button disabled={!revealed || ai.pending} onClick={onAskAi}>
             <Icon name="sparkles" /> AI perspective
@@ -266,7 +267,7 @@ export function Console({
           </div>
         </div>
 
-        <div className={styles['cgroup']}>
+        <div className={kit['asideGroup']}>
           <Eyebrow>Decision</Eyebrow>
           <p className={styles['readout']}>
             Team median <b>{revealed && state.median !== null ? fmtPoints(state.median) : '—'}</b>
