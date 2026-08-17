@@ -623,6 +623,14 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
     row.append("  ·  ", style=dim)
     row.append("a", style=key_style)
     row.append(" all tips", style=dim)
+    # Ceremonies is a keycap rather than an eleventh mode card: the menu renders
+    # every card with no scrolling, and an eleventh pushes THIS row off screen at
+    # the enforced 84x40 minimum — trading the version, changelog and feedback
+    # affordances for one menu entry. Dropped first on narrow terminals.
+    if width >= 72:
+        row.append("  ·  ", style=dim)
+        row.append("s", style=key_style)
+        row.append(" schedule", style=dim)
     return row
 
 

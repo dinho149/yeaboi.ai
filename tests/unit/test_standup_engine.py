@@ -325,17 +325,24 @@ class TestRunStandup:
 
         delivered = {}
 
-        def fake_deliver(report, channels):
+        def fake_deliver(dispatch, channels):
             delivered["channels"] = channels
+            delivered["dispatch"] = dispatch
             return {c: True for c in channels}
 
-        import yeaboi.standup.delivery as delivery_mod
+        # Patched on the real module rather than standup/delivery.py's shim: the
+        # shim re-exports the object, so rebinding a name there is invisible to
+        # anything that imports from ceremonies.delivery directly.
+        import yeaboi.ceremonies.delivery as delivery_mod
 
         monkeypatch.setattr(delivery_mod, "deliver", fake_deliver)
         engine.run_standup(
             seeded_session, deliver=True, channels=["terminal"], db_path=db_path, today=date(2026, 7, 10)
         )
         assert delivered["channels"] == ["terminal"]
+        # The channels take a Dispatch now, carrying the standup's own plaintext
+        # rendering rather than a re-wording of it.
+        assert "Daily Standup" in delivered["dispatch"].title
 
 
 class TestAutomationFilter:

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Error carries the Python exception class name a failure would have had.
@@ -555,4 +556,73 @@ func SortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// splitlineBreaks holds every terminator str.splitlines() recognises — a
+// wider set than "\n" ("\r\n" counts once). Promoted from
+// go/internal/analysis/practices.go in Wave 7.
+var splitlineBreaks = map[rune]bool{
+	'\n': true, '\r': true, '\v': true, '\f': true,
+	0x1c: true, 0x1d: true, 0x1e: true, 0x85: true, 0x2028: true, 0x2029: true,
+}
+
+// Splitlines mirrors str.splitlines() (no trailing empty line for a final
+// terminator; "\r\n" is one break).
+func Splitlines(s string) []string {
+	out := []string{}
+	start, i := 0, 0
+	for i < len(s) {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !splitlineBreaks[r] {
+			i += size
+			continue
+		}
+		out = append(out, s[start:i])
+		i += size
+		if r == '\r' && i < len(s) && s[i] == '\n' {
+			i++
+		}
+		start = i
+	}
+	if start < len(s) {
+		out = append(out, s[start:])
+	}
+	return out
+}
+
+// SplitWS mirrors no-argument str.split(): runs of unicode whitespace
+// (Python's isspace set) separate fields, and empty fields never appear.
+// The same shape go/internal/standup spells inline as
+// strings.FieldsFunc(s, pysem.IsSpace).
+func SplitWS(s string) []string {
+	return strings.FieldsFunc(s, IsSpace)
+}
+
+// quoteAlwaysSafe is urllib.parse.quote's always-safe set (RFC 3986
+// unreserved): ALPHA / DIGIT / "_" / "." / "-" / "~".
+func quoteSafeByte(b byte) bool {
+	switch {
+	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z', b >= '0' && b <= '9':
+		return true
+	case b == '_' || b == '.' || b == '-' || b == '~':
+		return true
+	}
+	return false
+}
+
+// QuoteAll mirrors urllib.parse.quote(s, safe=""): UTF-8 encode, keep only
+// the always-safe unreserved bytes, percent-encode everything else with
+// uppercase hex. (The dot stays — it is in urllib's always-safe set no
+// matter what safe says; callers that need it encoded replace it after.)
+func QuoteAll(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quoteSafeByte(c) {
+			b.WriteByte(c)
+		} else {
+			b.WriteString(fmt.Sprintf("%%%02X", c))
+		}
+	}
+	return b.String()
 }

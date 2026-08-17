@@ -35,7 +35,7 @@ version does not match or the handshake fails.
 ### core.hello
 
 Params: `{}` →
-`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate", "analysis.classify_markers", "analysis.score_code", "analysis.score_docs"]}`
+`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security", "standup.aggregate", "analysis.classify_markers", "analysis.score_code", "analysis.score_docs", "retro.build_export", "poker.build_export"]}`
 
 Adding a method is additive and does NOT bump `contract_version`: an older
 binary answers `-32601` for a method it lacks, which the client surfaces as a
@@ -143,6 +143,30 @@ progress. See `analysis.score_docs.json` and
 `src/yeaboi/analysis/aggregate.py` (`score_docs` is the reference
 implementation; `build_score_docs_inputs` builds the params).
 
+### retro.build_export
+
+One retro document — the Markdown artifact plus the HTML export args — as one
+pure function. Python freezes the report, the history rows, the editable flag
+and a single `now()` capture into the params; the sidecar rebuilds the report
+through the store-deserializer semantics and renders both artifacts from one
+call, so the two files can never disagree about which side built them. The
+HTML shell (`export_page`) and every filesystem write stay Python-side.
+Result key order is contractual — `args` is json.dumps-ed into the page boot
+payload. No progress notifications: milliseconds of pure compute. See
+`retro.build_export.json` and `src/yeaboi/retro/export.py`
+(`build_retro_export` is the reference implementation;
+`build_retro_export_inputs` builds the params).
+
+### poker.build_export
+
+The sibling of `retro.build_export` for one poker document. No `editable`
+param — poker has no editable share. Tracker URLs pass the same `safe_url`
+allowlist as the Markdown twin (one allowlist, both artifacts); a skipped
+ticket's `final` is forced null even over a stale `final_points`. See
+`poker.build_export.json` and `src/yeaboi/poker/export.py`
+(`build_poker_export` is the reference implementation;
+`build_poker_export_inputs` builds the params).
+
 ## Semantics the Go side must preserve
 
 These mirror `src/yeaboi/agentwatch/collector.py`, `store.py`,
@@ -212,3 +236,24 @@ automation,insights,confidence,categories}.py`):
     `int(round(x))` is banker's rounding; `str(list-of-strings)` renders with
     Python `repr` elements (`['a', 'b']`) where a yesterday entry is
     flattened into text.
+
+Rule 13 was added with `retro.build_export` / `poker.build_export` (it
+mirrors `src/yeaboi/{retro,poker}/export.py`, `artifacts/render.py`,
+`html_theme.py`'s pure helpers, `markdown_convert.md_table_cell` and
+`artifacts/paths.escape_value`):
+
+13. **Document-text semantics.** Duel transcripts split on
+    `str.splitlines()`'s universal-terminator set (`\r\n` once, NEL/LS/PS
+    included), not on `\n`; `md_table_cell`'s whitespace collapse is no-arg
+    `str.split()` — unicode whitespace, empties dropped. Numbers that pass
+    through `float()` (`_float_or_none`, trend values) are WIDENED and
+    render through `repr(float)` — a wire `3` leaves as `3.0`, never an echo
+    of the wire literal — while numbers that never pass through `float()`
+    (reaction counts, via `int()`) stay integers. `escape_value` reproduces
+    `urllib.parse.quote(value, safe="")` exactly (UTF-8 bytes, uppercase
+    hex, the unreserved set) plus the explicit `.` → `%2E` pass. Privacy:
+    the exports package imports no logging facility — card text, ticket
+    summaries, voter names and transcripts cross the wire as params and
+    never appear in a log line or an error message; `safe_url`'s
+    Python-side warning on a dropped URL is an accepted Python-only
+    deviation (the Go side drops silently).

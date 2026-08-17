@@ -22,6 +22,7 @@ import (
 	"github.com/yeaboi-ai/yeaboi/go/internal/agentwatch"
 	"github.com/yeaboi-ai/yeaboi/go/internal/analysis"
 	"github.com/yeaboi-ai/yeaboi/go/internal/contract"
+	"github.com/yeaboi-ai/yeaboi/go/internal/exports"
 	"github.com/yeaboi-ai/yeaboi/go/internal/pysem"
 	"github.com/yeaboi-ai/yeaboi/go/internal/rpc"
 	"github.com/yeaboi-ai/yeaboi/go/internal/standup"
@@ -31,7 +32,8 @@ import (
 // 0.2.0: standup.aggregate joined the method set (additive; contract v1).
 // 0.3.0: analysis.classify_markers + analysis.score_code (additive; contract v1).
 // 0.4.0: analysis.score_docs (additive; contract v1).
-const binaryVersion = "0.4.0"
+// 0.5.0: retro.build_export + poker.build_export (additive; contract v1).
+const binaryVersion = "0.5.0"
 
 var methods = []string{
 	"agentwatch.refresh",
@@ -42,6 +44,8 @@ var methods = []string{
 	"analysis.classify_markers",
 	"analysis.score_code",
 	"analysis.score_docs",
+	"retro.build_export",
+	"poker.build_export",
 }
 
 func main() {
@@ -227,6 +231,32 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 			run = analysis.RunScoreCode
 		case "analysis.score_docs":
 			run = analysis.RunScoreDocs
+		}
+		result, runErr := run(params)
+		if runErr != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: runErr.Error()}
+		}
+		return result, nil
+	case "retro.build_export", "poker.build_export":
+		// Same ordered decode as standup.aggregate: the params are
+		// Python-dict-shaped data whose object key order is contractual, and
+		// the result goes back out the same way (pysem.Obj.MarshalJSON —
+		// args is json.dumps-ed into the page boot payload). Emits no
+		// progress: the call is milliseconds of pure compute.
+		if len(req.Params) == 0 {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params are required"}
+		}
+		decoded, err := pysem.DecodeOrdered(req.Params)
+		if err != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: fmt.Sprintf("invalid params: %v", err)}
+		}
+		params := pysem.AsObj(decoded)
+		if params == nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params must be an object"}
+		}
+		run := exports.RunRetroBuildExport
+		if req.Method == "poker.build_export" {
+			run = exports.RunPokerBuildExport
 		}
 		result, runErr := run(params)
 		if runErr != nil {

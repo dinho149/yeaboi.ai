@@ -330,7 +330,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` | https://claude.ai/code/routines/trig_01G4TuU1wYY7GXJ1cEXZUNSu |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
 | `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | https://claude.ai/code/routines/trig_01KYYfRyy1kKCYXq8EFn6ac6 |
-| `cron/go-migration-campaign.md` | `40 7 * * 1-5` weekdays | go-migration | `heavy` | https://claude.ai/code/routines/trig_01M9VRz8rvNTusXLuxBwzwSB |
+| `cron/go-migration-campaign.md` | `54 * * * *` hourly | go-migration | `heavy` | https://claude.ai/code/routines/trig_01M9VRz8rvNTusXLuxBwzwSB |
 | `cron/go-migration-daily.md` | `0 17 * * *` daily | go-migration | `fast` | https://claude.ai/code/routines/trig_01A9NbWuCDoS137MH3u3scsn |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |

@@ -120,6 +120,27 @@ class TestAnalysisPrivacyInvariant:
             )
 
 
+class TestExportsPrivacyInvariant:
+    """The Go exports package must never log.
+
+    Card text, ticket summaries, voter names and duel transcripts cross the
+    wire as retro.build_export / poker.build_export params, and the privacy
+    invariant (rpc.md rule 13) says input content never reaches a log line —
+    Python's ``safe_url`` warning on a dropped URL is an accepted
+    Python-only deviation, so the Go side must drop silently. The package
+    upholds it by importing no logging facility at all.
+    """
+
+    def test_go_exports_package_imports_no_logger(self):
+        for path in sorted((REPO / "go" / "internal" / "exports").glob("*.go")):
+            imports = re.findall(r'^\s*(?:import\s+)?(?:\w+\s+|\.\s+|_\s+)?"([^"]+)"', path.read_text("utf-8"), re.M)
+            offenders = [name for name in imports if name == "log" or name.startswith("log/")]
+            assert not offenders, (
+                f"{path.name} imports {offenders} — the exports package receives document text as "
+                "params and must not log; fixed messages only, and never input content in an error"
+            )
+
+
 class TestSchemaGuardLockstep:
     """The Go schema guard's ceiling must track ``sessions.CURRENT_SCHEMA_VERSION``.
 

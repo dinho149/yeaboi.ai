@@ -292,37 +292,6 @@ const (
 	descStructured = 40
 )
 
-// pyLineBreaks holds every terminator str.splitlines() recognises — a wider
-// set than "\n" ("\r\n" counts once).
-var pyLineBreaks = map[rune]bool{
-	'\n': true, '\r': true, '\v': true, '\f': true,
-	0x1c: true, 0x1d: true, 0x1e: true, 0x85: true, 0x2028: true, 0x2029: true,
-}
-
-// pySplitLines mirrors str.splitlines() (no trailing empty line for a final
-// terminator).
-func pySplitLines(s string) []string {
-	out := []string{}
-	start, i := 0, 0
-	for i < len(s) {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if !pyLineBreaks[r] {
-			i += size
-			continue
-		}
-		out = append(out, s[start:i])
-		i += size
-		if r == '\r' && i < len(s) && s[i] == '\n' {
-			i++
-		}
-		start = i
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
-}
-
 // hasStructure ports _STRUCTURE.search — (?m)^\s*(#{1,6}\s|[-*]\s|\d+\.\s|
 // \[[ xX]\]). Evaluated manually so \s and \d keep Python's unicode
 // semantics: from every (?m)^ position ("\n" starts only — narrower than
@@ -390,7 +359,7 @@ func hasMeaningfulDescription(body string) bool {
 	}
 	length := utf8.RuneCountInString(text)
 	lines := 0
-	for _, line := range pySplitLines(text) {
+	for _, line := range pysem.Splitlines(text) {
 		if pysem.Strip(line) != "" {
 			lines++
 		}

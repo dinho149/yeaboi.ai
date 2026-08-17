@@ -332,6 +332,11 @@ AREAS: tuple[Area, ...] = (
             # Cross-mode shared infrastructure, like config/paths above: the
             # tamper-evident decision chain every mode records into.
             "src/yeaboi/provenance/",
+            # And the clock any mode can run on. It owns the OS-job installer the
+            # standup schedule was promoted out of, so a change here reaches a
+            # mode it does not otherwise touch.
+            "src/yeaboi/ceremonies/",
+            "src/yeaboi/standup/scheduler.py",
             "claude-plugin/",
             "packaging/",
         ),
@@ -343,6 +348,10 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_changelog*.py",
             "tests/unit/test_mcp_*.py",
             "tests/unit/test_provenance_*.py",
+            "tests/unit/test_ceremonies_*.py",
+            # The schedule wizard drives the promoted installer through the shim,
+            # so it is the test that catches a broken promotion.
+            "tests/unit/test_standup_schedule_wizard.py",
             # The standup wiring consumes the chain; a provenance change must
             # prove it did not break its first consumer.
             "tests/unit/test_standup_provenance_log.py",
@@ -402,6 +411,10 @@ ALWAYS: tuple[str, ...] = (
     # all — and a §3 table that stops parsing renders a bar stuck at the pilot
     # baseline with nothing failing anywhere.
     "tests/unit/test_migration_progress.py",
+    # The Go-migration freeze table: it hashes frozen source files, so it has no
+    # import edge to them — a scoped run on a frozen file's own area would skip
+    # exactly the guard that exists to catch that edit. Repo-scanning, fast.
+    "tests/unit/test_migration_freeze.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
     # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and
@@ -521,6 +534,27 @@ _MIRRORED = (
     "src/yeaboi/analysis/coverage.py",
     "src/yeaboi/analysis/practices.py",
     "src/yeaboi/analysis/ai_usage.py",
+    # Wave 6 (doc-quality scoring) — mirrored since PR #224; frozen since W7.
+    "src/yeaboi/analysis/doc_quality.py",
+    "src/yeaboi/tools/team_learning.py",
+    # Wave 7 (exports family). html_theme.py and render.py are load-bearing
+    # beyond retro/poker — five other exporters share them, so any mode's edit
+    # there must schedule the byte-parity gate.
+    "src/yeaboi/retro/export.py",
+    # Broad file, narrow twin: only `RetroReport.by_grid`, the grid/status
+    # constants re-exported through retro/board.py, and `annotations_from` are
+    # mirrored (go/internal/exports/render.go header) — but a byte gate cannot
+    # scope below a file, so every state.py edit schedules go + parity. Same
+    # trade already accepted for html_theme.py.
+    "src/yeaboi/agent/state.py",
+    "src/yeaboi/retro/board.py",
+    "src/yeaboi/retro/store.py",
+    "src/yeaboi/poker/export.py",
+    "src/yeaboi/poker/store.py",
+    "src/yeaboi/artifacts/render.py",
+    "src/yeaboi/artifacts/paths.py",
+    "src/yeaboi/html_theme.py",
+    "src/yeaboi/markdown_convert.py",
     "src/yeaboi/sessions.py",
     # Not a twin, but every literal it asserts is a parity fixture — changing it
     # changes what the Go side is checked against.

@@ -1885,9 +1885,13 @@ def run_standup(
     status = "success"
     if deliver and not dry_run:
         try:
-            from yeaboi.standup import delivery
+            from yeaboi.ceremonies import delivery
+            from yeaboi.ceremonies.renderers import standup_dispatch
 
-            delivery_status = delivery.deliver(report, resolved_channels)
+            # The channels take a mode-neutral Dispatch now. standup_dispatch
+            # wraps this report's existing plaintext renderer, so the bytes
+            # reaching Slack and people's inboxes are unchanged.
+            delivery_status = delivery.deliver(standup_dispatch(report), resolved_channels)
             if delivery_status and not all(delivery_status.values()):
                 status = "partial"
         except Exception as e:

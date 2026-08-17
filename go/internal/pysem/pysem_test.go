@@ -287,3 +287,54 @@ func TestIsWordRune(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitlines(t *testing.T) {
+	// Python universal terminators: \n \r \v \f FS GS RS NEL LS PS, with
+	// "\r\n" counting once and no trailing empty line for a final terminator.
+	got := Splitlines("a\r\nb\rc\nd\ve\u0085f g\u2028h\n")
+	want := []string{"a", "b", "c", "d", "e", "f g", "h"}
+	if len(got) != len(want) {
+		t.Fatalf("Splitlines = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Splitlines[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if lines := Splitlines(""); len(lines) != 0 {
+		t.Errorf("Splitlines(\"\") = %q, want empty", lines)
+	}
+}
+
+func TestSplitWS(t *testing.T) {
+	// No-arg str.split(): runs of unicode whitespace (including NBSP-free
+	// Python isspace extras like FS) separate fields, empties never appear.
+	got := SplitWS(" \ta b c  d\x1ce ")
+	want := []string{"a", "b", "c", "d", "e"}
+	if len(got) != len(want) {
+		t.Fatalf("SplitWS = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("SplitWS[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if fields := SplitWS(" \t "); len(fields) != 0 {
+		t.Errorf("SplitWS of all-whitespace = %q, want empty", fields)
+	}
+}
+
+func TestQuoteAll(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"abc-_.~", "abc-_.~"}, // the always-safe unreserved set
+		{"a b/c", "a%20b%2Fc"}, // safe="" — even the slash encodes
+		{"José", "Jos%C3%A9"},  // UTF-8 bytes, uppercase hex
+		{"%[]=", "%25%5B%5D%3D"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := QuoteAll(c.in); got != c.want {
+			t.Errorf("QuoteAll(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
