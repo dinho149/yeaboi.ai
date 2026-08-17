@@ -194,6 +194,8 @@ def _launch(
     from yeaboi.ui.shared._music_bar import duck_working_thread
 
     logger.info("Ship: launching %s against %s", story.id, repo)
+    from yeaboi.config import get_ship_board_enabled
+
     progress_q: queue.Queue = queue.Queue()
     result_box: list = [None, None]
     cancel = threading.Event()
@@ -203,6 +205,37 @@ def _launch(
     # open a gate over a diff this user did not launch.
     mine: list[str] = [""]
 
+    # The live board, opt-in. Created inside on_run_id (the run id is what it
+    # reads the store by) and started there — the loopback server binds
+    # instantly and the tunnel comes up on its own thread, so this callback,
+    # which the engine awaits before setup, never blocks on the network.
+    board_enabled = get_ship_board_enabled()
+    board_box: list = [None]
+
+    def _on_run_id(run_id: str) -> None:
+        mine[0] = run_id
+        if not board_enabled:
+            return
+        try:
+            from yeaboi.ship.live import ShipBoardSession
+
+            session_board = ShipBoardSession(run_id, story_title=story.title or story.id)
+            session_board.start()
+            board_box[0] = session_board
+        except Exception:  # noqa: BLE001 — a board failure must never sink the run
+            logger.warning("Ship: could not start the live board", exc_info=True)
+
+    def _on_progress(item: object) -> None:
+        progress_q.put(item)
+        board = board_box[0]
+        if board is not None and is_component_progress(item):
+            board.note_component(item)
+
+    def _on_agent_line(line: str) -> None:
+        board = board_box[0]
+        if board is not None:
+            board.note_agent_line(line)
+
     def _work() -> None:
         try:
             result_box[0] = engine.run_ship(
@@ -210,8 +243,11 @@ def _launch(
                 repo,
                 session_id=session_id,
                 check_command=check_command,
-                on_progress=progress_q.put,
-                on_run_id=lambda run_id: mine.__setitem__(0, run_id),
+                on_progress=_on_progress,
+                on_run_id=_on_run_id,
+                # Enabling the board turns on the driver's stream-json path, so a
+                # plain run (board off) keeps the unchanged one-shot json flow.
+                on_agent_line=_on_agent_line if board_enabled else None,
                 cancel_event=cancel,
             )
         except BaseException as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
@@ -224,48 +260,93 @@ def _launch(
         start = time.monotonic()
         last_poll = 0.0
 
-        while thread.is_alive():
-            while True:
-                try:
-                    item = progress_q.get_nowait()
-                except queue.Empty:
-                    break
-                if is_component_progress(item):
-                    events_by_id[item["component_id"]] = item
-            gated = None
-            if mine[0] and time.monotonic() - last_poll > 0.5:
-                last_poll = time.monotonic()
-                # By id, not by scanning a newest-first page: with concurrency
-                # raised, later runs would push ours off the end and its gate
-                # would never open on the surface that launched it.
-                row = watch.get_run(mine[0])
-                if row is not None and row.status == "awaiting_approval" and not row.gate_resolution:
-                    gated = row
-            if gated is not None:
-                outcome = _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, gated, cancel)
-                if outcome == "cancelled":
-                    pass  # the engine notices the event and winds down
-                continue
-            w, h = console.size
-            live.update(
-                _build_ship_progress_screen(
-                    list(events_by_id.values()),
-                    tick=time.monotonic() - start,
-                    width=w,
-                    height=h,
-                )
+        try:
+            _drive_progress(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                thread=thread,
+                watch=watch,
+                progress_q=progress_q,
+                events_by_id=events_by_id,
+                mine=mine,
+                board_box=board_box,
+                cancel=cancel,
+                start=start,
+                last_poll=last_poll,
             )
-            key = read_key(timeout=frame_time) if supports_timeout else read_key()
-            if key in ("esc", "q") and not cancel.is_set():
-                logger.info("Ship: cancel requested from the progress screen")
-                cancel.set()
-        thread.join()
+        finally:
+            board = board_box[0]
+            if board is not None:
+                board.stop()
 
     run = result_box[0]
     if run is None:
         logger.error("Ship run crashed: %s", result_box[1])
         return f"Run crashed: {result_box[1]} — see logs."
     return _result_loop(console, live, read_key, frame_time, supports_timeout, run)
+
+
+def _drive_progress(
+    console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    *,
+    thread,
+    watch,
+    progress_q,
+    events_by_id,
+    mine,
+    board_box,
+    cancel,
+    start,
+    last_poll,
+) -> None:
+    """The progress/gate render loop, extracted so the board teardown is a
+    single ``finally`` around it regardless of how the loop exits."""
+    while thread.is_alive():
+        while True:
+            try:
+                item = progress_q.get_nowait()
+            except queue.Empty:
+                break
+            if is_component_progress(item):
+                events_by_id[item["component_id"]] = item
+        gated = None
+        if mine[0] and time.monotonic() - last_poll > 0.5:
+            last_poll = time.monotonic()
+            # By id, not by scanning a newest-first page: with concurrency
+            # raised, later runs would push ours off the end and its gate
+            # would never open on the surface that launched it.
+            row = watch.get_run(mine[0])
+            if row is not None and row.status == "awaiting_approval" and not row.gate_resolution:
+                gated = row
+        if gated is not None:
+            outcome = _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, gated, cancel)
+            if outcome == "cancelled":
+                pass  # the engine notices the event and winds down
+            continue
+        w, h = console.size
+        board = board_box[0]
+        board_link = board.share_url if board is not None else ""
+        live.update(
+            _build_ship_progress_screen(
+                list(events_by_id.values()),
+                tick=time.monotonic() - start,
+                width=w,
+                height=h,
+                board_link=board_link,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("esc", "q") and not cancel.is_set():
+            logger.info("Ship: cancel requested from the progress screen")
+            cancel.set()
+    thread.join()
 
 
 def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run, cancel) -> str:

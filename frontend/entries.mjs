@@ -13,6 +13,7 @@ export const ENTRIES = {
   gate: 'src/gate/main.tsx',
   poker: 'src/poker/main.tsx',
   retro: 'src/retro/main.tsx',
+  ship: 'src/ship/main.tsx',
 };
 
 /** Global name for the IIFE wrapper. Nothing reads it; rollup requires one. */

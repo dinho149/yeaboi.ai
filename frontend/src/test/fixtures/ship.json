@@ -1,0 +1,65 @@
+{
+  "activity": [
+    {
+      "kind": "text",
+      "text": "Adding the limiter"
+    },
+    {
+      "kind": "tool",
+      "name": "Edit"
+    }
+  ],
+  "branch": "ship/wire-ship",
+  "cost_usd": 0.42,
+  "diff_stat": " 1 file changed, 2 insertions(+)",
+  "diff_text": "@@ -1 +1,3 @@\n def go():\n+    import time\n+    time.sleep(1)\n",
+  "findings": [
+    [
+      "secret",
+      "high",
+      "possible token in agent output"
+    ]
+  ],
+  "gate_comment": "",
+  "gate_resolution": "",
+  "phases": [
+    {
+      "component_id": "ship-gate",
+      "label": "Awaiting human approval",
+      "status": "running"
+    },
+    {
+      "component_id": "ship-implement",
+      "label": "Implementing",
+      "status": "completed"
+    },
+    {
+      "component_id": "ship-setup",
+      "label": "Preparing isolated worktree",
+      "status": "completed"
+    }
+  ],
+  "pr_url": "",
+  "presence": [
+    {
+      "avatar": "🦊",
+      "name": "Ada"
+    }
+  ],
+  "project": "yeaboi",
+  "rejection_count": 0,
+  "revision": 6,
+  "run_id": "wire-ship",
+  "status": "awaiting_approval",
+  "story": "Add a rate limiter",
+  "validation": {
+    "command": "make test",
+    "configured": true,
+    "exit_code": 0,
+    "output_tail": "OK",
+    "passed": true
+  },
+  "warnings": [
+    "agent produced no result envelope; cost and turn counts are unavailable"
+  ]
+}
