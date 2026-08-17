@@ -265,37 +265,6 @@
   font-size: var(--fs-s);
 }
 
-/* Per-member bars, scaled against the busiest member. The name column is a
-   fixed share so the bars all start at the same x and can be compared. */
-.activity {
-  margin: var(--s4) 0;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel);
-}
-.activity > * + * {
-  margin-top: var(--s2);
-}
-.activityRow {
-  display: grid;
-  grid-template-columns: minmax(0, 8rem) 1fr auto;
-  align-items: center;
-  gap: var(--s3);
-}
-.activityName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-}
-.activityTotal {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-xs);
-  color: var(--dim);
-}
-
 .member {
   margin-bottom: var(--s3);
   padding: var(--s4);

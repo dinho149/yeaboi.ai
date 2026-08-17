@@ -306,7 +306,16 @@ func memberEvidence(acts []*pysem.Obj, cap int, prefixes, workItemIDs map[string
 		if prNumber != "" {
 			dedupe = "pr-merge:" + strOr(a, "repository") + ":" + prNumber
 		} else if url != "" {
-			dedupe = url
+			// f"review|{url}" if a.get("kind") == "review" else url — a review
+			// legitimately shares its URL with the work it points at (an AzDO
+			// vote row and the member's own PR row), so reviews dedupe in
+			// their own URL namespace; other kinds share the plain-URL one so
+			// a ticket's latest event still wins.
+			if strOr(a, "kind") == "review" {
+				dedupe = "review|" + url
+			} else {
+				dedupe = url
+			}
 		} else {
 			// f"{a.get('kind','')}:{a.get('key','')}:{a.get('title','')}" —
 			// str() of the raw values, so a present-but-null field says "None".
@@ -566,7 +575,11 @@ func memberSkeletons(grouped *Grouped, coverage map[string]string, yesterday *py
 			block.Set("summary", fallbackCategorySummary(category, split[category], cov))
 			block.Set("links", linksToWire(memberLinks(split[category])))
 			block.Set("count", int64(len(split[category])))
-			block.Set("evidence", memberEvidence(evidenceActs, 8, prefixes, workItemIDs))
+			// 30 mirrors state.MEMBER_EVIDENCE_CAP, which is engine._member_evidence's
+			// cap default — enough for the web timeline to show the real shape of a
+			// busy day. Python's gap_taxonomy reads the same constant to tell "at the
+			// cap" from "merely busy", so change all three together.
+			block.Set("evidence", memberEvidence(evidenceActs, 30, prefixes, workItemIDs))
 			return block
 		}
 

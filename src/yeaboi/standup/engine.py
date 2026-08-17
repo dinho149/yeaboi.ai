@@ -26,11 +26,11 @@ import json
 import logging
 import re
 from collections.abc import Collection
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from yeaboi import html_theme
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
+from yeaboi.agent.state import MEMBER_EVIDENCE_CAP, ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
     from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
@@ -772,7 +772,13 @@ def _nest_pr_commits(acts: list[dict]) -> list[dict]:
 
 def _member_evidence(
     acts: list[dict],
-    cap: int = 8,
+    # Per member per category: enough for the web timeline to show the real
+    # shape of a busy day. Prose surfaces self-cap their display (the markdown
+    # export folds at _MD_EVIDENCE_CAP, the web list folds after 3 rows), so
+    # raising this grows only the artifact and the timeline's dots.
+    # `gap_taxonomy` reads the same constant to tell "at the cap" from "merely
+    # busy"; changing it here alone is what made that rule cry truncation.
+    cap: int = MEMBER_EVIDENCE_CAP,
     *,
     prefixes: Collection[str] = frozenset(),
     work_item_ids: Collection[str] = frozenset(),
@@ -784,8 +790,13 @@ def _member_evidence(
     no link still says something). Rows are ordered newest-first — the day's
     movement (a ticket landing in Done) belongs in the visible top rows, while
     carried WIP (which Jira stamps with an empty timestamp) folds. Deduped in
-    that order — by URL when there is one, else by (kind, key, title) — so the
-    latest event for a ticket is the one that survives.
+    that order — by URL when there is one, else by (kind, key, title) — so
+    the latest event for a ticket is the one that survives (a Done transition
+    and the issue's own row share a URL on purpose). Review rows are the one
+    exception: they dedupe in their own URL namespace, because a review
+    legitimately shares its URL with a different piece of work (an AzDO vote
+    and the member's own PR row both point at the PR; GitHub review rows fall
+    back to the PR's html_url) and must not swallow it or be swallowed.
 
     ``prefixes``/``work_item_ids`` are the report-wide reference gates
     (references.tracker_prefixes / tracker_work_item_ids): with them, each
@@ -817,8 +828,13 @@ def _member_evidence(
         )
         if pr_number:
             dedupe = f"pr-merge:{a.get('repository', '')}:{pr_number}"
+        elif url:
+            # "review|" keeps a review's URL disjoint from the work it points
+            # at; other kinds share the plain-URL namespace so a ticket's
+            # latest event still wins.
+            dedupe = f"review|{url}" if a.get("kind") == "review" else url
         else:
-            dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
+            dedupe = f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
         if dedupe in seen:
             continue
         seen.add(dedupe)
@@ -1564,6 +1580,7 @@ def run_standup(
     if days is None:
         since = collector.previous_working_day_start(today)
         activity_window = f"{since:%a %Y-%m-%d} 00:00 → now"
+        activity_window_start = since.isoformat()  # already tz-aware local midnight
         bundle = collector.collect_recent_activity(
             since=since,
             sources=enabled_sources,
@@ -1575,6 +1592,7 @@ def run_standup(
         )
     else:
         activity_window = f"last {days} day(s)"
+        activity_window_start = (datetime.now().astimezone() - timedelta(days=days)).isoformat()
         bundle = collector.collect_recent_activity(
             days=days,
             sources=enabled_sources,
@@ -1584,6 +1602,10 @@ def run_standup(
             skipped=skipped_sources,
             **source_params,
         )
+
+    # The window's far edge is "now" — stamped once collection returns, so the
+    # timeline axis ends where the freshest event can actually sit.
+    activity_window_end = datetime.now().astimezone().isoformat()
 
     # 3. Sprint context + deterministic confidence.
     _notify("Reading sprint progress")
@@ -1839,6 +1861,8 @@ def run_standup(
         # automation filters recompute per-source numbers.
         activity_counts=tuple((str(s), int(n)) for s, n in result["counts"]),
         activity_window=activity_window,
+        activity_window_start=activity_window_start,
+        activity_window_end=activity_window_end,
         skipped_sources=tuple(bundle.skipped),
         # Carried so the broadcast renderers can tell a disappointment from a
         # deliberate non-choice long after the run that classified them.

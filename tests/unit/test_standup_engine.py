@@ -1,7 +1,7 @@
 """Unit tests for the standup engine pipeline (mocked LLM + sources)."""
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -664,6 +664,13 @@ class TestActivityWindow:
         assert "days" not in captured
         assert report.activity_window.startswith("Fri 2026-07-17")
         assert report.activity_window.endswith("→ now")
+        # Machine-readable bounds for the timeline axis: tz-aware ISO, start
+        # at the window's midnight, end stamped at collection time.
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert (start.year, start.month, start.day, start.hour) == (2026, 7, 17, 0)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert start < end
 
     def test_explicit_days_keeps_legacy_window(self, monkeypatch, db_path, seeded_session):
         captured: dict = {}
@@ -686,6 +693,10 @@ class TestActivityWindow:
         assert captured["days"] == 3
         assert "since" not in captured
         assert report.activity_window == "last 3 day(s)"
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert (end - start).days == 3
 
 
 class TestIdentityResolution:
@@ -1441,6 +1452,29 @@ class TestMemberEvidence:
         assert (row.kind, row.key, row.title) == ("commit", "78e4201d", "Fix login redirect")
         assert (row.repository, row.timestamp) == ("yeaboi/web", "2026-07-30T09:15:00")
 
+    def test_review_sharing_the_pr_url_stays_a_separate_row(self):
+        # An AzDO review vote and the member's own PR row both point at the PR
+        # URL; GitHub review rows fall back to the PR's html_url. Reviewing and
+        # authoring are different work — neither may swallow the other.
+        acts = [
+            {
+                "kind": "pr",
+                "title": "Add retry",
+                "key": "!7",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T16:00:00",
+            },
+            {
+                "kind": "review",
+                "title": "approved PR !7: Add retry",
+                "key": "review:7:guid-vic",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T15:00:00",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert [(r.kind, r.key) for r in rows] == [("pr", "!7"), ("review", "review:7:guid-vic")]
+
     def test_urlless_items_survive_and_dedupe_by_identity(self):
         # Unlike _member_links, an in-progress ticket with no URL still says something.
         acts = [
@@ -1505,11 +1539,11 @@ class TestMemberEvidence:
         ]
         assert len(engine._member_evidence(acts)) == 2
 
-    def test_caps_at_eight_preserving_order(self):
-        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]
+    def test_caps_at_thirty_preserving_order(self):
+        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(35)]
         rows = engine._member_evidence(acts)
-        assert len(rows) == 8
-        assert rows[0].key == "#0" and rows[7].key == "#7"
+        assert len(rows) == 30
+        assert rows[0].key == "#0" and rows[29].key == "#29"
 
     def test_prefers_clean_summary_over_action_title(self):
         # Jira update/comment titles are action phrases ("updated KEY '…'");

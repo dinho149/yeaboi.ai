@@ -527,6 +527,13 @@ export type ExportReport = (
       quietMembers: string[];
       activityCounts: Array<[string, number]>;
       activityWindow: string;
+      /**
+       * Machine-readable window bounds (tz-aware ISO-8601) — the timeline's
+       * axis. Both `""` on a report stored before the timeline existed (a
+       * permanent path, not a transition shim): the component derives the
+       * axis from the event times instead.
+       */
+      window: { start: string; end: string };
       /** `[category, status]` — how completely each source could be read. */
       coverage: Array<[string, string]>;
       /** `[source, reason]` for the sources that were not read at all. */

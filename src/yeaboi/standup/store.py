@@ -315,6 +315,8 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         member_updates=members,
         activity_counts=counts,
         activity_window=d.get("activity_window", ""),
+        activity_window_start=d.get("activity_window_start", ""),
+        activity_window_end=d.get("activity_window_end", ""),
         skipped_sources=skipped,
         unmet_sources=tuple(str(s) for s in d.get("unmet_sources", ())),
         category_coverage=category_coverage,
