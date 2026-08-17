@@ -1421,7 +1421,7 @@ class TestCheckMode:
 
 
 class TestApplyRunExitCodes:
-    """The default run's exit codes, which `cron/cd-deploy.md` step 3 branches on.
+    """The default run's exit codes, which `cron/cd-deploy.md` step 4 branches on.
 
     Not part of `TestCheckMode` above: this is neither ``--check`` nor
     ``--local``. It is the apply run, and the only reason it is assertable
@@ -1440,7 +1440,7 @@ class TestApplyRunExitCodes:
         return copy
 
     def test_the_default_run_refuses_a_disagreeing_repo_with_exit_2(self, repo_copy: Path):
-        """2, not 1, and `cron/cd-deploy.md` step 3 is what reads the difference.
+        """2, not 1, and `cron/cd-deploy.md` step 4 is what reads the difference.
 
         1 from that step means the GitHub apply degraded — no labels created, or
         a variable rejected — which says nothing about a routine's trigger body
@@ -3213,7 +3213,7 @@ class TestSlackTemplates:
 
     Every message the fleet posts is specified as a worked example rather than
     as a list of topics to cover, because the one routine specified the other
-    way — ``cron/cd-deploy.md`` step 7 — wrote a fresh essay per run and put
+    way — ``cron/cd-deploy.md`` step 8 — wrote a fresh essay per run and put
     thirty-six of them in ``#yeaboi-claude`` in a single day. These checks are
     what stop a template drifting back out of the shared grammar in
     ``.claude/agents/cowork-scribe.md``; nothing at run time would notice.
@@ -4683,6 +4683,54 @@ class TestBlockedReport:
         assert "Not `cowork:proposal`" in gate, "the gate no longer says which label it must not use"
 
 
+class TestADeployThatCannotDeployIsCheap:
+    """What a firing costs when the tool it needs is absent — which is every
+    firing since 2026-08-10.
+
+    `cd-deploy` is woken by a push webhook that cannot be scoped to a branch
+    (`tests/fixtures/cowork_webhook_live.json` records `filter.ref` and
+    `filter.branches` both rejected), so in a repo running many worktrees it fires
+    once per push to anything. On 2026-08-17 five firings landed in three minutes,
+    each one running two scripts, discovering at step 4 that it could not
+    reconcile, and posting the same 🟡 line about the same tracked gap: roughly a
+    pound a push for a duplicate of work `.github/workflows/cowork-repo-setup.yml`
+    does anyway.
+
+    Two properties keep that fixed, and neither is visible by reading the routine
+    top to bottom — which is exactly why they are asserted.
+    """
+
+    ROUTINE = "cron/cd-deploy.md"
+
+    def _text(self) -> str:
+        return (setup.ROUTINES_DIR / "cron" / "cd-deploy.md").read_text(encoding="utf-8")
+
+    def test_the_tool_is_checked_before_anything_is_spent(self):
+        """The check must come before the first `cowork_setup.py` run. Order is
+        the whole fix: the same words further down cost a session per push."""
+        text = self._text()
+        gate = text.index("If `RemoteTrigger` is not in")
+        first_script = text.index("uv run python scripts/cowork_setup.py")
+        assert gate < first_script, "the RemoteTrigger check drifted back below the setup scripts"
+
+    def test_the_short_circuit_names_what_it_skips(self):
+        # A skip nobody wrote down is a skip somebody restores as a "fix".
+        text = self._text()
+        assert "skipping steps 3 to 7" in text
+        assert "cowork-repo-setup.yml" in text, "the routine no longer says who applies the GitHub half instead"
+
+    def test_the_check_in_is_once_a_day_not_once_a_firing(self):
+        """`--quiet-repeat` is what keeps thirty firings from becoming thirty
+        thread replies. It is a flag rather than a judgement call because the
+        judgement version ("post only if it matters") is one a model re-litigates
+        every run."""
+        text = self._text()
+        assert "--quiet-repeat" in text, "cd-deploy no longer suppresses repeat check-ins"
+        exemption = (setup.COWORK / "check-in.md").read_text(encoding="utf-8")
+        assert "--quiet-repeat" in exemption, "check-in.md no longer documents the exemption it grants"
+        assert "Two routines are exempt" in exemption
+
+
 class TestLinearLabels:
     """What `/cowork deploy` creates on the Linear team, derived rather than typed.
 
@@ -4765,6 +4813,29 @@ class TestTheAgentsExampleCannotBeCopied:
 
     def test_warnings_are_required_to_reach_the_post(self):
         assert "digest.warnings" in self.ROUTINE.read_text(encoding="utf-8")
+
+    def test_the_scope_is_a_repository_and_never_an_owner(self):
+        """The scan this session can actually make.
+
+        `--github-owners` expands an owner into repositories first, which is
+        `GET /users/{owner}/repos` — and the egress proxy refuses every path that
+        is not repository-scoped: *"sessions are bound to their configured
+        repositories"*, 403, observed 2026-08-17. What reached Slack that morning
+        was that refusal, verbatim, under a headline saying no agent had done
+        anything. Naming the repository skips discovery entirely and every read
+        after it is `GET /repos/{slug}/…`, which is on the allowlist.
+        """
+        text = self.ROUTINE.read_text(encoding="utf-8")
+        command = text[text.index("```bash") : text.index("```", text.index("```bash") + 7)]
+        assert "--github-owners" not in command, "the owner scan is refused by the proxy; name the repository"
+        assert "STANDUP_GITHUB_REPO=" in command, "nothing names the estate, so the scan resolves nothing every day"
+
+    def test_a_scan_that_reached_nothing_says_so_in_the_headline(self):
+        """The quiet line and a 403 in the same message contradict each other, and
+        the reader believes the headline."""
+        text = self.ROUTINE.read_text(encoding="utf-8")
+        assert "GitHub scan reached nothing" in text
+        assert "verbatim" in text, "the note itself must still be posted unreworded"
 
 
 class TestEveryRunChecksIn:

@@ -85,11 +85,14 @@ workstream did, the subject is that workstream.
 **Every run also checks in, and the budget above is unchanged, because a check-in is a reply.**
 Each routine closes with two lines under that morning's 📅 message — worked or not, what it did,
 what it spent, and a link to its log ([check-in.md](check-in.md)). That is eight to a dozen replies
-on a weekday: seven or eight timed runs, `cd-deploy` once per merge, whatever GitHub events fire,
-and one from `slack-relay`, which is the one routine that does *not* check in on every fire. It
-polls seventeen times a day, so it reports on its first fire and on any fire that acted — sixteen
-more lines saying "nothing to relay" would bury the two that mattered, and prove nothing the first
-did not.
+on a weekday: seven or eight timed runs, whatever GitHub events fire, and one each from the two
+routines that do *not* check in on every fire. `slack-relay` polls seventeen times a day, so it
+reports on its first fire and on any fire that acted — sixteen more lines saying "nothing to relay"
+would bury the two that mattered, and prove nothing the first did not. `cd-deploy` is woken by a
+push to *any* branch, which on a busy afternoon is once a minute; it passes `--quiet-repeat`, so
+the first check-in of the day at a given status posts and the rest record to the ledger silently.
+Both exemptions buy the same thing: a heartbeat is worth one line a day, and the count of firings
+belongs in `make cowork-metrics`, which reads the ledger.
 
 Any of those in the channel would mute the channel; under 📅 they cost a reader nothing and land
 where they mean the most, since 📅 already listed what would run today and each reply closes out one
@@ -105,13 +108,13 @@ of its lines.
 | Mondays 09:00 UTC | 🏷️ **Release batch waiting** — the gate-green fleet PRs awaiting your `make batch-assemble` | nothing is waiting and no batch is open |
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
 | A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
-| A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
+| A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause already has an open `[blocked]` issue, which is every firing after the first |
 | A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
 | Tuesdays 08:30 UTC | 🐹 **Go Migration** — the weekly bar: waves merged, in flight, blocked | never — a bar that only appears when it grows cannot be trusted |
 | A migration wave merges | 🌊 **Go Migration** — the wave, the new bar, the core version shipped | non-wave merges say nothing here |
 | The 13 maintenance sweeps | **nothing in the channel, ever** | always — a sweep files a GitHub issue and exits |
-| The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
+| The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire, or `cd-deploy` firing again the same day at the same status. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
 
 Three things follow from that table, and they are the whole design:
 
@@ -414,14 +417,16 @@ is it a degradation, and under `--strict` that is what exits non-zero.
 
 **And a token is not the same as access.** That session's egress goes through a proxy with its own
 allowlist, which was probed on 2026-08-11 and written down in
-`tests/fixtures/cowork_github_access_live.json` — 15 of 19 operations served, and the four refusals
-each close off an approach that looks obvious:
+`tests/fixtures/cowork_github_access_live.json` — 15 of 19 operations served. Those four refusals,
+plus a fifth met in the wild since and added to the probe rather than typed into the fixture, each
+close off an approach that looks obvious:
 
 | Refused there | Consequence |
 |---|---|
 | `POST /graphql` — *"only the pinned set of PR-review operations is served. Use REST … instead"* | Installing `gh` fixes nothing: `gh pr list --json` and `gh issue list --json` are GraphQL underneath, so the reads the sweeps and the digest are built on are exactly what would still fail. And `pr_feedback.py` cannot answer at all there — `reviewDecision` and thread resolution are v4-only — so it says so rather than reporting a PR it never read. |
-| `GET`/`PATCH /repos/…/actions/variables` | The `YEABOI_MODEL_*` half of `cd-deploy` step 3 can never succeed in-session. It moved to `.github/workflows/cowork-repo-setup.yml`, where a runner has no proxy. |
+| `GET`/`PATCH /repos/…/actions/variables` | The `YEABOI_MODEL_*` half of `cd-deploy` step 4 can never succeed in-session. It moved to `.github/workflows/cowork-repo-setup.yml`, where a runner has no proxy. |
 | `POST /repos/…/statuses/{sha}` | The `pr-feedback` commit status can only be posted from CI — which is where `.github/workflows/pr-feedback.yml` already posts it. |
+| Anything not repository-scoped — `GET /users/{owner}/repos` and its `/orgs/…`, `/search/…` neighbours — *"sessions are bound to their configured repositories"* (observed 2026-08-17, probed from the next re-derivation on) | A routine can read repositories it is told about and can never *discover* them. `cron/agents-standup.md` names a repository rather than an owner for exactly this reason; anything that expands an estate first belongs on a runner. |
 
 The labels half, by contrast, is genuinely repaired by the REST path: `gh label list` is GraphQL and
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running

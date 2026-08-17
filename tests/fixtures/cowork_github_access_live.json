@@ -22,7 +22,7 @@
     "     `gh issue list --json` are GraphQL underneath, and GraphQL is refused",
     "     outright — so the `--json` reads the sweeps and the digest are built on",
     "     are exactly what a bootstrapped `gh` would still fail at.",
-    "  2. The variables half of cd-deploy step 3 can never work in-session, over",
+    "  2. The variables half of cd-deploy's `--strict` step can never work in-session,",
     "     any transport. `/actions/variables` is refused on read AND write, so it",
     "     moved to .github/workflows/cowork-repo-setup.yml, where a runner has no",
     "     such proxy.",

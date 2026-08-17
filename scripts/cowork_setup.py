@@ -50,7 +50,7 @@ Usage::
     # …and the shell half of teardown (routines are /cowork teardown's job):
     uv run python scripts/cowork_setup.py --teardown --labels --variables --yes
 
-Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 3 reads to
+Exit codes on the default (apply) run, which `cron/cd-deploy.md` step 4 reads to
 decide whether to keep going:
 
     0   applied, or nothing needed applying
@@ -4931,7 +4931,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = Report()
     check_repo(report)
     if not report.ok:
-        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 3 reads.
+        # 2, not 1, and the difference is what `cron/cd-deploy.md` step 4 reads.
         # 1 here means the GitHub apply degraded, which has no bearing on a
         # routine's trigger body — those are built from these same files, and
         # these files are fine. 2 means the files are not, and nothing further
