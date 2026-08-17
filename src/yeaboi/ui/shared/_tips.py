@@ -152,6 +152,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "\U0001f576️ Tip: press Anonymize on any result screen to mask names before sharing",
     ),
     FeatureTip(
+        "ceremonies",
+        "\U0001f5d3️ Tip: press s to schedule a mode — it runs while yeaboi is closed and posts to your channels",
+        is_new=True,
+    ),
+    FeatureTip(
         "output-sharing",
         "🌐 Tip: Share Online publishes any generated output behind a temporary access code",
         is_new=True,

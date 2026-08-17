@@ -1,11 +1,16 @@
-"""Unit tests for the OS-native standup scheduler (launchd + crontab)."""
+"""Unit tests for the OS-native job scheduler (launchd + crontab).
+
+Promoted out of standup/scheduler.py: it now installs the standup pair AND one
+job per declared ceremony, and the tests that pinned the standup's identifiers
+are the ones that keep the promotion from breaking real installs.
+"""
 
 import plistlib
 from unittest.mock import MagicMock
 
 import pytest
 
-from yeaboi.standup import scheduler
+from yeaboi.ceremonies import scheduler
 
 
 class TestHelpers:
@@ -146,7 +151,7 @@ class TestTwoJobKinds:
         assert (macos / "com.yeaboi.standup.s1.plist").exists()
         assert not (macos / "com.yeaboi.standup-transcript.s1.plist").exists()
 
-    def test_remove_with_no_kind_tears_down_everything(self, macos):
+    def test_remove_with_no_kind_tears_down_the_standup_family(self, macos):
         scheduler.install_schedule("s1", "10:00", "1-5")
         scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
         scheduler.remove_schedule("s1")
@@ -195,7 +200,7 @@ class TestTwoJobKindsCron:
         assert len(cron) == 1
         assert "--standup-run" in cron[0]
 
-    def test_remove_with_no_kind_tears_down_everything(self, cron):
+    def test_remove_with_no_kind_tears_down_the_standup_family(self, cron):
         scheduler.install_schedule("s1", "10:00", "1-5")
         scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
         scheduler.remove_schedule("s1")
@@ -359,3 +364,173 @@ class TestUnsupportedPlatform:
         monkeypatch.setattr(scheduler, "_is_macos", lambda: False)
         monkeypatch.setattr(scheduler, "_is_linux", lambda: False)
         assert scheduler.get_schedule_status("sess-1") == {"platform": "unsupported", "installed": False, "path": ""}
+
+
+class TestCeremonyJobs:
+    """The third job family: one headless job per declared ceremony.
+
+    Everything here is either a compatibility pin on the standup's identifiers
+    or a property that only shows up once a job runs with nobody watching.
+    """
+
+    @pytest.fixture
+    def macos(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: True)
+        monkeypatch.setattr(scheduler, "_is_linux", lambda: False)
+        monkeypatch.setattr(scheduler, "_launch_agents_dir", lambda: tmp_path)
+        monkeypatch.setattr(scheduler, "_launcher_dir", lambda: tmp_path / "launchers")
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/yeaboi")
+        monkeypatch.setattr(scheduler.subprocess, "run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
+        return tmp_path
+
+    @pytest.fixture
+    def cron(self, monkeypatch):
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: False)
+        monkeypatch.setattr(scheduler, "_is_linux", lambda: True)
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/yeaboi")
+        lines: list[str] = []
+        monkeypatch.setattr(scheduler, "_read_crontab", lambda: list(lines))
+        monkeypatch.setattr(scheduler, "_write_crontab", lambda new: (lines.clear(), lines.extend(new)))
+        return lines
+
+    def _plist(self, path):
+        with path.open("rb") as fh:
+            return plistlib.load(fh)
+
+    # -- compatibility: the promotion must not rename what is installed ------
+
+    def test_the_standup_keeps_its_historical_identifiers(self):
+        # These two strings are installed on real machines. If the promotion
+        # renamed either, every existing user's standup would go on firing from
+        # a job yeaboi no longer knows how to remove.
+        assert scheduler._label("s1") == "com.yeaboi.standup.s1"
+        assert scheduler._cron_marker("s1") == "# yeaboi-standup s1"
+        assert scheduler._cron_marker("s1", scheduler.JOB_TRANSCRIPT_REMINDER) == "# yeaboi-standup-transcript s1"
+
+    # -- identity -----------------------------------------------------------
+
+    def test_a_ceremony_gets_its_own_label_namespace(self):
+        kind = scheduler.ceremony_kind("weekly-report")
+        assert scheduler._label("s1", kind) == "com.yeaboi.ceremony.weekly-report.s1"
+        assert scheduler._cron_marker("s1", kind) == "# yeaboi-ceremony-weekly-report s1"
+
+    def test_a_ceremony_named_transcript_does_not_take_over_the_reminder(self):
+        # The reason ceremonies are a namespace and not another suffix: a
+        # ceremony called "transcript" would otherwise land on exactly
+        # "com.yeaboi.standup-transcript.s1" and silently replace the reminder.
+        clash = scheduler._label("s1", scheduler.ceremony_kind("transcript"))
+        assert clash != scheduler._label("s1", scheduler.JOB_TRANSCRIPT_REMINDER)
+
+    def test_no_cron_marker_is_a_substring_of_another(self, cron):
+        markers = [
+            scheduler._cron_marker("s1"),
+            scheduler._cron_marker("s1", scheduler.JOB_TRANSCRIPT_REMINDER),
+            scheduler._cron_marker("s1", scheduler.ceremony_kind("report")),
+            scheduler._cron_marker("s1", scheduler.ceremony_kind("report-weekly")),
+        ]
+        for one in markers:
+            others = [m for m in markers if m != one]
+            assert not any(one in other for other in others), one
+
+    def test_a_name_a_job_label_cannot_hold_is_refused(self):
+        with pytest.raises(ValueError, match="cannot be used in a job label"):
+            scheduler._label("s1", scheduler.ceremony_kind("../escape"))
+
+    def test_an_unknown_kind_is_refused(self):
+        with pytest.raises(ValueError, match="unknown job kind"):
+            scheduler._label("s1", "nonsense")
+
+    # -- what the job actually runs -----------------------------------------
+
+    def test_the_argv_runs_the_ceremony_scheduled(self, monkeypatch):
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/yeaboi")
+        argv = scheduler._executable_args("s1", scheduler.ceremony_kind("weekly-report"))
+        assert argv == ["/bin/yeaboi", "ceremonies", "run", "weekly-report", "--session", "s1", "--scheduled"]
+
+    def test_a_ceremony_never_opens_a_window(self, macos):
+        # The wrapper/osascript stack is the standup's alone. A terminal
+        # appearing mid-meeting because the Monday report fired is the failure
+        # this pins shut.
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        data = self._plist(macos / "com.yeaboi.ceremony.weekly-report.s1.plist")
+        assert data["ProgramArguments"][1:4] == ["ceremonies", "run", "weekly-report"]
+        assert not (macos / "launchers").exists()
+
+    def test_a_ceremony_fires_at_the_declared_time_with_no_lead(self, macos):
+        # A standup is delivered *before* a meeting; a ceremony's time is just
+        # when it should happen.
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        interval = self._plist(macos / "com.yeaboi.ceremony.weekly-report.s1.plist")["StartCalendarInterval"]
+        assert interval == [{"Hour": 8, "Minute": 0, "Weekday": 1}]
+
+    # -- PATH: the trap a headless job walks straight into -------------------
+
+    def test_a_headless_job_carries_the_installing_shell_s_path(self, macos, monkeypatch):
+        monkeypatch.setenv("PATH", "/opt/homebrew/bin:/usr/bin:/bin")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        data = self._plist(macos / "com.yeaboi.ceremony.weekly-report.s1.plist")
+        assert data["EnvironmentVariables"]["PATH"] == "/opt/homebrew/bin:/usr/bin:/bin"
+
+    def test_the_window_opening_standup_does_not_need_one(self, macos):
+        # It inherits the user's profile through Terminal, so pinning a PATH
+        # into its plist would override the shell rather than help it.
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        assert "EnvironmentVariables" not in self._plist(macos / "com.yeaboi.standup.s1.plist")
+
+    def test_the_cron_entry_sets_path_inline(self, cron, monkeypatch):
+        monkeypatch.setenv("PATH", "/opt/homebrew/bin:/usr/bin")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        assert cron[0].split("* * 1 ")[1].startswith("PATH=/opt/homebrew/bin:/usr/bin ")
+
+    def test_a_percent_in_the_path_is_escaped_for_cron(self, cron, monkeypatch):
+        # cron reads an unescaped % as end-of-command and hands the rest to the
+        # job on stdin — the command would silently stop at the first one.
+        monkeypatch.setenv("PATH", "/opt/we%ird/bin:/usr/bin")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        assert r"we\%ird" in cron[0]
+        assert "we%ird" not in cron[0].replace(r"we\%ird", "")
+
+    # -- teardown asymmetry --------------------------------------------------
+
+    def test_turning_the_standup_off_leaves_the_ceremonies_alone(self, macos):
+        # remove_schedule(kind=None) means "the standup family", not "every job
+        # this session has" — the wizard calls it whenever the standup schedule
+        # is switched off, and the Monday report must survive that.
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        scheduler.remove_schedule("s1")
+        assert not (macos / "com.yeaboi.standup.s1.plist").exists()
+        assert (macos / "com.yeaboi.ceremony.weekly-report.s1.plist").exists()
+
+    def test_removing_one_ceremony_leaves_its_siblings(self, macos):
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        scheduler.install_ceremony("s1", "agent-cost", "08:30", "1")
+        scheduler.remove_ceremony("s1", "weekly-report")
+        assert not (macos / "com.yeaboi.ceremony.weekly-report.s1.plist").exists()
+        assert (macos / "com.yeaboi.ceremony.agent-cost.s1.plist").exists()
+
+    def test_removing_a_ceremony_on_cron_leaves_its_siblings(self, cron):
+        scheduler.install_ceremony("s1", "report", "08:00", "1")
+        scheduler.install_ceremony("s1", "report-weekly", "09:00", "1")
+        scheduler.remove_ceremony("s1", "report")
+        assert len(cron) == 1
+        assert "report-weekly" in cron[0]
+
+    # -- discovery -----------------------------------------------------------
+
+    def test_installed_ceremonies_reads_the_os_not_the_store(self, macos):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        scheduler.install_ceremony("s1", "agent-cost", "08:30", "1")
+        scheduler.install_ceremony("s2", "elsewhere", "08:30", "1")
+        assert scheduler.installed_ceremonies("s1") == ["agent-cost", "weekly-report"]
+        assert scheduler.installed_ceremonies("s2") == ["elsewhere"]
+
+    def test_installed_ceremonies_on_cron(self, cron):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_ceremony("s1", "weekly-report", "08:00", "1")
+        scheduler.install_ceremony("s2", "elsewhere", "08:30", "1")
+        assert scheduler.installed_ceremonies("s1") == ["weekly-report"]
+
+    def test_installed_ceremonies_is_empty_when_there_are_none(self, macos):
+        assert scheduler.installed_ceremonies("s1") == []

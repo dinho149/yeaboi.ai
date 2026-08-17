@@ -71,6 +71,9 @@ class Theme:
 ANALYSIS_THEME = Theme()
 PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", card_bg="rgb(20,24,38)")
 USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
+# Slate, deliberately the quietest accent on the menu: this page schedules the
+# other modes rather than being one, and a loud hue would compete with them.
+CEREMONIES_THEME = Theme(accent="rgb(120,150,175)", accent_bright="rgb(160,195,225)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
 RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
@@ -130,6 +133,11 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Jira": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Azure DevOps": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Ceremonies page. "Run now" is the affirmative action (green like Accept);
+    # Pause/Resume are neutral, because neither is the destructive one.
+    "Run now": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Pause": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Resume": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Standup identity flow (repo path + aliases; schedule setup lives on the hub).
     "Identity": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Settings page: cycles LOG_LEVEL (DEBUG → INFO → WARNING → ERROR).
@@ -345,6 +353,11 @@ def analysis_title(shimmer_tick: float | None = None, *, width: int | None = Non
 def usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Usage ASCII title (amber accent). Optionally shimmering."""
     return build_ascii_title("Usage", "rgb(220,160,60)", shimmer_tick=shimmer_tick, width=width)
+
+
+def ceremonies_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Ceremonies ASCII title (slate accent). Optionally shimmering."""
+    return build_ascii_title("Ceremonies", "rgb(120,150,175)", shimmer_tick=shimmer_tick, width=width)
 
 
 def settings_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

@@ -85,7 +85,11 @@ SURFACES: tuple[tuple[tuple[str, ...], Item], ...] = (
         ),
     ),
     (
-        ("src/yeaboi/standup/scheduler.py",),
+        # Both paths: the installer moved to ceremonies/ and standup/scheduler.py
+        # is now a re-export shim. Keying on the shim alone would have quietly
+        # stopped asking for this hand-test the moment a change touched the real
+        # installer and not the shim — which is every change from here on.
+        ("src/yeaboi/standup/scheduler.py", "src/yeaboi/ceremonies/scheduler.py"),
         Item(
             label="schedule",
             what="`yeaboi standup --schedule install`, set a fire two minutes out, confirm a "

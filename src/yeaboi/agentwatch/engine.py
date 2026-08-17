@@ -1048,46 +1048,22 @@ def _as_dict_shallow(artifact) -> dict:
 def _deliver_digest(digest) -> dict[str, bool]:
     """Post the digest to Slack (+ a desktop notification). Never raises.
 
-    The standup mode's ``deliver()`` is typed to StandupReport and formats via
-    its own plaintext renderer, so agentwatch posts through the same
-    configured webhook directly rather than duck-typing another mode's report.
+    This used to re-implement the webhook POST, because the shared channels were
+    typed to ``StandupReport`` and there was no honest way to hand them an agent
+    digest. They take a mode-neutral ``Dispatch`` now, so there is one Slack call
+    site again instead of two that can drift apart.
+
+    The digest's own plaintext renderer still writes the body — what changed is
+    who carries it, not what it says.
     """
+    from dataclasses import replace
+
     from yeaboi.agentwatch.export import build_standup_plaintext
+    from yeaboi.ceremonies.delivery import CHANNEL_DESKTOP, CHANNEL_SLACK, deliver
+    from yeaboi.ceremonies.renderers import agent_standup_dispatch
 
-    results: dict[str, bool] = {}
-    text = build_standup_plaintext(digest)
-    try:
-        from yeaboi import config
-
-        webhook = getattr(config, "get_slack_webhook_url", lambda: "")() or ""
-    except Exception:  # noqa: BLE001
-        webhook = ""
-    if not webhook:
-        logger.warning("agent standup delivery: no SLACK_WEBHOOK_URL configured")
-        results["slack"] = False
-    else:
-        import json as json_mod
-        import urllib.request
-
-        payload = json_mod.dumps({"text": text}).encode("utf-8")
-        req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})  # noqa: S310
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — user-configured webhook
-                results["slack"] = 200 <= resp.status < 300
-        except Exception as exc:  # noqa: BLE001
-            logger.error("agent standup delivery[slack] failed: %s", exc)
-            results["slack"] = False
-    try:
-        from yeaboi.standup.delivery import notify_desktop
-
-        results["desktop"] = notify_desktop(
-            "Agent Standup",
-            f"{digest.sessions_worked} session(s), ${digest.total_cost_usd:,.2f} — {digest.narrative[:120]}",
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("agent standup delivery[desktop] failed: %s", exc)
-        results["desktop"] = False
-    return results
+    dispatch = replace(agent_standup_dispatch(digest), body=build_standup_plaintext(digest))
+    return deliver(dispatch, [CHANNEL_SLACK, CHANNEL_DESKTOP])
 
 
 # ---------------------------------------------------------------------------
