@@ -24,8 +24,32 @@ _STATUS_STYLE = {
 }
 
 
-def format_run_rich(run: ShipRun) -> Group:
-    """One run, in full — the gate summary and the terminal report."""
+def format_diff_rich(diff: str) -> Group:
+    """The patch, tinted. Additions green, removals red, hunk headers cyan."""
+    lines: list[Text] = []
+    for raw in diff.splitlines():
+        if raw.startswith("+++") or raw.startswith("---"):
+            style = "bold"
+        elif raw.startswith("+"):
+            style = "green"
+        elif raw.startswith("-"):
+            style = "red"
+        elif raw.startswith("@@"):
+            style = "cyan"
+        elif raw.startswith("diff --git"):
+            style = "bold"
+        else:
+            style = ""
+        lines.append(Text(raw, style=style))
+    return Group(*lines)
+
+
+def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
+    """One run, in full — the gate summary and the terminal report.
+
+    ``show_diff`` is what the *gate* passes: approving a push on a file count
+    is not review, so the prompt renders the patch and the worktree path.
+    """
     lines: list[Text] = []
     header = Text()
     header.append(f"{run.story_id or '(no story)'} ", style="bold")
@@ -35,9 +59,12 @@ def format_run_rich(run: ShipRun) -> Group:
     lines.append(header)
     if run.branch:
         lines.append(Text(f"  branch    {run.branch}"))
+    if run.worktree:
+        lines.append(Text(f"  worktree  {run.worktree}", style="dim"))
     if run.diff_stat:
-        stat_tail = run.diff_stat.splitlines()[-1].strip()
-        lines.append(Text(f"  diff      {stat_tail}"))
+        for index, stat_line in enumerate(run.diff_stat.splitlines()):
+            label = "diff     " if index == 0 else "         "
+            lines.append(Text(f"  {label} {stat_line.strip()}"))
     if run.validation.configured:
         verdict = "passed" if run.validation.passed else f"FAILED (exit {run.validation.exit_code})"
         style = "green" if run.validation.passed else "red"
@@ -52,7 +79,20 @@ def format_run_rich(run: ShipRun) -> Group:
         lines.append(Text(f"  pr        {run.pr_url}", style="bold cyan"))
     for warning in run.warnings:
         lines.append(Text(f"  ⚠ {warning}", style="yellow"))
-    return Group(*lines)
+    parts: list = [Group(*lines)]
+    if show_diff:
+        parts.append(Text(""))
+        if run.diff_text:
+            parts.append(Text("  the change itself:", style="bold"))
+            parts.append(format_diff_rich(run.diff_text))
+        else:
+            parts.append(
+                Text(
+                    "  the diff could not be read — inspect the worktree before approving",
+                    style="yellow",
+                )
+            )
+    return Group(*parts)
 
 
 def format_history_rich(runs: list[ShipRun]) -> Group:

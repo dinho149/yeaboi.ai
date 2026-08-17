@@ -16,17 +16,30 @@ from yeaboi.mcp.runtime import run_readonly
 logger = logging.getLogger(__name__)
 
 
-def _history(limit: int):
-    if limit < 1 or limit > 100:
-        raise ValueError("limit must be between 1 and 100.")
-    from dataclasses import asdict
+def _listing(run) -> dict:
+    """One run as JSON, without the stored patch.
 
-    from yeaboi.ship.store import ShipStore
+    ``diff_text`` is capped at 20k characters *per run*; a hundred of them in
+    one listing is megabytes of patch nobody asked for. The stat, the branch
+    and the worktree are here — reading the change itself is a git command
+    away, and the gate that needs it is not this surface.
+    """
+    from dataclasses import asdict
 
     # asdict per run: to_jsonable only unpacks a TOP-LEVEL dataclass, and a
     # nested one would degrade to its repr via json's default=str.
+    payload = asdict(run)
+    payload.pop("diff_text", None)
+    return payload
+
+
+def _history(limit: int):
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+    from yeaboi.ship.store import ShipStore
+
     with ShipStore() as store:
-        return {"runs": [asdict(run) for run in store.list_runs(limit=limit)]}
+        return {"runs": [_listing(run) for run in store.list_runs(limit=limit)]}
 
 
 def _status():
@@ -37,7 +50,7 @@ def _status():
 
     with ShipStore() as store:
         runs = store.list_runs(limit=1)
-    return {"latest": asdict(runs[0]) if runs else None, "budget": asdict(budget.status())}
+    return {"latest": _listing(runs[0]) if runs else None, "budget": asdict(budget.status())}
 
 
 def register(app) -> None:

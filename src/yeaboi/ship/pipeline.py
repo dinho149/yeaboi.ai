@@ -27,6 +27,7 @@ from yeaboi.tools.local_git import git_subprocess_env
 logger = logging.getLogger(__name__)
 
 VALIDATION_TIMEOUT_S = 15 * 60
+DIFF_TEXT_CAP = 20_000  # the gate shows the patch; a runaway diff is capped, never dropped
 _TAIL_CHARS = 4000
 
 _GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
@@ -130,6 +131,29 @@ def diff_bridge(record: WorktreeRecord) -> tuple[bool, str]:
     ensure_committed(record)
     stat = _git(record.path, "diff", "--stat", f"{record.base_sha}..HEAD")
     return bool(stat.strip()), stat.strip()
+
+
+def diff_text(record: WorktreeRecord, *, max_chars: int = DIFF_TEXT_CAP) -> str:
+    """The patch itself, capped — what the approver is actually asked to approve.
+
+    A ``--stat`` is a file count, and the gate is the only control between
+    agent-authored code and a pushed branch. Capping rather than paging keeps
+    this a pure function of the artifact; the trailer names the exact command
+    for reading the rest out of band. Never raises — a diff we cannot read is
+    an empty string, and the gate says so rather than the run dying.
+    """
+    try:
+        patch = _git(record.path, "diff", f"{record.base_sha}..HEAD")
+    except WorktreeError as exc:
+        logger.warning("Could not read the diff for %s: %s", record.run_id, exc)
+        return ""
+    if len(patch) <= max_chars:
+        return patch
+    return (
+        patch[:max_chars].rstrip()
+        + f"\n\n… truncated at {max_chars} characters — read the rest with:\n"
+        + f"  git -C {record.path} diff {record.base_sha}..HEAD"
+    )
 
 
 def run_validation(record: WorktreeRecord, command: str) -> ShipValidation:

@@ -34,6 +34,7 @@ def _full_run(run_id="run-1", status="running"):
         phases=(ShipPhase(name="setup", status="completed", detail="ok", duration_s=1.5),),
         validation=ShipValidation(configured=True, command="make test", passed=True, exit_code=0, output_tail="ok"),
         diff_stat="2 files changed",
+        diff_text="@@ -1 +1 @@\n-old\n+new\n",
         cost_usd=0.42,
         transcript_findings=(("secret", "critical", "api key"),),
         transcript_path="/tmp/t.jsonl",
@@ -50,6 +51,7 @@ class TestRoundTrip:
         assert loaded.phases[0].duration_s == 1.5
         assert loaded.validation.command == "make test"
         assert loaded.transcript_findings == (("secret", "critical", "api key"),)
+        assert loaded.diff_text == "@@ -1 +1 @@\n-old\n+new\n"  # the patch survives history
 
     def test_list_runs_newest_first_with_limit(self, db_path):
         with ShipStore(db_path) as store:

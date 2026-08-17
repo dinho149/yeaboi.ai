@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from rich.console import Group
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from yeaboi.agent.state import ShipRun
@@ -24,6 +25,7 @@ from yeaboi.ui.shared._components import (
     build_action_buttons,
     build_page_panel,
     build_reveal_subtitle,
+    build_scrollbar,
     ship_title,
 )
 
@@ -35,6 +37,9 @@ _MAX_STORY_ROWS = 8
 _MAX_DIFF_ROWS = 8
 _MAX_TAIL_ROWS = 6
 _MAX_FINDING_ROWS = 4
+_MIN_DIFF_PANE_ROWS = 3  # the pane is never zero rows; a short terminal scrolls harder
+_TITLE_ROWS = 6  # the ASCII wordmark's own height
+_GATE_FOOTER_ROWS = 5  # message row + spacer + the three button rows
 
 # The engine's component ids (ship/engine.py emits these); the screen owns
 # what "pending" looks like.
@@ -169,6 +174,40 @@ def _gate_line(label: str, value: str, *, style: str = "rgb(200,200,210)") -> Te
     return row
 
 
+def _diff_row(line: str, *, width: int, theme) -> Text:
+    """One patch line, tinted by what it does to the file."""
+    style = {
+        "+": theme.good,
+        "-": theme.bad,
+        "@": "rgb(120,170,200)",
+    }.get(line[:1], "rgb(160,160,175)")
+    if line.startswith(("+++", "---", "diff --git")):
+        style = "bold rgb(200,200,210)"
+    return Text(f"{PAD}  {line[: max(20, width - 10)]}", style=style)
+
+
+def _diff_viewport(run: ShipRun, *, width: int, rows: int, offset: int, theme) -> tuple[object, int]:
+    """(the renderable, the clamped offset) for the scrollable patch pane."""
+    lines = run.diff_text.splitlines()
+    if not lines:
+        return Text(
+            f"{PAD}  the diff could not be read — inspect the worktree before approving",
+            style=theme.warn,
+        ), 0
+    max_start = max(0, len(lines) - rows)
+    start = max(0, min(offset, max_start))
+    visible = [_diff_row(line, width=width, theme=theme) for line in lines[start : start + rows]]
+    visible.extend(Text("") for _ in range(max(0, rows - len(visible))))
+    scrollbar = build_scrollbar(rows, len(lines), start, max_start)
+    if scrollbar is None:
+        return Group(*visible), start
+    shell = Table.grid(expand=True, padding=0)
+    shell.add_column(ratio=1)
+    shell.add_column(width=1)
+    shell.add_row(Group(*visible), scrollbar)
+    return shell, start
+
+
 def _build_ship_gate_screen(
     run: ShipRun,
     *,
@@ -177,11 +216,14 @@ def _build_ship_gate_screen(
     height: int = 24,
     comment_edit: str | None = None,
     message: str = "",
+    diff_offset: int = 0,
 ) -> Panel:
     """The approval gate: what the agent did, what was proven, your call.
 
     ``comment_edit`` non-None means the rejection comment is being typed; it
-    renders an input line and the buttons step back.
+    renders an input line and the buttons step back. ``diff_offset`` scrolls
+    the patch pane — the gate is the only control before a push, so it shows
+    the change itself and the worktree path, never just a file count.
     """
     theme = SHIP_THEME
     parts: list = [
@@ -192,6 +234,10 @@ def _build_ship_gate_screen(
         _gate_line("Story ", run.story_id),
         _gate_line("Branch", run.branch, style=theme.id),
     ]
+    if run.worktree:
+        # Where to look when the pane is not enough — the patch is capped, the
+        # checkout is not.
+        parts.append(_gate_line("Tree  ", run.worktree, style="rgb(140,140,155)"))
     diff_lines = run.diff_stat.splitlines()
     for line in diff_lines[:_MAX_DIFF_ROWS]:
         parts.append(Text(f"{PAD}  {line[: max(20, width - 10)]}", style="rgb(160,160,175)"))
@@ -216,6 +262,15 @@ def _build_ship_gate_screen(
     if run.rejection_count:
         parts.append(_gate_line("Rework", f"attempt {run.rejection_count + 1} after your feedback"))
     parts.append(Text(""))
+    # The patch pane takes whatever the fixed chrome leaves. The ASCII title is
+    # _TITLE_ROWS tall and the button block three; the rest of ``parts`` is one
+    # row each, so the remainder is what the viewport may use.
+    if comment_edit is None:
+        pane_rows = max(_MIN_DIFF_PANE_ROWS, height - len(parts) - _TITLE_ROWS - _GATE_FOOTER_ROWS)
+        viewport, diff_offset = _diff_viewport(run, width=width, rows=pane_rows, offset=diff_offset, theme=theme)
+        parts.append(Text(f"{PAD}the change itself  ↑↓ scrolls", style="rgb(110,110,125)"))
+        parts.append(viewport)
+        parts.append(Text(""))
     if comment_edit is not None:
         prompt = Text()
         prompt.append(PAD)

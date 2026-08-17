@@ -96,6 +96,7 @@ def _dict_to_run(data: dict) -> ShipRun:
             output_tail=str(validation.get("output_tail", "")),
         ),
         diff_stat=str(data.get("diff_stat", "")),
+        diff_text=str(data.get("diff_text", "")),
         cost_usd=float(data.get("cost_usd", 0.0)),
         transcript_findings=tuple(
             (str(f[0]), str(f[1]), str(f[2]))

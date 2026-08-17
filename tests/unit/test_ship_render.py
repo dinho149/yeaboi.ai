@@ -53,6 +53,31 @@ class TestFormatRun:
         out = _render(format_run_rich(ShipRun()))
         assert "(no story)" in out
 
+    def test_the_gate_rendering_carries_the_patch_and_the_worktree(self):
+        # show_diff is what the CLI gate passes: approving a push on a file
+        # count is not review.
+        run = ShipRun(
+            run_id="run-1",
+            story_id="US-001",
+            worktree="/tmp/wt/run-1",
+            diff_stat="src/app.py | 2 +-\n1 file changed",
+            diff_text="@@ -1 +1 @@\n-old = 1\n+new = 2\n",
+        )
+        out = _render(format_run_rich(run, show_diff=True))
+        assert "+new = 2" in out
+        assert "-old = 1" in out
+        assert "/tmp/wt/run-1" in out
+        assert "src/app.py" in out  # the whole stat, not only its last line
+
+    def test_the_summary_rendering_stays_a_summary(self):
+        run = ShipRun(run_id="r", story_id="US-1", diff_text="@@ -1 +1 @@\n+leaked into the summary\n")
+        assert "leaked into the summary" not in _render(format_run_rich(run))
+
+    def test_an_unreadable_patch_is_a_warning_at_the_gate(self):
+        run = ShipRun(run_id="r", story_id="US-1", diff_stat="1 file changed", diff_text="")
+        out = _render(format_run_rich(run, show_diff=True))
+        assert "could not be read" in out
+
 
 class TestFormatHistory:
     def test_empty_history_names_the_next_step(self):

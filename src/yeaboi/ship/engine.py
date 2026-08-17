@@ -298,7 +298,15 @@ def _run_phases(
             _report(on_progress, "ship-validate", "Validating the diff", "failed", detail="no changes")
             _abort(_failed(run, detail, phase="implement"))
         validation = pipeline.run_validation(record, check_command)
-        run = replace(run, diff_stat=diff_stat, validation=validation, updated_at=_now_iso())
+        # The patch travels with the artifact, so every gate surface shows the
+        # change itself rather than a file count.
+        run = replace(
+            run,
+            diff_stat=diff_stat,
+            diff_text=pipeline.diff_text(record),
+            validation=validation,
+            updated_at=_now_iso(),
+        )
         _phase_done("validate", "passed" if validation.passed else "see gate screen", started)
         _report(
             on_progress,

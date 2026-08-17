@@ -1694,6 +1694,7 @@ class ShipRun:
     phases: tuple[ShipPhase, ...] = ()
     validation: ShipValidation = ShipValidation()
     diff_stat: str = ""  # `git diff --stat` summary shown at the gate
+    diff_text: str = ""  # the capped patch itself — the gate approves a diff, not a file count
     cost_usd: float = 0.0
     transcript_findings: tuple[tuple[str, str, str], ...] = ()  # (kind, severity, label)
     transcript_path: str = ""

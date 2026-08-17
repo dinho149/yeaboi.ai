@@ -167,6 +167,27 @@ class TestGateScreen:
         assert "Why reject?" in out
         assert "wrong file" in out
 
+    def test_the_patch_itself_is_on_the_screen_not_just_a_file_count(self):
+        # The gate is the only control before a push; approving on a --stat
+        # summary is not review.
+        patch = "diff --git a/app.py b/app.py\n@@ -1,2 +1,2 @@\n-old = 1\n+new = 2\n"
+        out = _render(_build_ship_gate_screen(self._run(diff_text=patch, worktree="/tmp/wt/run-1"), height=40))
+        assert "+new = 2" in out
+        assert "-old = 1" in out
+        assert "/tmp/wt/run-1" in out  # where to read the rest out of band
+
+    def test_a_long_patch_scrolls_rather_than_truncating_silently(self):
+        patch = "\n".join(f"+line {n:03d}" for n in range(200))
+        top = _render(_build_ship_gate_screen(self._run(diff_text=patch), diff_offset=0))
+        scrolled = _render(_build_ship_gate_screen(self._run(diff_text=patch), diff_offset=100))
+        assert "+line 000" in top
+        assert "+line 000" not in scrolled
+        assert "+line 100" in scrolled
+
+    def test_an_unreadable_patch_says_so_instead_of_looking_clean(self):
+        out = _render(_build_ship_gate_screen(self._run(diff_text="")))
+        assert "could not be read" in out
+
 
 class TestResultScreen:
     def test_approved_run_shows_pr_and_phases(self):

@@ -1987,7 +1987,9 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                 for run in store.list_runs(limit=3):
                     if run.run_id in known or run.status != "awaiting_approval" or run.gate_resolution:
                         continue
-                    console.print(format_run_rich(run))
+                    # The gate is the only control before a push; it shows the
+                    # patch, not a file count.
+                    console.print(format_run_rich(run, show_diff=True))
                     try:
                         answer = input("Approve and open a PR? [y]es / [n]o with feedback / [c]ancel run: ")
                     except EOFError:

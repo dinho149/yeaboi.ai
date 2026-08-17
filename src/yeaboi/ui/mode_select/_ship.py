@@ -35,6 +35,8 @@ from yeaboi.ui.mode_select.screens._screens_ship import (
 
 logger = logging.getLogger(__name__)
 
+_DIFF_PAGE_ROWS = 10  # pgup/pgdn stride through the gate's patch pane
+
 
 def _load_stories() -> tuple[list, str, str]:
     """(stories, session_id, message) from the latest saved plan. Never raises."""
@@ -271,6 +273,7 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
     comment: str | None = None
     edit = {"buf": "", "cur": 0}
     message = ""
+    diff_offset = 0
     while True:
         w, h = console.size
         live.update(
@@ -281,6 +284,7 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
                 height=h,
                 comment_edit=edit["buf"] if comment is not None else None,
                 message=message,
+                diff_offset=diff_offset,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -300,6 +304,15 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
             action_sel = (action_sel - 1) % len(SHIP_GATE_ACTIONS)
         elif key in ("right", "tab"):
             action_sel = (action_sel + 1) % len(SHIP_GATE_ACTIONS)
+        elif key == "up":
+            # The builder clamps; a large offset just parks at the last page.
+            diff_offset = max(0, diff_offset - 1)
+        elif key == "down":
+            diff_offset += 1
+        elif key == "pgup":
+            diff_offset = max(0, diff_offset - _DIFF_PAGE_ROWS)
+        elif key == "pgdn":
+            diff_offset += _DIFF_PAGE_ROWS
         elif key == "enter":
             action = SHIP_GATE_ACTIONS[action_sel]
             if action == "Approve":

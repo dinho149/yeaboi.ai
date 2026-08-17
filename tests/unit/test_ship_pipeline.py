@@ -7,6 +7,7 @@ a real git tree can prove that distinction.
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 
 import pytest
@@ -121,6 +122,29 @@ class TestDiffBridge:
         has_work, stat = pipeline.diff_bridge(prepared)
         assert has_work
         assert "done.py" in stat
+
+
+class TestDiffText:
+    def test_the_patch_itself_reaches_the_gate(self, prepared):
+        path = worktree._validate_owned(prepared.path)
+        (path / "new.py").write_text("x = 1\n", encoding="utf-8")
+        pipeline.diff_bridge(prepared)  # commit the work
+        patch = pipeline.diff_text(prepared)
+        assert "+x = 1" in patch
+        assert "new.py" in patch
+
+    def test_a_runaway_diff_is_capped_with_the_command_to_read_the_rest(self, prepared):
+        path = worktree._validate_owned(prepared.path)
+        (path / "big.py").write_text("y = 2\n" * 5000, encoding="utf-8")
+        pipeline.diff_bridge(prepared)
+        patch = pipeline.diff_text(prepared, max_chars=500)
+        assert len(patch) < 900  # the cap plus the trailer, not the whole file
+        assert "truncated at 500 characters" in patch
+        assert f"git -C {prepared.path} diff" in patch
+
+    def test_an_unreadable_diff_is_empty_not_an_exception(self, prepared):
+        broken = dataclasses.replace(prepared, base_sha="not-a-real-sha")
+        assert pipeline.diff_text(broken) == ""
 
 
 class TestRunValidation:
