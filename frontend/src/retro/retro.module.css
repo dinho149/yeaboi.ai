@@ -67,7 +67,7 @@
 }
 .meChip:hover { border-color: var(--accent); }
 .meName { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pen { color: var(--muted); font-size: var(--fs-2xs); }
+.pen { display: inline-flex; color: var(--muted); }
 .roomCount { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 .viewCtl { display: flex; align-items: center; gap: var(--s2); }
@@ -181,23 +181,18 @@
      so the columns would grow past the viewport instead of scrolling inside it. */
   min-height: 0;
   display: grid;
-  /* Weighted by card count — see the `weights` memo in Board.tsx. The fallback
-     is the old equal split, so the board still lays out if the style attribute
-     is ever missing. `minmax(0, …)` in each track is what stops a long
-     unbroken word from forcing a column wider than its share. */
-  grid-template-columns: var(--col-weights, repeat(4, minmax(0, 1fr)));
+  /* Four equal columns. `minmax(0, …)` is what stops a long unbroken word from
+     forcing one wider than its share. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s3);
   padding: var(--s3) var(--s4);
   /* Plus the home-indicator inset: with the board-wide composer gone, the
      columns are the lowest thing on the screen. */
   padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
   overflow: hidden;
-  transition: grid-template-columns var(--dur-base) var(--ease);
 }
 
 @media (max-width: 1099px) {
-  /* Weights are a wide-screen affordance only: in a 2x2 they would make the
-     two rows different heights for no reason. */
   .board { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
@@ -244,30 +239,34 @@
 
 /* ── Column ───────────────────────────────────────────────────────────── */
 /*
- * The four columns used to be identical — same border, same surface, same
- * heading weight — so their meaning was carried by the words alone. At a
- * glance, which is how a facilitator reads a board while somebody is talking,
- * the board was an undifferentiated grid.
+ * A panel in the board's material — the same ground, hairline and top-edge
+ * highlight as the bar, the dock and every control on it. It was a near-black
+ * well with a hairline, which on a dark board reads as a hole rather than a
+ * surface.
  *
- * `--col-tone` and `--col-wash` are set per column by Column.tsx from the typed
- * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
- * four saturated columns would be a traffic jam, and the cards are the content.
+ * `--col-tone` is set per column by Column.tsx from the typed map in
+ * gridTone.ts. It says the column's identity once, on the head; the cards
+ * inside are the board's, not the column's.
  */
 .column {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--col-wash, var(--felt));
-  border: 1px solid var(--line-soft);
-  /* The identity, in two pixels. */
-  border-top: 2px solid var(--col-tone, var(--accent));
-  border-radius: var(--r-m);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%);
 }
 .columnHead {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
   padding: var(--s3) var(--s3) var(--s2);
+  /* The identity, in one pixel, under the words that carry it. */
+  border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
+  margin-bottom: var(--s2);
 }
 .columnTitle {
   margin: 0;
@@ -312,19 +311,16 @@
 /* ── Card ─────────────────────────────────────────────────────────────── */
 .card {
   background: var(--card);
-  border: 1px solid var(--line);
-  /* The column's tone, carried onto the card. --col-tone is set on the section
-     by Column.tsx, so a card picked up and dropped in another column changes
-     colour with it and nothing has to be told. */
-  border-left: 3px solid color-mix(in srgb, var(--col-tone, var(--accent)) 55%, transparent);
-  border-radius: var(--r-s);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
   padding: var(--s3);
-  /* No shadow. Four columns of shadowed cards on a dark surface reads as
-     grubby rather than raised; the 1px line and the tone rule do the work. */
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%);
 }
-/* An AI card is not the column's — it is the agent's, and it should be
-   obviously distinguishable from something a colleague wrote. */
-.cardAI { border-left-color: var(--accent2); }
+/* The one card that is not a colleague's. The column's own tone stays on the
+   head, so a rule here means one thing only: an agent wrote this. */
+.cardAI { border-left: 3px solid var(--accent2); }
 .cardDragging { opacity: 0.4; }
 .cardText {
   margin: 0;

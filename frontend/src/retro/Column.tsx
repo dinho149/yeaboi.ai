@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 
-import { toneMix, toneVar } from '../design/tone';
+import { toneVar } from '../design/tone';
 import { Ticker } from '../motion';
 import { TypingIndicator } from '../shared';
 import { cx } from '../runtime/cx';
@@ -135,11 +135,11 @@ export function Column({
     <section
       className={styles['column']}
       aria-labelledby={`col-${grid}`}
-      // The column's identity, as two custom properties the stylesheet reads.
-      // Set here rather than as four hand-written CSS rules so that the mapping
+      // The column's identity, as one custom property the stylesheet reads. Set
+      // here rather than as four hand-written CSS rules so that the mapping
       // lives in one typed place (gridTone.ts) and a new grid cannot ship
       // uncoloured.
-      style={{ '--col-tone': toneVar(tone), '--col-wash': toneMix(tone, 5, 'var(--bg)') } as never}
+      style={{ '--col-tone': toneVar(tone) } as never}
     >
       <header className={styles['columnHead']}>
         {/* The heading is mono and uppercase like every other label; the count

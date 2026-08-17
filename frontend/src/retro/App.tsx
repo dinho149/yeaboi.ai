@@ -44,7 +44,6 @@ import {
   MusicPlayer,
   PageShell,
   Popover,
-  PresenceRow,
   ProfileModal,
   ThemeSwitcher,
   TimerControls,
@@ -180,7 +179,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     for (const person of presence) if (person.avatar) map.set(person.name, person.avatar);
     return map;
   }, [presence]);
-  const others = useMemo(() => presence.filter((person) => person.name !== name), [presence, name]);
 
   const typingByGrid = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -365,13 +363,14 @@ export function App({ boot }: { boot: RetroBoot }) {
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
-            <span aria-hidden="true" className={styles['pen']}>
-              ✎
+            <span className={styles['pen']}>
+              <Icon name="pencil" size={12} />
             </span>
           </button>
 
-          <PresenceRow people={others} />
-
+          {/* One roster, not two. The Room's count is the headline and its
+              hover deals the room out; a row of the same faces beside it said
+              the same thing twice and only fitted four of them. */}
           <Room people={presence} meName={name} />
         </div>
 
@@ -383,7 +382,7 @@ export function App({ boot }: { boot: RetroBoot }) {
             disabled={!authors.length}
             onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
           />
-          <IconButton icon={<Icon name="qr-code" size={16} />} label="Group cards by author" active={grouped} onClick={toggleGrouped} />
+          <IconButton icon={<Icon name="rows" size={16} />} label="Group cards by author" active={grouped} onClick={toggleGrouped} />
         </div>
     </Toolbar>
   );

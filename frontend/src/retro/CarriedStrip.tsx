@@ -23,6 +23,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { CARRIED_STATUS_LABELS, CARRIED_STATUSES, type CarriedStatuses } from '../types/enums';
 import type { RetroCard } from '../types/board';
@@ -72,8 +73,8 @@ export function CarriedStrip({ items, onSetStatus, locked }: CarriedStripProps) 
           aria-controls="carried-body"
           onClick={() => setOpen((v) => !v)}
         >
-          <span aria-hidden="true" className={cx(styles['chevron'], open && styles['chevronOpen'])}>
-            ▸
+          <span className={cx(styles['chevron'], open && styles['chevronOpen'])}>
+            <Icon name="chevron-right" size={14} />
           </span>
           <span id="carried-title">Last sprint&rsquo;s actions</span>
         </button>

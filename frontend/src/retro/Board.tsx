@@ -78,29 +78,6 @@ export function Board({
     return map;
   }, [stable]);
 
-  /**
-   * Column widths, proportional to how full each column is.
-   *
-   * Four equal columns meant a Demos column holding one card took a quarter of
-   * a 1440px screen while "What went well" — which in a real retro holds most
-   * of the content — was squeezed into the same width. The ratio is clamped to
-   * 2:1 and the floor is a minmax in the stylesheet, so a busy column can
-   * breathe without a quiet one collapsing to an unreadable strip.
-   *
-   * Deliberately keyed off the count only, so it changes when a card is added
-   * or moved and at no other time. Deriving it from measured content height
-   * would reflow the board on every poll.
-   */
-  const weights = useMemo(
-    () =>
-      RETRO_GRIDS.map((grid) => {
-        const count = byGrid.get(grid)?.length ?? 0;
-        const share = Math.min(2, 1 + count / 6);
-        return `minmax(0, ${share.toFixed(2)}fr)`;
-      }).join(' '),
-    [byGrid]
-  );
-
   const onTrackScroll = (): void => {
     const track = trackRef.current;
     if (!track || track.clientWidth === 0) return;
@@ -109,12 +86,7 @@ export function Board({
 
   return (
     <>
-      <div
-        className={styles['board']}
-        ref={trackRef}
-        onScroll={onTrackScroll}
-        style={{ '--col-weights': weights } as never}
-      >
+      <div className={styles['board']} ref={trackRef} onScroll={onTrackScroll}>
         {RETRO_GRIDS.map((grid) => (
           <Column
             key={grid}

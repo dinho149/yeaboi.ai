@@ -41,6 +41,7 @@
 
 import type { RefObject } from 'react';
 
+import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { REACTION_EMOJIS } from '../types/enums';
 import { Button } from '../shared';
@@ -114,7 +115,7 @@ export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }:
       aria-controls={trayId}
       onClick={onToggle}
     >
-      <span aria-hidden="true">☺</span>
+      <Icon name="smile" size={16} />
     </Button>
   );
 }

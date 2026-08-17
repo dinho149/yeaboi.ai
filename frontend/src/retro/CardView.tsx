@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
-import { Avatar } from '../design/primitives';
+import { Avatar, Icon } from '../design/primitives';
 import { useDismiss } from '../hooks/useDismiss';
 import { fmtAgo } from '../runtime/format';
 import { cx } from '../runtime/cx';
@@ -187,7 +187,7 @@ export function CardView({
       <div className={styles['cardMeta']}>
         {isAI ? (
           <span className={styles['aiBadge']}>
-            <span aria-hidden="true">🤖</span> AI
+            <Icon name="sparkles" size={14} /> AI
           </span>
         ) : (
           <span className={styles['author']}>
@@ -226,10 +226,10 @@ export function CardView({
                 onDelete();
               }}
             >
-              <span aria-hidden="true">✓</span>
+              <Icon name="check" size={16} />
             </Button>
             <Button shape="bare" aria-label="Keep the card" onClick={cancelDelete}>
-              <span aria-hidden="true">↩</span>
+              <Icon name="undo" size={16} />
             </Button>
           </span>
         ) : (
@@ -248,7 +248,7 @@ export function CardView({
                 onPointerDown={(event) => onGripPointerDown(event as unknown as PointerEvent)}
                 onClick={() => setMoveOpen((v) => !v)}
               >
-                <span aria-hidden="true">⠿</span>
+                <Icon name="grip" size={16} />
               </Button>
               {moveOpen ? (
                 // The keyboard path. Dragging with arrow keys is a worse
@@ -291,7 +291,7 @@ export function CardView({
                 aria-label={`Edit card: ${card.text.slice(0, 40)}`}
                 onClick={() => setEditing(true)}
               >
-                <span aria-hidden="true">✎</span>
+                <Icon name="pencil" size={16} />
               </Button>
               <Button
                 shape="bare"
@@ -299,7 +299,7 @@ export function CardView({
                 aria-label={`Delete card: ${card.text.slice(0, 40)}`}
                 onClick={() => setConfirming(true)}
               >
-                <span aria-hidden="true">✕</span>
+                <Icon name="trash" size={16} />
               </Button>
             </>
           ) : null}

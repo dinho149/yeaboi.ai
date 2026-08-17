@@ -12,7 +12,7 @@
  * require keeping focus on this bar while you read the cards.
  */
 
-import { Avatar } from '../design/primitives';
+import { Avatar, Icon } from '../design/primitives';
 import { Button } from '../shared';
 import styles from './retro.module.css';
 
@@ -38,7 +38,7 @@ export function FocusBar({ authors, current, avatars, onStep, onExit }: FocusBar
         disabled={authors.length < 2}
         onClick={() => onStep(-1)}
       >
-        <span aria-hidden="true">←</span>
+        <Icon name="arrow-left" size={16} />
       </button>
 
       {/* One live region for the whole state, so stepping announces "Grace, 2 of
@@ -58,7 +58,7 @@ export function FocusBar({ authors, current, avatars, onStep, onExit }: FocusBar
         disabled={authors.length < 2}
         onClick={() => onStep(1)}
       >
-        <span aria-hidden="true">→</span>
+        <Icon name="arrow-right" size={16} />
       </button>
 
       <Button onClick={onExit}>

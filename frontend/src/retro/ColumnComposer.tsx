@@ -30,6 +30,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import { Icon } from '../design/primitives';
 import { Button } from '../shared';
 import styles from './retro.module.css';
 
@@ -82,7 +83,7 @@ export function ColumnComposer({
     return (
       <div className={styles['columnCompose']}>
         <button type="button" className={styles['composeGhost']} aria-label={`Add a card to ${label}`} onClick={onOpen}>
-          <span aria-hidden="true">＋</span> Add a card
+          <Icon name="plus" size={14} /> Add a card
         </button>
       </div>
     );
