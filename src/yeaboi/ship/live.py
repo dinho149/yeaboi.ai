@@ -66,7 +66,8 @@ class ShipBoardSession:
         from yeaboi.config import tunnels_disabled  # noqa: PLC0415
 
         if tunnels_disabled() and self._tunnel_factory is None:
-            logger.info("ship board: tunnels disabled; board is loopback-only at %s", self.host_url)
+            # Never log host_url whole: it carries ?token=&admin= (server.py:67). Base only.
+            logger.info("ship board: tunnels disabled; board is loopback-only at %s", self.host_url.split("?", 1)[0])
             return
         threading.Thread(target=self._bring_up_tunnel, name="ship-board-tunnel", daemon=True).start()
 

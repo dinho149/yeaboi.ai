@@ -37,8 +37,8 @@ from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 logger = logging.getLogger(__name__)
 
 
-def _load_stories() -> tuple[list, str, str]:
-    """(stories, plan_id, message) from the latest saved plan. Never raises.
+def _load_stories() -> tuple[list, str, str, str]:
+    """(stories, plan_id, project_name, message) from the latest saved plan. Never raises.
 
     Reads across BOTH plan stores (the interactive chat's project store and the
     SQLite session store) via ``ship.plans``, and picks the latest plan that
@@ -52,11 +52,11 @@ def _load_stories() -> tuple[list, str, str]:
         picked = plans.latest_plan_with_stories()
     except Exception as exc:  # noqa: BLE001 — an unreadable store must not crash the menu
         logger.warning("Ship page: could not load plans: %s", exc)
-        return [], "", "Could not read saved plans — see logs."
+        return [], "", "", "Could not read saved plans — see logs."
     if picked is None:
-        return [], "", ""
-    stories, plan_id, _name = picked
-    return stories, plan_id, ""
+        return [], "", "", ""
+    stories, plan_id, name = picked
+    return stories, plan_id, name, ""
 
 
 def _resolve_target(repo: str) -> tuple[str, str]:
@@ -84,7 +84,7 @@ def _resolve_target(repo: str) -> tuple[str, str]:
 
 def run_ship_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Enter Ship from the menu; returns when the user backs out."""
-    stories, session_id, message = _load_stories()
+    stories, session_id, project_name, message = _load_stories()
     logger.info("Ship page opened: %d stories from session %s", len(stories), session_id or "(none)")
     selected = 0
     action_sel = 0
@@ -156,6 +156,7 @@ def run_ship_page(console: Console, live, read_key, frame_time: float, supports_
                 supports_timeout,
                 story=stories[selected],
                 session_id=session_id,
+                project_name=project_name,
                 repo=repo,
                 check_command=check_command,
             )
@@ -172,6 +173,7 @@ def _launch(
     *,
     story,
     session_id: str,
+    project_name: str,
     repo: str,
     check_command: str,
 ) -> str:
@@ -224,7 +226,7 @@ def _launch(
         try:
             from yeaboi.ship.live import ShipBoardSession
 
-            session_board = ShipBoardSession(run_id, story_title=story.title or story.id)
+            session_board = ShipBoardSession(run_id, story_title=story.title or story.id, project_name=project_name)
             session_board.start()
             board_box[0] = session_board
         except Exception:  # noqa: BLE001 — a board failure must never sink the run
