@@ -3052,6 +3052,780 @@ dialog._modal_6ng5l_693 {
   }
 }
 /*
+ * The board kit: the parts of a live surface that are not about what it is for.
+ *
+ * Lifted out of the poker board, which grew all of them first. A mode's own
+ * stylesheet should be about its own subject — cards and votes, notes and
+ * columns — and everything here is the furniture underneath that: how a panel
+ * of controls behaves when the screen narrows, how a set of views shares one
+ * strip of tabs, how a region reads itself in.
+ *
+ * Nothing in this file knows what a vote is.
+ */
+
+/* ── Reading in ──────────────────────────────────────────────────────────
+ * A region's contents arrive rather than appearing, one line after another, so
+ * the eye is led through them instead of being handed all of it at once.
+ *
+ * `both` is load-bearing: without it each block paints at full opacity, waits
+ * out its delay, and only then animates — a flash, not an entrance.
+ *
+ * An animation rather than a transition, deliberately. The global guard in
+ * tokens.css flattens animations, so for anyone who asked for reduced motion
+ * this simply does not happen and the content is just there, which is the
+ * correct outcome for an entrance and would not follow from a transition. */
+._readsIn_g9ohp_24 > * {
+  animation: _board-read-in_g9ohp_1 var(--dur-base) var(--ease) both;
+}
+._readsIn_g9ohp_24 > *:nth-child(2) {
+  animation-delay: 70ms;
+}
+._readsIn_g9ohp_24 > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+._readsIn_g9ohp_24 > *:nth-child(4) {
+  animation-delay: 210ms;
+}
+/* Anything past the fourth lands with it rather than trailing further — a form
+   or an extra section must not push the stagger into the half-second range,
+   where it stops reading as one movement. */
+._readsIn_g9ohp_24 > *:nth-child(n + 5) {
+  animation-delay: 210ms;
+}
+
+@keyframes _board-read-in_g9ohp_1 {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────
+ * One strip, and panels that share a single grid cell underneath it.
+ *
+ * The cell is the point. Stacked, a taller panel pushes everything below it
+ * down when you switch to it, so the strip you are clicking moves under the
+ * pointer. Sharing one cell makes the box as tall as the tallest of them and
+ * the strip cannot move. The panel that is not showing keeps its space and
+ * loses its visibility, which is also what takes it out of the a11y tree. */
+._tabs_g9ohp_58 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+}
+
+._tab_g9ohp_58 {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--dim);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+._tab_g9ohp_58:hover {
+  color: var(--muted);
+}
+
+._tabOn_g9ohp_81 {
+  color: var(--text);
+}
+
+._panels_g9ohp_85 {
+  display: grid;
+  align-items: center;
+}
+
+/* All of them in the one cell. Without this they are grid *rows* and the whole
+   point is lost — the box grows to the sum of them and the strip moves. */
+._panels_g9ohp_85 > * {
+  grid-area: 1 / 1;
+}
+
+._panelOff_g9ohp_96 {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Announcement ────────────────────────────────────────────────────────
+ * The whole screen, for a couple of seconds.
+ *
+ * Everything behind goes soft, so there is one thing to look at and it is not
+ * competing with whatever else the board is doing. It takes no pointer events:
+ * it says something, it does not ask anything, and nothing should have to be
+ * dismissed to get back to a surface that is still running. */
+._veil_g9ohp_108 {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  animation: _board-veil_g9ohp_1 var(--dur-base) var(--ease) both;
+}
+
+._announce_g9ohp_120 {
+  margin: 0;
+  padding: var(--s4) var(--s6);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  box-shadow:
+    var(--edge),
+    0 12px 32px rgb(0 0 0 / 28%);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-l);
+  animation: _board-announce_g9ohp_1 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+@keyframes _board-veil_g9ohp_1 {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes _board-announce_g9ohp_1 {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────
+ * A small mono capsule for a status, and the same shape as a control.
+ *
+ * The pair matters more than either: a row that mixes a label and a button
+ * should say which is which by what they do on hover, not by making the one you
+ * can press look like a caption. */
+._chip_g9ohp_154 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 0;
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  /* The shared button sets its own; inheriting is what makes a chip button the
+     same height as a chip label rather than nearly. */
+  line-height: inherit;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+
+._chipOn_g9ohp_173 {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+._chipAlt_g9ohp_179 {
+  color: var(--accent2);
+  border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
+}
+
+/* Pressable, so it answers the pointer — which is the whole difference between
+   it and the label beside it. */
+._chipAct_g9ohp_186 {
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+._chipAct_g9ohp_186:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Written out ─────────────────────────────────────────────────────────
+ * Text that lands a word at a time. The part not yet written is transparent
+ * rather than absent, so nothing reflows as it fills in. */
+._unwritten_g9ohp_203 {
+  color: transparent;
+}
+
+/* ── Who is in the room ─────────────────────────────────────────────────
+ * The headcount is the whole control; pointing at it deals the room out
+ * underneath, one thin card per person. Lifted from the poker board whole. */
+/* The headcount sits opposite the notch's Invite, so it is the same shape. */
+._room_g9ohp_211 {
+  position: static;
+}
+._presenceChip_g9ohp_214 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+._room_g9ohp_211:hover ._presenceChip_g9ohp_214,
+._room_g9ohp_211:has(:focus-visible) ._presenceChip_g9ohp_214 {
+  border-color: var(--accent);
+}
+/* Dealt out from under the bar, one card per person and no panel behind them.
+ *
+ * The top padding does two jobs: it is the bridge the pointer crosses on its
+ * way from the chip to the first card, and it is exactly the distance from the
+ * chip's bottom edge to the bar's, so clipping it away puts the cut where the
+ * bar ends. Everything above that line is behind the bar as far as the eye is
+ * concerned. The other three sides are held clear of the shadows. */
+._roomList_g9ohp_240 {
+  position: absolute;
+  top: 100%;
+  /* Pulled left by whatever the card's own padding exceeds the identity chip's,
+     so the avatars and the names still sit on the row above's two columns. */
+  left: calc(var(--s1) - var(--room-pad));
+  z-index: var(--z-popover);
+  /* The cut is where the bar ends; the drop is how far below it the stack
+     settles. They are separate, or lowering the cards would move the cut with
+     them and they would appear out of thin air instead of out of the bar. */
+  --room-cut: var(--s3);
+  --room-drop: var(--s2);
+  --room-gap: var(--s2);
+  --room-pad: var(--s3);
+  margin: 0;
+  padding: calc(var(--room-cut) + var(--room-drop)) 0 0;
+  clip-path: inset(var(--room-cut) -40px -40px -40px);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  /* One width for all of them, set by the longest name. */
+  width: max-content;
+  min-width: 160px;
+  align-items: stretch;
+  gap: var(--room-gap);
+  pointer-events: none;
+}
+._roomCard_g9ohp_267 {
+  /* Its place in the deal; Room.tsx overrides it. A definite height is what
+     lets the start position be computed from it. */
+  --i: 0;
+  --card-h: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--card-h);
+  padding: 0 var(--room-pad);
+  white-space: nowrap;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  /* Nothing while it is parked. A card under the bar is clipped but its shadow
+     is not, so a dozen of them stack into a grey smudge along the bar's bottom
+     edge with the room shut. It takes its shadow on the way out. */
+  box-shadow: none;
+  font-size: var(--fs-s);
+  /*
+   * Out from behind the card above it — the first one out from behind the bar,
+   * where the clip is.
+   *
+   * Every card travels the same short distance, and the fade is what hides it
+   * until then. Sliding each one all the way from the bar is the same idea and
+   * does not survive a full room: the tenth card had four hundred pixels to
+   * cover in the same fifth of a second as the first card's forty, so half the
+   * list streaked past while the other half crept.
+   */
+  opacity: 0;
+  transform: translateY(calc((var(--card-h) + var(--room-gap)) * -1));
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease),
+    box-shadow var(--dur-base) var(--ease);
+}
+._roomName_g9ohp_303 {
+  flex: 1;
+}
+/* One after another on the way in. Leaving, they go together — a staggered
+   exit reads as the list being reluctant.
+
+   The step is capped: past the eighth card a per-person delay stops reading as
+   a deal and starts reading as a list that will not open. A room of twenty
+   finishes in the same quarter-second as a room of eight. */
+._room_g9ohp_211:hover ._roomCard_g9ohp_267,
+._room_g9ohp_211:has(:focus-visible) ._roomCard_g9ohp_267 {
+  opacity: 1;
+  transform: none;
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  transition-delay: calc(min(var(--i), 8) * 30ms);
+}
+/* A full room is a different object: at nine people a stack of full-height
+   cards runs off the bottom of a laptop screen. It tightens rather than
+   scrolling, because a scroller here would clip the shadows the cards were
+   given in the first place. */
+._roomList_g9ohp_240:has(> :nth-child(9)) {
+  --room-gap: var(--s1);
+}
+._roomList_g9ohp_240:has(> :nth-child(9)) ._roomCard_g9ohp_267 {
+  --card-h: 28px;
+  font-size: var(--fs-xs);
+}
+/* Past that there is no arrangement that fits, so it scrolls and the shadows
+   go. The cut stays where it was: the list still starts under the bar. */
+._roomList_g9ohp_240:has(> :nth-child(15)) {
+  max-height: calc(100dvh - 5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+._room_g9ohp_211:hover ._roomList_g9ohp_240,
+._room_g9ohp_211:has(:focus-visible) ._roomList_g9ohp_240 {
+  pointer-events: auto;
+}
+._roomYou_g9ohp_344 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+._roomEmpty_g9ohp_351 {
+  color: var(--dim);
+}
+/* The headcount is a number, so it is set as one. */
+._roomCount_g9ohp_355 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-s);
+  font-weight: 600;
+}
+
+/* ── The board itself ────────────────────────────────────────────────────
+ * The scaffolding every live surface is built on: a scroller inside the
+ * shell's viewport-tall region, three columns across it, and what those
+ * columns do as the screen narrows.
+ *
+ * Wide is rail | main | aside side by side. Below --bp-m there is no room for
+ * a third, so the aside goes to the foot of the rail's column; below --bp-s
+ * there is one column, the rail becomes a drawer and the aside a bottom sheet.
+ *
+ * `100dvh`, never `100vh`: on iOS Safari `100vh` is the viewport *without* the
+ * URL bar, so a full-height column overflows by exactly the bar's height and
+ * its last control sits under the browser chrome, permanently unreachable.
+ *
+ * `env(safe-area-inset-*)` on everything pinned to an edge, or on a notched
+ * phone in landscape the outer content lands under the notch.
+ */
+/*
+ * The poker board.
+ *
+ * Three regions on the shared breakpoints: the ticket rail, the main column
+ * (ticket → results → duel → table → deck), and the host console. Wide is all
+ * three side by side; under --bp-m the console becomes a bottom sheet; under
+ * --bp-s the rail becomes a drawer.
+ *
+ * ## Two things that only break on a phone
+ *
+ * `100dvh`, never `100vh`. On iOS Safari `100vh` is the viewport *without* the
+ * URL bar, so a full-height rail or console overflows by exactly the bar's
+ * height and its last control sits under the browser chrome, permanently
+ * unreachable. `dvh` tracks the bar as it collapses.
+ *
+ * `env(safe-area-inset-*)` on everything pinned to an edge. In landscape on a
+ * notched phone the deck's outer cards land under the notch and the console's
+ * bar under the home indicator.
+ *
+ * ## Layering
+ *
+ * Every z-index here is a token from tokens.css (--z-rail < --z-deck <
+ * --z-console < --z-popover < --z-banner < --z-modal). The page this replaces
+ * used bare numbers, which is how the rail drawer ended up above the theme
+ * popover and below the invite modal with no way to reason about either.
+ */
+
+/* The height and the column belong to PageShell's `app` variant now — a
+   scroll-away masthead, a one-viewport region holding the sticky toolbar and
+   this board, and a credit under it. What is left is the surface it is painted
+   on. */
+._board_g9ohp_409 {
+  background: var(--bg);
+  color: var(--text);
+}/* The board's own scroller, inside the shell's viewport-tall region. Poker
+   scrolled the window before the shell existed; the window still scrolls, but
+   only far enough to take the masthead and the credit past. Everything else
+   moves in here, which is what lets `deckZone` park against the bottom of the
+   region rather than wherever the window happens to be. */
+._scroll_g9ohp_417 {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}/* ── Layout ──────────────────────────────────────────────────────────── */
+
+._layout_g9ohp_425 {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
+  gap: var(--s6);
+  /* Clear of the screen's edge on both sides — the board's shape is a rounded
+     rectangle now, and content run to the edge crowds the curve.
+     The side value is not a round number because it is not a free choice: the
+     board's text has to start where the bar's does. The bar is inset --s3, has
+     a 1px border and --s4 of its own padding, and the columns inside here add
+     --s2 — so this is what is left over. */
+  --board-inset: calc(var(--s3) + 1px + var(--s4) - var(--s2));
+  padding: var(--s5) var(--board-inset);
+  padding-left: max(var(--board-inset), env(safe-area-inset-left));
+  padding-right: max(var(--board-inset), env(safe-area-inset-right));
+  /* Stretch, not start. Three columns that size to their own content are three
+     cards floating in a screen-sized box, which is what made the board read as
+     islands rather than one application. Each column now runs the full height
+     and scrolls inside itself. */
+  align-items: start;
+  min-height: 0;
+  /* A definite row, or an auto one sizes to its tallest column and pushes past
+     the region — and then the whole board scrolls instead of the rail and the
+     ticket scrolling inside themselves, which is what their own `min-height: 0`
+     and `overflow-y: auto` are for. */
+  grid-template-rows: minmax(0, 1fr);
+}/* Full height, so the deck can be pushed to the bottom of it. */
+._main_g9ohp_452 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-width: 0;
+  align-self: stretch;
+  /* The closed hand hangs past this column's bottom edge. `clip` rather than
+     `hidden`: it keeps the hang out of the scroller's length without making
+     this a scrollport of its own, which the sticky deck sticks to. The margin
+     is the layout's own bottom padding, so the hand is cut off by the screen's
+     edge rather than a couple of dozen pixels above it. */
+  overflow: clip;
+  overflow-clip-margin: var(--s5);
+}
+
+@media (max-width: 1099px) {
+  ._layout_g9ohp_425 {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  }
+}
+@media (max-width: 699px) {
+  ._layout_g9ohp_425 {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--s3);
+    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+  }
+}
+/* ── Rail ────────────────────────────────────────────────────────────── */
+
+._rail_g9ohp_481 {
+  min-height: 0;
+  overflow-y: auto;
+  /* The same inset the console carries, so the board's two outer columns hold
+     their content the same distance from their own edges. */
+  padding: var(--s2);
+}._railHead_g9ohp_487 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin-bottom: var(--s4);
+}/* The board's scope heads the list it scopes; the count sits under it. */
+._railScope_g9ohp_493 {
+  margin: 0;
+  font-size: var(--fs-m);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}._railList_g9ohp_499 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}._railItem_g9ohp_506 {
+  width: 100%;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}._railItem_g9ohp_506:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}._railDot_g9ohp_524 {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}._railCurrent_g9ohp_530 {
+  background: transparent;
+  color: var(--accent);
+}._railCurrent_g9ohp_530 ._railDot_g9ohp_524 {
+  background: var(--accent);
+}._railPeeking_g9ohp_535 {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: -1px;
+}._railDone_g9ohp_538 ._railDot_g9ohp_524 {
+  background: var(--ok);
+}._railDone_g9ohp_538 ._railText_g9ohp_540 {
+  text-decoration: line-through;
+  text-decoration-color: var(--dim);
+}._railText_g9ohp_540 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}._railKey_g9ohp_549 {
+  font-family: var(--font-mono);
+  color: var(--dim);
+  margin-right: var(--s1);
+}._railPts_g9ohp_553 {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+}._railToggle_g9ohp_558 {
+  display: none;
+}._railBackdrop_g9ohp_560 {
+  display: none;
+}
+
+@media (max-width: 699px) {
+  ._rail_g9ohp_481 {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: var(--z-rail);
+    width: min(80vw, 320px);
+    max-height: 100dvh;
+    border-radius: 0;
+    padding-top: max(var(--s3), env(safe-area-inset-top));
+    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+    padding-left: max(var(--s3), env(safe-area-inset-left));
+    transform: translateX(-100%);
+    transition: transform var(--dur-base) var(--ease);
+  }  ._railOpen_g9ohp_577 {
+    transform: translateX(0);
+  }  ._railToggle_g9ohp_558 {
+    display: inline-flex;
+  }  ._railBackdrop_g9ohp_560 {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-rail) - 1);
+    background: rgb(0 0 0 / 45%);
+  }
+}
+/* ── The table ───────────────────────────────────────────────────────── */
+
+/* No panel of its own: the seats read as part of the voting furniture, not as
+   another card. */
+/* Ten cards and the nine gaps between them — the deck's own width, so the
+   table above it lines up rather than floating at the column's edge. */
+._main_g9ohp_452 {
+  --deck-gap: var(--s2);
+  --deck-w: calc(10 * 72px + 9 * var(--deck-gap));
+}/* ── Host console ────────────────────────────────────────────────────── */
+
+._aside_g9ohp_600 {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Even, and not only on the left: a scrollport clips both axes, and the
+     attention ring is a 4px spread the panel would otherwise cut flat. */
+  padding: var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}._asideBar_g9ohp_611 {
+  display: none;
+  align-items: center;
+  gap: var(--s2);
+}._asideNow_g9ohp_615 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--accent);
+}._asideBody_g9ohp_621 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}._asideGroup_g9ohp_625 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}/*
+ * Every control on the board, in one material — except the two that declare
+ * themselves chromeless. The exclusions sit in `:where()` so they weigh
+ * nothing: matched at full weight they outrank the primary rules below and take
+ * the accent fill off every filled button on the board. They are also
+ * chromeless by declaration: a bare button (the ticket's Edit) and a pill (the
+ * deck's arrows) are meant to be glyphs, and giving them a panel is how the
+ * pencil stopped being something you only notice when you look for it.
+ *
+ * The shared button is a form control: a flat fill, a one-pixel outline and a
+ * small radius, which is what a browser draws when nobody has decided anything.
+ * These are furniture — the same panel ground, hairline and top-edge highlight
+ * as the bar and the notch — so they read as raised rather than outlined.
+ *
+ * Matched on a substring because the class is hashed by CSS modules and the
+ * button belongs to another one; the dock reaches its own the same way.
+ */
+._board_g9ohp_409 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])) {
+  border-radius: var(--r-m);
+  border-color: var(--hairline);
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}/* Nothing rises on hover — a panel of controls that all lift as the pointer
+   crosses them is a panel that will not sit still. The press is the feedback. */
+._board_g9ohp_409 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+}._board_g9ohp_409 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 12%);
+}/* Unavailable, not invisible: it keeps its outline and a readable label. */
+._board_g9ohp_409 [class*='btn']:where(:not([class*='btnBare']):not([class*='btnPill'])):disabled {
+  opacity: 1;
+  background: none;
+  border-color: var(--hairline);
+  box-shadow: none;
+  color: var(--dim);
+}/* A filled control keeps its colour when it is spent — the accent is how you
+   find the round's one action, and it should not move around the panel. */
+._board_g9ohp_409 [class*='btnPrimary']:disabled {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--ink);
+  opacity: 0.55;
+}/* The one live action wherever it appears. */
+._board_g9ohp_409 [class*='btnPrimary']:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--ink);
+}._board_g9ohp_409 [class*='btnPrimary']:hover:not(:disabled) {
+  border-color: transparent;
+  filter: brightness(1.06);
+}
+
+@media (max-width: 1099px) {
+  /*
+   * Still a column, just a shorter one.
+   *
+   * The console is the board's third column on a wide screen; there is no room
+   * for a third here, so it goes to the foot of the first — the rail's cell,
+   * aligned to its end, with the ticket list scrolling behind it. Across the
+   * whole bottom edge it was a sheet over the board rather than a part of it,
+   * and open it covered the ticket, the table and the hand at once.
+   *
+   * A panel now, so it needs to look like one: the same material as the bar at
+   * the top of the screen, and opaque, because the rail runs underneath.
+   */
+  /* Every column placed by hand once one of them shares a cell: auto-placement
+     flows around an explicitly placed item and put the board in the rail's
+     column. */
+  ._rail_g9ohp_481 {
+    grid-column: 1;
+    grid-row: 1;
+  }  ._main_g9ohp_452 {
+    grid-column: 2;
+    grid-row: 1;
+  }  ._aside_g9ohp_600 {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+    z-index: var(--z-console);
+    max-height: 100%;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-l);
+    box-shadow:
+      var(--edge),
+      0 1px 1px rgb(0 0 0 / 12%),
+      0 4px 12px rgb(0 0 0 / 10%);
+    padding: var(--s3);
+  }  /* Room to scroll the last ticket clear of the collapsed console — for the
+     host only, because a guest has no console and would get the hole anyway. */
+  ._board_g9ohp_409[data-host='true'] ._rail_g9ohp_481 {
+    padding-bottom: calc(var(--tap) + var(--s5));
+  }  ._asideBar_g9ohp_611 {
+    display: flex;
+  }  /* Collapsed by default: the bar carries the one action that matters, and the
+     rest is one tap away. A host on a phone is holding the phone. */
+  ._asideBody_g9ohp_621 {
+    display: none;
+  }  ._asideOpen_g9ohp_735 ._asideBody_g9ohp_621 {
+    display: flex;
+  }  /* Open, the sheet is most of the screen, and the dock's corner is under it.
+     They share a layer by design — both are furniture anchored to the bottom
+     edge — so the one that is being read takes the layer above while it is up. */
+  ._asideOpen_g9ohp_735 {
+    z-index: var(--z-popover);
+  }
+}
+/* ── Utility ─────────────────────────────────────────────────────────── */
+
+._srOnly_g9ohp_746 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* ── A short screen ──────────────────────────────────────────────────────
+ * The board is one screen and never scrolls as a document, so on a laptop in a
+ * window the whole of it comes out of about 570px. What gives is the furniture
+ * — the air around the columns. What must not is the content.
+ *
+ * Height, not width: a 27" monitor at half height has exactly this problem and
+ * none of the narrow one. Last, after every rule it overrides.
+ */
+@media (max-height: 800px) {
+  ._layout_g9ohp_425 {
+    padding-top: var(--s3);
+    padding-bottom: var(--s3);
+  }
+
+  ._main_g9ohp_452 {
+    gap: var(--s3);
+  }
+}
+/*
  * Retro board styles.
  *
  * Every colour is a token from design/tokens.css — a literal here would not
@@ -3074,7 +3848,7 @@ dialog._modal_6ng5l_693 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_1jr7y_24 {
+._app_173r6_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3088,19 +3862,23 @@ dialog._modal_6ng5l_693 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_1jr7y_38 {
+._boardRegion_173r6_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  /* Clear of the dock, which floats over the bottom edge. Every column ends in
+     its own composer, so without this the one control each column always has is
+     the one permanently under the notch. */
+  padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_1jr7y_45 { color: var(--warn); font-family: var(--font-sans); }
+._offline_173r6_49 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-._identity_1jr7y_48 { display: flex; align-items: center; gap: var(--s3); }
+._identity_173r6_52 { display: flex; align-items: center; gap: var(--s3); }
 
-._meChip_1jr7y_50 {
+._meChip_173r6_54 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3114,23 +3892,23 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._meChip_1jr7y_50:hover { border-color: var(--accent); }
-._meName_1jr7y_65 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._pen_1jr7y_66 { color: var(--muted); font-size: var(--fs-2xs); }
-._roomCount_1jr7y_67 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._meChip_173r6_54:hover { border-color: var(--accent); }
+._meName_173r6_69 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_173r6_70 { color: var(--muted); font-size: var(--fs-2xs); }
+._roomCount_173r6_71 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-._viewCtl_1jr7y_69 { display: flex; align-items: center; gap: var(--s2); }
+._viewCtl_173r6_73 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._lockBanner_1jr7y_72, ._musicBanner_1jr7y_72 {
+._lockBanner_173r6_76, ._musicBanner_173r6_76 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
   border-bottom: 1px solid var(--line);
 }
-._lockBanner_1jr7y_72 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-._musicBanner_1jr7y_72 {
+._lockBanner_173r6_76 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_173r6_76 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -3141,12 +3919,12 @@ dialog._modal_6ng5l_693 {
   cursor: pointer;
 }
 
-._popNote_1jr7y_91 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_173r6_95 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_1jr7y_94 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_1jr7y_95 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_1jr7y_96 {
+._carried_173r6_98 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_173r6_99 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_173r6_100 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3160,14 +3938,14 @@ dialog._modal_6ng5l_693 {
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_1jr7y_110 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_1jr7y_111 { transform: rotate(90deg); }
-._carriedProgress_1jr7y_112 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_1jr7y_113 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_1jr7y_113[hidden] { display: none; }
-._carriedHint_1jr7y_115 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_1jr7y_116 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_1jr7y_117 {
+._chevron_173r6_114 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_173r6_115 { transform: rotate(90deg); }
+._carriedProgress_173r6_116 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_173r6_117 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_173r6_117[hidden] { display: none; }
+._carriedHint_173r6_119 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_173r6_120 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_173r6_121 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3181,8 +3959,8 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_1jr7y_131 { flex: 1; min-width: 0; }
-._carriedSelect_1jr7y_132 {
+._carriedText_173r6_135 { flex: 1; min-width: 0; }
+._carriedSelect_173r6_136 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -3191,14 +3969,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_1jr7y_141 { border-left-color: var(--line); }
-._statusDone_1jr7y_142 { border-left-color: var(--ok); }
-._statusProgress_1jr7y_143 { border-left-color: var(--info); }
-._statusCarried_1jr7y_144 { border-left-color: var(--warn); }
-._statusMuted_1jr7y_145 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_173r6_145 { border-left-color: var(--line); }
+._statusDone_173r6_146 { border-left-color: var(--ok); }
+._statusProgress_173r6_147 { border-left-color: var(--info); }
+._statusCarried_173r6_148 { border-left-color: var(--warn); }
+._statusMuted_173r6_149 { border-left-color: var(--muted); opacity: 0.7; }
 
 /* ── Walkthrough bar ──────────────────────────────────────────────────── */
-._focusBar_1jr7y_148 {
+._focusBar_173r6_152 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -3206,7 +3984,7 @@ dialog._modal_6ng5l_693 {
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
-._focusStep_1jr7y_156 {
+._focusStep_173r6_160 {
   width: var(--tap);
   height: var(--tap);
   display: inline-grid;
@@ -3218,13 +3996,13 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   cursor: pointer;
 }
-._focusStep_1jr7y_156:disabled { opacity: 0.4; cursor: default; }
-._focusWho_1jr7y_169 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-._focusName_1jr7y_170 { font-size: var(--fs-m); }
-._focusCount_1jr7y_171 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._focusStep_173r6_160:disabled { opacity: 0.4; cursor: default; }
+._focusWho_173r6_173 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_173r6_174 { font-size: var(--fs-m); }
+._focusCount_173r6_175 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_1jr7y_34 {
+._board_173r6_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -3247,13 +4025,13 @@ dialog._modal_6ng5l_693 {
 @media (max-width: 1099px) {
   /* Weights are a wide-screen affordance only: in a 2x2 they would make the
      two rows different heights for no reason. */
-  ._board_1jr7y_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_173r6_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_1jr7y_34 {
+  ._board_173r6_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -3263,14 +4041,14 @@ dialog._modal_6ng5l_693 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_1jr7y_34::-webkit-scrollbar { display: none; }
-  ._column_1jr7y_214 { scroll-snap-align: center; }
+  ._board_173r6_34::-webkit-scrollbar { display: none; }
+  ._column_173r6_218 { scroll-snap-align: center; }
 }
 
-._pager_1jr7y_217 { display: none; }
+._pager_173r6_221 { display: none; }
 @media (max-width: 699px) {
-  ._pager_1jr7y_217 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_1jr7y_220 {
+  ._pager_173r6_221 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_173r6_224 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -3279,7 +4057,7 @@ dialog._modal_6ng5l_693 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_1jr7y_220::after {
+  ._pagerDot_173r6_224::after {
     content: "";
     display: block;
     width: 8px;
@@ -3288,7 +4066,7 @@ dialog._modal_6ng5l_693 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_1jr7y_238::after { background: var(--accent); }
+  ._pagerDotOn_173r6_242::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -3302,7 +4080,7 @@ dialog._modal_6ng5l_693 {
  * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
  * four saturated columns would be a traffic jam, and the cards are the content.
  */
-._column_1jr7y_214 {
+._column_173r6_218 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3312,13 +4090,13 @@ dialog._modal_6ng5l_693 {
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
 }
-._columnHead_1jr7y_262 {
+._columnHead_173r6_266 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
   padding: var(--s3) var(--s3) var(--s2);
 }
-._columnTitle_1jr7y_268 {
+._columnTitle_173r6_272 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -3327,13 +4105,13 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_1jr7y_277 { color: var(--dim); }
-._columnCount_1jr7y_278 {
+._columnDot_173r6_281 { color: var(--dim); }
+._columnCount_173r6_282 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_1jr7y_283 {
+._cards_173r6_287 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3342,11 +4120,11 @@ dialog._modal_6ng5l_693 {
   flex-direction: column;
   gap: var(--s2);
 }
-._cardsOver_1jr7y_292 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
-._columnEmpty_1jr7y_293 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._cardsOver_173r6_296 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+._columnEmpty_173r6_297 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._authorGroup_1jr7y_295 { display: flex; flex-direction: column; gap: var(--s2); }
-._authorGroupHead_1jr7y_296 {
+._authorGroup_173r6_299 { display: flex; flex-direction: column; gap: var(--s2); }
+._authorGroupHead_173r6_300 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-2xs);
@@ -3355,11 +4133,11 @@ dialog._modal_6ng5l_693 {
   letter-spacing: 0.06em;
 }
 
-._cardSlot_1jr7y_305 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-._dropLine_1jr7y_306 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+._cardSlot_173r6_309 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._dropLine_173r6_310 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
-._card_1jr7y_283 {
+._card_173r6_287 {
   background: var(--card);
   border: 1px solid var(--line);
   /* The column's tone, carried onto the card. --col-tone is set on the section
@@ -3373,9 +4151,9 @@ dialog._modal_6ng5l_693 {
 }
 /* An AI card is not the column's — it is the agent's, and it should be
    obviously distinguishable from something a colleague wrote. */
-._cardAI_1jr7y_323 { border-left-color: var(--accent2); }
-._cardDragging_1jr7y_324 { opacity: 0.4; }
-._cardText_1jr7y_325 {
+._cardAI_173r6_327 { border-left-color: var(--accent2); }
+._cardDragging_173r6_328 { opacity: 0.4; }
+._cardText_173r6_329 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -3384,10 +4162,10 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
 }
 
-._cardMeta_1jr7y_334 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-._metaSpacer_1jr7y_335 { flex: 1; }
-._author_1jr7y_295 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_1jr7y_337 {
+._cardMeta_173r6_338 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+._metaSpacer_173r6_339 { flex: 1; }
+._author_173r6_299 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_173r6_341 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -3395,8 +4173,8 @@ dialog._modal_6ng5l_693 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_1jr7y_345 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_1jr7y_346 {
+._aiBadge_173r6_349 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_173r6_350 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -3406,8 +4184,8 @@ dialog._modal_6ng5l_693 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_1jr7y_356 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_1jr7y_357 {
+._confirmRow_173r6_360 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_173r6_361 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -3415,18 +4193,18 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
 }
 
-._gripWrap_1jr7y_365 { position: relative; display: inline-flex; }
+._gripWrap_173r6_369 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_1jr7y_365 {
+._grip_173r6_369 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_1jr7y_365:active { cursor: grabbing; }
+._grip_173r6_369:active { cursor: grabbing; }
 
-._moveMenu_1jr7y_376 {
+._moveMenu_173r6_380 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -3440,7 +4218,7 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_1jr7y_390 {
+._moveItem_173r6_394 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -3452,11 +4230,11 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_1jr7y_390:hover { background: var(--panel-2); }
+._moveItem_173r6_394:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_1jr7y_405 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_1jr7y_406 {
+._editor_173r6_409 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_173r6_410 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -3467,14 +4245,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_1jr7y_417 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_173r6_421 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-._reactions_1jr7y_423 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-._rxChip_1jr7y_424, ._rxPick_1jr7y_424 {
+._reactions_173r6_427 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+._rxChip_173r6_428, ._rxPick_173r6_428 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -3490,10 +4268,10 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._rxChip_1jr7y_424:hover, ._rxPick_1jr7y_424:hover { border-color: var(--accent); }
-._rxChip_1jr7y_424:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_1jr7y_442 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-._rxCount_1jr7y_443 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_173r6_428:hover, ._rxPick_173r6_428:hover { border-color: var(--accent); }
+._rxChip_173r6_428:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_173r6_446 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_173r6_447 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
@@ -3504,7 +4282,7 @@ dialog._modal_6ng5l_693 {
  * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
  * even rows of the same size, not a ragged last line.
  */
-._rxTray_1jr7y_454 {
+._rxTray_173r6_458 {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
@@ -3522,7 +4300,7 @@ dialog._modal_6ng5l_693 {
  * directly above it. This replaced a bar pinned below the whole board plus a
  * segmented destination picker; see ColumnComposer.tsx for why.
  */
-._columnCompose_1jr7y_472 {
+._columnCompose_173r6_476 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -3531,7 +4309,7 @@ dialog._modal_6ng5l_693 {
 }
 /* Dashed and quiet at rest: it is an invitation, and four solid buttons across
    the bottom of the board would compete with the cards. */
-._composeGhost_1jr7y_481 {
+._composeGhost_173r6_485 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3546,12 +4324,12 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._composeGhost_1jr7y_481:hover, ._composeGhost_1jr7y_481:focus-visible {
+._composeGhost_173r6_485:hover, ._composeGhost_173r6_485:focus-visible {
   border-style: solid;
   border-color: var(--col-tone, var(--accent));
   color: var(--text);
 }
-._composeBox_1jr7y_501 {
+._composeBox_173r6_505 {
   width: 100%;
   min-height: var(--tap);
   max-height: 8rem;
@@ -3566,29 +4344,29 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeActions_1jr7y_516 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_173r6_520 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
-._floatLayer_1jr7y_519 {
+._floatLayer_173r6_523 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
   pointer-events: none;
   overflow: hidden;
 }
-._floater_1jr7y_526 {
+._floater_173r6_530 {
   position: absolute;
   bottom: 0;
-  animation: _rise_1jr7y_1 2.6s ease-out forwards;
+  animation: _rise_173r6_1 2.6s ease-out forwards;
 }
 
-@keyframes _rise_1jr7y_1 {
+@keyframes _rise_173r6_1 {
   from { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   to { transform: translateY(-70vh); opacity: 0; }
 }
 
-._srOnly_1jr7y_538 {
+._srOnly_173r6_542 {
   position: absolute;
   width: 1px;
   height: 1px;

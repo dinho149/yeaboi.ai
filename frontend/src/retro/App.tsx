@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Duck, useDuckPulse, type DuckRest } from '../design/primitives';
+import { Duck, Icon, useDuckPulse, type DuckRest } from '../design/primitives';
 import { useArrivals } from '../motion';
 import { useAlarm } from '../hooks/useAlarm';
 import { useBoardStream } from '../hooks/useBoardStream';
@@ -46,7 +46,6 @@ import {
   Popover,
   PresenceRow,
   ProfileModal,
-  Roster,
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
@@ -54,6 +53,8 @@ import {
   Toolbar,
   Visualizer,
 } from '../shared';
+import { cx } from '../runtime/cx';
+import { boardStyles as kit, Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
 import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
@@ -359,27 +360,61 @@ export function App({ boot }: { boot: RetroBoot }) {
             {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
           </>
         }
-        tools={
-          <>
+    >
+        <div className={styles['identity']}>
+          <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
+            <span aria-hidden="true">{avatar}</span>
+            <span className={styles['meName']}>{name || 'Set your name'}</span>
+            <span aria-hidden="true" className={styles['pen']}>
+              ✎
+            </span>
+          </button>
+
+          <PresenceRow people={others} />
+
+          <Room people={presence} meName={name} />
+        </div>
+
+        <div className={styles['viewCtl']}>
+          <IconButton
+            icon={<Icon name="user" size={16} />}
+            label="Walk through one person at a time"
+            active={Boolean(focus)}
+            disabled={!authors.length}
+            onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
+          />
+          <IconButton icon={<Icon name="qr-code" size={16} />} label="Group cards by author" active={grouped} onClick={toggleGrouped} />
+        </div>
+    </Toolbar>
+  );
+
+  return (
+    <PageShell
+      chrome={boot.chrome}
+      variant="app"
+      bar={toolbar}
+      className={cx(kit['board'], styles['app'])}
+      dock={
+        <>
             <Visualizer playing={music.playing} />
 
             {isHost ? (
               <IconButton
-                icon="🔒"
+                icon={<Icon name={locked ? 'lock' : 'lock-open'} size={16} />}
                 label={locked ? 'Unlock the board' : 'Lock the board'}
                 active={locked}
                 onClick={() => void actions.setLocked(!locked)}
               />
             ) : null}
 
-            <Popover trigger={<span aria-hidden="true">♪</span>} label="Music">
+            <Popover trigger={<Icon name="music" size={16} />} label="Music">
               <MusicPlayer
                 music={music}
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
                     <Button onClick={() => void actions.castMusic(music.playing, music.channel)}>
-                      <span aria-hidden="true">📣</span> Play for everyone
+                      <Icon name="megaphone" /> Play for everyone
                     </Button>
                   ) : null
                 }
@@ -389,7 +424,7 @@ export function App({ boot }: { boot: RetroBoot }) {
             <Popover
               trigger={
                 <>
-                  <span aria-hidden="true">⏱</span>
+                  <Icon name="timer" size={16} />
                   <TimerReadout remaining={remaining} />
                 </>
               }
@@ -406,66 +441,26 @@ export function App({ boot }: { boot: RetroBoot }) {
               )}
             </Popover>
 
-            <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme">
+            <Popover trigger={<Icon name="contrast" size={16} />} label="Theme">
               <ThemeSwitcher
                 value={theme}
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
                     <Button onClick={() => void actions.castTheme(theme)}>
-                      <span aria-hidden="true">📣</span> Apply to everyone
+                      <Icon name="megaphone" /> Apply to everyone
                     </Button>
                   ) : null
                 }
               />
             </Popover>
 
-            <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+            <IconButton icon={<Icon name="mail" size={16} />} label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
               Invite
             </IconButton>
-          </>
-        }
-      >
-        <div className={styles['identity']}>
-          <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
-            <span aria-hidden="true">{avatar}</span>
-            <span className={styles['meName']}>{name || 'Set your name'}</span>
-            <span aria-hidden="true" className={styles['pen']}>
-              ✎
-            </span>
-          </button>
-
-          <PresenceRow people={others} />
-
-          <Popover
-            align="left"
-            trigger={
-              <>
-                <span aria-hidden="true">👥</span>
-                <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
-              </>
-            }
-            label="Who is in the room"
-          >
-            <Roster people={presence} meName={name} />
-          </Popover>
-        </div>
-
-        <div className={styles['viewCtl']}>
-          <IconButton
-            icon="👤"
-            label="Walk through one person at a time"
-            active={Boolean(focus)}
-            disabled={!authors.length}
-            onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
-          />
-          <IconButton icon="⊞" label="Group cards by author" active={grouped} onClick={toggleGrouped} />
-        </div>
-    </Toolbar>
-  );
-
-  return (
-    <PageShell chrome={boot.chrome} variant="app" bar={toolbar} className={styles['app']}>
+        </>
+      }
+    >
       {/* One flex column inside the shell's scroll row. The banners, the
           carried strip and the focus bar are auto-height siblings above the
           board, which takes the rest — the same relationship they had when

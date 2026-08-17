@@ -40,6 +40,10 @@
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  /* Clear of the dock, which floats over the bottom edge. Every column ends in
+     its own composer, so without this the one control each column always has is
+     the one permanently under the notch. */
+  padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
 .offline { color: var(--warn); font-family: var(--font-sans); }

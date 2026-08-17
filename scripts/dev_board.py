@@ -49,6 +49,11 @@ def main() -> int:
             print(f"! seed rejected (unknown grid?): {grid}", file=sys.stderr)
 
     server = RetroServer(board)
+    # Fixed credentials, as the poker dev board does it: a rebuild-and-restart
+    # must not invalidate the token the tab you are looking at is holding.
+    # Dev only — in-memory board, loopback socket.
+    server.token = "dev-token"  # noqa: S105
+    server.admin_token = "dev-admin"  # noqa: S105
     server.start()
 
     api = f"http://127.0.0.1:{server.port}"
