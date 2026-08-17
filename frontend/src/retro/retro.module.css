@@ -170,47 +170,6 @@
 .statusCarried { border-left-color: var(--warn); }
 .statusMuted { border-left-color: var(--muted); opacity: 0.7; }
 
-/* ── Walkthrough ──────────────────────────────────────────────────────── */
-/* A panel in the notch, with the other tools. It was a bar across the top of
-   the board, which is a row of chrome the ceremony pays for the whole time it
-   is running. */
-/* A ceiling, because a docked panel is as wide as its widest unwrapped line
-   and the notch sits against the right edge of the screen. */
-.focusPanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  max-width: min(18rem, 70vw);
-}
-.focusRow {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-}
-.focusStep {
-  width: var(--tap);
-  height: var(--tap);
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-s);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-.focusStep:disabled { opacity: 0.4; cursor: default; }
-.focusWho { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; min-width: 0; }
-.focusName { font-size: var(--fs-m); }
-.focusCount { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-
-/* A tool that is doing something, in the notch's own idiom: coloured, not
-   ringed — the dock's `active` styling, reached from a Popover trigger. */
-.toolOn {
-  color: var(--accent);
-}
-
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {
   flex: 1;

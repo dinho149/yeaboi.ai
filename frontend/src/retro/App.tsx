@@ -51,6 +51,7 @@ import {
   Toast,
   Toolbar,
   Visualizer,
+  Walkthrough,
 } from '../shared';
 import { cx } from '../runtime/cx';
 import { boardStyles as kit, Room } from '../shared/board';
@@ -61,7 +62,6 @@ import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/b
 import { createRetroActions } from './actions';
 import { Board } from './Board';
 import { CarriedStrip } from './CarriedStrip';
-import { FocusControls } from './FocusBar';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
 
@@ -379,16 +379,8 @@ export function App({ boot }: { boot: RetroBoot }) {
             <Popover
               trigger={<Icon name="user" size={16} />}
               label="Walk through one person at a time"
-              triggerClassName={cx(focus && styles['toolOn'])}
             >
-              <FocusControls
-                authors={authors}
-                current={focus}
-                avatars={avatarsByName}
-                onStep={stepFocus}
-                onStart={() => setFocus(authors[0] ?? '')}
-                onExit={() => setFocus('')}
-              />
+              <Walkthrough people={authors} current={focus} onPick={setFocus} onExit={() => setFocus('')} />
             </Popover>
 
             {isHost ? (
@@ -524,16 +516,14 @@ export function App({ boot }: { boot: RetroBoot }) {
       />
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
+        {/* No join code here: the link carries it, and the QR is the link. A
+            code to read out is a third way to say the same thing. */}
         <p className={styles['popNote']}>
-          Send the invite link — it carries the share code, so they land straight on the board.
-          Scanning the QR does the same. Keep both off anywhere public.
+          Send the link, or let them scan it — either one lands them straight on the board. Keep both off
+          anywhere public.
         </p>
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
-        <InviteQR
-          qrSrc={apiUrl(session, '/api/qr')}
-          inviteUrl={invite.invite?.inviteUrl}
-          joinCode={invite.invite?.joinCode}
-        />
+        <InviteQR qrSrc={apiUrl(session, '/api/qr')} inviteUrl={invite.invite?.inviteUrl} />
       </Modal>
     </PageShell>
   );

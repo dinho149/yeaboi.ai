@@ -154,11 +154,15 @@ describe('retro App', () => {
     await screen.findByText('Pairing paid off');
 
     await user.click(screen.getByRole('button', { name: /Walk through one person/ }));
-    await user.click(screen.getByRole('button', { name: /Start with Ada/ }));
+    // The panel's own list, not the identity chip that carries the same name.
+    const walk = screen.getByRole('group', { name: 'Walkthrough' });
+    await user.click(within(walk).getByRole('button', { name: 'Ada' }));
     // Ada is first alphabetically, so hers stay and Grace's go.
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
     expect(screen.queryByText('Zero flaky tests')).toBeNull();
-    expect(screen.getByRole('group', { name: 'Walkthrough' }).textContent).toContain('1 of 2');
+    // The panel shows the running order and marks who is up.
+    expect(within(walk).getByRole('button', { name: 'Ada', pressed: true })).toBeTruthy();
+    expect(within(walk).getByRole('button', { name: 'Grace', pressed: false })).toBeTruthy();
 
     // → and Escape are bound at the document, so they step without the bar
     // holding focus — which is the point, since you are reading the cards.
@@ -166,9 +170,10 @@ describe('retro App', () => {
     expect(screen.getByText('Zero flaky tests')).toBeTruthy();
     expect(screen.queryByText('Pairing paid off')).toBeNull();
 
+    // Escape drops back to everyone's cards, wherever focus happens to be.
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('group', { name: 'Walkthrough' })).toBeNull();
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
+    expect(screen.getByText('Zero flaky tests')).toBeTruthy();
   });
 
   it('announces the lock and takes the composer away with it', async () => {

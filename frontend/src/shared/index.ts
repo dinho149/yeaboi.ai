@@ -32,3 +32,4 @@ export { ConfettiCanvas, TIMER_PRESETS, TimerControls, TimerReadout } from './Ti
 export { Toast, TOAST_MS, type ToastProps } from './Toast';
 export { Toolbar, type ToolbarProps } from './Toolbar';
 export { Visualizer, type VisualizerProps } from './Visualizer';
+export * from './Walkthrough';

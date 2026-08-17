@@ -13,6 +13,8 @@
  * of use.
  */
 
+import { useState } from 'react';
+
 import { safeImageSrc } from '../runtime/url';
 import { cx } from '../runtime/cx';
 import { CopyField } from './CopyField';
@@ -41,17 +43,25 @@ export interface InviteQRProps {
 
 export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
+  // The endpoint answers 503 until the tunnel is up, and a broken image with
+  // its alt text showing is the worst of the three things it could do.
+  const [unavailable, setUnavailable] = useState(false);
 
   return (
     <div className={cx(styles['invite'], className)}>
-      {src ? (
+      {src && !unavailable ? (
         <img
           className={styles['qr']}
           src={src}
           width={280}
           height={280}
           alt="QR code linking to this board"
+          onError={() => setUnavailable(true)}
         />
+      ) : null}
+
+      {unavailable ? (
+        <p className={styles['panelNote']}>The board is not shared yet, so there is nothing to scan.</p>
       ) : null}
 
       {/* Every field renders only once the values are in. They arrive from

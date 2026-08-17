@@ -205,6 +205,33 @@
   transform: scale(0.97);
 }
 
+/* The same presets when there is a variable number of them and they carry
+   words rather than a fixed four numbers — names, in the walkthrough. */
+.presetWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.presetWrap .preset {
+  padding: 0 var(--s3);
+  font-family: var(--font-sans);
+}
+
+/* The one that is on. Coloured rather than ringed, like every other "this is
+   what is happening" state on a board. */
+.presetOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  color: var(--accent);
+}
+
+/* A sentence inside a panel, rather than a control. */
+.panelNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
 /* ── Credit ───────────────────────────────────────────────────────
    The byline link. It inherits everything — colour, face, size, tracking —
    from whichever footer it is sitting in, because it is the *same string* the
