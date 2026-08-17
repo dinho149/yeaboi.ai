@@ -576,8 +576,8 @@ func memberSkeletons(grouped *Grouped, coverage map[string]string, yesterday *py
 			block.Set("links", linksToWire(memberLinks(split[category])))
 			block.Set("count", int64(len(split[category])))
 			// 30 mirrors engine._member_evidence's cap default — enough for the
-		// web timeline to show the real shape of a busy day.
-		block.Set("evidence", memberEvidence(evidenceActs, 30, prefixes, workItemIDs))
+			// web timeline to show the real shape of a busy day.
+			block.Set("evidence", memberEvidence(evidenceActs, 30, prefixes, workItemIDs))
 			return block
 		}
 
