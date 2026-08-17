@@ -2,6 +2,46 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.18.0",
+      "date": "2026-08-17",
+      "summary": "Wave 6 of the Go migration brings the documentation quality scoring engine behind the yeaboi-core sidecar. The analysis module now scores documentation clarity, AI usage patterns, and content quality in the background Go service with Python fallback, running ~100x faster than the Python implementation. Two new deterministic RPC methods enable the analysis pipeline to classify content markers and score documentation across your team's work without blocking the standup or analysis runs. Parity tests enforce byte-level equivalence across Python and Go implementations, and contract definitions lock the RPC interface across versions. This completes the deterministic scoring seam that began with Wave 5 (code health and practices).",
+      "highlights": [
+        {
+          "text": "Doc quality scoring now runs in the Go sidecar with two new RPC methods: score_docs and classify_doc_markers",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "~100x faster documentation scoring: Go implementation replaces Python read workers, cache writes batch at the seam",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Byte-level parity enforcement ensures Python and Go doc-quality implementations stay perfectly synchronized",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Silent Python fallback preserves compatibility when the sidecar is unavailable or encounters errors",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Completes the deterministic scoring seam: doc quality joins code health and practices in the Go backend",
+          "areas": [
+            "analysis"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.17.0",
       "date": "2026-08-17",
       "summary": "The Ship mode closes yeaboi's feedback loop: a user story from your saved sprint plan is handed to a supervised Claude Code headless agent in an isolated git worktree, its diff is validated deterministically, a human approves it at a gate, and only then is the branch pushed and a PR opened. Features include a global budget fuse with quota tracking and fail-closed safety, a worktree coordinator that handles repo setup and cleanup, a mechanical driver that strips agent permissions (no git push, no command execution), and a pipeline with precondition validation and 3-attempt reviewer gates.",
