@@ -2,6 +2,46 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.18.1",
+      "date": "2026-08-17",
+      "summary": "Ship mode hardening and safety improvements prevent agent capability creep, tighten consent checks, and show you the exact changes before approval. The agent's Bash tool is now completely denied (not just git/gh commands), closing permission-bypass risks from other shell features. Consent is checked against the git toplevel where worktree setup actually lands, so approval names the directory that is actually touched. The approval gate now renders a scrollable patch pane showing your complete diff alongside validation results, with measured button positioning that never leaves buttons off-screen on minimum terminals. Gates answer only their own run by capturing the run id immediately, preventing concurrent runs from presenting stale diffs to the wrong user. Session IDs now carry a random suffix preventing same-second collisions, and removal operations report correctly whether they found an entry.",
+      "highlights": [
+        {
+          "text": "Agent permissions hardened: Bash tool is completely denied, not just git/gh commands, closing permission bypasses",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Consent checks the git toplevel, so approval dialog names the exact directory that is touched",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Approval gate shows the full diff in a scrollable patch pane with validation results and the worktree path",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Gate buttons stay on screen at minimum terminal size (84x40); elastic sections (findings, stats) yield space gracefully",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Gates answer only their own run via immediate run-id callback; concurrent runs no longer see stale diffs",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.18.0",
       "date": "2026-08-17",
       "summary": "Wave 6 of the Go migration brings the documentation quality scoring engine behind the yeaboi-core sidecar. The analysis module now scores documentation clarity, AI usage patterns, and content quality in the background Go service with Python fallback, running ~100x faster than the Python implementation. Two new deterministic RPC methods enable the analysis pipeline to classify content markers and score documentation across your team's work without blocking the standup or analysis runs. Parity tests enforce byte-level equivalence across Python and Go implementations, and contract definitions lock the RPC interface across versions. This completes the deterministic scoring seam that began with Wave 5 (code health and practices).",
@@ -81,7 +121,7 @@
     {
       "version": "3.16.0",
       "date": "2026-08-16",
-      "summary": "Planning mode's prior-art intake flow now batches all candidate repos into a single multi-select carousel instead of asking about each one individually. Select multiple repos at once with Space, navigate with arrow keys, and use X to permanently dismiss a candidate. Rejections no longer blacklist repos globally — unchecking just skips them for this project, while X explicitly bans them forever. The new batch grammar works everywhere: TUI carousel, CLI flags, headless APIs, and REPL forms all use the same syntax (numbers, ranges, all, none, or !N bans). Resume now correctly replays the batch prompt instead of stale hints.",
+      "summary": "Planning mode's prior-art intake flow now batches all candidate repos into a single multi-select carousel instead of asking about each one individually. Select multiple repos at once with Space, navigate with arrow keys, and use X to permanently dismiss a candidate. Rejections no longer blacklist repos globally \u2014 unchecking just skips them for this project, while X explicitly bans them forever. The new batch grammar works everywhere: TUI carousel, CLI flags, headless APIs, and REPL forms all use the same syntax (numbers, ranges, all, none, or !N bans). Resume now correctly replays the batch prompt instead of stale hints.",
       "highlights": [
         {
           "text": "Batch multi-select carousel for prior-art intake: select all relevant repos at once instead of one-by-one confirmation",
