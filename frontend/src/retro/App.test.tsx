@@ -133,8 +133,7 @@ describe('retro App', () => {
     // destination. Each column carries its own composer, opened from its own
     // "Add a card" row.
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
-    await user.type(screen.getByRole('textbox', { name: 'Add a card to Demos' }), 'a demo');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByRole('textbox', { name: 'Add a card to Demos' }), 'a demo{Enter}');
 
     await waitFor(() => {
       const post = server.mock.calls.find(([url]) => String(url).startsWith('/api/cards'));

@@ -399,6 +399,17 @@
 .cards[data-fade='both'] {
   mask-image: linear-gradient(to bottom, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent);
 }
+/* The set that survives a filter arrives together — one move, not a dozen
+   staggered ones, because it is one decision. */
+.cardFiltered { animation: cardFilterIn 200ms var(--ease) both; }
+
+@keyframes cardFilterIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 .cardsOver {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);

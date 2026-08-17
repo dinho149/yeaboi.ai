@@ -32,7 +32,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
-import { Button } from '../shared';
 import styles from './retro.module.css';
 
 /** How long the draft takes to fold away. Matches `draftOut` in the sheet. */
@@ -138,10 +137,9 @@ export function ColumnComposer({
               onTyping();
             }}
             onKeyDown={(event) => {
-              // ⌘/Ctrl-Enter, not bare Enter: cards are frequently multi-line
-              // and a bare Enter that submitted would make writing a second
-              // line impossible.
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              // Enter posts, Shift-Enter is the second line. Same pair as the
+              // card editor, so writing a card and changing one are one habit.
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 submit();
               } else if (event.key === 'Escape') {
@@ -153,19 +151,6 @@ export function ColumnComposer({
               }
             }}
           />
-          <div className={styles['composeActions']}>
-            <Button
-              onClick={() => {
-                setText('');
-                onClose();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button tone="primary" disabled={!text.trim()} onClick={submit}>
-              Add
-            </Button>
-          </div>
         </div>
       ) : null}
     </div>

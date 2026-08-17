@@ -22,7 +22,13 @@ export interface Swap<T> {
   swapped: boolean;
 }
 
-export function useSwap<T>(payload: T, key: string | number, ms: number): Swap<T> {
+/**
+ * @param ready False while the value for `key` is still being fetched. The swap
+ *   waits: stepping back changes which retro you are on immediately, but its
+ *   cards are a request away, and swapping twice — once to nothing, once to the
+ *   answer — is the flicker.
+ */
+export function useSwap<T>(payload: T, key: string | number, ms: number, ready = true): Swap<T> {
   const [shown, setShown] = useState<{ payload: T; key: string | number }>({ payload, key });
   const [leaving, setLeaving] = useState(false);
   const swapped = useRef(false);
@@ -35,6 +41,7 @@ export function useSwap<T>(payload: T, key: string | number, ms: number): Swap<T
   // changed the key would show one frame of the new board before the old one
   // has been given its exit.
   useLayoutEffect(() => {
+    if (!ready) return undefined;
     if (key === shown.key) {
       // Same retro, fresher cards — no swap, just keep up.
       setShown((current) => (current.payload === payload ? current : { payload, key }));
@@ -47,7 +54,7 @@ export function useSwap<T>(payload: T, key: string | number, ms: number): Swap<T
       setLeaving(false);
     }, ms);
     return () => window.clearTimeout(timer);
-  }, [key, payload, shown.key, ms]);
+  }, [key, payload, shown.key, ms, ready]);
 
   return { payload: shown.payload, key: shown.key, leaving, swapped: swapped.current };
 }

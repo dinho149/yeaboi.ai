@@ -141,7 +141,8 @@ export function App({ boot }: { boot: RetroBoot }) {
     () => ({ cards: past ? past.cards : cards, carried: past ? past.carried : carried }),
     [past, cards, carried]
   );
-  const swap = useSwap(view, history.at, SWAP_MS);
+  // Stepping back is only settled once that retro's cards have arrived.
+  const swap = useSwap(view, history.at, SWAP_MS, history.at === 0 || Boolean(past));
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
   // anyone who reaches the board, token or not. Also puts it on the clipboard.
@@ -538,6 +539,7 @@ export function App({ boot }: { boot: RetroBoot }) {
             });
           }}
           past={history.at > 0}
+          viewKey={swap.key}
         />
       ) : null}
 

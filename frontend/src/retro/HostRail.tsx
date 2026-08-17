@@ -39,6 +39,9 @@ export interface HostRailProps {
   onSuggest(): void;
   /** True when a past retro is open — most of the rail is inert then. */
   past: boolean;
+  /** Which board is on screen. Changes once per completed swap, so the lists
+   *  replay their entrance then and not while one is still being fetched. */
+  viewKey: string | number;
 }
 
 const STATUS_LABELS = CARRIED_STATUSES.map((value) => CARRIED_STATUS_LABELS[value]);
@@ -59,6 +62,7 @@ export function HostRail({
   suggesting,
   onSuggest,
   past,
+  viewKey,
 }: HostRailProps) {
   const { runs, at, loading } = history;
   // Back is open until the list says otherwise: it is what fetches the list, so
@@ -111,7 +115,7 @@ export function HostRail({
       <section>
         <Eyebrow value={carried.length ? `${reviewed}/${carried.length}` : 'nothing'}>Last retro</Eyebrow>
         {carried.length ? (
-          <ul key={`carried-${at}`} className={cx(kit['railList'], styles['railSwap'])}>
+          <ul key={`carried-${viewKey}`} className={cx(kit['railList'], styles['railSwap'])}>
             {carried.map((item) => {
               const status = (item.status || 'pending') as CarriedStatuses;
               return (
@@ -144,7 +148,7 @@ export function HostRail({
       {people.length ? (
         <section role="group" aria-label="Show one person's cards">
           <Eyebrow value={focus || 'everyone'}>Showing</Eyebrow>
-          <ul key={`who-${at}`} className={cx(kit['railList'], styles['railSwap'])}>
+          <ul key={`who-${viewKey}`} className={cx(kit['railList'], styles['railSwap'])}>
             <li>
               <button
                 type="button"

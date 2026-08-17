@@ -9,6 +9,8 @@
  * column with the same accessible name are worse than clutter.
  */
 
+import { useEffect, useRef, useState } from 'react';
+
 import { toneVar } from '../design/tone';
 import { Ticker } from '../motion';
 import { TypingIndicator } from '../shared';
@@ -22,6 +24,9 @@ import type { DropTarget } from './useCardDrag';
 import motion from '../motion/motion.module.css';
 import { useEdgeFade } from './useEdgeFade';
 import styles from './retro.module.css';
+
+/** How long the surviving cards take to arrive after a filter change. */
+const FILTER_MS = 200;
 
 const NO_REACTIONS: ReadonlySet<string> = new Set();
 
@@ -85,6 +90,21 @@ export function Column({
   const visible = focus ? cards.filter((card) => card.author === focus) : cards;
   const [scroller, edges] = useEdgeFade<HTMLDivElement>(visible.length);
 
+  // Filtering replaces what the column is showing, so the set that survives it
+  // arrives rather than appearing. A token cleared on a timer, not a remount:
+  // remounting would reseed the arrivals hook and drop the scroll position.
+  const [filtering, setFiltering] = useState(false);
+  const firstFocus = useRef(true);
+  useEffect(() => {
+    if (firstFocus.current) {
+      firstFocus.current = false;
+      return undefined;
+    }
+    setFiltering(true);
+    const timer = window.setTimeout(() => setFiltering(false), FILTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [focus]);
+
   // Drop positions skip the card being dragged, matching `indexAt` in
   // useCardDrag — count it and the indicator sits one slot off whenever you
   // drag a card within its own column.
@@ -100,7 +120,11 @@ export function Column({
       // Both classes, not one: `enter` places the card and `arrived` decays an
       // accent edge over the next 700ms, so a facilitator who was looking at
       // another column can still find what moved.
-      className={cx(styles['cardSlot'], arrivals.has(card.id) && motion['enter'])}
+      className={cx(
+        styles['cardSlot'],
+        arrivals.has(card.id) && motion['enter'],
+        filtering && styles['cardFiltered']
+      )}
     >
       {dropAt && dropAt.index === positions.get(card.id) ? (
         <div className={styles['dropLine']} data-drop-line="lead" aria-hidden="true" />
