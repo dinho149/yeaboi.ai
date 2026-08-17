@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.17.0",
+      "date": "2026-08-17",
+      "summary": "The Ship mode closes yeaboi's feedback loop: a user story from your saved sprint plan is handed to a supervised Claude Code headless agent in an isolated git worktree, its diff is validated deterministically, a human approves it at a gate, and only then is the branch pushed and a PR opened. Features include a global budget fuse with quota tracking and fail-closed safety, a worktree coordinator that handles repo setup and cleanup, a mechanical driver that strips agent permissions (no git push, no command execution), and a pipeline with precondition validation and 3-attempt reviewer gates.",
+      "highlights": [
+        {
+          "text": "Ship mode: deliver user stories directly from sprint plan via supervised coding agent in isolated worktree",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Budget fuse: user-global quota (1 concurrent / 2 per hour / 12 per day) with fail-closed safety and circuit breaker on quota errors",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Deterministic gate: validation runs in its own process, precondition checks for empty diffs, and reviewer can request rework with feedback",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Mechanical safety: agent cannot run git or shell commands; only yeaboi commits and pushes after approval",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Full surfaces: TUI beta card with picker/progress/gate/result screens, CLI commands (run/status/history), MCP tools, and plugin skill",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.16.0",
       "date": "2026-08-16",
       "summary": "Planning mode's prior-art intake flow now batches all candidate repos into a single multi-select carousel instead of asking about each one individually. Select multiple repos at once with Space, navigate with arrow keys, and use X to permanently dismiss a candidate. Rejections no longer blacklist repos globally — unchecking just skips them for this project, while X explicitly bans them forever. The new batch grammar works everywhere: TUI carousel, CLI flags, headless APIs, and REPL forms all use the same syntax (numbers, ranges, all, none, or !N bans). Resume now correctly replays the batch prompt instead of stale hints.",

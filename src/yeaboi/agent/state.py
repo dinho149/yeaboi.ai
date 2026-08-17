@@ -1630,6 +1630,83 @@ def prior_art_from_dicts(rows) -> tuple[PriorArtRef, ...]:
 
 
 # ---------------------------------------------------------------------------
+# Ship artifacts (the supervised story → PR pipeline)
+# ---------------------------------------------------------------------------
+
+
+# Run lifecycle. `awaiting_approval` is the pause the human gate owns; the
+# resolve and resume transitions are independent CAS updates in ship/store.py.
+SHIP_STATUSES = (
+    "planned",
+    "running",
+    "awaiting_approval",
+    "approved",
+    "rejected",
+    "failed",
+    "cancelled",
+)
+
+
+@dataclass(frozen=True)
+class ShipPhase:
+    """One pipeline phase's outcome, for the progress screen and the record."""
+
+    name: str = ""  # setup | implement | validate | gate | finalize
+    status: str = ""  # completed | failed | skipped
+    detail: str = ""
+    duration_s: float = 0.0
+
+
+@dataclass(frozen=True)
+class ShipValidation:
+    """What the deterministic validation step ran and what it said.
+
+    ``configured`` False means no command was available — a visible state the
+    approval screen must show, never a silent pass.
+    """
+
+    configured: bool = False
+    command: str = ""
+    passed: bool = False
+    exit_code: int = -1
+    output_tail: str = ""
+
+
+@dataclass(frozen=True)
+class ShipRun:
+    """One supervised story → PR run, end to end.
+
+    Frozen like every artifact: the store persists status transitions, and the
+    engine returns a fresh copy per phase. The gate fields mirror archon's
+    protocol — ``gate_resolution`` is independent of ``status`` so resolve and
+    resume cannot race each other.
+    """
+
+    run_id: str = ""
+    story_id: str = ""
+    session_id: str = ""  # the *planning* session the story came from
+    agent_session_id: str = ""  # the coding agent's own session (transcript key)
+    repo: str = ""
+    branch: str = ""
+    worktree: str = ""
+    base_sha: str = ""
+    status: str = "planned"  # one of SHIP_STATUSES
+    phases: tuple[ShipPhase, ...] = ()
+    validation: ShipValidation = ShipValidation()
+    diff_stat: str = ""  # `git diff --stat` summary shown at the gate
+    cost_usd: float = 0.0
+    transcript_findings: tuple[tuple[str, str, str], ...] = ()  # (kind, severity, label)
+    transcript_path: str = ""
+    pr_url: str = ""
+    gate_resolution: str = ""  # "" (open) | approved | rejected
+    gate_comment: str = ""  # the approver's words; lands in the PR body
+    rejection_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+    warnings: tuple[str, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
 

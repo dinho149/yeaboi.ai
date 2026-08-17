@@ -73,6 +73,8 @@ EXPECTED_TOOLS = {
     "agents_security_history",
     "provenance_audit",
     "provenance_trace",
+    "ship_history",
+    "ship_status",
 }
 
 
@@ -1279,3 +1281,32 @@ class TestProvenanceTools:
         out = call_tool("provenance_trace", {"entity_id": "  "})
         assert out["ok"] is False
         assert "entity_id" in out["error"]["message"]
+
+
+class TestShipTools:
+    def test_history_is_empty_before_the_first_run(self, tmp_db):
+        out = call_tool("ship_history")
+        assert out["ok"] is True
+        assert out["data"]["runs"] == []
+
+    def test_history_rejects_a_bad_limit(self, tmp_db):
+        out = call_tool("ship_history", {"limit": 0})
+        assert out["ok"] is False
+        assert "limit" in out["error"]["message"]
+
+    def test_history_round_trips_a_recorded_run(self, tmp_db):
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore(tmp_db) as store:
+            store.record_run(ShipRun(run_id="run-1", story_id="US-001", status="approved", pr_url="https://x/pr/1"))
+        out = call_tool("ship_history")
+        assert out["ok"] is True
+        assert out["data"]["runs"][0]["story_id"] == "US-001"
+        assert out["data"]["runs"][0]["pr_url"] == "https://x/pr/1"
+
+    def test_status_reports_latest_run_and_budget(self, tmp_db):
+        out = call_tool("ship_status")
+        assert out["ok"] is True
+        assert out["data"]["latest"] is None
+        assert "max_per_hour" in out["data"]["budget"]

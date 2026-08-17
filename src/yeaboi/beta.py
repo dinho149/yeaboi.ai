@@ -58,6 +58,16 @@ AGENTWATCH_BETA_NOTICE = (
     "number as an estimate to verify, not an invoice."
 )
 
+# Ship's pair: the claim is about what it DOES (spends quota, writes branches),
+# not about output quality — the approval gate is the mitigation, so the
+# instruction names it.
+SHIP_BETA_PHRASE = "drives a real coding agent against your repository"
+SHIP_BETA_NOTICE = (
+    "Ship mode is in beta — it drives a real coding agent against your repository "
+    "and spends real API quota. Nothing is pushed without your approval at the "
+    "gate; review the diff like a stranger wrote it."
+)
+
 # Amber caution. Deliberately *not* the warm gold (226,186,96) used by the NEW
 # badge: beta is a warning, new is a freshness cue, and the two appear side by
 # side in the tips gallery where they must not read as the same thing. The docs

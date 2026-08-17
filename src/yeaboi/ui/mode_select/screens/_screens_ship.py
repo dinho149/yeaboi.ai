@@ -1,0 +1,278 @@
+"""Screen builders for the Ship mode page (story → coding agent → PR).
+
+Same shared-component structure as every other mode page (tui-standards):
+pinned wordmark title + subtitle + content, wrapped in ``build_page_panel``
+with the ship theme. Lists are CAPPED, not scrolled — the gate screen shows
+the top rows of the diff and validation tail and says how many more exist,
+so the page renders correctly at the minimum terminal size.
+
+Builders are pure (no clocks, no logging — they run every frame); the page
+loop in ``_ship.py`` owns time, keys, and state.
+"""
+
+from __future__ import annotations
+
+from rich.console import Group
+from rich.panel import Panel
+from rich.text import Text
+
+from yeaboi.agent.state import ShipRun
+from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_progress_body, _fmt_elapsed
+from yeaboi.ui.shared._components import (
+    PAD,
+    SHIP_THEME,
+    build_action_buttons,
+    build_page_panel,
+    build_reveal_subtitle,
+    ship_title,
+)
+
+SHIP_PICK_ACTIONS = ["Launch", "Back"]
+SHIP_GATE_ACTIONS = ["Approve", "Reject", "Cancel Run"]
+SHIP_RESULT_ACTIONS = ["Copy", "Back"]
+
+_MAX_STORY_ROWS = 8
+_MAX_DIFF_ROWS = 8
+_MAX_TAIL_ROWS = 6
+_MAX_FINDING_ROWS = 4
+
+# The engine's component ids (ship/engine.py emits these); the screen owns
+# what "pending" looks like.
+SHIP_PHASES: tuple[tuple[str, str], ...] = (
+    ("ship-setup", "Prepare isolated worktree"),
+    ("ship-implement", "Run the coding agent"),
+    ("ship-validate", "Validate the diff"),
+    ("ship-gate", "Await your approval"),
+    ("ship-finalize", "Push branch, open PR"),
+)
+
+
+def _field_row(label: str, value: str, *, editing: bool, theme) -> Text:
+    """One settings-style field line: label, value, and an edit cursor."""
+    row = Text()
+    row.append(PAD)
+    row.append(f"{label}: ", style=theme.muted)
+    if editing:
+        row.append(value, style="bold white")
+        row.append("▏", style=theme.accent_bright)
+    else:
+        row.append(value or "(none)", style="rgb(200,200,210)" if value else "rgb(110,110,125)")
+    return row
+
+
+def _build_ship_pick_screen(
+    stories: list,
+    selected: int,
+    *,
+    repo: str,
+    check_command: str,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    action_sel: int = 0,
+    message: str = "",
+    edit_field: str = "",
+    edit_buf: str = "",
+) -> Panel:
+    """The launch screen: pick a story, confirm repo + check command.
+
+    ``stories`` is a list of ``UserStory``; ``edit_field`` is ``""`` (not
+    editing), ``"repo"`` or ``"check"``, with ``edit_buf`` as the live buffer.
+    """
+    theme = SHIP_THEME
+    parts: list = [
+        Text(""),
+        ship_title(shimmer_tick, width=width),
+        build_reveal_subtitle("A story from your plan, implemented behind your approval", None, justify="center"),
+        Text(""),
+    ]
+    if not stories:
+        parts.append(Text(""))
+        parts.append(Text("No stories found in your latest plan.", style="rgb(200,200,210)", justify="center"))
+        parts.append(
+            Text("Generate a plan in Planning first — Ship implements its stories.", style="dim", justify="center")
+        )
+    else:
+        # A window that follows the selection, not a hard cap: a sprint plan
+        # routinely has more than eight stories and every one must be
+        # launchable from here.
+        start = max(0, min(selected - _MAX_STORY_ROWS // 2, len(stories) - _MAX_STORY_ROWS))
+        shown = stories[start : start + _MAX_STORY_ROWS]
+        if start:
+            parts.append(Text(f"{PAD}… {start} earlier", style="dim"))
+        for offset, story in enumerate(shown):
+            index = start + offset
+            row = Text()
+            row.append(PAD)
+            marker = "▸ " if index == selected else "  "
+            row.append(marker, style=theme.accent_bright if index == selected else "dim")
+            row.append(f"{story.id}", style=theme.id if index == selected else "rgb(120,140,160)")
+            title = getattr(story, "title", "") or getattr(story, "goal", "")
+            row.append(
+                f"  {title[: max(10, width - 30)]}", style="bold white" if index == selected else "rgb(160,160,175)"
+            )
+            points = getattr(story, "story_points", None)
+            if points is not None:
+                row.append(f"  · {int(points)} pts", style=theme.muted)
+            parts.append(row)
+        remaining = len(stories) - (start + len(shown))
+        if remaining > 0:
+            parts.append(Text(f"{PAD}… and {remaining} more", style="dim"))
+        parts.append(Text(""))
+        parts.append(
+            _field_row("Repo", edit_buf if edit_field == "repo" else repo, editing=edit_field == "repo", theme=theme)
+        )
+        parts.append(
+            _field_row(
+                "Check",
+                edit_buf if edit_field == "check" else check_command,
+                editing=edit_field == "check",
+                theme=theme,
+            )
+        )
+        parts.append(Text(f"{PAD}↑/↓ story · r edit repo · c edit check command", style="dim"))
+    parts.append(Text(""))
+    parts.append(Text(message, style=theme.warn if message else "", justify="center"))
+    parts.append(Text(""))
+    parts.extend(build_action_buttons(SHIP_PICK_ACTIONS, action_sel))
+    return build_page_panel(Group(*parts), theme=theme, height=height)
+
+
+def _build_ship_progress_screen(
+    progress: list,
+    *,
+    tick: float,
+    width: int = 80,
+    height: int = 24,
+    status: str = "",
+) -> Panel:
+    """The in-flight page: the phase checklist fed by the engine's events."""
+    theme = SHIP_THEME
+    parts: list = [
+        Text(""),
+        ship_title(None, width=width),
+        build_reveal_subtitle("Supervising the coding agent", None, justify="center"),
+    ]
+    parts.extend(_build_agent_progress_body(SHIP_PHASES, progress, tick=tick, theme=theme, status=status))
+    parts.append(Text(""))
+    parts.append(
+        Text("esc cancels the run — the agent is stopped and nothing is pushed", style="dim", justify="center")
+    )
+    return build_page_panel(Group(*parts), theme=theme, height=height)
+
+
+def _gate_line(label: str, value: str, *, style: str = "rgb(200,200,210)") -> Text:
+    row = Text()
+    row.append(PAD)
+    row.append(f"{label}  ", style="rgb(110,110,125)")
+    row.append(value, style=style)
+    return row
+
+
+def _build_ship_gate_screen(
+    run: ShipRun,
+    *,
+    action_sel: int = 0,
+    width: int = 80,
+    height: int = 24,
+    comment_edit: str | None = None,
+    message: str = "",
+) -> Panel:
+    """The approval gate: what the agent did, what was proven, your call.
+
+    ``comment_edit`` non-None means the rejection comment is being typed; it
+    renders an input line and the buttons step back.
+    """
+    theme = SHIP_THEME
+    parts: list = [
+        Text(""),
+        ship_title(None, width=width),
+        build_reveal_subtitle("Review the diff like a stranger wrote it — one did", None, justify="center"),
+        Text(""),
+        _gate_line("Story ", run.story_id),
+        _gate_line("Branch", run.branch, style=theme.id),
+    ]
+    diff_lines = run.diff_stat.splitlines()
+    for line in diff_lines[:_MAX_DIFF_ROWS]:
+        parts.append(Text(f"{PAD}  {line[: max(20, width - 10)]}", style="rgb(160,160,175)"))
+    if len(diff_lines) > _MAX_DIFF_ROWS:
+        parts.append(Text(f"{PAD}  … and {len(diff_lines) - _MAX_DIFF_ROWS} more lines", style="dim"))
+    parts.append(Text(""))
+    if run.validation.configured:
+        state = "✓ passed" if run.validation.passed else f"✗ FAILED (exit {run.validation.exit_code})"
+        style = theme.good if run.validation.passed else theme.bad
+        parts.append(_gate_line("Checks", f"{run.validation.command} — {state}", style=style))
+        if not run.validation.passed:
+            for line in run.validation.output_tail.splitlines()[-_MAX_TAIL_ROWS:]:
+                parts.append(Text(f"{PAD}  {line[: max(20, width - 10)]}", style="rgb(140,120,120)"))
+    else:
+        parts.append(_gate_line("Checks", "none configured — nothing was proven", style=theme.warn))
+    if run.cost_usd:
+        parts.append(_gate_line("Cost  ", f"${run.cost_usd:.2f}"))
+    if run.transcript_findings:
+        parts.append(_gate_line("Safety", f"{len(run.transcript_findings)} transcript finding(s):", style=theme.warn))
+        for kind, severity, label in run.transcript_findings[:_MAX_FINDING_ROWS]:
+            parts.append(Text(f"{PAD}  {severity}: {label} ({kind})", style=theme.warn))
+    if run.rejection_count:
+        parts.append(_gate_line("Rework", f"attempt {run.rejection_count + 1} after your feedback"))
+    parts.append(Text(""))
+    if comment_edit is not None:
+        prompt = Text()
+        prompt.append(PAD)
+        prompt.append("Why reject? ", style=theme.muted)
+        prompt.append(comment_edit, style="bold white")
+        prompt.append("▏", style=theme.accent_bright)
+        parts.append(prompt)
+        parts.append(Text(f"{PAD}enter sends the feedback to the agent · esc keeps reviewing", style="dim"))
+    parts.append(Text(message, style=theme.warn if message else "", justify="center"))
+    parts.append(Text(""))
+    parts.extend(build_action_buttons(SHIP_GATE_ACTIONS, action_sel))
+    return build_page_panel(Group(*parts), theme=theme, height=height)
+
+
+def _build_ship_result_screen(
+    run: ShipRun,
+    *,
+    action_sel: int = 0,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    notice: str = "",
+) -> Panel:
+    """The terminal page: what happened, where the PR is, what it cost."""
+    theme = SHIP_THEME
+    headline = {
+        "approved": ("✓ Shipped", theme.good),
+        "rejected": ("✗ Rejected at the gate", theme.bad),
+        "failed": ("✗ Run failed", theme.bad),
+        "cancelled": ("Run cancelled", theme.warn),
+    }.get(run.status, (run.status, theme.muted))
+    parts: list = [
+        Text(""),
+        ship_title(shimmer_tick, width=width),
+        build_reveal_subtitle("Run finished", None, justify="center"),
+        Text(""),
+        Text(f"{PAD}{headline[0]}", style=f"bold {headline[1]}" if not headline[1].startswith("bold") else headline[1]),
+        Text(""),
+    ]
+    if run.story_id:
+        parts.append(_gate_line("Story ", run.story_id))
+    if run.branch:
+        parts.append(_gate_line("Branch", run.branch, style=theme.id))
+    if run.pr_url:
+        parts.append(_gate_line("PR    ", run.pr_url, style=theme.accent_bright))
+    if run.cost_usd:
+        parts.append(_gate_line("Cost  ", f"${run.cost_usd:.2f}"))
+    for phase in run.phases:
+        mark = {"completed": "✓", "failed": "✗", "skipped": "○"}.get(phase.status, "○")
+        style = {"✓": theme.good, "✗": theme.bad}.get(mark, "dim")
+        detail = f" · {phase.detail}" if phase.detail else ""
+        stamp = f" ({_fmt_elapsed(phase.duration_s)})" if phase.duration_s >= 1 else ""
+        parts.append(Text(f"{PAD}{mark} {phase.name}{detail}{stamp}"[: max(30, width - 6)], style=style))
+    for warning in run.warnings[:3]:
+        parts.append(Text(f"{PAD}⚠ {warning[: max(30, width - 8)]}", style=theme.warn))
+    parts.append(Text(""))
+    parts.append(Text(notice, style=theme.accent if notice else "", justify="center"))
+    parts.append(Text(""))
+    parts.extend(build_action_buttons(SHIP_RESULT_ACTIONS, action_sel))
+    return build_page_panel(Group(*parts), theme=theme, height=height)

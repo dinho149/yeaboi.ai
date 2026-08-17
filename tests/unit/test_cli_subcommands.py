@@ -1293,3 +1293,68 @@ class TestProvenanceCommand:
         assert _run_subcommand(args) == 1
         payload = json.loads(capsys.readouterr().out)
         assert payload["found"] is False
+
+
+class TestShipCommand:
+    def test_run_parses_with_defaults(self):
+        args = build_parser().parse_args(["ship", "run", "US-001"])
+        assert args.command == "ship"
+        assert args.ship_command == "run"
+        assert args.story_id == "US-001"
+        assert args.repo == "."
+        assert args.check == ""
+        assert args.timeout_minutes == 30
+        assert args.dry_run is False
+        assert args.strict is False
+
+    def test_status_and_history_parse(self):
+        status = build_parser().parse_args(["ship", "status", "--format", "json"])
+        assert status.ship_command == "status"
+        history = build_parser().parse_args(["ship", "history", "--limit", "3"])
+        assert history.ship_command == "history"
+        assert history.limit == 3
+
+    def test_history_json_on_an_empty_store(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "history", "--format", "json"])
+        assert _run_subcommand(args) == 0
+        assert json.loads(capsys.readouterr().out) == []
+
+    def test_status_json_reports_budget_posture(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "status", "--format", "json"])
+        assert _run_subcommand(args) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["latest"] is None
+        assert payload["budget"]["max_per_hour"] >= 1
+
+    def test_dry_run_is_canned_and_touches_nothing(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "run", "US-001", "--dry-run", "--format", "json"])
+        assert _run_subcommand(args) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "approved"
+        assert any("dry run" in w for w in payload["warnings"])
+
+    def test_run_refuses_without_a_terminal(self, monkeypatch, capsys, tmp_path):
+        # stdin in tests is not a tty, and the repo path is sandbox-allowed
+        # (pytest tmp dirs are whitelisted) — so this exercises the tty guard.
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(tmp_path)])
+        assert _run_subcommand(args) == 2
+        assert "interactive terminal" in capsys.readouterr().err
+
+    def test_run_strict_exits_3_when_not_approved(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
+
+        from yeaboi.agent.state import ShipRun
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+        monkeypatch.setattr(
+            "yeaboi.ship.engine.run_ship",
+            lambda *a, **k: ShipRun(run_id="r", story_id="US-001", status="failed", warnings=("boom",)),
+        )
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(tmp_path), "--strict"])
+        assert _run_subcommand(args) == 3
+        assert "⚠ boom" in capsys.readouterr().err

@@ -192,6 +192,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "\U0001f512 Tip: `yeaboi provenance audit` verifies the tamper-evident log behind every signal",
         is_new=True,
     ),
+    FeatureTip(
+        "ship",
+        "\U0001f6a2 Tip: Ship hands a story from your plan to a coding agent — your approval gates the PR",
+        mode_key="ship",
+        is_beta=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic
