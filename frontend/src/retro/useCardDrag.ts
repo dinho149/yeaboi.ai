@@ -211,25 +211,28 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
     const slot = line?.parentElement;
     if (!el || !line || !slot || typeof el.animate !== 'function') return Promise.resolve();
 
-    // The indicator sits half a gap above the slot it marks, so landing on it
-    // puts the card a few pixels high — and it snaps down the moment the real
-    // one takes its place. The slot is what to aim at.
+    // The indicator sits half a gap outside the slot it marks, so landing on it
+    // would put the card a few pixels off — and it would snap the moment the
+    // real one took its place. The slot is what to aim at.
     const kind = line.dataset['dropLine'];
     const box = slot.getBoundingClientRect();
-    const gap = parseFloat(getComputedStyle(slot).rowGap) || 0;
+    const style = getComputedStyle(slot);
     const target =
-      kind === 'tail' ? { left: box.left, top: box.bottom + gap } : { left: box.left, top: box.top };
+      kind === 'tail'
+        ? { left: box.left, top: box.bottom + (parseFloat(style.rowGap) || 0) }
+        : kind === 'empty'
+          ? { left: box.left + parseFloat(style.paddingLeft), top: box.top + parseFloat(style.paddingTop) }
+          : { left: box.left, top: box.top };
 
-    const from = el.getBoundingClientRect();
-    const at = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+    // The layer is the viewport, and the card is pinned to its top-left corner,
+    // so the translation *is* the position — no delta against a measured rect,
+    // which is what got this wrong: `getBoundingClientRect` reports the
+    // axis-aligned box of a card that is leaning nine degrees and scaled up,
+    // and its top is 140px below the card's own.
     const animation = el.animate(
       [
         { transform: el.style.transform, rotate: el.style.rotate || '0deg', scale: '1.03' },
-        {
-          transform: `translate3d(${at.m41 + (target.left - from.left)}px, ${at.m42 + (target.top - from.top)}px, 0)`,
-          rotate: '0deg',
-          scale: '1',
-        },
+        { transform: `translate3d(${target.left}px, ${target.top}px, 0)`, rotate: '0deg', scale: '1' },
       ],
       { duration: LAND_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' }
     );

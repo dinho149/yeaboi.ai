@@ -9,8 +9,6 @@
  * column with the same accessible name are worse than clutter.
  */
 
-import { useState } from 'react';
-
 import { toneVar } from '../design/tone';
 import { Ticker } from '../motion';
 import { TypingIndicator } from '../shared';
@@ -38,13 +36,17 @@ export interface ColumnProps {
   /** Card ids that just arrived from a peer, for the entrance animation. */
   arrivals: ReadonlySet<string>;
   locked: boolean;
-  /** Cluster cards under an author heading instead of listing them flat. */
-  grouped: boolean;
   /** Only this author's cards are shown, during a walkthrough. */
   focus: string;
   /** Where a card would land if dropped now — `null` when not over this column. */
   dropAt: DropTarget | null;
   draggingId: string | null;
+  /** True when this is the column being written in. One draft at a time. */
+  composing: boolean;
+  /** Bumped to pull the caret back into an already-open box. */
+  focusNonce: number;
+  onOpenComposer(): void;
+  onCloseComposer(): void;
   /** A card written in this column's own composer. */
   onAddCard(text: string): void;
   /** Fired as you type into this column, for the peer "is writing" ghost. */
@@ -56,18 +58,6 @@ export interface ColumnProps {
   onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
 
-/** Cards clustered by author, first-seen order preserved. */
-function groupByAuthor(cards: readonly RetroCard[]): [string, RetroCard[]][] {
-  const groups = new Map<string, RetroCard[]>();
-  for (const card of cards) {
-    const key = card.origin === 'ai' ? '🤖 AI' : card.author;
-    const bucket = groups.get(key);
-    if (bucket) bucket.push(card);
-    else groups.set(key, [card]);
-  }
-  return [...groups.entries()];
-}
-
 export function Column({
   grid,
   cards,
@@ -76,10 +66,13 @@ export function Column({
   typing,
   arrivals,
   locked,
-  grouped,
   focus,
   dropAt,
   draggingId,
+  composing,
+  focusNonce,
+  onOpenComposer,
+  onCloseComposer,
   onAddCard,
   onTyping,
   onEdit,
@@ -87,8 +80,6 @@ export function Column({
   onReact,
   onCardPointerDown,
 }: ColumnProps) {
-  const [composing, setComposing] = useState(false);
-  const [focusNonce, setFocusNonce] = useState(0);
   const label = RETRO_GRID_LABELS[grid];
   const visible = focus ? cards.filter((card) => card.author === focus) : cards;
 
@@ -170,13 +161,6 @@ export function Column({
         ) : null}
         {visible.length === 0 && typing.length === 0 ? (
           <p className={styles['columnEmpty']}>{focus ? `Nothing from ${focus} here.` : 'Nothing yet.'}</p>
-        ) : grouped ? (
-          groupByAuthor(visible).map(([author, group]) => (
-            <div key={author} className={styles['authorGroup']}>
-              <h3 className={styles['authorGroupHead']}>{author}</h3>
-              {group.map((card, index) => renderCard(card, index === group.length - 1))}
-            </div>
-          ))
         ) : (
           visible.map((card, index) => renderCard(card, index === visible.length - 1))
         )}
@@ -190,11 +174,8 @@ export function Column({
             label={label}
             open={composing}
             focusNonce={focusNonce}
-            onOpen={() => {
-              setComposing(true);
-              setFocusNonce((n) => n + 1);
-            }}
-            onClose={() => setComposing(false)}
+            onOpen={onOpenComposer}
+            onClose={onCloseComposer}
             onSubmit={onAddCard}
             onTyping={onTyping}
           />

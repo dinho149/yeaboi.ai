@@ -82,8 +82,6 @@ const PATHS_16 = {
   'grip':
     '<circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="4" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="4" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="8" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="8" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="12" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="12" r="1" />',
   'plus': '<path data-part="h" d="M3 8.5h11" /> <path data-part="v" d="M8.5 3v11" />',
-  'rows':
-    '<rect data-part="top" x="2.5" y="2.5" width="11" height="4.5" rx="1" /> <rect data-part="bottom" x="2.5" y="9" width="11" height="4.5" rx="1" />',
   'smile':
     '<circle data-part="face" cx="8" cy="8" r="6.5" /> <path data-part="mouth" d="M5 8.75a3.2 3.2 0 0 0 6 0" /> <circle data-part="eye" fill="currentColor" stroke="none" cx="5.75" cy="6.25" r="0.85" /> <circle data-part="eye" fill="currentColor" stroke="none" cx="10.25" cy="6.25" r="0.85" />',
   'trash': '<path data-part="lid" d="M2.5 4.5h11" /> <path data-part="grab" d="M6 4.5v-2h4v2" /> <path data-part="can" d="M4 4.5v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-9" />',

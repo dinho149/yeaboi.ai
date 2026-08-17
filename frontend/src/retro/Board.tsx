@@ -24,6 +24,7 @@ import type { RetroCard } from '../types/board';
 import { Column } from './Column';
 import { DragPreview } from './DragPreview';
 import { useCardDrag } from './useCardDrag';
+import { useCardFlip } from './useCardFlip';
 import { useFrozen } from './useFrozen';
 import styles from './retro.module.css';
 
@@ -34,7 +35,6 @@ export interface BoardProps {
   /** grid → names typing into it, already excluding yourself. */
   typing: ReadonlyMap<string, readonly string[]>;
   locked: boolean;
-  grouped: boolean;
   focus: string;
   /** Card ids that just arrived from a peer, for the entrance animation. */
   arrivals: ReadonlySet<string>;
@@ -54,7 +54,6 @@ export function Board({
   myReactions,
   typing,
   locked,
-  grouped,
   focus,
   arrivals,
   onAddCard,
@@ -66,13 +65,37 @@ export function Board({
 }: BoardProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(0);
+  // One draft at a time. Owned here rather than per column, so opening a
+  // composer closes whichever one was already open — four half-written cards
+  // across the board is four things you have to remember to finish.
+  const [composing, setComposing] = useState<RetroGrids | ''>('');
+  const [focusNonce, setFocusNonce] = useState(0);
 
   const gridLabel = useCallback((grid: RetroGrids) => RETRO_GRID_LABELS[grid], []);
+  // What the flip watches: a card in a different column, or in a different
+  // place in one. Anything else that moves a card is not a move.
+  const arrangement = useMemo(() => cards.map((card) => `${card.id}:${card.grid}`).join(), [cards]);
+  // The move tells the flip which card not to replay: that one has its own
+  // flight from the pointer. Through a ref, because the flip needs the drag's
+  // state and the drag needs this callback — the cycle has to break somewhere.
+  const skipRef = useRef<((cardId: string) => void) | null>(null);
+  const onMoveCard = useCallback(
+    (cardId: string, grid: RetroGrids, index: number) => {
+      skipRef.current?.(cardId);
+      onMove(cardId, grid, index);
+    },
+    [onMove]
+  );
   const { drag, previewRef, onCardPointerDown, announcement } = useCardDrag({
-    onMove,
+    onMove: onMoveCard,
     gridLabel,
     enabled: !locked,
   });
+  // `drag !== null`, not a ref holding it: the render that matters is the one
+  // where the drag ends and the list unfreezes, and a ref written after this
+  // call still holds the previous render's value on exactly that render.
+  const flip = useCardFlip(trackRef, drag !== null, arrangement);
+  skipRef.current = flip.skipOnce;
 
   // Hold the card list still for the duration of a drag. See useFrozen.
   const stable = useFrozen(cards, drag !== null);
@@ -111,10 +134,16 @@ export function Board({
             typing={typing.get(grid) ?? NO_TYPING}
             arrivals={arrivals}
             locked={locked}
-            grouped={grouped}
             focus={focus}
             dropAt={drag?.target?.grid === grid ? drag.target : null}
             draggingId={drag?.cardId ?? null}
+            composing={composing === grid}
+            focusNonce={focusNonce}
+            onOpenComposer={() => {
+              setComposing(grid);
+              setFocusNonce((n) => n + 1);
+            }}
+            onCloseComposer={() => setComposing('')}
             onAddCard={(text) => onAddCard(grid, text)}
             onTyping={() => onTyping(grid)}
             onEdit={onEdit}

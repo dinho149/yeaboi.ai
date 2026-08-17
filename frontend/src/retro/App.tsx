@@ -70,7 +70,7 @@ import styles from './retro.module.css';
 const TYPING_LINGER_MS = 2500;
 
 /** Storage keys. Unchanged from the legacy page so an in-flight retro survives the flip. */
-const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar', grouped: 'retro_grouped' } as const;
+const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar' } as const;
 
 // Stable empty defaults. A fresh `[]` in a selector would be a new reference
 // every call, and `useSyncExternalStore` compares with Object.is — the board
@@ -123,7 +123,6 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
-  const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   // Fetched on open rather than read from the boot payload: the page is
@@ -307,13 +306,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     []
   );
 
-  const toggleGrouped = useCallback(() => {
-    setGrouped((current) => {
-      write('local', KEY.grouped, current ? '0' : '1');
-      return !current;
-    });
-  }, []);
-
   // ── The gate ───────────────────────────────────────────────────────────
   if (!session.token) {
     // No `onJoined`: the default navigates to `/?token=…`, and the reload is
@@ -392,13 +384,6 @@ export function App({ boot }: { boot: RetroBoot }) {
               active={Boolean(focus)}
               disabled={!authors.length}
               onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
-            />
-
-            <IconButton
-              icon={<Icon name="rows" size={16} />}
-              label="Group cards by author"
-              active={grouped}
-              onClick={toggleGrouped}
             />
 
             {isHost ? (
@@ -507,7 +492,6 @@ export function App({ boot }: { boot: RetroBoot }) {
         myReactions={myReactions}
         typing={typingByGrid}
         locked={locked}
-        grouped={grouped}
         focus={focus}
         arrivals={arrivals}
         onAddCard={addCard}

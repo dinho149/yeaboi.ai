@@ -296,16 +296,6 @@
 }
 .columnEmpty { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-.authorGroup { display: flex; flex-direction: column; gap: var(--s2); }
-.authorGroupHead {
-  margin: var(--s2) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
 .cardSlot { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
@@ -356,33 +346,20 @@
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
   cursor: grab;
-  transition:
-    transform var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
+  /* Colour only. A card that lifts under the pointer also lifts the instant one
+     is dropped, because the pointer is on it — which reads as one more
+     animation after the landing rather than as feedback. */
+  transition: border-color var(--dur-fast) var(--ease);
 }
 .card:hover {
   border-color: var(--hairline-strong);
-  transform: translateY(-1px);
-  box-shadow:
-    var(--edge),
-    0 2px 2px rgb(0 0 0 / 12%),
-    0 8px 20px rgb(0 0 0 / 14%);
 }
 .card:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
-   underneath it — and a sweep across the board would otherwise lift every card
-   it crossed. */
-.board[data-dragging='true'] .card {
-  transition: none;
-}
+   underneath it — and a sweep across the board would otherwise light up every
+   card it crossed. */
 .board[data-dragging='true'] .card:hover {
-  transform: none;
   border-color: var(--hairline);
-  box-shadow:
-    var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%),
-    0 4px 12px rgb(0 0 0 / 10%);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
 .cardLocked { cursor: default; }
@@ -447,7 +424,15 @@
   font-size: var(--fs-s);
 }
 
-.cardMeta { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+/* `min-height` because the carried copy of a card carries no controls, and
+   without it the card in the air is a different size from the one it becomes. */
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  margin-top: var(--s2);
+}
 .metaSpacer { flex: 1; }
 .author { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
 .authorName {
