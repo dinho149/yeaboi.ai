@@ -82,7 +82,10 @@ REPORT = StandupReport(
                     kind="pr",
                     key="#91",
                     title="Fix login redirect",
-                    url="https://example.invalid/pr/91",
+                    # GitHub-shaped on purpose: the timeline reads the pull-request
+                    # number out of `/pull/<n>` to thread this PR to Grace's review
+                    # of it below. An invented path draws no thread.
+                    url="https://example.invalid/acme/web/pull/91",
                     repository="yeaboi/web",
                     status="merged",
                     timestamp="2026-08-01T14:05:00",
@@ -116,7 +119,7 @@ REPORT = StandupReport(
                     kind="review",
                     key="review:91:grace",
                     title="approved PR #91: Fix login redirect",
-                    url="https://example.invalid/pr/91?discussionId=7",
+                    url="https://example.invalid/acme/web/pull/91#pullrequestreview-7",
                     repository="yeaboi/web",
                     status="approved",
                     timestamp="2026-08-01T11:20:00",

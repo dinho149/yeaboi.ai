@@ -2841,14 +2841,38 @@ a._issueKey_1nv7j_351:hover {
   }
 }
 /*
- * Activity timeline — swimlanes of DOM dots on CSS tracks.
+ * Activity timeline — swimlanes of DOM marks on CSS tracks.
  *
- * Positions are percentages of the window, so the page never scrolls
- * horizontally. Tooltips are pure CSS (hover / focus-visible); alignment is
- * decided from the dot's position class, no measurement JS. Tokens only.
+ * Positions are percentages of the compressed scale (see timelineScale.ts), so
+ * the page never scrolls horizontally. Tooltips are pure CSS (hover /
+ * focus-visible); alignment is decided from the mark's position class, no
+ * measurement JS. Tokens only — a literal colour here fails the guards.
+ *
+ * Two geometry contracts hold this together:
+ *  - `--tl-rail` is the rail width for *both* the axis grid and the lane grid,
+ *    and the left inset of the thread overlay. One declaration, three readers.
+ *  - `--tl-track-h` / `--tl-band-h` are mirrored by TRACK_H_REM / BAND_H_REM in
+ *    timelineScale.ts, which is how the overlay knows where a lane's track
+ *    centre sits. `timelineScale.test.ts` fails when the two drift, because a
+ *    drift shears every thread off its dots with nothing else going wrong.
+ *
+ * Every class is `tl`-prefixed: vitest runs CSS modules non-scoped, so a bare
+ * `.legend` here silently matched the Legend primitive on the same page.
  */
 
-._timeline_q8twb_9 {
+._timeline_1n1sb_21 {
+  --tl-rail: 12.5rem;
+  --tl-track-h: 2.2rem;
+  --tl-band-h: 1.4rem;
+  /* Two rows: notch durations above, clock ticks below. They sit at the same
+   * positions — a notch's label is a hair from the tick at its edge — so one
+   * row makes both unreadable. */
+  --tl-axis-h: 2.2rem;
+  /* A caption's width, as a share of the track — the same unit as
+   * CAPTION_MIN_PCT in timelineScale.ts, which is what keeps captions from
+   * colliding at any viewport width. Must stay <= that value. */
+  --tl-cap-w: 12%;
+
   margin-top: var(--s5);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -2856,24 +2880,23 @@ a._issueKey_1nv7j_351:hover {
   background: var(--panel);
 }
 
-._head_q8twb_17 {
+._tlHead_1n1sb_41 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
-  margin-bottom: var(--s3);
 }
 
 /* ---- legend / filter -------------------------------------------------- */
 
-._legend_q8twb_28 {
+._tlLegend_1n1sb_51 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
-._legendItem_q8twb_34 {
+._tlLegendItem_1n1sb_57 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -2887,107 +2910,207 @@ a._issueKey_1nv7j_351:hover {
   cursor: pointer;
 }
 
-._legendItem_q8twb_34 span {
+._tlLegendItem_1n1sb_57 span {
   color: var(--text);
 }
 
-._legendItem_q8twb_34[aria-pressed='true'] {
+._tlLegendItem_1n1sb_57[aria-pressed='true'] {
   border-color: currentcolor;
   outline: 1px solid currentcolor;
 }
 
-/* One dim rule serves legend keys and dot slots alike. */
-._dimmed_q8twb_58 {
+/* One dim rule serves legend keys and marks alike. */
+._tlDimmed_1n1sb_81 {
   opacity: 0.3;
 }
 
-/* ---- grid ------------------------------------------------------------- */
+/*
+ * The axis compresses idle time, which is a lie on a time chart unless the
+ * page says so. This line is rendered whenever a stretch was compressed.
+ */
+._tlNote_1n1sb_89 {
+  margin: var(--s2) 0 var(--s1);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
 
-/* All cells are direct children — three per row — so every row shares the
- * same resolved columns without needing subgrid support. */
-._grid_q8twb_66 {
+/* ---- axis -------------------------------------------------------------- */
+
+._tlAxis_1n1sb_97 {
   display: grid;
-  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr) auto;
-  row-gap: var(--s2);
-  align-items: center;
+  grid-template-columns: var(--tl-rail) minmax(0, 1fr);
+  margin-top: var(--s2);
 }
 
-._axisTrack_q8twb_73 {
+._tlAxisTrack_1n1sb_103 {
   position: relative;
-  height: 1.2rem;
+  height: var(--tl-axis-h);
 }
 
-._tick_q8twb_78 {
+._tlTick_1n1sb_108 {
   position: absolute;
   bottom: 0;
   transform: translateX(-50%);
   font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
   color: var(--muted);
   white-space: nowrap;
 }
 
-/* ---- lanes ------------------------------------------------------------ */
+/* The first tick of a new day earns the text colour; the clock ticks stay quiet. */
+._tlTickDay_1n1sb_119 {
+  color: var(--text);
+}
 
-._laneName_q8twb_89 {
-  display: inline-flex;
+/* ---- lanes ------------------------------------------------------------- */
+
+/*
+ * row-gap MUST stay 0: the thread overlay computes each lane's centre as a
+ * fraction of this grid's height, so a gap would shear every curve. Lane
+ * separation comes from the hairlines on .tlTrack instead.
+ */
+._tlLanes_1n1sb_130 {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tl-rail) minmax(0, 1fr);
+  row-gap: 0;
+}
+
+._tlRail_1n1sb_137 {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  height: calc(var(--tl-track-h) + var(--tl-band-h));
+  padding-right: var(--s3);
+}
+
+._tlWho_1n1sb_147 {
+  display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
-  padding-right: var(--s2);
   font-size: var(--fs-xs);
   color: var(--text);
 }
 
-._laneWord_q8twb_99 {
+._tlWord_1n1sb_156 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._track_q8twb_105 {
-  position: relative;
-  height: 2.4rem;
-  border-top: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-}
-
-._laneEnd_q8twb_112 {
-  padding-left: var(--s2);
-}
-
-._undated_q8twb_116 {
+/* A blocked member's lane should be the one the eye lands on. */
+._tlFlag_1n1sb_163 {
+  flex: none;
+  color: var(--danger);
   font-size: var(--fs-2xs);
+}
+
+._tlSpan_1n1sb_169 {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   white-space: nowrap;
 }
 
-._connector_q8twb_122 {
+._tlTally_1n1sb_177 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+._tlTallyItem_1n1sb_187 {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+._tlUndated_1n1sb_193 {
+  color: var(--dim);
+}
+
+._tlLane_1n1sb_130 {
+  position: relative;
+  display: block;
+  height: calc(var(--tl-track-h) + var(--tl-band-h));
+}
+
+/*
+ * `display: block` is load-bearing on both of these. They are spans, and being
+ * spans they are inline by default — an inline box ignores width and height, so
+ * a mark's `left: 42%` would resolve against a text-width containing block and
+ * every mark on the board would stack at the left edge. (It works by accident
+ * when a span happens to be a grid item, because grid blockifies its children.)
+ */
+._tlTrack_1n1sb_128 {
+  position: relative;
+  display: block;
+  height: var(--tl-track-h);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* Where the captions live — below the track, inside the same lane row. */
+._tlBand_1n1sb_219 {
+  position: relative;
+  display: block;
+  height: var(--tl-band-h);
+}
+
+/* The lane's own thread: first mark to last, so a sparse day still reads as one line. */
+._tlSpine_1n1sb_226 {
   position: absolute;
   top: 50%;
   height: 1px;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
+  background: color-mix(in srgb, var(--text) 20%, transparent);
 }
 
-._dayBreak_q8twb_129 {
+/* A compressed stretch, marked through the axis and every lane. */
+._tlGap_1n1sb_234 {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 1px;
-  background: var(--line-soft);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text) 8%, transparent) 0 1px,
+    transparent 1px 4px
+  );
+  border-left: 1px dashed var(--line-soft);
+  border-right: 1px dashed var(--line-soft);
 }
 
-/* ---- dots ------------------------------------------------------------- */
+/* The upper axis row — how long the notch beneath it stood for. */
+._tlGapLabel_1n1sb_248 {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--dim);
+  white-space: nowrap;
+}
 
-._markSlot_q8twb_139 {
-  /* The slot exists so the filter can dim a whole cluster (dot + badge). */
+/* ---- marks ------------------------------------------------------------- */
+
+._tlSlot_1n1sb_260 {
+  /* The slot exists so the filter can dim a whole mark (disc + badge). */
   display: contents;
 }
 
-._markSlot_q8twb_139._dimmed_q8twb_58 ._mark_q8twb_139 {
+._tlSlot_1n1sb_260._tlDimmed_1n1sb_81 ._tlDot_1n1sb_265,
+._tlSlot_1n1sb_260._tlDimmed_1n1sb_81 ._tlMinor_1n1sb_266 {
   opacity: 0.25;
 }
 
-._mark_q8twb_139 {
+/* A landmark: a PR, a review, a ticket move, a doc. Carries the glyph. */
+._tlDot_1n1sb_265 {
   position: absolute;
   top: 50%;
   display: inline-flex;
@@ -2999,18 +3122,44 @@ a._issueKey_1nv7j_351:hover {
   border: 1px solid currentcolor;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, currentcolor 16%, var(--panel));
-  /* padding-free hit area: the border-box is the target, ~22px + outline. */
   text-decoration: none;
 }
 
-._mark_q8twb_139:hover,
-._mark_q8twb_139:focus-visible {
+/*
+ * A minor event — a commit, a comment. A thin stroke at its true position
+ * rather than another disc, so density reads without the day turning into a
+ * row of identical circles. The anchor keeps a real hit area around it.
+ */
+._tlMinor_1n1sb_266 {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  transform: translate(-50%, -50%);
+  text-decoration: none;
+}
+
+._tlMinor_1n1sb_266::after {
+  content: '';
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: currentcolor;
+}
+
+._tlDot_1n1sb_265:hover,
+._tlDot_1n1sb_265:focus-visible,
+._tlMinor_1n1sb_266:hover,
+._tlMinor_1n1sb_266:focus-visible {
   z-index: 2;
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
-._markBadge_q8twb_171 {
+._tlBadge_1n1sb_320 {
   position: absolute;
   top: -0.55rem;
   right: -0.65rem;
@@ -3023,9 +3172,66 @@ a._issueKey_1nv7j_351:hover {
   color: var(--text);
 }
 
+/* ---- captions ---------------------------------------------------------- */
+
+/*
+ * What makes the board readable in a screenshot, a print or a Slack paste,
+ * where a tooltip does not exist. Positioned from the scale, never measured:
+ * the component drops any caption that lands too close to the last one kept.
+ */
+._tlCap_1n1sb_340 {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  /* The percentage is the collision guarantee; the ch ceiling only stops a
+   * caption sprawling on a very wide board. */
+  max-width: min(var(--tl-cap-w), 22ch);
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+._tlCapCount_1n1sb_355 {
+  color: var(--dim);
+}
+
+/* ---- threads ----------------------------------------------------------- */
+
+/*
+ * Curves joining the lanes that touched the same pull request or ticket.
+ * aria-hidden: the relationship is stated in words in each mark's label, so
+ * the drawing is never the only carrier. Inset from the left by exactly the
+ * rail width, which is why the rail is a fixed track and not minmax().
+ */
+/*
+ * The width and height are explicit on purpose. An <svg> is a replaced element:
+ * with `width: auto` and both `left` and `right` set it keeps its intrinsic
+ * 300x150 rather than stretching, so the curves get drawn into a box that has
+ * nothing to do with the lanes — visible only as stray marks near the top left.
+ */
+._tlThreads_1n1sb_373 {
+  position: absolute;
+  top: 0;
+  left: var(--tl-rail);
+  z-index: 0;
+  width: calc(100% - var(--tl-rail));
+  height: 100%;
+  pointer-events: none;
+}
+
+._tlThread_1n1sb_373 {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 38%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
 /* ---- tooltip ---------------------------------------------------------- */
 
-._tip_q8twb_186 {
+._tlTip_1n1sb_392 {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 50%;
@@ -3046,50 +3252,52 @@ a._issueKey_1nv7j_351:hover {
   text-align: left;
 }
 
-._mark_q8twb_139:hover ._tip_q8twb_186,
-._mark_q8twb_139:focus-visible ._tip_q8twb_186 {
+._tlDot_1n1sb_265:hover ._tlTip_1n1sb_392,
+._tlDot_1n1sb_265:focus-visible ._tlTip_1n1sb_392,
+._tlMinor_1n1sb_266:hover ._tlTip_1n1sb_392,
+._tlMinor_1n1sb_266:focus-visible ._tlTip_1n1sb_392 {
   display: flex;
 }
 
-/* Near the edges the tooltip hangs off the dot instead of centring. */
-._tipLeft_q8twb_213 ._tip_q8twb_186 {
+/* Near the edges the tooltip hangs off the mark instead of centring. */
+._tlTipLeft_1n1sb_421 ._tlTip_1n1sb_392 {
   left: 0;
   transform: none;
 }
 
-._tipRight_q8twb_218 ._tip_q8twb_186 {
+._tlTipRight_1n1sb_426 ._tlTip_1n1sb_392 {
   right: 0;
   left: auto;
   transform: none;
 }
 
-._tipTitle_q8twb_224 {
+._tlTipTitle_1n1sb_432 {
   font-size: var(--fs-xs);
 }
 
-._tipMeta_q8twb_228 {
+._tlTipMeta_1n1sb_436 {
   color: var(--muted);
 }
 
-._tipRow_q8twb_232 {
+._tlTipRow_1n1sb_440 {
   display: flex;
   align-items: center;
   gap: var(--s1);
 }
 
-._tipRow_q8twb_232 i {
+._tlTipRow_1n1sb_440 i {
   display: inline-flex;
   flex: none;
 }
 
-._tipRowText_q8twb_243 {
+._tlTipRowText_1n1sb_451 {
   overflow: hidden;
   max-width: 14rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._tipRowTime_q8twb_250 {
+._tlTipRowTime_1n1sb_458 {
   margin-left: auto;
   padding-left: var(--s2);
   color: var(--muted);
@@ -3099,16 +3307,22 @@ a._issueKey_1nv7j_351:hover {
 /* ---- small screens ---------------------------------------------------- */
 
 @media (max-width: 699px) {
-  ._grid_q8twb_66 {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+  ._timeline_1n1sb_21 {
+    --tl-rail: 6.5rem;
   }
 
-  /* The avatar carries the identity; the word lives in the dot aria-labels. */
-  ._laneWord_q8twb_99 {
+  /* The avatar carries the identity; the name rides the mark labels. */
+  ._tlWord_1n1sb_156,
+  ._tlTally_1n1sb_177 {
     display: none;
   }
 
-  ._mark_q8twb_139 {
+  /* Only the first captions survive the narrower track. */
+  ._tlCapLow_1n1sb_479 {
+    display: none;
+  }
+
+  ._tlDot_1n1sb_265 {
     width: 18px;
     height: 18px;
   }

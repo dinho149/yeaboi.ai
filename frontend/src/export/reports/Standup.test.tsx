@@ -190,10 +190,10 @@ describe('Standup', () => {
         ]}
       />
     );
-    const lane = container.querySelector('.timeline .laneName');
+    const lane = container.querySelector('.timeline .tlRail');
     expect(lane?.textContent).toContain('Ada');
-    const dot = container.querySelector('.timeline .mark');
-    expect(dot?.getAttribute('href')).toBe('#m-ada');
+    const mark = container.querySelector('.timeline .tlDot, .timeline .tlMinor');
+    expect(mark?.getAttribute('href')).toBe('#m-ada');
     expect(container.querySelector('#m-ada .memberHead')).not.toBeNull();
   });
 
@@ -211,7 +211,7 @@ describe('Standup', () => {
         ]}
       />
     );
-    expect([...container.querySelectorAll('.timeline .laneWord')].map((n) => n.textContent)).toEqual(['Ada']);
+    expect([...container.querySelectorAll('.timeline .tlWord')].map((n) => n.textContent)).toEqual(['Ada']);
     // Two names on the page now — the jump strip and the card — so ask for the card.
     expect(container.querySelector('#m-quiet .memberHead')).not.toBeNull();
   });

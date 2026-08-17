@@ -1,26 +1,40 @@
 /**
  * The activity timeline — the standup's opening picture.
  *
- * One horizontal time axis across the activity window, one swimlane per
- * member, every dated evidence row a dot: what each person did, when, in what
- * order. Icons (KindIcon) distinguish commits from PRs from reviews from
- * ticket moves, so the day's shape reads before a single card is opened.
+ * One compressed time axis across the day, one swimlane per member, every dated
+ * evidence row a mark: what each person did, when, in what order, and where two
+ * people met on the same pull request.
  *
- * Interactivity is pure client state — exports open over `file://` under a
- * CSP with `connect-src 'none'`, so tooltips are CSS on hover/focus, and a
- * dot is a plain `<a href="#m-…">` to the member's card below (the cards
- * already carry those ids for the jump strip). No fetch, ever.
+ * Three things carry the information, in this order of importance:
+ *
+ * 1. **Captions on the board.** Landmarks (a PR, a review, a ticket move, a doc)
+ *    print their own label; a run of commits prints its count. This is what
+ *    makes the picture survive a screenshot, a print or a Slack paste — where a
+ *    tooltip does not exist, and where the first version of this component said
+ *    nothing at all.
+ * 2. **Two tiers.** Landmarks are discs with glyphs; commits and comments are
+ *    thin strokes at their true positions. The size difference *is* the
+ *    hierarchy, so the eye finds the landmarks without reading anything.
+ * 3. **The compressed axis** (timelineScale.ts). Idle stretches become notches
+ *    labelled with what they stood for, and the working hours take the width
+ *    back. Never remove the `.tlNote` caption: an unlabelled compressed axis is
+ *    a lie about time.
+ *
+ * Interactivity is pure client state — exports open over `file://` under a CSP
+ * with `connect-src 'none'`, so tooltips are CSS on hover/focus and a mark is a
+ * plain `<a href="#m-…">` to the member's card below (the cards already carry
+ * those ids for the jump strip). No fetch, ever.
  *
  * Placement rules for awkward data:
- * - `time: ""` rows (carried WIP, some tracker updates) are *excluded* from
- *   the plot — a dot at an invented position would be a lie on a time axis —
- *   and surface as a muted "+N undated" note; the rows stay fully visible in
- *   the card below. Nothing hidden, only folded.
- * - Events that fall outside the reported window (a PR's child commit can
- *   predate it) stretch the axis rather than clip: every dot is plotted.
+ * - `time: ""` rows (carried WIP, some tracker updates) are *excluded* from the
+ *   plot — a mark at an invented position would be a lie on a time axis — and
+ *   surface as `+N undated` in the rail; the rows stay fully visible in the card
+ *   below. Nothing hidden, only folded.
+ * - Events outside the reported window (a PR's child commit can predate it)
+ *   stretch the domain rather than clip: every mark is plotted.
  * - Timestamps arrive in a mix of naive/offset ISO forms; `Date.parse` reads
  *   naive ones as viewer-local, so cross-source ordering can shift by a tz
- *   delta. Accepted for v1 — dots may shift, never crash or vanish.
+ *   delta. Accepted: marks may shift, never crash or vanish.
  */
 
 import { Fragment, useState } from 'react';
@@ -31,6 +45,19 @@ import { cx } from '../../runtime/cx';
 import type { EvidenceItem, StandupMember } from '../boot';
 import { KindIcon, kindGroup, kindMeta, type KindGroup } from './KindIcon';
 import styles from './timeline.module.css';
+import {
+  artifactId,
+  buildScale,
+  buildThreads,
+  CAPTION_MIN_PCT,
+  fmtClock,
+  fmtWhen,
+  parseTime,
+  refToken,
+  TRACK_CENTRE,
+  type Scale,
+  type ThreadInput,
+} from './timelineScale';
 
 /** Anchor-safe member id shared with the card headers, `#m-ada-lovelace`. */
 export function memberSlug(name: string): string {
@@ -42,13 +69,18 @@ export function memberSlug(name: string): string {
   );
 }
 
-const HOUR = 3_600_000;
-/** Above this span the axis switches from clock ticks to day ticks. */
-const DAY_AXIS_SPAN = 30 * HOUR;
-/** Events within this share of the track merge into one clustered dot. */
+/** The kinds that earn a disc and a caption of their own. */
+const LANDMARKS: ReadonlySet<KindGroup> = new Set<KindGroup>(['pr', 'review', 'ticket', 'doc']);
+/** Landmarks closer than this share of the track share one disc. */
 const CLUSTER_PCT = 1.8;
+/** Captions per lane. Beyond this the band is noise, not information. */
+const MAX_CAPTIONS = 6;
+/** Captions past this rank are hidden on a narrow screen (see the CSS). */
+const CAPTION_LOW_RANK = 3;
 /** Tooltip rows a cluster lists before folding to "+N more". */
 const CLUSTER_TIP_ROWS = 6;
+/** Least lateral bulge on a thread, as a share of the track. */
+const BEND_MIN = 6;
 
 interface TimelineEvent {
   kind: string;
@@ -57,6 +89,8 @@ interface TimelineEvent {
   repo: string;
   status: string;
   at: number;
+  /** The pull request or ticket this row refers to, `""` when none. */
+  artifact: string;
 }
 
 interface Lane {
@@ -64,38 +98,13 @@ interface Lane {
   slug: string;
   events: TimelineEvent[];
   undated: number;
-}
-
-/** Naive stamps read as viewer-local; AzDO's space separator is normalised. */
-function parseTime(value: string): number {
-  if (!value) return NaN;
-  return Date.parse(value.replace(' ', 'T'));
-}
-
-function two(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function fmtClock(at: number): string {
-  const d = new Date(at);
-  return `${two(d.getHours())}:${two(d.getMinutes())}`;
-}
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-
-function fmtDay(at: number): string {
-  const d = new Date(at);
-  return `${WEEKDAYS[d.getDay()]} ${two(d.getMonth() + 1)}-${two(d.getDate())}`;
-}
-
-function fmtWhen(at: number, multiDay: boolean): string {
-  return multiDay ? `${fmtDay(at)} ${fmtClock(at)}` : fmtClock(at);
+  blocked: boolean;
 }
 
 /**
- * One member's dots: every category's evidence flattened, a PR's child
- * commits hoisted to their own dots (they are distinct work moments — the
- * clustering pass absorbs the density), deduped by the exporter's own rule.
+ * One member's marks: every category's evidence flattened, a PR's child commits
+ * hoisted to their own marks (they are distinct work moments), deduped by the
+ * exporter's own rule.
  */
 function laneFor(member: StandupMember): Lane {
   const seen = new Set<string>();
@@ -107,7 +116,15 @@ function laneFor(member: StandupMember): Lane {
     seen.add(dedupe);
     const at = parseTime(item.time);
     if (Number.isFinite(at)) {
-      events.push({ kind: item.kind, key: item.key, title: item.title, repo: item.repo, status: item.status, at });
+      events.push({
+        kind: item.kind,
+        key: item.key,
+        title: item.title,
+        repo: item.repo,
+        status: item.status,
+        at,
+        artifact: artifactId(item.url, item.key),
+      });
     } else {
       undated += 1;
     }
@@ -119,66 +136,138 @@ function laneFor(member: StandupMember): Lane {
     }
   }
   events.sort((a, b) => a.at - b.at);
-  return { name: member.name, slug: memberSlug(member.name), events, undated };
+  return {
+    name: member.name,
+    slug: memberSlug(member.name),
+    events,
+    undated,
+    blocked: (member.blockers ?? []).length > 0,
+  };
 }
 
-interface Tick {
+/* ---- marks and captions ------------------------------------------------- */
+
+interface Mark {
+  landmark: boolean;
   at: number;
-  label: string;
-  /** A local-midnight tick — its hairline extends down through the lanes. */
-  day: boolean;
-}
-
-function axisTicks(start: number, end: number): Tick[] {
-  const span = end - start;
-  const out: Tick[] = [];
-  if (span <= DAY_AXIS_SPAN) {
-    const stepHours = [1, 2, 3, 6, 12].find((h) => span / (h * HOUR) <= 10) ?? 12;
-    const first = new Date(start);
-    first.setMinutes(0, 0, 0);
-    while (first.getTime() < start || first.getHours() % stepHours !== 0) {
-      first.setTime(first.getTime() + HOUR);
-    }
-    for (let t = first.getTime(); t <= end; t += stepHours * HOUR) {
-      out.push({ at: t, label: fmtClock(t), day: false });
-    }
-    return out;
-  }
-  const cursor = new Date(start);
-  cursor.setHours(0, 0, 0, 0);
-  if (cursor.getTime() < start) cursor.setDate(cursor.getDate() + 1);
-  const midnights: number[] = [];
-  while (cursor.getTime() <= end) {
-    midnights.push(cursor.getTime());
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  const step = Math.max(1, Math.ceil(midnights.length / 10));
-  midnights.forEach((t, index) => {
-    if (index % step === 0) out.push({ at: t, label: fmtDay(t), day: true });
-  });
-  return out;
-}
-
-interface Cluster {
-  at: number;
+  pct: number;
+  /** The active segment this mark sits in — its burst. */
+  burst: number;
   events: TimelineEvent[];
 }
 
-/** Greedy left-to-right sweep: near-simultaneous events share one dot. */
-function clusterEvents(events: TimelineEvent[], span: number): Cluster[] {
-  const threshold = span * (CLUSTER_PCT / 100);
-  const out: Cluster[] = [];
-  for (const event of events) {
-    const last = out[out.length - 1];
-    if (last && event.at - last.at <= threshold) {
-      last.events.push(event);
-      last.at = last.events.reduce((sum, e) => sum + e.at, 0) / last.events.length;
-    } else {
-      out.push({ at: event.at, events: [event] });
-    }
-  }
-  return out;
+interface Caption {
+  pct: number;
+  text: string;
+  /** A counted run of minor marks rather than a named landmark. */
+  counted: boolean;
+  rank: number;
 }
+
+/**
+ * Landmarks cluster (near-simultaneous ones would overlap as discs); minor
+ * events do not, because a 2px stroke may overlap harmlessly and keeping its
+ * true position is worth more than tidiness.
+ */
+function marksFor(events: TimelineEvent[], scale: Scale): Mark[] {
+  const marks: Mark[] = [];
+  let cluster: Mark | null = null;
+  for (const event of events) {
+    const pct = scale.pct(event.at);
+    const burst = scale.segmentIndex(event.at);
+    if (!LANDMARKS.has(kindGroup(event.kind))) {
+      marks.push({ landmark: false, at: event.at, pct, burst, events: [event] });
+      cluster = null;
+      continue;
+    }
+    if (cluster && pct - cluster.pct <= CLUSTER_PCT) {
+      cluster.events.push(event);
+      continue;
+    }
+    cluster = { landmark: true, at: event.at, pct, burst, events: [event] };
+    marks.push(cluster);
+  }
+  return marks.sort((a, b) => a.pct - b.pct);
+}
+
+/** What a doc row is called: the title is the handle, the machine id never renders. */
+function eventLabel(event: TimelineEvent): string {
+  const meta = kindMeta(event.kind);
+  if (meta.label === 'doc') return event.title || meta.label;
+  return event.title || event.key || meta.label;
+}
+
+/** The short form that fits on the board. */
+function captionFor(event: TimelineEvent): string {
+  const group = kindGroup(event.kind);
+  if (group === 'doc') return event.title || 'doc';
+  if (group === 'pr' || group === 'ticket') {
+    return [event.key, event.status].filter(Boolean).join(' ') || eventLabel(event);
+  }
+  if (group === 'review') {
+    // The producer's own sigil for the PR under review, e.g. "approved !91".
+    return [event.status || 'review', refToken(event.title)].filter(Boolean).join(' ');
+  }
+  return event.key || eventLabel(event);
+}
+
+/**
+ * A burst of minor work. For more than one event the count is the information
+ * and the individual shas are not; for a lone one the sha still is.
+ */
+function runCaption(events: TimelineEvent[]): string {
+  if (events.length === 1) return captionFor(events[0] as TimelineEvent);
+  const tally = new Map<string, number>();
+  for (const event of events) tally.set(event.kind, (tally.get(event.kind) ?? 0) + 1);
+  const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+  const label = kindMeta(top ? top[0] : '').label;
+  return `${events.length} ${label}s`;
+}
+
+/**
+ * Which captions to print, decided from positions alone — nothing is measured,
+ * so a caption is kept only when it stands `CAPTION_MIN_PCT` clear of every
+ * caption already kept. Landmarks are placed first so a run of commits can
+ * never crowd out a merged PR; a dropped caption leaves its mark and its
+ * tooltip untouched.
+ */
+function placeCaptions(marks: Mark[]): Caption[] {
+  const kept: Caption[] = [];
+  const consider = (pct: number, text: string, counted: boolean) => {
+    if (!text || kept.length >= MAX_CAPTIONS) return;
+    if (kept.some((caption) => Math.abs(caption.pct - pct) < CAPTION_MIN_PCT)) return;
+    kept.push({ pct, text, counted, rank: kept.length });
+  };
+
+  for (const mark of marks) {
+    if (mark.landmark) consider(mark.pct, captionFor(mark.events[0] as TimelineEvent), false);
+  }
+  // Minor marks sharing a burst read as one run: "3 commits", captioned at its
+  // middle. Grouping by burst rather than by distance is what keeps the count
+  // honest — on a compressed axis, two marks the same distance apart can be
+  // twenty minutes or four hours apart depending on which side of a notch.
+  let run: Mark[] = [];
+  const flush = () => {
+    if (!run.length) return;
+    const first = run[0] as Mark;
+    const last = run[run.length - 1] as Mark;
+    consider((first.pct + last.pct) / 2, runCaption(run.flatMap((mark) => mark.events)), run.length > 1);
+    run = [];
+  };
+  for (const mark of marks) {
+    if (mark.landmark) {
+      flush();
+      continue;
+    }
+    const previous = run[run.length - 1];
+    if (previous && mark.burst !== previous.burst) flush();
+    run.push(mark);
+  }
+  flush();
+  return kept;
+}
+
+/* ---- legend ------------------------------------------------------------- */
 
 /** Fixed legend order, so the same day draws the same way twice. */
 const GROUP_ORDER: readonly KindGroup[] = ['commit', 'pr', 'review', 'comment', 'ticket', 'doc', 'wip', 'ref'];
@@ -194,130 +283,186 @@ const GROUP_KIND: Record<KindGroup, string> = {
   ref: '',
 };
 
-/** What a dot calls its event. Doc keys are machine ids (a Confluence page
- * id, a Notion UUID) — same rule as EvidenceRow: the title is the handle and
- * the id never renders. */
-function eventLabel(event: TimelineEvent): string {
-  const meta = kindMeta(event.kind);
-  if (meta.label === 'doc') return event.title || meta.label;
-  return event.title || event.key || meta.label;
-}
+/* ---- marks -------------------------------------------------------------- */
 
-function clusterAria(cluster: Cluster, name: string, multiDay: boolean): string {
-  if (cluster.events.length === 1) {
-    const event = cluster.events[0] as TimelineEvent;
+function markAria(mark: Mark, name: string, multiDay: boolean, partners: string[]): string {
+  const shared = partners.length ? ` Also touched by ${partners.join(', ')}.` : '';
+  if (mark.events.length === 1) {
+    const event = mark.events[0] as TimelineEvent;
     const meta = kindMeta(event.kind);
     const parts = [fmtWhen(event.at, multiDay), event.status, event.repo].filter(Boolean).join(', ');
-    return `${meta.label}: ${eventLabel(event)} — ${parts}. Jump to ${name}'s update.`;
+    return `${meta.label}: ${eventLabel(event)} — ${parts}.${shared} Jump to ${name}'s update.`;
   }
-  const first = cluster.events[0] as TimelineEvent;
-  const last = cluster.events[cluster.events.length - 1] as TimelineEvent;
+  const first = mark.events[0] as TimelineEvent;
+  const last = mark.events[mark.events.length - 1] as TimelineEvent;
   return (
-    `${cluster.events.length} events between ${fmtWhen(first.at, multiDay)} and ` +
-    `${fmtWhen(last.at, multiDay)}. Jump to ${name}'s update.`
+    `${mark.events.length} events between ${fmtWhen(first.at, multiDay)} and ` +
+    `${fmtWhen(last.at, multiDay)}.${shared} Jump to ${name}'s update.`
   );
 }
 
-function Dot({ cluster, name, pct, multiDay }: { cluster: Cluster; name: string; pct: number; multiDay: boolean }) {
-  const head = cluster.events[0] as TimelineEvent;
+function MarkLink({
+  mark,
+  name,
+  multiDay,
+  partners,
+}: {
+  mark: Mark;
+  name: string;
+  multiDay: boolean;
+  partners: string[];
+}) {
+  const head = mark.events[0] as TimelineEvent;
   const meta = kindMeta(head.kind);
-  const count = cluster.events.length;
+  const count = mark.events.length;
   // Tooltip alignment is decided from the position — no measurement JS.
-  const align = pct < 15 ? styles['tipLeft'] : pct > 85 ? styles['tipRight'] : undefined;
-  const shown = cluster.events.slice(0, CLUSTER_TIP_ROWS);
+  const align = mark.pct < 15 ? styles['tlTipLeft'] : mark.pct > 85 ? styles['tlTipRight'] : undefined;
+  const shown = mark.events.slice(0, CLUSTER_TIP_ROWS);
   const folded = count - shown.length;
 
   return (
     <a
       href={`#m-${memberSlug(name)}`}
-      className={cx(styles['mark'], align)}
-      style={{ left: `${pct}%`, color: toneVar(meta.tone) }}
-      aria-label={clusterAria(cluster, name, multiDay)}
+      className={cx(mark.landmark ? styles['tlDot'] : styles['tlMinor'], align)}
+      style={{ left: `${mark.pct}%`, color: toneVar(meta.tone) }}
+      aria-label={markAria(mark, name, multiDay, partners)}
     >
-      <KindIcon kind={head.kind} />
-      {count > 1 ? <span className={styles['markBadge']}>×{count}</span> : null}
+      {mark.landmark ? <KindIcon kind={head.kind} /> : null}
+      {count > 1 ? <span className={styles['tlBadge']}>×{count}</span> : null}
       {/* Presentation only — the aria-label above already says all of this. */}
-      <span className={styles['tip']} aria-hidden="true">
+      <span className={styles['tlTip']} aria-hidden="true">
         {count === 1 ? (
           <>
-            <strong className={styles['tipTitle']}>{eventLabel(head)}</strong>
+            <strong className={styles['tlTipTitle']}>{eventLabel(head)}</strong>
             {(meta.label !== 'doc' && head.key) || head.repo ? (
-              <span className={styles['tipMeta']}>
+              <span className={styles['tlTipMeta']}>
                 {[meta.label === 'doc' ? '' : head.key, head.repo].filter(Boolean).join(' · ')}
               </span>
             ) : null}
-            <span className={styles['tipMeta']}>
+            <span className={styles['tlTipMeta']}>
               {[fmtWhen(head.at, multiDay), head.status].filter(Boolean).join(' · ')}
             </span>
           </>
         ) : (
           <>
             {shown.map((event, index) => (
-              <span key={index} className={styles['tipRow']}>
+              <span key={index} className={styles['tlTipRow']}>
                 <i style={{ color: toneVar(kindMeta(event.kind).tone) }}>
                   <KindIcon kind={event.kind} size={10} />
                 </i>
-                <span className={styles['tipRowText']}>{eventLabel(event)}</span>
-                <span className={styles['tipRowTime']}>{fmtWhen(event.at, multiDay)}</span>
+                <span className={styles['tlTipRowText']}>{eventLabel(event)}</span>
+                <span className={styles['tlTipRowTime']}>{fmtWhen(event.at, multiDay)}</span>
               </span>
             ))}
-            {folded > 0 ? <span className={styles['tipMeta']}>+{folded} more</span> : null}
+            {folded > 0 ? <span className={styles['tlTipMeta']}>+{folded} more</span> : null}
           </>
         )}
+        {partners.length ? <span className={styles['tlTipMeta']}>with {partners.join(', ')}</span> : null}
       </span>
     </a>
   );
 }
 
-export function Timeline({ members, window: bounds }: {
+/* ---- rail --------------------------------------------------------------- */
+
+/** The day's shape in words and numbers, so the rail is useful on its own. */
+function Rail({ lane, multiDay }: { lane: Lane; multiDay: boolean }) {
+  const first = lane.events[0] as TimelineEvent;
+  const last = lane.events[lane.events.length - 1] as TimelineEvent;
+  const tally = new Map<KindGroup, number>();
+  for (const event of lane.events) {
+    const group = kindGroup(event.kind);
+    tally.set(group, (tally.get(group) ?? 0) + 1);
+  }
+  const span =
+    first.at === last.at
+      ? fmtWhen(first.at, multiDay)
+      : `${fmtWhen(first.at, multiDay)} → ${multiDay ? fmtWhen(last.at, true) : fmtClock(last.at)}`;
+
+  return (
+    <span className={styles['tlRail']}>
+      <span className={styles['tlWho']}>
+        <Avatar name={lane.name} size={18} />
+        <span className={styles['tlWord']}>{lane.name}</span>
+        {lane.blocked ? (
+          <span className={styles['tlFlag']} title="Flagged an impediment">
+            ⚑
+          </span>
+        ) : null}
+      </span>
+      <span className={styles['tlSpan']}>
+        {span} · {lane.events.length} event{lane.events.length === 1 ? '' : 's'}
+      </span>
+      <span className={styles['tlTally']}>
+        {GROUP_ORDER.filter((group) => tally.has(group)).map((group) => (
+          <span key={group} className={styles['tlTallyItem']} style={{ color: toneVar(kindMeta(GROUP_KIND[group]).tone) }}>
+            <KindIcon kind={GROUP_KIND[group]} size={9} />
+            {tally.get(group)}
+          </span>
+        ))}
+        {lane.undated > 0 ? (
+          <span className={styles['tlUndated']} title="Rows with no event time — still listed in the card below">
+            +{lane.undated} undated
+          </span>
+        ) : null}
+      </span>
+    </span>
+  );
+}
+
+/* ---- the board ---------------------------------------------------------- */
+
+export function Timeline({
+  members,
+  window: bounds,
+}: {
   members: StandupMember[];
   /** Machine-readable window; both `""` on legacy reports (axis from events). */
   window?: { start: string; end: string } | undefined;
 }) {
   // Legend filter: one selected group, everything else dims. Presentation
-  // state only — dimmed dots stay in the page and in the accessibility tree.
+  // state only — dimmed marks stay in the page and in the accessibility tree.
   const [focus, setFocus] = useState<KindGroup | null>(null);
 
   const lanes = members.map(laneFor).filter((lane) => lane.events.length > 0);
   if (!lanes.length) return null;
 
-  const times = lanes.flatMap((lane) => lane.events.map((event) => event.at));
-  let start = parseTime(bounds?.start ?? '');
-  let end = parseTime(bounds?.end ?? '');
-  if (!Number.isFinite(start)) start = Math.min(...times);
-  if (!Number.isFinite(end)) end = Math.max(...times);
-  start = Math.min(start, ...times);
-  end = Math.max(end, ...times);
-  if (end - start < HOUR) {
-    start -= HOUR;
-    end += HOUR;
-  }
-  const pad = (end - start) * 0.02;
-  start -= pad;
-  end += pad;
-  const span = end - start;
-  const pct = (t: number) => ((t - start) / span) * 100;
-  const multiDay = span > DAY_AXIS_SPAN;
-  const ticks = axisTicks(start, end);
-  const dayTicks = ticks.filter((tick) => tick.day);
+  const scale = buildScale(
+    lanes.flatMap((lane) => lane.events.map((event) => event.at)),
+    bounds
+  );
+  const { multiDay } = scale;
+
+  const threadInput: ThreadInput[] = lanes.flatMap((lane, index) =>
+    lane.events
+      .filter((event) => event.artifact)
+      .map((event) => ({ lane: index, at: event.at, artifact: event.artifact }))
+  );
+  const { threads, partners } = buildThreads(threadInput);
+  /** The other people on an artifact — stated in words, never by the line alone. */
+  const partnersFor = (artifact: string, lane: number): string[] =>
+    (partners.get(artifact) ?? [])
+      .filter((other) => other !== lane)
+      .map((other) => (lanes[other] as Lane).name);
+  const laneY = (index: number) => ((index + TRACK_CENTRE) / lanes.length) * 100;
 
   const present = new Set(lanes.flatMap((lane) => lane.events.map((event) => kindGroup(event.kind))));
   const legend = GROUP_ORDER.filter((group) => present.has(group));
 
   return (
     <div className={styles['timeline']}>
-      <div className={styles['head']}>
+      <div className={styles['tlHead']}>
         <Eyebrow>Activity timeline</Eyebrow>
         {/* The legend doubles as a filter: press a kind to spotlight it. The
             word always rides beside the icon — never a shape or colour alone. */}
-        <div className={styles['legend']} role="group" aria-label="Filter by activity kind">
+        <div className={styles['tlLegend']} role="group" aria-label="Filter by activity kind">
           {legend.map((group) => {
             const meta = kindMeta(GROUP_KIND[group]);
             return (
               <button
                 key={group}
                 type="button"
-                className={cx(styles['legendItem'], focus !== null && focus !== group && styles['dimmed'])}
+                className={cx(styles['tlLegendItem'], focus !== null && focus !== group && styles['tlDimmed'])}
                 style={{ color: toneVar(meta.tone) }}
                 aria-pressed={focus === group}
                 onClick={() => setFocus((current) => (current === group ? null : group))}
@@ -330,64 +475,124 @@ export function Timeline({ members, window: bounds }: {
         </div>
       </div>
 
-      {/* Three cells per row, all direct grid children, so every row shares
-          the same resolved columns without needing subgrid support. */}
-      <div className={styles['grid']}>
+      {/* The axis is not linear. Saying so is not optional. */}
+      {scale.compressed ? (
+        <p className={styles['tlNote']}>
+          Quiet stretches are compressed — each notch is labelled with how long it ran.
+        </p>
+      ) : null}
+
+      <div className={styles['tlAxis']}>
         <span aria-hidden="true" />
-        <span className={styles['axisTrack']} aria-hidden="true">
-          {ticks.map((tick) => (
-            <span key={tick.at} className={styles['tick']} style={{ left: `${pct(tick.at)}%` }}>
+        <span className={styles['tlAxisTrack']} aria-hidden="true">
+          {scale.ticks.map((tick) => (
+            <span
+              key={`${tick.at}-${tick.left}`}
+              className={cx(styles['tlTick'], tick.day && styles['tlTickDay'])}
+              style={{ left: `${tick.left}%` }}
+            >
               {tick.label}
             </span>
           ))}
+          {scale.gaps.map((gap) => (
+            <span
+              key={gap.left}
+              className={styles['tlGapLabel']}
+              style={{ left: `${gap.left + gap.width / 2}%` }}
+            >
+              {gap.label}
+            </span>
+          ))}
         </span>
-        <span aria-hidden="true" />
+      </div>
 
-        {lanes.map((lane) => {
-          const clusters = clusterEvents(lane.events, span);
-          const first = pct((clusters[0] as Cluster).at);
-          const last = pct((clusters[clusters.length - 1] as Cluster).at);
+      {/* Two cells per row, all direct grid children, so every row shares the
+          same resolved columns without needing subgrid support. */}
+      <div className={styles['tlLanes']}>
+        <svg
+          className={styles['tlThreads']}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {threads.map((thread, index) => {
+            const x1 = scale.pct(thread.fromAt);
+            const x2 = scale.pct(thread.toAt);
+            const y1 = laneY(thread.fromLane);
+            const y2 = laneY(thread.toLane);
+            // Both control points bulge the same way, and never by less than
+            // BEND_MIN: two people touching one PR minutes apart would
+            // otherwise draw a vertical line straight through the lanes
+            // between them, which reads as a rendering artefact and not as a
+            // relationship.
+            const bend = Math.max(Math.abs(x2 - x1) * 0.35, BEND_MIN);
+            return (
+              <path
+                key={index}
+                className={styles['tlThread']}
+                d={`M${x1} ${y1} C${x1 + bend} ${y1} ${x2 + bend} ${y2} ${x2} ${y2}`}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+
+        {lanes.map((lane, laneIndex) => {
+          const marks = marksFor(lane.events, scale);
+          const captions = placeCaptions(marks);
+          const first = (marks[0] as Mark).pct;
+          const last = (marks[marks.length - 1] as Mark).pct;
           return (
             <Fragment key={lane.name}>
-              <span className={styles['laneName']}>
-                <Avatar name={lane.name} size={18} />
-                <span className={styles['laneWord']}>{lane.name}</span>
-              </span>
-              <span className={styles['track']}>
-                {dayTicks.map((tick) => (
-                  <i
-                    key={tick.at}
-                    className={styles['dayBreak']}
-                    style={{ left: `${pct(tick.at)}%` }}
-                    aria-hidden="true"
-                  />
-                ))}
-                {clusters.length > 1 ? (
-                  <i
-                    className={styles['connector']}
-                    style={{ left: `${first}%`, width: `${last - first}%` }}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {clusters.map((cluster, index) => {
-                  const dimmed =
-                    focus !== null && !cluster.events.some((event) => kindGroup(event.kind) === focus);
-                  return (
-                    <span key={index} className={cx(styles['markSlot'], dimmed && styles['dimmed'])}>
-                      <Dot cluster={cluster} name={lane.name} pct={pct(cluster.at)} multiDay={multiDay} />
+              <Rail lane={lane} multiDay={multiDay} />
+              <span className={styles['tlLane']}>
+                <span className={styles['tlTrack']}>
+                  {scale.gaps.map((gap) => (
+                    <i
+                      key={gap.left}
+                      className={styles['tlGap']}
+                      style={{ left: `${gap.left}%`, width: `${gap.width}%` }}
+                      aria-hidden="true"
+                    />
+                  ))}
+                  {marks.length > 1 ? (
+                    <i
+                      className={styles['tlSpine']}
+                      style={{ left: `${first}%`, width: `${last - first}%` }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {marks.map((mark, index) => {
+                    const dimmed =
+                      focus !== null && !mark.events.some((event) => kindGroup(event.kind) === focus);
+                    const head = mark.events[0] as TimelineEvent;
+                    return (
+                      <span key={index} className={cx(styles['tlSlot'], dimmed && styles['tlDimmed'])}>
+                        <MarkLink
+                          mark={mark}
+                          name={lane.name}
+                          multiDay={multiDay}
+                          partners={partnersFor(head.artifact, laneIndex)}
+                        />
+                      </span>
+                    );
+                  })}
+                </span>
+                <span className={styles['tlBand']} aria-hidden="true">
+                  {captions.map((caption) => (
+                    <span
+                      key={caption.rank}
+                      className={cx(
+                        styles['tlCap'],
+                        caption.counted && styles['tlCapCount'],
+                        caption.rank >= CAPTION_LOW_RANK && styles['tlCapLow']
+                      )}
+                      style={{ left: `${caption.pct}%` }}
+                    >
+                      {caption.text}
                     </span>
-                  );
-                })}
-              </span>
-              <span className={styles['laneEnd']}>
-                {lane.undated > 0 ? (
-                  <span
-                    className={styles['undated']}
-                    title="Rows with no event time — still listed in the member's card below"
-                  >
-                    +{lane.undated} undated
-                  </span>
-                ) : null}
+                  ))}
+                </span>
               </span>
             </Fragment>
           );
