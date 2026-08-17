@@ -37,7 +37,7 @@ import styles from './retro.module.css';
 export interface ColumnComposerProps {
   /** The column's human label, for the accessible names. */
   label: string;
-  /** Expanded, i.e. showing the textarea rather than the ghost button. */
+  /** Expanded, i.e. showing the textarea rather than the empty strip. */
   open: boolean;
   /**
    * Bumped to pull focus into the box, including when it is already open.
@@ -80,12 +80,19 @@ export function ColumnComposer({
   };
 
   if (!open) {
+    // The rest of the column, as one control. Nothing is drawn until the
+    // pointer is over it, so the board is cards and nothing else at rest.
     return (
-      <div className={styles['columnCompose']}>
-        <button type="button" className={styles['composeGhost']} aria-label={`Add a card to ${label}`} onClick={onOpen}>
+      <button
+        type="button"
+        className={styles['composeArea']}
+        aria-label={`Add a card to ${label}`}
+        onClick={onOpen}
+      >
+        <span className={styles['composeHint']}>
           <Icon name="plus" size={14} /> Add a card
-        </button>
-      </div>
+        </span>
+      </button>
     );
   }
 

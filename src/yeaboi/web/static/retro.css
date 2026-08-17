@@ -3848,7 +3848,7 @@ dialog._modal_6ng5l_693 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_18igu_24 {
+._app_3dhty_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3862,7 +3862,7 @@ dialog._modal_6ng5l_693 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_18igu_38 {
+._boardRegion_3dhty_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3873,12 +3873,12 @@ dialog._modal_6ng5l_693 {
   padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_18igu_49 { color: var(--warn); font-family: var(--font-sans); }
+._offline_3dhty_49 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-._identity_18igu_52 { display: flex; align-items: center; gap: var(--s3); }
+._identity_3dhty_52 { display: flex; align-items: center; gap: var(--s3); }
 
-._meChip_18igu_54 {
+._meChip_3dhty_54 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3892,22 +3892,22 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._meChip_18igu_54:hover { border-color: var(--accent); }
-._meName_18igu_69 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._pen_18igu_70 { display: inline-flex; color: var(--muted); }
-._roomCount_18igu_71 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._meChip_3dhty_54:hover { border-color: var(--accent); }
+._meName_3dhty_69 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_3dhty_70 { display: inline-flex; color: var(--muted); }
+._roomCount_3dhty_71 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._lockBanner_18igu_75, ._musicBanner_18igu_75 {
+._lockBanner_3dhty_75, ._musicBanner_3dhty_75 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
   border-bottom: 1px solid var(--line);
 }
-._lockBanner_18igu_75 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-._musicBanner_18igu_75 {
+._lockBanner_3dhty_75 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_3dhty_75 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -3918,12 +3918,12 @@ dialog._modal_6ng5l_693 {
   cursor: pointer;
 }
 
-._popNote_18igu_94 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_3dhty_94 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_18igu_97 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_18igu_98 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_18igu_99 {
+._carried_3dhty_97 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_3dhty_98 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_3dhty_99 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3937,14 +3937,14 @@ dialog._modal_6ng5l_693 {
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_18igu_113 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_18igu_114 { transform: rotate(90deg); }
-._carriedProgress_18igu_115 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_18igu_116 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_18igu_116[hidden] { display: none; }
-._carriedHint_18igu_118 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_18igu_119 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_18igu_120 {
+._chevron_3dhty_113 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_3dhty_114 { transform: rotate(90deg); }
+._carriedProgress_3dhty_115 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_3dhty_116 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_3dhty_116[hidden] { display: none; }
+._carriedHint_3dhty_118 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_3dhty_119 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_3dhty_120 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -3958,8 +3958,8 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_18igu_134 { flex: 1; min-width: 0; }
-._carriedSelect_18igu_135 {
+._carriedText_3dhty_134 { flex: 1; min-width: 0; }
+._carriedSelect_3dhty_135 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -3968,14 +3968,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_18igu_144 { border-left-color: var(--line); }
-._statusDone_18igu_145 { border-left-color: var(--ok); }
-._statusProgress_18igu_146 { border-left-color: var(--info); }
-._statusCarried_18igu_147 { border-left-color: var(--warn); }
-._statusMuted_18igu_148 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_3dhty_144 { border-left-color: var(--line); }
+._statusDone_3dhty_145 { border-left-color: var(--ok); }
+._statusProgress_3dhty_146 { border-left-color: var(--info); }
+._statusCarried_3dhty_147 { border-left-color: var(--warn); }
+._statusMuted_3dhty_148 { border-left-color: var(--muted); opacity: 0.7; }
 
 /* ── Walkthrough bar ──────────────────────────────────────────────────── */
-._focusBar_18igu_151 {
+._focusBar_3dhty_151 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -3983,7 +3983,7 @@ dialog._modal_6ng5l_693 {
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
-._focusStep_18igu_159 {
+._focusStep_3dhty_159 {
   width: var(--tap);
   height: var(--tap);
   display: inline-grid;
@@ -3995,13 +3995,13 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   cursor: pointer;
 }
-._focusStep_18igu_159:disabled { opacity: 0.4; cursor: default; }
-._focusWho_18igu_172 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-._focusName_18igu_173 { font-size: var(--fs-m); }
-._focusCount_18igu_174 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._focusStep_3dhty_159:disabled { opacity: 0.4; cursor: default; }
+._focusWho_3dhty_172 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_3dhty_173 { font-size: var(--fs-m); }
+._focusCount_3dhty_174 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_18igu_34 {
+._board_3dhty_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4019,13 +4019,13 @@ dialog._modal_6ng5l_693 {
 }
 
 @media (max-width: 1099px) {
-  ._board_18igu_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_3dhty_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_18igu_34 {
+  ._board_3dhty_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4035,14 +4035,14 @@ dialog._modal_6ng5l_693 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_18igu_34::-webkit-scrollbar { display: none; }
-  ._column_18igu_212 { scroll-snap-align: center; }
+  ._board_3dhty_34::-webkit-scrollbar { display: none; }
+  ._column_3dhty_212 { scroll-snap-align: center; }
 }
 
-._pager_18igu_215 { display: none; }
+._pager_3dhty_215 { display: none; }
 @media (max-width: 699px) {
-  ._pager_18igu_215 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_18igu_218 {
+  ._pager_3dhty_215 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_3dhty_218 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4051,7 +4051,7 @@ dialog._modal_6ng5l_693 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_18igu_218::after {
+  ._pagerDot_3dhty_218::after {
     content: "";
     display: block;
     width: 8px;
@@ -4060,7 +4060,7 @@ dialog._modal_6ng5l_693 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_18igu_236::after { background: var(--accent); }
+  ._pagerDotOn_3dhty_236::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4070,12 +4070,12 @@ dialog._modal_6ng5l_693 {
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_18igu_212 {
+._column_3dhty_212 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_18igu_251 {
+._columnHead_3dhty_251 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4084,7 +4084,7 @@ dialog._modal_6ng5l_693 {
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_18igu_260 {
+._columnTitle_3dhty_260 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4093,13 +4093,13 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_18igu_269 { color: var(--dim); }
-._columnCount_18igu_270 {
+._columnDot_3dhty_269 { color: var(--dim); }
+._columnCount_3dhty_270 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_18igu_275 {
+._cards_3dhty_275 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4110,16 +4110,16 @@ dialog._modal_6ng5l_693 {
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cardsOver_18igu_286 {
+._cardsOver_3dhty_286 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_18igu_292 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_3dhty_292 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._authorGroup_18igu_294 { display: flex; flex-direction: column; gap: var(--s2); }
-._authorGroupHead_18igu_295 {
+._authorGroup_3dhty_294 { display: flex; flex-direction: column; gap: var(--s2); }
+._authorGroupHead_3dhty_295 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-2xs);
@@ -4128,8 +4128,8 @@ dialog._modal_6ng5l_693 {
   letter-spacing: 0.06em;
 }
 
-._cardSlot_18igu_304 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-._dropLine_18igu_305 { height: 2px; border-radius: var(--r-pill); background: var(--col-tone, var(--accent)); }
+._cardSlot_3dhty_304 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._dropLine_3dhty_305 { height: 2px; border-radius: var(--r-pill); background: var(--col-tone, var(--accent)); }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
 /*
@@ -4140,7 +4140,7 @@ dialog._modal_6ng5l_693 {
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_18igu_275 {
+._card_3dhty_275 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4155,7 +4155,7 @@ dialog._modal_6ng5l_693 {
     box-shadow var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._card_18igu_275:hover {
+._card_3dhty_275:hover {
   border-color: var(--hairline-strong);
   transform: translateY(-1px);
   box-shadow:
@@ -4163,12 +4163,26 @@ dialog._modal_6ng5l_693 {
     0 2px 2px rgb(0 0 0 / 12%),
     0 8px 20px rgb(0 0 0 / 14%);
 }
-._card_18igu_275:active { cursor: grabbing; }
+._card_3dhty_275:active { cursor: grabbing; }
+/* A card in the air takes no pointer events, so the pointer is over whatever is
+   underneath it — and a sweep across the board would otherwise lift every card
+   it crossed. */
+._board_3dhty_34[data-dragging='true'] ._card_3dhty_275 {
+  transition: none;
+}
+._board_3dhty_34[data-dragging='true'] ._card_3dhty_275:hover {
+  transform: none;
+  border-color: var(--hairline);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+}
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_18igu_341 { cursor: default; }
+._cardLocked_3dhty_355 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_18igu_344 { border-left: 3px solid var(--accent2); }
+._cardAI_3dhty_358 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4176,16 +4190,16 @@ dialog._modal_6ng5l_693 {
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_18igu_352 {
+._cardDragging_3dhty_366 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_18igu_352 > * { opacity: 0; }
+._cardDragging_3dhty_366 > * { opacity: 0; }
 
-._dragLayer_18igu_361 {
+._dragLayer_3dhty_375 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4194,24 +4208,27 @@ dialog._modal_6ng5l_693 {
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_18igu_370 {
+._dragCard_3dhty_384 {
   position: absolute;
   top: 0;
   left: 0;
   cursor: grabbing;
   transform-origin: 50% 0%;
   transition: none;
+  /* Its own compositor layer. Without it every frame repaints a 40px-blurred
+     shadow, and the transform invalidates the document's layout with it. */
+  will-change: transform;
   box-shadow:
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_18igu_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_3dhty_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_18igu_1 {
+@keyframes _cardLift_3dhty_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
-._cardText_18igu_387 {
+._cardText_3dhty_404 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4220,10 +4237,10 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
 }
 
-._cardMeta_18igu_396 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-._metaSpacer_18igu_397 { flex: 1; }
-._author_18igu_294 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_18igu_399 {
+._cardMeta_3dhty_413 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+._metaSpacer_3dhty_414 { flex: 1; }
+._author_3dhty_294 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_3dhty_416 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4231,8 +4248,8 @@ dialog._modal_6ng5l_693 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_18igu_407 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_18igu_408 {
+._aiBadge_3dhty_424 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_3dhty_425 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4242,8 +4259,8 @@ dialog._modal_6ng5l_693 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_18igu_418 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_18igu_419 {
+._confirmRow_3dhty_435 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_3dhty_436 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4251,18 +4268,18 @@ dialog._modal_6ng5l_693 {
   text-transform: uppercase;
 }
 
-._gripWrap_18igu_427 { position: relative; display: inline-flex; }
+._gripWrap_3dhty_444 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_18igu_427 {
+._grip_3dhty_444 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_18igu_427:active { cursor: grabbing; }
+._grip_3dhty_444:active { cursor: grabbing; }
 
-._moveMenu_18igu_438 {
+._moveMenu_3dhty_455 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4276,7 +4293,7 @@ dialog._modal_6ng5l_693 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_18igu_452 {
+._moveItem_3dhty_469 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4288,11 +4305,11 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_18igu_452:hover { background: var(--panel-2); }
+._moveItem_3dhty_469:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_18igu_467 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_18igu_468 {
+._editor_3dhty_484 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_3dhty_485 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -4303,14 +4320,14 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_18igu_479 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_3dhty_496 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-._reactions_18igu_485 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-._rxChip_18igu_486, ._rxPick_18igu_486 {
+._reactions_3dhty_502 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+._rxChip_3dhty_503, ._rxPick_3dhty_503 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4326,68 +4343,88 @@ dialog._modal_6ng5l_693 {
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._rxChip_18igu_486:hover, ._rxPick_18igu_486:hover { border-color: var(--accent); }
-._rxChip_18igu_486:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_18igu_504 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-._rxCount_18igu_505 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_3dhty_503:hover, ._rxPick_3dhty_503:hover { border-color: var(--accent); }
+._rxChip_3dhty_503:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_3dhty_521 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_3dhty_522 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
- * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
- * `position: absolute` over the card, and the column (`.cards`, overflow-y:
- * auto, which forces overflow-x: auto with it) clipped it to a couple of visible
- * emoji. Nothing here may be positioned, or the clipping comes back.
+ * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
+ * `.cards` is a scroll box on both axes, so anything positioned inside a card
+ * is clipped to it.
  *
- * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
- * even rows of the same size, not a ragged last line.
+ * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
+ * size, not a ragged last line.
  */
-._rxTray_18igu_516 {
+._rxTray_3dhty_532 {
+  position: fixed;
+  z-index: var(--z-popover);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
-  margin-top: var(--s2);
   padding: var(--s2);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 8px 24px rgb(0 0 0 / 22%);
+  animation: _trayIn_3dhty_1 var(--dur-fast) var(--ease) both;
+}
+
+@keyframes _trayIn_3dhty_1 {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* ── Column composer ──────────────────────────────────────────────────── */
 /*
- * The column's own writing surface, pinned as its footer — a sibling of the
- * scrolling `.cards`, so it never scrolls out of reach and a card lands
- * directly above it. This replaced a bar pinned below the whole board plus a
- * segmented destination picker; see ColumnComposer.tsx for why.
+ * The rest of the column is the control that opens it: the last item in the
+ * card stack, taking whatever height the cards left. Four dashed buttons
+ * across the bottom of the board were four permanent objects for something you
+ * do by pointing at the space you want the card in.
+ *
+ * A real button, so the keyboard and a screen reader reach it — it just draws
+ * nothing until the pointer is over it.
  */
-._columnCompose_18igu_534 {
+._composeArea_3dhty_566 {
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: var(--s2) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+._composeHint_3dhty_578 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  opacity: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  transition: opacity var(--dur-fast) var(--ease);
+}
+._composeArea_3dhty_566:hover ._composeHint_3dhty_578,
+._composeArea_3dhty_566:focus-visible ._composeHint_3dhty_578 {
+  opacity: 1;
+}
+/* Nothing invites a card while one is in the air. */
+._board_3dhty_34[data-dragging='true'] ._composeHint_3dhty_578 { opacity: 0; }
+
+._columnCompose_3dhty_594 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  padding: var(--s2);
-  border-top: 1px solid var(--line-soft);
+  padding: var(--s2) 0;
 }
-/* Dashed and quiet at rest: it is an invitation, and four solid buttons across
-   the bottom of the board would compete with the cards. */
-._composeGhost_18igu_543 {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s1);
-  width: 100%;
-  min-height: var(--tap);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-._composeGhost_18igu_543:hover, ._composeGhost_18igu_543:focus-visible {
-  border-style: solid;
-  border-color: var(--col-tone, var(--accent));
-  color: var(--text);
-}
-._composeBox_18igu_563 {
+._composeBox_3dhty_600 {
   width: 100%;
   min-height: var(--tap);
   max-height: 8rem;
@@ -4402,29 +4439,29 @@ dialog._modal_6ng5l_693 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeActions_18igu_578 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_3dhty_615 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
-._floatLayer_18igu_581 {
+._floatLayer_3dhty_618 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
   pointer-events: none;
   overflow: hidden;
 }
-._floater_18igu_588 {
+._floater_3dhty_625 {
   position: absolute;
   bottom: 0;
-  animation: _rise_18igu_1 2.6s ease-out forwards;
+  animation: _rise_3dhty_1 2.6s ease-out forwards;
 }
 
-@keyframes _rise_18igu_1 {
+@keyframes _rise_3dhty_1 {
   from { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   to { transform: translateY(-70vh); opacity: 0; }
 }
 
-._srOnly_18igu_600 {
+._srOnly_3dhty_637 {
   position: absolute;
   width: 1px;
   height: 1px;

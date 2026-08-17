@@ -35,7 +35,7 @@
  * interaction than simply naming the destination.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 
 import type { RetroGrids } from '../types/enums';
 
@@ -86,6 +86,11 @@ export interface CardDragOptions {
 
 export interface CardDrag {
   drag: DragState | null;
+  /**
+   * Attach to the carried card. Its transform is written here rather than
+   * rendered, so following the pointer costs no React work.
+   */
+  previewRef: MutableRefObject<HTMLElement | null>;
   /** Attach to the grip element of the card with this id. */
   onGripPointerDown(cardId: string, event: PointerEvent): void;
   /** Attach to the card body. Mice pick up at once; fingers hold first. */
@@ -94,38 +99,73 @@ export interface CardDrag {
   announcement: string;
 }
 
-/** The column element under a point, if any. */
-function columnAt(x: number, y: number): HTMLElement | null {
-  const el = document.elementFromPoint(x, y);
-  return el instanceof Element ? el.closest<HTMLElement>('[data-grid]') : null;
+/** Where the carried card hangs, as one transform. */
+export function carriedTransform(drag: DragState): string {
+  return `translate3d(${drag.x - drag.grabX}px, ${drag.y - drag.grabY}px, 0) rotate(${drag.tilt}deg)`;
 }
 
 /**
- * Where a card dropped at `y` should land in `column`.
+ * Everything the drag needs to know about the board, measured once.
  *
- * Compared against each card's vertical midpoint, and the dragged card itself is
- * skipped — counting it would make "drop where it already is" compute an index
- * one past its own position and register as a move.
+ * The hit test used to run `elementFromPoint` and then `getBoundingClientRect`
+ * on every card in the column — on the frame that had just written the carried
+ * card's transform, so each one forced a synchronous layout of the whole
+ * document. The card list is frozen for the duration of a drag (see useFrozen),
+ * so nothing can move except by the column scrolling, which is one number.
  */
-function indexAt(column: HTMLElement, y: number, draggedId: string): number {
-  const cards = [...column.querySelectorAll<HTMLElement>('[data-card-id]')].filter(
-    (el) => el.dataset['cardId'] !== draggedId
-  );
-  for (let i = 0; i < cards.length; i += 1) {
-    const rect = (cards[i] as HTMLElement).getBoundingClientRect();
-    if (y < rect.top + rect.height / 2) return i;
-  }
-  return cards.length;
+interface Zone {
+  grid: RetroGrids;
+  el: HTMLElement;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  /** Whether the column can scroll at all, so the edge nudge can be skipped. */
+  scrollable: boolean;
+  /** Its scroll offset when measured; the nudge below moves it from here. */
+  scroll0: number;
+  /** Each resting card's vertical midpoint, in viewport coordinates. */
+  mids: number[];
 }
 
-/** Nudge a column that the pointer is hovering near the top or bottom edge of. */
-function autoScroll(column: HTMLElement, y: number): void {
-  const rect = column.getBoundingClientRect();
-  if (column.scrollHeight <= column.clientHeight) return;
-  const fromTop = y - rect.top;
-  const fromBottom = rect.bottom - y;
-  if (fromTop < EDGE) column.scrollTop -= SCROLL_RATE * (1 - fromTop / EDGE);
-  else if (fromBottom < EDGE) column.scrollTop += SCROLL_RATE * (1 - fromBottom / EDGE);
+function measure(draggedId: string): Zone[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-grid]')].map((el) => {
+    const rect = el.getBoundingClientRect();
+    const mids = [...el.querySelectorAll<HTMLElement>('[data-card-id]')]
+      .filter((card) => card.dataset['cardId'] !== draggedId)
+      .map((card) => {
+        const box = card.getBoundingClientRect();
+        return box.top + box.height / 2;
+      });
+    return {
+      grid: el.dataset['grid'] as RetroGrids,
+      el,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      scrollable: el.scrollHeight > el.clientHeight,
+      scroll0: el.scrollTop,
+      mids,
+    };
+  });
+}
+
+/** Nudge a column the pointer is hovering near the top or bottom edge of. */
+function autoScroll(zone: Zone, y: number): void {
+  if (!zone.scrollable) return;
+  const fromTop = y - zone.top;
+  const fromBottom = zone.bottom - y;
+  if (fromTop < EDGE) zone.el.scrollTop -= SCROLL_RATE * (1 - fromTop / EDGE);
+  else if (fromBottom < EDGE) zone.el.scrollTop += SCROLL_RATE * (1 - fromBottom / EDGE);
+}
+
+/** Where a card released at `y` would land in `zone`. */
+function indexIn(zone: Zone, y: number): number {
+  const shift = zone.el.scrollTop - zone.scroll0;
+  let index = 0;
+  while (index < zone.mids.length && y > (zone.mids[index] as number) - shift) index += 1;
+  return index;
 }
 
 export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptions): CardDrag {
@@ -170,6 +210,16 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
   // actually stopped. That gap is the swing back to upright.
   const settleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  const previewRef = useRef<HTMLElement | null>(null);
+
+  /** Move the carried card, without going through React. */
+  const place = useCallback((x: number, y: number, tilt: number) => {
+    const el = previewRef.current;
+    const held = active.current;
+    if (!el || !held) return;
+    el.style.transform = carriedTransform({ ...held, x, y, tilt });
+  }, []);
+
   /**
    * One press, from either the grip or the card body.
    *
@@ -210,18 +260,56 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
         }
         // A drag across a board of text otherwise paints half of it blue.
         document.body.style.userSelect = 'none';
+        zones = measure(cardId);
         setAnnouncement('Picked up. Drag to a column, or press Escape to cancel.');
       };
 
-      const at = (e: PointerEvent, tilt: number): DragState => {
-        const column = columnAt(e.clientX, e.clientY);
+      let pendingX = originX;
+      let pendingY = originY;
+      let queued = false;
+      let frame = 0;
+      let zones: Zone[] = [];
+
+      /**
+       * One update, on the frame that will paint it.
+       *
+       * Pointer events arrive faster than the screen refreshes, and a mouse
+       * reporting at 1000 Hz would otherwise run this — a hit test, a
+       * measurement of every card in the column, and a React render of the
+       * whole board — sixteen times per painted frame.
+       */
+      const flush = (): void => {
+        const x = pendingX;
+        const y = pendingY;
+
+        const speed = x - lastX;
+        lastX = x;
+        const tilt = Math.max(-TILT_MAX, Math.min(TILT_MAX, (speed / TILT_SPEED) * TILT_MAX));
+        place(x, y, tilt);
+
+        const zone = zones.find((z) => x >= z.left && x <= z.right && y >= z.top && y <= z.bottom);
         let target: DropTarget | null = null;
-        if (column) {
-          autoScroll(column, e.clientY);
-          const grid = column.dataset['grid'] as RetroGrids | undefined;
-          if (grid) target = { grid, index: indexAt(column, e.clientY, cardId) };
+        if (zone) {
+          autoScroll(zone, y);
+          target = { grid: zone.grid, index: indexIn(zone, y) };
         }
-        return { cardId, x: e.clientX, y: e.clientY, grabX, grabY, width, tilt, target };
+
+        const held = active.current;
+        const next: DragState = { cardId, x, y, grabX, grabY, width, tilt, target };
+        active.current = next;
+        // React only hears about the drop target. The carried card's position
+        // is written straight to its own style above, because re-rendering four
+        // columns of cards to move one of them is what made this stutter.
+        if (!held || held.target?.grid !== target?.grid || held.target?.index !== target?.index) {
+          setDrag(next);
+        }
+
+        clearTimeout(settleRef.current);
+        settleRef.current = setTimeout(() => {
+          if (!active.current) return;
+          active.current = { ...active.current, tilt: 0 };
+          place(active.current.x, active.current.y, 0);
+        }, SETTLE_MS);
       };
 
       const move = (e: PointerEvent): void => {
@@ -237,22 +325,14 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
         }
         // Armed: the gesture is ours, and the browser must not also scroll with it.
         e.preventDefault();
-
-        const speed = e.clientX - lastX;
-        lastX = e.clientX;
-        const tilt = Math.max(-TILT_MAX, Math.min(TILT_MAX, (speed / TILT_SPEED) * TILT_MAX));
-        const next = at(e, tilt);
-        active.current = next;
-        setDrag(next);
-
-        clearTimeout(settleRef.current);
-        settleRef.current = setTimeout(() => {
-          const held = active.current;
-          if (!held) return;
-          const upright = { ...held, tilt: 0 };
-          active.current = upright;
-          setDrag(upright);
-        }, SETTLE_MS);
+        pendingX = e.clientX;
+        pendingY = e.clientY;
+        if (queued) return;
+        queued = true;
+        frame = requestAnimationFrame(() => {
+          queued = false;
+          flush();
+        });
       };
 
       const up = (e: PointerEvent): void => {
@@ -277,6 +357,9 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
 
       function teardown(): void {
         document.body.style.userSelect = '';
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+        queued = false;
         clearTimeout(armTimer);
         clearTimeout(settleRef.current);
         document.removeEventListener('pointermove', move);
@@ -313,7 +396,7 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
       document.addEventListener('keydown', key);
       teardownRef.current = teardown;
     },
-    [enabled, finish]
+    [enabled, finish, place]
   );
 
   const onGripPointerDown = useCallback(
@@ -340,5 +423,5 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
     []
   );
 
-  return { drag, onGripPointerDown, onCardPointerDown, announcement };
+  return { drag, previewRef, onGripPointerDown, onCardPointerDown, announcement };
 }

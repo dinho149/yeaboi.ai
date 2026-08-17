@@ -18,13 +18,18 @@ import { useEffect, type RefObject } from 'react';
 export function useDismiss(
   open: boolean,
   ref: RefObject<HTMLElement | null>,
-  onDismiss: (reason: 'escape' | 'outside') => void
+  onDismiss: (reason: 'escape' | 'outside') => void,
+  /** A second region that also counts as inside — a panel opened in a portal. */
+  alsoInside?: RefObject<HTMLElement | null>
 ): void {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: Event): void => {
       const region = ref.current;
-      if (region && event.target instanceof Node && !region.contains(event.target)) onDismiss('outside');
+      if (!region || !(event.target instanceof Node)) return;
+      if (region.contains(event.target)) return;
+      if (alsoInside?.current?.contains(event.target)) return;
+      onDismiss('outside');
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onDismiss('escape');
@@ -35,5 +40,5 @@ export function useDismiss(
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open, ref, onDismiss]);
+  }, [open, ref, onDismiss, alsoInside]);
 }

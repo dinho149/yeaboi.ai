@@ -15,14 +15,13 @@
  * the store/local-state split in `boardStore.ts` is drawn where it is.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { Avatar, Icon } from '../design/primitives';
 import { useDismiss } from '../hooks/useDismiss';
 import { fmtAgo } from '../runtime/format';
 import { cx } from '../runtime/cx';
 import { Button } from '../shared';
-import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { ReactionChips, ReactionTray, ReactionTrigger } from './ReactionBar';
 import motion from '../motion/motion.module.css';
@@ -47,13 +46,11 @@ export interface CardViewProps {
    * typing feel laggy.
    */
   arrived?: boolean;
-  onEdit(text: string): void;
-  onDelete(): void;
-  onReact(emoji: string): void;
-  onMoveTo(grid: RetroGrids): void;
-  onGripPointerDown(event: PointerEvent): void;
+  onEdit(cardId: string, text: string): void;
+  onDelete(cardId: string): void;
+  onReact(cardId: string, emoji: string): void;
   /** A press on the card body. Mice pick up at once, fingers hold first. */
-  onCardPointerDown(event: PointerEvent): void;
+  onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
 
 function CardEditor({
@@ -103,7 +100,7 @@ function CardEditor({
   );
 }
 
-export function CardView({
+function CardViewBase({
   card,
   authorAvatar,
   myReactions,
@@ -113,12 +110,9 @@ export function CardView({
   onEdit,
   onDelete,
   onReact,
-  onMoveTo,
-  onGripPointerDown,
   onCardPointerDown,
 }: CardViewProps) {
   const [editing, setEditing] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
   /**
    * A delete waiting to be confirmed.
@@ -133,6 +127,7 @@ export function CardView({
   const cardRef = useRef<HTMLElement | null>(null);
   const confirmRef = useRef<HTMLSpanElement | null>(null);
   const trayTriggerRef = useRef<HTMLButtonElement>(null);
+  const trayRef = useRef<HTMLDivElement | null>(null);
   const trayId = useId();
 
   const isAI = card.origin === 'ai';
@@ -150,7 +145,7 @@ export function CardView({
   // The card, not the trigger, is the tray's boundary: the trigger and the tray
   // are no longer one element, and anything else in the action row is a click
   // you meant to make on this card.
-  useDismiss(trayOpen, cardRef, closeTray);
+  useDismiss(trayOpen, cardRef, closeTray, trayRef);
   useDismiss(confirming, confirmRef, cancelDelete);
 
   // A pending delete must not survive into a state where the card can no longer
@@ -174,7 +169,7 @@ export function CardView({
       // The whole card is the handle; the hook decides what a press means from
       // the pointer type and skips one that landed on a control.
       onPointerDown={(event) => {
-        if (!editing && !locked) onCardPointerDown(event as unknown as PointerEvent);
+        if (!editing && !locked) onCardPointerDown(card.id, event as unknown as PointerEvent);
       }}
     >
       {editing ? (
@@ -183,7 +178,7 @@ export function CardView({
           onCancel={() => setEditing(false)}
           onSave={(text) => {
             setEditing(false);
-            onEdit(text);
+            onEdit(card.id, text);
           }}
         />
       ) : (
@@ -232,7 +227,7 @@ export function CardView({
               autoFocus
               onClick={() => {
                 setConfirming(false);
-                onDelete();
+                onDelete(card.id);
               }}
             >
               <Icon name="check" size={16} />
@@ -243,46 +238,6 @@ export function CardView({
           </span>
         ) : (
           <>
-          {locked ? null : (
-            <span className={styles['gripWrap']}>
-              {/* `.grip` is not styling: its `touch-action: none` and
-                  `cursor: grab` are the drag mechanics useCardDrag reads. That
-                  is why it stays a class rather than becoming a `shape`. */}
-              <Button
-                shape="bare"
-                className={styles['grip']}
-                aria-label={`Move card: ${card.text.slice(0, 40)}`}
-                aria-haspopup="menu"
-                aria-expanded={moveOpen}
-                onPointerDown={(event) => onGripPointerDown(event as unknown as PointerEvent)}
-                onClick={() => setMoveOpen((v) => !v)}
-              >
-                <Icon name="grip" size={16} />
-              </Button>
-              {moveOpen ? (
-                // The keyboard path. Dragging with arrow keys is a worse
-                // interaction than naming the destination, and this is also the
-                // only way to move a card with a screen reader running.
-                <div className={styles['moveMenu']} role="menu" aria-label="Move to column">
-                  {RETRO_GRIDS.filter((grid) => grid !== card.grid).map((grid) => (
-                    <button
-                      key={grid}
-                      type="button"
-                      role="menuitem"
-                      className={styles['moveItem']}
-                      onClick={() => {
-                        setMoveOpen(false);
-                        onMoveTo(grid);
-                      }}
-                    >
-                      {RETRO_GRID_LABELS[grid]}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </span>
-          )}
-
           {locked ? null : (
             <ReactionTrigger
               open={trayOpen}
@@ -321,16 +276,30 @@ export function CardView({
       {trayOpen && !locked ? (
         <ReactionTray
           id={trayId}
+          anchorRef={trayTriggerRef}
+          trayRef={trayRef}
           mine={myReactions}
           onPick={(emoji) => {
-            onReact(emoji);
+            onReact(card.id, emoji);
             setTrayOpen(false);
             trayTriggerRef.current?.focus();
           }}
         />
       ) : null}
 
-      <ReactionChips reactions={card.reactions} mine={myReactions} onReact={onReact} disabled={locked} />
+      <ReactionChips
+        reactions={card.reactions}
+        mine={myReactions}
+        onReact={(emoji) => onReact(card.id, emoji)}
+        disabled={locked}
+      />
     </article>
   );
 }
+
+/**
+ * Memoised: a drag re-renders the board on every slot the pointer crosses, and
+ * without this that is every card on the board rather than the two whose drop
+ * indicator moved.
+ */
+export const CardView = memo(CardViewBase);

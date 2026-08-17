@@ -337,6 +337,20 @@
     0 8px 20px rgb(0 0 0 / 14%);
 }
 .card:active { cursor: grabbing; }
+/* A card in the air takes no pointer events, so the pointer is over whatever is
+   underneath it — and a sweep across the board would otherwise lift every card
+   it crossed. */
+.board[data-dragging='true'] .card {
+  transition: none;
+}
+.board[data-dragging='true'] .card:hover {
+  transform: none;
+  border-color: var(--hairline);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+}
 /* A locked board is read-only, and a grab cursor over it is a lie. */
 .cardLocked { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
@@ -374,6 +388,9 @@
   cursor: grabbing;
   transform-origin: 50% 0%;
   transition: none;
+  /* Its own compositor layer. Without it every frame repaints a 40px-blurred
+     shadow, and the transform invalidates the document's layout with it. */
+  will-change: transform;
   box-shadow:
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
@@ -505,60 +522,80 @@
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
- * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
- * `position: absolute` over the card, and the column (`.cards`, overflow-y:
- * auto, which forces overflow-x: auto with it) clipped it to a couple of visible
- * emoji. Nothing here may be positioned, or the clipping comes back.
+ * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
+ * `.cards` is a scroll box on both axes, so anything positioned inside a card
+ * is clipped to it.
  *
- * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
- * even rows of the same size, not a ragged last line.
+ * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
+ * size, not a ragged last line.
  */
 .rxTray {
+  position: fixed;
+  z-index: var(--z-popover);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
-  margin-top: var(--s2);
   padding: var(--s2);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 8px 24px rgb(0 0 0 / 22%);
+  animation: trayIn var(--dur-fast) var(--ease) both;
+}
+
+@keyframes trayIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* ── Column composer ──────────────────────────────────────────────────── */
 /*
- * The column's own writing surface, pinned as its footer — a sibling of the
- * scrolling `.cards`, so it never scrolls out of reach and a card lands
- * directly above it. This replaced a bar pinned below the whole board plus a
- * segmented destination picker; see ColumnComposer.tsx for why.
+ * The rest of the column is the control that opens it: the last item in the
+ * card stack, taking whatever height the cards left. Four dashed buttons
+ * across the bottom of the board were four permanent objects for something you
+ * do by pointing at the space you want the card in.
+ *
+ * A real button, so the keyboard and a screen reader reach it — it just draws
+ * nothing until the pointer is over it.
  */
+.composeArea {
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: var(--s2) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.composeHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  opacity: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.composeArea:hover .composeHint,
+.composeArea:focus-visible .composeHint {
+  opacity: 1;
+}
+/* Nothing invites a card while one is in the air. */
+.board[data-dragging='true'] .composeHint { opacity: 0; }
+
 .columnCompose {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  padding: var(--s2);
-  border-top: 1px solid var(--line-soft);
-}
-/* Dashed and quiet at rest: it is an invitation, and four solid buttons across
-   the bottom of the board would compete with the cards. */
-.composeGhost {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s1);
-  width: 100%;
-  min-height: var(--tap);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-.composeGhost:hover, .composeGhost:focus-visible {
-  border-style: solid;
-  border-color: var(--col-tone, var(--accent));
-  color: var(--text);
+  padding: var(--s2) 0;
 }
 .composeBox {
   width: 100%;

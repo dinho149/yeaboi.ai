@@ -68,7 +68,7 @@ export function Board({
   const [page, setPage] = useState(0);
 
   const gridLabel = useCallback((grid: RetroGrids) => RETRO_GRID_LABELS[grid], []);
-  const { drag, onGripPointerDown, onCardPointerDown, announcement } = useCardDrag({
+  const { drag, previewRef, onCardPointerDown, announcement } = useCardDrag({
     onMove,
     gridLabel,
     enabled: !locked,
@@ -93,7 +93,14 @@ export function Board({
 
   return (
     <>
-      <div className={styles['board']} ref={trackRef} onScroll={onTrackScroll}>
+      <div
+        className={styles['board']}
+        ref={trackRef}
+        onScroll={onTrackScroll}
+        // Suppresses the resting cards' hover lift: the carried card takes no
+        // pointer events, so without this every card it passes over animates.
+        data-dragging={drag ? 'true' : undefined}
+      >
         {RETRO_GRIDS.map((grid) => (
           <Column
             key={grid}
@@ -113,8 +120,6 @@ export function Board({
             onEdit={onEdit}
             onDelete={onDelete}
             onReact={onReact}
-            onMoveTo={(cardId, target) => onMove(cardId, target, (byGrid.get(target) ?? []).length)}
-            onGripPointerDown={onGripPointerDown}
             onCardPointerDown={onCardPointerDown}
           />
         ))}
@@ -140,7 +145,12 @@ export function Board({
       </div>
 
       {dragged ? (
-        <DragPreview drag={drag as NonNullable<typeof drag>} card={dragged} authorAvatar={avatars.get(dragged.author)} />
+        <DragPreview
+          previewRef={previewRef}
+          drag={drag as NonNullable<typeof drag>}
+          card={dragged}
+          authorAvatar={avatars.get(dragged.author)}
+        />
       ) : null}
 
       {/* The drag's running commentary. A pointer drag is invisible to a screen

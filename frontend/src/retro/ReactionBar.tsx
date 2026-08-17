@@ -17,29 +17,21 @@
  * is a `role="menu"`, so a screen reader announces "menu, 16 items" rather than
  * sixteen loose buttons appearing from nowhere.
  *
- * ## Why {@link ReactionTray} is in the card's flow, not floating over it
+ * ## Why {@link ReactionTray} is a portal
  *
- * It used to be `position: absolute`, hanging above the trigger. That looked
- * right in isolation and was broken on the board: `.cards` is `overflow-y: auto`
- * so each column is a scroll box, and a non-`visible` overflow on one axis
- * forces the other to `auto` too — so the column clipped the panel on both
- * axes. In a four-column layout the ~236px panel was wider than its ~250px
- * column allowed for once right-anchored, and all you saw was the last couple
- * of emoji. It was reported, reasonably, as "there are only 2 emojis".
+ * `.cards` is `overflow-y: auto`, so each column is a scroll box — and a
+ * non-`visible` overflow on one axis forces the other to `auto` too. A panel
+ * positioned inside the card is clipped on both, which in a four-column layout
+ * showed the last two emoji of sixteen. It renders on `document.body` and is
+ * placed from the trigger's rect, flipping against whichever edge it would
+ * otherwise run off.
  *
- * A tray in the flow simply cannot be clipped: it pushes the card taller, and
- * the column scrolls to it like any other content. The alternatives were a
- * portal with `getBoundingClientRect` (which is what the pre-React code did,
- * and is only worth its cost when a re-render would otherwise destroy the
- * panel — nothing does that here) or the top-layer `popover` attribute, which
- * the older phones a tunnel link gets opened on do not have.
- *
- * The cost is that the trigger and the tray are no longer one component: the
- * trigger belongs in the action row and the tray belongs below it, so the card
- * owns the open state and renders the two in their two places.
+ * The trigger and the tray are still two components: the card owns the open
+ * state, because it is also what closes the tray on a click elsewhere.
  */
 
-import type { RefObject } from 'react';
+import { useLayoutEffect, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
@@ -124,11 +116,44 @@ export interface ReactionTrayProps {
   id: string;
   mine: ReadonlySet<string>;
   onPick(emoji: string): void;
+  /** The trigger the tray hangs off. */
+  anchorRef: RefObject<HTMLButtonElement | null>;
+  /** Taken by the tray element, so the card can count it as inside itself. */
+  trayRef: RefObject<HTMLDivElement | null>;
 }
 
-export function ReactionTray({ id, mine, onPick }: ReactionTrayProps) {
-  return (
-    <div id={id} className={styles['rxTray']} role="menu" aria-label="Reactions">
+/** The tray's own box, in px. Placement needs it before it exists. */
+const TRAY_W = 268;
+const TRAY_H = 96;
+
+export function ReactionTray({ id, mine, onPick, anchorRef, trayRef }: ReactionTrayProps) {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+
+  // Layout, not effect: measured and placed before the browser paints, or the
+  // tray shows for one frame in the top-left corner.
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const gap = 8;
+    const width = Math.min(TRAY_W, window.innerWidth - gap * 2);
+    // Right-aligned on the trigger, then pushed back inside whichever edge it
+    // would cross. A card in the last column opens leftward for free this way.
+    const left = Math.max(gap, Math.min(rect.right - width, window.innerWidth - width - gap));
+    const below = window.innerHeight - rect.bottom;
+    const top = below < TRAY_H + gap ? rect.top - TRAY_H - gap : rect.bottom + gap;
+    setAt({ top: Math.max(gap, top), left });
+  }, [anchorRef]);
+
+  return createPortal(
+    <div
+      ref={trayRef as RefObject<HTMLDivElement>}
+      id={id}
+      className={styles['rxTray']}
+      role="menu"
+      aria-label="Reactions"
+      style={at ? { top: `${at.top}px`, left: `${at.left}px`, width: `${TRAY_W}px` } : { opacity: 0 }}
+    >
       {REACTION_EMOJIS.map((emoji) => (
         <button
           key={emoji}
@@ -141,6 +166,7 @@ export function ReactionTray({ id, mine, onPick }: ReactionTrayProps) {
           <span aria-hidden="true">{emoji}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -21,8 +21,6 @@ function renderCard(overrides: Parameters<typeof card>[0] = {}, props: Partial<P
     onEdit: vi.fn(),
     onDelete: vi.fn(),
     onReact: vi.fn(),
-    onMoveTo: vi.fn(),
-    onGripPointerDown: vi.fn(),
     onCardPointerDown: vi.fn(),
   };
   const subject = card(overrides);
@@ -51,8 +49,6 @@ describe('CardView', () => {
         onEdit={onEdit}
         onDelete={vi.fn()}
         onReact={vi.fn()}
-        onMoveTo={vi.fn()}
-        onGripPointerDown={vi.fn()}
         onCardPointerDown={vi.fn()}
       />
     );
@@ -67,7 +63,7 @@ describe('CardView', () => {
 
   it('saves on ⌘-Enter and cancels on Escape without saving', async () => {
     const user = userEvent.setup();
-    const { onEdit } = renderCard({ text: 'first', mine: true });
+    const { onEdit, subject } = renderCard({ text: 'first', mine: true });
 
     await user.click(screen.getByRole('button', { name: /^Edit card/ }));
     await user.type(screen.getByRole('textbox', { name: 'Edit card' }), ' second{Escape}');
@@ -76,7 +72,7 @@ describe('CardView', () => {
 
     await user.click(screen.getByRole('button', { name: /^Edit card/ }));
     await user.type(screen.getByRole('textbox', { name: 'Edit card' }), ' third{Meta>}{Enter}{/Meta}');
-    expect(onEdit).toHaveBeenCalledWith('first third');
+    expect(onEdit).toHaveBeenCalledWith(subject.id, 'first third');
   });
 
   it("offers edit and delete only on your own cards", () => {
@@ -119,19 +115,6 @@ describe('CardView', () => {
     expect(screen.getByRole('button', { name: /Add 👍 reaction \(2\)/ })).toBeTruthy();
   });
 
-  it('names the destination columns in the keyboard move menu, excluding its own', async () => {
-    const user = userEvent.setup();
-    const { onMoveTo } = renderCard({ grid: 'went_well' });
-
-    await user.click(screen.getByRole('button', { name: /^Move card/ }));
-    const menu = screen.getByRole('menu', { name: 'Move to column' });
-    const labels = [...menu.querySelectorAll('button')].map((b) => b.textContent);
-    expect(labels).toEqual(["What didn't go well", 'Action items', 'Demos']);
-
-    await user.click(screen.getByRole('menuitem', { name: 'Action items' }));
-    expect(onMoveTo).toHaveBeenCalledWith('action_items');
-  });
-
   it('asks before deleting, and only deletes when the confirmation is answered', async () => {
     const user = userEvent.setup();
     const { onDelete } = renderCard({ text: 'hard won', mine: true });
@@ -160,24 +143,22 @@ describe('CardView', () => {
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  it('offers every reaction emoji in a tray inside the card', async () => {
+  it('offers every reaction emoji in a tray outside the card', async () => {
     const user = userEvent.setup();
-    const { container, onReact } = renderCard();
+    const { container, onReact, subject } = renderCard();
 
     await user.click(screen.getByRole('button', { name: 'Add a reaction' }));
     const tray = screen.getByRole('menu', { name: 'Reactions' });
     expect([...tray.querySelectorAll('[role="menuitem"]')]).toHaveLength(REACTION_EMOJIS.length);
 
-    // The tray is a child of the card, in its flow. It used to be positioned
-    // over it, and the column's scroll box clipped it to the last couple of
-    // emoji — which is why this asserts on the *ancestry*, not just the count.
-    expect(container.querySelector('article')?.contains(tray)).toBe(true);
-    for (const property of ['position', 'right', 'bottom']) {
-      expect(tray.style.getPropertyValue(property)).toBe('');
-    }
+    // On the body, not in the card. `.cards` is a scroll box on both axes, so
+    // a panel positioned inside a card is clipped to the column — which showed
+    // the last two emoji of sixteen. The ancestry is the assertion.
+    expect(container.querySelector('article')?.contains(tray)).toBe(false);
+    expect(document.body.contains(tray)).toBe(true);
 
     await user.click(screen.getByRole('menuitem', { name: '🧠' }));
-    expect(onReact).toHaveBeenCalledWith('🧠');
+    expect(onReact).toHaveBeenCalledWith(subject.id, '🧠');
     expect(screen.queryByRole('menu', { name: 'Reactions' })).toBeNull();
   });
 

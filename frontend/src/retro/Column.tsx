@@ -52,8 +52,6 @@ export interface ColumnProps {
   onEdit(cardId: string, text: string): void;
   onDelete(cardId: string): void;
   onReact(cardId: string, emoji: string): void;
-  onMoveTo(cardId: string, grid: RetroGrids): void;
-  onGripPointerDown(cardId: string, event: PointerEvent): void;
   /** A press on the card body, which a mouse turns into a drag at once. */
   onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
@@ -87,8 +85,6 @@ export function Column({
   onEdit,
   onDelete,
   onReact,
-  onMoveTo,
-  onGripPointerDown,
   onCardPointerDown,
 }: ColumnProps) {
   const [composing, setComposing] = useState(false);
@@ -123,12 +119,10 @@ export function Column({
         myReactions={myReactions.get(card.id) ?? NO_REACTIONS}
         locked={locked}
         dragging={draggingId === card.id}
-        onEdit={(text) => onEdit(card.id, text)}
-        onDelete={() => onDelete(card.id)}
-        onReact={(emoji) => onReact(card.id, emoji)}
-        onMoveTo={(target) => onMoveTo(card.id, target)}
-        onGripPointerDown={(event) => onGripPointerDown(card.id, event)}
-        onCardPointerDown={(event) => onCardPointerDown(card.id, event)}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onReact={onReact}
+        onCardPointerDown={onCardPointerDown}
       />
     </div>
   );
@@ -181,22 +175,24 @@ export function Column({
         )}
         {/* Trailing indicator, for a drop past the last card. */}
         {dropAt && dropAt.index >= slots ? <div className={styles['dropLine']} aria-hidden="true" /> : null}
-      </div>
 
-      {locked ? null : (
-        <ColumnComposer
-          label={label}
-          open={composing}
-          focusNonce={focusNonce}
-          onOpen={() => {
-            setComposing(true);
-            setFocusNonce((n) => n + 1);
-          }}
-          onClose={() => setComposing(false)}
-          onSubmit={onAddCard}
-          onTyping={onTyping}
-        />
-      )}
+        {/* Last in the stack, so a card lands where you were pointing and the
+            rest of the column is the control that opens it. */}
+        {locked ? null : (
+          <ColumnComposer
+            label={label}
+            open={composing}
+            focusNonce={focusNonce}
+            onOpen={() => {
+              setComposing(true);
+              setFocusNonce((n) => n + 1);
+            }}
+            onClose={() => setComposing(false)}
+            onSubmit={onAddCard}
+            onTyping={onTyping}
+          />
+        )}
+      </div>
 
       {/* The ghost above says this visually and is aria-hidden; this keeps the
           announcement without printing the same sentence twice on screen. */}
