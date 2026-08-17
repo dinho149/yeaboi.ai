@@ -1,6 +1,6 @@
 # go migration campaign
 
-**Trigger** — cron `0 * * * *` (hourly)
+**Trigger** — cron `54 * * * *` (hourly, at :54)
 **Summary** — advances the current Go-migration wave by one phase, or opens the next wave
 **Workstream** — [`workstreams/go-migration.md`](../../workstreams/go-migration.md)
 **Model** — `heavy` ([models.md](../../models.md))
@@ -13,8 +13,15 @@ and the program doc's §5 conventions before anything else.
 **Hourly, because the program is a fixed amount of work and the cron was the only thing making
 it slow.** Thirteen waves is roughly a hundred phase-runs; at five runs a week that is five
 months, and at one an hour it is about four days. One run still advances exactly one phase —
-nothing about the unit of work changed, only how often the unit is attempted. `0 * * * *` is the
+nothing about the unit of work changed, only how often the unit is attempted. One hour is the
 floor the routines API allows; a shorter interval is rejected, not merely discouraged.
+
+**`54`, not `0`, and the minute is not cosmetic.** Registering `0 * * * *` does not store
+`0 * * * *`: the API moves a routine off the contended top-of-hour and stores what it chose —
+here `54`. The repo would then hold a cron the account does not, `--check` would report drift
+every run, and a `deploy` "fixing" it would post `0` and be moved again, forever. So the file
+records the minute the account actually keeps. Anything re-timing this routine should set the
+cron, read it back, and write the stored value here.
 
 **Two sessions must never work one wave branch.** An hourly cron will fire again while a long
 phase is still running, and the second session would read the same spec, implement the same
