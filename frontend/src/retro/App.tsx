@@ -56,14 +56,13 @@ import { cx } from '../runtime/cx';
 import { boardStyles as kit, Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
-import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
+import { AVATARS, type RetroGrids } from '../types/enums';
 import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/board';
 import { createRetroActions } from './actions';
 import { Board } from './Board';
-import { TimeSwitch } from './TimeSwitch';
+import { HostRail } from './HostRail';
 import { useHistory } from './useHistory';
-import { Walkthrough } from './Walkthrough';
-import { CarriedStrip } from './CarriedStrip';
+import { useSwap } from './useSwap';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
 
@@ -82,6 +81,9 @@ const NO_TYPING: readonly TypingEntry[] = [];
 // A retro that finished weeks ago has nobody typing into it and nothing arriving.
 const NO_TYPING_BY_GRID: ReadonlyMap<string, readonly string[]> = new Map();
 const NO_ARRIVALS: ReadonlySet<string> = new Set();
+
+/** How long one board takes to leave before the next arrives. Matches the sheet. */
+const SWAP_MS = 170;
 
 export function App({ boot }: { boot: RetroBoot }) {
   // ── Identity and session ───────────────────────────────────────────────
@@ -133,6 +135,13 @@ export function App({ boot }: { boot: RetroBoot }) {
   // A past retro is read-only in the strongest sense available: it reuses
   // `locked`, so every composer, every control and every drag is already off.
   const readOnly = locked || history.at > 0;
+
+  /** What the board is showing, held together so a sprint switch swaps once. */
+  const view = useMemo(
+    () => ({ cards: past ? past.cards : cards, carried: past ? past.carried : carried }),
+    [past, cards, carried]
+  );
+  const swap = useSwap(view, history.at, SWAP_MS);
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
   // anyone who reaches the board, token or not. Also puts it on the clipboard.
@@ -242,11 +251,12 @@ export function App({ boot }: { boot: RetroBoot }) {
   }, [arrivals, duckPulse]);
 
   /** Human authors with at least one card, sorted — the walkthrough running order. */
+  const shownCards = past ? past.cards : cards;
   const authors = useMemo(() => {
     const set = new Set<string>();
-    for (const card of cards) if (card.origin !== 'ai' && card.author) set.add(card.author);
+    for (const card of shownCards) if (card.origin !== 'ai' && card.author) set.add(card.author);
     return [...set].sort();
-  }, [cards]);
+  }, [shownCards]);
 
   /** The same people, with a face and a card count — what the panel shows. */
   const roster = useMemo(
@@ -254,9 +264,9 @@ export function App({ boot }: { boot: RetroBoot }) {
       authors.map((name) => ({
         name,
         avatar: avatarsByName.get(name),
-        cards: cards.filter((card) => card.author === name && card.origin !== 'ai').length,
+        cards: shownCards.filter((card) => card.author === name && card.origin !== 'ai').length,
       })),
-    [authors, avatarsByName, cards]
+    [authors, avatarsByName, shownCards]
   );
 
   // An author who has left mid-walkthrough would otherwise leave every column
@@ -355,7 +365,7 @@ export function App({ boot }: { boot: RetroBoot }) {
     );
   }
 
-  const shownCount = past ? past.cards.length : cards.length;
+  const shownCount = shownCards.length;
 
   const toolbar = (
     <Toolbar
@@ -368,10 +378,7 @@ export function App({ boot }: { boot: RetroBoot }) {
       mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
-            <TimeSwitch history={history} liveLabel={boot.sprint || 'This retro'} />
-            <span className={styles['subtleDot']} aria-hidden="true">
-              ·
-            </span>
+            {past ? `${past.sprint_name || past.date} · ` : boot.sprint ? `${boot.sprint} · ` : ''}
             {shownCount} {shownCount === 1 ? 'card' : 'cards'}
             {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
           </>
@@ -403,28 +410,6 @@ export function App({ boot }: { boot: RetroBoot }) {
       dock={
         <>
             <Visualizer playing={music.playing} />
-
-            <Popover
-              trigger={<Icon name="user" size={16} />}
-              label="Walk through one person at a time"
-            >
-              <Walkthrough people={roster} current={focus} onPick={setFocus} onExit={() => setFocus('')} />
-            </Popover>
-
-            {isHost ? (
-              <IconButton
-                icon={<Icon name="sparkles" size={16} />}
-                label="Suggest action items"
-                disabled={suggesting || readOnly}
-                onClick={() => {
-                  setSuggesting(true);
-                  void actions.suggestActions().then((message) => {
-                    setSuggesting(false);
-                    setSuggestion(message);
-                  });
-                }}
-              />
-            ) : null}
 
             {isHost ? (
               <IconButton
@@ -508,6 +493,16 @@ export function App({ boot }: { boot: RetroBoot }) {
         {locked ? 'The host locked the board.' : ''}
       </p>
 
+      {past ? (
+        <p className={styles['pastBar']} role="status">
+          <Icon name="rotate-ccw" size={14} />
+          <strong>{past.sprint_name || 'A past retro'}</strong>
+          <span className={styles['pastWhen']}>{past.date}</span>
+          <span className={styles['pastSpacer']} />
+          <Button onClick={() => history.reset()}>Back to this retro</Button>
+        </p>
+      ) : null}
+
       {musicBlocked ? (
         <button
           type="button"
@@ -518,15 +513,11 @@ export function App({ boot }: { boot: RetroBoot }) {
         </button>
       ) : null}
 
-      <CarriedStrip
-        items={past ? past.carried : carried}
-        locked={readOnly}
-        onSetStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_ as CarriedStatuses)}
-      />
-
-
+      <div className={styles['boardLayout']}>
       <Board
-        cards={past ? past.cards : cards}
+        key={swap.key}
+        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
+        cards={swap.payload.cards}
         avatars={avatarsByName}
         myReactions={myReactions}
         typing={past ? NO_TYPING_BY_GRID : typingByGrid}
@@ -540,6 +531,29 @@ export function App({ boot }: { boot: RetroBoot }) {
         onReact={(cardId, emoji) => void react(cardId, emoji)}
         onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
       />
+
+      {isHost ? (
+        <HostRail
+          history={history}
+          liveLabel={boot.sprint || 'This retro'}
+          carried={swap.payload.carried}
+          onSetCarriedStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_)}
+          people={roster}
+          focus={focus}
+          onFocus={setFocus}
+          canSuggest={!readOnly}
+          suggesting={suggesting}
+          onSuggest={() => {
+            setSuggesting(true);
+            void actions.suggestActions().then((message) => {
+              setSuggesting(false);
+              setSuggestion(message);
+            });
+          }}
+          past={history.at > 0}
+        />
+      ) : null}
+      </div>
       </div>
 
       {/* Overlays and modals are fixed-position, so they take no part in the

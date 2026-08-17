@@ -46,6 +46,10 @@ export interface History {
   loading: boolean;
   /** Move `delta` steps back (positive) or forward. Clamped at both ends. */
   step(delta: number): void;
+  /** Jump straight to a step. 0 is the live board. */
+  go(index: number): void;
+  /** True once the list has been asked for and answered. */
+  listed: boolean;
   /** Back to the live board. */
   reset(): void;
 }
@@ -88,6 +92,21 @@ export function useHistory(session: Session): History {
     [session]
   );
 
+  const go = useCallback(
+    (index: number) => {
+      if (index < 0) return;
+      setAt(index);
+      if (!asked.current) {
+        asked.current = true;
+        void get<{ retros: RetroRun[] }>(session).then((data) => {
+          setRuns(data?.retros ?? []);
+          setArrived(true);
+        });
+      }
+    },
+    [session]
+  );
+
   const reset = useCallback(() => setAt(0), []);
 
   useEffect(() => {
@@ -118,5 +137,5 @@ export function useHistory(session: Session): History {
     if (arrived && at > runs.length) setAt(runs.length);
   }, [arrived, at, runs.length]);
 
-  return { runs, at, showing, loading, step, reset };
+  return { runs, at, showing, loading, listed: arrived, step, go, reset };
 }

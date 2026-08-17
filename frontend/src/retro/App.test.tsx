@@ -148,12 +148,13 @@ describe('retro App', () => {
   });
 
   it('filters every column to one person during a walkthrough', async () => {
-    seedIdentity();
+    // Host: the walkthrough lives in the facilitator's rail, which a guest has
+    // no reason to see and does not get.
+    seedIdentity({ admin: true });
     const user = userEvent.setup();
     render(<App boot={BOOT} />);
     await screen.findByText('Pairing paid off');
 
-    await user.click(screen.getByRole('button', { name: /Walk through one person/ }));
     // The panel's own list, not the identity chip that carries the same name.
     const walk = screen.getByRole('group', { name: 'Walkthrough' });
     await user.click(within(walk).getByRole('button', { name: /^Ada,/ }));

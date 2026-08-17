@@ -206,10 +206,123 @@
 .statusCarried { border-left-color: var(--warn); }
 .statusMuted { border-left-color: var(--muted); opacity: 0.6; }
 
+/* ── Switching sprints ────────────────────────────────────────────────── */
+/*
+ * One board leaves, the next arrives. Only ever after a switch — the classes
+ * are not set on the first render, so opening the board still paints nothing.
+ * The columns move together rather than card by card: they are all being
+ * replaced at once, and a stagger would read as a board loading.
+ */
+.boardOut {
+  animation: sprintOut 170ms var(--ease) both;
+  pointer-events: none;
+}
+.boardIn {
+  animation: sprintIn 220ms var(--ease) both;
+}
+
+@keyframes sprintOut {
+  to {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes sprintIn {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* ── A retro that already happened ────────────────────────────────────── */
+/*
+ * Said plainly, once. Nothing else on the board tells you the cards are from
+ * last month — they are the same cards in the same columns — and the fact that
+ * you cannot write on them is only discoverable by trying.
+ */
+.pastBar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: 0;
+  padding: var(--s2) var(--s4);
+  color: var(--accent2);
+  font-size: var(--fs-s);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent2) 35%, transparent);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
+}
+.pastWhen { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
+.pastSpacer { flex: 1; }
+
+/* ── The facilitator's column ─────────────────────────────────────────── */
+/*
+ * Everything only the host does, beside the board instead of scattered across
+ * the bar, the notch and a strip above the columns. It scrolls on its own — the
+ * board is the thing with a fixed height, and a rail that pushed it shorter
+ * would be a control panel costing the content it controls.
+ */
+.boardLayout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.rail {
+  flex: none;
+  width: 17rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s3) var(--s4) var(--s3) 0;
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+
+/* No panel behind them: the rail is a column of the board, not a drawer over
+   it, and four stacked panels beside four columns of cards is eight objects. */
+.railBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.railTitle {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+.railNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+/* Under a laptop's width there is no room beside the board, so it goes back
+   above it and lies down. */
+@media (max-width: 1099px) {
+  .boardLayout { flex-direction: column-reverse; }
+  .rail {
+    width: auto;
+    overflow-y: visible;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s4);
+    padding: var(--s3) var(--s4) 0;
+  }
+  .railBlock { flex: 1 1 14rem; }
+}
+
 /* ── Which retro ──────────────────────────────────────────────────────── */
 /* Two arrows and a label, beside the sprint they are stepping through. */
 .timeSwitch {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--s1);
   vertical-align: middle;

@@ -1,13 +1,17 @@
 /**
  * Which retro you are looking at.
  *
- * Two arrows and a label, in the bar beside the sprint. Back walks into the
- * store one retro at a time; forward walks out again, and the last step forward
- * is the live board — which is labelled as such, because "Sprint 42" and
- * "Sprint 41" tell you nothing about which one you can still write on.
+ * Two arrows and a picker, in the bar beside the sprint. The arrows are for
+ * "the one before this", which is the step people actually take; the picker is
+ * for "the one where we talked about the deploy", which is the one they
+ * remember by name.
+ *
+ * The live board is an option in the list, not a separate control — going back
+ * to today is the same kind of move as going anywhere else, and a picker that
+ * cannot express where you already are is a picker with a hole in it.
  */
 
-import { Icon } from '../design/primitives';
+import { Dropdown, Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { History } from './useHistory';
 import styles from './retro.module.css';
@@ -18,16 +22,24 @@ export interface TimeSwitchProps {
   liveLabel: string;
 }
 
+/** Labels have to be unique — two retros in one sprint would collide. */
+function labelFor(run: { retro_date: string; sprint_name?: string }, index: number): string {
+  const named = run.sprint_name?.trim();
+  const when = run.retro_date || '—';
+  return named ? `${named} · ${when}` : `${when}${index ? ` (${index})` : ''}`;
+}
+
 export function TimeSwitch({ history, liveLabel }: TimeSwitchProps) {
-  const { runs, at, showing, loading } = history;
+  const { runs, at, loading } = history;
   // Back is open until the list says otherwise: it is what fetches the list, so
   // disabling it before then would mean nobody could ever ask.
   const canBack = runs.length === 0 ? at === 0 : at < runs.length;
-  const run = at > 0 ? runs[at - 1] : undefined;
-  const label = at === 0 ? liveLabel : (showing?.sprint_name ?? run?.retro_date ?? '…');
+
+  const options = [liveLabel, ...runs.map(labelFor)];
+  const value = options[at] ?? liveLabel;
 
   return (
-    <div className={styles['timeSwitch']} role="group" aria-label="Which retro">
+    <span className={styles['timeSwitch']} role="group" aria-label="Which retro">
       <button
         type="button"
         className={styles['timeStep']}
@@ -38,9 +50,13 @@ export function TimeSwitch({ history, liveLabel }: TimeSwitchProps) {
         <Icon name="chevron-left" size={14} />
       </button>
 
-      <span className={cx(styles['timeLabel'], at > 0 && styles['timeLabelPast'])} aria-live="polite">
-        {label}
-      </span>
+      <Dropdown
+        label="Which retro"
+        value={value}
+        options={options}
+        className={cx(styles['timePick'], at > 0 && styles['timePickPast'])}
+        onChange={(next) => history.go(options.indexOf(next))}
+      />
 
       <button
         type="button"
@@ -51,6 +67,6 @@ export function TimeSwitch({ history, liveLabel }: TimeSwitchProps) {
       >
         <Icon name="chevron-right" size={14} />
       </button>
-    </div>
+    </span>
   );
 }

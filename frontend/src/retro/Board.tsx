@@ -44,6 +44,8 @@ export interface BoardProps {
   onDelete(cardId: string): void;
   onReact(cardId: string, emoji: string): void;
   onMove(cardId: string, grid: RetroGrids, index: number): void;
+  /** Set while a sprint switch is swapping one board for another. */
+  className?: string | undefined;
 }
 
 const NO_TYPING: readonly string[] = [];
@@ -62,6 +64,7 @@ export function Board({
   onDelete,
   onReact,
   onMove,
+  className,
 }: BoardProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(0);
@@ -117,7 +120,7 @@ export function Board({
   return (
     <>
       <div
-        className={styles['board']}
+        className={cx(styles['board'], className)}
         ref={trackRef}
         onScroll={onTrackScroll}
         // Suppresses the resting cards' hover lift: the carried card takes no
