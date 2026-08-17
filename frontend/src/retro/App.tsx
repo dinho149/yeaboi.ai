@@ -202,7 +202,7 @@ export function App({ boot }: { boot: RetroBoot }) {
     const mine = new Set(cards.filter((card) => card.mine).map((card) => card.id));
     return (id: string): boolean => !mine.has(id);
   }, [cards]);
-  const arrivals = useArrivals(cardIds, notMine);
+  const arrivals = useArrivals(cardIds, notMine, Boolean(snapshot));
 
   /**
    * What the duck is doing.
