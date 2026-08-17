@@ -28,7 +28,7 @@
  * what you have typed.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Icon } from '../design/primitives';
 import { cx } from '../runtime/cx';
@@ -78,7 +78,10 @@ export function ColumnComposer({
     if (open && focusNonce > 0) boxRef.current?.focus();
   }, [open, focusNonce]);
 
-  useEffect(() => {
+  // Layout, not effect: an ordinary effect runs after paint, so the render that
+  // closed the box would show one frame with it already gone and the next with
+  // it back and folding — which is the flicker, not the fold.
+  useLayoutEffect(() => {
     const was = wasOpen.current;
     wasOpen.current = open;
     if (open || !was) return undefined;

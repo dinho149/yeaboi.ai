@@ -54,28 +54,42 @@
    far in the chip's own avatar sits, which is what they line up *with*. */
 .identity {
   position: relative;
-  --room-lead: var(--s3);
+  --room-lead: var(--s1);
   display: flex;
   align-items: center;
   gap: var(--s3);
 }
 
+/* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
+   It is your own name, not a control you are meant to find. */
 .meChip {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  padding: var(--s1) var(--s2) var(--s1) var(--s1);
+  border: 1px solid transparent;
   border-radius: var(--r-pill);
+  background: none;
   color: var(--text);
   font: inherit;
-  font-size: var(--fs-s);
+  font-size: var(--fs-xs);
   cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
-.meChip:hover { border-color: var(--accent); }
-.meName { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meChip:hover {
+  background: var(--panel-2);
+  border-color: var(--hairline);
+}
+.meName {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
 .pen { display: inline-flex; color: var(--muted); }
 .roomCount { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
@@ -551,7 +565,16 @@
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-.rxChip:hover, .rxPick:hover { border-color: var(--accent); }
+/* In the tray the emoji are the content, and sixteen pills behind them is
+   sixteen more objects than the panel needs. A ground only under the pointer. */
+.rxPick {
+  background: none;
+}
+.rxPick:hover, .rxPick:focus-visible {
+  background: var(--panel-2);
+}
+.rxChip:hover { border-color: var(--accent); }
+.rxPick:hover { border-color: transparent; }
 .rxChip:disabled { opacity: 0.5; cursor: default; }
 .rxChipMine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
@@ -571,7 +594,11 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
   padding: var(--s2);
-  background: var(--panel);
+  /* Frosted rather than filled: it is a small panel over the board, and a solid
+     one reads as a second surface where a translucent one reads as something
+     held above the first. */
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
   box-shadow:
