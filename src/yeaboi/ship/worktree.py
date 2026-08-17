@@ -222,17 +222,22 @@ def remove(run_id: str, *, delete_branch: bool = False) -> bool:
     entry = registry.get(run_id)
     if not isinstance(entry, dict):
         return False
-    ok = True
     path = str(entry.get("path", ""))
     repo = str(entry.get("repo", ""))
-    if path and repo:
-        try:
-            checkout = _validate_owned(path)
-            _git(repo, "worktree", "remove", "--force", str(checkout))
-            _git(repo, "worktree", "prune")
-        except WorktreeError as exc:
-            logger.warning("Could not remove worktree for %s: %s", run_id, exc)
-            ok = False
+    if not (path and repo):
+        # A hand-edited registry can name a run with no checkout behind it.
+        # Popping the row and reporting success would claim a removal that
+        # never happened, so say what is true: nothing was removed.
+        logger.warning("Registry entry for %s names no worktree; nothing removed", run_id)
+        return False
+    ok = True
+    try:
+        checkout = _validate_owned(path)
+        _git(repo, "worktree", "remove", "--force", str(checkout))
+        _git(repo, "worktree", "prune")
+    except WorktreeError as exc:
+        logger.warning("Could not remove worktree for %s: %s", run_id, exc)
+        ok = False
     if ok and delete_branch and repo and entry.get("branch"):
         try:
             _git(repo, "branch", "-D", str(entry["branch"]))

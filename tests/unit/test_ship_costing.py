@@ -108,3 +108,14 @@ class TestLocateTranscript:
         monkeypatch.setattr(costing, "_source_roots", lambda: (("claude_code", tmp_path),))
         assert costing.locate_transcript("../../etc/passwd") is None
         assert costing.locate_transcript("") is None
+
+    def test_rejects_glob_shaped_session_ids(self, tmp_path, monkeypatch):
+        # The id comes from the agent's own envelope and lands in an rglob
+        # pattern — a wildcard would match, and price, an unrelated run.
+        root = tmp_path / "projects"
+        (root / "some-proj").mkdir(parents=True)
+        (root / "some-proj" / "sess-42.jsonl").write_text("", encoding="utf-8")
+        monkeypatch.setattr(costing, "_source_roots", lambda: (("claude_code", root),))
+        assert costing.locate_transcript("*") is None
+        assert costing.locate_transcript("sess-4?") is None
+        assert costing.locate_transcript("sess-[0-9]*") is None

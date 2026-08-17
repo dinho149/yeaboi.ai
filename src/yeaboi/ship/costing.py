@@ -20,6 +20,7 @@ Reading ``~/.claude/projects`` is already permitted (and read-only) under
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,8 @@ from yeaboi.agentwatch.collector import IngestStats, _parse_file, _source_roots
 from yeaboi.agentwatch.engine import _session_cost
 
 logger = logging.getLogger(__name__)
+
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 @dataclass(frozen=True)
@@ -56,7 +59,11 @@ def locate_transcript(session_id: str) -> Path | None:
     The filename is the session id — Claude Code writes one
     ``<session-id>.jsonl`` per session under ``~/.claude/projects/<project>/``.
     """
-    if not session_id or "/" in session_id or "\\" in session_id:
+    # The id comes out of the agent's own JSON envelope and goes straight into
+    # an rglob pattern, so a glob metacharacter (``*``, ``?``, ``[``) would
+    # match some other run's transcript and price the wrong one. Whitelist the
+    # shape rather than escaping it — session ids are uuid-shaped.
+    if not _SESSION_ID_RE.fullmatch(session_id or ""):
         return None
     for _source, root in _source_roots():
         if not root.is_dir():
