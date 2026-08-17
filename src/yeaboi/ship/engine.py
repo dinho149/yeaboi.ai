@@ -84,17 +84,26 @@ def _failed(run: ShipRun, reason: str, *, phase: str = "") -> ShipRun:
 
 
 def _load_story(session_id: str, story_id: str, db_path: Path | None):
-    """(story, tasks, resolved_session_id) — raises ValueError with a plain reason."""
-    from yeaboi.paths import get_db_path
-    from yeaboi.sessions import SessionStore
+    """(story, tasks, resolved_id) — raises ValueError with a plain reason.
 
-    with SessionStore(db_path or get_db_path()) as sessions:
-        resolved = session_id or sessions.get_latest_session_id()
-        if not resolved:
-            raise ValueError("no saved planning sessions — generate a plan first")
-        state = sessions.load_state(resolved)
-    if state is None:
-        raise ValueError(f"session {resolved} has no saved state")
+    Resolves a plan across BOTH stores yeaboi saves plans to (the interactive
+    chat's project store and the SQLite session store) via ``ship.plans`` — the
+    same source the picker uses, so a story shown in the picker can always be
+    loaded here.
+    """
+    from yeaboi.ship import plans
+
+    if session_id:
+        resolved = session_id
+        state = plans.load_plan_state(session_id, db_path)
+    else:
+        picked = plans.latest_plan_with_stories(db_path)
+        if picked is None:
+            raise ValueError("no saved plan with stories — generate a plan first")
+        _, resolved, _ = picked
+        state = plans.load_plan_state(resolved, db_path)
+    if not state:
+        raise ValueError(f"plan {resolved} has no saved state")
     story, tasks = pipeline.find_story(state, story_id)
     return story, tasks, resolved
 

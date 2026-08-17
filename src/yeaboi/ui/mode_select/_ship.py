@@ -38,20 +38,25 @@ logger = logging.getLogger(__name__)
 
 
 def _load_stories() -> tuple[list, str, str]:
-    """(stories, session_id, message) from the latest saved plan. Never raises."""
-    from yeaboi.paths import get_db_path
-    from yeaboi.sessions import SessionStore
+    """(stories, plan_id, message) from the latest saved plan. Never raises.
+
+    Reads across BOTH plan stores (the interactive chat's project store and the
+    SQLite session store) via ``ship.plans``, and picks the latest plan that
+    actually has stories — so a completed plan is never shadowed by a newer,
+    empty session, and a chat-built plan is not invisible just because ship used
+    to read only SQLite.
+    """
+    from yeaboi.ship import plans
 
     try:
-        with SessionStore(get_db_path()) as store:
-            session_id = store.get_latest_session_id()
-            if not session_id:
-                return [], "", ""
-            state = store.load_state(session_id) or {}
-    except Exception as exc:  # noqa: BLE001 — an unreadable DB must not crash the menu
-        logger.warning("Ship page: could not load sessions: %s", exc)
+        picked = plans.latest_plan_with_stories()
+    except Exception as exc:  # noqa: BLE001 — an unreadable store must not crash the menu
+        logger.warning("Ship page: could not load plans: %s", exc)
         return [], "", "Could not read saved plans — see logs."
-    return list(state.get("stories") or []), session_id, ""
+    if picked is None:
+        return [], "", ""
+    stories, plan_id, _name = picked
+    return stories, plan_id, ""
 
 
 def _resolve_target(repo: str) -> tuple[str, str]:
