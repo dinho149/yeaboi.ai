@@ -80,6 +80,7 @@ def _retro_report() -> RetroReport:
             RetroCard(id="dd44", grid="action_items", text="AI wrote this", author="AI", origin="ai"),
             RetroCard(id="ee.55 %x", grid="action_items", text="anchor needs escape_value", author="İlker"),
             RetroCard(id="ff66", grid="lost_grid", text="unknown grid — counted, never rendered"),
+            RetroCard(id="gg77", grid="", text="empty grid — counted, never rendered"),
             # "demos" stays empty — the empty-grid branch renders "_No cards._".
         ),
         participants=(),  # empty participants — the header renders the dash
@@ -261,7 +262,8 @@ class TestCorpusSelfGuards:
         assert len(report["columns"]) == 4, "columns are always exactly the four grids"
         rendered = [c["text"] for col in report["columns"] for c in col["cards"]]
         assert "unknown grid — counted, never rendered" not in rendered
-        assert dict(args["facts"])["CARDS"] == "6", "the unknown-grid card still counts"
+        assert "empty grid — counted, never rendered" not in rendered
+        assert dict(args["facts"])["CARDS"] == "7", "the unknown-grid and empty-grid cards still count"
         anchors = [c.get("anchor", "") for col in report["columns"] for c in col["cards"]]
         assert "cards[id=ee%2E55 %25x]" not in anchors, "escape_value must also quote the space"
         assert "cards[id=ee%2E55%20%25x]" in anchors, "expected the escape_value anchor"

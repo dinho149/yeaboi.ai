@@ -411,6 +411,10 @@ ALWAYS: tuple[str, ...] = (
     # all — and a §3 table that stops parsing renders a bar stuck at the pilot
     # baseline with nothing failing anywhere.
     "tests/unit/test_migration_progress.py",
+    # The Go-migration freeze table: it hashes frozen source files, so it has no
+    # import edge to them — a scoped run on a frozen file's own area would skip
+    # exactly the guard that exists to catch that edit. Repo-scanning, fast.
+    "tests/unit/test_migration_freeze.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
     # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and
@@ -530,6 +534,21 @@ _MIRRORED = (
     "src/yeaboi/analysis/coverage.py",
     "src/yeaboi/analysis/practices.py",
     "src/yeaboi/analysis/ai_usage.py",
+    # Wave 6 (doc-quality scoring) — mirrored since PR #224; frozen since W7.
+    "src/yeaboi/analysis/doc_quality.py",
+    "src/yeaboi/tools/team_learning.py",
+    # Wave 7 (exports family). html_theme.py and render.py are load-bearing
+    # beyond retro/poker — five other exporters share them, so any mode's edit
+    # there must schedule the byte-parity gate.
+    "src/yeaboi/retro/export.py",
+    "src/yeaboi/retro/board.py",
+    "src/yeaboi/retro/store.py",
+    "src/yeaboi/poker/export.py",
+    "src/yeaboi/poker/store.py",
+    "src/yeaboi/artifacts/render.py",
+    "src/yeaboi/artifacts/paths.py",
+    "src/yeaboi/html_theme.py",
+    "src/yeaboi/markdown_convert.py",
     "src/yeaboi/sessions.py",
     # Not a twin, but every literal it asserts is a parity fixture — changing it
     # changes what the Go side is checked against.
