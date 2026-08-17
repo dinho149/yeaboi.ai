@@ -29,7 +29,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from yeaboi.agent.state import StandupReport, TranscriptClaim
+from yeaboi.agent.state import MEMBER_EVIDENCE_CAP, StandupReport, TranscriptClaim
 
 logger = logging.getLogger(__name__)
 
@@ -558,7 +558,10 @@ def classify(
     *,
     report: StandupReport,
     config: dict | None = None,
-    evidence_cap: int = 8,
+    # The engine's real cap, not a copy of it. Rule 8 reads "the list is exactly
+    # at its cap" as proof that items were cut, so a default below the true cap
+    # turns every busy member into a truncation report.
+    evidence_cap: int = MEMBER_EVIDENCE_CAP,
 ) -> Diagnosis | None:
     """Diagnose one unmatched claim. Returns None when no rule fires.
 

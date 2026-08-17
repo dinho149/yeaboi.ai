@@ -1330,6 +1330,25 @@ class TestAzdoRepoActivity:
 
         assert [item["status"] for item in items] == ["approved"]
 
+    def test_a_vote_reset_thread_emits_nothing_at_all(self, monkeypatch):
+        # AzDO records a vote being *reset* as a VoteUpdate thread with vote 0.
+        # There is no review event to report, and its system comment is the same
+        # bookkeeping — so guarding on the parsed vote rather than the thread
+        # type let this one fall through and become a "reviewed PR" row.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        thread = self._vote_thread(vote="0", voter=vic, published=recent)
+        del thread.comments[0].comment_type
+        git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
+        git.get_threads.return_value = [thread]
+
+        assert azdevops_recent_reviews("Proj", days=1) == []
+
     def test_a_snapshot_vote_inherits_the_changed_files_the_thread_pass_paid_for(self, monkeypatch):
         # `categories.is_documentation_activity` reads changed_files, so the same
         # approval must not land under Documentation via one path and Code via

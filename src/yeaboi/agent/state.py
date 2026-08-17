@@ -414,6 +414,18 @@ def annotations_from(value: object) -> tuple[Annotation, ...]:
 # serializable via asdict() — so it round-trips cleanly through the session
 # store. Every field has a default so old serialized reports still deserialize
 # (see CLAUDE.md "Frozen dataclass backward compatibility").
+# How many evidence rows one member's category carries in a report.
+#
+# It lives here, on the neutral module both readers already import, because two
+# places have to agree on it and they cannot import each other: the engine's
+# `_member_evidence` applies it, and `gap_taxonomy`'s truncation rule uses it to
+# decide whether a category is *at* its cap — i.e. whether activity was provably
+# cut. When those two drifted (the cap moved to 30, the rule kept assuming 8) the
+# rule fired on any member whose commits merely nested under a PR, and
+# `gap_issues` files that as a public GitHub issue.
+MEMBER_EVIDENCE_CAP = 30
+
+
 @dataclass(frozen=True)
 class ActivityEvidence:
     """One attributable activity item kept as structured evidence.

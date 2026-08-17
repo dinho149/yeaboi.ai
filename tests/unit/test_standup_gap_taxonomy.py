@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport, TranscriptClaim
+from yeaboi.agent.state import (
+    MEMBER_EVIDENCE_CAP,
+    ActivityEvidence,
+    MemberUpdate,
+    StandupReport,
+    TranscriptClaim,
+)
 from yeaboi.standup import gap_taxonomy
 
 
@@ -428,33 +434,61 @@ class TestSummaryDroppedIt:
 
 
 class TestEvidenceCapTruncation:
-    def test_fires_when_evidence_is_at_the_cap_and_more_was_counted(self):
-        report = _report(
-            member_updates=(
-                MemberUpdate(
-                    name="Alice",
-                    code_activity_count=23,
-                    code_evidence=tuple(ActivityEvidence(kind="commit", key=f"sha{i}") for i in range(8)),
-                ),
-            )
+    """Rule 8 reads "the list is exactly at its cap" as proof items were cut.
+
+    Every case here is written against ``MEMBER_EVIDENCE_CAP`` rather than a
+    literal, because the literal is what broke: the engine's cap moved to 30
+    while this rule kept assuming 8, and a suite full of eight-row fixtures went
+    on passing while the rule fired on any member whose commits merely nested
+    under a PR.
+    """
+
+    def _member(self, rows: int, counted: int) -> MemberUpdate:
+        return MemberUpdate(
+            name="Alice",
+            code_activity_count=counted,
+            code_evidence=tuple(ActivityEvidence(kind="commit", key=f"sha{i}") for i in range(rows)),
         )
+
+    def test_the_rule_and_the_engine_read_one_constant(self):
+        """A truth-lock, in the spirit of the manifest one above.
+
+        These two live in modules that cannot import each other, so nothing but
+        this test stops them drifting again — and the drift is silent, ending as
+        a public GitHub issue recommending a change to a cap that is already fine.
+        """
+        import inspect
+
+        from yeaboi.standup.engine import _member_evidence
+
+        assert inspect.signature(gap_taxonomy.classify).parameters["evidence_cap"].default == MEMBER_EVIDENCE_CAP
+        assert inspect.signature(_member_evidence).parameters["cap"].default == MEMBER_EVIDENCE_CAP
+
+    def test_fires_when_evidence_is_at_the_cap_and_more_was_counted(self):
+        report = _report(member_updates=(self._member(MEMBER_EVIDENCE_CAP, MEMBER_EVIDENCE_CAP + 15),))
         d = gap_taxonomy.classify(
             _claim(system_hint="github", artifact_hint="pushed a commit", matched_key=""), report=report
         )
         assert d.category.id == "evidence_cap_truncation"
-        assert "23" in d.detail
+        assert str(MEMBER_EVIDENCE_CAP + 15) in d.detail
 
     def test_does_not_fire_when_nothing_was_cut(self):
-        report = _report(
-            member_updates=(
-                MemberUpdate(
-                    name="Alice",
-                    code_activity_count=8,
-                    code_evidence=tuple(ActivityEvidence(kind="commit", key=f"sha{i}") for i in range(8)),
-                ),
-            )
-        )
+        report = _report(member_updates=(self._member(MEMBER_EVIDENCE_CAP, MEMBER_EVIDENCE_CAP),))
         d = gap_taxonomy.classify(_claim(system_hint="github", artifact_hint="pushed a commit"), report=report)
+        assert d is None or d.category.id != "evidence_cap_truncation"
+
+    def test_does_not_fire_on_a_busy_member_below_the_cap(self):
+        """The regression this constant exists to prevent.
+
+        Fifteen code activities that dedupe and nest down to eleven rows: more
+        counted than kept, but nothing cut — eleven is nowhere near the cap.
+        Under the old default of 8 this reported "Alice had 15 code items but
+        the report kept only 11" and blamed a cap that never applied.
+        """
+        report = _report(member_updates=(self._member(11, 15),))
+        d = gap_taxonomy.classify(
+            _claim(system_hint="github", artifact_hint="pushed a commit", matched_key=""), report=report
+        )
         assert d is None or d.category.id != "evidence_cap_truncation"
 
 

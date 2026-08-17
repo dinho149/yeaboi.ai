@@ -2212,6 +2212,23 @@ def _azdo_identity_fields(identity) -> tuple[str, str, str]:
     )
 
 
+def _azdo_is_vote_thread(thread) -> bool:
+    """True for a VoteUpdate system thread, whatever its vote turned out to be.
+
+    Deliberately separate from :func:`_azdo_thread_vote`, which returns None for
+    several *different* reasons — not a vote thread, an unreadable vote, or a
+    vote of 0 (how AzDO records a vote being reset). Only the first means the
+    thread's comments are a member's own words; the rest are AzDO's "Vic voted
+    10" bookkeeping, which the comment filter would otherwise let through on any
+    serialisation that omits ``comment_type``.
+    """
+    props = getattr(thread, "properties", None)
+    if not isinstance(props, dict):
+        return False
+    by_key = {str(key).lower(): value for key, value in props.items()}
+    return str(_azdo_prop_value(by_key.get("codereviewthreadtype")) or "").lower() == "voteupdate"
+
+
 def _azdo_thread_vote(thread):
     """Vote event carried by a VoteUpdate system thread, or None.
 
@@ -2356,13 +2373,17 @@ def azdevops_recent_reviews(
                                 "changed_files": changed_files,
                             }
                         )
-                if vote is not None:
+                if _azdo_is_vote_thread(thread):
                     # A VoteUpdate thread's own comment is AzDO's "Vic voted 10"
                     # notice. It is normally dropped as comment_type "system",
                     # but that attribute is absent on some SDK/serialisation
                     # shapes — which the widened filter below now *keeps* — and
-                    # it would land as a second "reviewed PR !x" row beside the
-                    # approval. The thread is already accounted for; skip it.
+                    # it would land as a "reviewed PR !x" row of bookkeeping.
+                    #
+                    # Keyed on the thread *type*, not on `vote is not None`:
+                    # that returns None for a vote of 0 too, which is how a vote
+                    # being reset is recorded, and such a thread would fall
+                    # through to the comment loop carrying the same noise.
                     continue
                 for comment in getattr(thread, "comments", ()) or ():
                     published = _aware(getattr(comment, "published_date", None))

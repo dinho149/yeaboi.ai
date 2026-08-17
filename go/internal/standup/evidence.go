@@ -575,8 +575,10 @@ func memberSkeletons(grouped *Grouped, coverage map[string]string, yesterday *py
 			block.Set("summary", fallbackCategorySummary(category, split[category], cov))
 			block.Set("links", linksToWire(memberLinks(split[category])))
 			block.Set("count", int64(len(split[category])))
-			// 30 mirrors engine._member_evidence's cap default — enough for the
-			// web timeline to show the real shape of a busy day.
+			// 30 mirrors state.MEMBER_EVIDENCE_CAP, which is engine._member_evidence's
+			// cap default — enough for the web timeline to show the real shape of a
+			// busy day. Python's gap_taxonomy reads the same constant to tell "at the
+			// cap" from "merely busy", so change all three together.
 			block.Set("evidence", memberEvidence(evidenceActs, 30, prefixes, workItemIDs))
 			return block
 		}

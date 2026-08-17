@@ -30,7 +30,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from yeaboi import html_theme
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
+from yeaboi.agent.state import MEMBER_EVIDENCE_CAP, ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
     from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
@@ -772,11 +772,13 @@ def _nest_pr_commits(acts: list[dict]) -> list[dict]:
 
 def _member_evidence(
     acts: list[dict],
-    # 30 per member per category: enough for the web timeline to show the real
+    # Per member per category: enough for the web timeline to show the real
     # shape of a busy day. Prose surfaces self-cap their display (the markdown
     # export folds at _MD_EVIDENCE_CAP, the web list folds after 3 rows), so
     # raising this grows only the artifact and the timeline's dots.
-    cap: int = 30,
+    # `gap_taxonomy` reads the same constant to tell "at the cap" from "merely
+    # busy"; changing it here alone is what made that rule cry truncation.
+    cap: int = MEMBER_EVIDENCE_CAP,
     *,
     prefixes: Collection[str] = frozenset(),
     work_item_ids: Collection[str] = frozenset(),
