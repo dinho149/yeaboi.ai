@@ -228,7 +228,7 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # The weekly migration bar is day-ahead's contract — run one script, post
     # what it printed — so it carries day-ahead's grant: no Write/Edit/Glob/Grep,
     # a shell for the renderer and the check-in, and Task for the scribe.
-    "go-migration-progress": ("Bash", "Read", "Task", "TodoWrite"),
+    "go-migration-daily": ("Bash", "Read", "Task", "TodoWrite"),
     # Not fork-controlled — a release is cut by a maintainer — but it writes
     # nothing itself either, and a routine that announces should not be able to
     # edit what it is announcing.
@@ -679,7 +679,7 @@ def digest_section_glyphs() -> set[str]:
 
 # The two title-line glyphs that predate the table and already belonged to the
 # workstream they now name: `cron/agents-standup.md` and
-# `cron/go-migration-progress.md`. They are grandfathered by *name*, so a third
+# `cron/go-migration-daily.md`. They are grandfathered by *name*, so a third
 # routine adopting one is a collision rather than a precedent.
 GRANDFATHERED_GLYPHS = {"agents": "🧭", "go-migration": "🐹"}
 

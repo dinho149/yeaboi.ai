@@ -126,11 +126,6 @@ CI_WORKFLOW_NAME = "CI"
 # as load-bearing.
 PARITY_GATED_LABEL = "workstream:go-migration"
 PARITY_BRANCH_PREFIX = "cowork/migration-w"
-# The Wave 6 rescue: PR #224 predates the branch convention (branch
-# `go-docs-score`), and a PR's head ref cannot be renamed — so the first wave
-# the lane merges is gated by number instead. Expires on its own the day #224
-# merges; delete at will after.
-PARITY_GATED_PRS = (224,)
 PARITY_CHECK_NAMES = ("Go core", "Python ↔ Go parity")
 
 # GitHub truncates a status description past 140 characters.
@@ -968,12 +963,14 @@ def parity_gated(snapshot: Snapshot) -> bool:
     `cowork/migration-w18b` (the one wave the program allows to split) still
     gates while `cowork/migration-workflow-fix` does not — holding a PR behind
     checks its diff never schedules is the asymmetric mistake, on a lane
-    forbidden from applying the override. The one branch-less wave, the #224
-    rescue, is gated by number."""
+    forbidden from applying the override.
+
+    Deliberately blind to the base ref. Waves are based on
+    `chore/go-migration`, the migration's integration branch, and the hold is
+    the same there as it would be against `main` — the branch prefix is what
+    arms it, the base only decides where a green wave lands."""
     if PARITY_GATED_LABEL not in snapshot.labels:
         return False
-    if snapshot.number in PARITY_GATED_PRS:
-        return True
     return bool(re.match(rf"{re.escape(PARITY_BRANCH_PREFIX)}\d", snapshot.head_ref))
 
 

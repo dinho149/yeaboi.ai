@@ -157,7 +157,7 @@ class TestFilesAgreeWithTheTable:
                 "cron/digest.md",
                 "cron/cd-deploy.md",
                 "cron/go-migration-campaign.md",
-                "cron/go-migration-progress.md",
+                "cron/go-migration-daily.md",
                 "cron/integrations-campaign.md",
                 "cron/release-promote-ask.md",
                 "cron/retune.md",
@@ -3268,7 +3268,7 @@ class TestSlackTemplates:
             "cron/release-promote-ask.md",
             "cron/cd-deploy.md",
             "cron/security-sweep.md",
-            "cron/go-migration-progress.md",
+            "cron/go-migration-daily.md",
             "events/release-published-announce.md",
             "events/go-migration-wave-merged.md",
         }
@@ -3445,7 +3445,7 @@ class TestAreaGlyphs:
         for name, glyph in sorted(setup.GRANDFATHERED_GLYPHS.items()):
             assert setup.parse_workstream_glyphs()[name] == glyph
         assert "🧭 **Agents**" in (setup.ROUTINES_DIR / "cron" / "agents-standup.md").read_text(encoding="utf-8")
-        assert "🐹 **Go Migration**" in (setup.ROUTINES_DIR / "cron" / "go-migration-progress.md").read_text(
+        assert "🐹 **Go Migration**" in (setup.ROUTINES_DIR / "cron" / "go-migration-daily.md").read_text(
             encoding="utf-8"
         )
 

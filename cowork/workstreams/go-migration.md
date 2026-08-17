@@ -38,6 +38,9 @@ at these sites is a proposal for platform.
   green-by-vacancy is the one finding that outranks all progress; `scripts/pr_feedback.py`
   holds wave PRs (`cowork/migration-w*` + the workstream label) red until `Go core` and
   `Python ↔ Go parity` ran and passed on the head commit.
+- **Waves land on `chore/go-migration`, never on `main`.** The campaign merges its own
+  gate-green waves into that integration branch and the next wave branches off it; the single
+  PR to `main` at the end is a human's. A wave PR opened against `main` is a bug in the run.
 - **The program doc is the queue.** Progress is recomputed from its §3 checkbox table, merged
   PRs by label, and parity counts — never from memory between runs
   (`scripts/migration_progress.py` is the only renderer).

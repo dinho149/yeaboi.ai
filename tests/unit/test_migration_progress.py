@@ -1,6 +1,6 @@
 """Tests for scripts/migration_progress.py — the Go-migration Slack renderer.
 
-Two routines post its ``lines`` verbatim (``cron/go-migration-progress.md`` and
+Routines post its ``lines`` verbatim (``cron/go-migration-daily.md`` and
 ``events/go-migration-wave-merged.md``), so every judgement a reader could act
 on — the bar, the counts, a stalled wave, a blind read — is asserted here, and
 the rendered lines are re-linted against the Slack dialect rules the fleet's
@@ -53,7 +53,8 @@ def payload(**overrides) -> dict:
         "program_done": 1,
         "blind": False,
         "in_flight": [],
-        "next_wave": {"wave": "W8", "contents": "Foundations: config/paths"},
+        "landed": [],
+        "next_wave": {"wave": "W8", "contents": "Foundations: config/paths", "gate": "golden-subprocess diff"},
         "core_version": "0.5.0",
         "parity_tests": 41,
         "program_url": "https://github.com/o/r/blob/main/cowork/migration/program.md",
@@ -127,6 +128,96 @@ class TestParseProgram:
         checked = PROGRAM_TEXT.replace("| ☐ | 2 |", "| ✔ | 2 |")
         waves = progress.parse_program(checked)
         assert [wave.done for wave in waves] == [True, True, False]
+
+    def test_the_size_and_gate_columns_are_captured(self):
+        # The Gate column is the per-wave "how it is proved" the daily post
+        # quotes; nothing else in the program carries one.
+        waves = progress.parse_program(PROGRAM_TEXT)
+        assert [wave.size for wave in waves] == ["S", "M", "L"]
+        assert waves[0].gate == "existing parity harness"
+        assert waves[2].gate == "migrate fixture DBs both sides"
+
+    def test_every_committed_row_carries_a_gate(self):
+        # A row whose gate went missing renders a landed wave with no way to
+        # check it — the one thing the daily post exists to carry.
+        waves = progress.parse_program(progress.PROGRAM_DOC.read_text(encoding="utf-8"))
+        assert all(wave.gate for wave in waves), [w.wave for w in waves if not w.gate]
+
+    def test_a_row_missing_its_last_columns_still_counts(self):
+        # size/gate are optional so a hand-edit that drops them degrades the
+        # prose, never the bar.
+        trimmed = "| ☐ | 4 | W10 | Mode engines headless |\n"
+        waves = progress.parse_program(PROGRAM_TEXT + trimmed)
+        assert [wave.wave for wave in waves] == ["W7", "W8", "W9", "W10"]
+        assert waves[-1].gate == ""
+
+
+class TestDailyLines:
+    LANDED = [
+        {
+            "title": "migration(w7): retro/poker export builders",
+            "number": 231,
+            "url": "https://github.com/o/r/pull/231",
+            "wave": "W7",
+            "merged_on": "Mon 18 Aug",
+            "gate": "existing parity harness",
+            "contents": "Retro/poker export builders",
+        }
+    ]
+
+    def test_a_quiet_day_still_posts_the_bar_and_how_to_test(self):
+        # The lane's whole story is the bar plus a way to check it; a day with
+        # no merge is still worth one line, which is why nothing here is
+        # conditional on `landed`.
+        lines = progress.daily_lines(payload())
+        assert lines[0] == "🐹 **Go Migration** — nothing landed · Tue 19 Aug"
+        assert any("How to test" in line for line in lines)
+        assert_dialect(lines)
+
+    def test_a_landed_wave_is_named_in_plain_language_with_its_gate(self):
+        lines = progress.daily_lines(payload(landed=self.LANDED))
+        body = "\n".join(lines)
+        assert lines[0] == "🐹 **Go Migration** — 1 landed · Tue 19 Aug"
+        # The §3 contents clause, not the PR title — the table is the prose.
+        assert "[W7 — Retro/poker export builders](https://github.com/o/r/pull/231)" in body
+        assert "— proved by existing parity harness" in body
+        assert_dialect(lines)
+
+    def test_it_asks_for_nothing(self):
+        # The lane merges its own waves into the integration branch, so the
+        # daily post is a pure TELL. An approval verb here would be a decision
+        # arriving in a channel that has none to make.
+        for kwargs in ({}, {"landed": self.LANDED}, {"blind": True}):
+            body = "\n".join(progress.daily_lines(payload(**kwargs)))
+            assert "✅" not in body and "❌" not in body
+            assert "approve" not in body.lower()
+
+    def test_how_to_test_points_at_the_integration_branch_not_main(self):
+        # For the whole program `main` gains nothing, so a reader sent there
+        # would find none of the migration.
+        body = "\n".join(progress.daily_lines(payload(landed=self.LANDED)))
+        assert progress.INTEGRATION_BRANCH in body
+        assert "git switch main" not in body
+
+    def test_a_blind_read_says_so(self):
+        lines = progress.daily_lines(payload(blind=True))
+        assert any(line.startswith("⚠️") for line in lines)
+        assert_dialect(lines)
+
+    def test_in_flight_replaces_next_up(self):
+        # Both answer "what is moving"; printing both would say it twice.
+        flight = [
+            {
+                "title": "migration(w8): foundations",
+                "number": 240,
+                "url": "https://github.com/o/r/pull/240",
+                "opened": "Mon 18 Aug",
+                "stalled": False,
+            }
+        ]
+        body = "\n".join(progress.daily_lines(payload(in_flight=flight)))
+        assert "In flight" in body and "Next up" not in body
+        assert "Next up" in "\n".join(progress.daily_lines(payload()))
 
 
 class TestWeeklyLines:
@@ -282,12 +373,13 @@ class TestBuildPayload:
 
     NOW = __import__("datetime").datetime(2026, 8, 25, 9, 0, tzinfo=__import__("datetime").UTC)
 
-    def _stub(self, monkeypatch, tmp_path, *, wave6=True, prs=None):
+    def _stub(self, monkeypatch, tmp_path, *, wave6=True, prs=None, landed=()):
         doc = tmp_path / "program.md"
         doc.write_text(PROGRAM_TEXT, encoding="utf-8")
         monkeypatch.setattr(progress, "PROGRAM_DOC", doc)
         monkeypatch.setattr(progress, "_wave6_merged", lambda: wave6)
         monkeypatch.setattr(progress, "_open_wave_prs", lambda: prs)
+        monkeypatch.setattr(progress, "_landed_waves", lambda moment: None if landed is None else list(landed))
         monkeypatch.setattr(progress, "core_version", lambda: "0.5.0")
         monkeypatch.setattr(progress, "parity_test_count", lambda: 36)
         monkeypatch.setattr(
@@ -331,6 +423,33 @@ class TestBuildPayload:
         stalled = {item["number"]: item["stalled"] for item in built["in_flight"]}
         assert stalled == {1: True, 2: False, 3: False}
         assert built["in_flight"][2]["opened"] == ""
+
+    def test_a_failed_landed_read_is_blind(self, monkeypatch, tmp_path):
+        # The third GitHub read, and the same rule as the other two: a lane
+        # reported quiet when it could not be asked is worse than one that says
+        # it could not look.
+        self._stub(monkeypatch, tmp_path, prs=[], landed=None)
+        built = progress.build_payload(now=self.NOW)
+        assert built["blind"] is True
+        assert built["landed"] is None
+
+    def test_a_landed_wave_is_joined_to_its_program_row(self, monkeypatch, tmp_path):
+        # The GitHub read knows the PR; the §3 table knows what it was for and
+        # how it was proved. The join is what lets the post speak plainly.
+        landed = [{"title": "migration(w7): x", "number": 231, "url": "u", "wave": "W7", "merged_on": "Mon 24 Aug"}]
+        self._stub(monkeypatch, tmp_path, prs=[], landed=landed)
+        built = progress.build_payload(now=self.NOW)
+        assert built["landed"][0]["contents"] == "Retro/poker export builders"
+        assert built["landed"][0]["gate"] == "existing parity harness"
+
+    def test_a_landed_wave_with_no_matching_row_degrades(self, monkeypatch, tmp_path):
+        # W99 is not in the table. The post should still name the PR rather
+        # than raise on a lookup that a hand-edited table can always miss.
+        landed = [{"title": "migration(w99): x", "number": 9, "url": "u", "wave": "W99", "merged_on": "Mon 24 Aug"}]
+        self._stub(monkeypatch, tmp_path, prs=[], landed=landed)
+        built = progress.build_payload(now=self.NOW)
+        assert built["landed"][0]["gate"] == ""
+        assert "migration(w99)" in "\n".join(progress.daily_lines(built))
 
 
 class TestHelpers:
@@ -378,6 +497,73 @@ class TestHelpers:
         monkeypatch.setattr(progress, "_get", lambda path: None)
         assert progress._open_wave_prs() is None
 
+    def test_landed_waves_wants_merged_labelled_waves_inside_the_window(self, monkeypatch):
+        import datetime as dt
+
+        now = dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC)
+        monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
+        wave_label = [{"name": progress.LABEL}]
+        rows = [
+            # in the window, labelled, a wave → counted
+            {
+                "number": 1,
+                "title": "migration(w7): x",
+                "labels": wave_label,
+                "head": {"ref": "cowork/migration-w7"},
+                "merged_at": "2026-08-25T08:00:00Z",
+                "html_url": "u1",
+            },
+            # closed but never merged — a human abandoning a branch is not a ship
+            {
+                "number": 2,
+                "title": "migration(w8): x",
+                "labels": wave_label,
+                "head": {"ref": "cowork/migration-w8"},
+                "merged_at": None,
+                "html_url": "u2",
+            },
+            # merged three days ago — outside the window
+            {
+                "number": 3,
+                "title": "migration(w9): x",
+                "labels": wave_label,
+                "head": {"ref": "cowork/migration-w9"},
+                "merged_at": "2026-08-22T08:00:00Z",
+                "html_url": "u3",
+            },
+            # labelled but not a wave — a renderer bugfix must not read as one
+            {
+                "number": 4,
+                "title": "fix renderer",
+                "labels": wave_label,
+                "head": {"ref": "cowork/migration-fix"},
+                "merged_at": "2026-08-25T08:30:00Z",
+                "html_url": "u4",
+            },
+        ]
+        monkeypatch.setattr(progress, "_get", lambda path: rows)
+        landed = progress._landed_waves(now)
+        assert [item["number"] for item in landed] == [1]
+        assert landed[0]["wave"] == "W7"
+
+    def test_landed_waves_asks_for_the_integration_branch(self, monkeypatch):
+        # Scoped by base: for the whole program `main` gains nothing, so asking
+        # about main would report an idle lane every single day.
+        import datetime as dt
+
+        seen = {}
+        monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
+        monkeypatch.setattr(progress, "_get", lambda path: seen.setdefault("path", path) and [])
+        progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC))
+        assert "base=chore%2Fgo-migration" in seen["path"]
+
+    def test_landed_waves_is_none_when_the_read_fails(self, monkeypatch):
+        import datetime as dt
+
+        monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
+        monkeypatch.setattr(progress, "_get", lambda path: None)
+        assert progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC)) is None
+
     def test_a_full_page_is_blindness_not_an_empty_queue(self, monkeypatch):
         # The page bound is the repo's open-PR count, not the lane's: past 100
         # open PRs the wave PR falls off page 1 and would render as "nothing in
@@ -398,6 +584,22 @@ class TestMain:
         assert progress.main(["--weekly"]) == 0
         printed = __import__("json").loads(capsys.readouterr().out)
         assert printed["lines"][0].startswith("🐹 **Go Migration** — ")
+
+    def test_daily_prints_payload_and_lines(self, monkeypatch, capsys):
+        monkeypatch.setattr(progress, "build_payload", lambda: payload())
+        assert progress.main(["--daily"]) == 0
+        printed = __import__("json").loads(capsys.readouterr().out)
+        assert printed["lines"][0].startswith("🐹 **Go Migration** — ")
+        assert any("How to test" in line for line in printed["lines"])
+
+    def test_the_three_modes_are_mutually_exclusive(self, monkeypatch):
+        # A routine passing two modes should fail loudly rather than silently
+        # posting whichever branch happens to be checked first.
+        import pytest
+
+        monkeypatch.setattr(progress, "build_payload", lambda: payload())
+        with pytest.raises(SystemExit):
+            progress.main(["--daily", "--weekly"])
 
     def test_wave_merged_needs_a_pr(self, monkeypatch, capsys):
         monkeypatch.setattr(progress, "build_payload", lambda: payload())

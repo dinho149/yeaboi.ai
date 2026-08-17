@@ -52,7 +52,7 @@ tier belongs in one place. The rest do model-worthy work in their own session an
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
 | `cron/integrations-campaign.md` | `deep` | Not a survey. It reads one provider's API docs, writes a client against them, and appends that provider to six other workstreams' registration sites — the one lane that adds capability, and the one that edits outside its own charter |
 | `cron/go-migration-campaign.md` | `heavy` | Long-running unattended implementation is exactly what the tier exists for: many-session waves behind a byte-parity gate, never security judgement. One caveat: W8 ports `redaction.py` mechanically behind the byte gate — porting, not security scouting; if a Fable reroute is ever observed mid-wave, the fix is a one-line flip to `deep` here |
-| `cron/go-migration-progress.md` | `fast` | Runs one script and posts what it printed; every number in the message was made in Python |
+| `cron/go-migration-daily.md` | `fast` | Runs one script and posts what it printed; every number in the message was made in Python |
 | `events/go-migration-wave-merged.md` | `fast` | Reads two fields, runs one script, posts what it printed |
 | the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
 | `cron/shipped-standup.md` | `standard` | Reads a day of merged PRs and their checks, and writes the one-line-each trace of what shipped |

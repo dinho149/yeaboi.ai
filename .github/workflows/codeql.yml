@@ -12,11 +12,16 @@ name: CodeQL
 #
 # NOTE: CodeQL is free because this repo is public. A private fork would need
 # GitHub Code Security licensing for this workflow to run.
+#
+# `chore/go-migration` is included for the same reason ci.yml includes it: the Go
+# rewrite lands thirteen waves of new Go and Python on that branch before any of
+# it reaches main, and scanning only main would leave the whole migration
+# unanalysed until the day it merges.
 on:
   push:
-    branches: [main]
+    branches: [main, chore/go-migration]
   pull_request:
-    branches: [main]
+    branches: [main, chore/go-migration]
   schedule:
     # Tuesdays, offset from the cowork security sweep's Monday run and off the hour
     # (":00" is the most contended slot and queues these ~3h late).

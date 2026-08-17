@@ -1954,12 +1954,20 @@ class TestTheParityHold:
         verdict = prf.classify(snapshot(comments=(review(0),), check_runs=None), NOW)
         assert verdict.state == "success"
 
-    def test_the_wave_six_rescue_is_gated_by_number(self):
-        # PR #224 predates the branch convention and a head ref cannot be
-        # renamed — the first wave the lane merges must not be the one wave the
-        # hold cannot see.
+    def test_the_hold_does_not_depend_on_the_pr_number(self):
+        # The #224 rescue expired when Wave 6 merged. Nothing is gated by
+        # number any more: a wave without the branch prefix is a wave the hold
+        # cannot see, and that must stay true so the prefix is the only story.
         runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
         snap = self._snap(number=224, head_ref="go-docs-score", check_runs=runs)
+        assert prf.classify(snap, NOW).state == "success"
+
+    def test_a_wave_based_on_the_integration_branch_still_gates(self):
+        # Waves are based on `chore/go-migration`, not `main`. The hold reads
+        # the head ref and the label and never the base, so moving the base must
+        # not change the verdict — a skipped parity job is still a failure.
+        runs = (("Go core", "skipped"), ("Python ↔ Go parity", "skipped"))
+        snap = self._snap(head_ref="cowork/migration-w7", check_runs=runs)
         assert prf.classify(snap, NOW).state == "failure"
 
     def test_a_labelled_pr_off_the_wave_branch_is_untouched(self):

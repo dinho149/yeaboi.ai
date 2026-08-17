@@ -16,32 +16,32 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
 1. **Work in flight.** `gh pr list --label "workstream:go-migration" --state open`. If one is
    open, drive it to green on both halves — CI via `gh pr checks` (the `Go core` and
    `Python ↔ Go parity` checks must be present and green, not skipped), review via the
-   `pr-feedback` status — arm the merge per step 5, and **stop**. That is the whole run and
-   the normal weekday.
+   `pr-feedback` status — merge it per step 6 the moment both are green, and **stop**. That is
+   the whole run and the normal weekday.
 
-   **Bootstrap exception, first runs only:** PR #224 (Wave 6, branch `go-docs-score`) predates
-   this workstream. If it is open and unlabelled, label it `cowork` +
-   `workstream:go-migration` + `type:chore`, rebase it on `origin/main`, repair its failed
-   auto-version run (a wave PR bumps **minor** — see
-   `.claude/skills/ci-and-release/SKILL.md`), and drive it exactly as above. Its branch does
-   not carry the wave prefix, so the parity hold covers it **by number** instead
-   (`PARITY_GATED_PRS` in `scripts/pr_feedback.py`) — the label is what arms that, so apply
-   it before anything else.
+2. **Carry `main` forward.** With nothing in flight, merge `origin/main` into
+   `chore/go-migration` and push. The integration branch is long-lived — thirteen waves live on
+   it before any of it reaches `main` — so `main` keeps moving underneath it (Dependabot, a
+   human's own work). Merging forward once per wave keeps each conflict small and local to the
+   wave that caused it; skipping it saves nothing and hands the final PR every conflict at once.
+   If the merge conflicts, resolve it, run `make test-scoped`, and treat that as the whole run.
 
-2. **Which wave?** Read the program doc's §3 table. The next wave is the first unchecked row
+3. **Which wave?** Read the program doc's §3 table. The next wave is the first unchecked row
    whose ordering dependencies (§3, **Ordering**) are all checked. Never infer progress from
    memory or from Slack — the table and
    `gh pr list --label "workstream:go-migration" --state merged` are the state.
 
-3. **Spec first.** If the wave has no `## PR N — Wave X` section in the program doc yet, this
+4. **Spec first.** If the wave has no `## PR N — Wave X` section in the program doc yet, this
    run writes one — following the §6/§7 template: verified ground truth, scope in/out, the
    gate, phase commits, lockstep bumps, risks — commits it on the wave branch as phase 0, and
    stops. Code starts next run, against a spec that exists.
 
-4. **Advance one phase.** On branch `cowork/migration-w<N>` (one branch per wave, kept for the
-   wave's whole life — **the prefix is load-bearing**: `scripts/pr_feedback.py`'s parity hold
-   keys on `cowork/migration-w` plus the workstream label, so a wave built on any other branch
-   name merges without its gate enforced): implement the next phase commit from the wave's
+5. **Advance one phase.** On branch `cowork/migration-w<N>`, **cut from and based on
+   `chore/go-migration`** (one branch per wave, kept for the wave's whole life — **the prefix is
+   load-bearing**: `scripts/pr_feedback.py`'s parity hold keys on `cowork/migration-w` plus the
+   workstream label, so a wave built on any other branch name merges without its gate
+   enforced; the *base* is what keeps the wave off `main`, the *prefix* is what keeps its gate
+   armed, and they are independent): implement the next phase commit from the wave's
    spec section. Every
    phase ends green on the verification the spec names (`make go-test && make go-lint &&
    make parity && make test && make lint`, as applicable). When the last phase is done: flip
@@ -50,25 +50,28 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
    spawn an independent `code-reviewer` at `deep` (the builder never reviews its own work),
    fix every blocker and should-fix, then open the PR titled
    `migration(w<N>): <the row's contents clause>`, labelled `cowork`,
-   `workstream:go-migration`, `type:chore`, body carrying `Closes YEA-<n>` — `cowork-scribe`
-   opens the Linear ticket when the wave branch is created, and it satisfies the rest of the
-   Definition of Done's comms items.
+   `workstream:go-migration`, `type:chore`, `semver:none`, body carrying `Closes YEA-<n>` —
+   `cowork-scribe` opens the Linear ticket when the wave branch is created, and it satisfies
+   the rest of the Definition of Done's comms items. **The PR's base is `chore/go-migration`**
+   (`gh pr create --base chore/go-migration`); a wave PR opened against `main` is wrong and
+   must be re-based rather than merged.
 
-5. **Leave the wave PR open — never merge, never arm auto-merge.** A gate-green wave waits,
-   with every other fleet PR, for the next release batch: a human's `make batch-assemble` folds
-   it in and the human's merge of the batch PR ships it
-   ([release-signoff.md](../../release-signoff.md)). The parity hold still rides the
-   `pr-feedback` context on the wave PR itself, unchanged. Waves therefore advance one per
-   batch cycle — wave N+1 branches off `main`, which gains wave N only when the batch ships —
-   which is the program's one-wave-at-a-time cadence with the shipping made human. Label the
-   wave PR `semver:none` like every fleet PR; the batch carries the bump, and a wave that bumps
-   `packaging/yeaboi-core` still publishes its core wheel only when the batch merge lands the
-   bump on `main`.
+6. **Merge the wave into `chore/go-migration` once both halves are green.** CI via
+   `gh pr checks` — the `Go core` and `Python ↔ Go parity` checks **present and passing, never
+   skipped** — and review via the `pr-feedback` status. Then `gh pr merge <n> --merge`. This is
+   the one place the fleet merges its own work, and it is bounded: the integration branch is
+   not `main`, it ships nothing to a user, and it carries the same six required contexts as
+   `main` so a red wave cannot land. **`main` is still only ever a human's** — when the last
+   §3 row is `✔`, a human opens and merges the single `chore/go-migration` → `main` PR.
 
-6. **Post nothing to the channel.** The Tuesday progress post and the wave-merged post carry
+   Wave N+1 therefore does not wait for anything: it branches off `chore/go-migration`, which
+   already carries wave N. Keep `semver:none` on every wave — the version bump and the
+   `yeaboi-core` wheel ride the final merge to `main`, once, not thirteen times.
+
+7. **Post nothing to the channel.** [`cron/go-migration-daily.md`](go-migration-daily.md) carries
    this lane's story; a building routine that also narrates is two voices for one fact.
 
-7. **Check in.** Whatever happened above — including nothing — close the run by following
+8. **Check in.** Whatever happened above — including nothing — close the run by following
    [check-in.md](../../check-in.md). It is the last thing you do.
 
 ## Stop conditions
@@ -78,8 +81,10 @@ sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
 - **The next wave's ordering dependencies are unmerged** → exit quietly; the program's
   ordering is not yours to reorder.
 - **A gate that will not go green after two runs of honest effort** → comment the blocker on
-  the wave's Linear ticket and stop touching the branch; the Tuesday post carries blockers to
+  the wave's Linear ticket and stop touching the branch; the daily post carries blockers to
   a human.
+- **Never merge anything into `main`, and never open a wave PR against it.** The integration
+  branch is the only thing this lane merges into. The one PR that reaches `main` is a human's.
 - **Never edit the program doc's table, decisions, or conventions** — checkbox flips and
   `## PR N — Wave X` spec appends only. Never delete a Python twin the plan does not name.
   **Never weaken a parity corpus to make it pass** — a wrong gate is worse than a red one, and

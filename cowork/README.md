@@ -63,7 +63,7 @@ rule is in [house-rules.md](house-rules.md); the arithmetic is
 
 Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is three to six
 channel messages a day**, worst case about eight, plus thread replies. Three of them always arrive
-— 📅, 🧭 and the Tuesday 🐹 — and the rest are exceptions reporting themselves. **The evening post
+— 📅, 🧭 and the daily 🐹 — and the rest are exceptions reporting themselves. **The evening post
 is not one of the three**: an area that did nothing says nothing, which is why the fan-out costs
 so much less than one message per area per day would. Every message opens with a title line
 carrying a fixed emoji, so a message is identifiable from its notification preview before it is
@@ -111,7 +111,7 @@ of its lines.
 | A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause already has an open `[blocked]` issue, which is every firing after the first |
 | A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
-| Tuesdays 08:30 UTC | 🐹 **Go Migration** — the weekly bar: waves merged, in flight, blocked | never — a bar that only appears when it grows cannot be trusted |
+| Daily 17:00 UTC | 🐹 **Go Migration** — what landed, what is moving, and how to test it | never — a bar that only appears when it grows cannot be trusted |
 | A migration wave merges | 🌊 **Go Migration** — the wave, the new bar, the core version shipped | non-wave merges say nothing here |
 | The 13 maintenance sweeps | **nothing in the channel, ever** | always — a sweep files a GitHub issue and exits |
 | The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire, or `cd-deploy` firing again the same day at the same status. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
@@ -119,7 +119,7 @@ of its lines.
 Three things follow from that table, and they are the whole design:
 
 - **Silence is the default and it is load-bearing.** Every routine but three — 📅 at 05:45, 🧭 at
-  06:15 and 🐹 on Tuesdays — is allowed to say nothing, and most of them say nothing most days. A
+  06:15 and 🐹 at 17:00 — is allowed to say nothing, and most of them say nothing most days. A
   routine that reports every morning is a routine nobody reads by Thursday, and a muted channel is
   worse than no channel — the one day it matters, nobody looks. The three exceptions earn it by
   being the ones you *wait* for, and each is a report on a **standing** thing rather than a
@@ -172,7 +172,7 @@ It is the display name and nothing else — the *label* stays `workstream:tui-ux
 and no code joins on the third column.
 
 **Two are grandfathered, and that is the rule working rather than an exception to it.** 🧭 and 🐹
-already led the title lines of `cron/agents-standup.md` and `cron/go-migration-progress.md` before
+already led the title lines of `cron/agents-standup.md` and `cron/go-migration-daily.md` before
 this table existed, and both of those messages speak for exactly the workstream the glyph now
 names. So an area can post twice in a day under one glyph — 🧭 at 06:15 about what other agents
 shipped, 🧭 in the evening about what the fleet changed in `agentwatch/` — and both are about
@@ -331,7 +331,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
 | `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | https://claude.ai/code/routines/trig_01KYYfRyy1kKCYXq8EFn6ac6 |
 | `cron/go-migration-campaign.md` | `40 7 * * 1-5` weekdays | go-migration | `heavy` | https://claude.ai/code/routines/trig_01M9VRz8rvNTusXLuxBwzwSB |
-| `cron/go-migration-progress.md` | `30 8 * * 2` Tue | go-migration | `fast` | https://claude.ai/code/routines/trig_01A9NbWuCDoS137MH3u3scsn |
+| `cron/go-migration-daily.md` | `0 17 * * *` daily | go-migration | `fast` | https://claude.ai/code/routines/trig_01A9NbWuCDoS137MH3u3scsn |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
 | `events/release-published-announce.md` | Release published | — | `standard` | https://claude.ai/code/routines/trig_01VXdR2FbPJUsMqVWghA7C5T |

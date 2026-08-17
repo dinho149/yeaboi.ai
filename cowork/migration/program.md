@@ -46,8 +46,15 @@ empty."
 ## 3. The 13 PRs
 
 Waves 1–6 predate this program: the sidecar pilot (PRs #215, #217, #221) merged waves 1–5, and
-Wave 6 (`analysis.score_docs`, PR #224) was open at bootstrap — rescuing it to merge is the
-campaign's first act, before PR 1 below begins.
+Wave 6 (`analysis.score_docs`, PR #224) merged on 2026-08-17. PR 1 below begins from there.
+
+**All thirteen land on one branch.** Every wave PR is based on `chore/go-migration` and merges
+into it once its gate is green; wave N+1 branches off that, so nothing waits. `main` gains none
+of this until a human opens and merges the single `chore/go-migration` → `main` PR after W19 —
+which is the review this program is ultimately for: one branch, read whole, rather than thirteen
+separate merges nobody saw together. The checkboxes below therefore live on the integration
+branch for the whole program, which is why `scripts/migration_progress.py` reads them from there
+and not from `main`.
 
 | ✔ | PR | Wave | Contents (phase commits inside) | Size | Gate |
 |---|---|---|---|---|---|
@@ -70,7 +77,8 @@ campaign's first act, before PR 1 below begins.
 worktrees (`make wt-headless NAME=wave-N-<area>`); after W9 → W10; after W10 → W11, W16; W13
 needs W12+W14; W15 needs W13; W18 needs W17+W10. PRs merge in wave order even when developed in
 parallel. Conflict surface ~nil (disjoint `go/internal/` trees; CLAUDE.md list + Makefile
-trivially rebased). `/sync-main` before `/ship`.
+trivially rebased). Rebase on `origin/chore/go-migration` before opening a wave PR — **not**
+`/sync-main`, which rebases on `origin/main` and would drag the wave off its base.
 
 ## 4. What stays in Python — `yeaboi-extras` (W16)
 
@@ -137,9 +145,12 @@ decisions, or these conventions is not.
 ### Versioning & release
 - `binaryVersion` bumps minor once per wave PR that adds RPC methods; others leave it alone.
 - `cmd/yeaboi` reports the **product** version (pyproject via ldflags), not `binaryVersion`.
-- A wave that bumps `binaryVersion` + the `packaging/yeaboi-core` version **publishes
-  `core-vX.Y.0` to PyPI on merge** — `publish-core.yml` is version-triggered and already live
-  (§2). W19 adds `release-binaries.yml` (matrix `go build` or goreleaser) attaching per-platform
+- A wave that bumps `binaryVersion` + the `packaging/yeaboi-core` version **publishes nothing on
+  its own merge**: waves merge into `chore/go-migration`, and `publish-core.yml` is triggered by
+  a version change reaching `main`. The bumps accumulate on the integration branch and the core
+  wheel publishes **once**, when the human merges the final PR — so the version a wave writes is
+  a promise about the final wheel, not a release. The lockstep tests still force each wave's own
+  consistency. W19 adds `release-binaries.yml` (matrix `go build` or goreleaser) attaching per-platform
   `yeaboi` binaries + `install.sh` to GitHub Releases (reuse the version-has-no-tag → publish
   pattern and `softprops/action-gh-release`); the PyPI flow (`publish.yml`) continues unchanged.
 - `auto-version.yml` untouched; wave PRs expect **minor** bumps; no major before W19.
@@ -168,9 +179,10 @@ observability, Notion, Slack, pr-feedback gate), plus:
 
 ## 6. PR 1 — Wave 7: retro/poker export builders
 
-**Base**: fresh worktree off origin/main **after PR #224 (Wave 6, `go-docs-score`) merges** —
-then `binaryVersion` 0.4.0 → this PR makes **0.5.0**. If #224 stalls, rebase on main directly and
-become 0.4.0; the lockstep tests force consistency either way.
+**Base**: fresh worktree off `origin/chore/go-migration`, the program's integration branch, which
+every wave from here is based on and merges into — PR #224 (Wave 6) merged on 2026-08-17 and its
+work is on `main`, which the integration branch carries forward. `binaryVersion` 0.4.0 → this PR
+makes **0.5.0**; the lockstep tests force consistency.
 
 ### The pure seam (~775 lines Python → ~700–900 Go)
 - `src/yeaboi/retro/export.py` (229 L): `_title`, `_stem`, `_reactions_str`,

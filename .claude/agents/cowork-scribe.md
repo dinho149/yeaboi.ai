@@ -201,7 +201,7 @@ than a gap to fill. The point is the notification preview: a reader should know 
 team analysis before opening it, which is only true if the glyph never moves.
 
 Two of those glyphs are also title-line emoji that predate the table — 🧭 (`cron/agents-standup.md`)
-and 🐹 (`cron/go-migration-progress.md`) — and both speak for exactly the workstream they now name,
+and 🐹 (`cron/go-migration-daily.md`) — and both speak for exactly the workstream they now name,
 so an area can legitimately post twice in a day under one glyph. The clause after the em-dash is
 what tells them apart, and it is the reason a title line always has one.
 
@@ -227,9 +227,9 @@ ambient, copy-pasteable glyph in the one channel where reacting with it is a des
 a cost with no upside; Slack's reaction picker surfaces recently-seen emoji.
 
 Some text is **rendered rather than composed**: it arrives finished and you post it unchanged —
-not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, both modes
-of `scripts/migration_progress.py` (`--weekly` and `--wave-merged` — the Go-migration bar and
-every count around it), `scripts/cowork_evening.py` (`cron/shipped-standup.md`'s per-area posts and
+not a version, not a count, not the order. That is `scripts/cowork_setup.py --agenda`, all three
+modes of `scripts/migration_progress.py` (`--daily`, `--weekly` and `--wave-merged` — the
+Go-migration bar, every count around it, and the how-to-test block), `scripts/cowork_evening.py` (`cron/shipped-standup.md`'s per-area posts and
 its 🩺 fleet-health message). `cron/release-promote-ask.md`'s reminder is *composed* by you from
 the `gh pr list` it just read — every PR number and title copied, never restated from memory —
 and it carries **no ✅/❌ footer and no parsed thread reply**: releasing is a human merging the
