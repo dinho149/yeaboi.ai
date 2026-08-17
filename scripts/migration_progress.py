@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Render the Go-migration Slack posts — the bar, the counts, every line.
 
-Two routines post about the migration and neither composes a word:
-``cron/go-migration-progress.md`` (Tuesdays) runs ``--weekly`` and
+The routines that post about the migration compose nothing:
+``cron/go-migration-daily.md`` runs ``--daily`` and
 ``events/go-migration-wave-merged.md`` runs ``--wave-merged --pr <n>``; both
-post the printed ``lines`` verbatim. That is ``--agenda``'s contract — rendered,
+post the printed ``lines`` verbatim. ``--weekly`` renders the fortnightly-style
+summary the daily post replaced and is kept for a human running it by hand. That is ``--agenda``'s contract — rendered,
 not composed — and it exists because a model retyping a number is the failure
 the fleet has already been bitten by. Every judgement in the message lives here,
 where ``tests/unit/test_migration_progress.py`` can hold it.
@@ -60,14 +61,35 @@ PILOT_WAVES = 6
 # being a wave" (see _is_wave).
 WAVE_BRANCH_PREFIX = "cowork/migration-w"
 
+# The migration's long-lived integration branch. Every wave PR is based on it
+# and merges into it; one human-opened PR carries the lot to `main` at W19. The
+# daily post reads "what landed" from PRs merged into *this* branch, never from
+# `main` — for the whole program `main` gains nothing and would report zero.
+INTEGRATION_BRANCH = "chore/go-migration"
+
+# How far back "landed" looks. The daily post runs once a day, so a 24h window
+# is the natural pane; it is deliberately not "since the last post", which would
+# need state this module refuses to keep (every count is recomputed from
+# scratch). A missed day therefore under-reports rather than double-reports, and
+# the bar beside it stays correct either way.
+LANDED_WINDOW_HOURS = 24
+
 # One glyph per wave, so the bar *is* the count. ▰/▱ are the product's own
 # meter glyphs (`build_meter`, src/yeaboi/ui/shared/_components.py) and carry
 # their own carve-out in TestSlackTemplates' emoji lint.
 FILLED = "▰"
 EMPTY = "▱"
 
-# A §3 row: | ☐ | 1 | W7 | Retro/poker export builders | S | … |
-_ROW = re.compile(r"^\|\s*(?P<box>[☐✔xX])\s*\|\s*(?P<pr>\d+)\s*\|\s*(?P<wave>W\d+)\s*\|\s*(?P<contents>[^|]+)\|")
+# A §3 row: | ☐ | 1 | W7 | Retro/poker export builders | S | existing parity harness |
+#
+# `size` and `gate` are optional on purpose. They feed the daily post's prose and
+# nothing else, while `box`/`pr`/`wave`/`contents` feed the bar — so a row that
+# loses its last two columns to a hand-edit should degrade to a quieter message,
+# never to a wave that vanishes from the count.
+_ROW = re.compile(
+    r"^\|\s*(?P<box>[☐✔xX])\s*\|\s*(?P<pr>\d+)\s*\|\s*(?P<wave>W\d+)\s*\|\s*(?P<contents>[^|]+)\|"
+    r"(?:\s*(?P<size>[^|]*)\|\s*(?P<gate>[^|]*)\|)?"
+)
 
 # A program wave PR's title: `migration(w7): retro/poker export builders`.
 _WAVE_TITLE = re.compile(r"^migration\(w(?P<wave>\d+)\)", re.IGNORECASE)
@@ -86,6 +108,13 @@ class Wave:
     wave: str
     contents: str
     done: bool
+    # The §3 Gate column: the human-written statement of how this wave is
+    # proved ("migrate fixture DBs both sides, diff full projections"). It is
+    # the only per-wave "how to test" the program has, and it was written by
+    # the person who scoped the wave — which is why the daily post quotes it
+    # rather than deriving one from changed paths.
+    size: str = ""
+    gate: str = ""
 
 
 def parse_program(text: str) -> list[Wave]:
@@ -109,6 +138,8 @@ def parse_program(text: str) -> list[Wave]:
                     wave=match.group("wave"),
                     contents=match.group("contents").strip(),
                     done=match.group("box") != "☐",
+                    size=(match.group("size") or "").strip(),
+                    gate=(match.group("gate") or "").strip(),
                 )
             )
     return waves
@@ -218,6 +249,58 @@ def _open_wave_prs() -> list[dict] | None:
     return found
 
 
+def _landed_waves(moment: datetime) -> list[dict] | None:
+    """Wave PRs merged into the integration branch inside the window, newest
+    first — or None when the read failed.
+
+    Scoped by `base=` rather than filtered client-side: a wave only ever lands
+    on the integration branch, and asking GitHub for that base is what keeps a
+    full first page from being the repo's whole closed-PR history. `state=closed`
+    is the only state the endpoint offers, so "merged" is re-checked per item —
+    a closed-unmerged wave (a human abandoning a branch) must not read as
+    shipped.
+    """
+    slug = transport.resolve_slug(REPO_ROOT)
+    if not slug:
+        return None
+    owner, name = slug.split("/")
+    data = _get(
+        f"/repos/{transport.segment(owner)}/{transport.segment(name)}/pulls"
+        f"?state=closed&base={transport.segment(INTEGRATION_BRANCH)}"
+        "&sort=updated&direction=desc&per_page=100"
+    )
+    if not isinstance(data, list):
+        return None
+    landed = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        merged_at = item.get("merged_at")
+        if not merged_at:
+            continue
+        labels = {label.get("name") for label in item.get("labels", []) if isinstance(label, dict)}
+        if LABEL not in labels or not _is_wave(item):
+            continue
+        try:
+            merged = datetime.fromisoformat(str(merged_at).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if (moment - merged).total_seconds() > LANDED_WINDOW_HOURS * 3600:
+            continue
+        title = item.get("title", "")
+        wave_match = _WAVE_TITLE.match(title)
+        landed.append(
+            {
+                "title": title,
+                "number": item.get("number"),
+                "url": item.get("html_url", ""),
+                "wave": f"W{wave_match.group('wave')}" if wave_match else "",
+                "merged_on": _day(merged_at),
+            }
+        )
+    return landed
+
+
 def _wave6_merged() -> bool | None:
     """Whether the pilot's last PR merged — or None when the read failed.
 
@@ -286,6 +369,14 @@ def build_payload(now: datetime | None = None) -> dict:
             )
 
     next_wave = next((wave for wave in waves if not wave.done), None)
+    landed = _landed_waves(moment)
+    # A §3 row carries the wave's own "how it is proved" string; index it so a
+    # landed PR can be rendered with the gate its scoper wrote for it.
+    by_wave = {wave.wave: wave for wave in waves}
+    for item in landed or []:
+        row = by_wave.get(item["wave"])
+        item["gate"] = row.gate if row else ""
+        item["contents"] = row.contents if row else ""
     return {
         "today": f"{moment:%a} {moment.day} {moment:%b}",
         "waves_total": PILOT_WAVES + len(waves),
@@ -297,9 +388,12 @@ def build_payload(now: datetime | None = None) -> dict:
         "program_done": program_done,
         # Any GitHub read failing makes the whole post blind: the counts came
         # from a mix of repo facts and a queue that could not be asked.
-        "blind": in_flight is None or wave6 is None,
+        "blind": in_flight is None or wave6 is None or landed is None,
         "in_flight": in_flight,  # None = the read failed, [] = genuinely nothing open
-        "next_wave": {"wave": next_wave.wave, "contents": next_wave.contents} if next_wave else None,
+        "landed": landed,  # None = the read failed, [] = nothing merged in the window
+        "next_wave": (
+            {"wave": next_wave.wave, "contents": next_wave.contents, "gate": next_wave.gate} if next_wave else None
+        ),
         "core_version": core_version(),
         "parity_tests": parity_test_count(),
         "program_url": _program_url(),
@@ -319,6 +413,66 @@ def _footer(payload: dict) -> str:
     if url:
         return f"Next wave and the full plan: [the program of record]({url})"
     return "Next wave and the full plan: `cowork/migration/program.md`"
+
+
+def daily_lines(payload: dict) -> list[str]:
+    """The daily message: what landed, what is moving, and how to check it.
+
+    A pure TELL. It asks for nothing, offers no approval verb and carries no
+    decision — the lane merges its own waves into the integration branch, so
+    there is nothing here for a human to unblock. The one instructing line is
+    the how-to-test block, which is a command to run if you feel like it, not a
+    question to answer.
+
+    "How to test" is quoted from the §3 Gate column rather than derived from
+    changed paths. `scripts/release_surfaces.py` would match exactly one row
+    (`sidecar`) for every wave and print the same generic instruction thirteen
+    times; the Gate column was written per wave by whoever scoped it.
+    """
+    landed = payload["landed"]
+    headline = f"{len(landed)} landed" if landed else "nothing landed"
+    lines = [
+        f"🐹 **Go Migration** — {headline} · {payload['today']}",
+        _bar_line(payload),
+        "",
+    ]
+    if payload["blind"]:
+        lines += ["⚠️ could not fully read GitHub — the counts above may undercount, never trust them today", ""]
+
+    if landed:
+        lines += [f"📦 **Landed** ({len(landed)})", ""]
+        for position, item in enumerate(landed, start=1):
+            what = item.get("contents") or item["title"]
+            label = f"{item['wave']} — {what}" if item["wave"] else what
+            lines.append(f"{position}. [{label}]({item['url']})")
+            if item.get("gate"):
+                lines.append(f"   — proved by {item['gate']}")
+            lines.append("")
+        lines += ["───────────────────────────", ""]
+
+    in_flight = payload["in_flight"]
+    if in_flight:
+        lines += [f"🚧 **In flight** ({len(in_flight)})", ""]
+        for position, item in enumerate(in_flight, start=1):
+            clause = f"open since {item['opened']}" if item["opened"] else "open"
+            if item["stalled"]:
+                clause += " · stalled — see the wave's Linear ticket"
+            lines += [f"{position}. [{item['title']} #{item['number']}]({item['url']})", f"   — {clause}", ""]
+        lines += ["───────────────────────────", ""]
+    elif payload["next_wave"]:
+        nxt = payload["next_wave"]
+        lines += [f"🚧 **Next up** — {nxt['wave']}, {nxt['contents']}", "", "───────────────────────────", ""]
+
+    lines += [
+        "🧪 **How to test** — everything the fleet has migrated so far lives on one branch",
+        "",
+        f"`git fetch origin {INTEGRATION_BRANCH} && git switch {INTEGRATION_BRANCH}`",
+        "`make parity` — the Go port and the Python original must agree byte for byte",
+        "`YEABOI_GO=0 yeaboi` vs `YEABOI_GO=1 yeaboi` — same numbers, same screens, either way",
+        "",
+        _footer(payload),
+    ]
+    return lines
 
 
 def weekly_lines(payload: dict) -> list[str]:
@@ -404,13 +558,16 @@ def merged_pr_facts(number: int) -> dict | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--daily", action="store_true", help="render the daily progress message")
     mode.add_argument("--weekly", action="store_true", help="render the Tuesday progress message")
     mode.add_argument("--wave-merged", action="store_true", help="render the wave-merged announcement")
     parser.add_argument("--pr", type=int, help="the merged PR number (required with --wave-merged)")
     args = parser.parse_args(argv)
 
     payload = build_payload()
-    if args.weekly:
+    if args.daily:
+        lines = daily_lines(payload)
+    elif args.weekly:
         lines = weekly_lines(payload)
     else:
         if args.pr is None:

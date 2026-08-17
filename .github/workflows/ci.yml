@@ -1,10 +1,19 @@
 name: CI
 
+# `chore/go-migration` is the Go rewrite's long-lived integration branch: every
+# wave PR is based on it and merges into it, and one PR carries the lot to main
+# at W19. `branches:` on `pull_request` filters the BASE ref, so omitting it here
+# does not merely skip CI on a wave — it strands the wave. `pr_feedback.py` waits
+# on a workflow run named `CI` (CI_WORKFLOW_NAME) and reports `pending` until one
+# concludes, `claude-review.yml` triggers on this workflow's `workflow_run`, and
+# the migration lane may not apply `feedback-override`. The result is a required
+# context that never resolves and no operator action that clears it.
+# See cowork/routines/cron/go-migration-campaign.md.
 on:
   push:
-    branches: [main]
+    branches: [main, chore/go-migration]
   pull_request:
-    branches: [main]
+    branches: [main, chore/go-migration]
 
 # Least-privilege token — these jobs only check out code and run tests.
 permissions:

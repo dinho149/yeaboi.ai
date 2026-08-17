@@ -189,19 +189,28 @@ passed on its head commit (`scripts/pr_feedback.py` enforces it), on top of ever
 **Everything else holds, unchanged.** An independent `code-reviewer` reads the diff before the
 PR opens. One open PR per workstream — a wave is many sessions, and the open PR is what
 serialises them. `scripts/pr_feedback.py` still refuses an `<!-- addressed: … -->` marker from
-the PR's own author. A gate-green wave waits for the release batch like every other fleet PR —
-one wave per batch cycle, since wave N+1 branches off a `main` that gains wave N only when the
-batch ships. Wave PRs carry `cowork`, `workstream:go-migration`, `type:chore` and `semver:none` —
-a port with no observable behaviour change is the one thing `chore` names exactly — and W19, the
-wave that *does* change what users install, is flagged in the program doc as the wave a human
-drives. The one deviation this lane used to carry is gone, and its removal is a tightening: a
-wave that bumps `binaryVersion` used to publish a **final** `yeaboi-core` wheel on its own merge
+the PR's own author. Wave PRs carry `cowork`, `workstream:go-migration`, `type:chore` and
+`semver:none` — a port with no observable behaviour change is the one thing `chore` names
+exactly — and W19, the wave that *does* change what users install, is flagged in the program
+doc as the wave a human drives.
+
+**The one place the fleet merges its own work is `chore/go-migration`.** A gate-green wave does
+not wait for a release batch: the campaign merges it into the migration's long-lived
+integration branch, and wave N+1 branches off that. What makes this bounded rather than a hole
+in "the fleet does not merge" is that the integration branch is not `main` and ships nothing to
+anybody — it carries the same six required contexts as `main`, so a red wave cannot land on it,
+and nothing on it reaches a user until **a human** opens and merges the single
+`chore/go-migration` → `main` PR at W19. `main` is still only ever a human's. A wave PR opened
+against `main`, or merged anywhere but the integration branch, is a bug in the run.
+
+The one deviation this lane used to carry is gone, and its removal is a tightening: a wave that
+bumps `binaryVersion` used to publish a **final** `yeaboi-core` wheel on its own merge
 (`publish-core.yml` is version-triggered), the single exception to "nothing ships on merge".
-Under the batch model the bump reaches `main` only inside the batch a human tested, so the core
-wheel publishes behind the same sign-off as everything else. The reason the exception was
-tolerable — the wheel reaches only the opt-in `[core]` extra of a sidecar behind an
-always-complete Python fallback — is now merely why the batch needs no extra ceremony for it,
-not a licence to ship on merge; do not re-add the carve-out.
+Now no wave reaches `main` at all until the final PR, so the bumps accumulate on the
+integration branch and the core wheel publishes once, behind the human merge. The reason the
+exception was tolerable — the wheel reaches only the opt-in `[core]` extra of a sidecar behind
+an always-complete Python fallback — is now merely why the accumulation is safe, not a licence
+to ship on merge; do not re-add the carve-out.
 
 ## The gate
 
@@ -222,12 +231,19 @@ The lane is wide; what keeps it safe is the merge path, and none of it is discre
   with ends the auto lane for that find: file it as a proposal and let a human answer. Before this
   was enforced, the routine that opened the PR could also declare the review of it answered — the
   applicant holding the key.
-- **The fleet does not merge at all.** A gate-green fleet PR waits open, and ships only inside a
-  release batch: a human runs `make batch-assemble`, which folds every gate-green fleet PR into
-  one `batch/<date>` PR, hand-tests the assembled build against the checklist, and merges it
-  ([release-signoff.md](release-signoff.md)). The merge is the sign-off. `pr-feedback` must be a
-  required status check on the `main-branch` ruleset for the per-PR gate to hold; it is a manual
-  setup step.
+- **The fleet does not merge to `main` at all.** A gate-green fleet PR waits open, and ships only
+  inside a release batch: a human runs `make batch-assemble`, which folds every gate-green fleet
+  PR into one `batch/<date>` PR, hand-tests the assembled build against the checklist, and merges
+  it ([release-signoff.md](release-signoff.md)). The merge is the sign-off. `pr-feedback` must be
+  a required status check on the `main-branch` ruleset for the per-PR gate to hold; it is a
+  manual setup step.
+
+  **One exception, and it is scoped to a branch rather than to a lane's judgement**: the
+  migration campaign merges its own waves into `chore/go-migration` (see **The migration lane**).
+  That branch carries the same six required contexts as `main`, ships to nobody, and reaches
+  users only through a human's single final PR. The rule above is about `main`, and about `main`
+  it is absolute. Adding a second such branch is a human's decision, not a precedent this one
+  sets.
 - **Nothing the fleet builds ships to users without a human's hand-test and merge.** `main`
   carries only what a human merged: their own PRs — which release on the spot, exactly as before —
   and the batch. `scripts/release_lane.py` still draws the fleet/human line over this file's own
