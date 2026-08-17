@@ -1737,6 +1737,7 @@ CEREMONY_OUTCOMES = (
     "failed",
     "skipped_stale",  # fired far enough after its slot that the output would mislead
     "skipped_over_cap",  # this month's spend on this ceremony is already at the cap
+    "skipped_paused",  # a job fired for a ceremony the store says is paused
 )
 
 

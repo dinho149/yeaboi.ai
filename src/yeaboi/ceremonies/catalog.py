@@ -191,10 +191,14 @@ def lookup(key: str) -> CeremonyMode | None:
 
 
 def refuse_reason(key: str) -> str:
-    """Why ``key`` cannot be scheduled — the recorded reason, or a generic one."""
-    key = (key or "").strip().lower()
-    if key in _BY_KEY:
+    """Why ``key`` cannot be scheduled — the recorded reason, or a generic one.
+
+    Resolves through :func:`lookup` rather than the index directly, so the
+    question "may I?" and the question "why not?" can never disagree.
+    """
+    if lookup(key) is not None:
         return ""
+    key = (key or "").strip().lower()
     known = UNSCHEDULABLE.get(key)
     if known:
         return f"{key} cannot run on a cadence: {known}"
