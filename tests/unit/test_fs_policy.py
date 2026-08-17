@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -170,6 +171,70 @@ class TestViolationMessage:
     def test_is_a_permission_error(self, tmp_path):
         with pytest.raises(PermissionError):
             resolve_and_check(tmp_path / "denied.txt")
+
+
+class TestLogInjection:
+    """A caller-supplied path must not be able to forge a sandbox log record.
+
+    ``Path(...).expanduser().resolve(strict=False)`` preserves embedded CR/LF,
+    so a path carrying a newline would close its own line in the log file and
+    let the remainder be read as a second, fabricated record.
+
+    These cases cover the two records ``fs_policy`` itself writes, and only
+    those. The same tainted value still reaches unwrapped sinks elsewhere —
+    ``ui/shared/_consent.py`` logs the same ``ConsentRequest``, and several
+    callers log ``SandboxViolationError``'s message, which embeds the path —
+    so a green run here is not evidence the forgery is closed end to end.
+
+    Assertions are on the *rendered* message (``getMessage()``), because that —
+    not the raw args tuple — is what a handler writes out.
+    """
+
+    # A denial the attacker wants on record as a grant that never happened.
+    FORGED_GRANT = "\nINFO yeaboi.fs_policy sandbox session grant: /etc/shadow"
+    # Old-Mac and Windows line endings forge a record just as well as \n.
+    FORGED_CR = "\rWARNING yeaboi.fs_policy sandbox denial: cannot read from /nowhere (-)"
+
+    @staticmethod
+    def _assert_single_line(caplog) -> None:
+        assert caplog.records, "expected a sandbox record to be emitted"
+        for record in caplog.records:
+            message = record.getMessage()
+            assert "\n" not in message, f"log record spans lines: {message!r}"
+            assert "\r" not in message, f"log record spans lines: {message!r}"
+
+    def test_denial_record_cannot_be_forged(self, caplog, tmp_path):
+        caplog.set_level(logging.WARNING, logger="yeaboi.fs_policy")
+        with pytest.raises(SandboxViolationError):
+            resolve_and_check(f"{tmp_path / 'nope'}{self.FORGED_GRANT}", mode="read", context="read_codebase")
+        self._assert_single_line(caplog)
+        assert any("sandbox denial" in r.getMessage() for r in caplog.records)
+
+    def test_denial_record_cannot_be_forged_with_carriage_return(self, caplog, tmp_path):
+        caplog.set_level(logging.WARNING, logger="yeaboi.fs_policy")
+        with pytest.raises(SandboxViolationError):
+            resolve_and_check(f"{tmp_path / 'nope'}{self.FORGED_CR}", mode="write")
+        self._assert_single_line(caplog)
+
+    def test_denial_record_cannot_be_forged_through_context(self, caplog, tmp_path):
+        """The other interpolated argument on the denial line, covered separately.
+
+        Every caller passes a literal today, so this asserts an invariant of the
+        function rather than a reachable path — which is the point: `context` is
+        a public parameter, and without a case of its own the wrap around it is
+        the one a later refactor drops with the suite still green.
+        """
+        caplog.set_level(logging.WARNING, logger="yeaboi.fs_policy")
+        with pytest.raises(SandboxViolationError):
+            resolve_and_check(tmp_path / "nope", mode="read", context=f"export{self.FORGED_GRANT}")
+        self._assert_single_line(caplog)
+        assert any("sandbox denial" in r.getMessage() for r in caplog.records)
+
+    def test_grant_record_cannot_be_forged(self, caplog, tmp_path):
+        caplog.set_level(logging.INFO, logger="yeaboi.fs_policy")
+        grant_session(f"{tmp_path / 'granted'}{self.FORGED_CR}")
+        self._assert_single_line(caplog)
+        assert any("sandbox session grant" in r.getMessage() for r in caplog.records)
 
 
 class TestThreadSafety:

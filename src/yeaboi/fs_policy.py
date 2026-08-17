@@ -163,7 +163,17 @@ def resolve_and_check(path: str | Path, *, mode: Mode = "read", context: str = "
     with _lock:
         if _interactive:
             _pending.append(ConsentRequest(resolved, mode, context))
-    logger.warning("sandbox denial: cannot %s %s (%s)", _MODE_VERB[mode], resolved, context or "-")
+    # Late import, matching this module's discipline (see _allowed_roots).
+    # `resolved` is caller-supplied and resolve(strict=False) preserves CR/LF,
+    # so without log_safe a path can close this line and forge the next record.
+    # This closes the two records fs_policy itself writes; the same tainted
+    # value still reaches other sinks (ui/shared/_consent.py logs the same
+    # ConsentRequest, and callers log SandboxViolationError's message), so do
+    # not read this as the whole surface. Wrap the arguments, never the format
+    # string.
+    from yeaboi.redaction import log_safe
+
+    logger.warning("sandbox denial: cannot %s %s (%s)", _MODE_VERB[mode], log_safe(resolved), log_safe(context or "-"))
     raise SandboxViolationError(resolved, mode, context)
 
 
@@ -172,7 +182,11 @@ def grant_session(path: str | Path) -> None:
     resolved = _resolve(path)
     with _lock:
         _session_grants.add(resolved)
-    logger.info("sandbox session grant: %s", resolved)
+    # Same reasoning as resolve_and_check's denial log: a grant record naming a
+    # path the user never granted is the one this forges most usefully.
+    from yeaboi.redaction import log_safe
+
+    logger.info("sandbox session grant: %s", log_safe(resolved))
 
 
 def clear_session_grants() -> None:
