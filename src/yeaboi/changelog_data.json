@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.18.2",
+      "date": "2026-08-17",
+      "summary": "The standup now shows an activity timeline swimlane board with landmarks and thread connections, while Azure DevOps PR reviews are captured and properly deduplicated. Four bugs in the Azure DevOps integration are fixed: reviewer votes were not fetched, comments incorrectly collapsed to one row per PR, activity caps silently dropped events, and the capability manifest claimed the opposite of reality. The standup timeline redesign replaces mute tick marks with labeled landmarks (merged PRs, ticket state changes) and commit bursts, using a compressed axis where events claim footprints and overlapping activity merges into bursts. Threads now connect lanes that touched the same pull request, and evidence caps widened from 8 to 30 rows per category to support busier days.",
+      "highlights": [
+        {
+          "text": "Standup timeline visualizes activity as labeled landmarks and commit bursts on a compressed axis with thread connections between PRs",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Azure DevOps PR reviewer votes are now captured and appear in standup evidence",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Azure DevOps PR comments no longer incorrectly collapse to a single row per PR",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Evidence caps per category widened from 8 to 30 to support busier days without silent truncation",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Activity timeline geometry invariants tested across zoom levels, themes, and single vs. multi-day boards",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.18.1",
       "date": "2026-08-17",
       "summary": "Ship mode hardening and safety improvements prevent agent capability creep, tighten consent checks, and show you the exact changes before approval. The agent's Bash tool is now completely denied (not just git/gh commands), closing permission-bypass risks from other shell features. Consent is checked against the git toplevel where worktree setup actually lands, so approval names the directory that is actually touched. The approval gate now renders a scrollable patch pane showing your complete diff alongside validation results, with measured button positioning that never leaves buttons off-screen on minimum terminals. Gates answer only their own run by capturing the run id immediately, preventing concurrent runs from presenting stale diffs to the wrong user. Run IDs now carry a random suffix preventing same-second collisions, and removal operations report correctly whether they found an entry.",
