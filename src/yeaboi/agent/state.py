@@ -1738,6 +1738,7 @@ CEREMONY_OUTCOMES = (
     "skipped_stale",  # fired far enough after its slot that the output would mislead
     "skipped_over_cap",  # this month's spend on this ceremony is already at the cap
     "skipped_paused",  # a job fired for a ceremony the store says is paused
+    "skipped_once",  # somebody asked for this one occurrence off
 )
 
 
@@ -1765,6 +1766,12 @@ class Ceremony:
     enabled: bool = True
     stale_after_min: int = 120  # 0 disables the staleness guard
     monthly_cap_usd: float = 0.0  # 0 = uncapped
+    # One occurrence off, as the ISO date of the slot being skipped — never a
+    # bool. launchd coalesces missed calendar intervals, so a flag can be
+    # consumed by a fire arriving the following morning *for yesterday's slot*,
+    # burning the skip on the occurrence the user already saw. A date says
+    # which one they meant, and the guard clears it once that slot has passed.
+    skip_next: str = ""
     last_fired_at: str = ""
     created_at: str = ""
     updated_at: str = ""

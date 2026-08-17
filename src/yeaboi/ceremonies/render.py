@@ -51,6 +51,7 @@ OUTCOME_MARKS: dict[str, tuple[str, str]] = {
     "skipped_stale": ("⏱", "warn"),
     "skipped_over_cap": ("$", "warn"),
     "skipped_paused": ("⏸", "warn"),
+    "skipped_once": ("⤼", "warn"),
 }
 
 # What each tone means to a console with no Theme behind it.
@@ -164,4 +165,8 @@ def next_fire(ceremony: Ceremony, now: datetime | None = None) -> str:
     """
     if not ceremony.enabled:
         return "paused"
+    if ceremony.skip_next:
+        # Distinct from "paused", and the date is the point: a one-shot skip
+        # shown as a pause reads as something nobody expects to end by itself.
+        return f"{cadence_label(ceremony)} · skipping {ceremony.skip_next}"
     return cadence_label(ceremony)

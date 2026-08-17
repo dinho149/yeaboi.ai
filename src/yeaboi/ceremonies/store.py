@@ -25,7 +25,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from yeaboi.agent.state import CEREMONY_OUTCOMES, Ceremony, CeremonyRun
@@ -103,6 +103,7 @@ def _dict_to_ceremony(data: dict) -> Ceremony:
         enabled=bool(data.get("enabled", True)),
         stale_after_min=int(data.get("stale_after_min", 120)),
         monthly_cap_usd=float(data.get("monthly_cap_usd", 0.0)),
+        skip_next=str(data.get("skip_next", "")),
         last_fired_at=str(data.get("last_fired_at", "")),
         created_at=str(data.get("created_at", "")),
         updated_at=str(data.get("updated_at", "")),
@@ -209,6 +210,16 @@ class CeremonyStore:
             ) from exc
         if any(day < 1 or day > 7 for day in days):
             raise ValueError(f"invalid weekdays {ceremony.weekdays!r} — days run Mon=1 to Sun=7")
+        # The guard compares this to a slot's date. An unparseable one would not
+        # crash a screen, but it would silently never match — a skip that reads
+        # as set and never takes effect.
+        if ceremony.skip_next:
+            try:
+                date.fromisoformat(ceremony.skip_next)
+            except ValueError as exc:
+                raise ValueError(
+                    f"invalid skip_next {ceremony.skip_next!r} — use an ISO date, e.g. 2026-08-18"
+                ) from exc
 
         existing = self.get(ceremony.session_id, ceremony.name)
         stamped = replace(
@@ -286,6 +297,21 @@ class CeremonyStore:
         if current is None:
             return None
         return self.save(replace(current, enabled=enabled))
+
+    def set_skip_next(self, session_id: str, name: str, occurrence: str) -> Ceremony | None:
+        """Skip one occurrence (an ISO date), or clear it with ''. None when gone.
+
+        Deliberately not ``enabled=False`` plus a timer: pause uninstalls the OS
+        job at every surface that offers it, and a one-day intent must never
+        churn a plist — a crash between uninstall and reinstall leaves the
+        ceremony permanently dead. Deliberately not a sentinel run row either:
+        ``ceremony_runs`` records what *fired*, and a future row would make
+        ``last_run`` return something that has not happened.
+        """
+        current = self.get(session_id, name)
+        if current is None:
+            return None
+        return self.save(replace(current, skip_next=occurrence))
 
     def mark_fired(self, session_id: str, name: str, when: str = "") -> None:
         """Stamp ``last_fired_at``. Silent when the ceremony is already gone.

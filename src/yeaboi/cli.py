@@ -879,6 +879,21 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--session", default="", metavar="ID")
         sub.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    cer_skip = ceremonies_sub.add_parser(
+        "skip",
+        help="Skip the next occurrence only — the schedule and the job stay exactly as they are",
+    )
+    cer_skip.add_argument("name")
+    cer_skip.add_argument(
+        "--on",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="Skip this date's run instead of the next one; '' clears a pending skip",
+    )
+    cer_skip.add_argument("--clear", action="store_true", help="Cancel a pending skip")
+    cer_skip.add_argument("--session", default="", metavar="ID")
+    cer_skip.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     cer_run = ceremonies_sub.add_parser("run", help="Run one now (this is what the scheduled job invokes)")
     cer_run.add_argument("name")
     cer_run.add_argument("--session", default="", metavar="ID")
@@ -2099,6 +2114,35 @@ def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
                 print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
             else:
                 console.print(f"[green]✓[/green] {ceremony.name} {command}d. {message}")
+            return 0
+
+        if command == "skip":
+            from yeaboi.ceremonies.scheduler import next_occurrence
+
+            existing = store.get(session_id, args.name)
+            if existing is None:
+                print(f"Error: no ceremony named {args.name!r}", file=sys.stderr)
+                return 1
+            # Resolved to a date here rather than stored as a flag: launchd
+            # coalesces a missed slot into a fire the next morning, and a flag
+            # would be spent on the occurrence the user already saw.
+            occurrence = "" if args.clear else (args.on or next_occurrence(existing))
+            if not occurrence and not args.clear:
+                print(f"Error: could not work out {args.name!r}'s next run — pass --on YYYY-MM-DD", file=sys.stderr)
+                return 1
+            try:
+                ceremony = store.set_skip_next(session_id, args.name, occurrence)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
+            # The job is deliberately left installed: a one-day intent must not
+            # churn a plist, and a crash mid-reinstall would kill the ceremony.
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "skipping": occurrence}, indent=2))
+            elif occurrence:
+                console.print(f"[green]✓[/green] {ceremony.name} will skip its {occurrence} run, then carry on.")
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} is no longer skipping a run.")
             return 0
 
     # run — outside the store context: the engine opens its own connection.

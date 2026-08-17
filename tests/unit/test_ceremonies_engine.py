@@ -14,7 +14,7 @@ from datetime import datetime
 import pytest
 
 from yeaboi.agent.state import AgentUsageReport, Ceremony, StandupReport
-from yeaboi.ceremonies import engine
+from yeaboi.ceremonies import engine, scheduler
 from yeaboi.ceremonies.store import CeremonyStore
 
 
@@ -424,3 +424,104 @@ class TestAnchoringADeliveredPost:
         store.save(_ceremony(name="agent-cost", mode="agents-usage"))
         engine.run_ceremony("agent-cost", session_id="s1", db_path=db)
         assert "on_run_id" not in calls[0]
+
+
+class TestSkipOnce:
+    """One occurrence off — the case a pause is the wrong shape for.
+
+    Pausing uninstalls the OS job at every surface that offers it, so "not
+    tomorrow" must not go through it: a one-day intent should never churn a
+    plist, and a crash between uninstall and reinstall leaves the ceremony
+    permanently dead.
+    """
+
+    def test_the_named_occurrence_is_declined_and_recorded_as_its_own_outcome(self, store, db, monkeypatch):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(skip_next="2026-08-18"))
+        run = engine.run_ceremony(
+            "morning-standup",
+            session_id="s1",
+            db_path=db,
+            scheduled=True,
+            now=datetime(2026, 8, 18, 9, 0),
+        )
+        # Not skipped_paused: "somebody asked for tomorrow off" and "the store
+        # and the OS have drifted" are different facts.
+        assert run.outcome == "skipped_once"
+        assert "2026-08-18" in run.detail
+
+    def test_a_different_occurrence_still_fires(self, store, db, monkeypatch):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(skip_next="2026-08-18"))
+        run = engine.run_ceremony(
+            "morning-standup",
+            session_id="s1",
+            db_path=db,
+            scheduled=True,
+            now=datetime(2026, 8, 19, 9, 0),
+        )
+        assert run.outcome == "ok"
+
+    def test_a_coalesced_wake_up_still_skips_the_slot_it_was_asked_to(self, store, db, monkeypatch):
+        # The whole reason skip_next is a DATE. launchd coalesces a missed
+        # calendar interval into one fire at wake, so Tuesday's 09:00 job can
+        # arrive at 07:00 on Wednesday — and it is still Tuesday's run.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(stale_after_min=0, skip_next="2026-08-18"))
+        run = engine.run_ceremony(
+            "morning-standup",
+            session_id="s1",
+            db_path=db,
+            scheduled=True,
+            now=datetime(2026, 8, 19, 7, 0),
+        )
+        assert run.outcome == "skipped_once"
+
+    def test_the_skip_clears_itself_once_spent(self, store, db, monkeypatch):
+        # A one-shot skip that outlives its occurrence is a ceremony that
+        # silently stopped, and nobody would think to go looking.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(skip_next="2026-08-18"))
+        engine.run_ceremony(
+            "morning-standup", session_id="s1", db_path=db, scheduled=True, now=datetime(2026, 8, 18, 9, 0)
+        )
+        assert store.get("s1", "morning-standup").skip_next == ""
+
+    def test_a_skip_ahead_of_its_slot_survives_an_earlier_fire(self, store, db, monkeypatch):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(skip_next="2026-08-20"))
+        engine.run_ceremony(
+            "morning-standup", session_id="s1", db_path=db, scheduled=True, now=datetime(2026, 8, 18, 9, 0)
+        )
+        assert store.get("s1", "morning-standup").skip_next == "2026-08-20"
+
+    def test_a_manual_run_ignores_a_pending_skip(self, store, db, monkeypatch):
+        # The guards answer questions an unattended fire raises. A human typing
+        # "run it now" means it.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(skip_next="2026-08-18"))
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, now=datetime(2026, 8, 18, 9, 0))
+        assert run.outcome == "ok"
+
+    def test_pausing_is_still_the_stronger_statement(self, store, db, monkeypatch):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(enabled=False, skip_next="2026-08-18"))
+        run = engine.run_ceremony(
+            "morning-standup", session_id="s1", db_path=db, scheduled=True, now=datetime(2026, 8, 18, 9, 0)
+        )
+        assert run.outcome == "skipped_paused"
+
+
+class TestNextOccurrence:
+    def test_names_the_next_slot_later_today(self):
+        assert scheduler.next_occurrence(_ceremony(), now=datetime(2026, 8, 18, 7, 0)) == "2026-08-18"
+
+    def test_rolls_to_tomorrow_once_todays_slot_has_gone(self):
+        assert scheduler.next_occurrence(_ceremony(), now=datetime(2026, 8, 18, 10, 0)) == "2026-08-19"
+
+    def test_respects_the_weekday_spec(self):
+        # Friday 10:00 on a weekdays-only ceremony → Monday.
+        assert scheduler.next_occurrence(_ceremony(weekdays="1-5"), now=datetime(2026, 8, 21, 10, 0)) == "2026-08-24"
+
+    def test_an_unreadable_cadence_names_nothing_rather_than_guessing(self):
+        assert scheduler.next_occurrence(_ceremony(at="not-a-time"), now=datetime(2026, 8, 18, 7, 0)) == ""

@@ -35,9 +35,18 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
+
+# How far ahead of its slot a fire may be and still count as on time. Covers
+# clock skew, not a scheduler that woke up on the wrong day.
+_EARLY_GRACE = timedelta(minutes=5)
+
+if TYPE_CHECKING:  # a Ceremony is data the scheduler reads, never a dependency it needs at import
+    from yeaboi.agent.state import Ceremony
 
 # launchd label / crontab marker are keyed by session so multiple projects can
 # each have their own schedule without clobbering one another.
@@ -665,3 +674,77 @@ def transcript_reminder_offset(session_id: str, standup_time: str) -> int:
         logger.warning("transcript_reminder_offset failed: %s", e)
         return 0
     return ((fire[0] * 60 + fire[1]) - (hour * 60 + minute)) % 1440
+
+
+def occurrence_for(ceremony: Ceremony, now: datetime) -> datetime | None:
+    """The scheduled slot this fire belongs to, or None when it cannot be read.
+
+    Local time throughout, because that is what launchd and cron fire in.
+
+    The slot, not today's clock time. The case this exists for is a laptop
+    asleep across the slot, and that sleep does not politely end before
+    midnight: a 09:00 Monday job that launchd coalesces and fires at 07:00
+    Tuesday belongs to *Monday*, but comparing it to Tuesday's own 09:00 makes
+    it look two hours early. Weekdays are part of the answer too — a
+    Monday-only report woken on Wednesday is measured from Monday.
+
+    Two callers need exactly this, which is why it is one function: staleness
+    asks how far past the slot the fire is, and a one-shot skip asks which slot
+    is being skipped. A bool skip would be consumed by that Tuesday-morning
+    fire and burn itself on the occurrence the user already saw.
+    """
+    try:
+        hour, minute = parse_time(ceremony.at)
+    except ValueError:
+        logger.warning("ceremony %s has an unparseable time %r", ceremony.name, ceremony.at)
+        return None
+    try:
+        days = {d for d in weekday_list(ceremony.weekdays) if 1 <= d <= 7}
+    except ValueError:
+        logger.warning("ceremony %s has an unparseable weekday spec %r", ceremony.name, ceremony.weekdays)
+        days = set()
+
+    todays = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # A fire that just beats its own slot is early, never stale — reading it as
+    # late for the previous occurrence is the one way this guard could suppress
+    # a run that is perfectly on time. The window is minutes wide on purpose: a
+    # scheduler firing *hours* early is not an early fire, it is a late one for
+    # the occurrence before, which is precisely the wake-up case above.
+    if todays - _EARLY_GRACE <= now < todays and (not days or now.isoweekday() in days):
+        return todays
+
+    # Walk back to the latest occurrence at or before now. A week covers every
+    # spec, since weekdays repeat every seven days.
+    for back in range(8):
+        candidate = todays - timedelta(days=back)
+        if candidate > now:
+            continue
+        if days and candidate.isoweekday() not in days:
+            continue
+        return candidate
+    return None
+
+
+def next_occurrence(ceremony: Ceremony, now: datetime | None = None) -> str:
+    """The ISO date of the next slot, or '' when the cadence cannot be read.
+
+    What a surface passes to ``store.set_skip_next``: "skip the next one" has
+    to resolve to a *date* at the moment it is asked, because that is the only
+    thing a coalesced fire the following morning can be checked against.
+    """
+    moment = now or datetime.now()
+    try:
+        hour, minute = parse_time(ceremony.at)
+        days = {d for d in weekday_list(ceremony.weekdays) if 1 <= d <= 7}
+    except ValueError:
+        logger.warning("ceremony %s: cannot read its cadence to find the next slot", ceremony.name)
+        return ""
+    todays = moment.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    for ahead in range(8):
+        candidate = todays + timedelta(days=ahead)
+        if candidate <= moment:
+            continue
+        if days and candidate.isoweekday() not in days:
+            continue
+        return candidate.date().isoformat()
+    return ""

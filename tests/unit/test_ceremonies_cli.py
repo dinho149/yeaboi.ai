@@ -218,3 +218,43 @@ class TestModes:
         payload = json.loads(capsys.readouterr().out)
         assert {m["key"] for m in payload["schedulable"]} >= {"standup", "report"}
         assert "retro" in payload["refused"]
+
+
+class TestSkip:
+    """`ceremonies skip` — one occurrence off, and the job stays installed."""
+
+    def test_skipping_leaves_the_os_job_exactly_where_it_was(self, env):
+        # The distinction from pause. A one-day intent must not churn a plist:
+        # a crash between uninstall and reinstall kills the ceremony outright.
+        _add()
+        assert _run("skip", "morning-standup", "--on", "2026-08-18") == 0
+        assert "morning-standup" in env["installed"]
+        with CeremonyStore(env["db"]) as store:
+            ceremony = store.get("s1", "morning-standup")
+        assert ceremony.skip_next == "2026-08-18"
+        assert ceremony.enabled is True
+
+    def test_it_resolves_the_next_slot_when_no_date_is_given(self, env):
+        _add()
+        assert _run("skip", "morning-standup") == 0
+        with CeremonyStore(env["db"]) as store:
+            # A date, never a flag — resolved at the moment it was asked for.
+            assert len(store.get("s1", "morning-standup").skip_next) == len("2026-08-18")
+
+    def test_clear_cancels_a_pending_skip(self, env):
+        _add()
+        _run("skip", "morning-standup", "--on", "2026-08-18")
+        assert _run("skip", "morning-standup", "--clear") == 0
+        with CeremonyStore(env["db"]) as store:
+            assert store.get("s1", "morning-standup").skip_next == ""
+
+    def test_a_junk_date_exits_1_and_changes_nothing(self, env, capsys):
+        _add()
+        assert _run("skip", "morning-standup", "--on", "next tuesday") == 1
+        assert "skip_next" in capsys.readouterr().err
+        with CeremonyStore(env["db"]) as store:
+            assert store.get("s1", "morning-standup").skip_next == ""
+
+    def test_skipping_something_that_does_not_exist_exits_1(self, env, capsys):
+        assert _run("skip", "nope") == 1
+        assert "no ceremony" in capsys.readouterr().err

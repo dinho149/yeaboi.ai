@@ -342,6 +342,11 @@ AREAS: tuple[Area, ...] = (
             # mode it does not otherwise touch.
             "src/yeaboi/ceremonies/",
             "src/yeaboi/standup/scheduler.py",
+            # The inbound half of that clock: what a team said back in Slack.
+            # It rides with ceremonies because it anchors to their delivered
+            # posts and answers with their store.
+            "src/yeaboi/slack/",
+            "src/yeaboi/tools/slack.py",
             "claude-plugin/",
             "packaging/",
         ),
@@ -354,6 +359,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_mcp_*.py",
             "tests/unit/test_provenance_*.py",
             "tests/unit/test_ceremonies_*.py",
+            "tests/unit/test_slack_*.py",
             # The schedule wizard drives the promoted installer through the shim,
             # so it is the test that catches a broken promotion.
             "tests/unit/test_standup_schedule_wizard.py",
