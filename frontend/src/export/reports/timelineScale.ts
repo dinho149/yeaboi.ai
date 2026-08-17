@@ -184,13 +184,14 @@ export function buildScale(times: number[], bounds?: { start: string; end: strin
   const runs = activeRuns(sorted);
   const first = runs[0];
   const last = runs[runs.length - 1];
-  // With no dated events there is nothing to draw; callers return null before
-  // this, but a degenerate scale beats a NaN one.
-  let from = first ? first.from : 0;
-  let to = last ? last.to : 1;
-
   const windowStart = parseTime(bounds?.start ?? '');
   const windowEnd = parseTime(bounds?.end ?? '');
+  // With no dated events there is nothing to draw; callers return null before
+  // this, but a degenerate scale beats a NaN one — and beats an axis that
+  // starts at the epoch, which is what falling back to 0 produced for a
+  // bounds-only call (a 56-year span labelled "Thu 01-01").
+  let from = first ? first.from : Number.isFinite(windowStart) ? windowStart : 0;
+  let to = last ? last.to : Number.isFinite(windowEnd) ? windowEnd : from + HOUR;
   if (Number.isFinite(windowStart)) from = Math.min(from, windowStart);
   if (Number.isFinite(windowEnd)) to = Math.max(to, windowEnd);
 

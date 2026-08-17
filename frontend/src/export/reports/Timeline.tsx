@@ -34,7 +34,14 @@
  *   stretch the domain rather than clip: every mark is plotted.
  * - Timestamps arrive in a mix of naive/offset ISO forms; `Date.parse` reads
  *   naive ones as viewer-local, so cross-source ordering can shift by a tz
- *   delta. Accepted: marks may shift, never crash or vanish.
+ *   delta. Accepted: marks may shift, never crash or vanish. The window bounds
+ *   are the exception — they *are* offset-aware (the engine stamps them from an
+ *   aware `datetime`), so a viewer in another zone sees the leading and
+ *   trailing notches sized by their own offset. Only the notch durations move;
+ *   every mark keeps its position relative to the others.
+ * - A member whose evidence is entirely undated keeps a rail and an empty
+ *   track. They have nothing to plot, but dropping them would quietly shrink
+ *   the team the overview appears to describe.
  */
 
 import { Fragment, useState } from 'react';
@@ -374,10 +381,11 @@ function Rail({ lane, multiDay }: { lane: Lane; multiDay: boolean }) {
     const group = kindGroup(event.kind);
     tally.set(group, (tally.get(group) ?? 0) + 1);
   }
-  const span =
-    first.at === last.at
+  const span = !first
+    ? 'no times recorded'
+    : first.at === (last as TimelineEvent).at
       ? fmtWhen(first.at, multiDay)
-      : `${fmtWhen(first.at, multiDay)} → ${multiDay ? fmtWhen(last.at, true) : fmtClock(last.at)}`;
+      : `${fmtWhen(first.at, multiDay)} → ${multiDay ? fmtWhen((last as TimelineEvent).at, true) : fmtClock((last as TimelineEvent).at)}`;
 
   return (
     <span className={styles['tlRail']}>
@@ -391,7 +399,7 @@ function Rail({ lane, multiDay }: { lane: Lane; multiDay: boolean }) {
         ) : null}
       </span>
       <span className={styles['tlSpan']}>
-        {span} · {lane.events.length} event{lane.events.length === 1 ? '' : 's'}
+        {lane.events.length ? `${span} · ${lane.events.length} event${lane.events.length === 1 ? '' : 's'}` : span}
       </span>
       <span className={styles['tlTally']}>
         {GROUP_ORDER.filter((group) => tally.has(group)).map((group) => (
@@ -424,8 +432,14 @@ export function Timeline({
   // state only — dimmed marks stay in the page and in the accessibility tree.
   const [focus, setFocus] = useState<KindGroup | null>(null);
 
-  const lanes = members.map(laneFor).filter((lane) => lane.events.length > 0);
+  const all = members.map(laneFor);
+  const lanes = all.filter((lane) => lane.events.length > 0);
   if (!lanes.length) return null;
+  // A member whose evidence is *entirely* undated — a tracker-heavy day of
+  // carried WIP, which Jira and AzDO both ship with an empty timestamp — has no
+  // marks to plot but must not vanish from the overview. They get a rail and an
+  // empty track, which says "here, but nothing datable" rather than nothing.
+  const undatedOnly = all.filter((lane) => !lane.events.length && lane.undated > 0);
 
   const scale = buildScale(
     lanes.flatMap((lane) => lane.events.map((event) => event.at)),
@@ -438,13 +452,16 @@ export function Timeline({
       .filter((event) => event.artifact)
       .map((event) => ({ lane: index, at: event.at, artifact: event.artifact }))
   );
-  const { threads, partners } = buildThreads(threadInput);
+  const { threads, dropped, partners } = buildThreads(threadInput);
   /** The other people on an artifact — stated in words, never by the line alone. */
   const partnersFor = (artifact: string, lane: number): string[] =>
     (partners.get(artifact) ?? [])
       .filter((other) => other !== lane)
       .map((other) => (lanes[other] as Lane).name);
-  const laneY = (index: number) => ((index + TRACK_CENTRE) / lanes.length) * 100;
+  // Divided by every rendered row, not just the plotted ones: the overlay spans
+  // the whole lane grid, so the undated-only lanes appended below still count.
+  const rows = lanes.length + undatedOnly.length;
+  const laneY = (index: number) => ((index + TRACK_CENTRE) / rows) * 100;
 
   const present = new Set(lanes.flatMap((lane) => lane.events.map((event) => kindGroup(event.kind))));
   const legend = GROUP_ORDER.filter((group) => present.has(group));
@@ -475,10 +492,15 @@ export function Timeline({
         </div>
       </div>
 
-      {/* The axis is not linear. Saying so is not optional. */}
-      {scale.compressed ? (
+      {/* The axis is not linear, and a capped drawing is not the whole picture.
+          Saying both out loud is not optional — this panel already announces
+          `+N undated` and labels every notch, and a silently dropped thread
+          would be the one omission left. */}
+      {scale.compressed || dropped > 0 ? (
         <p className={styles['tlNote']}>
-          Quiet stretches are compressed — each notch is labelled with how long it ran.
+          {scale.compressed ? 'Quiet stretches are compressed — each notch is labelled with how long it ran.' : ''}
+          {scale.compressed && dropped > 0 ? ' ' : ''}
+          {dropped > 0 ? `${dropped} further shared-work link${dropped === 1 ? '' : 's'} not drawn.` : ''}
         </p>
       ) : null}
 
@@ -597,6 +619,16 @@ export function Timeline({
             </Fragment>
           );
         })}
+
+        {undatedOnly.map((lane) => (
+          <Fragment key={lane.name}>
+            <Rail lane={lane} multiDay={multiDay} />
+            <span className={styles['tlLane']}>
+              <span className={cx(styles['tlTrack'], styles['tlTrackEmpty'])} />
+              <span className={styles['tlBand']} />
+            </span>
+          </Fragment>
+        ))}
       </div>
     </div>
   );

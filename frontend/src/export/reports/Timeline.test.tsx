@@ -167,6 +167,31 @@ describe('Timeline', () => {
     expect(container.querySelector('.tlWord')?.textContent).toBe('Ada Lovelace');
   });
 
+  it('keeps a member whose evidence is all undated, with an empty track', () => {
+    // Jira and AzDO both ship carried WIP with an empty timestamp, so a
+    // tracker-heavy day can leave someone with nothing datable. Dropping their
+    // lane would quietly shrink the team the overview appears to describe.
+    const { container } = render(
+      <Timeline
+        members={[
+          member([evidence()], 'Ada Lovelace'),
+          member([evidence({ kind: 'wip', key: 'YB-9', url: 'https://j/YB-9', time: '' })], 'Grace Hopper'),
+        ]}
+        window={WINDOW}
+      />
+    );
+    expect([...container.querySelectorAll('.tlWord')].map((n) => n.textContent)).toEqual([
+      'Ada Lovelace',
+      'Grace Hopper',
+    ]);
+    expect(container.querySelectorAll('.tlTrackEmpty')).toHaveLength(1);
+    const rails = container.querySelectorAll('.tlRail');
+    expect(rails[1]?.querySelector('.tlSpan')?.textContent).toBe('no times recorded');
+    expect(rails[1]?.querySelector('.tlUndated')?.textContent).toBe('+1 undated');
+    // Only the dated lane carries marks.
+    expect(marks(container)).toHaveLength(1);
+  });
+
   it('flags a blocked member so the eye lands on the lane that needs attention', () => {
     const { container, rerender } = render(
       <Timeline

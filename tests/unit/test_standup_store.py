@@ -545,6 +545,40 @@ class TestSavedRunsHub:
             latest = store.get_latest_report("s1")
         assert latest.activity_window == "Fri 2026-07-17 00:00 → now"
 
+    def test_activity_window_bounds_round_trip(self, db_path):
+        """The machine-readable pair the web timeline draws its axis from.
+
+        ``activity_window`` beside it is the human string; only these two are
+        parseable, and this is the path that feeds "open instantly from a saved
+        report", so a report read back without them draws an axis derived from
+        event times alone and silently loses the window's quiet edges.
+        """
+        report = _make_report(
+            activity_window_start="2026-07-17T00:00:00+01:00",
+            activity_window_end="2026-07-17T18:30:00+01:00",
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest.activity_window_start == "2026-07-17T00:00:00+01:00"
+        assert latest.activity_window_end == "2026-07-17T18:30:00+01:00"
+
+    def test_a_report_stored_before_the_bounds_existed_still_reads(self, db_path):
+        """Rows written by an older build carry neither key — they must default."""
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report())
+            (raw,) = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(raw)
+            d.pop("activity_window_start", None)
+            d.pop("activity_window_end", None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None
+        assert latest.activity_window_start == ""
+        assert latest.activity_window_end == ""
+
     def test_my_name_round_trips(self, db_path):
         report = _make_report(my_name="Omar Din")
         with StandupStore(db_path) as store:

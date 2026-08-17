@@ -1541,7 +1541,13 @@ def _activity_pull_requests(git_client, project: str, repositories: list[str] | 
         try:
 
             def _list_repo_prs():
-                return list(git_client.get_pull_requests(repo.id, criteria, project=selected_project, top=25) or [])
+                # Same reasoning as _MAX_REPO_PRS on the project-wide path: a
+                # listing capped below the repo's open-PR count silently hides
+                # review activity on the older ones, and this is the branch a
+                # standup takes whenever the user picked specific repositories.
+                return list(
+                    git_client.get_pull_requests(repo.id, criteria, project=selected_project, top=_MAX_REPO_PRS) or []
+                )
 
             prs = (
                 metadata_cache.memoize(
@@ -2269,9 +2275,15 @@ def azdevops_recent_reviews(
         rows = _activity_pull_requests(git_client, project, repositories, criteria, metadata_cache)
         # Old completed PRs cannot acquire new review comments. Keep recently
         # created/closed PRs plus active PRs, then bound the expensive thread
-        # lookups across the whole project rather than per repository. Sorted
-        # freshest-first so that when the cap bites, the PRs most likely to
-        # carry this window's review activity keep their thread lookups.
+        # lookups across the whole project rather than per repository.
+        #
+        # Ordering when the cap bites: **active before completed**, then newest
+        # first within each. Only an active PR can gain a *new* thread, so a
+        # three-week-old PR still under review is worth more than a PR created
+        # this morning that nobody has touched — and AzDO's GitPullRequest
+        # carries no updated-date, so creation is the only date signal there is.
+        # Sorting on date alone put the population this fetcher exists to
+        # capture at the bottom of the list.
         eligible = []
         for selected_project, repo, pr in rows:
             created = _aware(getattr(pr, "creation_date", None))
@@ -2279,9 +2291,19 @@ def azdevops_recent_reviews(
             status = str(getattr(pr, "status", "") or "").lower()
             if status == "active" or (created and created >= cutoff) or (closed and closed >= cutoff):
                 freshness = max((stamp for stamp in (created, closed) if stamp), default=cutoff)
-                eligible.append((freshness, selected_project, repo, pr, closed))
-        eligible.sort(key=lambda row: row[0], reverse=True)
-        eligible_rows = [(sp, repo, pr) for _, sp, repo, pr, _ in eligible[:_MAX_REVIEW_THREAD_LOOKUPS]]
+                eligible.append((status == "active", freshness, selected_project, repo, pr, closed))
+        eligible.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        eligible_rows = [(sp, repo, pr) for _, _, sp, repo, pr, _ in eligible[:_MAX_REVIEW_THREAD_LOOKUPS]]
+        if len(eligible) > _MAX_REVIEW_THREAD_LOOKUPS:
+            # Say it out loud: the next report of "my reviews are missing" is
+            # diagnosed from this line or not at all.
+            logger.warning(
+                "azdevops_recent_reviews: %d eligible PR(s) exceed the %d thread-lookup cap — "
+                "review activity on the %d oldest completed PR(s) is not fetched",
+                len(eligible),
+                _MAX_REVIEW_THREAD_LOOKUPS,
+                len(eligible) - _MAX_REVIEW_THREAD_LOOKUPS,
+            )
 
         def _reviews_for_pr(index_row) -> list[dict]:
             index, (selected_project, repo, pr) = index_row
@@ -2328,11 +2350,20 @@ def azdevops_recent_reviews(
                                 "status": label,
                                 "timestamp": str(published)[:19],
                                 "key": f"review:{pr_id}:{voter_id or email}",
+                                "pr_id": pr_id,
                                 "url": thread_url,
                                 "repository": f"{selected_project}/{repo.name}",
                                 "changed_files": changed_files,
                             }
                         )
+                if vote is not None:
+                    # A VoteUpdate thread's own comment is AzDO's "Vic voted 10"
+                    # notice. It is normally dropped as comment_type "system",
+                    # but that attribute is absent on some SDK/serialisation
+                    # shapes — which the widened filter below now *keeps* — and
+                    # it would land as a second "reviewed PR !x" row beside the
+                    # approval. The thread is already accounted for; skip it.
+                    continue
                 for comment in getattr(thread, "comments", ()) or ():
                     published = _aware(getattr(comment, "published_date", None))
                     if published is None or published < cutoff:
@@ -2357,6 +2388,7 @@ def azdevops_recent_reviews(
                             "status": "commented",
                             "timestamp": str(published)[:19],
                             "key": f"review-comment-{comment_id}",
+                            "pr_id": pr_id,
                             "url": thread_url,
                             "repository": f"{selected_project}/{repo.name}",
                             "changed_files": changed_files,
@@ -2375,7 +2407,16 @@ def azdevops_recent_reviews(
         # thread-lookup cap. A thread-derived vote (real event time) wins over
         # the snapshot's closed-date approximation for the same (PR, reviewer).
         vote_keys = {item["key"] for item in items if str(item.get("key", "")).startswith("review:")}
-        for _, selected_project, repo, pr, closed in eligible:
+        # Reuse the changed files the thread pass already paid for. Without it
+        # the same approval on the same PR carries files when it arrives via a
+        # thread and none when it arrives via the snapshot, and
+        # `categories.is_documentation_activity` reads exactly that — so a
+        # docs-only PR's approval would land under Documentation or under Code
+        # depending on which path produced it.
+        changed_by_pr = {
+            item["pr_id"]: item["changed_files"] for item in items if item.get("pr_id") and item.get("changed_files")
+        }
+        for _, _, selected_project, repo, pr, closed in eligible:
             if closed is None or closed < cutoff:
                 continue
             pr_id = getattr(pr, "pull_request_id", "")
@@ -2400,9 +2441,10 @@ def azdevops_recent_reviews(
                         "status": label,
                         "timestamp": str(closed)[:19],
                         "key": key,
+                        "pr_id": pr_id,
                         "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
                         "repository": f"{selected_project}/{repo.name}",
-                        "changed_files": [],
+                        "changed_files": changed_by_pr.get(pr_id, []),
                     }
                 )
         logger.info("azdevops_recent_reviews: %d review event(s)", len(items))

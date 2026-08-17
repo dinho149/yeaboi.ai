@@ -1282,6 +1282,92 @@ class TestAzdoRepoActivity:
 
         assert [call.args[1] for call in git.get_threads.call_args_list] == [2]
 
+    def test_an_active_pr_outranks_a_newer_completed_one_for_the_cap(self, monkeypatch):
+        # Only an active PR can gain a *new* thread, so a three-week-old PR still
+        # under review is worth a lookup that a PR merged this morning is not.
+        # Sorting on date alone put the population this fetcher exists to
+        # capture at the bottom of the list.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._MAX_REVIEW_THREAD_LOOKUPS", 1)
+        repo = SimpleNamespace(id="r1", name="api", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(
+                repo,
+                1,
+                status="completed",
+                created=datetime.now(UTC) - timedelta(hours=2),
+                closed=datetime.now(UTC) - timedelta(hours=1),
+            ),
+            self._review_pr(repo, 2, status="active", created=datetime.now(UTC) - timedelta(days=21)),
+        ]
+        git.get_threads.return_value = []
+
+        azdevops_recent_reviews("Proj", days=1)
+
+        assert [call.args[1] for call in git.get_threads.call_args_list] == [2]
+
+    def test_a_vote_thread_does_not_also_emit_its_own_system_comment(self, monkeypatch):
+        # The comment filter drops "system", but that attribute is absent on some
+        # serializations — and the widened filter keeps unknown types. Without
+        # skipping the thread outright, AzDO's own "Vic voted 10" notice lands as
+        # a second "reviewed PR" row beside the approval it describes.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        thread = self._vote_thread(voter=vic, published=recent)
+        del thread.comments[0].comment_type  # the shape where the type never arrives
+        git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
+        git.get_threads.return_value = [thread]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert [item["status"] for item in items] == ["approved"]
+
+    def test_a_snapshot_vote_inherits_the_changed_files_the_thread_pass_paid_for(self, monkeypatch):
+        # `categories.is_documentation_activity` reads changed_files, so the same
+        # approval must not land under Documentation via one path and Code via
+        # the other.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: ["docs/runbook.md"])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        ada = SimpleNamespace(display_name="Ada", unique_name="ada@corp.com", id="guid-ada", vote=10)
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 42, status="completed", closed=recent, reviewers=(ada,))
+        ]
+        git.get_threads.return_value = [self._vote_thread(voter=vic, published=recent)]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        by_author = {item["author"]: item for item in items}
+        assert by_author["Vic"]["changed_files"] == ["docs/runbook.md"]
+        assert by_author["Ada"]["changed_files"] == ["docs/runbook.md"]
+
+    def test_the_repo_scoped_listing_asks_for_the_same_bound_as_the_project_one(self, monkeypatch):
+        # The branch a standup takes whenever the user picked specific repos. It
+        # was left at top=25 while the project-wide path was raised to 200 —
+        # the identical silent truncation, in the more common configuration.
+        from yeaboi.tools.azure_devops import _MAX_REPO_PRS, azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        git.get_pull_requests.return_value = []
+
+        azdevops_recent_reviews("Proj", days=1, repositories=["Proj/api"])
+
+        assert git.get_pull_requests.call_args.kwargs["top"] == _MAX_REPO_PRS
+
     def test_auth_error_raises_source_error(self, monkeypatch):
         from azure.devops.exceptions import AzureDevOpsServiceError
 
@@ -1315,6 +1401,119 @@ class TestAzdoRepoActivity:
         monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", no_org)
         monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
         assert azdevops_recent_prs("Proj", days=1) == []
+
+
+class TestAzdoVoteWireShapes:
+    """The degradation branches of the vote helpers.
+
+    Every one of these exists because the property/identity wire shape varies by
+    SDK version and serialization, and every one of them fails the *same silent
+    way* — no vote row, no error, no log — which is precisely the bug the vote
+    capture was written to fix. A shape that stops parsing must be caught here
+    or it is not caught at all.
+    """
+
+    def _thread(self, properties, *, comments=(), identities=None):
+        return SimpleNamespace(
+            id=7,
+            properties=properties,
+            identities=identities if identities is not None else {},
+            comments=comments,
+        )
+
+    def _comment(self, author=None, published=None):
+        return SimpleNamespace(
+            id=70,
+            published_date=published or (datetime.now(UTC) - timedelta(hours=1)),
+            author=author,
+            content="voted",
+            comment_type="system",
+        )
+
+    def test_prop_value_reads_all_three_shapes(self):
+        from yeaboi.tools.azure_devops import _azdo_prop_value
+
+        assert _azdo_prop_value({"$type": "System.String", "$value": "VoteUpdate"}) == "VoteUpdate"
+        assert _azdo_prop_value({"value": "VoteUpdate"}) == "VoteUpdate"
+        assert _azdo_prop_value(SimpleNamespace(value="VoteUpdate")) == "VoteUpdate"
+        assert _azdo_prop_value("VoteUpdate") == "VoteUpdate"
+        assert _azdo_prop_value(None) is None
+
+    def test_identity_fields_read_object_and_dict_alike(self):
+        from yeaboi.tools.azure_devops import _azdo_identity_fields
+
+        obj = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        assert _azdo_identity_fields(obj) == ("Vic", "vic@corp.com", "guid-vic")
+        assert _azdo_identity_fields({"displayName": "Vic", "uniqueName": "vic@corp.com", "id": "guid-vic"}) == (
+            "Vic",
+            "vic@corp.com",
+            "guid-vic",
+        )
+        # snake_case is the other serialization the SDK emits.
+        assert _azdo_identity_fields({"display_name": "Vic", "unique_name": "vic@corp.com"}) == (
+            "Vic",
+            "vic@corp.com",
+            "",
+        )
+        assert _azdo_identity_fields(None) == ("", "", "")
+
+    def test_the_system_comment_author_stands_in_for_a_missing_identity_index(self):
+        from yeaboi.tools.azure_devops import _azdo_thread_vote
+
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        # No CodeReviewVotedByIdentity, and no identities map to look one up in.
+        thread = self._thread(
+            {"CodeReviewThreadType": "VoteUpdate", "CodeReviewVoteResult": "10"},
+            comments=(self._comment(author=vic),),
+        )
+        display, email, voter_id, vote, published = _azdo_thread_vote(thread)
+        assert (display, email, voter_id, vote) == ("Vic", "vic@corp.com", "guid-vic", 10)
+        assert published is not None
+
+    def test_a_vote_that_cannot_be_read_is_not_reported(self):
+        from yeaboi.tools.azure_devops import _azdo_thread_vote
+
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        comments = (self._comment(author=vic),)
+        # Properties that are not a mapping at all.
+        assert _azdo_thread_vote(self._thread(None, comments=comments)) is None
+        assert _azdo_thread_vote(self._thread([], comments=comments)) is None
+        # A thread that is not a vote.
+        assert _azdo_thread_vote(self._thread({"CodeReviewThreadType": "Comment"}, comments=comments)) is None
+        # An unparseable or absent vote value.
+        assert (
+            _azdo_thread_vote(
+                self._thread({"CodeReviewThreadType": "VoteUpdate", "CodeReviewVoteResult": "yes"}, comments=comments)
+            )
+            is None
+        )
+        assert _azdo_thread_vote(self._thread({"CodeReviewThreadType": "VoteUpdate"}, comments=comments)) is None
+        # A reset-to-no-vote, which is not an event worth crediting.
+        assert (
+            _azdo_thread_vote(
+                self._thread({"CodeReviewThreadType": "VoteUpdate", "CodeReviewVoteResult": "0"}, comments=comments)
+            )
+            is None
+        )
+        # No comment means no timestamp, and an undated vote would repeat daily.
+        assert (
+            _azdo_thread_vote(
+                self._thread({"CodeReviewThreadType": "VoteUpdate", "CodeReviewVoteResult": "10"}, comments=())
+            )
+            is None
+        )
+
+    def test_the_thread_type_key_is_matched_case_insensitively(self):
+        from yeaboi.tools.azure_devops import _azdo_thread_vote
+
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        thread = self._thread(
+            {"codeReviewThreadType": {"$value": "voteUpdate"}, "codeReviewVoteResult": {"$value": "-10"}},
+            comments=(self._comment(author=vic),),
+        )
+        result = _azdo_thread_vote(thread)
+        assert result is not None
+        assert result[3] == -10
 
 
 class TestConfluenceMultiEditor:

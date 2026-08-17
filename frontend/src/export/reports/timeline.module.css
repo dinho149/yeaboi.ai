@@ -215,6 +215,19 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
+/*
+ * A member with evidence but no *datable* evidence — a day of carried WIP.
+ * They keep a lane so the overview still names them; the track reads as empty
+ * on purpose, and their rail says "no times recorded".
+ */
+.tlTrackEmpty {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text) 5%, transparent) 0 1px,
+    transparent 1px 6px
+  );
+}
+
 /* Where the captions live — below the track, inside the same lane row. */
 .tlBand {
   position: relative;
