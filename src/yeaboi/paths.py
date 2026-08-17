@@ -144,6 +144,7 @@ PLANNING_LOGS_DIR = LOGS_DIR / "planning"
 MCP_LOGS_DIR = LOGS_DIR / "mcp"
 AGENTWATCH_LOGS_DIR = LOGS_DIR / "agentwatch"
 SHIP_LOGS_DIR = LOGS_DIR / "ship"
+CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -463,6 +464,18 @@ def get_agentwatch_log_dir() -> Path:
     """Return the agentwatch (Agents family) logs directory, creating it if needed."""
     AGENTWATCH_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return AGENTWATCH_LOGS_DIR
+
+
+def get_ceremonies_log_dir() -> Path:
+    """Return the Ceremonies (scheduled runs) logs directory, creating it if needed.
+
+    Its own directory rather than the fired mode's: a scheduled run's log is the
+    only trace of a fire nobody watched, and burying it in the standup's log
+    beside the runs a human started is how "did it fire at all?" becomes
+    unanswerable.
+    """
+    CEREMONIES_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return CEREMONIES_LOGS_DIR
 
 
 def get_ship_log_dir() -> Path:

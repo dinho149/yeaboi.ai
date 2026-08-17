@@ -827,6 +827,78 @@ def build_parser() -> argparse.ArgumentParser:
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    ceremonies_p = subparsers.add_parser(
+        "ceremonies",
+        help="Run a mode on a cadence — declare it once, the OS fires it",
+    )
+    ceremonies_sub = ceremonies_p.add_subparsers(dest="ceremonies_command", required=True)
+
+    cer_list = ceremonies_sub.add_parser("list", help="Show this session's ceremonies and what they last did")
+    cer_list.add_argument("--session", default="", metavar="ID", help="Session to read (default: most recent)")
+    cer_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_add = ceremonies_sub.add_parser("add", help="Declare a ceremony and install its job")
+    cer_add.add_argument("name", help="A short name — lowercase letters, digits, dot, dash, underscore")
+    cer_add.add_argument("--mode", required=True, help="Which mode runs (see `ceremonies modes`)")
+    cer_add.add_argument("--at", default="09:00", metavar="HH:MM", help="Local time it should happen (default 09:00)")
+    cer_add.add_argument("--weekdays", default="", metavar="SPEC", help="e.g. 1-5, 1,3,5 (default: the mode's own)")
+    cer_add.add_argument(
+        "--channels",
+        default="terminal",
+        metavar="LIST",
+        help="Comma-separated: terminal, desktop, slack, email (default terminal)",
+    )
+    cer_add.add_argument(
+        "--arg",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="A mode argument; repeatable (see `ceremonies modes`)",
+    )
+    cer_add.add_argument("--session", default="", metavar="ID", help="Session to attach it to")
+    cer_add.add_argument(
+        "--stale-after",
+        type=int,
+        default=120,
+        metavar="MIN",
+        help="Skip a scheduled run this many minutes late (0 disables; default 120)",
+    )
+    cer_add.add_argument(
+        "--monthly-cap", type=float, default=0.0, metavar="USD", help="Skip scheduled runs past this month's spend"
+    )
+    cer_add.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_rm = ceremonies_sub.add_parser("remove", help="Forget a ceremony and tear its job down")
+    cer_rm.add_argument("name")
+    cer_rm.add_argument("--session", default="", metavar="ID")
+    cer_rm.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    for verb, blurb in (("pause", "Stop a ceremony firing, keeping it declared"), ("resume", "Start it again")):
+        sub = ceremonies_sub.add_parser(verb, help=blurb)
+        sub.add_argument("name")
+        sub.add_argument("--session", default="", metavar="ID")
+        sub.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_run = ceremonies_sub.add_parser("run", help="Run one now (this is what the scheduled job invokes)")
+    cer_run.add_argument("name")
+    cer_run.add_argument("--session", default="", metavar="ID")
+    cer_run.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="Arm the guards a fired run needs: staleness, the monthly cap, and pause",
+    )
+    cer_run.add_argument("--dry-run", action="store_true", help="Run the engine without LLM calls or delivery")
+    cer_run.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_hist = ceremonies_sub.add_parser("history", help="What the ceremonies actually did")
+    cer_hist.add_argument("name", nargs="?", default="", help="Only this ceremony (default: all)")
+    cer_hist.add_argument("--session", default="", metavar="ID")
+    cer_hist.add_argument("--limit", type=int, default=20, help="Rows to show (default 20)")
+    cer_hist.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
+    cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     agents_p = subparsers.add_parser(
         "agents",
         help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
@@ -1419,6 +1491,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "agents": _cmd_agents,
         "provenance": _cmd_provenance,
         "ship": _cmd_ship,
+        "ceremonies": _cmd_ceremonies,
     }
     try:
         return handlers[args.command](args, console)
@@ -1872,6 +1945,184 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print(format_trace_rich(trace))
     return 0 if trace.found else 1
+
+
+def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
+    """Declare, inspect and fire recurring runs.
+
+    ``ceremonies run --scheduled`` is what the installed OS job invokes, so this
+    handler is on the unattended path: it prints, exits with a code, and never
+    prompts. Every write goes through the store (which validates) and then the
+    scheduler, in that order — a job installed for a ceremony the store refused
+    would be one nothing can describe or remove.
+    """
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.agent.state import Ceremony
+    from yeaboi.ceremonies import catalog, render, scheduler
+    from yeaboi.ceremonies.store import CeremonyStore
+
+    command = args.ceremonies_command
+    to_json = getattr(args, "format", "text") == "json"
+    logging.getLogger(__name__).info("ceremonies %s", command)
+
+    if command == "modes":
+        if to_json:
+            print(
+                json.dumps(
+                    {
+                        "schedulable": [asdict(m) for m in catalog.CATALOG],
+                        "refused": catalog.UNSCHEDULABLE,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            console.print(render.format_modes_rich())
+        return 0
+
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+
+    session_id = resolve_session_id(getattr(args, "session", ""))
+
+    with CeremonyStore() as store:
+        if command == "list":
+            declared = store.list(session_id)
+            # The store and the operating system are two different things, and
+            # the gap between them is invisible until something does not fire.
+            # Three states, not two: "installed but paused" is a bug, whereas
+            # "declared but not installed" is exactly what pause is for.
+            installed = set(scheduler.installed_ceremonies(session_id))
+            known = {c.name for c in declared}
+            expected = {c.name for c in declared if c.enabled}
+            drift = [
+                f"a job is installed for {orphan!r}, which is not declared here" for orphan in sorted(installed - known)
+            ]
+            drift += [
+                f"{zombie!r} is paused but its job is still installed"
+                for zombie in sorted((installed & known) - expected)
+            ]
+            drift += [
+                f"{missing!r} is declared but has no scheduled job — re-add it"
+                for missing in sorted(expected - installed)
+            ]
+            if to_json:
+                # Drift and the OS's own view ride along, because a scripted
+                # caller is exactly who cannot notice a morning going quiet.
+                print(
+                    json.dumps(
+                        {
+                            "ceremonies": [asdict(c) for c in declared],
+                            "installed_jobs": sorted(installed),
+                            "drift": drift,
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
+            last = {c.name: store.last_run(session_id, c.name) for c in declared}
+            console.print(render.format_ceremonies_rich(declared, last))
+            for line in drift:
+                console.print(f"[yellow]![/yellow] {line}")
+            return 0
+
+        if command == "history":
+            runs = store.runs(session_id, getattr(args, "name", ""), limit=args.limit)
+            if to_json:
+                print(json.dumps([asdict(r) for r in runs], indent=2))
+            else:
+                console.print(render.format_history_rich(runs))
+            return 0
+
+        if command == "add":
+            mode = catalog.lookup(args.mode)
+            if mode is None:
+                print(f"Error: {catalog.refuse_reason(args.mode)}", file=sys.stderr)
+                return 2
+            declared_args: list[tuple[str, str]] = []
+            for pair in args.arg:
+                key, sep, value = pair.partition("=")
+                if not sep:
+                    print(f"Error: --arg expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+                    return 2
+                declared_args.append((key.strip(), value.strip()))
+            channels = tuple(c.strip() for c in args.channels.split(",") if c.strip())
+            ceremony = store.save(
+                Ceremony(
+                    session_id=session_id,
+                    name=args.name,
+                    mode=mode.key,
+                    args=tuple(declared_args),
+                    weekdays=args.weekdays or mode.default_weekdays,
+                    at=args.at,
+                    channels=channels,
+                    stale_after_min=args.stale_after,
+                    monthly_cap_usd=args.monthly_cap,
+                )
+            )
+            message = scheduler.install_ceremony(session_id, ceremony.name, ceremony.at, ceremony.weekdays)
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} — {render.cadence_label(ceremony)}")
+                console.print(f"  → {', '.join(ceremony.channels)}")
+                console.print(f"  {message}", style="dim")
+            return 0
+
+        if command == "remove":
+            message = scheduler.remove_ceremony(session_id, args.name)
+            removed = store.remove(session_id, args.name)
+            if to_json:
+                print(json.dumps({"removed": removed, "scheduler": message}, indent=2))
+            elif removed:
+                console.print(f"[green]✓[/green] removed {args.name}. {message}")
+            else:
+                # Still report the scheduler's half: an orphaned job with no
+                # declaration is exactly the state worth telling someone about.
+                console.print(f"No ceremony named {args.name!r}. {message}")
+            return 0 if removed else 1
+
+        if command in ("pause", "resume"):
+            enabled = command == "resume"
+            ceremony = store.set_enabled(session_id, args.name, enabled)
+            if ceremony is None:
+                print(f"Error: no ceremony named {args.name!r}", file=sys.stderr)
+                return 1
+            if enabled:
+                message = scheduler.install_ceremony(session_id, ceremony.name, ceremony.at, ceremony.weekdays)
+            else:
+                # Pause removes the JOB and keeps the declaration: a paused
+                # ceremony that still fires is the thing users report as a bug.
+                message = scheduler.remove_ceremony(session_id, ceremony.name)
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} {command}d. {message}")
+            return 0
+
+    # run — outside the store context: the engine opens its own connection.
+    from yeaboi.ceremonies.engine import CeremonyNotFoundError, run_ceremony
+
+    try:
+        run = run_ceremony(
+            args.name,
+            session_id=session_id,
+            scheduled=args.scheduled,
+            dry_run=args.dry_run,
+            on_progress=None if to_json else lambda step: console.print(f"  {step}", style="dim"),
+        )
+    except CeremonyNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if to_json:
+        print(json.dumps(asdict(run), indent=2))
+    else:
+        console.print(render.format_history_rich([run]))
+    # A declined run is not a failed one: the guards did their job, and a
+    # scheduled wrapper treating "skipped because the laptop was asleep" as a
+    # crash would fill the logs with alarms about working behaviour.
+    return 1 if run.outcome == "failed" else 0
 
 
 def _cmd_ship(args: argparse.Namespace, console: Console) -> int:

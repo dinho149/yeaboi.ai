@@ -12337,6 +12337,18 @@ def select_mode(
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
+                elif key == "s":
+                    # Ceremonies (bottom-left hint). Handled inline like `c`: the
+                    # page is a reader, so returning falls straight back here.
+                    # A keycap rather than a mode card because the menu draws
+                    # every card and an eleventh pushes the version row off screen
+                    # at the enforced minimum size.
+                    logger.info("ceremonies opened from mode select")
+                    from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
+
+                    run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
                     # composer in place, so the welcome screen never leaves. The full

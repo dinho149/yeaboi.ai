@@ -260,6 +260,24 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice"},
         "skill": Exempt("TUI utility page"),
     },
+    # Ceremonies are the clock other modes run on, not a mode of their own: the
+    # engine fires a catalogued mode and delivers its output.
+    "ceremonies": {
+        "engines": {("yeaboi.ceremonies.engine", "run_ceremony")},
+        # Read-only on this surface, for the same reason the standup's own
+        # schedule has never been settable here: declaring one installs a
+        # launchd/crontab job on the user's machine that outlives the session,
+        # survives reboots and spends money unattended.
+        "mcp_tools": {"ceremonies_list", "ceremonies_history"},
+        # Not a mode card: the menu draws every card with no scrolling, and an
+        # eleventh pushes the version/changelog/feedback row off screen at the
+        # enforced 84x40 minimum (measured) — trading three affordances every
+        # user has for one menu entry. Reached by `s` from the welcome screen,
+        # beside the changelog and feedback keycaps it belongs with.
+        "tui_mode": Exempt("a welcome-screen keycap (s), not a card — an 11th card breaks the 84x40 layout"),
+        "cli": {"ceremonies"},
+        "skill": "ceremonies",
+    },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
     # Every mode ships at full parity: no Exempt entries, because each mode's
