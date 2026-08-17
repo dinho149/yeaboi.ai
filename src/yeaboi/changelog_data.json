@@ -2,6 +2,47 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.19.0",
+      "date": "2026-08-17",
+      "summary": "yeaboi now runs on a clock. Ceremonies let you schedule any of six catalogued modes — standup, report, and four agentwatch digests — to fire at a specific time on weekdays and deliver results to Slack, email, or terminal while yeaboi is closed. The OS installs the job (launchd on macOS, cron elsewhere); yeaboi's scheduler catches its fire, runs the engine, records the outcome and cost in a ledger, and applies three guards that block stale fires, cap spending, or respect pauses. You declare a ceremony once, and it runs unattended every week. The ceremony CLI lives under `yeaboi ceremonies` (add/list/remove/pause/resume/run/history/modes), with a dedicated TUI page for viewing schedules, pausing runs, and seeing OS/store drift.",
+      "highlights": [
+        {
+          "text": "Schedule any mode to run at a time on weekdays with `yeaboi ceremonies add` — standup, report, and agentwatch digests deliver to Slack, email, or terminal",
+          "areas": [
+            "standup",
+            "reporting",
+            "usage"
+          ]
+        },
+        {
+          "text": "OS-installed jobs (launchd/cron) fire ceremonies while yeaboi is closed, with each run recorded in a ledger showing outcome, duration, cost, and delivery status",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "Three guards protect unattended runs: staleness rejects fires too late for their slot, spending caps prevent budget overruns, and pause status gates fires",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "New TUI page shows your ceremony schedule, lets you run or pause them, and displays any drift between the store and the OS",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Delivery was unified onto a mode-neutral Dispatch type, reducing code duplication and making new delivery channels easier to add",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.18.2",
       "date": "2026-08-17",
       "summary": "The standup now shows an activity timeline swimlane board with landmarks and thread connections, while Azure DevOps PR reviews are captured and properly deduplicated. Four bugs in the Azure DevOps integration are fixed: reviewer votes were not fetched, comments incorrectly collapsed to one row per PR, activity caps silently dropped events, and the capability manifest claimed the opposite of reality. The standup timeline redesign replaces mute tick marks with labeled landmarks (merged PRs, ticket state changes) and commit bursts, using a compressed axis where events claim footprints and overlapping activity merges into bursts. Threads now connect lanes that touched the same pull request, and evidence caps widened from 8 to 30 rows per category to support busier days.",
