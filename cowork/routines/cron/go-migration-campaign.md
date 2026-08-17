@@ -1,6 +1,6 @@
 # go migration campaign
 
-**Trigger** — cron `40 7 * * 1-5` (weekdays 07:40 UTC)
+**Trigger** — cron `0 * * * *` (hourly)
 **Summary** — advances the current Go-migration wave by one phase, or opens the next wave
 **Workstream** — [`workstreams/go-migration.md`](../../workstreams/go-migration.md)
 **Model** — `heavy` ([models.md](../../models.md))
@@ -8,10 +8,27 @@
 The fleet's second building lane. The program of record is
 [`cowork/migration/program.md`](../../migration/program.md); the lane and its approval story
 are [`house-rules.md`](../../house-rules.md), **The migration lane** — read both, the charter,
-and the program doc's §5 conventions before anything else. `40 7` on purpose: `0 7` carries
-sweeps, `20 7` the integrations campaign, `30 7` the fortnightlies.
+and the program doc's §5 conventions before anything else.
+
+**Hourly, because the program is a fixed amount of work and the cron was the only thing making
+it slow.** Thirteen waves is roughly a hundred phase-runs; at five runs a week that is five
+months, and at one an hour it is about four days. One run still advances exactly one phase —
+nothing about the unit of work changed, only how often the unit is attempted. `0 * * * *` is the
+floor the routines API allows; a shorter interval is rejected, not merely discouraged.
+
+**Two sessions must never work one wave branch.** An hourly cron will fire again while a long
+phase is still running, and the second session would read the same spec, implement the same
+phase, and race the first to push. Step 0 is what stops that, and it is not optional.
 
 ## Run
+
+0. **Take the lane, or leave.** `git fetch origin` and look at the wave branch this run would
+   touch (`cowork/migration-w<N>`, or the branch of the open wave PR from step 1).
+   **If its newest commit is under 90 minutes old, exit immediately and say so in the run log** —
+   another session is mid-phase, and a phase is allowed to take longer than an hour. Do the same
+   if `git push` is rejected as non-fast-forward at any later point: that is the same collision
+   seen from the other end, and the answer is always to exit rather than to force or to merge.
+   A skipped hour costs one hour; two sessions writing one phase costs the wave.
 
 1. **Work in flight.** `gh pr list --label "workstream:go-migration" --state open`. If one is
    open, drive it to green on both halves — CI via `gh pr checks` (the `Go core` and
