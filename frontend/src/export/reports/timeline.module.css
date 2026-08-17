@@ -1,0 +1,273 @@
+/*
+ * Activity timeline — swimlanes of DOM dots on CSS tracks.
+ *
+ * Positions are percentages of the window, so the page never scrolls
+ * horizontally. Tooltips are pure CSS (hover / focus-visible); alignment is
+ * decided from the dot's position class, no measurement JS. Tokens only.
+ */
+
+.timeline {
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+/* ---- legend / filter -------------------------------------------------- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid color-mix(in srgb, currentcolor 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 10%, var(--panel));
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  color: inherit;
+  cursor: pointer;
+}
+
+.legendItem span {
+  color: var(--text);
+}
+
+.legendItem[aria-pressed='true'] {
+  border-color: currentcolor;
+  outline: 1px solid currentcolor;
+}
+
+/* One dim rule serves legend keys and dot slots alike. */
+.dimmed {
+  opacity: 0.3;
+}
+
+/* ---- grid ------------------------------------------------------------- */
+
+/* All cells are direct children — three per row — so every row shares the
+ * same resolved columns without needing subgrid support. */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr) auto;
+  row-gap: var(--s2);
+  align-items: center;
+}
+
+.axisTrack {
+  position: relative;
+  height: 1.2rem;
+}
+
+.tick {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- lanes ------------------------------------------------------------ */
+
+.laneName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  padding-right: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+.laneWord {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  position: relative;
+  height: 2.4rem;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.laneEnd {
+  padding-left: var(--s2);
+}
+
+.undated {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.connector {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+.dayBreak {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-soft);
+}
+
+/* ---- dots ------------------------------------------------------------- */
+
+.markSlot {
+  /* The slot exists so the filter can dim a whole cluster (dot + badge). */
+  display: contents;
+}
+
+.markSlot.dimmed .mark {
+  opacity: 0.25;
+}
+
+.mark {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  border: 1px solid currentcolor;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 16%, var(--panel));
+  /* padding-free hit area: the border-box is the target, ~22px + outline. */
+  text-decoration: none;
+}
+
+.mark:hover,
+.mark:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.markBadge {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.65rem;
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* ---- tooltip ---------------------------------------------------------- */
+
+.tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 22rem;
+  padding: var(--s2) var(--s3);
+  transform: translateX(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-2xs);
+  color: var(--text);
+  text-align: left;
+}
+
+.mark:hover .tip,
+.mark:focus-visible .tip {
+  display: flex;
+}
+
+/* Near the edges the tooltip hangs off the dot instead of centring. */
+.tipLeft .tip {
+  left: 0;
+  transform: none;
+}
+
+.tipRight .tip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.tipTitle {
+  font-size: var(--fs-xs);
+}
+
+.tipMeta {
+  color: var(--muted);
+}
+
+.tipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.tipRow i {
+  display: inline-flex;
+  flex: none;
+}
+
+.tipRowText {
+  overflow: hidden;
+  max-width: 14rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tipRowTime {
+  margin-left: auto;
+  padding-left: var(--s2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+/* ---- small screens ---------------------------------------------------- */
+
+@media (max-width: 699px) {
+  .grid {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  /* The avatar carries the identity; the word lives in the dot aria-labels. */
+  .laneWord {
+    display: none;
+  }
+
+  .mark {
+    width: 18px;
+    height: 18px;
+  }
+}

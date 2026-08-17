@@ -2841,6 +2841,279 @@ a._issueKey_1nv7j_351:hover {
   }
 }
 /*
+ * Activity timeline — swimlanes of DOM dots on CSS tracks.
+ *
+ * Positions are percentages of the window, so the page never scrolls
+ * horizontally. Tooltips are pure CSS (hover / focus-visible); alignment is
+ * decided from the dot's position class, no measurement JS. Tokens only.
+ */
+
+._timeline_q8twb_9 {
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+._head_q8twb_17 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+/* ---- legend / filter -------------------------------------------------- */
+
+._legend_q8twb_28 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+._legendItem_q8twb_34 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid color-mix(in srgb, currentcolor 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 10%, var(--panel));
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  color: inherit;
+  cursor: pointer;
+}
+
+._legendItem_q8twb_34 span {
+  color: var(--text);
+}
+
+._legendItem_q8twb_34[aria-pressed='true'] {
+  border-color: currentcolor;
+  outline: 1px solid currentcolor;
+}
+
+/* One dim rule serves legend keys and dot slots alike. */
+._dimmed_q8twb_58 {
+  opacity: 0.3;
+}
+
+/* ---- grid ------------------------------------------------------------- */
+
+/* All cells are direct children — three per row — so every row shares the
+ * same resolved columns without needing subgrid support. */
+._grid_q8twb_66 {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr) auto;
+  row-gap: var(--s2);
+  align-items: center;
+}
+
+._axisTrack_q8twb_73 {
+  position: relative;
+  height: 1.2rem;
+}
+
+._tick_q8twb_78 {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- lanes ------------------------------------------------------------ */
+
+._laneName_q8twb_89 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  padding-right: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+._laneWord_q8twb_99 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+._track_q8twb_105 {
+  position: relative;
+  height: 2.4rem;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+._laneEnd_q8twb_112 {
+  padding-left: var(--s2);
+}
+
+._undated_q8twb_116 {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+._connector_q8twb_122 {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+._dayBreak_q8twb_129 {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-soft);
+}
+
+/* ---- dots ------------------------------------------------------------- */
+
+._markSlot_q8twb_139 {
+  /* The slot exists so the filter can dim a whole cluster (dot + badge). */
+  display: contents;
+}
+
+._markSlot_q8twb_139._dimmed_q8twb_58 ._mark_q8twb_139 {
+  opacity: 0.25;
+}
+
+._mark_q8twb_139 {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  border: 1px solid currentcolor;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 16%, var(--panel));
+  /* padding-free hit area: the border-box is the target, ~22px + outline. */
+  text-decoration: none;
+}
+
+._mark_q8twb_139:hover,
+._mark_q8twb_139:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+._markBadge_q8twb_171 {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.65rem;
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* ---- tooltip ---------------------------------------------------------- */
+
+._tip_q8twb_186 {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 22rem;
+  padding: var(--s2) var(--s3);
+  transform: translateX(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-2xs);
+  color: var(--text);
+  text-align: left;
+}
+
+._mark_q8twb_139:hover ._tip_q8twb_186,
+._mark_q8twb_139:focus-visible ._tip_q8twb_186 {
+  display: flex;
+}
+
+/* Near the edges the tooltip hangs off the dot instead of centring. */
+._tipLeft_q8twb_213 ._tip_q8twb_186 {
+  left: 0;
+  transform: none;
+}
+
+._tipRight_q8twb_218 ._tip_q8twb_186 {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+._tipTitle_q8twb_224 {
+  font-size: var(--fs-xs);
+}
+
+._tipMeta_q8twb_228 {
+  color: var(--muted);
+}
+
+._tipRow_q8twb_232 {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+._tipRow_q8twb_232 i {
+  display: inline-flex;
+  flex: none;
+}
+
+._tipRowText_q8twb_243 {
+  overflow: hidden;
+  max-width: 14rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+._tipRowTime_q8twb_250 {
+  margin-left: auto;
+  padding-left: var(--s2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+/* ---- small screens ---------------------------------------------------- */
+
+@media (max-width: 699px) {
+  ._grid_q8twb_66 {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  /* The avatar carries the identity; the word lives in the dot aria-labels. */
+  ._laneWord_q8twb_99 {
+    display: none;
+  }
+
+  ._mark_q8twb_139 {
+    width: 18px;
+    height: 18px;
+  }
+}
+/*
  * The shared page shell: masthead, contents, body column, footer.
  *
  * Lifted wholesale out of export/export.module.css when the boards, the gate

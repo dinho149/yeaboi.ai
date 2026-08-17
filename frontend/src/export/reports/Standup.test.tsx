@@ -33,6 +33,7 @@ const BASE = {
   members: [],
   activityCounts: [] as Array<[string, number]>,
   activityWindow: '',
+  window: { start: '', end: '' },
   coverage: [] as Array<[string, string]>,
   skipped: [] as Array<[string, string]>,
   practices: [] as Array<{ rule: string; count: number; title: string }>,
@@ -176,32 +177,48 @@ describe('Standup', () => {
     expect(container.querySelectorAll('#summary li')).toHaveLength(2);
   });
 
-  it('scales the activity bars against the busiest member', () => {
-    // Every bar filling the track would be four pictures of 100%.
+  it('opens with a timeline lane per member with dated evidence, dots linking to their card', () => {
     const { container } = render(
       <Standup
         {...BASE}
-        members={[member({ name: 'Ada', counts: [4, 0, 0] }), member({ name: 'Bo', counts: [1, 0, 0] })]}
+        members={[
+          member({
+            name: 'Ada',
+            counts: [0, 1, 0],
+            categories: [{ label: 'Code', items: [], links: [], evidence: [evidence()] }],
+          }),
+        ]}
       />
     );
-    const widths = [...container.querySelectorAll('.activityRow .segTrack')].map(
-      (bar) => (bar as HTMLElement).style.width
-    );
-    expect(widths).toEqual(['100%', '25%']);
+    const lane = container.querySelector('.timeline .laneName');
+    expect(lane?.textContent).toContain('Ada');
+    const dot = container.querySelector('.timeline .mark');
+    expect(dot?.getAttribute('href')).toBe('#m-ada');
+    expect(container.querySelector('#m-ada .memberHead')).not.toBeNull();
   });
 
-  it('leaves an all-quiet member out of the activity bars but keeps their card', () => {
+  it('leaves a member with no dated evidence out of the timeline but keeps their card', () => {
     const { container } = render(
-      <Standup {...BASE} members={[member({ name: 'Ada', counts: [2, 0, 0] }), member({ name: 'Quiet' })]} />
+      <Standup
+        {...BASE}
+        members={[
+          member({
+            name: 'Ada',
+            counts: [0, 1, 0],
+            categories: [{ label: 'Code', items: [], links: [], evidence: [evidence()] }],
+          }),
+          member({ name: 'Quiet' }),
+        ]}
+      />
     );
-    expect([...container.querySelectorAll('.activityName')].map((n) => n.textContent)).toEqual(['Ada']);
+    expect([...container.querySelectorAll('.timeline .laneWord')].map((n) => n.textContent)).toEqual(['Ada']);
     // Two names on the page now — the jump strip and the card — so ask for the card.
     expect(container.querySelector('#m-quiet .memberHead')).not.toBeNull();
   });
 
-  it('draws no activity block at all when nobody has counts', () => {
+  it('draws no timeline at all when no evidence carries a time', () => {
     const { container } = render(<Standup {...BASE} members={[member()]} />);
-    expect(container.querySelector('.activity')).toBeNull();
+    expect(container.querySelector('.timeline')).toBeNull();
   });
 
   it('renders quiet members as one strip, not cards', () => {
