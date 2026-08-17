@@ -158,6 +158,7 @@ def run_ship(
     dry_run: bool = False,
     on_progress: Callable | None = None,
     on_run_id: Callable[[str], None] | None = None,
+    on_agent_line: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
     driver: object | None = None,
 ) -> ShipRun:
@@ -172,6 +173,12 @@ def run_ship(
     run" as "one that was not there when I started", which stops being true
     the moment two runs are allowed at once — and then a user is asked to
     approve, and push, a diff they have never seen.
+
+    ``on_agent_line`` receives one raw JSON event per line while the agent
+    works (it selects the driver's ``stream-json`` mode). It is the live-board
+    seam; a caller that omits it keeps the unchanged one-shot ``json`` path, so
+    a plain CLI/TUI run is entirely unaffected. Filtering these events down to
+    what is safe to show a remote watcher is the board's job, not the engine's.
     """
     if dry_run:
         return _dry_run_artifact(story_id, repo)
@@ -237,6 +244,7 @@ def run_ship(
             check_command=check_command,
             timeout_minutes=timeout_minutes,
             on_progress=on_progress,
+            on_agent_line=on_agent_line,
             cancel_event=cancel_event,
         )
     except _RunAbortError as aborted:
@@ -267,6 +275,7 @@ def _run_phases(
     check_command: str,
     timeout_minutes: int,
     on_progress,
+    on_agent_line,
     cancel_event,
 ) -> ShipRun:
     """The phase sequence. Raises _RunAbortError with the terminal artifact."""
@@ -298,7 +307,9 @@ def _run_phases(
 
     # -- implement ---------------------------------------------------------
     prompt = pipeline.build_prompt(story, tasks)
-    result = _implement(agent, prompt, record, run, timeout_minutes, on_progress, cancel_event, label="Implementing")
+    result = _implement(
+        agent, prompt, record, run, timeout_minutes, on_progress, on_agent_line, cancel_event, label="Implementing"
+    )
     if result is None:  # cancelled
         _abort(_save(store, replace(run, status="cancelled", updated_at=_now_iso())))
 
@@ -366,7 +377,15 @@ def _run_phases(
         if run.status != "running":
             _abort(run)
         result = _implement(
-            agent, rework, record, run, timeout_minutes, on_progress, cancel_event, label="Reworking after rejection"
+            agent,
+            rework,
+            record,
+            run,
+            timeout_minutes,
+            on_progress,
+            on_agent_line,
+            cancel_event,
+            label="Reworking after rejection",
         )
         if result is None:
             _abort(_save(store, replace(run, status="cancelled", updated_at=_now_iso())))
@@ -401,6 +420,7 @@ def _implement(
     run: ShipRun,
     timeout_minutes: int,
     on_progress,
+    on_agent_line,
     cancel_event,
     *,
     label: str,
@@ -414,7 +434,8 @@ def _implement(
         Path(record.path),
         timeout_s=max(1, timeout_minutes) * 60,
         cancel_event=cancel_event,
-        on_line=None,
+        on_line=on_agent_line,
+        stream=on_agent_line is not None,
     )
     if result.cancelled:
         _report(on_progress, "ship-implement", label, "failed", detail="cancelled")
