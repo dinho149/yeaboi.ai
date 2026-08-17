@@ -27,15 +27,42 @@ cron, read it back, and write the stored value here.
 phase is still running, and the second session would read the same spec, implement the same
 phase, and race the first to push. Step 0 is what stops that, and it is not optional.
 
+It stops it with a **claim ref**, not with the age of the last commit, and the difference is the
+whole schedule. A commit's age cannot tell "the previous run finished twenty minutes ago" — where
+this run should start immediately — from "the previous run is still working and has not committed
+yet" — where it must not. Treating both as busy costs an hour every hour: at one phase per two
+hours the program takes eight days rather than four, which is the entire benefit of the hourly
+cron given back. A ref that a run creates when it starts and deletes when it stops says exactly
+which of the two is true.
+
 ## Run
 
-0. **Take the lane, or leave.** `git fetch origin` and look at the wave branch this run would
-   touch (`cowork/migration-w<N>`, or the branch of the open wave PR from step 1).
-   **If its newest commit is under 90 minutes old, exit immediately and say so in the run log** —
-   another session is mid-phase, and a phase is allowed to take longer than an hour. Do the same
-   if `git push` is rejected as non-fast-forward at any later point: that is the same collision
-   seen from the other end, and the answer is always to exit rather than to force or to merge.
-   A skipped hour costs one hour; two sessions writing one phase costs the wave.
+0. **Take the lane, or leave.** The lane is claimed by one ref, `refs/heads/lane/go-migration`,
+   and this step is the only thing that reads or writes it.
+
+   ```bash
+   git fetch origin '+refs/heads/lane/*:refs/remotes/origin/lane/*' --prune
+   git log -1 --format=%cI origin/lane/go-migration 2>/dev/null   # empty ⇒ unclaimed
+   ```
+
+   - **No such ref** — the lane is free. Take it: commit an empty claim
+     (`git commit --allow-empty -m "claim: <run url>"` on a branch cut from `origin/main`) and
+     `git push origin HEAD:refs/heads/lane/go-migration`. **If that push is rejected, another
+     session claimed it in the same minute — exit.** The push is the lock, and losing the race
+     is a normal outcome, not an error.
+   - **Claimed, under 90 minutes old** — a session is mid-phase. Exit immediately and say so in
+     the run log. A phase is allowed to take longer than an hour.
+   - **Claimed, over 90 minutes old** — the run that claimed it died without releasing. Say so
+     in the run log, force-delete the ref, and claim it yourself. Nothing else clears a stale
+     claim, so skipping this stalls the lane permanently.
+
+   **Release it in step 7, whatever happened** — including on an early exit from any later step,
+   and including when the run did nothing: `git push origin --delete lane/go-migration`. A run
+   that exits holding the claim costs the next 90 minutes.
+
+   The same rule from the other end: if `git push` is rejected as non-fast-forward at any later
+   point, exit rather than force or merge. A skipped hour costs one hour; two sessions writing
+   one phase costs the wave.
 
 1. **Work in flight.** `gh pr list --label "workstream:go-migration" --state open`. If one is
    open, drive it to green on both halves — CI via `gh pr checks` (the `Go core` and
@@ -100,13 +127,18 @@ phase, and race the first to push. Step 0 is what stops that, and it is not opti
 6. **Post nothing to the channel.** [`cron/go-migration-daily.md`](go-migration-daily.md) carries
    this lane's story; a building routine that also narrates is two voices for one fact.
 
-7. **Check in.** Whatever happened above — including nothing — close the run by following
-   [check-in.md](../../check-in.md). It is the last thing you do.
+7. **Release the lane, then check in.** `git push origin --delete lane/go-migration` — before
+   the check-in, so a failure in the check-in cannot leave the lane held. Then close the run by
+   following [check-in.md](../../check-in.md). Releasing is unconditional: a run that exited at
+   step 1 with nothing to do still held the claim, and still hands it back.
 
 ## Stop conditions
 
 - **An open PR on `workstream:go-migration`** → drive it, stop. One open PR per workstream is
   what makes a many-session wave serial.
+- **The lane claim is held and fresh** → exit before doing anything else, and do **not** release
+  it: it is not yours. Releasing another session's claim is the one way this design fails
+  silently, because the next fire then starts a second writer on the same branch.
 - **The next wave's ordering dependencies are unmerged** → exit quietly; the program's
   ordering is not yours to reorder.
 - **A gate that will not go green after two runs of honest effort** → comment the blocker on
