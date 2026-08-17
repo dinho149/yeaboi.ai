@@ -90,6 +90,13 @@ _DOC_CACHE_TASK = "documentation_page_score"
 # Confluence/Notion readers), prose-only Flesch, wider owner detection, and the
 # AI-disclosure gate — cached v2 page scores were built from structure-less text
 # and must not be reused.
+#
+# This version is the cache's ONLY invalidation lever, and since the sidecar
+# seam the cache can hold Go-computed assets: the key carries no engine or
+# binary version, so a scoring fix on the Go side alone (a divergence the
+# parity fixtures missed) MUST bump this constant too, or the poisoned rows
+# are served forever — including after the user sets YEABOI_GO=0, because
+# the Python path reads the same cache.
 _DOC_SCORING_VERSION = "deterministic-v3"
 _EMPTY_BODY = "empty page body"
 
@@ -231,87 +238,6 @@ def _usefulness_metrics(text: str) -> dict:
     }
 
 
-def aggregate_doc_quality(pages: list[dict]) -> DocQualitySignal:
-    """Aggregate scanned page dicts into a :class:`DocQualitySignal`.
-
-    Pure over its input (no network). Each page is a normalized dict with
-    ``platform``, ``title``, ``text`` (+ optional ``author``/``url``). Returns an
-    all-zero signal for an empty list.
-    """
-    if not pages:
-        return DocQualitySignal()
-
-    platforms: list[str] = []
-    per_platform: dict[str, int] = {}
-    clarities: list[float] = []
-    usefulness_scores: list[float] = []
-    clear = mixed = unclear = ai_marked = owned = actionable = structured = 0
-    # (clarity, usefulness, title) per page — used to pick actionable call-outs.
-    scored: list[tuple[float, float, str]] = []
-
-    for page in pages:
-        text = str(page.get("text", ""))
-        platform = str(page.get("platform", "")).strip()
-        title = str(page.get("title", "Untitled")).strip()[:80] or "Untitled"
-        if platform and platform not in platforms:
-            platforms.append(platform)
-        per_platform[platform] = per_platform.get(platform, 0) + 1
-
-        clarity = _clarity_metrics(text)["clarity"]
-        clarities.append(clarity)
-        if clarity >= _CLEAR_MIN:
-            clear += 1
-        elif clarity < _UNCLEAR_MAX:
-            unclear += 1
-        else:
-            mixed += 1
-
-        useful = _usefulness_metrics(text)
-        usefulness_scores.append(useful["usefulness"])
-        owned += int(useful["owned"])
-        actionable += int(useful["actionable"])
-        structured += int(useful["structured"])
-        if _has_ai_disclosure(text):
-            ai_marked += 1
-
-        scored.append((clarity, useful["usefulness"], title))
-
-    avg_clarity = round(sum(clarities) / len(clarities), 1) if clarities else 0.0
-    avg_usefulness = round(sum(usefulness_scores) / len(usefulness_scores), 1) if usefulness_scores else 0.0
-
-    # Flagged call-outs: the least-clear pages and the most-AI-likely pages, deduped.
-    flagged: list[tuple[str, str]] = []
-    seen_titles: set[str] = set()
-    for clarity, _usefulness, title in sorted(scored, key=lambda x: x[0]):
-        if clarity < _CLEAR_MIN and title not in seen_titles:
-            flagged.append((title, f"clarity {clarity:.0f}/100 — dense or long-winded"))
-            seen_titles.add(title)
-    for _cl, usefulness, title in sorted(scored, key=lambda x: x[1]):
-        if usefulness < 60 and title not in seen_titles:
-            flagged.append((title, f"usefulness {usefulness:.0f}/100 — missing purpose, ownership, or actions"))
-            seen_titles.add(title)
-
-    def _sorted_pairs(d: dict[str, int]) -> tuple[tuple[str, int], ...]:
-        return tuple(sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
-
-    return DocQualitySignal(
-        pages_scanned=len(pages),
-        platforms_scanned=tuple(platforms),
-        avg_clarity=avg_clarity,
-        avg_usefulness=avg_usefulness,
-        clear_pages=clear,
-        mixed_pages=mixed,
-        unclear_pages=unclear,
-        owned_pages=owned,
-        actionable_pages=actionable,
-        structured_pages=structured,
-        ai_marked_pages=ai_marked,
-        per_platform=_sorted_pairs(per_platform),
-        flagged_pages=tuple(flagged),
-        is_ai_estimate=False,
-    )
-
-
 def _analyse_page_asset(page: dict) -> dict:
     """Score one page into the complete derived record persisted by the cache."""
     text = str(page.get("text", ""))
@@ -405,6 +331,55 @@ def _doc_cache_key(meta: dict) -> str:
         ensure_ascii=False,
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _write_doc_cache(scoreable: list[dict], assets: list[dict], db_path) -> None:
+    """Persist the freshly scored assets, one cache row per cache-miss page.
+
+    ``scoreable``/``assets`` are the seam's aligned in/out lists (the dispatch
+    validates the count before trusting a sidecar result). This replaces the
+    old in-worker checkpoint write, so it is one batch after scoring; cached
+    entries hold only derived assets — never page bodies. Best-effort, like
+    every other touch of this cache.
+    """
+    if db_path is None:
+        return
+    # A misaligned pair would write asset i+1 under page i's cache key and
+    # serve that wrong score until _DOC_SCORING_VERSION bumps — but a raise
+    # here would escape into run_doc_quality's blanket handler and zero the
+    # whole Documentation component, so a mismatch skips the write instead.
+    if len(scoreable) != len(assets):
+        logger.warning(
+            "Documentation cache write skipped — %d pages vs %d assets",
+            len(scoreable),
+            len(assets),
+        )
+        return
+    fresh = [
+        (page, asset)
+        for page, asset in zip(scoreable, assets, strict=False)
+        if not isinstance(page.get("asset"), dict) and isinstance(asset, dict)
+    ]
+    if not fresh:
+        return
+    from yeaboi.team_profile import TeamProfileStore
+
+    try:
+        store = TeamProfileStore(Path(db_path))
+    except Exception:
+        logger.debug("Documentation cache store unavailable", exc_info=True)
+        return
+    try:
+        for page, asset in fresh:
+            cache_key = _doc_cache_key(page)
+            if not cache_key:
+                continue
+            try:
+                store.save_analysis_enrichment(_DOC_CACHE_TASK, cache_key, _DOC_SCORING_VERSION, {"asset": asset})
+            except Exception:
+                logger.debug("Documentation cache write failed", exc_info=True)
+    finally:
+        store.close()
 
 
 # ---------------------------------------------------------------------------
@@ -605,7 +580,6 @@ def _read_page_inventory(
     cache_started = time.monotonic()
     results: list[dict | None] = [None] * len(inventory)
     cache_store = None
-    cache_lock = threading.Lock()
     cache_hits = 0
     if db_path is not None:
         from yeaboi.team_profile import TeamProfileStore
@@ -654,26 +628,16 @@ def _read_page_inventory(
         gate = _AdaptiveDocGate(min(_DOC_INITIAL_WORKERS[provider], workers), workers)
 
         def _gated_read(index: int) -> dict:
+            # Reading only — scoring happens in one batch behind the
+            # ``analysis.score_docs`` seam after every body is in (see
+            # ``run_doc_quality``), which also moved the score-cache write
+            # there: an interrupted run no longer checkpoints partial scores,
+            # and a raise while scoring is no longer isolated to one failed
+            # page — it fails the whole component via run_doc_quality's guard.
             gate.acquire()
             page: dict = {}
             try:
                 page = _read_one_page(inventory[index], reader)
-                if str(page.get("text", "")).strip():
-                    asset = _analyse_page_asset(page)
-                    page["asset"] = asset
-                    page["cache_status"] = "miss"
-                    cache_key = _doc_cache_key(page)
-                    if cache_store is not None and cache_key:
-                        try:
-                            with cache_lock:
-                                cache_store.save_analysis_enrichment(
-                                    _DOC_CACHE_TASK,
-                                    cache_key,
-                                    _DOC_SCORING_VERSION,
-                                    {"asset": asset},
-                                )
-                        except Exception:
-                            logger.debug("Documentation cache checkpoint failed", exc_info=True)
                 return page
             finally:
                 error = str(page.get("read_error", ""))
@@ -935,7 +899,10 @@ def collect_doc_pages(
             read_error or ("page hit safety ceiling" if page.get("truncated") else ""),
             eligible=not empty_body,
         )
-        if isinstance(page.get("asset"), dict):
+        # A page is readable when it carries a version-matched cached asset or a
+        # body for the scoring seam — fresh reads are no longer scored in the
+        # worker, so "has an asset" alone would drop every cache miss.
+        if isinstance(page.get("asset"), dict) or str(page.get("text", "")).strip():
             readable_pages.append(page)
 
     coverage_blob = tracker.as_dict()
@@ -954,28 +921,6 @@ def collect_doc_pages(
     if _return_coverage:
         return readable_pages, platforms_scanned, coverage, coverage_blob
     return readable_pages, platforms_scanned, coverage
-
-
-def _collect_samples(pages: list[dict], limit: int | None = None) -> list[dict]:
-    """Structured summaries for every page (never page bodies)."""
-    out: list[dict] = []
-    for page in pages:
-        text = str(page.get("text", ""))
-        out.append(
-            {
-                "title": str(page.get("title", "Untitled"))[:80],
-                "platform": page.get("platform", ""),
-                "clarity": _clarity_metrics(text)["clarity"],
-                "usefulness": _usefulness_metrics(text)["usefulness"],
-                "marked": _has_ai_disclosure(text),
-                "url": page.get("url", ""),
-                "key": page.get("key", ""),
-                "container": page.get("container", ""),
-            }
-        )
-        if limit is not None and len(out) >= limit:
-            break
-    return out
 
 
 def _doc_findings(assets: list[dict]) -> list[dict]:
@@ -1104,18 +1049,26 @@ def run_doc_quality(
             }
         else:
             pages, platforms_scanned, coverage, coverage_blob = collected
-        assets = [
-            page["asset"] if isinstance(page.get("asset"), dict) else _analyse_page_asset(page)
-            for page in pages
-            if isinstance(page.get("asset"), dict) or str(page.get("text", "")).strip()
-        ]
-        _report_doc_progress(progress, f"Assembling quality results for {len(assets)} documentation pages")
+        from yeaboi.analysis.aggregate import (
+            build_score_docs_inputs,
+            doc_signal_from_wire,
+            go_score_docs,
+            score_docs,
+            scoreable_doc_pages,
+        )
+
+        scoreable = scoreable_doc_pages(pages)
+        _report_doc_progress(progress, f"Assembling quality results for {len(scoreable)} documentation pages")
         score_started = time.monotonic()
-        signal = _aggregate_doc_assets(assets)
+        inputs = build_score_docs_inputs(pages=pages)
+        scored = go_score_docs(inputs) or score_docs(inputs)
+        signal = doc_signal_from_wire(scored["signal"])
+        assets = scored["assets"]
+        _write_doc_cache(scoreable, assets, db_path)
 
         samples = assets
-        findings = _doc_findings(samples)
-        action_plan = _prioritize_doc_actions(findings)
+        findings = scored["findings"]
+        action_plan = scored["action_plan"]
         score_seconds = time.monotonic() - score_started
         stage_timings = {
             "discovery_seconds": 0.0,
@@ -1129,23 +1082,7 @@ def run_doc_quality(
             }
         )
         blob: dict = {
-            "summary": {
-                "pages_scanned": signal.pages_scanned,
-                "platforms_scanned": list(signal.platforms_scanned),
-                "avg_clarity": signal.avg_clarity,
-                "avg_usefulness": signal.avg_usefulness,
-                "clear_pages": signal.clear_pages,
-                "mixed_pages": signal.mixed_pages,
-                "unclear_pages": signal.unclear_pages,
-                "owned_pages": signal.owned_pages,
-                "actionable_pages": signal.actionable_pages,
-                "structured_pages": signal.structured_pages,
-                "ai_marked_pages": signal.ai_marked_pages,
-                "per_platform": [list(p) for p in signal.per_platform],
-                "flagged_pages": [list(p) for p in signal.flagged_pages],
-                "is_ai_estimate": False,
-                "small_sample": doc_small_sample(signal),
-            },
+            "summary": scored["summary"],
             "samples": samples,
             "assets": samples,
             "coverage": coverage,
@@ -1155,6 +1092,13 @@ def run_doc_quality(
             "findings": findings,
             "action_plan": action_plan,
         }
+        # The seam always computes the (deterministic) coaching insights; only a
+        # run that actually read pages earns them in the blob — the same gate the
+        # team-learning caller used to apply after the fact.
+        if signal.pages_scanned > 0 and coverage_blob.get("status") not in {"failed", "no_data"}:
+            blob["insights"] = scored["insights"]
+        else:
+            blob["insights"] = {}
         logger.info(
             "run_doc_quality: pages=%d avg_clarity=%.0f usefulness=%.0f marked=%d platforms=%s",
             signal.pages_scanned,

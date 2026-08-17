@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from yeaboi.analysis.code_health import analyse_changed_files, analyse_repository_health, prioritize_actions
 from yeaboi.analysis.coverage import CoverageTracker
-from yeaboi.analysis.doc_quality import aggregate_doc_quality, run_doc_quality
+from yeaboi.analysis.doc_quality import _aggregate_doc_assets, _analyse_page_asset, run_doc_quality
 from yeaboi.team_profile import TeamProfileStore
 
 
@@ -111,13 +111,15 @@ def test_changed_file_analysis_is_attribution_scoped_and_reports_exclusions():
 
 
 def test_doc_signal_uses_usefulness_not_ai_authorship():
-    signal = aggregate_doc_quality(
+    signal = _aggregate_doc_assets(
         [
-            {
-                "platform": "notion",
-                "title": "Runbook",
-                "text": "# Purpose\n\nOwner: SRE\n\n- Run the check.\n- Verify the result.",
-            }
+            _analyse_page_asset(
+                {
+                    "platform": "notion",
+                    "title": "Runbook",
+                    "text": "# Purpose\n\nOwner: SRE\n\n- Run the check.\n- Verify the result.",
+                }
+            )
         ]
     )
     assert signal.pages_scanned == 1
