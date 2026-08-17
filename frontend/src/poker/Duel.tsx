@@ -21,11 +21,10 @@
  * ceremony people find genuinely novel.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useRef } from 'react';
 
 import { cx } from '../runtime/cx';
-import { rememberFloor, seatFace } from './seats';
+import { Announce, useArrival } from '../shared/board';
 import { fmtClock } from '../runtime/format';
 import type { DuelSlice } from '../types/board';
 import styles from './poker.module.css';
@@ -41,63 +40,19 @@ export interface DuelProps {
   onCloseDuel(): void;
 }
 
-/** How long a duelist takes to get out of their chair, in ms. */
-const SEAT_MS = 620;
-const SEAT_EASE = 'cubic-bezier(0.32, 0.94, 0.3, 1)';
-
-/**
- * Walk a duelist from their chair to the floor.
- *
- * The face is what travels — it leaves the seat's coordinates and arrives at the
- * panel's — and the panel fades up around it once it lands. The alternative, and
- * what this replaced, was flying the whole panel from the seat: correct in its
- * arithmetic and wrong to look at, because the thing that moved was a rectangle
- * the size of the floor rather than the person.
- *
- * The chair is gone from the DOM by the time this runs, so the start is the box
- * the table recorded on its last layout. Once per pairing: a re-render mid-turn
- * must not send them back and out again.
- */
-function useSeatEntrance(
-  card: { current: HTMLDivElement | null },
-  face: { current: HTMLSpanElement | null },
-  name: string
-): void {
-  const flown = useRef('');
-
-  useLayoutEffect(() => {
-    const node = face.current;
-    if (!name || !node) return;
-    // Recorded every layout, so the table can fly them home again.
-    rememberFloor(name, node);
-    if (flown.current === name) return;
-    flown.current = name;
-    if (typeof node.animate !== 'function') return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    const from = seatFace(name);
-    const here = node.getBoundingClientRect();
-    if (!from || !here.width) return;
-    const dx = from.x - (here.left + here.width / 2);
-    const dy = from.y - (here.top + here.height / 2);
-    node.animate(
-      [
-        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / here.width})` },
-        { transform: 'none' },
-      ],
-      { duration: SEAT_MS, easing: SEAT_EASE }
-    );
-    // The panel is not what moves; it arrives around them.
-    card.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: SEAT_MS, easing: 'ease-out' });
-  }, [card, face, name]);
-}
-
 function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
   const person = duel[role];
   const speaking = duel.status === 'live' && duel.turn === role;
   const card = useRef<HTMLDivElement>(null);
   const face = useRef<HTMLSpanElement>(null);
-  useSeatEntrance(card, face, duel.status === 'live' ? person.name : '');
+  // The face travels out of the chair it was picked from; the panel arrives
+  // around it. The chair is gone from the DOM by now — the kit kept its box.
+  useArrival(face, {
+    place: 'floor',
+    from: 'table',
+    name: duel.status === 'live' ? person.name : '',
+    alsoFade: card,
+  });
   return (
     <div ref={card} className={cx(styles['duelist'], speaking && styles['duelistSpeaking'])}>
       <span ref={face} className={styles['duelFace']} aria-hidden="true">
@@ -114,42 +69,6 @@ function Duelist({ duel, role }: { duel: DuelSlice; role: 'low' | 'high' }) {
         </span>
       ) : null}
     </div>
-  );
-}
-
-/** How long the announcement holds the screen, in ms. */
-const TURN_MS = 2400;
-
-/**
- * "You're up", once, over the whole board.
- *
- * A line inside the floor was the wrong shape for it: the floor is one tab of
- * three, so the person whose turn had just started could be reading the spread
- * and never see it — and once seen there is nothing more to do with it, yet it
- * stayed for the length of the turn.
- *
- * A portal, because it belongs to the screen rather than to the panel it is
- * declared in, and the panel it is declared in is `visibility: hidden` whenever
- * another tab is showing.
- */
-function YourTurn({ on }: { on: boolean }) {
-  const [showing, setShowing] = useState(false);
-
-  useEffect(() => {
-    if (!on) return undefined;
-    setShowing(true);
-    const timer = window.setTimeout(() => setShowing(false), TURN_MS);
-    return () => window.clearTimeout(timer);
-  }, [on]);
-
-  if (!showing) return null;
-  return createPortal(
-    // `role="status"` rather than `alert`: it is your turn, not an error, and
-    // alert would interrupt whatever a screen reader was mid-sentence on.
-    <div className={styles['youupWrap']} role="status">
-      <p className={styles['youup']}>You&rsquo;re up — make your case!</p>
-    </div>,
-    document.body
   );
 }
 
@@ -213,7 +132,7 @@ export function Duel({ duel, remaining, isHost, onNextTurn, onCloseDuel }: DuelP
         <Duelist duel={duel} role="high" />
       </div>
 
-      <YourTurn on={myTurn} />
+      <Announce when={myTurn}>You&rsquo;re up — make your case!</Announce>
 
       {duel.recording.host ? <p className={styles['hint']}>Host room mic is recording the debate.</p> : null}
     </div>

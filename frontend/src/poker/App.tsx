@@ -58,6 +58,7 @@ import {
   Toolbar,
   Visualizer,
 } from '../shared';
+import { Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
 import { AVATARS } from '../types/enums';
@@ -69,7 +70,6 @@ import { Deck } from './Deck';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
-import { Room } from './Room';
 import { ticketOptions, TicketPanel } from './Ticket';
 import { useDuelMic } from './useDuelMic';
 import styles from './poker.module.css';

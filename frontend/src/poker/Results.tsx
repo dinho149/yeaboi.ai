@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { AiPerspective, DuelSlice } from '../types/board';
+import { Panel, Panels, Tabs, Written } from '../shared/board';
 import { Duel } from './Duel';
 import { fmtPoints } from './points';
 import styles from './poker.module.css';
@@ -81,21 +82,16 @@ export function Results({
             place — the AI's read is long enough to push the table off screen if
             it stacks under the spread. */}
         {tabbed ? (
-          <div className={styles['rtabs']} role="tablist" aria-label="Results view">
-            <Tabbed id="spread" tab={tab} onPick={setTab}>
-              Results
-            </Tabbed>
-            {hasAi ? (
-              <Tabbed id="ai" tab={tab} onPick={setTab}>
-                AI perspective
-              </Tabbed>
-            ) : null}
-            {hasFloor ? (
-              <Tabbed id="floor" tab={tab} onPick={setTab}>
-                The floor
-              </Tabbed>
-            ) : null}
-          </div>
+          <Tabs<Tab>
+            label="Results view"
+            current={tab}
+            onPick={setTab}
+            tabs={[
+              { id: 'spread' as Tab, label: 'Results' },
+              ...(hasAi ? [{ id: 'ai' as Tab, label: 'AI perspective' }] : []),
+              ...(hasFloor ? [{ id: 'floor' as Tab, label: 'The floor' }] : []),
+            ]}
+          />
         ) : (
           <Eyebrow>Results</Eyebrow>
         )}
@@ -117,17 +113,8 @@ export function Results({
         ) : null}
       </div>
 
-      {/* Both panels share one grid cell, so the box is always as tall as the
-          taller of them and switching tabs cannot move the tabs. The one that
-          is not showing keeps its space and loses its visibility, which is also
-          what takes it out of the accessibility tree. */}
-      <div className={styles['rpanel']}>
-        <div
-          role={tabbed ? 'tabpanel' : undefined}
-          id="results-spread"
-          aria-labelledby="results-tab-spread"
-          className={cx(!onSpread && styles['rpanelOff'])}
-        >
+      <Panels>
+        <Panel id="spread" label="Results view" showing={onSpread} tabbed={tabbed}>
           {revealed && entries.length ? (
             <ul className={styles['dist']}>
               {entries.map(([value, count]) => (
@@ -148,26 +135,16 @@ export function Results({
               ))}
             </ul>
           ) : null}
-        </div>
+        </Panel>
 
         {hasAi ? (
-          <div
-            role="tabpanel"
-            id="results-ai"
-            aria-labelledby="results-tab-ai"
-            className={cx(!onAi && styles['rpanelOff'])}
-          >
+          <Panel id="ai" label="Results view" showing={onAi}>
             <AiNote ai={ai} />
-          </div>
+          </Panel>
         ) : null}
 
         {duel ? (
-          <div
-            role="tabpanel"
-            id="results-floor"
-            aria-labelledby="results-tab-floor"
-            className={cx(!onFloor && styles['rpanelOff'])}
-          >
+          <Panel id="floor" label="Results view" showing={onFloor}>
             <Duel
               duel={duel}
               remaining={remaining}
@@ -175,30 +152,14 @@ export function Results({
               onNextTurn={onNextTurn}
               onCloseDuel={onCloseDuel}
             />
-          </div>
+          </Panel>
         ) : null}
-      </div>
+      </Panels>
     </section>
   );
 }
 
 type Tab = 'spread' | 'ai' | 'floor';
-
-function Tabbed({ id, tab, onPick, children }: { id: Tab; tab: Tab; onPick(next: Tab): void; children: string }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      id={`results-tab-${id}`}
-      aria-selected={tab === id}
-      aria-controls={`results-${id}`}
-      className={cx(styles['rtab'], tab === id && styles['rtabOn'])}
-      onClick={() => onPick(id)}
-    >
-      {children}
-    </button>
-  );
-}
 
 function AiNote({ ai }: { ai: AiPerspective }) {
   if (ai.pending) {
@@ -219,64 +180,22 @@ function AiNote({ ai }: { ai: AiPerspective }) {
     );
   }
 
-  return <AiWritten ai={ai} />;
-}
-
-/** How long one word waits for the next. A read-along pace, not a wait. */
-const WORD_MS = 22;
-
-/**
- * The perspective arrives as one finished string, and lands a word at a time.
- *
- * The whole note is in the DOM from the first frame — the part not yet written
- * is transparent, not absent — so nothing reflows as it fills in and the tabs
- * above it do not move. It is also what a screen reader gets, whole, at once.
- */
-function AiWritten({ ai }: { ai: AiPerspective }) {
-  const note = ai.note;
-  const [upto, setUpto] = useState(note.length);
-
-  useEffect(() => {
-    if (!note || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setUpto(note.length);
-      return undefined;
-    }
-    setUpto(0);
-    let at = 0;
-    let timer = 0;
-    const write = (): void => {
-      const space = note.indexOf(' ', at + 1);
-      at = space === -1 ? note.length : space;
-      setUpto(at);
-      if (at < note.length) timer = window.setTimeout(write, WORD_MS);
-    };
-    timer = window.setTimeout(write, WORD_MS);
-    return () => window.clearTimeout(timer);
-  }, [note]);
-
-  const done = upto >= note.length;
-
   return (
     <div className={styles['ainote']}>
-      <p className={styles['aiBody']}>
-        {note.slice(0, upto)}
-        <span className={styles['aiUnwritten']}>{note.slice(upto)}</span>
-      </p>
-      {/* The conclusion holds its place from the start and fades in once the
-          reasoning above it is finished — reading the verdict first would give
-          the argument away. */}
-      {ai.evidence.length ? (
-        <ul className={cx(styles['ev'], !done && styles['aiUnwritten'])}>
-          {ai.evidence.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
-      ) : null}
-      {ai.suggested !== null ? (
-        <p className={cx(styles['sug'], !done && styles['aiUnwritten'])}>
-          AI suggests <b>{fmtPoints(ai.suggested)} points</b>
-        </p>
-      ) : null}
+      <Written text={ai.note} className={styles['aiBody']}>
+        {ai.evidence.length ? (
+          <ul className={styles['ev']}>
+            {ai.evidence.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
+        {ai.suggested !== null ? (
+          <p className={styles['sug']}>
+            AI suggests <b>{fmtPoints(ai.suggested)} points</b>
+          </p>
+        ) : null}
+      </Written>
     </div>
   );
 }

@@ -10,10 +10,10 @@
  * and a phone has no hover.
  */
 
-import { Icon } from '../design/primitives';
-import { cx } from '../runtime/cx';
-import type { Participant } from '../shared';
-import styles from './poker.module.css';
+import { Icon } from '../../design/primitives';
+import { cx } from '../../runtime/cx';
+import type { Participant } from '../Presence';
+import styles from './board.module.css';
 
 export interface RoomProps {
   people: readonly Participant[];

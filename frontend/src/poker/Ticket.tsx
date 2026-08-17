@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Dropdown, Eyebrow, Icon } from '../design/primitives';
+import { boardStyles as kit } from '../shared/board';
 import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
@@ -179,7 +180,7 @@ function TicketForm({
           identified by is also the row it is saved from. */}
       <div className={styles['tkrow']}>
         <span className={styles['key']}>{ticket.key}</span>
-        <span className={styles['phaseTag']}>editing</span>
+        <span className={kit['chip']}>editing</span>
         <div className={styles['editActions']}>
           <Button size="s" tone="primary" onClick={submit}>
             Save
@@ -314,7 +315,7 @@ function TicketBody({ ticket, tag, onEdit, nav }: BodyProps) {
           <Button
             size="s"
             shape="bare"
-            className={styles['tkEdit']}
+            className={cx(kit['chip'], kit['chipAct'])}
             aria-label="Edit this ticket"
             onClick={onEdit}
           >
@@ -427,7 +428,7 @@ export function TicketPanel({
           </span>
         </div>
         {peek ? (
-          <TicketBody ticket={peek} tag={<span className={cx(styles['phaseTag'], styles['phaseTagPeek'])}>
+          <TicketBody ticket={peek} tag={<span className={cx(kit['chip'], kit['chipAlt'])}>
               <Icon name="eye" size={12} /> preview
             </span>} />
         ) : (
@@ -453,13 +454,13 @@ export function TicketPanel({
 
   const tag =
     phase === 'revealed' ? (
-      <span className={cx(styles['phaseTag'], styles['phaseTagOn'])}>votes revealed</span>
+      <span className={cx(kit['chip'], kit['chipOn'])}>votes revealed</span>
     ) : phase === 'duel' ? (
-      <span className={cx(styles['phaseTag'], styles['phaseTagOn'])}>
+      <span className={cx(kit['chip'], kit['chipOn'])}>
         <Icon name="swords" size={12} /> the floor is open
       </span>
     ) : (
-      <span className={styles['phaseTag']}>
+      <span className={kit['chip']}>
         voting {index + 1}/{count}
       </span>
     );

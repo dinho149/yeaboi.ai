@@ -1,0 +1,360 @@
+/*
+ * The board kit: the parts of a live surface that are not about what it is for.
+ *
+ * Lifted out of the poker board, which grew all of them first. A mode's own
+ * stylesheet should be about its own subject — cards and votes, notes and
+ * columns — and everything here is the furniture underneath that: how a panel
+ * of controls behaves when the screen narrows, how a set of views shares one
+ * strip of tabs, how a region reads itself in.
+ *
+ * Nothing in this file knows what a vote is.
+ */
+
+/* ── Reading in ──────────────────────────────────────────────────────────
+ * A region's contents arrive rather than appearing, one line after another, so
+ * the eye is led through them instead of being handed all of it at once.
+ *
+ * `both` is load-bearing: without it each block paints at full opacity, waits
+ * out its delay, and only then animates — a flash, not an entrance.
+ *
+ * An animation rather than a transition, deliberately. The global guard in
+ * tokens.css flattens animations, so for anyone who asked for reduced motion
+ * this simply does not happen and the content is just there, which is the
+ * correct outcome for an entrance and would not follow from a transition. */
+.readsIn > * {
+  animation: board-read-in var(--dur-base) var(--ease) both;
+}
+.readsIn > *:nth-child(2) {
+  animation-delay: 70ms;
+}
+.readsIn > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+.readsIn > *:nth-child(4) {
+  animation-delay: 210ms;
+}
+/* Anything past the fourth lands with it rather than trailing further — a form
+   or an extra section must not push the stagger into the half-second range,
+   where it stops reading as one movement. */
+.readsIn > *:nth-child(n + 5) {
+  animation-delay: 210ms;
+}
+
+@keyframes board-read-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────
+ * One strip, and panels that share a single grid cell underneath it.
+ *
+ * The cell is the point. Stacked, a taller panel pushes everything below it
+ * down when you switch to it, so the strip you are clicking moves under the
+ * pointer. Sharing one cell makes the box as tall as the tallest of them and
+ * the strip cannot move. The panel that is not showing keeps its space and
+ * loses its visibility, which is also what takes it out of the a11y tree. */
+.tabs {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+}
+
+.tab {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--dim);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.tab:hover {
+  color: var(--muted);
+}
+
+.tabOn {
+  color: var(--text);
+}
+
+.panels {
+  display: grid;
+  align-items: center;
+}
+
+/* All of them in the one cell. Without this they are grid *rows* and the whole
+   point is lost — the box grows to the sum of them and the strip moves. */
+.panels > * {
+  grid-area: 1 / 1;
+}
+
+.panelOff {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Announcement ────────────────────────────────────────────────────────
+ * The whole screen, for a couple of seconds.
+ *
+ * Everything behind goes soft, so there is one thing to look at and it is not
+ * competing with whatever else the board is doing. It takes no pointer events:
+ * it says something, it does not ask anything, and nothing should have to be
+ * dismissed to get back to a surface that is still running. */
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  animation: board-veil var(--dur-base) var(--ease) both;
+}
+
+.announce {
+  margin: 0;
+  padding: var(--s4) var(--s6);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  box-shadow:
+    var(--edge),
+    0 12px 32px rgb(0 0 0 / 28%);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-l);
+  animation: board-announce 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+@keyframes board-veil {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes board-announce {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────
+ * A small mono capsule for a status, and the same shape as a control.
+ *
+ * The pair matters more than either: a row that mixes a label and a button
+ * should say which is which by what they do on hover, not by making the one you
+ * can press look like a caption. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 0;
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  /* The shared button sets its own; inheriting is what makes a chip button the
+     same height as a chip label rather than nearly. */
+  line-height: inherit;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+
+.chipOn {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.chipAlt {
+  color: var(--accent2);
+  border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
+}
+
+/* Pressable, so it answers the pointer — which is the whole difference between
+   it and the label beside it. */
+.chipAct {
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.chipAct:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Written out ─────────────────────────────────────────────────────────
+ * Text that lands a word at a time. The part not yet written is transparent
+ * rather than absent, so nothing reflows as it fills in. */
+.unwritten {
+  color: transparent;
+}
+
+/* ── Who is in the room ─────────────────────────────────────────────────
+ * The headcount is the whole control; pointing at it deals the room out
+ * underneath, one thin card per person. Lifted from the poker board whole. */
+/* The headcount sits opposite the notch's Invite, so it is the same shape. */
+.room {
+  position: static;
+}
+.presenceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+.room:hover .presenceChip,
+.room:has(:focus-visible) .presenceChip {
+  border-color: var(--accent);
+}
+/* Dealt out from under the bar, one card per person and no panel behind them.
+ *
+ * The top padding does two jobs: it is the bridge the pointer crosses on its
+ * way from the chip to the first card, and it is exactly the distance from the
+ * chip's bottom edge to the bar's, so clipping it away puts the cut where the
+ * bar ends. Everything above that line is behind the bar as far as the eye is
+ * concerned. The other three sides are held clear of the shadows. */
+.roomList {
+  position: absolute;
+  top: 100%;
+  /* Pulled left by whatever the card's own padding exceeds the identity chip's,
+     so the avatars and the names still sit on the row above's two columns. */
+  left: calc(var(--s1) - var(--room-pad));
+  z-index: var(--z-popover);
+  /* The cut is where the bar ends; the drop is how far below it the stack
+     settles. They are separate, or lowering the cards would move the cut with
+     them and they would appear out of thin air instead of out of the bar. */
+  --room-cut: var(--s3);
+  --room-drop: var(--s2);
+  --room-gap: var(--s2);
+  --room-pad: var(--s3);
+  margin: 0;
+  padding: calc(var(--room-cut) + var(--room-drop)) 0 0;
+  clip-path: inset(var(--room-cut) -40px -40px -40px);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  /* One width for all of them, set by the longest name. */
+  width: max-content;
+  min-width: 160px;
+  align-items: stretch;
+  gap: var(--room-gap);
+  pointer-events: none;
+}
+.roomCard {
+  /* Its place in the deal; Room.tsx overrides it. A definite height is what
+     lets the start position be computed from it. */
+  --i: 0;
+  --card-h: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--card-h);
+  padding: 0 var(--room-pad);
+  white-space: nowrap;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  /* Nothing while it is parked. A card under the bar is clipped but its shadow
+     is not, so a dozen of them stack into a grey smudge along the bar's bottom
+     edge with the room shut. It takes its shadow on the way out. */
+  box-shadow: none;
+  font-size: var(--fs-s);
+  /*
+   * Out from behind the card above it — the first one out from behind the bar,
+   * where the clip is.
+   *
+   * Every card travels the same short distance, and the fade is what hides it
+   * until then. Sliding each one all the way from the bar is the same idea and
+   * does not survive a full room: the tenth card had four hundred pixels to
+   * cover in the same fifth of a second as the first card's forty, so half the
+   * list streaked past while the other half crept.
+   */
+  opacity: 0;
+  transform: translateY(calc((var(--card-h) + var(--room-gap)) * -1));
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease),
+    box-shadow var(--dur-base) var(--ease);
+}
+.roomName {
+  flex: 1;
+}
+/* One after another on the way in. Leaving, they go together — a staggered
+   exit reads as the list being reluctant.
+
+   The step is capped: past the eighth card a per-person delay stops reading as
+   a deal and starts reading as a list that will not open. A room of twenty
+   finishes in the same quarter-second as a room of eight. */
+.room:hover .roomCard,
+.room:has(:focus-visible) .roomCard {
+  opacity: 1;
+  transform: none;
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  transition-delay: calc(min(var(--i), 8) * 30ms);
+}
+/* A full room is a different object: at nine people a stack of full-height
+   cards runs off the bottom of a laptop screen. It tightens rather than
+   scrolling, because a scroller here would clip the shadows the cards were
+   given in the first place. */
+.roomList:has(> :nth-child(9)) {
+  --room-gap: var(--s1);
+}
+.roomList:has(> :nth-child(9)) .roomCard {
+  --card-h: 28px;
+  font-size: var(--fs-xs);
+}
+/* Past that there is no arrangement that fits, so it scrolls and the shadows
+   go. The cut stays where it was: the list still starts under the bar. */
+.roomList:has(> :nth-child(15)) {
+  max-height: calc(100dvh - 5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.room:hover .roomList,
+.room:has(:focus-visible) .roomList {
+  pointer-events: auto;
+}
+.roomYou {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+.roomEmpty {
+  color: var(--dim);
+}
+/* The headcount is a number, so it is set as one. */
+.roomCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-s);
+  font-weight: 600;
+}
