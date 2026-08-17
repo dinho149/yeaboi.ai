@@ -10590,7 +10590,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     from yeaboi.config import get_retro_server_port
     from yeaboi.retro.board import RetroBoard, board_to_report
-    from yeaboi.retro.engine import carried_action_items_for_session
+    from yeaboi.retro.engine import carried_action_items_for_session, history_providers
     from yeaboi.retro.server import RetroServer
     from yeaboi.retro.store import RetroStore
 
@@ -10603,6 +10603,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         board.seed_carried(list(carried))
         logger.info("retro: seeded %d carried-over action item(s) (session=%s)", len(carried), session_id)
     server = RetroServer(board, port=get_retro_server_port())
+    # Previous retros, for the board's back arrow. Read lazily, so a store that
+    # cannot be opened costs a board with no history rather than a board.
+    server.history_list, server.history_report = history_providers(project_name=project_name, db_path=_ana_dbp)
     try:
         server.start()
         logger.info("retro: server started on port %s (session=%s)", server.port, session_id)

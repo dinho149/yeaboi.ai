@@ -3865,7 +3865,7 @@ dialog._modal_1l2ir_700 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_1ried_24 {
+._app_15mq5_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3879,7 +3879,7 @@ dialog._modal_1l2ir_700 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_1ried_38 {
+._boardRegion_15mq5_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3890,13 +3890,13 @@ dialog._modal_1l2ir_700 {
   padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_1ried_49 { color: var(--warn); font-family: var(--font-sans); }
+._offline_15mq5_49 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
    cluster, so its cards line up with the chip above them. `--room-lead` is how
    far in the chip's own avatar sits, which is what they line up *with*. */
-._identity_1ried_55 {
+._identity_15mq5_55 {
   position: relative;
   --room-lead: var(--s1);
   display: flex;
@@ -3906,7 +3906,7 @@ dialog._modal_1l2ir_700 {
 
 /* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
    It is your own name, not a control you are meant to find. */
-._meChip_1ried_65 {
+._meChip_15mq5_65 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3923,23 +3923,23 @@ dialog._modal_1l2ir_700 {
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._meChip_1ried_65:hover {
+._meChip_15mq5_65:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
-._meName_1ried_86 {
+._meName_15mq5_86 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
-._pen_1ried_93 { display: inline-flex; color: var(--muted); }
-._roomCount_1ried_94 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._pen_15mq5_93 { display: inline-flex; color: var(--muted); }
+._roomCount_15mq5_94 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._musicBanner_1ried_98 {
+._musicBanner_15mq5_98 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
@@ -3958,7 +3958,7 @@ dialog._modal_1l2ir_700 {
   cursor: pointer;
 }
 
-._popNote_1ried_117 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_15mq5_117 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Last retro ───────────────────────────────────────────────────────── */
 /*
@@ -3971,15 +3971,15 @@ dialog._modal_1l2ir_700 {
  * It folds itself away once every item has a status: the review is over, and a
  * row of closed loops is dead weight for the other fifty-eight minutes.
  */
-._carried_1ried_130 {
+._carried_15mq5_130 {
   padding: var(--s3) var(--s4) 0;
 }
-._carriedHead_1ried_133 {
+._carriedHead_15mq5_133 {
   display: flex;
   align-items: center;
   gap: var(--s3);
 }
-._carriedToggle_1ried_138 {
+._carriedToggle_15mq5_138 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3995,17 +3995,17 @@ dialog._modal_1l2ir_700 {
   text-transform: uppercase;
   cursor: pointer;
 }
-._carriedToggle_1ried_138:hover { color: var(--text); }
-._chevron_1ried_155 { display: inline-flex; transition: transform var(--dur-fast) var(--ease); }
-._chevronOpen_1ried_156 { transform: rotate(90deg); }
-._carriedProgress_1ried_157 {
+._carriedToggle_15mq5_138:hover { color: var(--text); }
+._chevron_15mq5_155 { display: inline-flex; transition: transform var(--dur-fast) var(--ease); }
+._chevronOpen_15mq5_156 { transform: rotate(90deg); }
+._carriedProgress_15mq5_157 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
 }
-._carriedBody_1ried_163[hidden] { display: none; }
-._carriedList_1ried_164 {
+._carriedBody_15mq5_163[hidden] { display: none; }
+._carriedList_15mq5_164 {
   list-style: none;
   margin: 0;
   padding: var(--s2) 0 0;
@@ -4015,7 +4015,7 @@ dialog._modal_1l2ir_700 {
 }
 /* A card, like the ones below it — with the status on its left edge, so four
    states are one glance apart without reading a word. */
-._carriedItem_1ried_174 {
+._carriedItem_15mq5_174 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4030,8 +4030,8 @@ dialog._modal_1l2ir_700 {
     0 4px 12px rgb(0 0 0 / 10%);
   font-size: var(--fs-s);
 }
-._carriedText_1ried_189 { flex: 1; min-width: 0; }
-._carriedSelect_1ried_190 {
+._carriedText_15mq5_189 { flex: 1; min-width: 0; }
+._carriedSelect_15mq5_190 {
   min-height: var(--tap-min);
   flex: none;
   padding: 0 var(--s1);
@@ -4043,12 +4043,40 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-2xs);
   cursor: pointer;
 }
-._carriedSelect_1ried_190:hover { border-color: var(--hairline-strong); color: var(--text); }
-._statusPending_1ried_203 { border-left-color: var(--line); }
-._statusDone_1ried_204 { border-left-color: var(--ok); }
-._statusProgress_1ried_205 { border-left-color: var(--info); }
-._statusCarried_1ried_206 { border-left-color: var(--warn); }
-._statusMuted_1ried_207 { border-left-color: var(--muted); opacity: 0.6; }
+._carriedSelect_15mq5_190:hover { border-color: var(--hairline-strong); color: var(--text); }
+._statusPending_15mq5_203 { border-left-color: var(--line); }
+._statusDone_15mq5_204 { border-left-color: var(--ok); }
+._statusProgress_15mq5_205 { border-left-color: var(--info); }
+._statusCarried_15mq5_206 { border-left-color: var(--warn); }
+._statusMuted_15mq5_207 { border-left-color: var(--muted); opacity: 0.6; }
+
+/* ── Which retro ──────────────────────────────────────────────────────── */
+/* Two arrows and a label, beside the sprint they are stepping through. */
+._timeSwitch_15mq5_211 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  vertical-align: middle;
+}
+._timeStep_15mq5_217 {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+._timeStep_15mq5_217:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+._timeStep_15mq5_217:disabled { opacity: 0.3; cursor: default; }
+._timeLabel_15mq5_231 { font-family: inherit; }
+/* A retro you cannot write on. The accent is what the board uses for "this is
+   what is happening", and looking at last month is not that. */
+._timeLabelPast_15mq5_234 { color: var(--accent2); }
+._subtleDot_15mq5_235 { color: var(--dim); margin: 0 var(--s2); }
 
 /* ── Walkthrough ──────────────────────────────────────────────────────── */
 /*
@@ -4056,19 +4084,19 @@ dialog._modal_1l2ir_700 {
  * two questions a facilitator is answering here are who has not been round yet
  * and how much they have to get through.
  */
-._walk_1ried_215 {
+._walk_15mq5_243 {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   min-width: 15rem;
   max-width: min(20rem, 72vw);
 }
-._walkGrid_1ried_222 {
+._walkGrid_15mq5_250 {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--s2);
 }
-._walkPerson_1ried_227 {
+._walkPerson_15mq5_255 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4086,16 +4114,16 @@ dialog._modal_1l2ir_700 {
     background var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-._walkPerson_1ried_227:hover {
+._walkPerson_15mq5_255:hover {
   border-color: var(--hairline-strong);
 }
 /* Coloured, not ringed — the same "this is what is happening" the notch uses. */
-._walkPersonOn_1ried_249 {
+._walkPersonOn_15mq5_277 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
 }
-._walkName_1ried_254 {
+._walkName_15mq5_282 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -4103,18 +4131,18 @@ dialog._modal_1l2ir_700 {
   white-space: nowrap;
   text-align: left;
 }
-._walkCount_1ried_262 {
+._walkCount_15mq5_290 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
-._walkPersonOn_1ried_249 ._walkCount_1ried_262 {
+._walkPersonOn_15mq5_277 ._walkCount_15mq5_290 {
   color: inherit;
 }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_1ried_34 {
+._board_15mq5_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4132,13 +4160,13 @@ dialog._modal_1l2ir_700 {
 }
 
 @media (max-width: 1099px) {
-  ._board_1ried_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_15mq5_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_1ried_34 {
+  ._board_15mq5_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4148,14 +4176,14 @@ dialog._modal_1l2ir_700 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_1ried_34::-webkit-scrollbar { display: none; }
-  ._column_1ried_308 { scroll-snap-align: center; }
+  ._board_15mq5_34::-webkit-scrollbar { display: none; }
+  ._column_15mq5_336 { scroll-snap-align: center; }
 }
 
-._pager_1ried_311 { display: none; }
+._pager_15mq5_339 { display: none; }
 @media (max-width: 699px) {
-  ._pager_1ried_311 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_1ried_314 {
+  ._pager_15mq5_339 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_15mq5_342 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4164,7 +4192,7 @@ dialog._modal_1l2ir_700 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_1ried_314::after {
+  ._pagerDot_15mq5_342::after {
     content: "";
     display: block;
     width: 8px;
@@ -4173,7 +4201,7 @@ dialog._modal_1l2ir_700 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_1ried_332::after { background: var(--accent); }
+  ._pagerDotOn_15mq5_360::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4183,12 +4211,12 @@ dialog._modal_1l2ir_700 {
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_1ried_308 {
+._column_15mq5_336 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_1ried_347 {
+._columnHead_15mq5_375 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4197,7 +4225,7 @@ dialog._modal_1l2ir_700 {
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_1ried_356 {
+._columnTitle_15mq5_384 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4206,13 +4234,13 @@ dialog._modal_1l2ir_700 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_1ried_365 { color: var(--dim); }
-._columnCount_1ried_366 {
+._columnDot_15mq5_393 { color: var(--dim); }
+._columnCount_15mq5_394 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_1ried_371 {
+._cards_15mq5_399 {
   /* The containing block for an empty column's drop indicator. */
   position: relative;
   transition: background-color var(--dur-fast) var(--ease);
@@ -4226,20 +4254,20 @@ dialog._modal_1l2ir_700 {
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cardsOver_1ried_385 {
+._cardsOver_15mq5_413 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_1ried_391 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_15mq5_419 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._cardSlot_1ried_393 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._cardSlot_15mq5_421 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
    midpoints the drop index is computed against, which made the indicator
    oscillate between two slots at the boundary. */
-._dropLine_1ried_398 {
+._dropLine_15mq5_426 {
   position: absolute;
   left: 0;
   right: 0;
@@ -4248,17 +4276,17 @@ dialog._modal_1l2ir_700 {
   border-radius: var(--r-pill);
   background: var(--col-tone, var(--accent));
 }
-._dropLineTail_1ried_407 {
+._dropLineTail_15mq5_435 {
   top: auto;
   bottom: calc(var(--s2) / -2 - 1px);
 }
 /* Drawn from the middle out. It moves by being torn down in one slot and built
    in another, so an entrance is the only thing that can smooth the change. */
-._dropLine_1ried_398 {
-  animation: _dropIn_1ried_1 var(--dur-fast) var(--ease) both;
+._dropLine_15mq5_426 {
+  animation: _dropIn_15mq5_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _dropIn_1ried_1 {
+@keyframes _dropIn_15mq5_1 {
   from {
     opacity: 0;
     transform: scaleX(0.4);
@@ -4274,7 +4302,7 @@ dialog._modal_1l2ir_700 {
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_1ried_371 {
+._card_15mq5_399 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4289,21 +4317,21 @@ dialog._modal_1l2ir_700 {
      animation after the landing rather than as feedback. */
   transition: border-color var(--dur-fast) var(--ease);
 }
-._card_1ried_371:hover {
+._card_15mq5_399:hover {
   border-color: var(--hairline-strong);
 }
-._card_1ried_371:active { cursor: grabbing; }
+._card_15mq5_399:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
    underneath it — and a sweep across the board would otherwise light up every
    card it crossed. */
-._board_1ried_34[data-dragging='true'] ._card_1ried_371:hover {
+._board_15mq5_34[data-dragging='true'] ._card_15mq5_399:hover {
   border-color: var(--hairline);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_1ried_459 { cursor: default; }
+._cardLocked_15mq5_487 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_1ried_462 { border-left: 3px solid var(--accent2); }
+._cardAI_15mq5_490 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4311,16 +4339,16 @@ dialog._modal_1l2ir_700 {
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_1ried_470 {
+._cardDragging_15mq5_498 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_1ried_470 > * { opacity: 0; }
+._cardDragging_15mq5_498 > * { opacity: 0; }
 
-._dragLayer_1ried_479 {
+._dragLayer_15mq5_507 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4329,7 +4357,7 @@ dialog._modal_1l2ir_700 {
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_1ried_488 {
+._dragCard_15mq5_516 {
   position: absolute;
   top: 0;
   left: 0;
@@ -4347,19 +4375,19 @@ dialog._modal_1l2ir_700 {
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_1ried_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_15mq5_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_1ried_1 {
+@keyframes _cardLift_15mq5_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
 /* A card you wrote opens for editing where you read it. `text`, because that is
    what the pointer is over and what it is about to do. */
-._cardTextMine_1ried_514 {
+._cardTextMine_15mq5_542 {
   cursor: text;
 }
 
-._cardText_1ried_514 {
+._cardText_15mq5_542 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4370,16 +4398,16 @@ dialog._modal_1l2ir_700 {
 
 /* `min-height` because the carried copy of a card carries no controls, and
    without it the card in the air is a different size from the one it becomes. */
-._cardMeta_1ried_529 {
+._cardMeta_15mq5_557 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
   margin-top: var(--s2);
 }
-._metaSpacer_1ried_536 { flex: 1; }
-._author_1ried_537 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_1ried_538 {
+._metaSpacer_15mq5_564 { flex: 1; }
+._author_15mq5_565 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_15mq5_566 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4387,8 +4415,8 @@ dialog._modal_1l2ir_700 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_1ried_546 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_1ried_547 {
+._aiBadge_15mq5_574 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_15mq5_575 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4398,8 +4426,8 @@ dialog._modal_1l2ir_700 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_1ried_557 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_1ried_558 {
+._confirmRow_15mq5_585 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_15mq5_586 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4407,18 +4435,18 @@ dialog._modal_1l2ir_700 {
   text-transform: uppercase;
 }
 
-._gripWrap_1ried_566 { position: relative; display: inline-flex; }
+._gripWrap_15mq5_594 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_1ried_566 {
+._grip_15mq5_594 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_1ried_566:active { cursor: grabbing; }
+._grip_15mq5_594:active { cursor: grabbing; }
 
-._moveMenu_1ried_577 {
+._moveMenu_15mq5_605 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4432,7 +4460,7 @@ dialog._modal_1l2ir_700 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_1ried_591 {
+._moveItem_15mq5_619 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4444,11 +4472,11 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_1ried_591:hover { background: var(--panel-2); }
+._moveItem_15mq5_619:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_1ried_606 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_1ried_607 {
+._editor_15mq5_634 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_15mq5_635 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -4459,7 +4487,7 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_1ried_618 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_15mq5_646 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
@@ -4468,7 +4496,7 @@ dialog._modal_1l2ir_700 {
 /* `nowrap` and a floor of zero: the row is the card's last line and must stay
    one line whatever is in it, so a card with eight reactions scrolls them
    rather than growing a second row and pushing the board about. */
-._reactions_1ried_627 {
+._reactions_15mq5_655 {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -4477,13 +4505,13 @@ dialog._modal_1l2ir_700 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._reactions_1ried_627::-webkit-scrollbar {
+._reactions_15mq5_655::-webkit-scrollbar {
   display: none;
 }
-._rxChip_1ried_639 {
+._rxChip_15mq5_667 {
   flex: none;
 }
-._rxChip_1ried_639, ._rxPick_1ried_642 {
+._rxChip_15mq5_667, ._rxPick_15mq5_670 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4502,44 +4530,44 @@ dialog._modal_1l2ir_700 {
   cursor: pointer;
 }
 /* A ground only under the pointer, in the tray. */
-._rxPick_1ried_642:hover, ._rxPick_1ried_642:focus-visible {
+._rxPick_15mq5_670:hover, ._rxPick_15mq5_670:focus-visible {
   background: var(--panel-2);
 }
 /* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
    an emoji is a second shape competing with the one that carries the meaning. */
-._rxGlyph_1ried_666 {
+._rxGlyph_15mq5_694 {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
 
 /* A reaction is somebody pressing a button, so it arrives and it leaves. The
    `scale` property rather than a transform, so nothing here has to know what
    else may be transforming the chip. Neither changes the row's height. */
-._rxChipIn_1ried_673 {
-  animation: _rxIn_1ried_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+._rxChipIn_15mq5_701 {
+  animation: _rxIn_15mq5_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
-._rxChipOut_1ried_676 {
-  animation: _rxOut_1ried_1 150ms var(--ease) both;
+._rxChipOut_15mq5_704 {
+  animation: _rxOut_15mq5_1 150ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _rxIn_1ried_1 {
+@keyframes _rxIn_15mq5_1 {
   from {
     opacity: 0;
     scale: 0.4;
   }
 }
 
-@keyframes _rxOut_1ried_1 {
+@keyframes _rxOut_15mq5_1 {
   to {
     opacity: 0;
     scale: 0.4;
   }
 }
-._rxChip_1ried_639:hover { border-color: var(--accent); }
-._rxPick_1ried_642:hover { border-color: transparent; }
-._rxChip_1ried_639:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_1ried_697 { border-color: var(--accent); }
-._rxCount_1ried_698 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_15mq5_667:hover { border-color: var(--accent); }
+._rxPick_15mq5_670:hover { border-color: transparent; }
+._rxChip_15mq5_667:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_15mq5_725 { border-color: var(--accent); }
+._rxCount_15mq5_726 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
@@ -4549,7 +4577,7 @@ dialog._modal_1l2ir_700 {
  * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
  * size, not a ragged last line.
  */
-._rxTray_1ried_708 {
+._rxTray_15mq5_736 {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -4563,30 +4591,30 @@ dialog._modal_1l2ir_700 {
   border: 0;
   border-radius: var(--r-l);
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  animation: _trayIn_1ried_1 var(--dur-fast) var(--ease) both;
+  animation: _trayIn_15mq5_1 var(--dur-fast) var(--ease) both;
 }
 
 /* Without the filter there is nothing behind the emoji at all, so the ground
    comes back rather than the tray being unreadable over a card. */
 @supports not (backdrop-filter: blur(1px)) {
-  ._rxTray_1ried_708 {
+  ._rxTray_15mq5_736 {
     background: var(--panel);
   }
 }
 
-._rxTrayOut_1ried_733 {
-  animation: _trayOut_1ried_1 140ms var(--ease) both;
+._rxTrayOut_15mq5_761 {
+  animation: _trayOut_15mq5_1 140ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _trayOut_1ried_1 {
+@keyframes _trayOut_15mq5_1 {
   to {
     opacity: 0;
     transform: translateY(-4px);
   }
 }
 
-@keyframes _trayIn_1ried_1 {
+@keyframes _trayIn_15mq5_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -4606,7 +4634,7 @@ dialog._modal_1l2ir_700 {
 /* Holds the two states in one box: the invitation, and the draft that folds
    over it. Relative so the folding box can leave the flow on its way out and
    let the invitation back underneath it. */
-._composeSlot_1ried_765 {
+._composeSlot_15mq5_793 {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -4614,7 +4642,7 @@ dialog._modal_1l2ir_700 {
   min-height: var(--tap);
 }
 
-._composeArea_1ried_773 {
+._composeArea_15mq5_801 {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
   display: grid;
@@ -4626,7 +4654,7 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   cursor: pointer;
 }
-._composeHint_1ried_785 {
+._composeHint_15mq5_813 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4635,18 +4663,18 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-xs);
   transition: opacity var(--dur-fast) var(--ease);
 }
-._composeArea_1ried_773:hover ._composeHint_1ried_785,
-._composeArea_1ried_773:focus-visible ._composeHint_1ried_785 {
+._composeArea_15mq5_801:hover ._composeHint_15mq5_813,
+._composeArea_15mq5_801:focus-visible ._composeHint_15mq5_813 {
   opacity: 1;
 }
 /* Nothing invites a card while one is in the air. */
-._board_1ried_34[data-dragging='true'] ._composeHint_1ried_785 { opacity: 0; }
+._board_15mq5_34[data-dragging='true'] ._composeHint_15mq5_813 { opacity: 0; }
 
 /* The draft is a card: the same ground, hairline, corner and shadows as the
    one it is about to become, with the column's tone on its edge. The box
    inside it is bare — a second bordered field inside a bordered card is two
    objects for one thing. */
-._columnCompose_1ried_805 {
+._columnCompose_15mq5_833 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4659,24 +4687,24 @@ dialog._modal_1l2ir_700 {
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
-._columnCompose_1ried_805:focus-within {
+._columnCompose_15mq5_833:focus-within {
   border-color: var(--col-tone, var(--accent));
 }
 /* Unfolds where the card will be, and folds back into it. `both` holds the
    `from` state through the delay so the box does not flash at full size first. */
-._columnCompose_1ried_805 {
-  animation: _draftIn_1ried_1 180ms var(--ease) both;
+._columnCompose_15mq5_833 {
+  animation: _draftIn_15mq5_1 180ms var(--ease) both;
 }
-._columnComposeOut_1ried_826 {
+._columnComposeOut_15mq5_854 {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  animation: _draftOut_1ried_1 160ms var(--ease) both;
+  animation: _draftOut_15mq5_1 160ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _draftIn_1ried_1 {
+@keyframes _draftIn_15mq5_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
@@ -4684,14 +4712,14 @@ dialog._modal_1l2ir_700 {
   }
 }
 
-@keyframes _draftOut_1ried_1 {
+@keyframes _draftOut_15mq5_1 {
   to {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
     transform-origin: 50% 0%;
   }
 }
-._composeBox_1ried_850 {
+._composeBox_15mq5_878 {
   width: 100%;
   min-height: 3lh;
   max-height: 8rem;
@@ -4704,12 +4732,12 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeBox_1ried_850::placeholder {
+._composeBox_15mq5_878::placeholder {
   color: var(--dim);
 }
-._composeActions_1ried_866 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_15mq5_894 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
-._srOnly_1ried_868 {
+._srOnly_15mq5_896 {
   position: absolute;
   width: 1px;
   height: 1px;

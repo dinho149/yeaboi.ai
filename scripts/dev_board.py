@@ -44,7 +44,7 @@ SEED: list[tuple[str, str, str]] = [
 # Last sprint's action items, up for review — the board opens on these, and a
 # dev board with none of them never shows the strip that carries them.
 CARRIED: list[str] = [
-    "Add an alert for staging health",
+    "Chase the flaky deploy step",
     "Write down how a release actually gets cut",
     "Book the retro before the sprint ends, not after",
 ]
@@ -60,7 +60,68 @@ def main() -> int:
 
     board.seed_carried([RetroCard(id=f"carried-{i}", text=text, author="last sprint") for i, text in enumerate(CARRIED)])
 
+    # Two retros behind this one, so the back arrow has somewhere to go. Real
+    # boards read these from the store (see engine.history_providers); this is
+    # the same shape by hand.
+    past = [
+        {
+            "id": 2,
+            "run_at": "2026-08-01T10:00:00+00:00",
+            "retro_date": "2026-08-01",
+            "project_name": "yeaboi",
+            "sprint_name": "Sprint 41",
+            "card_count": 3,
+            "cards": [
+                ("went_well", "The tunnel held up for the whole ceremony", "Grace"),
+                ("didnt_go_well", "Nobody could find the join code", "Linus"),
+                ("action_items", "Put the join code on the invite screen", "Ada"),
+            ],
+        },
+        {
+            "id": 1,
+            "run_at": "2026-07-18T10:00:00+00:00",
+            "retro_date": "2026-07-18",
+            "project_name": "yeaboi",
+            "sprint_name": "Sprint 40",
+            "card_count": 2,
+            "cards": [
+                ("went_well", "Shipped the first browser board", "Ada"),
+                ("action_items", "Add an alert for staging health", "Grace"),
+            ],
+        },
+    ]
+
+    def _listing() -> list[dict]:
+        return [{k: v for k, v in run.items() if k != "cards"} for run in past]
+
+    def _one(run_id: int) -> dict | None:
+        run = next((r for r in past if r["id"] == run_id), None)
+        if run is None:
+            return None
+        return {
+            "date": run["retro_date"],
+            "sprint_name": run["sprint_name"],
+            "project_name": run["project_name"],
+            "participants": sorted({a for _, _, a in run["cards"]}),
+            "cards": [
+                {
+                    "id": f"past-{run['id']}-{i}",
+                    "grid": grid,
+                    "text": text,
+                    "author": author,
+                    "created_at": run["run_at"],
+                    "origin": "web",
+                    "reactions": {},
+                    "status": "",
+                    "mine": False,
+                }
+                for i, (grid, text, author) in enumerate(run["cards"])
+            ],
+            "carried": [],
+        }
+
     server = RetroServer(board)
+    server.history_list, server.history_report = _listing, _one
     # Fixed credentials, as the poker dev board does it: a rebuild-and-restart
     # must not invalidate the token the tab you are looking at is holding.
     # Dev only — in-memory board, loopback socket.

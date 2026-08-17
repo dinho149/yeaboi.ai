@@ -39,6 +39,7 @@ import logging
 import secrets
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -163,7 +164,34 @@ class _RetroHandler(BaseHTTPRequestHandler):
                 return
             self._send_invite()
             return
+        if path == "/api/history":  # what this team decided in previous retros
+            if not self._authed():
+                self._send_json(403, {"error": "forbidden"})
+                return
+            self._send_history()
+            return
         self._send_json(404, {"error": "not found"})
+
+    def _send_history(self) -> None:
+        """Answer ``GET /api/history`` — the list, or one past retro's cards.
+
+        Both come from callables supplied by whoever started the server, so this
+        module never learns about the store: the TUI reads SQLite, a dev board
+        hands over fixtures, and a board with neither answers an empty list
+        rather than 404ing a page that is otherwise fine.
+        """
+        server = self.server  # type: ignore[attr-defined]
+        run_id = self._query("id").strip()
+        if run_id:
+            reader = getattr(server, "history_report", None)
+            report = reader(int(run_id)) if reader and run_id.isdigit() else None
+            if report is None:
+                self._send_json(404, {"error": "no such retro"})
+                return
+            self._send_json(200, {"retro": report})
+            return
+        lister = getattr(server, "history_list", None)
+        self._send_json(200, {"retros": lister() if lister else []})
 
     def _send_invite(self) -> None:
         """Answer ``GET /api/invite`` with what a participant needs to join.
@@ -300,6 +328,7 @@ class _RetroHandler(BaseHTTPRequestHandler):
             "/api/carried/status",
             "/api/admin/broadcast",
             "/api/admin/lock",
+            "/api/admin/suggest",
         )
         if path not in authed_paths or not self._authed():
             self._send_json(403, {"error": "forbidden"})
@@ -313,7 +342,7 @@ class _RetroHandler(BaseHTTPRequestHandler):
 
         # ── Admin-only routes (host link holds the admin secret) ──────────────
         # /api/timer is admin-only too — the shared countdown belongs to the host.
-        if path in ("/api/admin/broadcast", "/api/admin/lock", "/api/timer"):
+        if path in ("/api/admin/broadcast", "/api/admin/lock", "/api/timer", "/api/admin/suggest"):
             if not self._admin_authed(admin):
                 self._send_json(403, {"error": "admin only"})
                 return
@@ -338,6 +367,22 @@ class _RetroHandler(BaseHTTPRequestHandler):
         if path == "/api/admin/lock":
             self._board.set_locked(bool(payload.get("locked")))
             self._send_json(200, {"ok": True, "state": _state()})
+            return
+
+        if path == "/api/admin/suggest":
+            # Reads the feedback columns, weights each card by how many people
+            # reacted to it, and appends what it makes of them as `origin="ai"`
+            # cards. It also re-adds last sprint's "Carried Over" items, which is
+            # the half of that loop the board has never been able to close.
+            #
+            # Suggestions, not a verdict: they land as ordinary cards in Action
+            # items, badged, and the room keeps or deletes them like any other.
+            # `generate_action_items` never raises and returns the line to show.
+            from yeaboi.retro.engine import generate_action_items
+
+            message = generate_action_items(self._board)
+            logger.info("retro server: AI suggestions requested — %s", message)
+            self._send_json(200, {"ok": True, "message": message, "state": _state()})
             return
 
         if path == "/api/cards":
@@ -438,6 +483,12 @@ class RetroServer:
         # empty forever if the tunnel could not start — which is exactly the state
         # in which this board has no shareable address at all.
         self.public_url = ""
+        # Previous retros, if whoever started this server can reach them. The
+        # TUI reads its SQLite store; a dev board hands over fixtures. Left
+        # unset, the board simply has no history to step back through — which is
+        # the truth for a board opened outside a session.
+        self.history_list: Callable[[], list[dict]] | None = None
+        self.history_report: Callable[[int], dict | None] | None = None
         # Live-update plumbing. Built here rather than in start() so stop() is
         # safe on a server that was never started.
         self.event_hub = EventHub()
@@ -537,6 +588,10 @@ class RetroServer:
         # Always present so the invite/QR handlers can read it unconditionally;
         # set_public_url() fills it in when the tunnel comes up.
         httpd.public_url = self.public_url  # type: ignore[attr-defined]
+        # Read at `start()` like everything else here: whoever owns this server
+        # sets them on it, and the handler only ever sees the HTTP server.
+        httpd.history_list = self.history_list  # type: ignore[attr-defined]
+        httpd.history_report = self.history_report  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="retro-http", daemon=True)
         self._thread.start()

@@ -42,6 +42,17 @@ export interface RetroActions {
   setLocked(locked: boolean): Promise<boolean>;
   castTheme(theme: string): Promise<boolean>;
   castMusic(playing: boolean, channel: number): Promise<boolean>;
+  /**
+   * Ask for action items.
+   *
+   * Reads the feedback columns, weights each card by how many people reacted to
+   * it, and appends what it makes of them as `origin: "ai"` cards — plus last
+   * sprint's "Carried Over" items, which is the half of that loop the board has
+   * never been able to close. Resolves to the line to show, because this is the
+   * one action whose outcome is not visible in the cards it produces (an
+   * unconfigured LLM still adds something, and should say so).
+   */
+  suggestActions(): Promise<string>;
 }
 
 /**
@@ -113,6 +124,13 @@ export function createRetroActions(session: Session, store: BoardStore<RetroStat
 
     async castMusic(playing, channel) {
       return (await mutate('/api/admin/broadcast', { music: { playing, channel } })).ok;
+    },
+
+    async suggestActions() {
+      const result = await postJSON<StateEnvelope & { message?: string }>(session, '/api/admin/suggest', {});
+      if (result.ok && result.data.state) store.apply(result.data.state);
+      if (!result.ok) return 'Could not reach the board — nothing was added.';
+      return result.data.message ?? '';
     },
   };
 }

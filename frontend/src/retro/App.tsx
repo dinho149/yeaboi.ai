@@ -60,6 +60,8 @@ import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
 import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/board';
 import { createRetroActions } from './actions';
 import { Board } from './Board';
+import { TimeSwitch } from './TimeSwitch';
+import { useHistory } from './useHistory';
 import { Walkthrough } from './Walkthrough';
 import { CarriedStrip } from './CarriedStrip';
 import type { RetroBoot } from './boot';
@@ -77,6 +79,9 @@ const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar' } as 
 const NO_CARDS: readonly RetroCard[] = [];
 const NO_PEOPLE: readonly Participant[] = [];
 const NO_TYPING: readonly TypingEntry[] = [];
+// A retro that finished weeks ago has nobody typing into it and nothing arriving.
+const NO_TYPING_BY_GRID: ReadonlyMap<string, readonly string[]> = new Map();
+const NO_ARRIVALS: ReadonlySet<string> = new Set();
 
 export function App({ boot }: { boot: RetroBoot }) {
   // ── Identity and session ───────────────────────────────────────────────
@@ -123,11 +128,20 @@ export function App({ boot }: { boot: RetroBoot }) {
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
+  const history = useHistory(session);
+  const past = history.showing;
+  // A past retro is read-only in the strongest sense available: it reuses
+  // `locked`, so every composer, every control and every drag is already off.
+  const readOnly = locked || history.at > 0;
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
   // anyone who reaches the board, token or not. Also puts it on the clipboard.
   const invite = useInvite(session, inviteOpen);
   const [musicBlocked, setMusicBlocked] = useState(false);
+  // The one action whose outcome is not visible in what it produces: an
+  // unconfigured LLM still adds items, and has to be able to say so.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState('');
   const [typingGrid, setTypingGrid] = useState('');
   // Which emoji *this browser* has reacted with, per card. The server does not
   // put raw pids on the wire, so "did I react" is only knowable from the
@@ -341,7 +355,7 @@ export function App({ boot }: { boot: RetroBoot }) {
     );
   }
 
-  const cardCount = cards.length;
+  const shownCount = past ? past.cards.length : cards.length;
 
   const toolbar = (
     <Toolbar
@@ -354,8 +368,11 @@ export function App({ boot }: { boot: RetroBoot }) {
       mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
-            {boot.sprint ? `${boot.sprint} · ` : ''}
-            {cardCount} {cardCount === 1 ? 'card' : 'cards'}
+            <TimeSwitch history={history} liveLabel={boot.sprint || 'This retro'} />
+            <span className={styles['subtleDot']} aria-hidden="true">
+              ·
+            </span>
+            {shownCount} {shownCount === 1 ? 'card' : 'cards'}
             {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
           </>
         }
@@ -393,6 +410,21 @@ export function App({ boot }: { boot: RetroBoot }) {
             >
               <Walkthrough people={roster} current={focus} onPick={setFocus} onExit={() => setFocus('')} />
             </Popover>
+
+            {isHost ? (
+              <IconButton
+                icon={<Icon name="sparkles" size={16} />}
+                label="Suggest action items"
+                disabled={suggesting || readOnly}
+                onClick={() => {
+                  setSuggesting(true);
+                  void actions.suggestActions().then((message) => {
+                    setSuggesting(false);
+                    setSuggestion(message);
+                  });
+                }}
+              />
+            ) : null}
 
             {isHost ? (
               <IconButton
@@ -487,20 +519,20 @@ export function App({ boot }: { boot: RetroBoot }) {
       ) : null}
 
       <CarriedStrip
-        items={carried}
-        locked={locked}
+        items={past ? past.carried : carried}
+        locked={readOnly}
         onSetStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_ as CarriedStatuses)}
       />
 
 
       <Board
-        cards={cards}
+        cards={past ? past.cards : cards}
         avatars={avatarsByName}
         myReactions={myReactions}
-        typing={typingByGrid}
-        locked={locked}
+        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
+        locked={readOnly}
         focus={focus}
-        arrivals={arrivals}
+        arrivals={past ? NO_ARRIVALS : arrivals}
         onAddCard={addCard}
         onTyping={onTyping}
         onEdit={(cardId, text) => void actions.editCard(cardId, text)}
@@ -512,6 +544,8 @@ export function App({ boot }: { boot: RetroBoot }) {
 
       {/* Overlays and modals are fixed-position, so they take no part in the
           layout above and can sit anywhere in the tree. */}
+      <Toast message={suggestion} onDismiss={() => setSuggestion('')} />
+
       <ConfettiCanvas canvasRef={confettiRef} />
 
       <ProfileModal
