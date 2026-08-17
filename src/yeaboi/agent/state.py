@@ -556,6 +556,11 @@ class StandupReport:
     member_updates: tuple[MemberUpdate, ...] = ()
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
     activity_window: str = ""  # human-readable look-back window, e.g. "Fri 2026-07-17 00:00 → now"
+    # Machine-readable window bounds (tz-aware ISO-8601) — the web timeline's
+    # axis. Defaulted so a report stored before the timeline existed still
+    # deserializes; the page derives the axis from event times when empty.
+    activity_window_start: str = ""
+    activity_window_end: str = ""
     skipped_sources: tuple[tuple[str, str], ...] = ()  # (source, reason) for sources NOT scanned — visible, not silent
     # The subset of skipped_sources the user actually ASKED for and did not get.
     # Diagnostic surfaces (the TUI panel, the HTML details) list every skip; the

@@ -1008,6 +1008,13 @@ def standup_export_args(
             "quietMembers": [m.name for m in quiet],
             "activityCounts": [[source, count] for source, count in report.activity_counts],
             "activityWindow": report.activity_window,
+            # Machine-readable bounds for the timeline axis. Always present;
+            # both empty on a report stored before the timeline existed, and
+            # the page then derives the axis from the event times instead.
+            "window": {
+                "start": getattr(report, "activity_window_start", ""),
+                "end": getattr(report, "activity_window_end", ""),
+            },
             "coverage": [[category, status] for category, status in report.category_coverage],
             "skipped": [[source, reason] for source, reason in report.skipped_sources],
             # Overview rollup. `count` is MEMBERS, so "2" beside untracked-work

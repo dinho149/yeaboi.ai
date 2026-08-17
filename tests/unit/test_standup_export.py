@@ -1309,6 +1309,22 @@ def _signal(**over):
     return PracticeSignal(**base)
 
 
+class TestWindowBounds:
+    def test_payload_carries_the_window_verbatim(self):
+        report = _report(
+            activity_window_start="2026-07-12T00:00:00+02:00",
+            activity_window_end="2026-07-13T10:30:00+02:00",
+        )
+        data = island(build_standup_html(report))["report"]
+        assert data["window"] == {"start": "2026-07-12T00:00:00+02:00", "end": "2026-07-13T10:30:00+02:00"}
+
+    def test_window_is_always_present_and_empty_on_a_legacy_report(self):
+        # A report stored before the timeline existed re-exports forever with
+        # empty bounds — the page derives the axis from event times instead.
+        data = island(build_standup_html(_report()))["report"]
+        assert data["window"] == {"start": "", "end": ""}
+
+
 class TestPracticesInExports:
     def _report_with_practices(self, *signals, rollup=(("untracked-work", 1),)):
         return _report(

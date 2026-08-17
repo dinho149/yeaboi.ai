@@ -26,7 +26,7 @@ import json
 import logging
 import re
 from collections.abc import Collection
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from yeaboi import html_theme
@@ -1578,6 +1578,7 @@ def run_standup(
     if days is None:
         since = collector.previous_working_day_start(today)
         activity_window = f"{since:%a %Y-%m-%d} 00:00 → now"
+        activity_window_start = since.isoformat()  # already tz-aware local midnight
         bundle = collector.collect_recent_activity(
             since=since,
             sources=enabled_sources,
@@ -1589,6 +1590,7 @@ def run_standup(
         )
     else:
         activity_window = f"last {days} day(s)"
+        activity_window_start = (datetime.now().astimezone() - timedelta(days=days)).isoformat()
         bundle = collector.collect_recent_activity(
             days=days,
             sources=enabled_sources,
@@ -1598,6 +1600,10 @@ def run_standup(
             skipped=skipped_sources,
             **source_params,
         )
+
+    # The window's far edge is "now" — stamped once collection returns, so the
+    # timeline axis ends where the freshest event can actually sit.
+    activity_window_end = datetime.now().astimezone().isoformat()
 
     # 3. Sprint context + deterministic confidence.
     _notify("Reading sprint progress")
@@ -1853,6 +1859,8 @@ def run_standup(
         # automation filters recompute per-source numbers.
         activity_counts=tuple((str(s), int(n)) for s, n in result["counts"]),
         activity_window=activity_window,
+        activity_window_start=activity_window_start,
+        activity_window_end=activity_window_end,
         skipped_sources=tuple(bundle.skipped),
         # Carried so the broadcast renderers can tell a disappointment from a
         # deliberate non-choice long after the run that classified them.

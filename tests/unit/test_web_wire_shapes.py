@@ -465,6 +465,10 @@ def _export_snapshots() -> dict[str, dict]:
         ),
         activity_counts=(("github", 6), ("jira", 5)),
         activity_window="last 24 hours",
+        # ISO-with-T so the value never matches the _STAMP pinning regex and
+        # the fixture cannot rewrite itself.
+        activity_window_start="2026-07-12T00:00:00+00:00",
+        activity_window_end="2026-07-13T10:00:00+00:00",
         category_coverage=(("ticketing", "covered"), ("documentation", "not_configured")),
         skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),),
         warnings=("Jira was reachable for 12 of 14 days.",),

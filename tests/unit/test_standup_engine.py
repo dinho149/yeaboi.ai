@@ -1,7 +1,7 @@
 """Unit tests for the standup engine pipeline (mocked LLM + sources)."""
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -664,6 +664,13 @@ class TestActivityWindow:
         assert "days" not in captured
         assert report.activity_window.startswith("Fri 2026-07-17")
         assert report.activity_window.endswith("→ now")
+        # Machine-readable bounds for the timeline axis: tz-aware ISO, start
+        # at the window's midnight, end stamped at collection time.
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert (start.year, start.month, start.day, start.hour) == (2026, 7, 17, 0)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert start < end
 
     def test_explicit_days_keeps_legacy_window(self, monkeypatch, db_path, seeded_session):
         captured: dict = {}
@@ -686,6 +693,10 @@ class TestActivityWindow:
         assert captured["days"] == 3
         assert "since" not in captured
         assert report.activity_window == "last 3 day(s)"
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert (end - start).days == 3
 
 
 class TestIdentityResolution:
