@@ -514,24 +514,6 @@ export function App({ boot }: { boot: RetroBoot }) {
       ) : null}
 
       <div className={styles['boardLayout']}>
-      <Board
-        key={swap.key}
-        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
-        cards={swap.payload.cards}
-        avatars={avatarsByName}
-        myReactions={myReactions}
-        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
-        locked={readOnly}
-        focus={focus}
-        arrivals={past ? NO_ARRIVALS : arrivals}
-        onAddCard={addCard}
-        onTyping={onTyping}
-        onEdit={(cardId, text) => void actions.editCard(cardId, text)}
-        onDelete={(cardId) => void actions.deleteCard(cardId)}
-        onReact={(cardId, emoji) => void react(cardId, emoji)}
-        onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
-      />
-
       {isHost ? (
         <HostRail
           history={history}
@@ -553,6 +535,24 @@ export function App({ boot }: { boot: RetroBoot }) {
           past={history.at > 0}
         />
       ) : null}
+      <Board
+        key={swap.key}
+        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
+        cards={swap.payload.cards}
+        avatars={avatarsByName}
+        myReactions={myReactions}
+        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
+        locked={readOnly}
+        focus={focus}
+        arrivals={past ? NO_ARRIVALS : arrivals}
+        onAddCard={addCard}
+        onTyping={onTyping}
+        onEdit={(cardId, text) => void actions.editCard(cardId, text)}
+        onDelete={(cardId) => void actions.deleteCard(cardId)}
+        onReact={(cardId, emoji) => void react(cardId, emoji)}
+        onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
+      />
+
       </div>
       </div>
 
