@@ -154,6 +154,16 @@ class TestRemove:
     def test_unknown_run_returns_false(self, ship_home):
         assert not worktree.remove("run-404")
 
+    def test_an_entry_naming_no_checkout_reports_failure_not_success(self, ship_home, target_repo):
+        # Nothing was deleted, so nothing may claim it was — and the row stays
+        # for a human to look at rather than being popped on the way out.
+        worktree.prepare("run-1", target_repo)
+        registry = json.loads(worktree.SHIP_WORKTREE_REGISTRY.read_text(encoding="utf-8"))
+        registry["run-1"]["path"] = ""
+        worktree.SHIP_WORKTREE_REGISTRY.write_text(json.dumps(registry), encoding="utf-8")
+        assert not worktree.remove("run-1")
+        assert worktree.get_record("run-1") is not None
+
     def test_tampered_registry_path_is_refused(self, ship_home, target_repo, tmp_path):
         worktree.prepare("run-1", target_repo)
         victim = tmp_path / "victim"

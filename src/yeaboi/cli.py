@@ -1888,12 +1888,15 @@ def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
 
     if args.ship_command == "history":
         from yeaboi.ship.render import format_history_rich
-        from yeaboi.ship.store import ShipStore
+        from yeaboi.ship.store import ShipStore, listing_dict
 
         with ShipStore() as store:
             runs = store.list_runs(limit=args.limit)
         if args.format == "json":
-            print(json.dumps([asdict(r) for r in runs], indent=2))
+            # `listing_dict` drops the stored patch: capped per run is not
+            # capped per response, and a listing is polled in a loop. The
+            # single run `ship run --format json` prints keeps it.
+            print(json.dumps([listing_dict(r) for r in runs], indent=2))
         else:
             console.print(format_history_rich(runs))
         return 0
@@ -1901,13 +1904,13 @@ def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
     if args.ship_command == "status":
         from yeaboi.ship import budget
         from yeaboi.ship.render import format_budget_rich, format_run_rich
-        from yeaboi.ship.store import ShipStore
+        from yeaboi.ship.store import ShipStore, listing_dict
 
         with ShipStore() as store:
             runs = store.list_runs(limit=1)
         posture = budget.status()
         if args.format == "json":
-            print(json.dumps({"latest": asdict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
+            print(json.dumps({"latest": listing_dict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
         else:
             if runs:
                 console.print(format_run_rich(runs[0]))
@@ -1928,12 +1931,21 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
     from dataclasses import asdict
 
     from yeaboi import fs_policy
-    from yeaboi.ship import engine
+    from yeaboi.ship import engine, worktree
     from yeaboi.ship.render import format_run_rich
     from yeaboi.ship.store import ShipStore
 
     repo = str(Path(args.repo).expanduser().resolve())
     if not args.dry_run:
+        try:
+            # Resolve the toplevel BEFORE the consent check: every write lands
+            # there (`git worktree add` into <toplevel>/.git, the later push),
+            # and fs_policy containment is `is_relative_to` — so granting a
+            # subdirectory would let yeaboi write outside the approved root.
+            repo = str(worktree.resolve_repo(repo))
+        except worktree.WorktreeError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
         try:
             fs_policy.resolve_and_check(repo, mode="write", context="ship: run a coding agent against this repository")
         except PermissionError as exc:
@@ -1947,6 +1959,11 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
 
     result_box: list = [None]
     cancel = threading.Event()
+    # The engine hands its run id back the moment it exists. Anything else in
+    # the store belongs to ANOTHER session (a TUI in another terminal, a stale
+    # process) — prompting for one of those would let this user approve, and
+    # push, a diff they are not looking at.
+    mine: list[str] = [""]
 
     def _work() -> None:
         result_box[0] = engine.run_ship(
@@ -1956,14 +1973,10 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
             check_command=args.check,
             timeout_minutes=args.timeout_minutes,
             dry_run=args.dry_run,
+            on_run_id=lambda run_id: mine.__setitem__(0, run_id),
             cancel_event=cancel,
         )
 
-    with ShipStore() as preexisting:
-        # Runs that already exist belong to OTHER sessions (a TUI in another
-        # terminal, a stale process). Prompting for those would let this user
-        # approve a diff they are not looking at — and push it.
-        known = {r.run_id for r in preexisting.list_runs(limit=100)}
     worker = threading.Thread(target=_work, daemon=True)
     worker.start()
     try:
@@ -1972,13 +1985,19 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                 worker.join(timeout=0.5)
                 if not worker.is_alive() or cancel.is_set():
                     continue  # a cancelled run winds down on its own; stop prompting
-                # An open gate is one this loop has not answered yet: resolving
-                # stamps gate_resolution, and a rework clears it again — so the
-                # reopened gate prompts again by construction.
-                for run in store.list_runs(limit=3):
-                    if run.run_id in known or run.status != "awaiting_approval" or run.gate_resolution:
-                        continue
-                    console.print(format_run_rich(run))
+                if not mine[0]:
+                    continue  # the id has not been minted yet; nothing can be ours
+                # Fetched by id, never scanned out of a newest-first page: with
+                # concurrency raised, runs started after ours would push it off
+                # the end and its gate would never render here. An open gate is
+                # one this loop has not answered yet — resolving stamps
+                # gate_resolution and a rework clears it, so a reopened gate
+                # prompts again by construction.
+                run = store.get_run(mine[0])
+                if run is not None and run.status == "awaiting_approval" and not run.gate_resolution:
+                    # The gate is the only control before a push; it shows the
+                    # patch, not a file count.
+                    console.print(format_run_rich(run, show_diff=True))
                     try:
                         answer = input("Approve and open a PR? [y]es / [n]o with feedback / [c]ancel run: ")
                     except EOFError:

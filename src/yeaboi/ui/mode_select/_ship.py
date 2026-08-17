@@ -32,6 +32,7 @@ from yeaboi.ui.mode_select.screens._screens_ship import (
     _build_ship_progress_screen,
     _build_ship_result_screen,
 )
+from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
 
@@ -53,20 +54,27 @@ def _load_stories() -> tuple[list, str, str]:
     return list(state.get("stories") or []), session_id, ""
 
 
-def _repo_problem(repo: str) -> str:
-    """A user-facing reason this repo cannot take a run, or ""."""
+def _resolve_target(repo: str) -> tuple[str, str]:
+    """(the git toplevel this run will touch, a user-facing problem or "").
+
+    The toplevel, not the typed path, is what every later write targets —
+    ``git worktree add`` writes into ``<toplevel>/.git`` and the push runs from
+    there. Consent is checked with ``is_relative_to`` containment, so granting a
+    *subdirectory* would not grant the toplevel: resolving first is what keeps
+    the consent prompt honest about what is about to be touched.
+    """
     from yeaboi.ship import worktree
 
     try:
         top = worktree.resolve_repo(Path(repo).expanduser())
     except worktree.WorktreeError as exc:
-        return str(exc)
+        return "", str(exc)
     try:
         if worktree.is_dirty(top):
-            return f"{top} has uncommitted changes — commit or stash first"
+            return str(top), f"{top} has uncommitted changes — commit or stash first"
     except worktree.WorktreeError as exc:
-        return str(exc)
-    return ""
+        return str(top), str(exc)
+    return str(top), ""
 
 
 def run_ship_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -165,7 +173,7 @@ def _launch(
     """Consent + worker thread + progress/gate/result loops. Returns a picker message."""
     from yeaboi.ui.shared._consent import _preflight_path_consent
 
-    problem = _repo_problem(repo)
+    repo, problem = _resolve_target(repo)
     if problem:
         return problem
     if not _preflight_path_consent(
@@ -190,6 +198,11 @@ def _launch(
     result_box: list = [None, None]
     cancel = threading.Event()
 
+    # The engine hands its run id back as soon as it exists; everything else
+    # in the shared store belongs to another session, and this loop must never
+    # open a gate over a diff this user did not launch.
+    mine: list[str] = [""]
+
     def _work() -> None:
         try:
             result_box[0] = engine.run_ship(
@@ -198,17 +211,16 @@ def _launch(
                 session_id=session_id,
                 check_command=check_command,
                 on_progress=progress_q.put,
+                on_run_id=lambda run_id: mine.__setitem__(0, run_id),
                 cancel_event=cancel,
             )
         except BaseException as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
             result_box[1] = exc
 
     with ShipStore() as watch:
-        known = {r.run_id for r in watch.list_runs(limit=50)}
         thread = duck_working_thread(_work, name="ship-run")
         thread.start()
         events_by_id: dict[str, dict] = {}
-        run_id = ""
         start = time.monotonic()
         last_poll = 0.0
 
@@ -221,13 +233,14 @@ def _launch(
                 if is_component_progress(item):
                     events_by_id[item["component_id"]] = item
             gated = None
-            if time.monotonic() - last_poll > 0.5:
+            if mine[0] and time.monotonic() - last_poll > 0.5:
                 last_poll = time.monotonic()
-                for row in watch.list_runs(limit=5):
-                    if row.run_id not in known:
-                        run_id = row.run_id
-                    if row.run_id == run_id and row.status == "awaiting_approval" and not row.gate_resolution:
-                        gated = row
+                # By id, not by scanning a newest-first page: with concurrency
+                # raised, later runs would push ours off the end and its gate
+                # would never open on the surface that launched it.
+                row = watch.get_run(mine[0])
+                if row is not None and row.status == "awaiting_approval" and not row.gate_resolution:
+                    gated = row
             if gated is not None:
                 outcome = _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, gated, cancel)
                 if outcome == "cancelled":
@@ -264,6 +277,11 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
     comment: str | None = None
     edit = {"buf": "", "cur": 0}
     message = ""
+    diff_offset = 0
+    # The builder publishes the pane's true geometry here; apply_scroll clamps
+    # to exactly what is on screen, so the loop counter and the visible
+    # position can never diverge (see ui/shared/_scroll.py).
+    scroll_meta: dict = {}
     while True:
         w, h = console.size
         live.update(
@@ -274,6 +292,8 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
                 height=h,
                 comment_edit=edit["buf"] if comment is not None else None,
                 message=message,
+                diff_offset=diff_offset,
+                scroll_meta=scroll_meta,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -289,7 +309,11 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
             elif isinstance(key, str) and key:
                 _settings_edit_keypress(key, edit)
             continue
-        if key in ("left",):
+        if key in SCROLL_KEYS:
+            # One membership test routes arrows, wheel, page and home/end; the
+            # burst is drained in one shot so a fast wheel flick repaints once.
+            diff_offset = coalesce_scroll(diff_offset, key, scroll_meta, read_key)
+        elif key in ("left",):
             action_sel = (action_sel - 1) % len(SHIP_GATE_ACTIONS)
         elif key in ("right", "tab"):
             action_sel = (action_sel + 1) % len(SHIP_GATE_ACTIONS)

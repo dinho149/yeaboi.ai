@@ -116,13 +116,21 @@ class TestRun:
 
     def test_the_permission_envelope_is_mechanical_not_prose(self, tmp_path):
         # The "nothing pushes without approval" guarantee rests on these argv
-        # flags: acceptEdits (files editable headlessly, Bash denied) plus an
-        # explicit git-push/gh deny list. Losing them would leave only a
-        # sentence in the prompt between the agent and `git push`.
+        # flags: acceptEdits (files editable headlessly) plus a deny of the
+        # whole Bash tool. Losing them would leave only a sentence in the
+        # prompt between the agent and `git push`.
         body = "import sys, json; sys.stdin.read(); print(json.dumps({'result': ' '.join(sys.argv[1:])}))"
         result = driver.ClaudeCodeDriver(binary=_make_shim(tmp_path, body)).run("go", tmp_path)
         assert "--permission-mode acceptEdits" in result.output
-        assert "--disallowedTools Bash(git push:*) Bash(gh:*)" in result.output
+        assert "--disallowedTools Bash" in result.output
+
+    def test_the_deny_is_the_whole_tool_not_a_command_pattern(self):
+        # A pattern deny (`Bash(git push:*)`) is porous — `git -c … push` and
+        # an edit to `.git/config` sit outside it — and the child still reads
+        # the *target repo's* .claude/settings.json allow list, which for this
+        # very repo starts `Bash(make test)`. Only a whole-tool deny holds.
+        assert "Bash" in driver._PERMISSION_ARGS
+        assert not any(arg.startswith("Bash(") for arg in driver._PERMISSION_ARGS)
 
 
 class TestAvailability:

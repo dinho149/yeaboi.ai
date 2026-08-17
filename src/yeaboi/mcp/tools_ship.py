@@ -19,25 +19,21 @@ logger = logging.getLogger(__name__)
 def _history(limit: int):
     if limit < 1 or limit > 100:
         raise ValueError("limit must be between 1 and 100.")
-    from dataclasses import asdict
+    from yeaboi.ship.store import ShipStore, listing_dict
 
-    from yeaboi.ship.store import ShipStore
-
-    # asdict per run: to_jsonable only unpacks a TOP-LEVEL dataclass, and a
-    # nested one would degrade to its repr via json's default=str.
     with ShipStore() as store:
-        return {"runs": [asdict(run) for run in store.list_runs(limit=limit)]}
+        return {"runs": [listing_dict(run) for run in store.list_runs(limit=limit)]}
 
 
 def _status():
     from dataclasses import asdict
 
     from yeaboi.ship import budget
-    from yeaboi.ship.store import ShipStore
+    from yeaboi.ship.store import ShipStore, listing_dict
 
     with ShipStore() as store:
         runs = store.list_runs(limit=1)
-    return {"latest": asdict(runs[0]) if runs else None, "budget": asdict(budget.status())}
+    return {"latest": listing_dict(runs[0]) if runs else None, "budget": asdict(budget.status())}
 
 
 def register(app) -> None:

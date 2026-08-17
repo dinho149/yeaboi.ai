@@ -1310,3 +1310,24 @@ class TestShipTools:
         assert out["ok"] is True
         assert out["data"]["latest"] is None
         assert "max_per_hour" in out["data"]["budget"]
+
+    def test_the_stored_patch_stays_out_of_the_listing(self, tmp_db):
+        # diff_text is capped per run, not per response; a hundred runs of it
+        # is megabytes of patch nobody asked for. The stat and worktree stay.
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore(tmp_db) as store:
+            store.record_run(
+                ShipRun(
+                    run_id="run-1",
+                    story_id="US-001",
+                    status="approved",
+                    diff_stat="1 file changed",
+                    diff_text="@@ -1 +1 @@\n+enormous\n",
+                )
+            )
+        row = call_tool("ship_history")["data"]["runs"][0]
+        assert "diff_text" not in row
+        assert row["diff_stat"] == "1 file changed"
+        assert "diff_text" not in call_tool("ship_status")["data"]["latest"]

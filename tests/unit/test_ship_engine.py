@@ -215,6 +215,56 @@ class TestHappyPath:
         ).stdout
         assert run.branch in heads
 
+    def test_the_run_id_reaches_the_caller_before_the_gate_opens(self, ship_env):
+        # Surfaces poll a shared store for the gate; identifying "my run" by
+        # elimination stops being true the moment two runs are allowed at
+        # once, and then someone approves a diff they never saw.
+        seen: list[str] = []
+        resolver = _resolver(ship_env.db, ["approved"])
+        run = engine.run_ship(
+            "US-001",
+            str(ship_env.repo),
+            db_path=ship_env.db,
+            driver=FakeDriver(behaviors=("work",)),
+            on_run_id=seen.append,
+        )
+        resolver.join(timeout=5)
+        assert seen == [run.run_id]
+
+    def test_the_run_id_is_handed_over_even_when_the_run_fails(self, ship_env):
+        seen: list[str] = []
+        run = engine.run_ship(
+            "US-001",
+            str(ship_env.repo),
+            db_path=ship_env.db,
+            driver=FakeDriver(behaviors=("nothing",)),
+            on_run_id=seen.append,
+        )
+        assert run.status == "failed"
+        assert seen == [run.run_id]
+
+    def test_a_raising_run_id_callback_does_not_kill_the_run(self, ship_env):
+        def _boom(_run_id):
+            raise RuntimeError("a surface hiccup")
+
+        resolver = _resolver(ship_env.db, ["approved"])
+        run = engine.run_ship(
+            "US-001",
+            str(ship_env.repo),
+            db_path=ship_env.db,
+            driver=FakeDriver(behaviors=("work",)),
+            on_run_id=_boom,
+        )
+        resolver.join(timeout=5)
+        assert run.status == "approved", run.warnings
+
+    def test_the_patch_travels_with_the_artifact(self, ship_env):
+        resolver = _resolver(ship_env.db, ["approved"])
+        run = engine.run_ship("US-001", str(ship_env.repo), db_path=ship_env.db, driver=FakeDriver(("work",)))
+        resolver.join(timeout=5)
+        assert "agent_1.py" in run.diff_text
+        assert run.diff_text.startswith("diff --git")
+
     def test_progress_events_cover_every_phase(self, ship_env):
         events: list[dict] = []
         resolver = _resolver(ship_env.db, ["approved"])

@@ -22,6 +22,7 @@ the database CAS is the arbiter, so two surfaces racing resolve exactly once.
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -62,9 +63,17 @@ def _report(on_progress, component_id: str, label: str, status: str, **kwargs) -
 
 
 def _new_run_id(story_id: str) -> str:
+    """A run id: story, second-resolution stamp, and a random suffix.
+
+    The suffix is what makes the id an identity rather than a description.
+    Two runs of the same story started in the same second would otherwise
+    collide — and since both surfaces now find *their* run by this id, and
+    ``worktree.prepare`` is idempotent per id, a collision would hand the
+    second run the first one's checkout and let one gate answer for both.
+    """
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in story_id.lower()).strip("-.")[:40]
-    return f"{safe or 'story'}-{stamp}"
+    return f"{safe or 'story'}-{stamp}-{secrets.token_hex(3)}"
 
 
 def _failed(run: ShipRun, reason: str, *, phase: str = "") -> ShipRun:
@@ -148,6 +157,7 @@ def run_ship(
     db_path: Path | None = None,
     dry_run: bool = False,
     on_progress: Callable | None = None,
+    on_run_id: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
     driver: object | None = None,
 ) -> ShipRun:
@@ -156,6 +166,12 @@ def run_ship(
     ``driver`` is an injection seam (an ``AgentDriver``); the default is
     Claude Code headless. The human gate always resolves through
     ``ShipStore.resolve_gate`` — this function only waits for it.
+
+    ``on_run_id`` fires once, as soon as the id exists, because the surfaces
+    poll a shared store for the gate: without it they can only identify "my
+    run" as "one that was not there when I started", which stops being true
+    the moment two runs are allowed at once — and then a user is asked to
+    approve, and push, a diff they have never seen.
     """
     if dry_run:
         return _dry_run_artifact(story_id, repo)
@@ -178,6 +194,11 @@ def run_ship(
         )
 
     run_id = _new_run_id(story_id)
+    if on_run_id is not None:
+        try:
+            on_run_id(run_id)
+        except Exception:  # a surface's bookkeeping must never kill the run
+            logger.debug("on_run_id callback failed", exc_info=True)
     run = ShipRun(
         run_id=run_id,
         story_id=story_id,
@@ -298,7 +319,15 @@ def _run_phases(
             _report(on_progress, "ship-validate", "Validating the diff", "failed", detail="no changes")
             _abort(_failed(run, detail, phase="implement"))
         validation = pipeline.run_validation(record, check_command)
-        run = replace(run, diff_stat=diff_stat, validation=validation, updated_at=_now_iso())
+        # The patch travels with the artifact, so every gate surface shows the
+        # change itself rather than a file count.
+        run = replace(
+            run,
+            diff_stat=diff_stat,
+            diff_text=pipeline.diff_text(record),
+            validation=validation,
+            updated_at=_now_iso(),
+        )
         _phase_done("validate", "passed" if validation.passed else "see gate screen", started)
         _report(
             on_progress,

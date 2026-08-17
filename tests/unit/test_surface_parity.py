@@ -361,7 +361,10 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
 }
 
 # Injection/test seams that are never exposed on any wire surface.
-HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "dry_run"}
+# ``on_run_id`` joins them for the same reason as ``on_progress``: it hands a
+# caller-side callback the id of the run being started, which only a surface
+# that owns the process can use.
+HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "on_run_id", "dry_run"}
 
 # Per-tool engine params deliberately not exposed on the MCP tool. Every entry
 # needs a reason; a stale entry (param gone from the engine) fails the tests.

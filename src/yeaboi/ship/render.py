@@ -7,11 +7,31 @@ is load-bearing; the JSON format carries the same facts.
 
 from __future__ import annotations
 
+import re
+
 from rich.console import Group
 from rich.text import Text
 
 from yeaboi.agent.state import ShipRun
 from yeaboi.ship.budget import BudgetStatus
+
+# Every C0 control and DEL except tab and newline — notably ESC (0x1b), which
+# rich does NOT strip (``STRIP_CONTROL_CODES`` is only BEL/BS/VT/FF/CR) and
+# which reaches the terminal verbatim inside a Text segment.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def safe_console_text(text: str) -> str:
+    """Strip control characters from agent-authored text before it is drawn.
+
+    The patch and the validation tail are written by the coding agent, and the
+    gate is the only control before a push — so a file containing escape
+    sequences could move the cursor and repaint over what the reviewer is
+    reading, and they would approve what they saw rather than what is on disk.
+    Newlines survive: callers split on them to build rows.
+    """
+    return _CONTROL_RE.sub("", text)
+
 
 _STATUS_STYLE = {
     "approved": "bold green",
@@ -24,8 +44,32 @@ _STATUS_STYLE = {
 }
 
 
-def format_run_rich(run: ShipRun) -> Group:
-    """One run, in full — the gate summary and the terminal report."""
+def format_diff_rich(diff: str) -> Group:
+    """The patch, tinted. Additions green, removals red, hunk headers cyan."""
+    lines: list[Text] = []
+    for raw in safe_console_text(diff).splitlines():
+        if raw.startswith("+++") or raw.startswith("---"):
+            style = "bold"
+        elif raw.startswith("+"):
+            style = "green"
+        elif raw.startswith("-"):
+            style = "red"
+        elif raw.startswith("@@"):
+            style = "cyan"
+        elif raw.startswith("diff --git"):
+            style = "bold"
+        else:
+            style = ""
+        lines.append(Text(raw, style=style))
+    return Group(*lines)
+
+
+def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
+    """One run, in full — the gate summary and the terminal report.
+
+    ``show_diff`` is what the *gate* passes: approving a push on a file count
+    is not review, so the prompt renders the patch and the worktree path.
+    """
     lines: list[Text] = []
     header = Text()
     header.append(f"{run.story_id or '(no story)'} ", style="bold")
@@ -35,13 +79,20 @@ def format_run_rich(run: ShipRun) -> Group:
     lines.append(header)
     if run.branch:
         lines.append(Text(f"  branch    {run.branch}"))
+    if run.worktree:
+        lines.append(Text(f"  worktree  {run.worktree}", style="dim"))
     if run.diff_stat:
-        stat_tail = run.diff_stat.splitlines()[-1].strip()
-        lines.append(Text(f"  diff      {stat_tail}"))
+        # The gate wants every file; a status line wants the totals. A 60-file
+        # run should not print 60 rows every time someone asks what happened.
+        stat_all = safe_console_text(run.diff_stat).splitlines()
+        stat_lines = stat_all if show_diff else stat_all[-1:]
+        for index, stat_line in enumerate(stat_lines):
+            label = "diff     " if index == 0 else "         "
+            lines.append(Text(f"  {label} {stat_line.strip()}"))
     if run.validation.configured:
         verdict = "passed" if run.validation.passed else f"FAILED (exit {run.validation.exit_code})"
         style = "green" if run.validation.passed else "red"
-        lines.append(Text(f"  checks    {run.validation.command} — {verdict}", style=style))
+        lines.append(Text(f"  checks    {safe_console_text(run.validation.command)} — {verdict}", style=style))
     else:
         lines.append(Text("  checks    none configured — nothing was proven", style="yellow"))
     if run.cost_usd:
@@ -52,7 +103,20 @@ def format_run_rich(run: ShipRun) -> Group:
         lines.append(Text(f"  pr        {run.pr_url}", style="bold cyan"))
     for warning in run.warnings:
         lines.append(Text(f"  ⚠ {warning}", style="yellow"))
-    return Group(*lines)
+    parts: list = [Group(*lines)]
+    if show_diff:
+        parts.append(Text(""))
+        if run.diff_text:
+            parts.append(Text("  the change itself:", style="bold"))
+            parts.append(format_diff_rich(run.diff_text))
+        else:
+            parts.append(
+                Text(
+                    "  the diff could not be read — inspect the worktree before approving",
+                    style="yellow",
+                )
+            )
+    return Group(*parts)
 
 
 def format_history_rich(runs: list[ShipRun]) -> Group:

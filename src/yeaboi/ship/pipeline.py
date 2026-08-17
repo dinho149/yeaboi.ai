@@ -27,6 +27,8 @@ from yeaboi.tools.local_git import git_subprocess_env
 logger = logging.getLogger(__name__)
 
 VALIDATION_TIMEOUT_S = 15 * 60
+DIFF_TEXT_CAP = 20_000  # the gate shows the patch; a runaway diff is capped, never dropped
+_DIFF_REAP_S = 10.0
 _TAIL_CHARS = 4000
 
 _GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
@@ -130,6 +132,65 @@ def diff_bridge(record: WorktreeRecord) -> tuple[bool, str]:
     ensure_committed(record)
     stat = _git(record.path, "diff", "--stat", f"{record.base_sha}..HEAD")
     return bool(stat.strip()), stat.strip()
+
+
+def diff_text(record: WorktreeRecord, *, max_chars: int = DIFF_TEXT_CAP) -> str:
+    """The patch itself, capped — what the approver is actually asked to approve.
+
+    A ``--stat`` is a file count, and the gate is the only control between
+    agent-authored code and a pushed branch. Capping rather than paging keeps
+    this a pure function of the artifact; the trailer names the exact command
+    for reading the rest out of band. Never raises — a diff we cannot read is
+    an empty string, and the gate says so rather than the run dying.
+
+    The read is bounded, not sliced after the fact: an agent that commits a
+    generated lockfile produces a patch of megabytes, and this runs on the
+    TUI's worker thread. Only ``max_chars`` are ever pulled off the pipe.
+    """
+    argv = ["git", "-C", str(record.path), "diff", f"{record.base_sha}..HEAD"]
+    try:
+        proc = subprocess.Popen(  # noqa: S603 — fixed binary, whitelisted-id args
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=git_subprocess_env(),
+            cwd=str(record.path),
+        )
+    except OSError as exc:
+        logger.warning("Could not read the diff for %s: %s", record.run_id, exc)
+        return ""
+    try:
+        assert proc.stdout is not None
+        patch = proc.stdout.read(max_chars + 1)
+    except OSError as exc:
+        logger.warning("Could not read the diff for %s: %s", record.run_id, exc)
+        patch = ""
+    finally:
+        # Stop git writing the rest into a pipe nobody drains, then reap it —
+        # including after the kill, or the dead child lingers as a zombie.
+        if proc.stdout is not None:
+            proc.stdout.close()
+        try:
+            proc.wait(timeout=_DIFF_REAP_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.wait(timeout=_DIFF_REAP_S)
+            except subprocess.TimeoutExpired:
+                logger.error("git diff for %s would not die", record.run_id)
+    if proc.returncode not in (0, None) and not patch:
+        logger.warning("git diff for %s exited %s", record.run_id, proc.returncode)
+        return ""
+    if len(patch) <= max_chars:
+        return patch
+    return (
+        patch[:max_chars].rstrip()
+        + f"\n\n… truncated at {max_chars} characters — read the rest with:\n"
+        + f"  git -C {record.path} diff {record.base_sha}..HEAD"
+    )
 
 
 def run_validation(record: WorktreeRecord, command: str) -> ShipValidation:

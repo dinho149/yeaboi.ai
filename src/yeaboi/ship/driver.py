@@ -19,6 +19,13 @@ production failure upstream:
   or newer CLI degrades to raw text with a warning, never an exception —
   downstream, the deterministic bridge judges the run by the diff on disk,
   not by what the agent said.
+- **The capability envelope is argv, not prose** (``_PERMISSION_ARGS``): the
+  agent edits files, has no shell, and loads no MCP servers, so it cannot
+  itself run git. That is a bound on the *agent*, not a proof about the run:
+  the pipeline afterwards executes the user's validation command with a shell
+  in this same worktree, so code the agent wrote into a ``Makefile`` or a test
+  still runs before the gate. What the gate guarantees is that nothing reaches
+  ``origin`` until a human has approved the diff.
 
 Supervision follows ``voice_install._run_installer``: a daemon pump thread
 reads stdout for the process's whole life (so the pipe can never fill and
@@ -57,17 +64,30 @@ _SESSION_ENV_VARS = ("CLAUDE_SESSION_ID", "CLAUDE_PARENT_SESSION_ID", "CLAUDECOD
 # The agent's capability envelope, and it is MECHANICAL, not prose:
 # `acceptEdits` lets file edits land without a prompt (a headless --print run
 # cannot answer one, so the default mode would leave the agent unable to edit
-# at all), while Bash and every other gated tool stay denied — the agent
-# cannot run git, so it physically cannot push, commit, or open a PR; the
-# pipeline commits its work and pushes only after the human gate. The
-# disallow list is belt and braces on top: an explicit deny outranks every
-# permission mode if one is ever passed.
+# at all), and `--disallowedTools Bash` denies the shell outright — so the
+# agent physically cannot push, commit, or open a PR; the pipeline commits its
+# work and pushes only after the human gate.
+#
+# The deny must be the whole *tool*, not a pattern over commands, because the
+# child resolves settings we do not control: the user's own
+# `~/.claude/settings.json`, and — since `cwd` is a checkout of the target
+# repo — that repo's `.claude/settings.json` too. A run against a repo whose
+# committed allow list starts `Bash(make test)` would hand the agent a shell,
+# and a narrow deny list (`Bash(git push:*)`) is porous anyway: `git -c … push`,
+# `git remote set-url`, or an edit to `.git/config` all sit outside it. A deny
+# rule outranks every allow rule from every source, which is what makes this
+# boundary hold regardless of what the target repo ships.
+#
+# `--strict-mcp-config` with no `--mcp-config` beside it is the same argument
+# one layer out: MCP servers are resolved from the user's `~/.claude.json`,
+# and a git or GitHub server there is a push path that no tool deny mentions.
+# The run needs none of them, so it loads none.
 _PERMISSION_ARGS = (
     "--permission-mode",
     "acceptEdits",
     "--disallowedTools",
-    "Bash(git push:*)",
-    "Bash(gh:*)",
+    "Bash",
+    "--strict-mcp-config",
 )
 
 
