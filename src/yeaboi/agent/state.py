@@ -1816,6 +1816,27 @@ class Dispatch:
     subject: str = ""
 
 
+@dataclass(frozen=True)
+class MessageRef:
+    """Where a delivered message landed, so a later read can find it again.
+
+    An incoming webhook answers a POST with the literal body ``ok`` and no
+    message id, which is the whole reason the two-way lane needs a bot token:
+    ``chat.postMessage`` replies with ``(channel, ts)``, and that pair is the
+    only handle Slack ever gives you on a message you posted. Without it, a
+    reaction can never be attributed back to the run that caused it.
+
+    ``kind`` rather than a Slack-only shape because email could grow a
+    Message-ID and be answered the same way; nothing else has a durable address
+    today, and those channels simply return no ref.
+    """
+
+    kind: str = "slack"
+    channel: str = ""  # Slack channel id
+    ts: str = ""  # Slack message ts — the identity
+    permalink: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------

@@ -189,6 +189,135 @@ class TestSlackDelivery:
         assert SlackDelivery("https://hooks.slack.com/services/x").send(_dispatch()) is False
 
 
+def _webhook_ok(captured: dict):
+    """A urlopen stand-in that records the webhook body and returns 200."""
+    import json
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        captured["body"] = json.loads(req.data.decode())
+        return _Resp()
+
+    return fake_urlopen
+
+
+class TestSlackAsBot:
+    """The token path — the only one that can say where a message landed.
+
+    A webhook answers with the literal body ``ok``, so anything posted through
+    it is permanently unanswerable. The whole two-way lane rests on
+    ``chat.postMessage`` handing back a ``ts``.
+    """
+
+    @staticmethod
+    def _api(monkeypatch, resp):
+        from yeaboi.tools import slack as slack_api
+
+        calls: dict = {}
+
+        def fake_post(channel, text, *, thread_ts="", token="", budget=None):
+            calls.update(channel=channel, text=text, token=token)
+            return resp
+
+        monkeypatch.setattr(slack_api, "post_message", fake_post)
+        return calls
+
+    def test_a_bot_post_keeps_the_receipt(self, monkeypatch):
+        from yeaboi.tools.slack import SlackResponse
+
+        calls = self._api(monkeypatch, SlackResponse(ok=True, data={"channel": "C123", "ts": "1723800000.000100"}))
+        channel = SlackDelivery("https://hooks.slack.com/services/x", bot_token="xoxb-1", channel="C123")
+        assert channel.send(_dispatch()) is True
+        assert calls == {"channel": "C123", "text": "the whole standup", "token": "xoxb-1"}
+        assert (channel.receipt.channel, channel.receipt.ts) == ("C123", "1723800000.000100")
+
+    def test_a_token_without_a_channel_stays_on_the_webhook(self, monkeypatch):
+        # Posting as a bot changes the VISIBLE SENDER and needs the bot invited
+        # to the channel. A token pasted for some unrelated reason must not
+        # silently change how a team's standup looks, or break it outright.
+        posted: dict = {}
+        monkeypatch.setattr(delivery.urllib.request, "urlopen", _webhook_ok(posted))
+        channel = SlackDelivery("https://hooks.slack.com/services/x", bot_token="xoxb-1", channel="")
+        assert channel.send(_dispatch()) is True
+        assert posted["body"] == {"text": "the whole standup"}
+        assert channel.receipt is None
+
+    def test_a_failed_bot_post_falls_back_to_the_webhook(self, monkeypatch):
+        from yeaboi.tools.slack import SlackResponse
+
+        self._api(monkeypatch, SlackResponse(ok=False, error="not_in_channel"))
+        posted: dict = {}
+        monkeypatch.setattr(delivery.urllib.request, "urlopen", _webhook_ok(posted))
+        channel = SlackDelivery("https://hooks.slack.com/services/x", bot_token="xoxb-1", channel="C123")
+        # The standup still lands. It is merely not answerable.
+        assert channel.send(_dispatch()) is True
+        assert posted["body"] == {"text": "the whole standup"}
+        assert channel.receipt is None
+
+    def test_a_stale_receipt_never_survives_a_later_send(self, monkeypatch):
+        from yeaboi.tools.slack import SlackResponse
+
+        self._api(monkeypatch, SlackResponse(ok=True, data={"channel": "C123", "ts": "111.1"}))
+        channel = SlackDelivery("https://hooks.slack.com/services/x", bot_token="xoxb-1", channel="C123")
+        channel.send(_dispatch())
+        self._api(monkeypatch, SlackResponse(ok=False, error="ratelimited"))
+        monkeypatch.setattr(delivery.urllib.request, "urlopen", _webhook_ok({}))
+        channel.send(_dispatch())
+        # Otherwise the next anchor would be written against the previous post.
+        assert channel.receipt is None
+
+
+class TestOnReceipt:
+    """deliver()'s keyword seam — the alternative to widening its return type."""
+
+    def _slack_stub(self, ref):
+        class _Slack(TerminalDelivery):
+            name = "slack"
+            receipt = ref
+
+            def send(self, dispatch):
+                return True
+
+        return _Slack()
+
+    def test_fires_for_a_channel_with_a_durable_address(self, monkeypatch):
+        from yeaboi.agent.state import MessageRef
+
+        stub = self._slack_stub(MessageRef(channel="C1", ts="9.9"))
+        monkeypatch.setattr(delivery, "get_delivery", lambda channel: stub)
+        seen: list[tuple[str, str]] = []
+        results = deliver(_dispatch(), ["slack"], on_receipt=lambda ch, ref: seen.append((ch, ref.ts)))
+        assert results == {"slack": True}
+        assert seen == [("slack", "9.9")]
+
+    def test_never_fires_for_a_channel_that_has_no_address(self, monkeypatch):
+        monkeypatch.setattr(delivery, "get_delivery", lambda channel: TerminalDelivery())
+        seen: list[str] = []
+        deliver(_dispatch(), ["terminal"], on_receipt=lambda ch, ref: seen.append(ch))
+        assert seen == []
+
+    def test_a_recording_failure_never_fails_the_delivery(self, monkeypatch):
+        from yeaboi.agent.state import MessageRef
+
+        stub = self._slack_stub(MessageRef(channel="C1", ts="9.9"))
+        monkeypatch.setattr(delivery, "get_delivery", lambda channel: stub)
+
+        def boom(_ch, _ref):
+            raise RuntimeError("the store is gone")
+
+        # Losing the anchor costs the ability to answer this message. It must
+        # never cost the team the message.
+        assert deliver(_dispatch(), ["slack"], on_receipt=boom) == {"slack": True}
+
+
 class TestEmailDelivery:
     def _mailer(self, **overrides):
         base = {

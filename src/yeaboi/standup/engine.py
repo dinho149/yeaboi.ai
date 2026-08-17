@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -1410,6 +1410,7 @@ def run_standup(
     db_path=None,
     today: date | None = None,
     on_progress=None,
+    on_run_id: Callable[[int], None] | None = None,
 ) -> StandupReport:
     """Run a full standup for ``session_id`` and return the StandupReport.
 
@@ -1441,6 +1442,11 @@ def run_standup(
         on_progress: optional ``callable(str)`` invoked (best-effort) as each
             pipeline phase starts — lets the TUI show live progress while the
             network + LLM calls run on a worker thread.
+        on_run_id: optional ``callable(int)`` fired once, as soon as this run's
+            history row exists. For a caller that has to point back at *this*
+            run later — the Slack lane anchors a delivered post to it — rather
+            than asking for "the latest run" and getting whichever one a
+            concurrent session wrote last.
     """
     from yeaboi.paths import get_db_path
     from yeaboi.sessions import SessionStore
@@ -1899,7 +1905,16 @@ def run_standup(
             status = "partial"
 
     with StandupStore(db_path) as store:
-        store.record_run(report, delivery_status=delivery_status, status=status)
+        run_id = store.record_run(report, delivery_status=delivery_status, status=status)
+        if on_run_id is not None:
+            # Fires once, as soon as the id exists. A caller that needs to point
+            # at this run later — the Slack lane anchoring a post to it — must
+            # not have to ask for "the latest run" afterwards, which is the same
+            # most-recently-touched guess that makes an implicit session unsafe.
+            try:
+                on_run_id(run_id)
+            except Exception:  # noqa: BLE001 — a bookkeeping callback must not kill the run
+                logger.debug("on_run_id callback raised", exc_info=True)
         # Fetched after record_run so today's confidence is part of the trend
         # the HTML export draws.
         run_history = store.get_history(session_id, limit=30)

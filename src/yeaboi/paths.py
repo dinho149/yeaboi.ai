@@ -145,6 +145,7 @@ MCP_LOGS_DIR = LOGS_DIR / "mcp"
 AGENTWATCH_LOGS_DIR = LOGS_DIR / "agentwatch"
 SHIP_LOGS_DIR = LOGS_DIR / "ship"
 CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
+SLACK_LOGS_DIR = LOGS_DIR / "slack"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -476,6 +477,18 @@ def get_ceremonies_log_dir() -> Path:
     """
     CEREMONIES_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return CEREMONIES_LOGS_DIR
+
+
+def get_slack_log_dir() -> Path:
+    """Return the two-way Slack lane's logs directory, creating it if needed.
+
+    Separate from the ceremonies log for the same reason that one is separate
+    from each mode's: the inbound poll runs unattended on its own cadence, and
+    "did anyone's reaction get read?" must not be a question you answer by
+    reading around the runs a human started.
+    """
+    SLACK_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return SLACK_LOGS_DIR
 
 
 def get_ship_log_dir() -> Path:

@@ -860,10 +860,60 @@ def get_slack_webhook_url() -> str:
 
 
 def set_slack_webhook_url(url: str) -> None:
-    """Persist the Slack webhook URL to ~/.scrum-agent/.env and apply it now."""
+    """Persist the Slack webhook URL to ~/.yeaboi/.env and apply it now."""
     config_file = set_config_value("SLACK_WEBHOOK_URL", url)
     os.environ["SLACK_WEBHOOK_URL"] = url
     logger.info("Slack webhook URL persisted to %s", config_file)
+
+
+# ── Slack two-way ──────────────────────────────────────────────────────────
+#
+# A webhook answers a POST with the literal body ``ok`` and no message id, so
+# yeaboi cannot identify its own message — which makes a reaction on it
+# unreadable by construction. Reading anything back therefore needs a bot
+# token, and that is the whole reason these exist beside the webhook rather
+# than replacing it. With no token the webhook path is untouched.
+
+
+def get_slack_bot_token() -> str:
+    """Return the Slack bot token (``xoxb-…``) for two-way, or '' if unset."""
+    return os.getenv("SLACK_BOT_TOKEN", "") or ""
+
+
+def set_slack_bot_token(token: str) -> None:
+    """Persist the Slack bot token to ~/.yeaboi/.env and apply it now."""
+    config_file = set_config_value("SLACK_BOT_TOKEN", token)
+    os.environ["SLACK_BOT_TOKEN"] = token
+    logger.info("Slack bot token persisted to %s", config_file)
+
+
+def get_slack_channel_id() -> str:
+    """Return the Slack channel id (``C…``/``G…``) posts land in, or ''."""
+    return os.getenv("SLACK_CHANNEL_ID", "") or ""
+
+
+def set_slack_channel_id(channel: str) -> None:
+    """Persist the Slack channel id to ~/.yeaboi/.env and apply it now."""
+    config_file = set_config_value("SLACK_CHANNEL_ID", channel)
+    os.environ["SLACK_CHANNEL_ID"] = channel
+    logger.info("Slack channel id persisted to %s", config_file)
+
+
+def slack_two_way_ready() -> tuple[bool, str]:
+    """(ready, why-not) for the two-way path — the one predicate every surface asks.
+
+    Gated on the token AND the channel, never the token alone. Posting via
+    ``chat.postMessage`` changes the *visible sender* — a webhook posts as its
+    configured app, a bot posts as the bot user and must be invited to the
+    channel — so a token pasted for some unrelated reason must not silently
+    change how a team's daily standup looks, or break it with
+    ``not_in_channel``.
+    """
+    if not get_slack_bot_token():
+        return False, "no SLACK_BOT_TOKEN — a webhook cannot read, so two-way needs a bot token"
+    if not get_slack_channel_id():
+        return False, "no SLACK_CHANNEL_ID — set the channel the bot posts in and reads back from"
+    return True, ""
 
 
 def get_smtp_host() -> str:

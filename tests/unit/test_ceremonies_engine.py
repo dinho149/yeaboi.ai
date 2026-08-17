@@ -35,7 +35,7 @@ def no_delivery(monkeypatch):
     sent = []
     monkeypatch.setattr(
         "yeaboi.ceremonies.delivery.deliver",
-        lambda dispatch, channels: (sent.append((dispatch, channels)), {c: True for c in channels})[1],
+        lambda dispatch, channels, **_kw: (sent.append((dispatch, channels)), {c: True for c in channels})[1],
     )
     monkeypatch.setattr("yeaboi.ceremonies.delivery.notify_desktop", lambda t, b: True)
     return sent
@@ -123,7 +123,7 @@ class TestFailuresBecomeRows:
         # The report exists and is in its mode's own history; which channels
         # took it is a column, so a dead webhook is visible without being fatal.
         _fake_engine(monkeypatch)
-        monkeypatch.setattr("yeaboi.ceremonies.delivery.deliver", lambda d, ch: {c: False for c in ch})
+        monkeypatch.setattr("yeaboi.ceremonies.delivery.deliver", lambda d, ch, **_kw: {c: False for c in ch})
         store.save(_ceremony())
         run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db)
         assert run.outcome == "ok"
@@ -352,3 +352,75 @@ class TestCosting:
         run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db)
         assert run.outcome == "ok"
         assert run.cost_usd == 0.0
+
+
+class TestAnchoringADeliveredPost:
+    """A post is only answerable if we wrote down which run it was.
+
+    The anchor is the whole semantic layer of the two-way Slack lane: an
+    inbound reaction resolves through it rather than through anything a human
+    typed. So a ceremony has to carry its run's identity into delivery, and the
+    identity has to be the one this run wrote — not "the latest", which is
+    whichever run a concurrent session touched last.
+    """
+
+    def _slack_receipt(self, monkeypatch, sent):
+        """Stand in for a bot post that came back with a (channel, ts)."""
+        from yeaboi.agent.state import MessageRef
+
+        def _deliver(dispatch, channels, *, on_receipt=None):
+            sent.append((dispatch, channels))
+            if on_receipt is not None:
+                on_receipt("slack", MessageRef(channel="C123", ts="1723800000.000100"))
+            return {c: True for c in channels}
+
+        monkeypatch.setattr("yeaboi.ceremonies.delivery.deliver", _deliver)
+
+    def test_the_anchor_carries_the_run_this_ceremony_just_wrote(self, store, db, monkeypatch):
+        calls = _fake_engine(monkeypatch)
+        # The standup engine reports its history row through on_run_id.
+        original = calls.append
+
+        def _run(**kwargs):
+            original(kwargs)
+            if "on_run_id" in kwargs:
+                kwargs["on_run_id"](77)
+            return StandupReport(date="2026-08-17", team_summary="all good")
+
+        monkeypatch.setattr(engine.catalog, "engine_callable", lambda mode: _run)
+        self._slack_receipt(monkeypatch, [])
+        store.save(_ceremony(channels=("slack",)))
+        engine.run_ceremony("morning-standup", session_id="s1", db_path=db)
+
+        from yeaboi.slack.store import SlackStore
+
+        with SlackStore(db) as slack_store:
+            anchor = slack_store.anchor("C123", "1723800000.000100")
+        assert anchor is not None
+        assert (anchor.run_id, anchor.mode, anchor.artifact_kind) == (77, "standup", "standup")
+        assert (anchor.ceremony, anchor.session_id) == ("morning-standup", "s1")
+
+    def test_a_mode_that_emits_no_run_id_still_anchors(self, store, db, monkeypatch):
+        # An agent-usage post has no editable run to answer. That is an honest
+        # anchor with run_id 0, not a missing one — a ceremony control reaction
+        # still needs somewhere to resolve.
+        _fake_engine(monkeypatch, mode_key="agents-usage", artifact=AgentUsageReport(total_cost_usd=1.0))
+        self._slack_receipt(monkeypatch, [])
+        store.save(_ceremony(name="agent-cost", mode="agents-usage", channels=("slack",)))
+        engine.run_ceremony("agent-cost", session_id="s1", db_path=db)
+
+        from yeaboi.slack.store import SlackStore
+
+        with SlackStore(db) as slack_store:
+            anchor = slack_store.anchor("C123", "1723800000.000100")
+        assert anchor is not None
+        assert (anchor.run_id, anchor.artifact_kind) == (0, "")
+        assert anchor.ceremony == "agent-cost"
+
+    def test_a_run_id_is_only_requested_from_a_mode_that_offers_one(self, store, db, monkeypatch, no_delivery):
+        # Passing on_run_id to an engine that does not take it is a TypeError
+        # dressed up as a failed ceremony.
+        calls = _fake_engine(monkeypatch, mode_key="agents-usage", artifact=AgentUsageReport(total_cost_usd=1.0))
+        store.save(_ceremony(name="agent-cost", mode="agents-usage"))
+        engine.run_ceremony("agent-cost", session_id="s1", db_path=db)
+        assert "on_run_id" not in calls[0]

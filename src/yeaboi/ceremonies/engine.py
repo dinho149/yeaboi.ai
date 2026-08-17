@@ -260,12 +260,22 @@ def run_ceremony(
         spent = _spend_probe()
         error = ""
         dispatch: Dispatch | None = None
+        # The history row this run writes, when its engine can say. Collected
+        # rather than looked up afterwards: "the latest run" is whichever one a
+        # concurrent session touched last, and a post anchored to the wrong run
+        # sends a verdict to the wrong report.
+        artifact_run_id = 0
         try:
             _report(f"running {mode.label}")
             kwargs = catalog.engine_kwargs(mode, ceremony.args, session_id=ceremony.session_id)
             if dry_run:
                 kwargs["dry_run"] = True
+            if mode.emits_run_id:
+                collected: list[int] = []
+                kwargs["on_run_id"] = collected.append
             artifact = catalog.engine_callable(mode)(**kwargs)
+            if mode.emits_run_id and collected:
+                artifact_run_id = collected[0]
             dispatch = catalog.renderer_callable(mode)(artifact)
         except Exception as exc:  # noqa: BLE001 — every failure becomes a row
             error = f"{type(exc).__name__}: {exc}"
@@ -278,7 +288,22 @@ def run_ceremony(
             channels = [c for c in ceremony.channels if not (suppress_terminal and c == CHANNEL_TERMINAL)]
             if channels:
                 _report("delivering")
-                delivery_results = tuple(deliver(dispatch, channels).items())
+
+                def _anchor(_channel: str, ref, _mode=mode, _run_id=artifact_run_id) -> None:
+                    """Record where this post landed, so it can be answered."""
+                    from yeaboi.slack.store import record_post
+
+                    record_post(
+                        ref,
+                        session_id=session_id,
+                        ceremony=name,
+                        mode=_mode.key,
+                        artifact_kind=_mode.artifact_kind,
+                        run_id=_run_id,
+                        db_path=db_path,
+                    )
+
+                delivery_results = tuple(deliver(dispatch, channels, on_receipt=_anchor).items())
             else:
                 logger.info("ceremony %s: nothing to deliver to on this screen", name)
 
