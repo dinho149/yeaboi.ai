@@ -127,17 +127,30 @@
   background: color-mix(in srgb, var(--panel) 72%, transparent);
   backdrop-filter: blur(18px) saturate(180%);
   box-shadow: var(--shadow-1);
-  color: var(--muted);
   font-size: var(--fs-xs);
   pointer-events: none;
   animation: lockNoteIn 220ms var(--ease) both;
 }
+/* The two ways a board goes read-only, in the colours the rest of the board
+   already uses for them: the host's lock is a warning, a past retro is the
+   accent the picker goes when you step back to one. */
+.lockNoteLocked { color: var(--warn); }
+.lockNotePast { color: var(--accent2); }
 @supports not (backdrop-filter: blur(1px)) {
   .lockNote { background: var(--panel); }
 }
 
 @keyframes lockNoteIn {
   from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+.lockNoteOut { animation: lockNoteOut 180ms var(--ease) both; }
+
+@keyframes lockNoteOut {
+  to {
     opacity: 0;
     translate: 0 8px;
   }

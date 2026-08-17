@@ -62,6 +62,7 @@ import { createRetroActions } from './actions';
 import { Board } from './Board';
 import { HostRail } from './HostRail';
 import { useHistory } from './useHistory';
+import { useLinger } from './useLinger';
 import { useSwap } from './useSwap';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
@@ -84,6 +85,9 @@ const NO_ARRIVALS: ReadonlySet<string> = new Set();
 
 /** How long one board takes to leave before the next arrives. Matches the sheet. */
 const SWAP_MS = 170;
+
+/** How long the read-only notice takes to fold away. Matches `lockNoteOut`. */
+const LOCK_NOTE_OUT_MS = 180;
 
 export function App({ boot }: { boot: RetroBoot }) {
   // ── Identity and session ───────────────────────────────────────────────
@@ -135,6 +139,8 @@ export function App({ boot }: { boot: RetroBoot }) {
   // A past retro is read-only in the strongest sense available: it reuses
   // `locked`, so every composer, every control and every drag is already off.
   const readOnly = locked || history.at > 0;
+  // Held on screen for its exit — see the notice at the foot of the board.
+  const lock = useLinger(readOnly, LOCK_NOTE_OUT_MS);
 
   /** What the board is showing, held together so a sprint switch swaps once. */
   const view = useMemo(
@@ -486,8 +492,15 @@ export function App({ boot }: { boot: RetroBoot }) {
           still read, not a headline. `aria-hidden`, because the same sentence is
           in the live region below and announcing it twice is announcing it
           wrong. */}
-      {readOnly ? (
-        <p className={styles['lockNote']} aria-hidden="true">
+      {lock.mounted ? (
+        <p
+          className={cx(
+            styles['lockNote'],
+            locked ? styles['lockNoteLocked'] : styles['lockNotePast'],
+            lock.leaving && styles['lockNoteOut']
+          )}
+          aria-hidden="true"
+        >
           <Icon name={locked ? 'lock' : 'rotate-ccw'} size={13} />
           {locked ? 'The host locked the board' : 'A retro that already happened'}
         </p>
