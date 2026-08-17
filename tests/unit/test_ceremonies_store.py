@@ -116,6 +116,43 @@ class TestSaveRefuses:
         with pytest.raises(ValueError, match="needs a session"):
             store.save(_ceremony(session_id=""))
 
+    @pytest.mark.parametrize("at", ["mornings", "9am", "25:00", "09-30", ""])
+    def test_a_time_nothing_downstream_can_parse(self, store, at):
+        with pytest.raises(ValueError, match="invalid time"):
+            store.save(_ceremony(at=at))
+
+    @pytest.mark.parametrize("weekdays", ["mon-fri", "weekdays", "1-9", "0", "8"])
+    def test_a_weekday_spec_nothing_downstream_can_parse(self, store, weekdays):
+        with pytest.raises(ValueError, match="invalid weekdays"):
+            store.save(_ceremony(weekdays=weekdays))
+
+    def test_a_misspelled_channel(self, store):
+        # The quieter version of no channel at all: the fan-out records it as
+        # undelivered and the run still reports "ok".
+        with pytest.raises(ValueError, match="unknown delivery channel"):
+            store.save(_ceremony(channels=("slak",)))
+
+
+class TestAnUnparseableRowNeverLands:
+    """The reason ``at``/``weekdays`` are validated at the write and not the read.
+
+    Every reading surface re-parses both — the installer, ``cadence_label`` in
+    each listing, ``next_fire`` on the TUI page. A row that stores cleanly and
+    raises on read is not a bad row; it is one that takes the Ceremonies screen
+    down every time it is drawn, recoverable only from the terminal.
+    """
+
+    def test_every_read_surface_survives_whatever_the_store_accepted(self, store):
+        from yeaboi.ceremonies.render import cadence_label, format_ceremonies_rich, next_fire
+        from yeaboi.ceremonies.scheduler import weekday_list
+
+        for at, weekdays in (("00:00", "7"), ("23:59", "1-5"), ("08:15", "1,3,5")):
+            saved = store.save(_ceremony(name=f"c-{weekdays.replace(',', '')}-{at[:2]}", at=at, weekdays=weekdays))
+            assert cadence_label(saved)
+            assert next_fire(saved, None)
+            assert weekday_list(saved.weekdays)
+        assert format_ceremonies_rich(store.list("s1"), {}) is not None
+
 
 class TestLedger:
     def _run(self, **overrides) -> CeremonyRun:
@@ -152,14 +189,24 @@ class TestLedger:
         store.record_run(self._run())
         assert store.last_run("s1", "morning-standup").outcome == "ok"
 
-    def test_month_spend_sums_only_the_runs_that_ran(self, store):
+    def test_month_spend_sums_only_the_runs_that_reached_an_engine(self, store):
         store.record_run(self._run(cost_usd=0.20))
         store.record_run(self._run(cost_usd=0.30))
-        # A run the cap itself declined costs nothing — counting it would latch
-        # the cap permanently the first time it bit.
+        # A run the cap itself declined never reached an engine, so it spent
+        # nothing — counting it would latch the cap permanently the first time
+        # it bit. The 9.99 here cannot occur in practice (a guard returns before
+        # _spend_probe is even taken); it is here so the exclusion is proven by
+        # something other than a zero.
         store.record_run(self._run(outcome="skipped_over_cap", cost_usd=9.99))
-        store.record_run(self._run(outcome="failed", cost_usd=5.00))
         assert store.month_spend("s1", "morning-standup", "2026-08") == pytest.approx(0.50)
+
+    def test_a_failed_run_still_counts_against_the_cap(self, store):
+        # The expensive direction. An engine that makes its LLM call and then
+        # raises on the way out has already spent the money; excluding it lets a
+        # ceremony burn its cap every day forever with the cap seeing nothing.
+        store.record_run(self._run(cost_usd=0.20))
+        store.record_run(self._run(outcome="failed", cost_usd=5.00))
+        assert store.month_spend("s1", "morning-standup", "2026-08") == pytest.approx(5.20)
 
     def test_month_spend_ignores_other_months_and_ceremonies(self, store):
         store.record_run(self._run(cost_usd=0.40))

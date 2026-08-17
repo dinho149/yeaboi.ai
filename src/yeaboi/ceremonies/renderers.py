@@ -68,14 +68,23 @@ def _money(value: float) -> str:
 
 
 def standup_dispatch(report: StandupReport) -> Dispatch:
-    """The daily standup. Body is the existing plaintext renderer, verbatim."""
+    """The daily standup, in the exact shape it was already being delivered in.
+
+    Body is the existing plaintext renderer, verbatim. The title and subject are
+    the two strings the pre-``Dispatch`` channels built for themselves, kept
+    apart because they were never the same string: the desktop banner led with
+    the confidence label, and the email subject carried date *and* label. Inbox
+    filters and mail threading are built on the second one.
+    """
     from yeaboi.standup.render import format_standup_plaintext
 
     label = report.confidence_label or report.date
+    subject = f"Daily Standup — {report.date} ({report.confidence_label})" if report.date else "Daily Standup"
     return Dispatch(
-        title=f"Daily Standup — {report.date}" if report.date else "Daily Standup",
-        summary=report.team_summary or report.confidence_rationale or f"Standup ready ({label}).",
+        title=f"Daily Standup — {label}" if label else "Daily Standup",
+        summary=report.team_summary or report.confidence_rationale or "Standup ready.",
         body=format_standup_plaintext(report),
+        subject=subject,
     )
 
 

@@ -258,3 +258,24 @@ def engine_callable(mode: CeremonyMode) -> Callable:
 def renderer_callable(mode: CeremonyMode) -> Callable:
     """Import and return the mode's artifact → Dispatch renderer."""
     return _resolve(mode.renderer)
+
+
+def accepts_dry_run(mode: CeremonyMode) -> bool:
+    """Whether this mode's engine takes a ``dry_run`` keyword.
+
+    Asked rather than assumed, because the wrong answer is expensive in both
+    directions. Passing ``dry_run=True`` to an engine without the parameter is a
+    ``TypeError`` recorded as a failed run; *not* passing it and calling the
+    engine anyway is a dry run that makes real LLM calls and posts to the real
+    Slack webhook. ``reporting.run_delivery_report`` is currently the one
+    catalogued engine with no such parameter, so the caller must be able to tell
+    the difference and decline.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(engine_callable(mode)).parameters
+    except (TypeError, ValueError):  # a builtin or C callable — assume not
+        logger.warning("ceremony mode %s: engine signature unreadable", mode.key)
+        return False
+    return "dry_run" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())

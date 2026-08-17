@@ -1801,11 +1801,19 @@ class Dispatch:
     payload that replaced it: ``summary`` is the one-liner a desktop
     notification can hold, ``body`` is the plaintext Slack/email/terminal
     version.
+
+    ``subject`` exists because an email subject line is not a notification
+    title, even when they carry the same two facts. People build inbox filters
+    and threading on subject lines, so a mode that has been mailing one shape
+    for releases does not get to change it because a desktop banner reads better
+    shorter. Empty means "use the title", which is right for every mode with no
+    opinion.
     """
 
     title: str = ""
     summary: str = ""
     body: str = ""
+    subject: str = ""
 
 
 # ---------------------------------------------------------------------------

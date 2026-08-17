@@ -37,24 +37,38 @@ def local_stamp(fired_at: str, *, with_date: bool = True) -> str:
     return moment.strftime("%Y-%m-%d %H:%M" if with_date else "%m-%d %H:%M")
 
 
-# Outcome → (glyph, style). A skip is amber, not red: it is a decision the
+# Outcome → (glyph, tone). A skip is amber, not red: it is a decision the
 # guards made, and colouring it like a failure teaches people to ignore both.
-_OUTCOME_STYLE = {
-    "ok": ("✓", "green"),
-    "failed": ("✗", "red"),
-    "skipped_stale": ("⏱", "yellow"),
-    "skipped_over_cap": ("$", "yellow"),
-    "skipped_paused": ("⏸", "yellow"),
+#
+# A *tone* rather than a colour, and public rather than private, because two
+# surfaces read this and only one of them has a palette. The CLI renders to a
+# bare console and wants Rich's own colour names; the TUI screen has a Theme and
+# must not spell a colour at all (tui-standards rule 2). Naming the meaning and
+# letting each side resolve it is the same split the web payloads use.
+OUTCOME_MARKS: dict[str, tuple[str, str]] = {
+    "ok": ("✓", "good"),
+    "failed": ("✗", "bad"),
+    "skipped_stale": ("⏱", "warn"),
+    "skipped_over_cap": ("$", "warn"),
+    "skipped_paused": ("⏸", "warn"),
 }
+
+# What each tone means to a console with no Theme behind it.
+_CONSOLE_TONE = {"good": "green", "warn": "yellow", "bad": "red"}
+
+
+def outcome_mark(outcome: str) -> tuple[str, str]:
+    """(glyph, tone) for a run outcome; an unrecognised one is a dim question mark."""
+    return OUTCOME_MARKS.get(outcome, ("?", "dim"))
 
 
 def outcome_chip(run: CeremonyRun | None) -> Text:
     """One-glance verdict for a ceremony's most recent run."""
     if run is None:
         return Text("— never run", style="dim")
-    glyph, style = _OUTCOME_STYLE.get(run.outcome, ("?", "dim"))
+    glyph, tone = outcome_mark(run.outcome)
     when = local_stamp(run.fired_at)
-    return Text(f"{glyph} {run.outcome} · {when}", style=style)
+    return Text(f"{glyph} {run.outcome} · {when}", style=_CONSOLE_TONE.get(tone, "dim"))
 
 
 def cadence_label(ceremony: Ceremony) -> str:
@@ -102,7 +116,8 @@ def format_history_rich(runs: list[CeremonyRun]) -> Group:
     table.add_column("Delivered")
     table.add_column("Detail")
     for run in runs:
-        glyph, style = _OUTCOME_STYLE.get(run.outcome, ("?", "dim"))
+        glyph, tone = outcome_mark(run.outcome)
+        style = _CONSOLE_TONE.get(tone, "dim")
         delivered = ", ".join(f"{ch}{'' if ok else ' ✗'}" for ch, ok in run.delivery) or "—"
         table.add_row(
             local_stamp(run.fired_at),

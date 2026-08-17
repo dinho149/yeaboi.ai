@@ -24,7 +24,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.agent.state import Ceremony, CeremonyRun
-from yeaboi.ceremonies.render import _OUTCOME_STYLE, local_stamp, next_fire
+from yeaboi.ceremonies.render import local_stamp, next_fire, outcome_mark
 from yeaboi.ui.shared._components import (
     CEREMONIES_THEME,
     PAD,
@@ -56,7 +56,9 @@ def _cell(text: str, style: str) -> Text:
 def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
     if run is None:
         return _cell("never run", theme.dim)
-    glyph, style = _OUTCOME_STYLE.get(run.outcome, ("?", theme.dim))
+    glyph, tone = outcome_mark(run.outcome)
+    # The table names a tone; the palette decides what it looks like.
+    style = getattr(theme, tone, theme.dim)
     cell = Text(no_wrap=True, overflow="ellipsis")
     cell.append(f"{glyph} ", style=style)
     # The verdict leads and the timestamp follows, because this column

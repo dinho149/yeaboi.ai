@@ -166,6 +166,14 @@ class CeremonyStore:
         a future importer all write through this one method, and a name that is
         rejected in one place and accepted in another is how a plist ends up
         named after something nobody can remove.
+
+        **Everything the reading surfaces will later parse is validated here**,
+        because a row that stores cleanly and crashes on read is worse than a
+        rejected write. ``at`` and ``weekdays`` are re-parsed by the installer,
+        by ``cadence_label`` in every listing and by ``next_fire`` on the TUI
+        page — so an unparseable one is not a bad row, it is a row that takes
+        the Ceremonies screen down every time it is drawn, recoverable only by
+        removing it from the terminal.
         """
         if not ceremony.session_id:
             raise ValueError("a ceremony needs a session")
@@ -175,11 +183,32 @@ class CeremonyStore:
                 "(it becomes a scheduled-job label and a filename)"
             )
         from yeaboi.ceremonies.catalog import lookup, refuse_reason
+        from yeaboi.ceremonies.delivery import ALL_CHANNELS
+        from yeaboi.ceremonies.scheduler import parse_time, weekday_list
 
         if lookup(ceremony.mode) is None:
             raise ValueError(refuse_reason(ceremony.mode))
         if not ceremony.channels:
             raise ValueError("a ceremony with no delivery channel would run and tell nobody")
+        # A misspelled channel is the quieter version of no channel at all: the
+        # fan-out records it as undelivered and the run still reports "ok".
+        unknown = [c for c in ceremony.channels if c not in ALL_CHANNELS]
+        if unknown:
+            raise ValueError(
+                f"unknown delivery channel(s) {', '.join(map(repr, unknown))} — choose from {', '.join(ALL_CHANNELS)}"
+            )
+        try:
+            parse_time(ceremony.at)
+        except ValueError as exc:
+            raise ValueError(f"invalid time {ceremony.at!r} — use HH:MM in 24-hour form") from exc
+        try:
+            days = weekday_list(ceremony.weekdays)
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid weekdays {ceremony.weekdays!r} — use numbers Mon=1..Sun=7, e.g. '1-5' or '1,3,5'"
+            ) from exc
+        if any(day < 1 or day > 7 for day in days):
+            raise ValueError(f"invalid weekdays {ceremony.weekdays!r} — days run Mon=1 to Sun=7")
 
         existing = self.get(ceremony.session_id, ceremony.name)
         stamped = replace(
@@ -327,13 +356,21 @@ class CeremonyStore:
     def month_spend(self, session_id: str, ceremony: str, month: str = "") -> float:
         """This ceremony's recorded spend in ``month`` (``YYYY-MM``, default now).
 
-        Only ``ok`` runs count: a run the cap itself declined costs nothing, and
-        counting it would make the cap latch permanently the first time it bit.
+        Both outcomes that reach an engine count. A guard declines *before* the
+        engine is called, so a ``skipped_*`` row spent nothing and is excluded —
+        counting one would let the cap latch permanently the first time it bit,
+        on money that was never spent.
+
+        ``failed`` is inside the sum, and that is the half worth writing down:
+        an engine that makes its LLM call and then raises on the way out — a
+        renderer change, a dead export path — has already spent the money.
+        Filtering to ``ok`` would let a ceremony burn its cap every day forever
+        without the cap ever seeing a cent.
         """
         target = month or month_key(_now())
         row = self._conn.execute(
             "SELECT COALESCE(SUM(cost_usd), 0) FROM ceremony_runs "
-            "WHERE session_id = ? AND ceremony = ? AND outcome = 'ok' AND fired_at LIKE ?",
+            "WHERE session_id = ? AND ceremony = ? AND outcome IN ('ok', 'failed') AND fired_at LIKE ?",
             (session_id, ceremony, f"{target}%"),
         ).fetchone()
         return float(row[0] or 0.0)

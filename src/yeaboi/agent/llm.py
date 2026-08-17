@@ -152,7 +152,7 @@ def track_usage(response, *, model: str | None = None, duration_ms: float | None
             from yeaboi.sessions import SessionStore
 
             provider = get_llm_provider()
-            recorded_model = model or get_llm_model() or _PROVIDER_DEFAULTS.get(provider, "")
+            recorded_model = resolve_model_name(model)
             from yeaboi.paths import get_db_path
 
             db = get_db_path()
@@ -234,6 +234,19 @@ _ANALYSIS_FAST_MODELS: dict[str, str] = {
 
 # Kept for backward compatibility — callers that imported DEFAULT_MODEL still work.
 DEFAULT_MODEL = _PROVIDER_DEFAULTS["anthropic"]
+
+
+def resolve_model_name(model: str | None = "") -> str:
+    """The model id a call will actually use: explicit → ``LLM_MODEL`` → provider default.
+
+    The three-step fallback was spelled out at each call site, which is fine
+    until somewhere outside this module needs the same answer. Anything pricing
+    a call has to resolve it the same way get_llm() does, because ``LLM_MODEL``
+    is unset in the common case and the empty string prices at the fallback
+    rate.
+    """
+    return model or get_llm_model() or _PROVIDER_DEFAULTS.get(get_llm_provider(), "")
+
 
 # Output-token cap requested from Ollama. Single-sourced: get_llm() passes it
 # as num_predict, and the context-budget maths (warn_if_context_overflow,
@@ -327,7 +340,7 @@ def get_llm(
         return override
 
     provider = get_llm_provider()
-    resolved_model = model or get_llm_model() or _PROVIDER_DEFAULTS.get(provider, "")
+    resolved_model = resolve_model_name(model)
     logger.debug("get_llm: provider=%s, model=%s, temperature=%s", provider, resolved_model, temperature)
 
     # Newer Claude models reject `temperature` by presence (400 "temperature is

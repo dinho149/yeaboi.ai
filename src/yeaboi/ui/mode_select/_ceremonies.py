@@ -66,11 +66,15 @@ def _load(session_id: str) -> tuple[list[Ceremony], dict, dict, list[str]]:
     return declared, last, spend, drift
 
 
-def _run_now(console: Console, live, session_id: str, ceremony: Ceremony) -> str:
+def _run_now(console: Console, live, session_id: str, ceremony: Ceremony, dry_run: bool = False) -> str:
     """Fire one ceremony on a worker thread, repainting while it runs.
 
     On a thread because a real run makes LLM and network calls for tens of
     seconds, and a frozen terminal is indistinguishable from a crashed one.
+
+    ``suppress_terminal`` because of that same thread: the main thread is
+    repainting a ``Live`` while this runs, and the terminal channel's whole job
+    is printing to the screen it is repainting.
     """
     from yeaboi.ceremonies.engine import run_ceremony
 
@@ -78,7 +82,7 @@ def _run_now(console: Console, live, session_id: str, ceremony: Ceremony) -> str
 
     def _work() -> None:
         try:
-            outcome["run"] = run_ceremony(ceremony.name, session_id=session_id)
+            outcome["run"] = run_ceremony(ceremony.name, session_id=session_id, dry_run=dry_run, suppress_terminal=True)
         except Exception as exc:  # noqa: BLE001 — surfaced as a message, never a traceback
             logger.error("ceremonies page: %s raised", ceremony.name, exc_info=True)
             outcome["error"] = f"{type(exc).__name__}: {exc}"
@@ -108,8 +112,21 @@ def _run_now(console: Console, live, session_id: str, ceremony: Ceremony) -> str
     return f"{ceremony.name}: {run.outcome} — {run.error or run.detail}"
 
 
-def run_ceremonies_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
-    """Enter Ceremonies from the menu; returns when the user backs out."""
+def run_ceremonies_page(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    dry_run: bool = False,
+) -> None:
+    """Enter Ceremonies from the menu; returns when the user backs out.
+
+    ``dry_run`` is threaded through to the engine like every other page's is.
+    Without it ``make run-dry`` — documented as "no LLM calls" — would make real
+    ones the moment somebody pressed Run now, and post the result to the real
+    Slack webhook.
+    """
     session_id = _session()
     ceremonies, last, spend, drift = _load(session_id)
     logger.info("Ceremonies page opened: %d declared in session %s", len(ceremonies), session_id or "(none)")
@@ -170,7 +187,7 @@ def run_ceremonies_page(console: Console, live, read_key, frame_time: float, sup
             ceremony = ceremonies[selected]
             if choice == "Run now":
                 logger.info("Ceremonies: running %s on request", ceremony.name)
-                message = _run_now(console, live, session_id, ceremony)
+                message = _run_now(console, live, session_id, ceremony, dry_run)
             else:
                 enable = choice == "Resume"
                 logger.info("Ceremonies: %s %s", "resuming" if enable else "pausing", ceremony.name)

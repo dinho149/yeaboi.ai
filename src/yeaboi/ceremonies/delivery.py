@@ -165,7 +165,7 @@ class EmailDelivery(NotificationDelivery):
             logger.warning("delivery[email] skipped — SMTP host or recipients not configured")
             return False
         msg = EmailMessage()
-        msg["Subject"] = dispatch.title or "yeaboi"
+        msg["Subject"] = dispatch.subject or dispatch.title or "yeaboi"
         msg["From"] = self.sender
         msg["To"] = ", ".join(self.recipients)
         msg.set_content(dispatch.body or dispatch.summary)

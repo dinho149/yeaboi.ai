@@ -74,9 +74,9 @@ def _save(db, **overrides) -> Ceremony:
         return store.save(Ceremony(**{**base, **overrides}))
 
 
-def _run(keys) -> _Live:
+def _run(keys, dry_run: bool = False) -> _Live:
     live = _Live()
-    _ceremonies.run_ceremonies_page(_Console(), live, keys, 0.05, True)
+    _ceremonies.run_ceremonies_page(_Console(), live, keys, 0.05, True, dry_run=dry_run)
     return live
 
 
@@ -203,7 +203,34 @@ class TestRunNow:
         # Never "scheduled": the guards answer questions an unattended fire
         # raises, and a human pressing Run now at 14:00 means it.
         assert called.get("scheduled") in (None, False)
+        # The main thread repaints a Live every 100 ms while this runs, and the
+        # terminal channel's whole job is printing to that same screen.
+        assert called["suppress_terminal"] is True
         assert "ran ($0.12)" in _render(live.frames[-1])
+
+    def test_dry_run_reaches_the_engine(self, env, monkeypatch):
+        # `make run-dry` is documented as "no LLM calls". Every other page
+        # threads dry_run through; this one is reached by a keycap rather than a
+        # card, which is exactly how it got missed. Without it, Run now makes
+        # real LLM calls and posts to the real Slack webhook.
+        _save(env["db"])
+        called = {}
+        monkeypatch.setattr(
+            "yeaboi.ceremonies.engine.run_ceremony",
+            lambda name, **k: (called.update(k), CeremonyRun(ceremony=name, outcome="ok"))[1],
+        )
+        _run(_keys("enter", "esc"), dry_run=True)
+        assert called["dry_run"] is True
+
+    def test_a_live_session_does_not_dry_run(self, env, monkeypatch):
+        _save(env["db"])
+        called = {}
+        monkeypatch.setattr(
+            "yeaboi.ceremonies.engine.run_ceremony",
+            lambda name, **k: (called.update(k), CeremonyRun(ceremony=name, outcome="ok"))[1],
+        )
+        _run(_keys("enter", "esc"))
+        assert called["dry_run"] is False
 
     def test_a_declined_run_reports_its_reason(self, env, monkeypatch):
         _save(env["db"])

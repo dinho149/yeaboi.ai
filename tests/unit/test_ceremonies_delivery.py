@@ -68,6 +68,17 @@ class TestStandupBytesAreUnchanged:
     def test_a_standup_with_nothing_to_say_still_says_something(self):
         assert standup_dispatch(StandupReport(date="2026-07-10")).summary
 
+    def test_the_email_subject_is_the_one_it_always_was(self):
+        # People build inbox filters and threading on subject lines, so this is
+        # the string in the whole refactor that is least free to drift. It is
+        # deliberately not the desktop title — those were never the same string.
+        assert standup_dispatch(_report()).subject == "Daily Standup — 2026-07-10 (At risk)"
+
+    def test_the_desktop_title_is_the_one_it_always_was(self):
+        # confidence_label leading, falling back to the date.
+        assert standup_dispatch(_report()).title == "Daily Standup — At risk"
+        assert standup_dispatch(StandupReport(date="2026-07-10")).title == "Daily Standup — 2026-07-10"
+
 
 class TestTerminalDelivery:
     def test_prints_the_body_and_succeeds(self, capsys):
@@ -200,6 +211,17 @@ class TestEmailDelivery:
         msg = smtp.send_message.call_args[0][0]
         assert msg["Subject"] == "Daily Standup — 2026-07-10"
         assert "the whole standup" in msg.get_content()
+
+    def test_a_dispatch_with_its_own_subject_wins_over_the_title(self, monkeypatch):
+        # An email subject is not a notification title even when it carries the
+        # same facts, and the standup has been mailing one shape for releases.
+        smtp = MagicMock()
+        smtp.__enter__ = lambda s: s
+        smtp.__exit__ = lambda s, *e: False
+        smtp.has_extn.return_value = True
+        monkeypatch.setattr(delivery.smtplib, "SMTP", MagicMock(return_value=smtp))
+        self._mailer().send(_dispatch(title="banner text", subject="Daily Standup — 2026-07-10 (At risk)"))
+        assert smtp.send_message.call_args[0][0]["Subject"] == "Daily Standup — 2026-07-10 (At risk)"
 
     def test_no_recipients_is_a_handled_failure(self):
         assert self._mailer(recipients=[]).send(_dispatch()) is False

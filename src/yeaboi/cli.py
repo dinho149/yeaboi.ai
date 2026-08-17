@@ -1989,11 +1989,6 @@ def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
     with CeremonyStore() as store:
         if command == "list":
             declared = store.list(session_id)
-            if to_json:
-                print(json.dumps([asdict(c) for c in declared], indent=2))
-                return 0
-            last = {c.name: store.last_run(session_id, c.name) for c in declared}
-            console.print(render.format_ceremonies_rich(declared, last))
             # The store and the operating system are two different things, and
             # the gap between them is invisible until something does not fire.
             # Three states, not two: "installed but paused" is a bug, whereas
@@ -2001,12 +1996,35 @@ def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
             installed = set(scheduler.installed_ceremonies(session_id))
             known = {c.name for c in declared}
             expected = {c.name for c in declared if c.enabled}
-            for orphan in sorted(installed - known):
-                console.print(f"[yellow]![/yellow] a job is installed for {orphan!r}, which is not declared here")
-            for zombie in sorted((installed & known) - expected):
-                console.print(f"[yellow]![/yellow] {zombie!r} is paused but its job is still installed")
-            for missing in sorted(expected - installed):
-                console.print(f"[yellow]![/yellow] {missing!r} is declared but has no scheduled job — re-add it")
+            drift = [
+                f"a job is installed for {orphan!r}, which is not declared here" for orphan in sorted(installed - known)
+            ]
+            drift += [
+                f"{zombie!r} is paused but its job is still installed"
+                for zombie in sorted((installed & known) - expected)
+            ]
+            drift += [
+                f"{missing!r} is declared but has no scheduled job — re-add it"
+                for missing in sorted(expected - installed)
+            ]
+            if to_json:
+                # Drift and the OS's own view ride along, because a scripted
+                # caller is exactly who cannot notice a morning going quiet.
+                print(
+                    json.dumps(
+                        {
+                            "ceremonies": [asdict(c) for c in declared],
+                            "installed_jobs": sorted(installed),
+                            "drift": drift,
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
+            last = {c.name: store.last_run(session_id, c.name) for c in declared}
+            console.print(render.format_ceremonies_rich(declared, last))
+            for line in drift:
+                console.print(f"[yellow]![/yellow] {line}")
             return 0
 
         if command == "history":

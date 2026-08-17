@@ -144,7 +144,18 @@ class TestListAndDrift:
         capsys.readouterr()  # drop the add's human output
         _run("list", "--format", "json")
         captured = capsys.readouterr()
-        assert json.loads(captured.out)[0]["name"] == "morning-standup"
+        assert json.loads(captured.out)["ceremonies"][0]["name"] == "morning-standup"
+
+    def test_json_carries_the_drift_the_text_path_reports(self, env, capsys):
+        # A scripted caller is exactly who cannot notice a morning going quiet,
+        # so the one gap the feature exists to surface must not be text-only.
+        env["installed"]["ghost"] = "09:00 1-5"
+        _add()
+        capsys.readouterr()
+        _run("list", "--format", "json")
+        payload = json.loads(capsys.readouterr().out)
+        assert "ghost" in payload["installed_jobs"]
+        assert any("ghost" in line for line in payload["drift"])
 
 
 class TestRunExitCodes:

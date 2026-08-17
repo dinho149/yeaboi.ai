@@ -28,12 +28,12 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from yeaboi.agent.state import Ceremony, CeremonyRun, Dispatch
 from yeaboi.ceremonies import catalog
-from yeaboi.ceremonies.scheduler import parse_time
+from yeaboi.ceremonies.scheduler import parse_time, weekday_list
 from yeaboi.ceremonies.store import CeremonyStore
 from yeaboi.logging_setup import mode_log
 
@@ -42,6 +42,11 @@ logger = logging.getLogger(__name__)
 
 class CeremonyNotFoundError(LookupError):
     """No ceremony by that name in this session."""
+
+
+# How far ahead of its slot a fire may be and still count as on time. Covers
+# clock skew, not a scheduler that woke up on the wrong day.
+_EARLY_GRACE = timedelta(minutes=5)
 
 
 def _spend_probe() -> Callable[[], float]:
@@ -55,9 +60,11 @@ def _spend_probe() -> Callable[[], float]:
 
     An estimate, and labelled one: the counters are process-global totals with
     no per-model split, so a run that switched models mid-way is priced at the
-    configured one.
+    configured one — and a concurrent LLM call elsewhere in the process (the TUI
+    running a ceremony on a worker thread while the user does something else)
+    lands on this ceremony's bill.
     """
-    from yeaboi.agent.llm import get_llm_model, get_llm_provider, get_usage_stats
+    from yeaboi.agent.llm import get_llm_provider, get_usage_stats, resolve_model_name
     from yeaboi.pricing import estimate_cost
 
     before = get_usage_stats()
@@ -66,7 +73,10 @@ def _spend_probe() -> Callable[[], float]:
         after = get_usage_stats()
         try:
             return estimate_cost(
-                get_llm_model() or "",
+                # The provider's default, not "", when LLM_MODEL is unset — which
+                # is the common case. An empty name prices at the fallback rate,
+                # coincidentally right for Anthropic and wrong for everyone else.
+                resolve_model_name(),
                 input_tokens=max(0, after.get("input_tokens", 0) - before.get("input_tokens", 0)),
                 output_tokens=max(0, after.get("output_tokens", 0) - before.get("output_tokens", 0)),
                 provider=get_llm_provider() or "",
@@ -82,14 +92,46 @@ def _minutes_late(ceremony: Ceremony, now: datetime) -> float:
     """How far past its declared slot this fire is, in minutes (negative = early).
 
     Local time throughout, because that is what launchd and cron fire in.
+
+    Measured against the most recent *scheduled* occurrence of the slot, not
+    against today's clock time. The case this exists for is a laptop asleep
+    across the slot, and that sleep does not politely end before midnight: a
+    09:00 Monday job that launchd coalesces and fires at 07:00 Tuesday is 22
+    hours late, but comparing it to Tuesday's own 09:00 makes it look two hours
+    *early* and waves a day-old standup straight through. Weekdays are part of
+    the answer too — a Monday-only report woken on Wednesday is measured from
+    Monday.
     """
     try:
         hour, minute = parse_time(ceremony.at)
     except ValueError:
         logger.warning("ceremony %s has an unparseable time %r", ceremony.name, ceremony.at)
         return 0.0
-    slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return (now - slot).total_seconds() / 60.0
+    try:
+        days = {d for d in weekday_list(ceremony.weekdays) if 1 <= d <= 7}
+    except ValueError:
+        logger.warning("ceremony %s has an unparseable weekday spec %r", ceremony.name, ceremony.weekdays)
+        days = set()
+
+    todays = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # A fire that just beats its own slot is early, never stale — reading it as
+    # late for the previous occurrence is the one way this guard could suppress
+    # a run that is perfectly on time. The window is minutes wide on purpose: a
+    # scheduler firing *hours* early is not an early fire, it is a late one for
+    # the occurrence before, which is precisely the wake-up case above.
+    if todays - _EARLY_GRACE <= now < todays and (not days or now.isoweekday() in days):
+        return (now - todays).total_seconds() / 60.0
+
+    # Walk back to the latest occurrence at or before now. A week covers every
+    # spec, since weekdays repeat every seven days.
+    for back in range(8):
+        candidate = todays - timedelta(days=back)
+        if candidate > now:
+            continue
+        if days and candidate.isoweekday() not in days:
+            continue
+        return (now - candidate).total_seconds() / 60.0
+    return 0.0
 
 
 def _guard(ceremony: Ceremony, now: datetime, store: CeremonyStore) -> tuple[str, str]:
@@ -139,6 +181,7 @@ def run_ceremony(
     db_path: Path | None = None,
     now: datetime | None = None,
     dry_run: bool = False,
+    suppress_terminal: bool = False,
     on_progress: Callable[[str], None] | None = None,
 ) -> CeremonyRun:
     """Fire one declared ceremony. Returns the ledger row it wrote.
@@ -148,6 +191,14 @@ def run_ceremony(
     row, because the alternative is a traceback in a log file nobody opens.
     ``CeremonyNotFoundError`` is the one exception, and it is raised before anything
     has happened: there is nothing to record a run against.
+
+    ``suppress_terminal`` drops the terminal channel from the fan-out, for a
+    caller that already owns the screen. The TUI runs a ceremony on a worker
+    thread while the main thread repaints a ``Live`` every 100 ms, so a channel
+    whose whole job is printing to stdout would shred the display — and terminal
+    is the default channel. The dropped channel is absent from the recorded
+    ``delivery`` tuple rather than recorded as a failure, because it did not
+    fail; it was never asked.
     """
     moment = now or datetime.now()
 
@@ -194,6 +245,17 @@ def run_ceremony(
                 CeremonyRun(ceremony=name, session_id=session_id, outcome="failed", scheduled=scheduled, error=reason)
             )
 
+        if dry_run and not catalog.accepts_dry_run(mode):
+            # Declining is the only safe answer. Calling the engine without the
+            # flag would make a "dry" run spend money and post to Slack, and
+            # passing a flag it does not take is a TypeError dressed up as a
+            # failure of the ceremony rather than of the request.
+            reason = f"{mode.label} cannot be dry-run — its engine takes no dry_run parameter"
+            logger.warning("ceremony %s: %s", name, reason)
+            return store.record_run(
+                CeremonyRun(ceremony=name, session_id=session_id, outcome="failed", scheduled=scheduled, error=reason)
+            )
+
         started = time.monotonic()
         spent = _spend_probe()
         error = ""
@@ -211,10 +273,14 @@ def run_ceremony(
 
         delivery_results: tuple[tuple[str, bool], ...] = ()
         if dispatch is not None and not dry_run:
-            _report("delivering")
-            from yeaboi.ceremonies.delivery import deliver
+            from yeaboi.ceremonies.delivery import CHANNEL_TERMINAL, deliver
 
-            delivery_results = tuple(deliver(dispatch, list(ceremony.channels)).items())
+            channels = [c for c in ceremony.channels if not (suppress_terminal and c == CHANNEL_TERMINAL)]
+            if channels:
+                _report("delivering")
+                delivery_results = tuple(deliver(dispatch, channels).items())
+            else:
+                logger.info("ceremony %s: nothing to deliver to on this screen", name)
 
         # Delivery failing does not make the run a failure: the report exists and
         # is in its mode's own history. Which channels took it is a column, so a

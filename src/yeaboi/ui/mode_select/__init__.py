@@ -12346,7 +12346,7 @@ def select_mode(
                     logger.info("ceremonies opened from mode select")
                     from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
 
-                    run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                     select_time = time.monotonic()
                 elif key == "f":

@@ -137,6 +137,64 @@ class TestFailuresBecomeRows:
         assert "standup" in run.error
 
 
+class TestDryRun:
+    def test_an_engine_without_a_dry_run_parameter_is_declined(self, store, db, monkeypatch, no_delivery):
+        # Both alternatives are wrong: passing the flag is a TypeError recorded
+        # as the ceremony's failure, and *not* passing it makes a "dry" run
+        # spend money and post to the real webhook.
+        _fake_engine(monkeypatch)
+        monkeypatch.setattr(engine.catalog, "accepts_dry_run", lambda mode: False)
+        store.save(_ceremony())
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, dry_run=True)
+        assert run.outcome == "failed"
+        assert "dry_run" in run.error
+        assert no_delivery == []
+
+    def test_the_gate_reflects_the_real_signatures(self):
+        # The catalogued engine that has no dry_run today. If reporting gains
+        # one this flips, which is a fact worth failing on rather than drifting.
+        from yeaboi.ceremonies import catalog
+
+        assert catalog.accepts_dry_run(catalog.lookup("standup")) is True
+        assert catalog.accepts_dry_run(catalog.lookup("report")) is False
+
+    def test_a_dry_run_never_delivers(self, store, db, monkeypatch, no_delivery):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony())
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, dry_run=True)
+        assert run.outcome == "ok"
+        assert no_delivery == []
+
+
+class TestSuppressTerminal:
+    """The TUI repaints a Live while the run works on a thread, and the terminal
+    channel's whole job is printing to that same screen."""
+
+    def test_the_terminal_channel_is_dropped_not_failed(self, store, db, monkeypatch, no_delivery):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(channels=("terminal", "slack")))
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, suppress_terminal=True)
+        assert no_delivery[0][1] == ["slack"]
+        # Absent, not recorded as a failure: it did not fail, it was never asked.
+        assert dict(run.delivery) == {"slack": True}
+
+    def test_a_terminal_only_ceremony_delivers_nowhere_rather_than_shredding_the_screen(
+        self, store, db, monkeypatch, no_delivery
+    ):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(channels=("terminal",)))
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, suppress_terminal=True)
+        assert run.outcome == "ok"
+        assert no_delivery == []
+        assert run.delivery == ()
+
+    def test_a_scheduled_run_still_prints(self, store, db, monkeypatch, no_delivery):
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(channels=("terminal",)))
+        engine.run_ceremony("morning-standup", session_id="s1", db_path=db, now=datetime(2026, 8, 17, 9, 0))
+        assert no_delivery[0][1] == ["terminal"]
+
+
 class TestScheduledGuards:
     def _at(self, hhmm: str) -> datetime:
         hour, minute = (int(p) for p in hhmm.split(":"))
@@ -169,6 +227,37 @@ class TestScheduledGuards:
         _fake_engine(monkeypatch)
         store.save(_ceremony(stale_after_min=120))
         run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, now=self._at("14:00"))
+        assert run.outcome == "ok"
+
+    def test_a_fire_that_wakes_the_next_morning_is_still_stale(self, store, db, monkeypatch, no_delivery):
+        # The case the guard exists for does not politely end before midnight.
+        # A 09:00 Monday job coalesced by launchd and fired at 07:00 Tuesday is
+        # 22 hours late; measured against *Tuesday's* 09:00 it looks two hours
+        # early and a day-old standup sails into the team channel.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(stale_after_min=120))
+        tuesday_dawn = datetime(2026, 8, 18, 7, 0)
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, scheduled=True, now=tuesday_dawn)
+        assert run.outcome == "skipped_stale"
+        assert "1320 min" in run.detail  # 22h from Monday 09:00, not -120 from Tuesday's
+        assert no_delivery == []
+
+    def test_lateness_is_measured_from_the_last_scheduled_day(self, store, db, monkeypatch, no_delivery):
+        # A Monday-only report woken on Wednesday is measured from Monday, not
+        # from a Wednesday slot it was never scheduled for.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(weekdays="1", at="08:00", stale_after_min=120))
+        wednesday = datetime(2026, 8, 19, 7, 0)
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, scheduled=True, now=wednesday)
+        assert run.outcome == "skipped_stale"
+        assert "2820 min" in run.detail  # 47h from Monday 08:00
+
+    def test_a_fire_that_beats_its_own_slot_is_early_not_stale(self, store, db, monkeypatch):
+        # The one way this guard could suppress a run that is perfectly on time:
+        # reading an early fire as late for the *previous* occurrence.
+        _fake_engine(monkeypatch)
+        store.save(_ceremony(stale_after_min=120))
+        run = engine.run_ceremony("morning-standup", session_id="s1", db_path=db, scheduled=True, now=self._at("08:58"))
         assert run.outcome == "ok"
 
     def test_the_monthly_cap_declines_a_scheduled_run(self, store, db, monkeypatch):
