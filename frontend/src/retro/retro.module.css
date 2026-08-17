@@ -116,9 +116,25 @@
 
 .popNote { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
-/* ── Carried-over review strip ────────────────────────────────────────── */
-.carried { border-bottom: 1px solid var(--line); background: var(--panel); }
-.carriedHead { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+/* ── Last retro ───────────────────────────────────────────────────────── */
+/*
+ * The board opens on the previous retro's actions, because that is what a retro
+ * opens on: what did we say we would do, and did we. They are cards in the
+ * board's own material — the same ground, hairline and corner as the ones being
+ * written below them — laid across the top rather than filed in a column, since
+ * they are the last sprint's, not this one's.
+ *
+ * It folds itself away once every item has a status: the review is over, and a
+ * row of closed loops is dead weight for the other fifty-eight minutes.
+ */
+.carried {
+  padding: var(--s3) var(--s4) 0;
+}
+.carriedHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
 .carriedToggle {
   display: inline-flex;
   align-items: center;
@@ -127,48 +143,68 @@
   padding: 0;
   background: none;
   border: 0;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-s);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
   font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   cursor: pointer;
 }
-.chevron { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+.carriedToggle:hover { color: var(--text); }
+.chevron { display: inline-flex; transition: transform var(--dur-fast) var(--ease); }
 .chevronOpen { transform: rotate(90deg); }
-.carriedProgress { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-.carriedBody { padding: 0 var(--s4) var(--s3); }
+.carriedProgress {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
 .carriedBody[hidden] { display: none; }
-.carriedHint { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-.carriedList { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.carriedList {
+  list-style: none;
+  margin: 0;
+  padding: var(--s2) 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--s3);
+}
+/* A card, like the ones below it — with the status on its left edge, so four
+   states are one glance apart without reading a word. */
 .carriedItem {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  flex: 1 1 320px;
   padding: var(--s2) var(--s3);
-  background: var(--card);
-  border: 1px solid var(--line);
-  /* The status colour rides on the left edge, so the four states are
-     distinguishable at a glance without relying on the text alone. */
-  border-left-width: 3px;
-  border-radius: var(--r-s);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--line);
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
   font-size: var(--fs-s);
 }
 .carriedText { flex: 1; min-width: 0; }
 .carriedSelect {
-  min-height: var(--tap);
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
+  min-height: var(--tap-min);
+  flex: none;
+  padding: 0 var(--s1);
+  background: none;
+  color: var(--muted);
+  border: 1px solid transparent;
   border-radius: var(--r-s);
   font: inherit;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
 }
+.carriedSelect:hover { border-color: var(--hairline-strong); color: var(--text); }
 .statusPending { border-left-color: var(--line); }
 .statusDone { border-left-color: var(--ok); }
 .statusProgress { border-left-color: var(--info); }
 .statusCarried { border-left-color: var(--warn); }
-.statusMuted { border-left-color: var(--muted); opacity: 0.7; }
+.statusMuted { border-left-color: var(--muted); opacity: 0.6; }
 
 /* ── Walkthrough ──────────────────────────────────────────────────────── */
 /*

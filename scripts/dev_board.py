@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from yeaboi.agent.state import RetroCard  # noqa: E402
 from yeaboi.retro.board import RetroBoard  # noqa: E402
 from yeaboi.retro.server import RetroServer  # noqa: E402
 
@@ -40,6 +41,15 @@ SEED: list[tuple[str, str, str]] = [
 ]
 
 
+# Last sprint's action items, up for review — the board opens on these, and a
+# dev board with none of them never shows the strip that carries them.
+CARRIED: list[str] = [
+    "Add an alert for staging health",
+    "Write down how a release actually gets cut",
+    "Book the retro before the sprint ends, not after",
+]
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -47,6 +57,8 @@ def main() -> int:
     for grid, text, author in SEED:
         if board.add_card(grid=grid, text=text, author=author, origin="seed", pid="dev-seed") is None:
             print(f"! seed rejected (unknown grid?): {grid}", file=sys.stderr)
+
+    board.seed_carried([RetroCard(id=f"carried-{i}", text=text, author="last sprint") for i, text in enumerate(CARRIED)])
 
     server = RetroServer(board)
     # Fixed credentials, as the poker dev board does it: a rebuild-and-restart

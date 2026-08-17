@@ -76,7 +76,7 @@ export function CarriedStrip({ items, onSetStatus, locked }: CarriedStripProps) 
           <span className={cx(styles['chevron'], open && styles['chevronOpen'])}>
             <Icon name="chevron-right" size={14} />
           </span>
-          <span id="carried-title">Last sprint&rsquo;s actions</span>
+          <span id="carried-title">Last retro</span>
         </button>
         <span className={styles['carriedProgress']}>
           {reviewed}/{items.length} reviewed
@@ -84,9 +84,6 @@ export function CarriedStrip({ items, onSetStatus, locked }: CarriedStripProps) 
       </header>
 
       <div id="carried-body" hidden={!open} className={styles['carriedBody']}>
-        <p className={styles['carriedHint']}>
-          Set a status on each to close the loop. &ldquo;Carried Over&rdquo; re-adds it to this sprint.
-        </p>
         <ul className={styles['carriedList']}>
           {items.map((item) => {
             const status = (item.status || 'pending') as CarriedStatuses;
