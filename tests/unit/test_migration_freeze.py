@@ -28,6 +28,10 @@ FROZEN_SURFACES: dict[str, str] = {
     # Wave 6 — doc-quality scoring. The mirrored pieces are the ones CLAUDE.md's
     # dual-maintenance table names for `doc_quality.py`; the read/cache plumbing
     # in the same file is not served by the sidecar but freezes with the file.
+    # `tools/team_learning.py` (the same wave's `_insight_item` pair) is
+    # deliberately NOT here: a whole-file freeze would block the unrelated tool
+    # work that file mostly is, and behavioural drift in the mirrored pieces is
+    # still caught by `make parity` — the freeze only adds byte-level cover.
     "src/yeaboi/analysis/doc_quality.py": "57df80a38a94c8a41fdff7f8112600c76016bb19a9871fe9bc31b6e67bdcb28d",
 }
 

@@ -541,6 +541,12 @@ _MIRRORED = (
     # beyond retro/poker — five other exporters share them, so any mode's edit
     # there must schedule the byte-parity gate.
     "src/yeaboi/retro/export.py",
+    # Broad file, narrow twin: only `RetroReport.by_grid`, the grid/status
+    # constants re-exported through retro/board.py, and `annotations_from` are
+    # mirrored (go/internal/exports/render.go header) — but a byte gate cannot
+    # scope below a file, so every state.py edit schedules go + parity. Same
+    # trade already accepted for html_theme.py.
+    "src/yeaboi/agent/state.py",
     "src/yeaboi/retro/board.py",
     "src/yeaboi/retro/store.py",
     "src/yeaboi/poker/export.py",

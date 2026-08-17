@@ -329,6 +329,22 @@ class TestGoDispatch:
         monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
         assert go_build_poker_export(_inputs()) is None
 
+    def test_skewed_args_key_set_is_malformed(self, monkeypatch):
+        # The args are splatted into keyword-only `export_page`: an unknown key
+        # would TypeError after the .md was written, a missing one would drop
+        # chrome. Either shape reads as malformed and falls back to Python.
+        canned = build_poker_export(_inputs())
+        extra = {**canned["args"], "surprise": "1"}
+        short = {k: v for k, v in canned["args"].items() if k != "nav"}
+        for args in (extra, short):
+
+            class FakeClient:
+                def request(self, method, params, on_progress=None, timeout=None):
+                    return {**canned, "args": args}
+
+            monkeypatch.setattr("yeaboi.gocore.get_client", lambda client=FakeClient(): client)
+            assert go_build_poker_export(_inputs()) is None
+
     def test_ticket_count_mismatch_is_malformed(self, monkeypatch):
         canned = build_poker_export(_inputs())
         report = {**canned["args"]["report"], "tickets": canned["args"]["report"]["tickets"][:1]}

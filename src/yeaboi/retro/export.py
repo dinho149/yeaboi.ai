@@ -264,6 +264,15 @@ def build_retro_export(inputs: dict) -> dict:
     }
 
 
+# The exact top-level keyword set the callers splat into
+# ``export_page(**args, markdown_name=...)``, which is keyword-only and rejects
+# unknown names. Pinned here because a within-v1 binary skew that grows, drops,
+# or renames a key would otherwise TypeError out of the export *after* the .md
+# was written, instead of falling back to Python (the ``go_score_docs``
+# key-set idiom; annotations ride inside ``report``, never at this level).
+_RETRO_ARG_KEYS = frozenset({"mode", "title", "wordmark", "facts", "report", "footer"})
+
+
 def _valid_retro_export(result: object, inputs: dict) -> bool:
     """Structural checks on a sidecar result — any failure means malformed → Python."""
     if not isinstance(result, dict):
@@ -271,7 +280,7 @@ def _valid_retro_export(result: object, inputs: dict) -> bool:
     if not (isinstance(result.get("markdown"), str) and result["markdown"]):
         return False
     args = result.get("args")
-    if not isinstance(args, dict):
+    if not isinstance(args, dict) or set(args) != _RETRO_ARG_KEYS:
         return False
     report = args.get("report")
     if not isinstance(report, dict) or report.get("kind") != "retro":
