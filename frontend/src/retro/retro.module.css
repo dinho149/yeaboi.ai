@@ -49,7 +49,9 @@
 .offline { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-.identity { display: flex; align-items: center; gap: var(--s3); }
+/* `relative` is load-bearing: the Room's roster is positioned against this
+   cluster, so its cards line up with the chip above them. */
+.identity { position: relative; display: flex; align-items: center; gap: var(--s3); }
 
 .meChip {
   display: inline-flex;
@@ -273,6 +275,9 @@
 }
 
 .cards {
+  /* The containing block for an empty column's drop indicator. */
+  position: relative;
+  transition: background-color var(--dur-fast) var(--ease);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -302,7 +307,35 @@
 }
 
 .cardSlot { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-.dropLine { height: 2px; border-radius: var(--r-pill); background: var(--col-tone, var(--accent)); }
+/* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
+   stack's gap pushed every card below it ten pixels down — including the
+   midpoints the drop index is computed against, which made the indicator
+   oscillate between two slots at the boundary. */
+.dropLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--s2) / -2 - 1px);
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--col-tone, var(--accent));
+}
+.dropLineTail {
+  top: auto;
+  bottom: calc(var(--s2) / -2 - 1px);
+}
+/* Drawn from the middle out. It moves by being torn down in one slot and built
+   in another, so an entrance is the only thing that can smooth the change. */
+.dropLine {
+  animation: dropIn var(--dur-fast) var(--ease) both;
+}
+
+@keyframes dropIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+}
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
 /*
@@ -387,10 +420,14 @@
   left: 0;
   cursor: grabbing;
   transform-origin: 50% 0%;
-  transition: none;
+  /* The position is written every frame and must not be smoothed, or the card
+     trails the pointer. The lean is a separate property, and is: it swings
+     between ±9° several times a second when a card is moved side to side, and
+     a rotation that steps from frame to frame reads as a shudder. */
+  transition: rotate 240ms cubic-bezier(0.22, 1, 0.36, 1);
   /* Its own compositor layer. Without it every frame repaints a 40px-blurred
      shadow, and the transform invalidates the document's layout with it. */
-  will-change: transform;
+  will-change: transform, rotate;
   box-shadow:
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
@@ -591,26 +628,41 @@
 /* Nothing invites a card while one is in the air. */
 .board[data-dragging='true'] .composeHint { opacity: 0; }
 
+/* The draft is a card: the same ground, hairline, corner and shadows as the
+   one it is about to become, with the column's tone on its edge. The box
+   inside it is bare — a second bordered field inside a bordered card is two
+   objects for one thing. */
 .columnCompose {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  padding: var(--s2) 0;
+  padding: var(--s3);
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 35%, var(--hairline));
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+}
+.columnCompose:focus-within {
+  border-color: var(--col-tone, var(--accent));
 }
 .composeBox {
   width: 100%;
-  min-height: var(--tap);
+  min-height: 3lh;
   max-height: 8rem;
   resize: vertical;
-  padding: var(--s2);
-  background: var(--panel-2);
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
   color: var(--text);
-  /* The column's own colour, so an open composer belongs to the column it is
-     going to add to — the thing the segmented control used to have to say. */
-  border: 1px solid var(--col-tone, var(--accent));
-  border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
+}
+.composeBox::placeholder {
+  color: var(--dim);
 }
 .composeActions { display: flex; justify-content: flex-end; gap: var(--s2); }
 

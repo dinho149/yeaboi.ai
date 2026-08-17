@@ -24,6 +24,7 @@ import type { RetroCard } from '../types/board';
 import { Column } from './Column';
 import { DragPreview } from './DragPreview';
 import { useCardDrag } from './useCardDrag';
+import { useCardFlip } from './useCardFlip';
 import { useFrozen } from './useFrozen';
 import styles from './retro.module.css';
 
@@ -68,8 +69,18 @@ export function Board({
   const [page, setPage] = useState(0);
 
   const gridLabel = useCallback((grid: RetroGrids) => RETRO_GRID_LABELS[grid], []);
+  // Every card that is displaced by a move slides into its new place. The one
+  // that was dropped is excluded — it has its own flight from the pointer.
+  const flip = useCardFlip(trackRef);
+  const onMoveCard = useCallback(
+    (cardId: string, grid: RetroGrids, index: number) => {
+      flip.skipOnce(cardId);
+      onMove(cardId, grid, index);
+    },
+    [flip, onMove]
+  );
   const { drag, previewRef, onCardPointerDown, announcement } = useCardDrag({
-    onMove,
+    onMove: onMoveCard,
     gridLabel,
     enabled: !locked,
   });

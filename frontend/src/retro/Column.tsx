@@ -101,7 +101,7 @@ export function Column({
   }
   const slots = positions.size;
 
-  const renderCard = (card: RetroCard) => (
+  const renderCard = (card: RetroCard, last: boolean) => (
     <div
       key={card.id}
       // Both classes, not one: `enter` places the card and `arrived` decays an
@@ -110,7 +110,14 @@ export function Column({
       className={cx(styles['cardSlot'], arrivals.has(card.id) && motion['enter'])}
     >
       {dropAt && dropAt.index === positions.get(card.id) ? (
-        <div className={styles['dropLine']} aria-hidden="true" />
+        <div className={styles['dropLine']} data-drop-line="lead" aria-hidden="true" />
+      ) : null}
+      {/* Past the last card. Rendered inside the slot rather than after it: the
+          indicator is positioned out of the flow, and a sibling in the flow
+          would push every card below it by its own height plus a gap — which
+          moves the very midpoints the drop index was computed from. */}
+      {last && dropAt && dropAt.index >= slots ? (
+        <div className={cx(styles['dropLine'], styles['dropLineTail'])} data-drop-line="tail" aria-hidden="true" />
       ) : null}
       <CardView
         arrived={arrivals.has(card.id)}
@@ -167,14 +174,14 @@ export function Column({
           groupByAuthor(visible).map(([author, group]) => (
             <div key={author} className={styles['authorGroup']}>
               <h3 className={styles['authorGroupHead']}>{author}</h3>
-              {group.map(renderCard)}
+              {group.map((card, index) => renderCard(card, index === group.length - 1))}
             </div>
           ))
         ) : (
-          visible.map(renderCard)
+          visible.map((card, index) => renderCard(card, index === visible.length - 1))
         )}
-        {/* Trailing indicator, for a drop past the last card. */}
-        {dropAt && dropAt.index >= slots ? <div className={styles['dropLine']} aria-hidden="true" /> : null}
+        {/* An empty column has no last slot to hang the tail indicator in. */}
+        {visible.length === 0 && dropAt ? <div className={styles['dropLine']} data-drop-line="empty" aria-hidden="true" /> : null}
 
         {/* Last in the stack, so a card lands where you were pointing and the
             rest of the column is the control that opens it. */}

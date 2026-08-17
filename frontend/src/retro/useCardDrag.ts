@@ -51,10 +51,12 @@ const EDGE = 56;
 const SCROLL_RATE = 12;
 /** Degrees of lean at full tilt. */
 const TILT_MAX = 9;
-/** Horizontal speed, in px per event, that reaches it. */
-const TILT_SPEED = 14;
+/** Horizontal speed, in px per *frame*, that reaches it. */
+const TILT_SPEED = 40;
 /** Quiet time after which a carried card swings back upright, in ms. */
 const SETTLE_MS = 70;
+/** How long the released card takes to fly into the slot it was dropped on. */
+const LAND_MS = 220;
 
 export interface DropTarget {
   grid: RetroGrids;
@@ -99,9 +101,17 @@ export interface CardDrag {
   announcement: string;
 }
 
-/** Where the carried card hangs, as one transform. */
+/**
+ * Where the carried card hangs.
+ *
+ * The lean is the separate `rotate` property, not part of this transform, so
+ * the stylesheet can transition it without also smoothing — and so visibly
+ * lagging — the position. Individual transform properties compose after
+ * `transform`, which puts the translation first and the pivot where the card
+ * is being held.
+ */
 export function carriedTransform(drag: DragState): string {
-  return `translate3d(${drag.x - drag.grabX}px, ${drag.y - drag.grabY}px, 0) rotate(${drag.tilt}deg)`;
+  return `translate3d(${drag.x - drag.grabX}px, ${drag.y - drag.grabY}px, 0)`;
 }
 
 /**
@@ -185,32 +195,86 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
   // with a card in the air keeps four handlers alive against a dead component.
   const teardownRef = useRef<(() => void) | null>(null);
 
-  const finish = useCallback((commit: boolean) => {
-    const current = active.current;
-    active.current = null;
-    setDrag(null);
-    if (!current) return;
-    if (commit && current.target) {
-      handlers.current.onMove(current.cardId, current.target.grid, current.target.index);
-      // 1-based: "position 0" is not something anyone says out loud.
-      setAnnouncement(
-        `Moved to ${handlers.current.gridLabel(current.target.grid)}, position ${current.target.index + 1}.`
-      );
-    } else if (commit) {
-      // Released over the toolbar, the composer, or the gap between columns.
-      // Distinct from a cancel: nothing went wrong and nothing was undone, and
-      // saying "cancelled" would suggest the move had been rejected.
-      setAnnouncement('Dropped outside a column. The card did not move.');
-    } else {
-      setAnnouncement('Move cancelled.');
-    }
+  const previewRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * Fly the released card into the slot it was dropped on.
+   *
+   * The indicator is already drawn exactly where the card is going, so it is
+   * the target — no second guess at the landing position, and it is right
+   * whichever column and index the drop resolved to. Resolves when the card has
+   * arrived, so the caller knows when to stop rendering it.
+   */
+  const land = useCallback((): Promise<void> => {
+    const el = previewRef.current;
+    const line = document.querySelector<HTMLElement>('[data-drop-line]');
+    const slot = line?.parentElement;
+    if (!el || !line || !slot || typeof el.animate !== 'function') return Promise.resolve();
+
+    // The indicator sits half a gap above the slot it marks, so landing on it
+    // puts the card a few pixels high — and it snaps down the moment the real
+    // one takes its place. The slot is what to aim at.
+    const kind = line.dataset['dropLine'];
+    const box = slot.getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(slot).rowGap) || 0;
+    const target =
+      kind === 'tail' ? { left: box.left, top: box.bottom + gap } : { left: box.left, top: box.top };
+
+    const from = el.getBoundingClientRect();
+    const at = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+    const animation = el.animate(
+      [
+        { transform: el.style.transform, rotate: el.style.rotate || '0deg', scale: '1.03' },
+        {
+          transform: `translate3d(${at.m41 + (target.left - from.left)}px, ${at.m42 + (target.top - from.top)}px, 0)`,
+          rotate: '0deg',
+          scale: '1',
+        },
+      ],
+      { duration: LAND_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' }
+    );
+    return animation.finished.then(
+      () => undefined,
+      () => undefined
+    );
   }, []);
+
+  const finish = useCallback(
+    (commit: boolean) => {
+      const current = active.current;
+      active.current = null;
+      if (!current) {
+        setDrag(null);
+        return;
+      }
+      if (commit && current.target) {
+        handlers.current.onMove(current.cardId, current.target.grid, current.target.index);
+        // 1-based: "position 0" is not something anyone says out loud.
+        setAnnouncement(
+          `Moved to ${handlers.current.gridLabel(current.target.grid)}, position ${current.target.index + 1}.`
+        );
+        // Held one flight longer: the list is frozen while a drag is live, so
+        // this is also what keeps the slot open underneath the card until it
+        // has arrived in it.
+        void land().then(() => setDrag(null));
+        return;
+      }
+      if (commit) {
+        // Released over the toolbar, the composer, or the gap between columns.
+        // Distinct from a cancel: nothing went wrong and nothing was undone, and
+        // saying "cancelled" would suggest the move had been rejected.
+        setAnnouncement('Dropped outside a column. The card did not move.');
+      } else {
+        setAnnouncement('Move cancelled.');
+      }
+      setDrag(null);
+    },
+    [land]
+  );
 
   // Cleared on every move and re-armed, so it only fires once the pointer has
   // actually stopped. That gap is the swing back to upright.
   const settleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const previewRef = useRef<HTMLElement | null>(null);
 
   /** Move the carried card, without going through React. */
   const place = useCallback((x: number, y: number, tilt: number) => {
@@ -218,6 +282,7 @@ export function useCardDrag({ onMove, gridLabel, enabled = true }: CardDragOptio
     const held = active.current;
     if (!el || !held) return;
     el.style.transform = carriedTransform({ ...held, x, y, tilt });
+    el.style.rotate = `${tilt.toFixed(2)}deg`;
   }, []);
 
   /**
