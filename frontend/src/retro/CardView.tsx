@@ -232,6 +232,16 @@ function CardViewBase({
 
         <span className={styles['metaSpacer']} />
 
+        {/* In the row, not under it. Below the row it added a line to every card
+            that anyone had reacted to, so the board reflowed the first time
+            somebody pressed 👍 — and the row already has the height for it. */}
+        <ReactionChips
+          reactions={card.reactions}
+          mine={myReactions}
+          onReact={(emoji) => onReact(card.id, emoji)}
+          disabled={locked}
+        />
+
         {confirming ? (
           // The whole control cluster is replaced rather than added to: a
           // pending destructive action wants the row saying one thing, and
@@ -311,12 +321,6 @@ function CardViewBase({
         />
       ) : null}
 
-      <ReactionChips
-        reactions={card.reactions}
-        mine={myReactions}
-        onReact={(emoji) => onReact(card.id, emoji)}
-        disabled={locked}
-      />
     </article>
   );
 }

@@ -548,7 +548,24 @@
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-.reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+/* `nowrap` and a floor of zero: the row is the card's last line and must stay
+   one line whatever is in it, so a card with eight reactions scrolls them
+   rather than growing a second row and pushing the board about. */
+.reactions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.reactions::-webkit-scrollbar {
+  display: none;
+}
+.rxChip {
+  flex: none;
+}
 .rxChip, .rxPick {
   display: inline-flex;
   align-items: center;
