@@ -597,7 +597,11 @@ export function App({ boot }: { boot: RetroBoot }) {
           </p>
         ) : null}
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
-        <InviteQR qrSrc={apiUrl(session, '/api/qr')} inviteUrl={invite.invite?.inviteUrl} />
+        <InviteQR
+          qrSrc={apiUrl(session, '/api/qr')}
+          inviteUrl={invite.invite?.inviteUrl}
+          shareState={invite.invite?.shareState}
+        />
       </Modal>
     </PageShell>
   );

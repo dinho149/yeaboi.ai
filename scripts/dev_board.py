@@ -14,6 +14,7 @@ safe to run against a real install.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -128,6 +129,14 @@ def main() -> int:
     server.token = "dev-token"  # noqa: S105
     server.admin_token = "dev-admin"  # noqa: S105
     server.start()
+    # There is no tunnel here, so the invite panel has nothing to hand out.
+    # SHARE picks which of the four states it renders — `pending` is the honest
+    # default, and the others are the only way to see that copy without one.
+    share = os.environ.get("SHARE", "pending")
+    if share == "ready":
+        server.set_public_url("https://dev-board.example.invalid/")
+    else:
+        server.set_share_state(share)
 
     api = f"http://127.0.0.1:{server.port}"
     print("\n  dev board ready")

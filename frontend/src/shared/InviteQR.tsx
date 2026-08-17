@@ -38,10 +38,22 @@ export interface InviteQRProps {
    * component only renders what arrived.
    */
   inviteUrl?: string | undefined;
+  /**
+   * Why there is no link yet. Boards that do not report it get `pending`, which
+   * is what an empty url used to mean unconditionally.
+   */
+  shareState?: 'ready' | 'pending' | 'failed' | 'off' | undefined;
   className?: string | undefined;
 }
 
-export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProps) {
+/** What to say while there is nothing to send. */
+const WAITING: Record<'pending' | 'failed' | 'off', string> = {
+  pending: 'Setting up the shared link — this takes a moment.',
+  failed: 'The shared link could not be set up. Retry it from the terminal running this board.',
+  off: 'Sharing is off for this board, so there is no link to send.',
+};
+
+export function InviteQR({ qrSrc, joinCode, inviteUrl, shareState, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
   // The endpoint answers 503 until the tunnel is up, and a broken image with
   // its alt text showing is the worst of the three things it could do.
@@ -49,7 +61,7 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProp
   // The QR having failed is the one signal from in here that the board is not
   // shared. Not `!inviteUrl`, which is also true for the first frame after the
   // panel opens, while both are still in flight.
-  const pending = unavailable || !src;
+  const waiting = (unavailable || !src) && shareState !== 'ready';
 
   return (
     <div className={cx(styles['invite'], className)}>
@@ -64,13 +76,7 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProp
         />
       ) : null}
 
-      {pending ? (
-        <p className={styles['panelNote']}>
-          No link yet — the board is only on this machine. The terminal running it sets up the shared link
-          when the board opens, which takes up to a minute; this panel fills in on its own once it is ready.
-          If it stays empty, the terminal will say why and offer to retry.
-        </p>
-      ) : null}
+      {waiting ? <p className={styles['panelNote']}>{WAITING[shareState ?? 'pending']}</p> : null}
 
       {/* Every field renders only once the values are in. They arrive from
           `GET /api/invite` rather than the boot payload, because the page is

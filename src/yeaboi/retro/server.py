@@ -212,14 +212,17 @@ class _RetroHandler(BaseHTTPRequestHandler):
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
         # RetroServer.display_code is an alias for join_code; the handler only
         # ever sees the ThreadingHTTPServer, which carries the latter.
+        public = self.server.public_url  # type: ignore[attr-defined]
+        state = getattr(self.server, "share_state", "pending")
         self._send_json(
             200,
-            invite_payload(
-                self.headers,
-                fallback,
-                self._join_code,
-                self.server.public_url,  # type: ignore[attr-defined]
-            ),
+            {
+                **invite_payload(self.headers, fallback, self._join_code, public),
+                # The browser cannot tell these apart from an empty url: the
+                # link is up, it is still coming, it is not coming and the
+                # terminal is where it gets retried, or sharing was turned off.
+                "shareState": "ready" if public else state,
+            },
         )
 
     def _serve_state(self) -> None:
@@ -483,6 +486,11 @@ class RetroServer:
         # empty forever if the tunnel could not start — which is exactly the state
         # in which this board has no shareable address at all.
         self.public_url = ""
+        # Why there is no public url yet — "pending", "failed" or "off".
+        # `public_url` alone cannot say: empty means "coming" for the first
+        # minute, "never" after that, and "not asked for" under YEABOI_NO_TUNNEL,
+        # and the invite panel has to tell a teammate which they are waiting on.
+        self.share_state = "pending"
         # Previous retros, if whoever started this server can reach them. The
         # TUI reads its SQLite store; a dev board hands over fixtures. Left
         # unset, the board simply has no history to step back through — which is
@@ -522,6 +530,16 @@ class RetroServer:
         self.public_url = url
         if self._httpd is not None:
             self._httpd.public_url = url  # type: ignore[attr-defined]
+
+    def set_share_state(self, state: str) -> None:
+        """Record why there is no public url — ``pending``/``failed``/``off``.
+
+        Two writes for the same reason as :meth:`set_public_url` — the handler
+        only ever sees the ``ThreadingHTTPServer``.
+        """
+        self.share_state = state
+        if self._httpd is not None:
+            self._httpd.share_state = state  # type: ignore[attr-defined]
 
     @property
     def url(self) -> str:
@@ -588,6 +606,7 @@ class RetroServer:
         # Always present so the invite/QR handlers can read it unconditionally;
         # set_public_url() fills it in when the tunnel comes up.
         httpd.public_url = self.public_url  # type: ignore[attr-defined]
+        httpd.share_state = self.share_state  # type: ignore[attr-defined]
         # Read at `start()` like everything else here: whoever owns this server
         # sets them on it, and the handler only ever sees the HTTP server.
         httpd.history_list = self.history_list  # type: ignore[attr-defined]
