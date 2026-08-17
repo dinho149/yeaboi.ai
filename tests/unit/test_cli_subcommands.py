@@ -1336,13 +1336,70 @@ class TestShipCommand:
         assert payload["status"] == "approved"
         assert any("dry run" in w for w in payload["warnings"])
 
+    @staticmethod
+    def _git_repo(root):
+        """A real repo with a subdirectory — the toplevel is what gets touched."""
+        import subprocess
+
+        from yeaboi.tools.local_git import git_subprocess_env
+
+        def _git(*a):
+            subprocess.run(["git", "-C", str(root), *a], check=True, capture_output=True, env=git_subprocess_env())
+
+        root.mkdir(exist_ok=True)
+        _git("init", "-q", "-b", "main")
+        _git("config", "user.email", "t@example.com")
+        _git("config", "user.name", "T")
+        (root / "README.md").write_text("hi\n", encoding="utf-8")
+        _git("add", "README.md")
+        _git("commit", "-q", "-m", "init")
+        sub = root / "src"
+        sub.mkdir()
+        return root, sub
+
     def test_run_refuses_without_a_terminal(self, monkeypatch, capsys, tmp_path):
         # stdin in tests is not a tty, and the repo path is sandbox-allowed
         # (pytest tmp dirs are whitelisted) — so this exercises the tty guard.
         monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
-        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(tmp_path)])
+        repo, _ = self._git_repo(tmp_path / "proj")
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo)])
         assert _run_subcommand(args) == 2
         assert "interactive terminal" in capsys.readouterr().err
+
+    def test_run_refuses_a_path_that_is_not_a_git_work_tree(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(tmp_path)])
+        assert _run_subcommand(args) == 2
+        # git's own words when the rev-parse fails, ours when it returns empty.
+        assert "not a git" in capsys.readouterr().err
+
+    def test_consent_is_checked_against_the_toplevel_not_the_typed_path(self, monkeypatch, tmp_path):
+        # fs_policy containment is `is_relative_to`, and every write lands on
+        # the toplevel — so pointing --repo at a subdirectory must still ask
+        # about (and run against) the repository root.
+        from pathlib import Path
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        repo, sub = self._git_repo(tmp_path / "proj")
+        checked: list[str] = []
+        monkeypatch.setattr(
+            "yeaboi.fs_policy.resolve_and_check",
+            lambda path, **kw: checked.append(str(path)) or Path(path),
+        )
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+        launched: list[str] = []
+
+        from yeaboi.agent.state import ShipRun
+
+        def _fake_run_ship(story_id, target, **kw):
+            launched.append(target)
+            return ShipRun(run_id="r", story_id=story_id, status="failed")
+
+        monkeypatch.setattr("yeaboi.ship.engine.run_ship", _fake_run_ship)
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(sub)])
+        assert _run_subcommand(args) == 0
+        assert checked == [str(repo.resolve())]
+        assert launched == [str(repo.resolve())]
 
     def test_run_strict_exits_3_when_not_approved(self, monkeypatch, capsys, tmp_path):
         monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
@@ -1350,11 +1407,12 @@ class TestShipCommand:
 
         from yeaboi.agent.state import ShipRun
 
+        repo, _ = self._git_repo(tmp_path / "proj")
         monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
         monkeypatch.setattr(
             "yeaboi.ship.engine.run_ship",
             lambda *a, **k: ShipRun(run_id="r", story_id="US-001", status="failed", warnings=("boom",)),
         )
-        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(tmp_path), "--strict"])
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo), "--strict"])
         assert _run_subcommand(args) == 3
         assert "⚠ boom" in capsys.readouterr().err

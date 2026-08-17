@@ -1928,12 +1928,21 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
     from dataclasses import asdict
 
     from yeaboi import fs_policy
-    from yeaboi.ship import engine
+    from yeaboi.ship import engine, worktree
     from yeaboi.ship.render import format_run_rich
     from yeaboi.ship.store import ShipStore
 
     repo = str(Path(args.repo).expanduser().resolve())
     if not args.dry_run:
+        try:
+            # Resolve the toplevel BEFORE the consent check: every write lands
+            # there (`git worktree add` into <toplevel>/.git, the later push),
+            # and fs_policy containment is `is_relative_to` — so granting a
+            # subdirectory would let yeaboi write outside the approved root.
+            repo = str(worktree.resolve_repo(repo))
+        except worktree.WorktreeError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
         try:
             fs_policy.resolve_and_check(repo, mode="write", context="ship: run a coding agent against this repository")
         except PermissionError as exc:

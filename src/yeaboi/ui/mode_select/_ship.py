@@ -53,20 +53,27 @@ def _load_stories() -> tuple[list, str, str]:
     return list(state.get("stories") or []), session_id, ""
 
 
-def _repo_problem(repo: str) -> str:
-    """A user-facing reason this repo cannot take a run, or ""."""
+def _resolve_target(repo: str) -> tuple[str, str]:
+    """(the git toplevel this run will touch, a user-facing problem or "").
+
+    The toplevel, not the typed path, is what every later write targets —
+    ``git worktree add`` writes into ``<toplevel>/.git`` and the push runs from
+    there. Consent is checked with ``is_relative_to`` containment, so granting a
+    *subdirectory* would not grant the toplevel: resolving first is what keeps
+    the consent prompt honest about what is about to be touched.
+    """
     from yeaboi.ship import worktree
 
     try:
         top = worktree.resolve_repo(Path(repo).expanduser())
     except worktree.WorktreeError as exc:
-        return str(exc)
+        return "", str(exc)
     try:
         if worktree.is_dirty(top):
-            return f"{top} has uncommitted changes — commit or stash first"
+            return str(top), f"{top} has uncommitted changes — commit or stash first"
     except worktree.WorktreeError as exc:
-        return str(exc)
-    return ""
+        return str(top), str(exc)
+    return str(top), ""
 
 
 def run_ship_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -165,7 +172,7 @@ def _launch(
     """Consent + worker thread + progress/gate/result loops. Returns a picker message."""
     from yeaboi.ui.shared._consent import _preflight_path_consent
 
-    problem = _repo_problem(repo)
+    repo, problem = _resolve_target(repo)
     if problem:
         return problem
     if not _preflight_path_consent(
