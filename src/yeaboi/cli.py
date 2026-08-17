@@ -928,6 +928,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     slack_poll.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    slack_watch = slack_sub.add_parser("watch", help="Install, remove or inspect the recurring poll")
+    watch_group = slack_watch.add_mutually_exclusive_group(required=True)
+    watch_group.add_argument("--install", action="store_true", help="Install the recurring poll")
+    watch_group.add_argument("--remove", action="store_true", help="Tear the poll down (nothing else)")
+    watch_group.add_argument("--status", action="store_true", help="Report what is installed")
+    slack_watch.add_argument(
+        "--every",
+        type=int,
+        default=10,
+        metavar="MIN",
+        help="Minutes between polls; must divide 60 (default 10)",
+    )
+    slack_watch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     slack_check = slack_sub.add_parser("check", help="Is two-way configured, and can it see the channel?")
     slack_check.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
@@ -2023,6 +2037,27 @@ def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
             if "identity" in report:
                 console.print(f"Slack says: {report['identity']}")
         return 0 if ready and report.get("reachable", True) else 1
+
+    if command == "watch":
+        from yeaboi.ceremonies import scheduler
+
+        if args.status:
+            status = scheduler.slack_poll_status()
+            if to_json:
+                print(json.dumps(status, indent=2))
+            elif status.get("installed"):
+                console.print(f"Polling every {status.get('interval_min', 0)} min ({status.get('platform', '?')})")
+            else:
+                console.print("The Slack poll is not installed.")
+            return 0
+        message = scheduler.remove_slack_poll() if args.remove else scheduler.install_slack_poll(minutes=args.every)
+        if to_json:
+            print(json.dumps({"message": message}, indent=2))
+        else:
+            console.print(message)
+        # An install this refuses (no token, an interval cron cannot express) is
+        # a request that could not be honoured, not a crash.
+        return 1 if message.startswith(("Not installing", "Failed")) or "not a usable interval" in message else 0
 
     if command == "history":
         from yeaboi.slack.store import SlackStore

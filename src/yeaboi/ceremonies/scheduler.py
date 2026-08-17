@@ -72,6 +72,22 @@ CEREMONY_PREFIX = "ceremony."
 _CEREMONY_LABEL_PREFIX = "com.yeaboi.ceremony"
 _CEREMONY_CRON_MARKER = "# yeaboi-ceremony"
 
+# The inbound Slack poll. Its own namespace again, and its own *kind* rather
+# than a catalogued ceremony: it produces no artifact and delivers nothing, its
+# cadence is an interval rather than a slot (which inverts the staleness
+# guard's whole premise — a late poll reading a 48h window is exactly as
+# correct as an on-time one), and at this frequency it would put ~144 rows a
+# day into the ledger whose purpose is answering "did my 09:00 standup fire?".
+JOB_SLACK_POLL = "slack-poll"
+_SLACK_LABEL_PREFIX = "com.yeaboi.slack"
+_SLACK_CRON_MARKER = "# yeaboi-slack"
+
+#: Divisors of 60 only. ``*/7`` in cron fires at 0,7,…,56 and then leaves a
+#: four-minute gap — a cadence that is not the one the user asked for, on the
+#: platform least able to say so.
+POLL_INTERVALS = (1, 2, 3, 5, 10, 15, 20, 30, 60)
+DEFAULT_POLL_MINUTES = 10
+
 
 def ceremony_kind(name: str) -> str:
     """The job kind for a declared ceremony."""
@@ -92,6 +108,8 @@ def _identity(kind: str) -> tuple[str, str]:
     if kind in _KIND_SUFFIX:
         suffix = _KIND_SUFFIX[kind]
         return f"{_LABEL_PREFIX}{suffix}", f"{_CRON_MARKER}{suffix}"
+    if kind == JOB_SLACK_POLL:
+        return _SLACK_LABEL_PREFIX, _SLACK_CRON_MARKER
     name = ceremony_name(kind)
     if name:
         from yeaboi.ceremonies.store import valid_name
@@ -142,6 +160,10 @@ def _executable_args(session_id: str, kind: str = JOB_STANDUP) -> list[str]:
     base = _base_argv()
     if kind == JOB_TRANSCRIPT_REMINDER:
         return [*base, "--standup-remind-transcript", "--standup-session", session_id]
+    if kind == JOB_SLACK_POLL:
+        # Not session-scoped: the token and the channel are machine-wide, and
+        # each event finds its own session through the anchor it answers.
+        return [*base, "slack", "poll", "--scheduled"]
     name = ceremony_name(kind)
     if name:
         return [*base, "ceremonies", "run", name, "--session", session_id, "--scheduled"]
@@ -256,6 +278,12 @@ def _session_launcher_dir(session_id: str, kind: str = JOB_STANDUP) -> Path:
     # window); for every other kind this is the directory that is checked for
     # and found absent during teardown.
     safe = session_id.replace("/", "_")
+    if kind == JOB_SLACK_POLL:
+        # An explicit branch, not a fall-through: without one this lands on the
+        # ceremony path and yields "ceremony--<session>". Nothing is written
+        # there, but teardown rmtree's it, and an ambiguous path in a delete is
+        # not something to leave to chance.
+        return _launcher_dir() / f"slack-poll-{safe}"
     suffix = _KIND_SUFFIX.get(kind)
     if suffix is None:
         return _launcher_dir() / f"ceremony-{ceremony_name(kind)}-{safe}"
@@ -582,6 +610,109 @@ def install_ceremony(session_id: str, name: str, at: str, weekdays: str = "1-5")
 def remove_ceremony(session_id: str, name: str) -> str:
     """Tear down one ceremony's job. Removing it from the store is the caller's half."""
     return remove_schedule(session_id, kind=ceremony_kind(name))
+
+
+# ── the interval kind (the Slack inbox poll) ───────────────────────────────
+
+
+def _install_launchd_interval(session_id: str, seconds: int, kind: str) -> str:
+    label = _label(session_id, kind)
+    plist = {
+        "Label": label,
+        "ProgramArguments": _executable_args(session_id, kind),
+        # StartInterval rather than StartCalendarInterval: this job has no slot,
+        # only a frequency. launchd still coalesces missed intervals into one
+        # fire at wake, which is exactly what the poll's overlapping read
+        # window is built to absorb.
+        "StartInterval": seconds,
+        "RunAtLoad": False,
+        "EnvironmentVariables": {"PATH": job_path()},
+    }
+    path = _plist_path(session_id, kind)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as fh:
+        plistlib.dump(plist, fh)
+    logger.info("scheduler[launchd]: wrote %s (every %ds)", path, seconds)
+    subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
+    proc = subprocess.run(["launchctl", "load", str(path)], capture_output=True, text=True, timeout=10, check=False)
+    if proc.returncode != 0:
+        logger.warning("scheduler[launchd]: load returned %d: %s", proc.returncode, proc.stderr.strip())
+    return f"Slack inbox polling every {seconds // 60} min via launchd ({path.name})"
+
+
+def _install_cron_interval(session_id: str, minutes: int, kind: str) -> str:
+    marker = _cron_marker(session_id, kind)
+    entry = f"*/{minutes} * * * * {_cron_command(session_id, kind)} {marker}"
+    lines = [ln for ln in _read_crontab() if marker not in ln]
+    lines.append(entry)
+    _write_crontab(lines)
+    logger.info("scheduler[cron]: installed a */%d entry (kind=%s)", minutes, kind)
+    return f"Slack inbox polling every {minutes} min via crontab"
+
+
+def install_slack_poll(session_id: str = "", minutes: int = DEFAULT_POLL_MINUTES) -> str:
+    """Install/replace the inbound Slack poll. Returns a status message.
+
+    Refuses without a bot token: a job that can only ever decline is noise on a
+    ten-minute cadence, and the decline would be recorded 144 times a day.
+    """
+    from yeaboi import config
+
+    ready, why = config.slack_two_way_ready()
+    if not ready:
+        return f"Not installing the Slack poll — {why}."
+    if minutes not in POLL_INTERVALS:
+        allowed = ", ".join(str(m) for m in POLL_INTERVALS)
+        return f"{minutes} is not a usable interval (cron would leave a gap). Choose one of: {allowed}."
+    try:
+        if _is_macos():
+            return _install_launchd_interval(session_id, minutes * 60, JOB_SLACK_POLL)
+        if _is_linux():
+            return _install_cron_interval(session_id, minutes, JOB_SLACK_POLL)
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.error("install_slack_poll failed: %s", e)
+        return f"Failed to install the Slack poll: {e}"
+    return "Scheduling is not supported on this platform — run `yeaboi slack poll` by hand."
+
+
+def remove_slack_poll(session_id: str = "") -> str:
+    """Tear down the inbound poll, and nothing else.
+
+    Never reaches the standup family or any ceremony: turning the Slack inbox
+    off must not stop the Monday delivery report.
+    """
+    return remove_schedule(session_id, kind=JOB_SLACK_POLL)
+
+
+def slack_poll_status(session_id: str = "") -> dict:
+    """Is the poll installed, and how often does it fire?
+
+    The interval is read back off the installed job rather than kept in config,
+    the way the transcript reminder's offset is: a stored copy is a second
+    source of truth that can disagree with what will actually fire.
+    """
+    status = get_schedule_status(session_id, kind=JOB_SLACK_POLL)
+    status["interval_min"] = _installed_interval(session_id, JOB_SLACK_POLL)
+    return status
+
+
+def _installed_interval(session_id: str, kind: str) -> int:
+    """Minutes between fires according to the OS, or 0 when nothing is installed."""
+    try:
+        if _is_macos():
+            path = _plist_path(session_id, kind)
+            if not path.exists():
+                return 0
+            with path.open("rb") as fh:
+                return int(plistlib.load(fh).get("StartInterval", 0)) // 60
+        if _is_linux():
+            marker = _cron_marker(session_id, kind)
+            for line in _read_crontab():
+                if marker in line and line.startswith("*/"):
+                    return int(line.split()[0][2:])
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        logger.warning("scheduler: could not read the installed poll interval", exc_info=True)
+    return 0
 
 
 def installed_ceremonies(session_id: str) -> list[str]:
