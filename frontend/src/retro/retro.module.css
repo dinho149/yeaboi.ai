@@ -116,96 +116,6 @@
 
 .popNote { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
-/* ── Last retro ───────────────────────────────────────────────────────── */
-/*
- * The board opens on the previous retro's actions, because that is what a retro
- * opens on: what did we say we would do, and did we. They are cards in the
- * board's own material — the same ground, hairline and corner as the ones being
- * written below them — laid across the top rather than filed in a column, since
- * they are the last sprint's, not this one's.
- *
- * It folds itself away once every item has a status: the review is over, and a
- * row of closed loops is dead weight for the other fifty-eight minutes.
- */
-.carried {
-  padding: var(--s3) var(--s4) 0;
-}
-.carriedHead {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-}
-.carriedToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: var(--tap);
-  padding: 0;
-  background: none;
-  border: 0;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.carriedToggle:hover { color: var(--text); }
-.chevron { display: inline-flex; transition: transform var(--dur-fast) var(--ease); }
-.chevronOpen { transform: rotate(90deg); }
-.carriedProgress {
-  color: var(--dim);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-variant-numeric: tabular-nums;
-}
-.carriedBody[hidden] { display: none; }
-.carriedList {
-  list-style: none;
-  margin: 0;
-  padding: var(--s2) 0 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: var(--s3);
-}
-/* A card, like the ones below it — with the status on its left edge, so four
-   states are one glance apart without reading a word. */
-.carriedItem {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s2) var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-left: 3px solid var(--line);
-  border-radius: var(--r-l);
-  box-shadow:
-    var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%),
-    0 4px 12px rgb(0 0 0 / 10%);
-  font-size: var(--fs-s);
-}
-.carriedText { flex: 1; min-width: 0; }
-.carriedSelect {
-  min-height: var(--tap-min);
-  flex: none;
-  padding: 0 var(--s1);
-  background: none;
-  color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: var(--r-s);
-  font: inherit;
-  font-size: var(--fs-2xs);
-  cursor: pointer;
-}
-.carriedSelect:hover { border-color: var(--hairline-strong); color: var(--text); }
-.statusPending { border-left-color: var(--line); }
-.statusDone { border-left-color: var(--ok); }
-.statusProgress { border-left-color: var(--info); }
-.statusCarried { border-left-color: var(--warn); }
-.statusMuted { border-left-color: var(--muted); opacity: 0.6; }
-
 /* ── Switching sprints ────────────────────────────────────────────────── */
 /*
  * One board leaves, the next arrives. Only ever after a switch — the classes
@@ -257,10 +167,9 @@
 
 /* ── The facilitator's column ─────────────────────────────────────────── */
 /*
- * Everything only the host does, beside the board instead of scattered across
- * the bar, the notch and a strip above the columns. It scrolls on its own — the
- * board is the thing with a fixed height, and a rail that pushed it shorter
- * would be a control panel costing the content it controls.
+ * The kit's rail carries the material; this is what retro adds to it. Nothing
+ * in here is framed: a rail of boxes beside four columns of cards is twice the
+ * furniture for a quarter of the content.
  */
 .boardLayout {
   display: flex;
@@ -269,42 +178,73 @@
 }
 .rail {
   flex: none;
-  width: 17rem;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  width: 16rem;
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
-  padding: var(--s3) 0 var(--s3) var(--s4);
+  gap: var(--s5);
+  padding: var(--s3) var(--s2) var(--s3) var(--s4);
+  overscroll-behavior: contain;
   scrollbar-width: none;
 }
 .rail::-webkit-scrollbar { display: none; }
+.railPast { color: var(--accent2); }
 
-/* No panel behind them: the rail is a column of the board, not a drawer over
-   it, and four stacked panels beside four columns of cards is eight objects. */
-.railBlock {
+/* Two arrows under the name they step through. */
+.timeSwitch {
   display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  align-items: center;
+  gap: var(--s1);
 }
-.railTitle {
-  margin: 0;
+.timeStep {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-s);
+  background: none;
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
+  cursor: pointer;
 }
-.railNote {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
+.timeStep:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.timeStep:disabled { opacity: 0.3; cursor: default; }
 
-/* Under a laptop's width there is no room beside the board, so it goes back
-   above it and lies down. */
+/* A carried item is a row, like everything else in the rail. Its status is the
+   dot the kit already puts at the head of one. */
+.carriedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.carriedText { flex: 1; min-width: 0; }
+.carriedSelect {
+  flex: none;
+  max-width: 7rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+.carriedSelect:hover:not(:disabled) { color: var(--text); }
+.dot_done { background: var(--ok); }
+.dot_in_progress { background: var(--info); }
+.dot_carried_over { background: var(--warn); }
+.dot_not_relevant { opacity: 0.4; }
+
+.railName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.railCount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.railAction { display: flex; flex-direction: column; gap: var(--s2); }
+
+/* Under a laptop's width there is no room beside the board, so it goes above it
+   and lies down. */
 @media (max-width: 1099px) {
   .boardLayout { flex-direction: column; }
   .rail {
@@ -316,7 +256,7 @@
     gap: var(--s4);
     padding: var(--s3) var(--s4) 0;
   }
-  .railBlock { flex: 1 1 14rem; }
+  .rail > * { flex: 1 1 14rem; }
 }
 
 /* ── Which retro ──────────────────────────────────────────────────────── */
@@ -346,69 +286,6 @@
    what is happening", and looking at last month is not that. */
 .timeLabelPast { color: var(--accent2); }
 .subtleDot { color: var(--dim); margin: 0 var(--s2); }
-
-/* ── Walkthrough ──────────────────────────────────────────────────────── */
-/*
- * Who is up, in the notch. Faces and counts rather than a list of names: the
- * two questions a facilitator is answering here are who has not been round yet
- * and how much they have to get through.
- */
-.walk {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  min-width: 15rem;
-  max-width: min(20rem, 72vw);
-}
-.walkGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--s2);
-}
-.walkPerson {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: var(--tap);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-m);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-s);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
-}
-.walkPerson:hover {
-  border-color: var(--hairline-strong);
-}
-/* Coloured, not ringed — the same "this is what is happening" the notch uses. */
-.walkPersonOn {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
-  color: var(--accent);
-}
-.walkName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.walkCount {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-}
-.walkPersonOn .walkCount {
-  color: inherit;
-}
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {

@@ -523,7 +523,6 @@ export function App({ boot }: { boot: RetroBoot }) {
           people={roster}
           focus={focus}
           onFocus={setFocus}
-          canSuggest={!readOnly}
           suggesting={suggesting}
           onSuggest={() => {
             setSuggesting(true);
