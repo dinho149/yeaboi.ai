@@ -914,6 +914,28 @@ def build_parser() -> argparse.ArgumentParser:
     cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
     cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    slack_p = subparsers.add_parser(
+        "slack",
+        help="Two-way Slack — read reactions and replies on what yeaboi posted",
+    )
+    slack_sub = slack_p.add_subparsers(dest="slack_command", required=True)
+
+    slack_poll = slack_sub.add_parser("poll", help="Read Slack once and apply what is new (the scheduled job)")
+    slack_poll.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="Arm the guards an unattended fire needs (the overlap lock and the gap notice)",
+    )
+    slack_poll.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_check = slack_sub.add_parser("check", help="Is two-way configured, and can it see the channel?")
+    slack_check.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_hist = slack_sub.add_parser("history", help="What Slack asked for, and what happened to it")
+    slack_hist.add_argument("--limit", type=int, default=20, help="Rows to show (default 20)")
+    slack_hist.add_argument("--pending", action="store_true", help="Only events claimed but never settled")
+    slack_hist.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     agents_p = subparsers.add_parser(
         "agents",
         help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
@@ -1507,6 +1529,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "provenance": _cmd_provenance,
         "ship": _cmd_ship,
         "ceremonies": _cmd_ceremonies,
+        "slack": _cmd_slack,
     }
     try:
         return handlers[args.command](args, console)
@@ -1960,6 +1983,78 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print(format_trace_rich(trace))
     return 0 if trace.found else 1
+
+
+def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi slack …` — the inbound half of the Slack channel."""
+    import json
+    from dataclasses import asdict
+
+    from yeaboi import config
+    from yeaboi.slack import allowlist as allow
+
+    to_json = getattr(args, "format", "text") == "json"
+    command = args.slack_command
+
+    if command == "check":
+        ready, why = config.slack_two_way_ready()
+        report: dict = {
+            "configured": ready,
+            "reason": why,
+            "allowlist": allow.describe(),
+            "ack_reaction": config.get_slack_ack_reaction() or "off",
+        }
+        if ready:
+            from yeaboi.tools import slack as slack_api
+
+            identity = slack_api.auth_test()
+            report["identity"] = (
+                {"team": identity.data.get("team", ""), "bot": identity.data.get("user", "")}
+                if identity.ok
+                else slack_api.error_message(identity)
+            )
+            report["reachable"] = identity.ok
+        if to_json:
+            print(json.dumps(report, indent=2))
+        else:
+            console.print(f"Two-way: {'[green]on[/green]' if ready else f'[yellow]off[/yellow] — {why}'}")
+            console.print(f"Allowlist: {report['allowlist']}")
+            console.print(f"Ack reaction: {report['ack_reaction']}")
+            if "identity" in report:
+                console.print(f"Slack says: {report['identity']}")
+        return 0 if ready and report.get("reachable", True) else 1
+
+    if command == "history":
+        from yeaboi.slack.store import SlackStore
+
+        with SlackStore() as store:
+            rows = store.unsettled(limit=args.limit) if args.pending else store.history(limit=args.limit)
+        if to_json:
+            print(json.dumps({"events": rows}, indent=2))
+        elif not rows:
+            console.print("Nothing from Slack yet." if not args.pending else "Nothing left unfinished.")
+        else:
+            for row in rows:
+                outcome = row.get("outcome") or "in flight"
+                console.print(
+                    f"  {row.get('claimed_at', '')[:16]}  {outcome:<13} {row.get('intent', '') or '-':<8} "
+                    f"{row.get('slack_user', '')}  {row.get('reason', '')}"
+                )
+        return 0
+
+    # poll
+    from yeaboi.slack.poller import run_poll
+
+    result = run_poll()
+    if to_json:
+        print(json.dumps(asdict(result), indent=2))
+    else:
+        console.print(f"{result.outcome}: {result.detail or '-'}")
+        if result.events_applied:
+            console.print(f"  applied {result.events_applied} of {result.events_seen} seen")
+    # A declined poll is not a failed one — the same rule the ceremonies runner
+    # follows, so a cron job that could not act does not page anybody.
+    return 1 if result.outcome == "failed" else 0
 
 
 def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:

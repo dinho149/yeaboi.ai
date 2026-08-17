@@ -233,6 +233,59 @@ def post_message(
     return call("chat.postMessage", params, token=token, http_method="POST", budget=budget)
 
 
+def replies(
+    channel: str, ts: str, *, cursor: str = "", limit: int = 200, token: str = "", budget: RetryBudget | None = None
+) -> SlackResponse:
+    """The thread hanging under one of our messages."""
+    params: dict = {"channel": channel, "ts": ts, "limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    return call("conversations.replies", params, token=token, budget=budget)
+
+
+def reactions_get(channel: str, ts: str, *, token: str = "", budget: RetryBudget | None = None) -> SlackResponse:
+    """Reactions on one message.
+
+    ``full=true`` because Slack truncates the ``users`` list on a busy message
+    otherwise, and a truncated list is indistinguishable from nobody having
+    reacted — which would mean an act that silently never happened.
+    """
+    return call("reactions.get", {"channel": channel, "timestamp": ts, "full": "true"}, token=token, budget=budget)
+
+
+def users_info(user: str, *, token: str = "", budget: RetryBudget | None = None) -> SlackResponse:
+    """One member's profile, for naming a reaction in a listing."""
+    return call("users.info", {"user": user}, token=token, budget=budget)
+
+
+def users_list(*, cursor: str = "", limit: int = 200, token: str = "", budget: RetryBudget | None = None):
+    """A page of workspace members, for building the allowlist by copy-paste."""
+    params: dict = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    return call("users.list", params, token=token, budget=budget)
+
+
+def paginate(fetch, key: str, *, max_pages: int = 10) -> tuple[list[dict], str]:
+    """Walk a cursor-paginated method. Returns (items, error).
+
+    Stops at ``max_pages`` rather than following a cursor forever: this runs
+    unattended on a short cadence, and the overlapping read window means a
+    truncated page is re-read next time rather than lost.
+    """
+    items: list[dict] = []
+    cursor = ""
+    for _ in range(max_pages):
+        resp = fetch(cursor)
+        if not resp.ok:
+            return items, resp.error
+        items.extend(resp.data.get(key) or [])
+        cursor = ((resp.data.get("response_metadata") or {}).get("next_cursor") or "").strip()
+        if not cursor:
+            break
+    return items, ""
+
+
 def add_reaction(
     channel: str, ts: str, name: str, *, token: str = "", budget: RetryBudget | None = None
 ) -> SlackResponse:

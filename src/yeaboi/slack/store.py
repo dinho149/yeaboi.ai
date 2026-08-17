@@ -64,7 +64,59 @@ CREATE TABLE IF NOT EXISTS slack_anchors (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_anchors_recent ON slack_anchors (posted_at);
 CREATE INDEX IF NOT EXISTS idx_slack_anchors_root ON slack_anchors (channel, root_ts);
+
+CREATE TABLE IF NOT EXISTS slack_inbound (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_key  TEXT NOT NULL,
+    channel    TEXT NOT NULL DEFAULT '',
+    anchor_ts  TEXT NOT NULL DEFAULT '',
+    act        TEXT NOT NULL DEFAULT '',
+    intent     TEXT NOT NULL DEFAULT '',
+    slack_user TEXT NOT NULL DEFAULT '',
+    member     TEXT NOT NULL DEFAULT '',
+    outcome    TEXT NOT NULL DEFAULT '',
+    reason     TEXT NOT NULL DEFAULT '',
+    claimed_at TEXT NOT NULL DEFAULT '',
+    settled_at TEXT NOT NULL DEFAULT '',
+    UNIQUE(event_key)
+);
+CREATE INDEX IF NOT EXISTS idx_slack_inbound_claimed ON slack_inbound (claimed_at);
+
+CREATE TABLE IF NOT EXISTS slack_polls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    polled_at       TEXT NOT NULL DEFAULT '',
+    window_start    TEXT NOT NULL DEFAULT '',
+    outcome         TEXT NOT NULL DEFAULT '',
+    messages_read   INTEGER NOT NULL DEFAULT 0,
+    events_seen     INTEGER NOT NULL DEFAULT 0,
+    events_new      INTEGER NOT NULL DEFAULT 0,
+    events_applied  INTEGER NOT NULL DEFAULT 0,
+    duration_s      REAL NOT NULL DEFAULT 0,
+    detail          TEXT NOT NULL DEFAULT '',
+    error           TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_slack_polls_recent ON slack_polls (polled_at);
 """
+
+# What a considered event ended up as. Every one is recorded, including the
+# refusals: the fleet learned the expensive version of this lesson, where the
+# *fact* of a refusal was durable and the *reason* was free text nobody kept.
+# "You are not on the list", "I could not tell what you meant" and "the write
+# said no" are different problems, and only some of them are anyone's to fix.
+OUTCOME_CLAIMED = ""  # claimed, not yet settled — a crash leaves this behind
+OUTCOME_APPLIED = "applied"
+OUTCOME_IGNORED = "ignored"  # not part of the grammar, or not for us
+OUTCOME_UNAUTHORIZED = "unauthorized"
+OUTCOME_STALE = "stale"  # the anchor has expired
+OUTCOME_REFUSED = "refused"  # the write path itself said no
+OUTCOME_FAILED = "failed"
+
+POLL_OK = "ok"
+POLL_FAILED = "failed"
+POLL_NO_TOKEN = "skipped_no_token"  # noqa: S105 — an outcome label, not a credential
+POLL_NO_CHANNEL = "skipped_no_channel"
+POLL_NO_ALLOWLIST = "skipped_no_allowlist"
+POLL_LOCKED = "skipped_locked"
 
 
 @dataclass(frozen=True)
@@ -99,6 +151,38 @@ class SlackAnchor:
             logger.warning("slack anchor %s/%s has an unparseable expires_at", self.channel, self.ts)
             return True
         return (now or datetime.now(UTC)) >= deadline
+
+
+@dataclass(frozen=True)
+class InboundEvent:
+    """One thing an allowlisted human did to a message yeaboi posted.
+
+    ``event_key`` is the identity the ledger dedupes on, and it is derived
+    entirely from Slack's own facts — the channel, the message, who acted and
+    what they did — so replaying a window produces the same keys and therefore
+    no second write. Un-reacting and re-reacting is a fidget, not a second
+    instruction.
+    """
+
+    event_key: str = ""
+    channel: str = ""
+    anchor_ts: str = ""  # the message being answered (ours)
+    reply_ts: str = ""  # the reply carrying the answer, when there is one
+    act: str = ""
+    intent: str = ""
+    payload: str = ""  # a correction's text; empty otherwise
+    slack_user: str = ""
+    member: str = ""  # resolved roster name, when one is known
+    anchor: SlackAnchor | None = None
+
+
+def reaction_key(channel: str, ts: str, actor: str, emoji: str) -> str:
+    return f"react:{channel}:{ts}:{actor}:{emoji}"
+
+
+def reply_key(channel: str, reply_ts: str) -> str:
+    """One message, one interpretation — so a verb and a correction share a key."""
+    return f"reply:{channel}:{reply_ts}"
 
 
 def _now() -> datetime:
@@ -205,12 +289,112 @@ class SlackStore:
         )
         return stamped
 
-    def prune(self, *, keep_days: int = 30, now: datetime | None = None) -> int:
-        """Drop anchors older than ``keep_days``; return how many went."""
-        cutoff = _stamp((now or _now()) - timedelta(days=keep_days))
-        cur = self._conn.execute("DELETE FROM slack_anchors WHERE posted_at < ?", (cutoff,))
+    def claim(self, event: InboundEvent, *, now: datetime | None = None) -> bool:
+        """Take ownership of one event. True means this run should act on it.
+
+        ``INSERT OR IGNORE`` on ``event_key``, and the rowcount **is** the
+        answer — which is what makes the overlapping read window free. The poll
+        re-reads the same 48 hours every time (a gap after a failed run would
+        drop somebody's vote on the floor), so almost every event it sees has
+        already been handled, and saying so costs one refused insert.
+
+        Claimed *before* acting, deliberately. A crash between the two loses one
+        event and leaves a visible unsettled row; the other order double-applies
+        a write. Every act here mutates something, so at-most-once with a
+        visible remainder is the right way round.
+        """
+        cur = self._conn.execute(
+            """INSERT OR IGNORE INTO slack_inbound
+               (event_key, channel, anchor_ts, act, intent, slack_user, member, claimed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event.event_key,
+                event.channel,
+                event.anchor_ts,
+                event.act,
+                event.intent,
+                event.slack_user,
+                event.member,
+                _stamp(now or _now()),
+            ),
+        )
         self._conn.commit()
-        return cur.rowcount or 0
+        return bool(cur.rowcount)
+
+    def settle(self, event_key: str, *, outcome: str, reason: str = "", now: datetime | None = None) -> None:
+        """Record what happened to a claimed event."""
+        self._conn.execute(
+            "UPDATE slack_inbound SET outcome = ?, reason = ?, settled_at = ? WHERE event_key = ?",
+            (outcome, reason[:500], _stamp(now or _now()), event_key),
+        )
+        self._conn.commit()
+        logger.info("slack event %s → %s%s", event_key, outcome, f" ({reason})" if reason else "")
+
+    def unsettled(self, *, limit: int = 50) -> list[dict]:
+        """Events claimed but never settled — what a crash mid-apply leaves."""
+        rows = self._conn.execute(
+            "SELECT * FROM slack_inbound WHERE outcome = '' ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def history(self, *, limit: int = 20) -> list[dict]:
+        """The most recent inbound events, newest first."""
+        rows = self._conn.execute("SELECT * FROM slack_inbound ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_poll(self, poll: dict) -> None:
+        """One row per poll, whatever happened — including the declines.
+
+        The ceremonies ledger's discipline, for the same reason: a job that
+        fires unattended and stops working is indistinguishable from one that
+        had nothing to do, unless it says which.
+        """
+        self._conn.execute(
+            """INSERT INTO slack_polls
+               (polled_at, window_start, outcome, messages_read, events_seen,
+                events_new, events_applied, duration_s, detail, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                poll.get("polled_at", _stamp(_now())),
+                poll.get("window_start", ""),
+                poll.get("outcome", ""),
+                int(poll.get("messages_read", 0)),
+                int(poll.get("events_seen", 0)),
+                int(poll.get("events_new", 0)),
+                int(poll.get("events_applied", 0)),
+                float(poll.get("duration_s", 0.0)),
+                str(poll.get("detail", ""))[:500],
+                str(poll.get("error", ""))[:500],
+            ),
+        )
+        self._conn.commit()
+
+    def polls(self, *, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM slack_polls ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def last_poll(self, *, ok_only: bool = True) -> dict | None:
+        clause = "WHERE outcome = 'ok' " if ok_only else ""
+        row = self._conn.execute(f"SELECT * FROM slack_polls {clause}ORDER BY id DESC LIMIT 1").fetchone()  # noqa: S608
+        return dict(row) if row else None
+
+    def prune(self, *, keep_days: int = 30, now: datetime | None = None) -> int:
+        """Drop rows older than ``keep_days``; return how many went.
+
+        A job that fires every ten minutes and never collects its own garbage
+        grows without limit, so this runs at the tail of a successful poll.
+        """
+        cutoff = _stamp((now or _now()) - timedelta(days=keep_days))
+        gone = 0
+        for table, column in (
+            ("slack_anchors", "posted_at"),
+            ("slack_inbound", "claimed_at"),
+            ("slack_polls", "polled_at"),
+        ):
+            cur = self._conn.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff,))  # noqa: S608 — literal names
+            gone += cur.rowcount or 0
+        self._conn.commit()
+        return gone
 
     # ── reads ─────────────────────────────────────────────────────────────
 

@@ -899,6 +899,34 @@ def set_slack_channel_id(channel: str) -> None:
     logger.info("Slack channel id persisted to %s", config_file)
 
 
+def get_slack_allowed_member_ids() -> str:
+    """Return the raw allowlist of Slack member ids, or '' if unset.
+
+    Raw rather than parsed, because the parse fails loudly and this getter must
+    not: ``slack.allowlist`` owns the one place that decides what a malformed
+    entry means (nobody is authorised).
+    """
+    return os.getenv("SLACK_ALLOWED_MEMBER_IDS", "") or ""
+
+
+def set_slack_allowed_member_ids(ids: str) -> None:
+    """Persist the Slack allowlist to ~/.yeaboi/.env and apply it now."""
+    config_file = set_config_value("SLACK_ALLOWED_MEMBER_IDS", ids)
+    os.environ["SLACK_ALLOWED_MEMBER_IDS"] = ids
+    logger.info("Slack allowlist persisted to %s", config_file)
+
+
+def get_slack_ack_reaction() -> str:
+    """The emoji yeaboi adds to a message it has acted on ('' = off).
+
+    Off by default because it needs ``reactions:write``, and the two-way lane is
+    a *read* feature — a token that can write into a team channel is the scope
+    an administrator is most likely to refuse. The reaction is a courtesy for
+    humans and is never read back as a record.
+    """
+    return (os.getenv("SLACK_ACK_REACTION", "") or "").strip().strip(":")
+
+
 def slack_two_way_ready() -> tuple[bool, str]:
     """(ready, why-not) for the two-way path — the one predicate every surface asks.
 

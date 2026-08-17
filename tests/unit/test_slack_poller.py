@@ -1,0 +1,415 @@
+"""The poll: read a window, apply what an allowlisted human asked for, exit.
+
+The properties under test are the ones an unattended job lives or dies on.
+**Replay is free** — the window overlaps by design, so the same reaction seen
+288 times must act once. **Failure is closed** — no token, no allowlist, a
+malformed allowlist and an expired anchor all end in nothing happening, and all
+of them say so in the ledger. And **one bad event never costs the rest**.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from yeaboi.slack import poller
+from yeaboi.slack.poller import PollResult, is_human_message, run_poll
+from yeaboi.slack.store import (
+    KIND_SIGNAL,
+    POLL_LOCKED,
+    POLL_NO_ALLOWLIST,
+    POLL_NO_CHANNEL,
+    POLL_NO_TOKEN,
+    POLL_OK,
+    SlackAnchor,
+    SlackStore,
+)
+from yeaboi.tools.slack import SlackResponse
+
+NOW = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+ACTOR = "U0123456789"
+
+
+@pytest.fixture
+def db(tmp_path):
+    return tmp_path / "sessions.db"
+
+
+@pytest.fixture(autouse=True)
+def _configured(monkeypatch, tmp_path):
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-1")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
+    monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", ACTOR)
+    monkeypatch.setenv("SLACK_ACK_REACTION", "")
+    monkeypatch.setattr("yeaboi.paths.get_slack_log_dir", lambda: tmp_path)
+
+
+class FakeApi:
+    """A Slack that answers from a script rather than a network."""
+
+    is_fatal_auth_error = staticmethod(lambda resp: resp.error in {"invalid_auth", "token_revoked"})
+    error_message = staticmethod(lambda resp: f"Error: {resp.error}")
+
+    def __init__(self, *, reactions=None, thread=None, auth=None):
+        self._reactions = reactions or {}
+        self._thread = thread or {}
+        self._auth = auth or SlackResponse(ok=True, data={"user_id": "UBOT000000", "team": "acme", "user": "yeaboi"})
+        self.acks: list[tuple[str, str, str]] = []
+
+    def auth_test(self, *, token="", budget=None):
+        return self._auth
+
+    def reactions_get(self, channel, ts, *, token="", budget=None):
+        entry = self._reactions.get(ts)
+        if isinstance(entry, SlackResponse):
+            return entry
+        return SlackResponse(ok=True, data={"message": {"reactions": entry or []}})
+
+    def replies(self, channel, ts, *, cursor="", limit=200, token="", budget=None):
+        return SlackResponse(ok=True, data={"messages": self._thread.get(ts, [])})
+
+    def paginate(self, fetch, key, *, max_pages=10):
+        resp = fetch("")
+        return (list(resp.data.get(key) or []), "") if resp.ok else ([], resp.error)
+
+    def add_reaction(self, channel, ts, name, *, token="", budget=None):
+        self.acks.append((channel, ts, name))
+        return SlackResponse(ok=True)
+
+
+def _anchor(db, **kw) -> SlackAnchor:
+    base = {
+        "channel": "C123",
+        "ts": "1723800000.000100",
+        "session_id": "s1",
+        "ceremony": "morning",
+        "mode": "standup",
+        "run_id": 7,
+    }
+    with SlackStore(db) as store:
+        return store.record_anchor(SlackAnchor(**{**base, **kw}), now=NOW - timedelta(hours=1))
+
+
+def _react(emoji=None, users=None):
+    return {"1723800000.000100": [{"name": emoji or "pause_button", "users": users or [ACTOR]}]}
+
+
+class TestDeclines:
+    """Every one of these writes a row saying which decline it was."""
+
+    def test_no_token_never_calls_slack(self, db, monkeypatch):
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "")
+        api = FakeApi()
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (True, ""))
+        assert result.outcome == POLL_NO_TOKEN
+        assert result.declined
+
+    def test_no_channel_declines(self, db, monkeypatch):
+        monkeypatch.setenv("SLACK_CHANNEL_ID", "")
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: (True, ""))
+        assert result.outcome == POLL_NO_CHANNEL
+
+    def test_an_empty_allowlist_declines_without_calling_slack(self, db, monkeypatch):
+        # With nobody authorised there is no event this poll could act on, so
+        # the API call would be pure waste.
+        monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", "")
+        called = []
+
+        class _Counting(FakeApi):
+            def auth_test(self, *, token="", budget=None):
+                called.append("auth")
+                return super().auth_test()
+
+        result = run_poll(db_path=db, now=NOW, api=_Counting(), apply_event=lambda e: (True, ""))
+        assert result.outcome == POLL_NO_ALLOWLIST
+        assert called == []
+
+    def test_a_malformed_allowlist_is_the_same_as_an_empty_one(self, db, monkeypatch):
+        # A half-filled list LOOKS configured, which is why one bad entry voids
+        # all of it rather than quietly dropping itself.
+        monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", f"{ACTOR},oops")
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: (True, ""))
+        assert result.outcome == POLL_NO_ALLOWLIST
+
+    def test_a_declined_poll_is_still_recorded(self, db, monkeypatch):
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "")
+        run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: (True, ""))
+        with SlackStore(db) as store:
+            assert store.polls()[0]["outcome"] == POLL_NO_TOKEN
+
+    def test_a_second_poll_backs_off_rather_than_racing(self, db, monkeypatch):
+        # launchd will not double-run a loaded label; cron absolutely will.
+        monkeypatch.setattr(poller, "_lock", lambda path: None)
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: (True, ""))
+        assert result.outcome == POLL_LOCKED
+
+
+class TestApplying:
+    def test_an_allowlisted_reaction_is_applied_once(self, db):
+        _anchor(db)
+        seen = []
+        result = run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react()),
+            apply_event=lambda e: (seen.append(e.intent), (True, "paused"))[1],
+        )
+        assert result.outcome == POLL_OK
+        assert result.events_applied == 1
+        assert seen == ["pause"]
+
+    def test_replaying_the_same_window_applies_nothing_further(self, db):
+        # The window overlaps ~288x at a ten-minute cadence. That is only free
+        # because the ledger's key makes the second sighting a no-op.
+        _anchor(db)
+        api = FakeApi(reactions=_react())
+        applied = []
+        for _ in range(3):
+            run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (applied.append(e), (True, ""))[1])
+        assert len(applied) == 1
+
+    def test_an_unauthorised_actor_is_ignored_silently_but_recorded(self, db):
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react(users=["U5555555555"])),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+        with SlackStore(db) as store:
+            assert store.history()[0]["outcome"] == "unauthorized"
+
+    def test_the_bot_may_not_authorise_itself(self, db, monkeypatch):
+        # Otherwise the acknowledgement reaction drives the next round.
+        monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", "UBOT000000")
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react(users=["UBOT000000"])),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+
+    def test_an_emoji_outside_the_grammar_is_recorded_as_ignored(self, db):
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react(emoji="tada")),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+        with SlackStore(db) as store:
+            assert store.history()[0]["outcome"] == "ignored"
+
+    def test_an_expired_anchor_resolves_to_nothing(self, db):
+        # apply_verdict would refuse a stale run on its own, but a stale
+        # ceremony control would happily fire.
+        _anchor(db, expires_at=(NOW - timedelta(days=1)).isoformat(timespec="seconds"))
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react()),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+        with SlackStore(db) as store:
+            assert store.history()[0]["outcome"] == "stale"
+
+    def test_a_thumb_on_the_post_is_not_a_verdict(self, db):
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions=_react(emoji="+1")),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+
+    def test_a_thumb_on_a_signal_is(self, db):
+        _anchor(
+            db, kind=KIND_SIGNAL, ts="1723800001.0002", root_ts="1723800000.000100", member="Ada", rule="wip-sprawl"
+        )
+        seen = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(reactions={"1723800001.0002": [{"name": "+1", "users": [ACTOR]}]}),
+            apply_event=lambda e: (seen.append((e.act, e.intent)), (True, ""))[1],
+        )
+        assert seen == [("verdict", "up")]
+
+    def test_a_refusal_is_recorded_with_its_reason(self, db):
+        _anchor(db)
+        run_poll(db_path=db, now=NOW, api=FakeApi(reactions=_react()), apply_event=lambda e: (False, "already paused"))
+        with SlackStore(db) as store:
+            row = store.history()[0]
+        assert (row["outcome"], row["reason"]) == ("refused", "already paused")
+
+    def test_one_raising_event_does_not_stop_the_others(self, db):
+        _anchor(db)
+        _anchor(db, ts="1723800009.0009")
+        calls = []
+
+        def _apply(event):
+            calls.append(event.anchor_ts)
+            if event.anchor_ts.endswith("0009"):
+                raise RuntimeError("boom")
+            return True, "ok"
+
+        result = run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(
+                reactions={
+                    "1723800000.000100": [{"name": "pause_button", "users": [ACTOR]}],
+                    "1723800009.0009": [{"name": "pause_button", "users": [ACTOR]}],
+                }
+            ),
+            apply_event=_apply,
+        )
+        assert result.outcome == POLL_OK
+        assert len(calls) == 2
+        with SlackStore(db) as store:
+            assert {r["outcome"] for r in store.history()} == {"applied", "failed"}
+
+
+class TestReplies:
+    def test_a_bare_verb_in_a_thread_acts(self, db):
+        _anchor(db)
+        seen = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(thread={"1723800000.000100": [{"ts": "1723800005.5", "user": ACTOR, "text": "pause"}]}),
+            apply_event=lambda e: (seen.append(e.intent), (True, ""))[1],
+        )
+        assert seen == ["pause"]
+
+    def test_a_bot_reply_is_never_read(self, db):
+        # Another integration talking in the thread must not drive yeaboi.
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(
+                thread={"1723800000.000100": [{"ts": "1723800005.5", "bot_id": "B1", "user": ACTOR, "text": "pause"}]}
+            ),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+
+    def test_an_edited_message_shape_is_not_read(self, db):
+        _anchor(db)
+        applied = []
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(
+                thread={
+                    "1723800000.000100": [
+                        {"ts": "1723800005.5", "user": ACTOR, "text": "pause", "subtype": "message_changed"}
+                    ]
+                }
+            ),
+            apply_event=lambda e: (applied.append(e), (True, ""))[1],
+        )
+        assert applied == []
+
+
+class TestIsHumanMessage:
+    @pytest.mark.parametrize(
+        "message",
+        [
+            {"user": "U1", "text": "hi"},
+            {"user": "U1", "text": "hi", "subtype": ""},
+            {"user": "U1", "text": "hi", "subtype": "thread_broadcast"},
+        ],
+    )
+    def test_a_plain_message_is_human(self, message):
+        assert is_human_message(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            {"bot_id": "B1", "user": "U1"},
+            {"app_id": "A1", "user": "U1"},
+            {"user": "", "text": "hi"},
+            {"text": "hi"},
+            # username is client-settable, so it is never a fallback for user.
+            {"username": "ada", "text": "hi"},
+            {"user": "U1", "subtype": "message_deleted"},
+            "not a dict",
+        ],
+    )
+    def test_everything_else_is_not(self, message):
+        assert not is_human_message(message)
+
+
+class TestAck:
+    def test_off_by_default(self, db):
+        # reactions:write is the scope an administrator is most likely to
+        # refuse, and this is a read feature.
+        _anchor(db)
+        api = FakeApi(reactions=_react())
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (True, ""))
+        assert api.acks == []
+
+    def test_ticks_the_message_when_configured(self, db, monkeypatch):
+        monkeypatch.setenv("SLACK_ACK_REACTION", "white_check_mark")
+        _anchor(db)
+        api = FakeApi(reactions=_react())
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (True, ""))
+        assert api.acks == [("C123", "1723800000.000100", "white_check_mark")]
+
+    def test_never_ticks_something_it_did_not_apply(self, db, monkeypatch):
+        monkeypatch.setenv("SLACK_ACK_REACTION", "white_check_mark")
+        _anchor(db)
+        api = FakeApi(reactions=_react())
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (False, "nope"))
+        assert api.acks == []
+
+
+class TestFailures:
+    def test_a_revoked_token_fails_the_poll_with_slacks_own_code(self, db):
+        api = FakeApi(auth=SlackResponse(ok=False, error="token_revoked"))
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (True, ""))
+        assert (result.outcome, result.error) == ("failed", "token_revoked")
+
+    def test_an_unreadable_message_does_not_lose_the_rest_of_the_window(self, db):
+        _anchor(db)
+        _anchor(db, ts="1723800009.0009")
+        api = FakeApi(
+            reactions={
+                "1723800000.000100": SlackResponse(ok=False, error="message_not_found"),
+                "1723800009.0009": [{"name": "pause_button", "users": [ACTOR]}],
+            }
+        )
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (True, "ok"))
+        assert result.events_applied == 1
+
+    def test_a_gap_longer_than_the_window_is_reported_not_widened(self, db):
+        # Acting on a three-day-old approval is the staleness the ceremonies
+        # engine already ruled against; doing it silently is worse.
+        with SlackStore(db) as store:
+            store.record_poll({"polled_at": (NOW - timedelta(days=4)).isoformat(timespec="seconds"), "outcome": "ok"})
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: (True, ""))
+        assert "exceeds the 48h window" in result.detail
+
+
+class TestPollResult:
+    @pytest.mark.parametrize(
+        "outcome,declined",
+        [(POLL_OK, False), ("failed", False), (POLL_NO_TOKEN, True), (POLL_LOCKED, True)],
+    )
+    def test_declined_separates_a_refusal_from_a_failure(self, outcome, declined):
+        assert PollResult(outcome=outcome).declined is declined
