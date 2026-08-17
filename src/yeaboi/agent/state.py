@@ -1725,6 +1725,89 @@ class ShipRun:
 
 
 # ---------------------------------------------------------------------------
+# Ceremony artifacts (the team's recurring runs — see ceremonies/)
+# ---------------------------------------------------------------------------
+
+
+# What one fired run did. Two of the four are *not* failures: a run the guards
+# declined is a decision, and recording it as such is the difference between
+# "nothing happened" and "something stopped it".
+CEREMONY_OUTCOMES = (
+    "ok",
+    "failed",
+    "skipped_stale",  # fired far enough after its slot that the output would mislead
+    "skipped_over_cap",  # this month's spend on this ceremony is already at the cap
+)
+
+
+@dataclass(frozen=True)
+class Ceremony:
+    """One recurring run of one mode, declared once and fired by the OS.
+
+    ``name`` is the key every surface addresses, and it also becomes part of a
+    launchd label, a plist filename and a crontab marker — so it is whitelisted
+    (``ceremonies.store.valid_name``) rather than trusted.
+
+    ``args`` is ordered key/value *strings*; the catalog coerces them to the
+    engine's real types. A dict would be the obvious choice and is the wrong
+    one: this artifact is frozen, persisted as JSON and compared field-by-field
+    in tests, and a tuple of pairs round-trips through all three unchanged.
+    """
+
+    session_id: str = ""
+    name: str = ""
+    mode: str = ""  # a ceremonies.catalog key
+    args: tuple[tuple[str, str], ...] = ()
+    weekdays: str = "1-5"  # the scheduler's spec form: "1-5", "1,3,5"
+    at: str = "09:00"  # local time the ceremony is FOR (and when the job fires)
+    channels: tuple[str, ...] = ("terminal",)
+    enabled: bool = True
+    stale_after_min: int = 120  # 0 disables the staleness guard
+    monthly_cap_usd: float = 0.0  # 0 = uncapped
+    last_fired_at: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class CeremonyRun:
+    """One fired run, recorded whatever happened to it.
+
+    A scheduled run that fails at 06:00 with nobody watching is how this whole
+    feature dies quietly, so ``error`` is a column rather than a log line: the
+    fact of a failure is useless without the reason for it.
+    """
+
+    ceremony: str = ""
+    session_id: str = ""
+    fired_at: str = ""
+    outcome: str = ""  # one of CEREMONY_OUTCOMES
+    scheduled: bool = False  # fired by the OS job, not by a human
+    duration_s: float = 0.0
+    cost_usd: float = 0.0
+    delivery: tuple[tuple[str, bool], ...] = ()  # (channel, delivered)
+    detail: str = ""  # the headline the run produced, for the history screen
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class Dispatch:
+    """What a finished ceremony has to say, in a form every channel can send.
+
+    Delivery used to be typed on ``StandupReport``, which is why nothing else
+    could be delivered. This is the mode-neutral payload that replaced it:
+    ``summary`` is the one-liner a desktop notification can hold, ``body`` is
+    the plaintext Slack/email/terminal version, and ``artifact`` points at an
+    already-exported file when the mode produced one.
+    """
+
+    title: str = ""
+    summary: str = ""
+    body: str = ""
+    artifact: str = ""  # path to an exported file, "" when there is none
+
+
+# ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
 
