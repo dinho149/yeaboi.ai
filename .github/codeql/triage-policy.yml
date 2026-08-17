@@ -51,14 +51,13 @@ propose:
       Removing the checkout breaks the workflow_run chain that Claude Review and
       Dependabot verify both depend on. publish.yml's `test` job checks out
       `needs.check.outputs.sha` rather than main for the guarantee the whole file
-      exists for — the tested rc and the published final must be the same tree —
+      exists for — the tested tree and the published final must be the same tree —
       so the non-constant ref is the feature, not the defect. What bounds it:
-      reaching that job needs both `release:promote` and `release:promotion` on
-      the ask issue (repo write for either), the `<!-- tested: -->` marker is
-      filtered to an authorAssociation of OWNER/MEMBER/COLLABORATOR, and the ref
-      must resolve to a real refs/tags/beta/X.Y.ZrcN that only publish-beta.yml
-      pushes. Any change at either site is a redesign of the release path, not an
-      alert fix.
+      the sha is resolved in `check` from the pushed commit itself (the batch
+      model's sign-off IS the human's merge), the lane step gates every
+      publishing step off for a fleet-classified push, and only a human-lane
+      push reaches the upload at all. Any change at either site is a redesign of
+      the release path, not an alert fix.
     accepted:
       - .github/workflows/auto-version.yml
       - .github/workflows/publish.yml

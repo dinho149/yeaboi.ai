@@ -9,7 +9,7 @@ CODE ?= code
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -178,23 +178,30 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
 
-# --- Beta sign-off (see cowork/release-signoff.md) --------------------------
+# --- Release batch sign-off (see cowork/release-signoff.md) ------------------
 #
-# Every release-worthy merge publishes a PyPI pre-release; a human turns the
-# accumulated batch into the official X.Y.Z once a week. These are that human's
-# commands, and there are two test sessions rather than one: the fleet
+# The fleet's PRs never merge one by one: they wait open, gate-green, and ship
+# inside ONE batch PR a human assembles, hand-tests and merges. These are that
+# human's commands. There are two test sessions rather than one: the fleet
 # maintains what exists AND builds one provider integration a week, and those are
 # different things to sit down and exercise.
 #
-# `beta-check` only reports. Each `beta-sign-*` records that track's sign-off on
-# the promotion ask, and the LAST one writes the bare `<!-- tested: -->` marker
-# publish.yml greps for — which is what lets it cut the final from the exact
-# commit that was tested, and what stops a half-signed batch being promoted.
+# `batch-assemble` builds the `batch/<date>` branch (one squash commit per fleet
+# PR), opens the draft batch PR, and builds the wheel to test. `beta-check` only
+# reports. Each `beta-sign-*` records that track's sign-off as a marker comment
+# on the batch PR, pinned to the head sha that was tested; the LAST one writes
+# the bare completion marker — which is what stops a half-signed batch being
+# promoted. `beta-promote` verifies, flips the draft to ready, and prints the
+# merge command. THE MERGE IS YOURS: `gh pr merge <n> --merge` (never squash),
+# and publish.yml cuts the official X.Y.Z from your merge.
 #
-# Two targets rather than `make beta-sign <track>`: Make reads a bare word as a
-# second goal, so that spelling fails with "No rule to make target 'integration'".
+# Two sign targets rather than `make beta-sign <track>`: Make reads a bare word
+# as a second goal, so that spelling fails with "No rule to make target …".
 
-beta-check: ## What is installable, what changed, and what to exercise by hand
+batch-assemble: ## Assemble the gate-green fleet PRs into a batch branch + draft PR
+	@$(UV) run python scripts/batch_assemble.py
+
+beta-check: ## What is in the open batch, and what to exercise by hand
 	@$(UV) run python scripts/beta_signoff.py check
 
 beta-sign-maintenance: ## Record the maintenance sign-off (security, bugs, chores, docs)
@@ -203,7 +210,7 @@ beta-sign-maintenance: ## Record the maintenance sign-off (security, bugs, chore
 beta-sign-integration: ## Record the integration sign-off (this week's provider campaign)
 	@$(UV) run python scripts/beta_signoff.py sign integration
 
-beta-promote: ## Promote the tested pre-release to the official X.Y.Z (prompts)
+beta-promote: ## Verify the sign-offs, mark the batch PR ready, print the merge command
 	@$(UV) run python scripts/beta_signoff.py promote
 
 # --- Front end — TS sources in frontend/, built output committed ------------

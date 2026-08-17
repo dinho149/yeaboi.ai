@@ -90,8 +90,9 @@ the only thing standing between this routine and an agent that can lower its own
    Then the ordinary auto-lane machinery, unchanged: `cowork-scribe` (`standard`) opens the Linear
    ticket, `cowork-builder` (`deep`) makes the edit in a branch off `main` and runs the DoD gate,
    **you** spawn `code-reviewer` (`deep`) on the diff, and the PR opens labelled `cowork` +
-   `workstream:fleet` + `type:chore`. Arm auto-merge only if `pr-feedback` is a required status
-   check — the same ruleset read [sweep-procedure.md](../../sweep-procedure.md) step 5 does.
+   `workstream:fleet` + `type:chore` + `semver:none`. Leave it open — never merge, never arm
+   auto-merge; it ships with the next release batch, exactly as
+   [sweep-procedure.md](../../sweep-procedure.md) step 5 says.
 
 5. **Propose lane — everything else, and "everything else" is most of it.**
 

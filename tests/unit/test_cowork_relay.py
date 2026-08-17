@@ -68,7 +68,7 @@ def item(number: int, ts: str = "1", **reactions: list[str]) -> dict:
 
 
 def promotion(number: int, version: str = "3.6.1", ts: str = "1", **reactions: list[str]) -> dict:
-    """The ask routine's reply, in the exact contract `PROMOTE_RE` parses."""
+    """The RETIRED ask routine's reply shape — matched only by the tombstone."""
     return reply(ts, f"#{number} — promote {version} — https://example.invalid/{number}", **reactions)
 
 
@@ -138,7 +138,7 @@ class TestRecordedFailure:
         assert "<!-- implement-retry -->" in plan[0]["command"][-1]
 
     def test_an_unreadable_approval_state_still_approves(self, thread):
-        """The asymmetry with `is_promotion`, which routes `None` to `ask`.
+        """The asymmetry with `is_campaign_candidate`, which routes `None` to `ask`.
 
         Guessing wrong there starts an implementation run against a release ask.
         Guessing wrong here re-applies a label that is already present, which does
@@ -163,7 +163,7 @@ class TestVerbs:
         plan = relay.build_plan(fresh, ALLOWLIST, approved_check=lambda n: False)["plan"]
         assert plan[0]["command"] == ["gh", "issue", "edit", "172", "--add-label", "claude-implement"]
 
-    @pytest.mark.parametrize("verb", ["approve", "refire", "promote", "campaign", "reject"])
+    @pytest.mark.parametrize("verb", ["approve", "refire", "campaign", "reject"])
     def test_no_emitted_command_can_replace_a_label_set(self, verb):
         """Over every verb by name, rather than over whichever ones a sample thread
         happens to reach — `refire` needs a stubbed label read to be reached at all,
@@ -184,7 +184,7 @@ class TestVerbs:
         """`_command` raises on an unknown verb, so a verb added to `build_plan`
         without one turns a relay run into a crash mid-plan — after it has already
         executed the entries before it."""
-        for verb in ("approve", "refire", "promote", "campaign", "reject"):
+        for verb in ("approve", "refire", "campaign", "reject"):
             assert relay._command(verb, 1)[0] == "gh"
 
     def test_a_rejection_closes(self):
@@ -204,103 +204,83 @@ class TestVerbs:
         assert [p["issue"] for p in relay.build_plan(thread, ALLOWLIST)["plan"]] == [1, 2]
 
 
-class TestPromotion:
-    """✅ on the weekly ask releases the accumulated batch.
+class TestPromotionTombstone:
+    """The promote verb is GONE — releasing is merging the batch PR, and no ✅ ships.
 
-    The verb rides the proven `--add-label` path rather than dispatching a
-    workflow, because a workflow cannot start another with GITHUB_TOKEN — but the
-    relay is not CI, and `gh issue edit --add-label claude-implement` is already
-    trusted here. This is that path with a different label.
+    The regex survives so a promote-shaped reply — last week's ask still in the
+    48h read window at cutover, or a crafted title the digest quoted — cannot
+    fall through to the ordinary lane, where a ✅ applies `claude-implement` to
+    the old release ask and launches an implement run against "Promote 3.7.0?".
     """
 
-    def test_an_approval_on_a_promotion_ask_promotes(self):
-        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True)[
-            "plan"
-        ]
-        assert plan[0]["verb"] == "promote"
-        assert plan[0]["command"] == ["gh", "issue", "edit", "231", "--add-label", "release:promote"]
-
-    def test_the_shape_alone_is_not_enough_without_the_label(self):
-        """A user-written title can match the regex; only the label is authoritative.
-
-        The damage is a *lost approval*, not a stray label: `publish.yml` would
-        refuse the release anyway, but the ✅ meant as "build this" would have
-        applied `release:promote` and never `claude-implement`, with nothing said.
-        """
-        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: False)[
-            "plan"
-        ]
-        assert plan[0]["verb"] == "approve"
-        assert plan[0]["command"][-1] == "claude-implement"
-
-    @pytest.mark.parametrize("payload", [None, "not json", '{"labels": "wrong shape"}', ""])
-    def test_an_unanswerable_question_is_not_a_no(self, payload):
-        """`None`, never `False` — the difference decides whether an agent starts.
-
-        `approve` is not a no-op: it applies `claude-implement`, and `claude.yml`
-        fires on any issue receiving that label. Collapsing "could not reach
-        GitHub" into "not a promotion" would turn one rate-limited `gh` call into
-        an unattended implementation run against the release ask itself.
-        """
-        assert relay.is_promotion(231, runner=lambda argv: payload) is None
-
-    def test_an_unreachable_github_asks_rather_than_approving(self):
-        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: None)[
-            "plan"
-        ]
+    def test_a_promote_reply_asks_and_acts_on_nothing(self):
+        plan = relay.build_plan([promotion(231, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
         assert plan[0]["verb"] == "ask"
         assert plan[0]["command"] is None, "no command at all — not `claude-implement` by another name"
 
-    def test_the_label_is_read_from_github(self):
-        seen = {}
-
-        def runner(argv):
-            seen["argv"] = argv
-            return '{"labels": [{"name": "release:promotion"}, {"name": "type:chore"}]}'
-
-        assert relay.is_promotion(231, runner=runner) is True
-        assert seen["argv"] == ["gh", "issue", "view", "231", "--json", "labels,state"]
-        assert relay.is_promotion(231, runner=lambda a: '{"labels": [{"name": "type:chore"}]}') is False
-
-    def test_a_closed_ask_cannot_be_promoted(self):
-        """The stale-Slack-reply hole, closed on the only side that can close it.
-
-        `cron/release-promote-ask.md` supersedes an unanswered ask by closing it
-        and opening a fresh one — which dedups GitHub and does nothing for Slack.
-        Last week's thread reply is still in the 48h read window, still unmarked,
-        and `publish.yml`'s guard fires on the `labeled` event without ever
-        looking at issue state. A ✅ there would promote against a manifest nobody
-        read. `ask` rather than `reject`: the human does want to promote, just not
-        on that issue.
-        """
-        payload = '{"labels": [{"name": "release:promotion"}], "state": "CLOSED"}'
-        assert relay.is_promotion(231, runner=lambda argv: payload) is None
-        plan = relay.build_plan(
-            [promotion(231, white_check_mark=[HUMAN])],
-            ALLOWLIST,
-            promotion_check=lambda n: relay.is_promotion(231, runner=lambda a: payload),
-        )["plan"]
+    def test_a_rejection_on_a_promote_reply_also_asks(self):
+        """A ❌ used to close the ask; now nothing here may touch it either way."""
+        plan = relay.build_plan([promotion(231, x=[HUMAN])], ALLOWLIST)["plan"]
         assert plan[0]["verb"] == "ask"
-        assert plan[0]["command"] is None, "no label at all — not release:promote, not claude-implement"
+        assert plan[0]["command"] is None
 
-    def test_an_open_ask_still_promotes(self):
-        payload = '{"labels": [{"name": "release:promotion"}], "state": "OPEN"}'
-        assert relay.is_promotion(231, runner=lambda argv: payload) is True
+    def test_there_is_no_promote_verb_to_spell(self):
+        with pytest.raises(relay.RelayError):
+            relay._command("promote", 231)
 
-    def test_a_payload_with_no_state_reads_as_open(self):
-        """Absence is not evidence: an older transport shape is not a closed issue."""
-        assert relay.is_promotion(231, runner=lambda a: '{"labels": [{"name": "release:promotion"}]}') is True
-
-    def test_a_closed_ordinary_proposal_is_untouched_by_the_state_check(self):
-        """The state read must only gate promotion, not ordinary approvals."""
-        payload = '{"labels": [{"name": "type:chore"}], "state": "CLOSED"}'
-        assert relay.is_promotion(231, runner=lambda a: payload) is False
+    def test_no_emitted_command_names_the_retired_label(self):
+        for verb in ("approve", "refire", "campaign", "reject"):
+            assert "release:promote" not in relay._command(verb, 1)
 
     def test_an_ordinary_proposal_is_still_an_approval(self):
         fresh = [item(172, white_check_mark=[HUMAN])]
         plan = relay.build_plan(fresh, ALLOWLIST, approved_check=lambda n: False)["plan"]
         assert plan[0]["verb"] == "approve"
         assert plan[0]["command"][-1] == "claude-implement"
+
+
+class TestOpenLabelTristate:
+    """`_has_open_label` via its surviving caller, `is_campaign_candidate`.
+
+    The tristate reasoning predates the batch model and still holds: `None`
+    means "could not ask", and collapsing it into False would send the fallback
+    verb — `approve`, which applies `claude-implement` — against an issue that
+    describes a week of work.
+    """
+
+    @pytest.mark.parametrize("payload", [None, "not json", '{"labels": "wrong shape"}', ""])
+    def test_an_unanswerable_question_is_not_a_no(self, payload):
+        assert relay.is_campaign_candidate(241, runner=lambda argv: payload) is None
+
+    def test_the_label_is_read_from_github(self):
+        seen = {}
+
+        def runner(argv):
+            seen["argv"] = argv
+            return '{"labels": [{"name": "integration:candidate"}, {"name": "type:chore"}]}'
+
+        assert relay.is_campaign_candidate(241, runner=runner) is True
+        assert seen["argv"] == ["gh", "issue", "view", "241", "--json", "labels,state"]
+        assert relay.is_campaign_candidate(241, runner=lambda a: '{"labels": [{"name": "type:chore"}]}') is False
+
+    def test_a_closed_candidate_reads_as_none(self):
+        """Monday supersedes by closing; a late ✅ must route to `ask`."""
+        payload = '{"labels": [{"name": "integration:candidate"}], "state": "CLOSED"}'
+        assert relay.is_campaign_candidate(241, runner=lambda argv: payload) is None
+
+    def test_an_open_candidate_reads_true(self):
+        payload = '{"labels": [{"name": "integration:candidate"}], "state": "OPEN"}'
+        assert relay.is_campaign_candidate(241, runner=lambda argv: payload) is True
+
+    def test_a_payload_with_no_state_reads_as_open(self):
+        """Absence is not evidence: an older transport shape is not a closed issue."""
+        assert (
+            relay.is_campaign_candidate(241, runner=lambda a: '{"labels": [{"name": "integration:candidate"}]}') is True
+        )
+
+    def test_a_closed_ordinary_proposal_is_untouched_by_the_state_check(self):
+        payload = '{"labels": [{"name": "type:chore"}], "state": "CLOSED"}'
+        assert relay.is_campaign_candidate(241, runner=lambda a: payload) is False
 
     @pytest.mark.parametrize(
         "text",
@@ -311,33 +291,17 @@ class TestPromotion:
             "promote 3.6.1 — #12",
         ],
     )
-    def test_a_title_that_merely_mentions_promote_does_not(self, text):
-        """A proposal title is quoted verbatim into the thread, and anyone can
-        file an issue on a public repo. Only the fixed contract routes the label."""
-        plan = relay.build_plan(
-            [reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True
-        )["plan"]
-        assert all(entry["verb"] != "promote" for entry in plan)
+    def test_a_title_that_merely_mentions_promote_is_an_ordinary_approval(self, text):
+        """The tombstone matches only the retired ask contract, not any title
+        containing the word — a proposal quoted verbatim must stay approvable."""
+        plan = relay.build_plan([reply("1", text, white_check_mark=[HUMAN])], ALLOWLIST)["plan"]
+        if relay.ITEM_RE.match(text):
+            assert plan[0]["verb"] == "approve"
+        else:
+            assert plan == []
 
-    def test_a_rejection_on_a_promotion_ask_just_closes_it(self):
-        """ "Not this week" — next Monday's run opens a fresh ask."""
-        plan = relay.build_plan([promotion(231, x=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True)["plan"]
-        assert plan[0]["verb"] == "reject"
-        assert plan[0]["command"] == ["gh", "issue", "close", "231"]
-
-    def test_the_promote_command_still_cannot_replace_a_label_set(self):
-        for entry in relay.build_plan(
-            [promotion(231, white_check_mark=[HUMAN])], ALLOWLIST, promotion_check=lambda n: True
-        )["plan"]:
-            argv = entry["command"]
-            assert "api" not in argv
-            assert not {"PUT", "-X", "--method"} & set(argv)
-            assert "--remove-label" not in argv
-
-    def test_an_unauthorised_reaction_promotes_nothing(self):
-        plan = relay.build_plan(
-            [promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST, promotion_check=lambda n: True
-        )["plan"]
+    def test_an_unauthorised_reaction_on_a_promote_reply_plans_nothing(self):
+        plan = relay.build_plan([promotion(231, white_check_mark=["USTRANGER"])], ALLOWLIST)["plan"]
         assert plan == []
 
 
@@ -455,15 +419,14 @@ class TestCampaignCandidate:
         )["plan"]
         assert plan == []
 
-    def test_a_promotion_and_a_candidate_do_not_collide(self):
-        """Two special contracts in one thread, each routed by its own label."""
+    def test_a_promote_tombstone_and_a_candidate_do_not_collide(self):
+        """Two special contracts in one thread; only the candidate still acts."""
         plan = relay.build_plan(
             [promotion(231, ts="1", white_check_mark=[HUMAN]), candidate(241, ts="2", white_check_mark=[HUMAN])],
             ALLOWLIST,
-            promotion_check=lambda n: True,
             candidate_check=lambda n: True,
         )["plan"]
-        assert [entry["verb"] for entry in plan] == ["promote", "campaign"]
+        assert [entry["verb"] for entry in plan] == ["ask", "campaign"]
 
 
 class TestAuthorisation:
@@ -814,7 +777,7 @@ class TestTheAuditComment:
     def test_every_approving_verb_says_what_it_did_in_english(self) -> None:
         # "campaign" + "d" is "campaignd". The map exists because deriving the
         # past tense was wrong for the one verb that is not a regular English one.
-        for verb in ("approve", "promote", "campaign"):
+        for verb in ("approve", "campaign"):
             body = relay._audit(verb, 7, "who", "1.0")[-1]
             assert f"<!-- relayed: verb={verb} by=who ts=1.0 -->" in body
             assert "campaignd" not in body
@@ -834,7 +797,7 @@ class TestTheAuditComment:
     def test_the_audit_never_spells_the_label_replacing_call(self) -> None:
         # The same prohibition `_command` carries: `gh api -X PUT .../labels`
         # replaced #172's whole label set. An audit comment is a write too.
-        for verb in ("approve", "promote", "campaign", "reject"):
+        for verb in ("approve", "campaign", "reject"):
             argv = relay._audit(verb, 9, "who", "1.0")
             assert "api" not in argv
             assert not any("PUT" in part for part in argv)

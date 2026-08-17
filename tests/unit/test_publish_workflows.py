@@ -65,19 +65,13 @@ class TestTheOfficialChannelIsPromotionOnly:
         guard = "steps.lane.outputs.unattended != 'true'"
         after = steps[steps.index(lane[0]) + 1 :]
 
-        # `name` as the last fallback: the duplicate-approval step has no `id` and
-        # no `uses`, so keying on those two alone put a bare `None` in this list
-        # and made the exemption below unmatchable.
         def label(step: dict) -> str:
             return step.get("id") or step.get("uses") or step.get("name") or "<unnamed>"
 
         ungated = {label(s): str(s.get("if", "")) for s in after if guard not in str(s.get("if", ""))}
-        # One exemption, and it has to earn it: a step with no lane guard is only
-        # safe if it cannot run on a push at all.
-        assert all("issues" in cond for cond in ungated.values()), (
-            f"steps after `lane` with neither the lane guard nor an issues-only condition: "
-            f"{ {k: v for k, v in ungated.items() if 'issues' not in v} }"
-        )
+        # Unconditional now: the issues-only exemption died with the `issues:`
+        # trigger, so EVERY step after `lane` must carry the guard.
+        assert not ungated, f"steps after `lane` without the lane guard: {ungated}"
 
     def test_the_lane_verdict_is_not_respelled_in_yaml(self):
         """One predicate, one language. A prefix added to `pr_feedback.py` and
@@ -102,20 +96,19 @@ class TestTheOfficialChannelIsPromotionOnly:
         for block in failure_blocks:
             assert setter in block, f"a failure path does not stay on the pre-release channel:\n{block}"
 
-    def test_publish_fires_on_the_promotion_label(self):
+    def test_publish_has_no_issues_trigger(self):
+        """Releasing by label is RETIRED. The batch model's ship act is a human
+        merging the batch PR — a push — and an `issues:` trigger surviving a
+        merge-conflict resolution would silently revive a label-driven release
+        path that now has no double-label guard behind it."""
         triggers = load(PUBLISH)[True]
-        assert "issues" in triggers and "labeled" in triggers["issues"]["types"]
+        assert "issues" not in triggers
+        assert set(triggers) == {"push", "workflow_dispatch"}
 
-    def test_promotion_requires_both_labels(self):
-        """One label is the human's ✅; the other proves the issue is really an ask.
-
-        Anyone can file an issue on a public repo and the relay parses thread
-        replies, so a crafted title could route a ✅ at the wrong issue. It cannot
-        put `release:promotion` there — only the ask routine applies that.
-        """
-        guard = load(PUBLISH)["jobs"]["check"]["if"]
-        assert "release:promote" in guard
-        assert "release:promotion" in guard
+    def test_no_promotion_label_is_read_anywhere(self):
+        text = PUBLISH.read_text(encoding="utf-8")
+        assert "release:promote" not in text
+        assert "ISSUE_BODY" not in text, "the issue-body marker plumbing went with the issues trigger"
 
     def test_the_release_notes_are_built_before_the_upload(self):
         """Publishing without tagging is the one unrecoverable ordering.
@@ -176,33 +169,31 @@ class TestTheOfficialReleaseIsTheTreeThatWasTested:
         ids = [step.get("id") for step in steps if step.get("id")]
         assert ids.index("pin") < ids.index("notes") < ids.index("v")
 
-    def test_it_prefers_what_was_tested_over_what_was_asked(self):
+    def test_the_pin_is_the_pushed_commit_and_reads_no_marker(self):
+        """The sign-off IS the merge now. The hand-test markers live on the batch
+        PR and gate `make beta-promote`; the workflow releases the pushed tree
+        and must not resurrect the marker plumbing."""
         pin = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "pin")
         run = pin["run"]
-        assert run.index("marker tested") < run.index("marker beta"), "the sign-off wins over the ask"
-        assert "git rev-parse -q --verify" in run, "a marker from a public issue is verified, never trusted"
-
-    def test_a_missing_marker_falls_back_rather_than_failing(self):
-        """Refusing here strands a promotion the human already approved."""
-        run = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "pin")["run"]
         assert "git rev-parse HEAD" in run
         assert "exit 1" not in run
+        assert "tested" not in run, "no marker resolution — beta_signoff.py owns the markers now"
 
-    def test_drift_is_measured_in_commits_not_versions(self):
-        run = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "v")["run"]
-        assert "git log --oneline --no-merges" in run
-        assert "origin/main" in run, "the checkout is detached at the pinned commit by then"
-        assert "left_behind" in run
-
-    def test_a_duplicate_approval_closes_out_green(self):
-        """Two ✅s in the relay's window is a race, not a broken release."""
+    def test_a_versionless_merge_closes_out_green(self):
+        """A human merge that never moved the version line — docs, CI — is the
+        ordinary quiet case, not a broken release."""
         job = load(PUBLISH)["jobs"]["check"]
         run = next(step for step in job["steps"] if step.get("id") == "v")["run"]
         assert "is already released" in run
         assert "go=false" in run and "go=true" in run
-        assert job["permissions"]["issues"] == "write"
         for name in ("test", "publish", "release"):
             assert "needs.check.outputs.go" in str(load(PUBLISH)["jobs"][name].get("if", ""))
+
+    def test_no_job_holds_an_issues_write(self):
+        """The promotion-issue plumbing is gone; a write permission surviving it
+        would be a grant with no consumer, waiting to be used by accident."""
+        for name, job in load(PUBLISH)["jobs"].items():
+            assert "issues" not in (job.get("permissions") or {}), name
 
 
 class TestTheBetaChannelTagsWhatItPublished:
@@ -341,44 +332,6 @@ class TestUnattendedBranchPrefixesAgree:
     def test_every_machine_branch_is_covered_by_both(self, branch):
         assert branch.startswith(prf.UNATTENDED_BRANCH_PREFIXES)
         assert any(branch.startswith(prefix) for prefix in self._workflow_prefixes())
-
-
-class TestTheReleaseStepsCannotDieOnTheirOwnPlumbing:
-    """Two shell traps that fail a promotion for a reason nobody would guess.
-
-    Both are the same shape: a step that is *reporting* something optional takes
-    down the release it was reporting on. And both bite only in the case the line
-    exists for — more than fifty commits left behind, or a `gh` call that did not
-    answer — so a green run proves nothing about either.
-    """
-
-    def _step(self, needle: str) -> str:
-        text = PUBLISH.read_text(encoding="utf-8")
-        assert needle in text, f"the line under test moved: {needle}"
-        return text
-
-    def test_the_leftover_commit_list_does_not_pipe_into_head(self):
-        """`git log | head -50` under `set -o pipefail`: SIGPIPE → 141 → dead step.
-
-        The same file explains this trap fifteen lines above, for two other
-        commands. `-n 50` asks git for fifty and never closes a pipe early.
-        """
-        text = self._step("origin/main")
-        for line in text.splitlines():
-            if "git log" in line and "origin/main" in line:
-                assert "| head" not in line, "git log piped into head can take SIGPIPE and fail the promotion"
-
-    def test_reading_the_tested_marker_cannot_hard_fail(self):
-        """`marker`'s own `|| true` covers its greps, not the `gh` process.
-
-        The block's stated contract is that a missing marker means less pinning,
-        not no release — and a rate-limited `gh` must land in the same place as
-        an absent comment.
-        """
-        text = self._step("--json comments")
-        # The assignment spans several lines (the author filter), so the check is
-        # on where it ends rather than on one line of it.
-        assert "marker tested || true)" in text, "a failed `gh issue view` would abort the promotion"
 
 
 class TestTheRepoSetupJobIsRedOnlyForRealProblems:

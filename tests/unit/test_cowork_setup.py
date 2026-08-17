@@ -822,7 +822,7 @@ class TestLabels:
                 "implement-blocked",
                 "feedback-override",
                 "release:promotion",
-                "release:promote",
+                "semver:none",
                 "integration:candidate",
                 "integration:approved",
                 "review-capped",
@@ -2143,17 +2143,21 @@ class TestToolOverrides:
         assert "Task" in tools and "Bash" in tools
 
     def test_the_promotion_ask_cannot_answer_itself(self):
-        """The routine that asks whether to release must not be able to approve it.
+        """The routine that asks may not answer — and the answer is a MERGE now.
 
-        `publish.yml` fires on `release:promote`, which is applied by the relay
-        carrying a human's ✅. A grant of `gh issue edit` here would let the ask
-        label its own issue and cut a release nobody approved — the same shape as
-        a sweep applying `claude-implement` to its own proposal.
+        The reminder routine reads what is waiting and posts one Slack line.
+        Every verb toward shipping must be absent: `gh pr merge` would ship the
+        batch, `gh pr ready` would flip the draft, `gh pr edit` could label it,
+        `gh pr comment` could forge a sign-off marker (the SIGNERS filter would
+        discard it, but the routine must not even be able to try), and `gh api`
+        can PUT a merge. Same shape as a sweep applying `claude-implement` to
+        its own proposal.
         """
         tools = setup.routine_tools("release-promote-ask")
         assert not {"Write", "Edit"} & set(tools)
-        assert not any("gh issue edit" in tool for tool in tools)
-        assert "Bash" not in tools, "a bare Bash grant would include `gh issue edit`"
+        for verb in ("gh pr merge", "gh pr ready", "gh pr edit", "gh pr comment", "gh issue edit", "gh api"):
+            assert not any(verb in tool for tool in tools), verb
+        assert "Bash" not in tools, "a bare Bash grant would include `gh pr merge`"
 
     def test_every_override_names_a_real_routine(self):
         """A renamed relay would otherwise silently lose its extra tools."""
@@ -2269,7 +2273,7 @@ class TestTeardown:
             "implement-blocked",
             "feedback-override",
             "release:promotion",
-            "release:promote",
+            "semver:none",
             "integration:approved",
             "fleet-ledger",
         }

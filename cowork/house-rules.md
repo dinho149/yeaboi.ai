@@ -88,8 +88,8 @@ otherwise enforces:
   file records the prescribed fix for each.
 
 None of that removes a gate: the triage PR goes through **The gate** below like everything else,
-and merges via `gh pr merge --auto` so the ruleset is what decides. A wrong fix does not merge; it
-sits red.
+then waits gate-green for the next release batch. A wrong fix does not ship; it sits red on its
+own PR, or green and unshipped until a human's hand-test carries it.
 
 ## The campaign lane
 
@@ -101,7 +101,8 @@ one week, and wired into every mode that has a question it answers. The procedur
 
 **What approves it is the provider, not the change.** Monday's shortlist reaches you through the
 digest as three `integration:candidate` issues; a ✅ on one applies `integration:approved`, and the
-week's work then ships unattended. That is the whole human step, and it is deliberately upstream:
+week's work is then built unattended — it ships with the release batch you hand-test
+([release-signoff.md](release-signoff.md)). That is the whole human step, and it is deliberately upstream:
 approving each PR of a week-long build is three approvals a week for decisions you already made when
 you picked the provider.
 
@@ -118,9 +119,9 @@ covered it:
 **Everything else holds, unchanged.** An independent `code-reviewer` reads the diff before the PR
 opens. `claude-review.yml` reviews it once CI is green. `scripts/pr_feedback.py` still refuses an
 `<!-- addressed: … -->` marker from the PR's own author, so a campaign may fix a finding and never
-dismiss one. One open PR at a time. The ruleset decides the merge. And nothing reaches a user on
-merge: a campaign publishes a pre-release you hand-test against its own checklist before it is
-promoted (`release-signoff.md`).
+dismiss one. One open PR at a time. And nothing reaches a user until you do: a campaign's PRs wait
+gate-green for the release batch, whose INTEGRATION checklist you hand-test before your merge
+ships it (`release-signoff.md`).
 
 ### Extends — appending a provider to another workstream's file
 
@@ -188,16 +189,19 @@ passed on its head commit (`scripts/pr_feedback.py` enforces it), on top of ever
 **Everything else holds, unchanged.** An independent `code-reviewer` reads the diff before the
 PR opens. One open PR per workstream — a wave is many sessions, and the open PR is what
 serialises them. `scripts/pr_feedback.py` still refuses an `<!-- addressed: … -->` marker from
-the PR's own author. The ruleset decides the merge (`gh pr merge --auto`, armed only after
-probing that `pr-feedback` is still required). Wave PRs carry `cowork`,
-`workstream:go-migration` and `type:chore` — a port with no observable behaviour change is the
-one thing `chore` names exactly — and W19, the wave that *does* change what users install, is
-flagged in the program doc as the wave a human drives. One deviation from "nothing ships on
-merge" is deliberate and bounded: a wave that bumps `binaryVersion` publishes a **final**
-`yeaboi-core` wheel on merge (`publish-core.yml` is version-triggered), but that wheel reaches
-only the opt-in `[core]` extra of a sidecar behind an always-complete Python fallback — the
-product's own release path, pre-release per merge and human promotion weekly, is untouched
-until W19.
+the PR's own author. A gate-green wave waits for the release batch like every other fleet PR —
+one wave per batch cycle, since wave N+1 branches off a `main` that gains wave N only when the
+batch ships. Wave PRs carry `cowork`, `workstream:go-migration`, `type:chore` and `semver:none` —
+a port with no observable behaviour change is the one thing `chore` names exactly — and W19, the
+wave that *does* change what users install, is flagged in the program doc as the wave a human
+drives. The one deviation this lane used to carry is gone, and its removal is a tightening: a
+wave that bumps `binaryVersion` used to publish a **final** `yeaboi-core` wheel on its own merge
+(`publish-core.yml` is version-triggered), the single exception to "nothing ships on merge".
+Under the batch model the bump reaches `main` only inside the batch a human tested, so the core
+wheel publishes behind the same sign-off as everything else. The reason the exception was
+tolerable — the wheel reaches only the opt-in `[core]` extra of a sidecar behind an
+always-complete Python fallback — is now merely why the batch needs no extra ceremony for it,
+not a licence to ship on merge; do not re-add the carve-out.
 
 ## The gate
 
@@ -218,27 +222,30 @@ The lane is wide; what keeps it safe is the merge path, and none of it is discre
   with ends the auto lane for that find: file it as a proposal and let a human answer. Before this
   was enforced, the routine that opened the PR could also declare the review of it answered — the
   applicant holding the key.
-- **The merge waits on the ruleset**, which decides, not on any routine. `pr-feedback` must be a
-  required status check on the `main-branch` ruleset for that sentence to be true; it is a manual
-  setup step. Every workflow that would arm `--auto` checks for it first and refuses when it is
-  absent, rather than merging on CI alone and calling it reviewed.
-- **Nothing the fleet merges ships to users on merge.** An *unattended* merge to `main` — this
-  lane — publishes a PyPI *pre-release*; `pip install yeaboi` is unaffected. The accumulated batch
-  becomes an official version only when a human promotes it — see
-  [`routines/cron/release-promote-ask.md`](routines/cron/release-promote-ask.md).
-  `scripts/release_lane.py` is what draws the line, over this file's own label and branch prefixes.
-  Note what it does not buy: a human merging anything cuts an official release from `main`, which
-  carries whatever the fleet merged below it. The backstop is against the fleet shipping *by
-  itself*, not against its work reaching users — a wrong fix that survives everything above still
-  has to get past a
-  person who has been running it.
+- **The fleet does not merge at all.** A gate-green fleet PR waits open, and ships only inside a
+  release batch: a human runs `make batch-assemble`, which folds every gate-green fleet PR into
+  one `batch/<date>` PR, hand-tests the assembled build against the checklist, and merges it
+  ([release-signoff.md](release-signoff.md)). The merge is the sign-off. `pr-feedback` must be a
+  required status check on the `main-branch` ruleset for the per-PR gate to hold; it is a manual
+  setup step.
+- **Nothing the fleet builds ships to users without a human's hand-test and merge.** `main`
+  carries only what a human merged: their own PRs — which release on the spot, exactly as before —
+  and the batch. `scripts/release_lane.py` still draws the fleet/human line over this file's own
+  label and branch prefixes, as a backstop: a fleet PR merged to `main` directly publishes a
+  pre-release only and ships with the next human merge. What the model does not buy, said
+  honestly: the batch merge is one human act carrying a week of fleet work, and merging it without
+  running the checklist ships the batch unlooked-at. That exposure is smaller and more visible
+  than the one it replaced — a release that silently carried the fleet's unverified work under an
+  unrelated human merge — but it is not zero; the ritual in
+  [release-signoff.md](release-signoff.md) is what closes it.
 
-## Merges are already bounded — do not throttle the auto lane
+## The lane is already bounded — do not throttle it
 
-One `auto` find per run and one open PR per workstream (see Guardrails) together cap a heavy
-weekday at roughly eight merges and a typical one at two to four. That is the intended volume, and
-it is bounded by structure rather than by a counter someone has to tune. A new limit on top would
-mostly express nervousness, and the honest answer to nervousness here is the gate above.
+One `auto` find per run and one open PR per workstream (see Guardrails) together cap what a batch
+can accumulate: a heavy week folds roughly a dozen PRs into the batch and a typical one two to
+four. That is the intended volume, and it is bounded by structure rather than by a counter someone
+has to tune. A new limit on top would mostly express nervousness, and the honest answer to
+nervousness here is the gate above plus the hand-test the batch cannot ship without.
 
 **That sentence was about merges, and it was read as being about everything.** The propose lane had
 no bound at all: a scout returns up to ten finds, the auto lane consumes at most one, so a single
@@ -339,7 +346,7 @@ It is permitted **only** when the find is one of these four, and this list is cl
 2. data loss or database corruption
 3. `main` crashing, or the published package failing to install
 4. a safety gate that has silently stopped working — CI not running, `pr-feedback` no longer
-   required, a guard that no longer guards
+   required, a routine merging or arming `--auto` on any PR, a guard that no longer guards
 
 Everything else is `critical: false`, including every find whose worst outcome is that a user is
 annoyed. This is a new axis and not a louder `impact`: `impact` is a 1–5 score the scout gives
@@ -383,10 +390,13 @@ become the route by which an exploit gets published.
   on its written allowlist, and records who and the message link on the issue. The human is
   approving; the relay is transport — it never applies the label to anything no allowlisted human
   reacted to.
-- **Never push to `main`, never `--force`, and never merge a PR yourself.** `gh pr merge --auto`
-  is not a merge — it hands the decision to the ruleset, which merges only once every required
-  check is green. Arming it is allowed; clicking merge, bypassing a check, or pushing to `main`
-  is not, and no widening of the auto lane changes that.
+- **Never push to `main`, never `--force`, and never merge a PR — in any form, `--auto`
+  included.** Fleet PRs ship inside a human's release batch, and the batch PR is the one merge
+  that releases; a routine armed with `--auto` would hand that decision back to a machine, which
+  is precisely what the batch model exists to withhold. Never touch a `batch/*` branch or the
+  batch PR either — not a label, not a comment marker, not `gh pr ready`: the routine that builds
+  the work may not sign it off, the same rule that keeps a sweep from applying
+  `claude-implement` to its own proposal. No widening of the auto lane changes any of this.
 - **One coherent change per run.** No grab-bags.
 - **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no channel message. A
   routine that always finds something is a routine inventing work. It still checks in

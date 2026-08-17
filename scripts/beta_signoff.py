@@ -1,32 +1,33 @@
 #!/usr/bin/env python3
-"""The human half of the release channel: what to test, and then ship it.
+"""The human half of the release channel: test the batch, sign it, then merge it.
 
-Everything a machine can decide about a release is already decided by the time an
-rc reaches PyPI — `make test`, `make lint`, `make parity` and `make web-check` all
-ran, an independent reviewer read the diff, and `pr-feedback` held the merge until
-every finding was answered. What is left is the part no gate covers: somebody
-installing the actual wheel and using it. This module makes that a two-command
-ritual instead of an open-ended one.
+Everything a machine can decide about a release is already decided by the time a
+batch PR exists — every constituent passed `make test`, `make lint`, an
+independent review and the `pr-feedback` gate individually, and the batch PR's
+own CI ran on the assembled tree. What is left is the part no gate covers:
+somebody installing the actual wheel and using it. This module makes that a
+short ritual instead of an open-ended one.
 
-    make beta-check      what is installable, what changed, what to exercise
-    make beta-promote    turn it into the official X.Y.Z
+    make batch-assemble           build the batch branch + draft PR (batch_assemble.py)
+    make beta-check               what is in the batch, and what to exercise
+    make beta-sign-<track>        record one track's sign-off on the batch PR
+    make beta-promote             verify every track, mark ready, print the merge
 
-`beta-check` also *records* the sign-off, as a `<!-- tested: beta/X.Y.ZrcN -->`
-comment on the promotion ask. Two things read it back. `publish.yml` cuts the
-final from that exact commit, so what shipped is what was tested rather than
-whatever `main` happened to be at the moment of the ✅. And next week's ask uses
-it as the floor of the batch, so a skipped week asks for the delta rather than
-re-presenting work already signed off — which is the difference between a review
-that stays bounded and one that grows until it gets skimmed.
+The sign-off is recorded as `<!-- tested: <sha> -->` comments on the batch PR,
+where `<sha>` is the PR's head at the moment of the sign-off. `promote` counts a
+track only when its signed sha IS the current head: any commit after the
+sign-off — a re-assembly, a late constituent — makes the signature stale, which
+is the honest reading, because the tree it names is not the tree that would
+merge.
 
-The arithmetic all belongs to `release_channel.py` and the checklist to
-`release_surfaces.py`; this file owns the terminal output and the two GitHub
-writes. `--add-label release:promote` is imported from `cowork_relay` rather than
-spelled again, because the Slack ✅ and this command must be the same action —
-two spellings of it is how they drift apart, and the one that drifts is the one
-nobody is watching.
+**Nothing here merges.** The merge is the sign-off, and it is a human's:
+`promote` verifies, flips the draft to ready, prints the `gh pr merge --merge`
+command, and stops. `publish.yml` then classifies the human's merge and cuts
+the official release from exactly the merged tree.
 
-Stdlib only, like its neighbours.
+The checklist belongs to `release_surfaces.py` and the batch to
+`batch_assemble.py`; this file owns the terminal output and the marker
+round-trip. Stdlib only, like its neighbours.
 """
 
 from __future__ import annotations
@@ -41,31 +42,27 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _gh_transport as transport  # noqa: E402
-import cowork_relay  # noqa: E402
-import release_channel as channel  # noqa: E402
+import batch_assemble  # noqa: E402
+import release_lane  # noqa: E402
 import release_surfaces  # noqa: E402
 
-PROMOTION_LABEL = cowork_relay.PROMOTION_LABEL
+PROMOTION_LABEL = batch_assemble.PROMOTION_LABEL
 
-# Written by this module, read by `publish.yml` and by next Monday's ask. Its own
-# marker rather than a reuse of `<!-- beta: … -->`: the ask says which pre-release
-# it is *about*, this says which one a human actually ran, and those differ the
-# moment somebody signs off mid-week against a newer rc.
-TESTED_RE = re.compile(r"<!--\s*tested:\s*(beta/\d+\.\d+\.\d+rc\d+)\s*-->")
-BETA_MARKER_RE = re.compile(r"<!--\s*beta:\s*(beta/\d+\.\d+\.\d+rc\d+)\s*-->")
+# Written by `sign`, read back by `promote`. A full 40-hex sha, never an
+# abbreviation: the marker names the exact tree a human ran, and a prefix that
+# stops resolving uniquely is a signature that stops meaning anything.
+TESTED_RE = re.compile(r"<!--\s*tested:\s*([0-9a-f]{40})\s*-->")
 
-# The per-track marker, and it is shaped **deliberately not to match** either
-# `TESTED_RE` above or `publish.yml`'s grep, which both require ` -->` directly
-# after the digits. That is the mechanism rather than an accident:
+# The per-track marker, shaped **deliberately not to match** `TESTED_RE`, which
+# requires ` -->` directly after the sha:
 #
-#   `<!-- tested: beta/X.Y.ZrcN track=maintenance -->`  one session, this file only
-#   `<!-- tested: beta/X.Y.ZrcN -->`                    every required track, and the
-#                                                       only marker publish.yml reads
+#   `<!-- tested: <sha> track=maintenance -->`  one session, one track
+#   `<!-- tested: <sha> -->`                    every required track is signed
 #
-# So `publish.yml` needs no edit at all, and an existing bare marker keeps meaning
-# exactly what it meant when somebody wrote it — "I ran this build and signed the
-# whole thing off" — which under the split is precisely the completion marker.
-TRACK_TESTED_RE = re.compile(r"<!--\s*tested:\s*(beta/\d+\.\d+\.\d+rc\d+)\s+track=([a-z][a-z-]*)\s*-->")
+# So a half-signed batch cannot look complete to any reader that only ever
+# learned the bare marker — the same mechanism the issue-era markers used, with
+# the tag swapped for the sha.
+TRACK_TESTED_RE = re.compile(r"<!--\s*tested:\s*([0-9a-f]{40})\s+track=([a-z][a-z-]*)\s*-->")
 
 BAR = "─" * 72
 
@@ -77,18 +74,14 @@ class SignoffError(RuntimeError):
 def _gh(*args: str) -> str | None:
     """Run `gh` and return stdout, or None if it is missing or refuses.
 
-    None is never fatal here. `beta-check` is a reporting command first: with no
-    `gh` on the machine it still prints the batch and the checklist off git alone,
-    and only the marker and the label need an answer. Failing the whole command
-    because the queue is unreachable would hide the information the human came for.
+    None is never fatal here. `beta-check` is a reporting command first, and
+    only the marker writes and the draft flip need an answer.
+
+    Through `_gh_transport`'s process seam rather than `subprocess.run`
+    directly: this function *writes* — `sign` comments markers on the batch PR —
+    so a test that forgets to stub `_gh` must land in `tests/conftest.py`'s
+    `_no_real_gh_calls` rather than on the real PR.
     """
-    # Through `_gh_transport`'s process seam rather than `subprocess.run` directly.
-    # This function *writes* — `mark_tested` builds `gh issue comment`, and the
-    # promote path adds `release:promote` — so a test that forgets to stub `_gh`,
-    # or a branch added below it, would land both on the real release-ask issue
-    # with `cwd=ROOT` pointing at this repo. `tests/conftest.py`'s
-    # `_no_real_gh_calls` blocks that one name; nothing can block a call that
-    # bypasses it.
     try:
         result = transport._run(["gh", *args], cwd=ROOT, capture_output=True, text=True, check=False)
     except FileNotFoundError:
@@ -106,15 +99,10 @@ def _json(*args: str) -> object | None:
         return None
 
 
-def recent_asks(limit: int = 5) -> list[dict]:
-    """The promotion asks, newest first — open and closed.
-
-    Closed ones matter: the routine supersedes an unanswered ask by closing it, so
-    the sign-off marker from the week somebody tested but did not promote is on an
-    issue that is no longer open.
-    """
+def recent_batches(limit: int = 5) -> list[dict]:
+    """The batch PRs, newest first — open, merged and closed alike."""
     data = _json(
-        "issue",
+        "pr",
         "list",
         "--label",
         PROMOTION_LABEL,
@@ -123,37 +111,35 @@ def recent_asks(limit: int = 5) -> list[dict]:
         "--limit",
         str(limit),
         "--json",
-        "number,state,body,title,url",
+        "number,state,body,title,url,headRefName,headRefOid,isDraft,labels",
     )
     return data if isinstance(data, list) else []
 
 
-def open_ask(asks: list[dict]) -> dict | None:
-    return next((ask for ask in asks if str(ask.get("state", "")).upper() == "OPEN"), None)
+def open_batch(batches: list[dict]) -> dict | None:
+    return next((batch for batch in batches if str(batch.get("state", "")).upper() == "OPEN"), None)
 
 
-# Who may sign a build off. `authorAssociation` as GitHub reports it on a comment:
-# the three that mean write access to this repository, and nothing else.
+# Who may sign a batch off. `authorAssociation` as GitHub reports it on a
+# comment: the three that mean write access to this repository, and nothing else.
 SIGNERS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
-def _comment_bodies(issue: int) -> list[str]:
-    """Every comment on the ask that a maintainer wrote.
+def _comment_bodies(number: int) -> list[str]:
+    """Every comment on the batch PR that a maintainer wrote.
 
     **The filter is the authorization, and there is no other one.** A sign-off
-    marker names the tree `publish.yml` checks out, tests, builds and tags as the
-    official release — and the ask is an open issue on a public repository, so
-    anybody at all can comment on it. The regex that reads the marker validates
-    its *shape*, and the tag lookup validates that the ref *exists*; neither asks
-    who said it. Without this, a stranger's `<!-- tested: beta/1.2.3rc4 -->`
-    naming any real older pre-release outranks the maintainer's genuine sign-off
-    on the newest one, and the release is cut from a tree nobody signed for.
+    marker names the tree the human is about to merge and release, and the batch
+    is an open PR on a public repository, so anybody at all can comment on it.
+    The regex that reads the marker validates its *shape*; it never asks who
+    said it. Without this, a stranger's `<!-- tested: <head-sha> -->` satisfies
+    `promote` on a batch nobody ran.
 
-    An unrecognised association reads as an outsider. That is the safe direction:
-    the cost is a sign-off that has to be repeated by someone the API does
-    recognise, and the other way round is a release nobody chose.
+    An unrecognised association reads as an outsider. That is the safe
+    direction: the cost is a sign-off that has to be repeated by someone the API
+    does recognise, and the other way round is a release nobody chose.
     """
-    data = _json("issue", "view", str(issue), "--json", "comments")
+    data = _json("pr", "view", str(number), "--json", "comments")
     comments = data.get("comments") if isinstance(data, dict) else None
     if not isinstance(comments, list):
         return []
@@ -162,384 +148,341 @@ def _comment_bodies(issue: int) -> list[str]:
     ]
 
 
-def newest_tested(asks: list[dict]) -> str | None:
-    """The most recent ``beta/…`` tag anyone has signed off on, or None.
+def track_floors(number: int) -> dict[str, set[str]]:
+    """Every sha each track has been signed off at, from the batch PR's comments.
 
-    Ordered by the tag, not by the comment date. Two people signing off on the
-    same batch from different machines is not a conflict — the newer *pre-release*
-    is the one that supersedes, and comment timestamps would let a late sign-off on
-    an older rc silently narrow the next batch past work nobody looked at.
+    Sets rather than a newest-wins pick: with shas there is no total order to
+    pick a winner by, and none is needed — `promote` asks one question, "is the
+    *current head* among the signed shas?", and any older signature is stale by
+    definition because the tree it names is not the tree that would merge.
+
+    **A bare marker seeds every track**, exactly as the issue-era bare marker
+    did: "I tested this build" is a statement about the whole build.
     """
-    found: list[dict] = []
-    for ask in asks:
-        for body in _comment_bodies(int(ask["number"])):
-            for match in TESTED_RE.finditer(body):
-                entry = channel.resolve_beta(match.group(1))
-                if entry is not None:
-                    found.append(entry)
-    if not found:
-        return None
-    return max(found, key=lambda entry: channel.prerelease_key(entry["version"]))["tag"]
+    floors: dict[str, set[str]] = {track: set() for track in release_surfaces.TRACKS}
+    for body in _comment_bodies(number):
+        for match in TRACK_TESTED_RE.finditer(body):
+            if match.group(2) in floors:
+                floors[match.group(2)].add(match.group(1))
+        # `TRACK_TESTED_RE` cannot match a bare marker and `TESTED_RE` cannot
+        # match a tracked one, so scanning both never double-counts.
+        for match in TESTED_RE.finditer(body):
+            for signed in floors.values():
+                signed.add(match.group(1))
+    return floors
 
 
-def track_floors(asks: list[dict]) -> dict[str, str]:
-    """The newest pre-release each track has been signed off on, by track.
+def changed_paths(batch: dict) -> list[str]:
+    """The batch's paths, diffed `origin/main...<head>` after a fetch.
 
-    Ordered by ``prerelease_key`` and not by comment date, for the same reason
-    ``newest_tested`` is: the newer *pre-release* supersedes, and a late sign-off
-    on an older rc must not narrow the next batch past work nobody looked at.
-
-    **A bare marker seeds every track.** It was written when there was one session,
-    and "I tested this build" is a statement about the whole build. Reading it as
-    maintenance-only would strand promotion behind an integration sign-off nobody
-    was ever asked for; reading it as neither would lose the floor entirely.
+    Falls back to the PR's own file list when git cannot answer — a shallow or
+    offline checkout must degrade to a coarser checklist, not to no checklist.
     """
-    floors: dict[str, list[dict]] = {track: [] for track in release_surfaces.TRACKS}
-    for ask in asks:
-        for body in _comment_bodies(int(ask["number"])):
-            for match in TRACK_TESTED_RE.finditer(body):
-                entry = channel.resolve_beta(match.group(1))
-                if entry is not None and match.group(2) in floors:
-                    floors[match.group(2)].append(entry)
-            # A bare marker is one every track carries. `TRACK_TESTED_RE` cannot
-            # match it and `TESTED_RE` cannot match a tracked one, so scanning
-            # both never double-counts.
-            for match in TESTED_RE.finditer(body):
-                entry = channel.resolve_beta(match.group(1))
-                if entry is not None:
-                    for found in floors.values():
-                        found.append(entry)
+    from batch_assemble import _git
+
+    _git("fetch", "origin", "--quiet")
+    diff = _git("diff", "--name-only", f"origin/main...{batch['headRefOid']}")
+    if diff.returncode == 0:
+        return [line for line in diff.stdout.splitlines() if line.strip()]
+    data = _json("pr", "view", str(batch["number"]), "--json", "files")
+    files = data.get("files") if isinstance(data, dict) else None
+    if isinstance(files, list):
+        return [str(entry.get("path", "")) for entry in files if entry.get("path")]
+    return []
+
+
+def providers_of(batch: dict, paths: list[str]) -> tuple[str, ...]:
+    """The campaign providers in this batch: paths first, titles corroborating.
+
+    The constituent lines in the batch body carry each PR's title, so an
+    `integration(<provider>):` prefix survives into the batch the same way it
+    used to survive into the commit subject.
+    """
+    named = set(release_surfaces.campaign_providers(paths))
+    for match in batch_assemble.CONSTITUENT_RE.finditer(str(batch.get("body") or "")):
+        prefixed = re.match(r"integration\(([a-z0-9][a-z0-9_-]*)\)", match.group("title"))
+        if prefixed:
+            named.add(prefixed.group(1))
+    return tuple(sorted(named))
+
+
+def batch_view(batch: dict) -> dict:
+    """Everything the three commands ask about one batch, computed once."""
+    paths = changed_paths(batch)
+    providers = providers_of(batch, paths)
+    baseline, per_track = release_surfaces.tracked_checklists(paths, providers)
+    head = str(batch.get("headRefOid") or "")
+    floors = track_floors(int(batch["number"]))
+    required = {track for track, items in per_track.items() if items}
+    covered = {track for track in required if head and head in floors.get(track, set())}
     return {
-        track: max(found, key=lambda entry: channel.prerelease_key(entry["version"]))["tag"]
-        for track, found in floors.items()
-        if found
+        "batch": batch,
+        "head": head,
+        "paths": paths,
+        "providers": providers,
+        "baseline": baseline,
+        "per_track": per_track,
+        "floors": floors,
+        "required": required,
+        "covered": covered,
+        "outstanding": sorted(required - covered),
+        "constituents": batch_assemble.constituents_of(str(batch.get("body") or "")),
     }
 
 
-def required_tracks(batch: dict) -> set[str]:
-    """The tracks this batch actually needs a human to sit down with.
+def assert_ships_human(batch: dict) -> None:
+    """The batch PR must classify `human`, or the merge releases nothing.
 
-    A track with nothing in it is **not** required. A week with no campaign must
-    not block promotion on a session whose checklist is empty — an empty checklist
-    reads as "signed off" when it means "never asked", and that is the one way this
-    split could ship something untested while looking complete.
+    `batch_assemble.py` refuses to create one that would not; this re-check
+    exists because a label added *after* creation — a well-meaning `cowork` on
+    the batch — would flip the lane with nothing red until the release silently
+    fails to happen.
     """
-    tracks = batch.get("tracks")
-    if not isinstance(tracks, dict):
-        # A pre-split batch dict: one session, and the old bare marker covers it.
-        return set()
-    return {name for name in release_surfaces.TRACKS if (tracks.get(name) or {}).get("required")}
+    labels = [entry.get("name") for entry in batch.get("labels") or [] if isinstance(entry, dict)]
+    if release_lane.classify({"labels": labels, "head": str(batch.get("headRefName") or "")}) != release_lane.HUMAN:
+        raise SignoffError(
+            f"batch PR #{batch['number']} would classify as a fleet merge "
+            f"(head {batch.get('headRefName')!r}, labels {labels!r}) — merging it would cut NO release. "
+            "Remove the `cowork` label before promoting."
+        )
 
 
-def ask_beta(ask: dict | None) -> str | None:
-    """The pre-release an ask is about, from its `<!-- beta: … -->` marker."""
-    if not ask:
-        return None
-    match = BETA_MARKER_RE.search(str(ask.get("body") or ""))
-    return match.group(1) if match else None
+def mark_tested(number: int, sha: str, track: str | None = None) -> list[str]:
+    """The argv that records a sign-off. Literal, like every other write here.
+
+    ``track`` stays the third, defaulted parameter: a two-argument call writes
+    the bare completion marker, which only the last outstanding track earns.
+    """
+    if track is None:
+        body = f"Signed off on `{sha[:8]}` — tested from a real install.\n\n<!-- tested: {sha} -->"
+    else:
+        body = (
+            f"Signed off on the **{track}** half of `{sha[:8]}` — tested from a real install."
+            f"\n\n<!-- tested: {sha} track={track} -->"
+        )
+    return ["gh", "pr", "comment", str(number), "--body", body]
 
 
-def _checklist_lines(batch: dict, floors: dict[str, str]) -> list[str]:
+def _already_marked(number: int, sha: str, track: str | None = None) -> bool:
+    bodies = _comment_bodies(number)
+    if track is None:
+        return any(match.group(1) == sha for body in bodies for match in TESTED_RE.finditer(body))
+    return any(
+        match.group(1) == sha and match.group(2) == track for body in bodies for match in TRACK_TESTED_RE.finditer(body)
+    )
+
+
+def _no_batch() -> int:
+    print("[beta] no batch PR is open — run `make batch-assemble` to build one from")
+    print("       the waiting fleet PRs. A human PR still ships on its own merge.")
+    return 1
+
+
+def _checklist_lines(view: dict) -> list[str]:
     """One shared baseline, then one section per required track.
 
-    The baseline is above both and not inside each. Repeated, it gets done twice;
-    in one section only, the other track can be signed without anyone installing
-    the wheel — and the wheel is the artefact users actually get.
+    The baseline is above both and not inside each: repeated, it gets done
+    twice; in one section only, the other track could be signed by somebody who
+    never installed the wheel — and the wheel is what users actually get.
     """
-    providers = tuple(((batch.get("tracks") or {}).get("integration") or {}).get("providers") or ())
-    baseline, per_track = release_surfaces.tracked_checklists(batch["changed_paths"], providers)
-    lines = [release_surfaces.render(baseline, markdown=False), ""]
-    required = required_tracks(batch)
+    lines = [release_surfaces.render(view["baseline"], markdown=False), ""]
     for track in release_surfaces.TRACKS:
-        items = per_track.get(track) or []
+        items = view["per_track"].get(track) or []
         if not items:
             continue
-        named = ", ".join(providers) if track == "integration" and providers else None
+        named = ", ".join(view["providers"]) if track == "integration" and view["providers"] else None
         head = f"  ── {track.upper()}" + (f": {named}" if named else "")
-        signed = floors.get(track)
-        if signed and channel.prerelease_key(signed.split("/", 1)[-1]) >= _tag_key(batch["installable_tag"]):
+        if track in view["covered"]:
             head += "   ✓ signed off"
         lines += [head + " " + "─" * max(0, 68 - len(head)), "", release_surfaces.render(items, markdown=False), ""]
-    if not required:
+    if not view["required"]:
         lines.append("  nothing in this batch needs a hand-test beyond the baseline.")
     return lines
 
 
-def _tag_key(tag: str | None) -> tuple[int, ...]:
-    """A ``beta/X.Y.ZrcN`` tag as a comparable key; the zero tuple when absent."""
-    return channel.prerelease_key(tag.split("/", 1)[-1]) if tag else (0, 0, 0, 0)
-
-
-def _report(batch: dict, ask: dict | None, tested: str | None, floors: dict[str, str] | None = None) -> str:
-    # `or {}` rather than trusting the default: `_checklist_lines` reads `floors`
-    # unconditionally, so the signature as written advertises a call that raises.
-    floors = floors or {}
-    lines = [BAR]
-    if not batch["promotable"]:
-        lines += [
-            f"  nothing pending — pyproject is at {batch['target']}, which is already released",
-            f"  as {batch['last_final']}. The next release-worthy merge starts a new batch.",
-            BAR,
-        ]
-        return "\n".join(lines)
-
-    if batch["installable"]:
-        lines.append(f"  install   pip install --pre yeaboi=={batch['installable']}")
-    else:
-        lines.append("  install   nothing published yet — no pre-release exists for this batch")
-    span = batch["since"] or batch["last_final"] or "the beginning of the project"
-    lines += [
-        f"  batch     {batch['target']} · {batch['commits_since']} commits since {span}",
-        f"  ask       {ask['url'] if ask else 'none open — the Monday routine opens it'}",
+def _report(view: dict) -> str:
+    batch = view["batch"]
+    lines = [
+        BAR,
+        f"  batch     {batch['title']}",
+        f"  pr        {batch['url']}" + ("   (draft)" if batch.get("isDraft") else ""),
+        f"  head      {view['head'][:8]} · {len(view['constituents'])} constituents",
+        BAR,
+        "",
+        "  TEST THIS BATCH",
+        "",
+        *_checklist_lines(view),
     ]
-    if tested and batch["since"]:
-        lines.append(f"  delta     you last signed off on {tested}; below is only what is new since")
-    lines.append(BAR)
-
-    if batch["entries"]:
-        lines.append("")
-        for entry in batch["entries"]:
-            lines.append(f"  {entry.get('version', '?')} — {entry.get('summary', '')}".rstrip(" —"))
-            for highlight in entry.get("highlights") or []:
-                areas = ", ".join(highlight.get("areas") or [])
-                lines.append(f"      · {highlight.get('text', '')}{f'  [{areas}]' if areas else ''}")
-
-    if batch.get("nothing_new"):
-        lines += [
-            "",
-            f"  Nothing new published since you signed off on {batch['since']} —",
-            "  the build above is the one you already tested. Nothing to re-check.",
-        ]
-    else:
-        lines += ["", "  TEST THIS WEEK", ""]
-        lines += _checklist_lines(batch, floors)
-
-    untested = batch["untested_commits"]
-    if untested and batch["installable"]:
-        lines += [
-            "",
-            f"  NOT IN THIS RELEASE — {len(untested)} commits are on main but in no pre-release.",
-            "  Promotion is pinned to the tag above, so they ride the next one.",
-            *[f"    - {line}" for line in untested],
-        ]
-    outstanding = sorted(required_tracks(batch) - _covered(batch, floors or {}))
-    if outstanding:
+    stale = {
+        track: signed
+        for track, signed in view["floors"].items()
+        if signed and track in view["required"] and track not in view["covered"]
+    }
+    for track in sorted(stale):
+        lines.append(f"  ⚠ {track} was signed at an older head — the batch moved, so it needs a re-run.")
+    if view["outstanding"]:
         lines += [
             "",
             BAR,
-            *[f"  next      make beta-sign-{track}" for track in outstanding],
-            "  then      make beta-promote      (or ✅ the Slack ask)",
+            *[f"  next      make beta-sign-{track}" for track in view["outstanding"]],
+            "  then      make beta-promote",
             BAR,
         ]
     else:
-        lines += ["", BAR, "  next      make beta-promote      (or ✅ the Slack ask)", BAR]
+        lines += ["", BAR, "  next      make beta-promote", BAR]
     return "\n".join(lines)
 
 
-def _covered(batch: dict, floors: dict[str, str]) -> set[str]:
-    """Which tracks are signed off at or above this batch's installable tag."""
-    target = _tag_key(batch.get("installable_tag"))
-    return {track for track, tag in floors.items() if _tag_key(tag) >= target}
-
-
-def mark_tested(issue: int, tag: str, track: str | None = None) -> list[str]:
-    """The argv that records a sign-off. Literal, like every other write here.
-
-    ``track`` stays the third, defaulted parameter so every existing two-argument
-    call keeps writing the bare completion marker `publish.yml` greps for.
-    """
-    if track is None:
-        body = f"Signed off on `{tag}` — tested from a real install.\n\n<!-- tested: {tag} -->"
-    else:
-        body = (
-            f"Signed off on the **{track}** half of `{tag}` — tested from a real install."
-            f"\n\n<!-- tested: {tag} track={track} -->"
-        )
-    return ["gh", "issue", "comment", str(issue), "--body", body]
-
-
-def _already_marked(issue: int, tag: str, track: str | None = None) -> bool:
-    bodies = _comment_bodies(issue)
-    if track is None:
-        return any(match.group(1) == tag for body in bodies for match in TESTED_RE.finditer(body))
-    return any(
-        match.group(1) == tag and match.group(2) == track for body in bodies for match in TRACK_TESTED_RE.finditer(body)
-    )
-
-
 def check(args: argparse.Namespace) -> int:
-    """Report only. Recording moved to `sign`, because there are two sessions now.
+    """Report only. Recording is `sign`'s job, because there are two sessions.
 
-    ``beta-check`` used to end by writing the sign-off, which was right when
-    printing the checklist and running it were one act. With two tracks it is not:
-    a command that printed both sections and silently signed both would be a
+    A command that printed both checklists and silently signed both would be a
     command that signs off work nobody ran.
     """
-    asks = recent_asks()
-    floors = track_floors(asks)
-    tested = newest_tested(asks)
-    batch = channel.pending(since=tested)
+    batch = open_batch(recent_batches())
+    if not batch:
+        return _no_batch()
+    view = batch_view(batch)
     if args.json:
         payload = {
-            **batch,
-            "tested": tested,
-            "floors": floors,
-            "required": sorted(required_tracks(batch)),
-            "outstanding": sorted(required_tracks(batch) - _covered(batch, floors)),
-            "ask": (open_ask(asks) or {}).get("number"),
+            "number": batch["number"],
+            "url": batch["url"],
+            "head": view["head"],
+            "constituents": view["constituents"],
+            "changed_paths": view["paths"],
+            "providers": list(view["providers"]),
+            "required": sorted(view["required"]),
+            "covered": sorted(view["covered"]),
+            "outstanding": view["outstanding"],
         }
         print(json.dumps(payload, indent=2))
         return 0
-    print(_report(batch, open_ask(asks), tested, floors))
+    print(_report(view))
     return 0
 
 
 def sign(args: argparse.Namespace) -> int:
     """Record one track's sign-off, and the completion marker when it is the last.
 
-    Two comments, deliberately, and only the second one `publish.yml` can see. The
-    per-track marker is shaped not to match its grep, so a half-signed batch cannot
-    be promoted by a workflow that only ever learned to read one marker.
+    Two comments, deliberately: the per-track marker is shaped not to match the
+    bare one, so a half-signed batch cannot look complete to `promote` or to any
+    future reader that only ever learned one marker.
     """
     track = args.track
     if track not in release_surfaces.TRACKS:
         print(f"[beta] unknown track {track!r} — one of: {', '.join(release_surfaces.TRACKS)}", file=sys.stderr)
         return 2
 
-    asks = recent_asks()
-    batch = channel.pending(since=newest_tested(asks))
-    if not batch["promotable"]:
-        print(f"[beta] nothing to sign off — {batch['target']} is already released as {batch['last_final']}.")
-        return 1
-
-    required = required_tracks(batch)
-    if track not in required:
-        # Not an error. It is the honest answer to "sign off the integration half"
-        # in a week with no campaign in it, and signing it anyway would record a
-        # human's name against a checklist that was never printed.
+    batch = open_batch(recent_batches())
+    if not batch:
+        return _no_batch()
+    view = batch_view(batch)
+    if track not in view["required"]:
+        # Not an error. It is the honest answer to "sign off the integration
+        # half" of a batch with no campaign in it, and signing anyway would
+        # record a human's name against a checklist that was never printed.
         print(f"[beta] nothing {track} in this batch — no sign-off needed, and none recorded.")
         return 0
 
-    ask = open_ask(asks)
-    tag = batch["installable_tag"]
-    if not tag:
-        print("[beta] there is no published pre-release to sign off on yet.")
-        return 1
-    if not ask:
-        print("[beta] no promotion ask is open. Monday's routine opens one, or promote by hand with:")
-        print(f"       gh workflow run publish.yml -f version={batch['target']}")
-        return 1
-
-    issue = int(ask["number"])
-    if _already_marked(issue, tag, track):
-        print(f"[beta] {track} was already signed off on {tag} (#{issue}) — nothing re-recorded.")
-    elif _gh(*mark_tested(issue, tag, track)[1:]) is None:
-        print(f"[beta] could not record the {track} sign-off on #{issue} — gh is missing or refused.")
+    number, head = int(batch["number"]), view["head"]
+    if not head:
+        print("[beta] the batch PR reports no head commit — refusing to sign a tree it cannot name.")
+        return 2
+    if _already_marked(number, head, track):
+        print(f"[beta] {track} was already signed off at {head[:8]} (#{number}) — nothing re-recorded.")
+    elif _gh(*mark_tested(number, head, track)[1:]) is None:
+        print(f"[beta] could not record the {track} sign-off on #{number} — gh is missing or refused.")
         return 2
     else:
-        print(f"[beta] recorded the {track} half of {tag} as signed off on #{issue}.")
+        print(f"[beta] recorded the {track} half of {head[:8]} as signed off on #{number}.")
 
     # The track just recorded counts, without asking GitHub to confirm a comment
-    # written one line ago. Re-reading would be slower and less correct: a comment
-    # can lag its own read, and a stale answer here withholds the completion marker
-    # on a batch that is in fact fully signed — which reads as "half tested" and is
-    # the wrong way for this to be wrong.
-    floors = {**track_floors(asks), track: tag}
-    outstanding = sorted(required - _covered(batch, floors))
+    # written one line ago: a comment can lag its own read, and a stale answer
+    # here withholds the completion marker on a batch that is fully signed —
+    # which reads as "half tested" and is the wrong way for this to be wrong.
+    covered = view["covered"] | {track}
+    outstanding = sorted(view["required"] - covered)
     if outstanding:
         print(f"[beta] still outstanding: {', '.join(outstanding)} — run make beta-sign-{outstanding[0]}.")
         return 0
-    if _already_marked(issue, tag):
-        print(f"[beta] {tag} was already complete — publish.yml already has its marker.")
+    if _already_marked(number, head):
+        print(f"[beta] {head[:8]} was already complete — the batch is ready to promote.")
         return 0
-    if _gh(*mark_tested(issue, tag)[1:]) is None:
-        print(f"[beta] every track is signed, but the completion marker could not be written to #{issue}.")
+    if _gh(*mark_tested(number, head)[1:]) is None:
+        print(f"[beta] every track is signed, but the completion marker could not be written to #{number}.")
         return 2
-    print(f"[beta] every required track is signed — {tag} is ready to promote.")
+    print("[beta] every required track is signed — run make beta-promote.")
     return 0
 
 
 def promote(args: argparse.Namespace) -> int:
-    asks = recent_asks()
-    ask = open_ask(asks)
-    batch = channel.pending(since=newest_tested(asks))
-    if not batch["promotable"]:
-        print(f"[beta] nothing to promote — {batch['target']} is already released as {batch['last_final']}.")
-        return 1
-    if not ask:
-        print("[beta] no promotion ask is open. Either wait for Monday's routine, or run:")
-        print(f"       gh workflow run publish.yml -f version={batch['target']}")
-        print("       (that promotes main's HEAD, not a pinned pre-release)")
-        return 1
+    """Verify the batch is fully signed, flip it to ready, print the merge. STOP.
 
-    # `track_floors` reads every ask's comments, so it is only worth asking when
-    # the answer can change the outcome. A batch with no required track — a quiet
-    # week, or a dict from before the split — has nothing to be outstanding.
-    required = required_tracks(batch)
-    outstanding = sorted(required - _covered(batch, track_floors(asks))) if required else []
-    if outstanding and not args.yes:
-        print(f"[beta] not promoted — {', '.join(outstanding)} has not been signed off on this batch.")
-        for track in outstanding:
+    The merge is a human's — the whole model rests on `publish.yml` seeing a
+    human-lane push — so this command never runs it and never could: it holds no
+    `gh pr merge` anywhere.
+    """
+    batch = open_batch(recent_batches())
+    if not batch:
+        return _no_batch()
+    assert_ships_human(batch)
+    view = batch_view(batch)
+
+    if view["outstanding"] and not args.yes:
+        print(f"[beta] not ready — {', '.join(view['outstanding'])} has not been signed off at {view['head'][:8]}.")
+        for track in view["outstanding"]:
             print(f"       run: make beta-sign-{track}")
         print("       (--yes overrides, and records that you chose to)")
         return 1
 
-    tag = ask_beta(ask) or batch["installable_tag"]
-    print(f"  promoting {batch['target']} from {tag or 'main HEAD (no pre-release tag)'}")
-    if outstanding:
-        print(f"  ⚠ promoting with {', '.join(outstanding)} unsigned, because --yes was passed")
-    print(f"  ask       {ask['url']}")
-    untested = batch["untested_commits"]
-    if untested:
-        print(f"  ⚠ {len(untested)} commits on main are NOT in this release:")
-        for line in untested:
-            print(f"      - {line}")
+    print(f"  batch     {batch['title']}")
+    print(f"  pr        {batch['url']}")
+    print(f"  head      {view['head'][:8]} · {len(view['constituents'])} constituents")
+    if view["outstanding"]:
+        print(f"  ⚠ promoting with {', '.join(view['outstanding'])} unsigned, because --yes was passed")
     if not args.yes:
         try:
-            answer = input("  cut the official release? [y/N] ").strip().lower()
+            answer = input("  mark the batch ready to merge? [y/N] ").strip().lower()
         except EOFError:
             answer = ""
         if answer != "y":
             print("[beta] not promoted.")
             return 1
 
-    # The same argv the Slack ✅ produces. Imported rather than respelled: the two
-    # paths approving the same release must be one action, and `_command` is where
-    # the repo already decided that `--add-label` (adds) is the only acceptable
-    # spelling of it — `gh api -X PUT .../labels` replaces, and once wiped an
-    # issue's whole label set.
-    argv = cowork_relay._command("promote", int(ask["number"]))
-    if _gh(*argv[1:]) is None:
-        print("[beta] could not apply release:promote — gh is missing or refused. Run:")
-        print("       " + " ".join(argv))
-        return 2
-    print(f"[beta] labelled #{ask['number']} release:promote — publish.yml takes it from here.")
+    if batch.get("isDraft") and _gh("pr", "ready", str(batch["number"])) is None:
+        print(f"[beta] could not mark #{batch['number']} ready — do it by hand: gh pr ready {batch['number']}")
+    print(BAR)
+    print("  the batch is signed and ready. The merge is yours — nothing here merges:")
+    print(f"      gh pr merge {batch['number']} --merge")
+    print("  (--merge, never --squash: the release notes walk this history per item.)")
+    print("  Your merge is the sign-off; publish.yml cuts the official release from it.")
+    print(BAR)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="The weekly beta sign-off")
+    parser = argparse.ArgumentParser(description="The batch sign-off")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    checker = sub.add_parser("check", help="what is installable, what changed, what to test")
-    # Kept, and now a no-op: `check` never records. Accepted rather than removed so
-    # a script or a habit that passes it keeps working instead of erroring.
+    checker = sub.add_parser("check", help="what is in the batch, and what to test")
+    # Kept, and still a no-op: `check` never records. Accepted rather than
+    # removed so a script or a habit that passes it keeps working.
     checker.add_argument("--no-mark", action="store_true", help="deprecated no-op — check never records")
     checker.add_argument("--json", action="store_true", help="the batch as JSON")
     checker.set_defaults(func=check)
 
-    signer = sub.add_parser("sign", help="record one track's sign-off on the open ask")
+    signer = sub.add_parser("sign", help="record one track's sign-off on the batch PR")
     signer.add_argument("track", help=f"one of: {', '.join(release_surfaces.TRACKS)}")
     signer.set_defaults(func=sign)
 
-    promoter = sub.add_parser("promote", help="turn the tested pre-release into the official X.Y.Z")
+    promoter = sub.add_parser("promote", help="verify the sign-offs and print the merge command")
     promoter.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     promoter.set_defaults(func=promote)
 
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (channel.ReleaseChannelError, SignoffError) as error:
+    except SignoffError as error:
         print(f"[beta] {error}", file=sys.stderr)
         return 2
 
