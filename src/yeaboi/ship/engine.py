@@ -22,6 +22,7 @@ the database CAS is the arbiter, so two surfaces racing resolve exactly once.
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -62,9 +63,17 @@ def _report(on_progress, component_id: str, label: str, status: str, **kwargs) -
 
 
 def _new_run_id(story_id: str) -> str:
+    """A run id: story, second-resolution stamp, and a random suffix.
+
+    The suffix is what makes the id an identity rather than a description.
+    Two runs of the same story started in the same second would otherwise
+    collide — and since both surfaces now find *their* run by this id, and
+    ``worktree.prepare`` is idempotent per id, a collision would hand the
+    second run the first one's checkout and let one gate answer for both.
+    """
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in story_id.lower()).strip("-.")[:40]
-    return f"{safe or 'story'}-{stamp}"
+    return f"{safe or 'story'}-{stamp}-{secrets.token_hex(3)}"
 
 
 def _failed(run: ShipRun, reason: str, *, phase: str = "") -> ShipRun:

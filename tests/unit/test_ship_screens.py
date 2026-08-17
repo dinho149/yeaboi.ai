@@ -29,8 +29,8 @@ from yeaboi.ui.mode_select.screens._screens_ship import (
 )
 
 
-def _render(panel, width: int = 100) -> str:
-    console = Console(file=io.StringIO(), width=width, height=40)
+def _render(panel, width: int = 100, height: int = 40) -> str:
+    console = Console(file=io.StringIO(), width=width, height=height)
     console.print(panel)
     return console.file.getvalue()
 
@@ -120,6 +120,12 @@ class TestProgressScreen:
 
 
 class TestGateScreen:
+    # The TUI refuses to run below 84x40 (`_screens.py` _MIN_WIDTH/_MIN_HEIGHT),
+    # so the gate is asserted at the smallest window a user can actually be in
+    # — the builder's own 24-row default is a size the app never renders.
+    def _gate(self, run, *, width: int = 84, height: int = 40, **kwargs) -> str:
+        return _render(_build_ship_gate_screen(run, width=width, height=height, **kwargs), width=width, height=height)
+
     def _run(self, **overrides):
         base = ShipRun(
             run_id="run-1",
@@ -133,7 +139,7 @@ class TestGateScreen:
         return ShipRun(**{**base.__dict__, **overrides})
 
     def test_shows_diff_validation_and_cost(self):
-        out = _render(_build_ship_gate_screen(self._run()))
+        out = self._gate(self._run())
         assert "US-001" in out
         assert "ship/run-1" in out
         assert "2 files changed" in out
@@ -147,23 +153,23 @@ class TestGateScreen:
                 configured=True, command="make test", passed=False, exit_code=2, output_tail="FAILED test_x"
             )
         )
-        out = _render(_build_ship_gate_screen(run))
+        out = self._gate(run)
         assert "FAILED" in out
         assert "FAILED test_x" in out
 
     def test_no_validation_is_a_visible_warning_not_silence(self):
         run = self._run(validation=ShipValidation())
-        out = _render(_build_ship_gate_screen(run))
+        out = self._gate(run)
         assert "nothing was proven" in out
 
     def test_transcript_findings_surface_as_labels_only(self):
         run = self._run(transcript_findings=(("secret", "critical", "anthropic api key"),))
-        out = _render(_build_ship_gate_screen(run))
+        out = self._gate(run)
         assert "anthropic api key" in out
         assert "1 transcript finding" in out
 
     def test_rejection_comment_editor_renders(self):
-        out = _render(_build_ship_gate_screen(self._run(), comment_edit="wrong file"))
+        out = self._gate(self._run(), comment_edit="wrong file")
         assert "Why reject?" in out
         assert "wrong file" in out
 
@@ -171,22 +177,65 @@ class TestGateScreen:
         # The gate is the only control before a push; approving on a --stat
         # summary is not review.
         patch = "diff --git a/app.py b/app.py\n@@ -1,2 +1,2 @@\n-old = 1\n+new = 2\n"
-        out = _render(_build_ship_gate_screen(self._run(diff_text=patch, worktree="/tmp/wt/run-1"), height=40))
+        out = self._gate(self._run(diff_text=patch, worktree="/tmp/wt/run-1"))
         assert "+new = 2" in out
         assert "-old = 1" in out
         assert "/tmp/wt/run-1" in out  # where to read the rest out of band
 
     def test_a_long_patch_scrolls_rather_than_truncating_silently(self):
         patch = "\n".join(f"+line {n:03d}" for n in range(200))
-        top = _render(_build_ship_gate_screen(self._run(diff_text=patch), diff_offset=0))
-        scrolled = _render(_build_ship_gate_screen(self._run(diff_text=patch), diff_offset=100))
+        top = self._gate(self._run(diff_text=patch), diff_offset=0)
+        scrolled = self._gate(self._run(diff_text=patch), diff_offset=100)
         assert "+line 000" in top
         assert "+line 000" not in scrolled
         assert "+line 100" in scrolled
 
     def test_an_unreadable_patch_says_so_instead_of_looking_clean(self):
-        out = _render(_build_ship_gate_screen(self._run(diff_text="")))
+        out = self._gate(self._run(diff_text=""))
         assert "could not be read" in out
+
+    def test_the_buttons_survive_a_crowded_gate_at_the_minimum_terminal_size(self):
+        # The pane takes what is left and no more. A Panel of fixed height
+        # crops from the bottom, and a cropped button row still answers Enter
+        # with "Approve" — which is a push nobody could see the buttons for.
+        run = self._run(
+            diff_stat="\n".join(f"src/f{n}.py | 4 ++--" for n in range(8)) + "\n8 files changed",
+            diff_text="\n".join(f"+line {n:03d}" for n in range(500)),
+            validation=ShipValidation(
+                configured=True,
+                command="make test",
+                passed=False,
+                exit_code=1,
+                output_tail="\n".join(f"FAILED test_{n}" for n in range(8)),
+            ),
+            transcript_findings=(
+                ("secret", "critical", "api key"),
+                ("risky_tool", "high", "curl | sh"),
+                ("secret", "high", "token"),
+                ("risky_tool", "medium", "rm -rf"),
+            ),
+            rejection_count=1,
+        )
+        for width, height in ((84, 40), (100, 40), (120, 24)):
+            out = self._gate(run, width=width, height=height)
+            assert "Approve" in out, f"buttons cropped at {width}x{height}"
+            assert "Reject" in out, f"buttons cropped at {width}x{height}"
+
+    def test_a_window_too_short_for_both_drops_the_pane_and_says_where_to_look(self):
+        run = self._run(diff_text="\n".join(f"+line {n}" for n in range(200)), worktree="/tmp/wt/run-1")
+        out = self._gate(run, height=22)
+        assert "Approve" in out
+        assert "patch hidden" in out
+        assert "/tmp/wt/run-1" in out
+
+    def test_the_builder_publishes_the_panes_geometry_to_the_loop(self):
+        # The loop clamps with these numbers; a builder that clamps privately
+        # is the "scrolling sometimes does nothing" bug _scroll.py exists for.
+        meta: dict = {}
+        run = self._run(diff_text="\n".join(f"+line {n}" for n in range(200)))
+        self._gate(run, scroll_meta=meta)
+        assert meta["max_offset"] == 200 - meta["viewport_h"]
+        assert meta["viewport_h"] >= 3
 
 
 class TestResultScreen:

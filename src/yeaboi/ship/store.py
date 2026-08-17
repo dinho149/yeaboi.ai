@@ -65,6 +65,23 @@ def _run_to_json(run: ShipRun) -> str:
     return json.dumps(asdict(run), ensure_ascii=False)
 
 
+def listing_dict(run: ShipRun) -> dict:
+    """One run as JSON for a *listing* surface — without the stored patch.
+
+    ``diff_text`` is capped per run, not per response, so a hundred rows of it
+    is megabytes of patch nobody asked for; a listing is also the thing people
+    poll in a loop. The stat, the branch and the worktree stay, and reading the
+    change itself is a git command away — the gate that needs it renders from
+    the artifact, not from this.
+
+    ``asdict`` per run rather than on the list: the MCP layer's ``to_jsonable``
+    only unpacks a top-level dataclass, so a nested one would arrive as a repr.
+    """
+    payload = asdict(run)
+    payload.pop("diff_text", None)
+    return payload
+
+
 def _dict_to_run(data: dict) -> ShipRun:
     """Rebuild the frozen artifact from JSON; tolerant of missing keys."""
     validation = data.get("validation") or {}

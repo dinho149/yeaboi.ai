@@ -20,8 +20,12 @@ production failure upstream:
   downstream, the deterministic bridge judges the run by the diff on disk,
   not by what the agent said.
 - **The capability envelope is argv, not prose** (``_PERMISSION_ARGS``): the
-  agent edits files and has no shell, so nothing it does can reach ``origin``
-  ahead of the human gate.
+  agent edits files, has no shell, and loads no MCP servers, so it cannot
+  itself run git. That is a bound on the *agent*, not a proof about the run:
+  the pipeline afterwards executes the user's validation command with a shell
+  in this same worktree, so code the agent wrote into a ``Makefile`` or a test
+  still runs before the gate. What the gate guarantees is that nothing reaches
+  ``origin`` until a human has approved the diff.
 
 Supervision follows ``voice_install._run_installer``: a daemon pump thread
 reads stdout for the process's whole life (so the pipe can never fill and
@@ -73,11 +77,17 @@ _SESSION_ENV_VARS = ("CLAUDE_SESSION_ID", "CLAUDE_PARENT_SESSION_ID", "CLAUDECOD
 # `git remote set-url`, or an edit to `.git/config` all sit outside it. A deny
 # rule outranks every allow rule from every source, which is what makes this
 # boundary hold regardless of what the target repo ships.
+#
+# `--strict-mcp-config` with no `--mcp-config` beside it is the same argument
+# one layer out: MCP servers are resolved from the user's `~/.claude.json`,
+# and a git or GitHub server there is a push path that no tool deny mentions.
+# The run needs none of them, so it loads none.
 _PERMISSION_ARGS = (
     "--permission-mode",
     "acceptEdits",
     "--disallowedTools",
     "Bash",
+    "--strict-mcp-config",
 )
 
 

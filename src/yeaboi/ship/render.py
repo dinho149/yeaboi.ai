@@ -62,7 +62,10 @@ def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
     if run.worktree:
         lines.append(Text(f"  worktree  {run.worktree}", style="dim"))
     if run.diff_stat:
-        for index, stat_line in enumerate(run.diff_stat.splitlines()):
+        # The gate wants every file; a status line wants the totals. A 60-file
+        # run should not print 60 rows every time someone asks what happened.
+        stat_lines = run.diff_stat.splitlines() if show_diff else run.diff_stat.splitlines()[-1:]
+        for index, stat_line in enumerate(stat_lines):
             label = "diff     " if index == 0 else "         "
             lines.append(Text(f"  {label} {stat_line.strip()}"))
     if run.validation.configured:

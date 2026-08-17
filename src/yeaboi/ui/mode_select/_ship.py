@@ -32,10 +32,9 @@ from yeaboi.ui.mode_select.screens._screens_ship import (
     _build_ship_progress_screen,
     _build_ship_result_screen,
 )
+from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
-
-_DIFF_PAGE_ROWS = 10  # pgup/pgdn stride through the gate's patch pane
 
 
 def _load_stories() -> tuple[list, str, str]:
@@ -236,9 +235,12 @@ def _launch(
             gated = None
             if mine[0] and time.monotonic() - last_poll > 0.5:
                 last_poll = time.monotonic()
-                for row in watch.list_runs(limit=5):
-                    if row.run_id == mine[0] and row.status == "awaiting_approval" and not row.gate_resolution:
-                        gated = row
+                # By id, not by scanning a newest-first page: with concurrency
+                # raised, later runs would push ours off the end and its gate
+                # would never open on the surface that launched it.
+                row = watch.get_run(mine[0])
+                if row is not None and row.status == "awaiting_approval" and not row.gate_resolution:
+                    gated = row
             if gated is not None:
                 outcome = _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, gated, cancel)
                 if outcome == "cancelled":
@@ -276,6 +278,10 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
     edit = {"buf": "", "cur": 0}
     message = ""
     diff_offset = 0
+    # The builder publishes the pane's true geometry here; apply_scroll clamps
+    # to exactly what is on screen, so the loop counter and the visible
+    # position can never diverge (see ui/shared/_scroll.py).
+    scroll_meta: dict = {}
     while True:
         w, h = console.size
         live.update(
@@ -287,6 +293,7 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
                 comment_edit=edit["buf"] if comment is not None else None,
                 message=message,
                 diff_offset=diff_offset,
+                scroll_meta=scroll_meta,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -302,19 +309,14 @@ def _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, run
             elif isinstance(key, str) and key:
                 _settings_edit_keypress(key, edit)
             continue
-        if key in ("left",):
+        if key in SCROLL_KEYS:
+            # One membership test routes arrows, wheel, page and home/end; the
+            # burst is drained in one shot so a fast wheel flick repaints once.
+            diff_offset = coalesce_scroll(diff_offset, key, scroll_meta, read_key)
+        elif key in ("left",):
             action_sel = (action_sel - 1) % len(SHIP_GATE_ACTIONS)
         elif key in ("right", "tab"):
             action_sel = (action_sel + 1) % len(SHIP_GATE_ACTIONS)
-        elif key == "up":
-            # The builder clamps; a large offset just parks at the last page.
-            diff_offset = max(0, diff_offset - 1)
-        elif key == "down":
-            diff_offset += 1
-        elif key == "pgup":
-            diff_offset = max(0, diff_offset - _DIFF_PAGE_ROWS)
-        elif key == "pgdn":
-            diff_offset += _DIFF_PAGE_ROWS
         elif key == "enter":
             action = SHIP_GATE_ACTIONS[action_sel]
             if action == "Approve":

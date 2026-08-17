@@ -1888,12 +1888,15 @@ def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
 
     if args.ship_command == "history":
         from yeaboi.ship.render import format_history_rich
-        from yeaboi.ship.store import ShipStore
+        from yeaboi.ship.store import ShipStore, listing_dict
 
         with ShipStore() as store:
             runs = store.list_runs(limit=args.limit)
         if args.format == "json":
-            print(json.dumps([asdict(r) for r in runs], indent=2))
+            # `listing_dict` drops the stored patch: capped per run is not
+            # capped per response, and a listing is polled in a loop. The
+            # single run `ship run --format json` prints keeps it.
+            print(json.dumps([listing_dict(r) for r in runs], indent=2))
         else:
             console.print(format_history_rich(runs))
         return 0
@@ -1901,13 +1904,13 @@ def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
     if args.ship_command == "status":
         from yeaboi.ship import budget
         from yeaboi.ship.render import format_budget_rich, format_run_rich
-        from yeaboi.ship.store import ShipStore
+        from yeaboi.ship.store import ShipStore, listing_dict
 
         with ShipStore() as store:
             runs = store.list_runs(limit=1)
         posture = budget.status()
         if args.format == "json":
-            print(json.dumps({"latest": asdict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
+            print(json.dumps({"latest": listing_dict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
         else:
             if runs:
                 console.print(format_run_rich(runs[0]))
@@ -1984,12 +1987,14 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                     continue  # a cancelled run winds down on its own; stop prompting
                 if not mine[0]:
                     continue  # the id has not been minted yet; nothing can be ours
-                # An open gate is one this loop has not answered yet: resolving
-                # stamps gate_resolution, and a rework clears it again — so the
-                # reopened gate prompts again by construction.
-                for run in store.list_runs(limit=3):
-                    if run.run_id != mine[0] or run.status != "awaiting_approval" or run.gate_resolution:
-                        continue
+                # Fetched by id, never scanned out of a newest-first page: with
+                # concurrency raised, runs started after ours would push it off
+                # the end and its gate would never render here. An open gate is
+                # one this loop has not answered yet — resolving stamps
+                # gate_resolution and a rework clears it, so a reopened gate
+                # prompts again by construction.
+                run = store.get_run(mine[0])
+                if run is not None and run.status == "awaiting_approval" and not run.gate_resolution:
                     # The gate is the only control before a push; it shows the
                     # patch, not a file count.
                     console.print(format_run_rich(run, show_diff=True))
