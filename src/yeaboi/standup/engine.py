@@ -772,7 +772,11 @@ def _nest_pr_commits(acts: list[dict]) -> list[dict]:
 
 def _member_evidence(
     acts: list[dict],
-    cap: int = 8,
+    # 30 per member per category: enough for the web timeline to show the real
+    # shape of a busy day. Prose surfaces self-cap their display (the markdown
+    # export folds at _MD_EVIDENCE_CAP, the web list folds after 3 rows), so
+    # raising this grows only the artifact and the timeline's dots.
+    cap: int = 30,
     *,
     prefixes: Collection[str] = frozenset(),
     work_item_ids: Collection[str] = frozenset(),

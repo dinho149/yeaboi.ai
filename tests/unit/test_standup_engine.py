@@ -1528,11 +1528,11 @@ class TestMemberEvidence:
         ]
         assert len(engine._member_evidence(acts)) == 2
 
-    def test_caps_at_eight_preserving_order(self):
-        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]
+    def test_caps_at_thirty_preserving_order(self):
+        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(35)]
         rows = engine._member_evidence(acts)
-        assert len(rows) == 8
-        assert rows[0].key == "#0" and rows[7].key == "#7"
+        assert len(rows) == 30
+        assert rows[0].key == "#0" and rows[29].key == "#29"
 
     def test_prefers_clean_summary_over_action_title(self):
         # Jira update/comment titles are action phrases ("updated KEY '…'");
