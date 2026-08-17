@@ -94,7 +94,7 @@ When driving multiple features at once, work as an **orchestrator**: one main se
 | `cowork/sweep-procedure.md` | What a sweep does, step by step |
 | `cowork/models.md` | The only file that names a model — everything else names a tier |
 | `cowork/hygiene-lenses.md` | The standing detectors a routine runs before scouting |
-| `cowork/release-signoff.md` | The pre-release channel and the two-track hand-test |
+| `cowork/release-signoff.md` | The release batch: assemble, hand-test, merge |
 | `cowork/migration/program.md` | The Go rewrite program, wave by wave |
 
 `/cowork status | today | runs | deploy | run <name> | pause | resume | teardown` drives the fleet. Editing anything under `cowork/` is the `fleet` workstream's subject — read `cowork/workstreams/fleet.md` first, and note that the constitution (`house-rules.md`, `definition-of-done.md`, `sweep-procedure.md`, `models.md`, `crew.md`, and the three crew agents in `.claude/agents/`) sits outside every charter.

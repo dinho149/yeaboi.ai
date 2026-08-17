@@ -58,7 +58,11 @@ LANE_LABELS = ("cowork", "ci-sentinel")
 
 # Open longer than this, or red, and it is stuck rather than building. The number
 # is `shipped-standup.md`'s and is unchanged by the fan-out.
-STUCK_DAYS = 7
+# 14, not 7: under the batch release model a gate-green fleet PR routinely
+# waits up to a week for `make batch-assemble` — that is the design, not a
+# stall (`cowork/sweep-procedure.md` step 2). Fourteen days means it missed a
+# batch, usually a conflict skip, and that IS worth calling stuck.
+STUCK_DAYS = 14
 
 # The area a PR carrying no `workstream:` label is reported under. It is reported,
 # never dropped: an untagged PR is a convention miss somebody should see, and the

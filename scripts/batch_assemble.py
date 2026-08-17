@@ -209,6 +209,10 @@ def assemble(prs: list[dict], *, date: str) -> tuple[Path, str, list[dict], list
     if worktree.exists():
         _git("worktree", "remove", "--force", str(worktree))
         shutil.rmtree(worktree, ignore_errors=True)
+        # If `remove` failed (a locked worktree) the rmtree above deleted the
+        # directory but left it REGISTERED, and the `worktree add` below then
+        # refuses the path forever. Prune makes a re-run self-healing.
+        _git("worktree", "prune")
     fetched = _git("fetch", "origin", "--quiet")
     if fetched.returncode != 0:
         raise AssembleError(f"git fetch origin failed:\n{fetched.stderr.strip()}")
@@ -393,9 +397,17 @@ def run_assemble(*, dry_run: bool) -> int:
         str(body_file),
     )
     if created is None:
-        # An open batch PR for this head already existing is the common cause; say so.
-        print("[batch] could not open the batch PR — if one is already open for this branch,", file=sys.stderr)
-        print("        the push above refreshed it and there is nothing else to do.", file=sys.stderr)
+        # Distinguish "one is already open" (the push above refreshed it — fine)
+        # from a real failure. Exiting green on a `gh` outage would report a
+        # batch that does not exist.
+        existing = _json("pr", "list", "--head", branch, "--state", "open", "--json", "number,url")
+        if isinstance(existing, list) and existing:
+            print(f"[batch] batch PR already open — the push refreshed it: {existing[0].get('url', '')}")
+        else:
+            print("[batch] pushed, but the batch PR could not be opened — gh is missing or refused.", file=sys.stderr)
+            print(f"        open it by hand: gh pr create --draft --base main --head {branch} \\", file=sys.stderr)
+            print(f"          --title {title!r} --label {PROMOTION_LABEL} --body-file {body_file}", file=sys.stderr)
+            return 2
     else:
         print(f"[batch] opened draft PR: {created.strip()}")
 
