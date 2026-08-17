@@ -594,18 +594,22 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
   padding: var(--s2);
-  /* Frosted rather than filled: it is a small panel over the board, and a solid
-     one reads as a second surface where a translucent one reads as something
-     held above the first. */
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid var(--hairline);
+  /* Glass: no ground of its own and no outline, only what is behind it
+     blurred. The shadow is the whole of its edge. */
+  background: none;
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 0;
   border-radius: var(--r-l);
-  box-shadow:
-    var(--edge),
-    0 1px 1px rgb(0 0 0 / 12%),
-    0 8px 24px rgb(0 0 0 / 22%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
   animation: trayIn var(--dur-fast) var(--ease) both;
+}
+
+/* Without the filter there is nothing behind the emoji at all, so the ground
+   comes back rather than the tray being unreadable over a card. */
+@supports not (backdrop-filter: blur(1px)) {
+  .rxTray {
+    background: var(--panel);
+  }
 }
 
 @keyframes trayIn {
