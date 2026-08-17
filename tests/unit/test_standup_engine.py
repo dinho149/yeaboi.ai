@@ -1441,6 +1441,29 @@ class TestMemberEvidence:
         assert (row.kind, row.key, row.title) == ("commit", "78e4201d", "Fix login redirect")
         assert (row.repository, row.timestamp) == ("yeaboi/web", "2026-07-30T09:15:00")
 
+    def test_review_sharing_the_pr_url_stays_a_separate_row(self):
+        # An AzDO review vote and the member's own PR row both point at the PR
+        # URL; GitHub review rows fall back to the PR's html_url. Reviewing and
+        # authoring are different work — neither may swallow the other.
+        acts = [
+            {
+                "kind": "pr",
+                "title": "Add retry",
+                "key": "!7",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T16:00:00",
+            },
+            {
+                "kind": "review",
+                "title": "approved PR !7: Add retry",
+                "key": "review:7:guid-vic",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T15:00:00",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert [(r.kind, r.key) for r in rows] == [("pr", "!7"), ("review", "review:7:guid-vic")]
+
     def test_urlless_items_survive_and_dedupe_by_identity(self):
         # Unlike _member_links, an in-progress ticket with no URL still says something.
         acts = [

@@ -204,9 +204,9 @@ KNOWN_UNSUPPORTED: dict[str, str] = {
 # hashing the model's wording would silently break dedup and leave a public repo
 # full of near-duplicate issues.
 # ORDER MATTERS — first match wins, and the ACTIVITY outranks the OBJECT it was
-# performed on. "commented on the pull request" is a comment, not a pull
-# request: on Azure Repos, PRs are fetched and their comments are not, so
-# resolving that phrase to "pull_request" would hide a real capability gap.
+# performed on. "commented on the work item" is a comment, not a ticket: on
+# Azure Boards, work items are fetched and their discussion is not, so
+# resolving that phrase to "ticket" would hide a real capability gap.
 _ARTIFACT_KEYWORDS: tuple[tuple[str, str], ...] = (
     # Activities first. "comment" outranks "review": a REVIEW COMMENT is a
     # comment, and the word "review" turns up constantly inside object names
@@ -269,11 +269,11 @@ CAPABILITY_MANIFEST: dict[tuple[str, str], str] = {
     ("azure_devops", "comment"): NOT_FETCHED,
     ("azure_devops", "worklog"): NOT_FETCHED,
     ("azure_devops", "board"): NOT_FETCHED,
-    # Azure Repos — commits, PRs and review votes; PR comments are not read.
+    # Azure Repos — commits, PRs, review votes and PR thread comments.
     ("azdo_repos", "commit"): FETCHED,
     ("azdo_repos", "pull_request"): FETCHED,
     ("azdo_repos", "review"): FETCHED,
-    ("azdo_repos", "comment"): NOT_FETCHED,
+    ("azdo_repos", "comment"): FETCHED,
     ("azdo_repos", "build"): NOT_FETCHED,
     # GitHub — commits, PRs, reviews and PR comments; issues are not scanned.
     ("github", "commit"): FETCHED,

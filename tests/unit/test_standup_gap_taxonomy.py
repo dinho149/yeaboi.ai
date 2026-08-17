@@ -296,15 +296,32 @@ class TestCapabilityGap:
         )
         assert d.category.id == "capability_gap_in_supported_source"
 
-    def test_azdo_pr_comments_resolve_to_comment_not_pull_request(self):
-        """The load-bearing ordering case: Azure Repos fetches PRs but not their
-        comments, so 'commented on the PR' must not be read as a PR."""
+    def test_azdo_pr_comments_are_fetched_so_no_gap(self):
+        """Azure Repos fetches PR thread comments (and votes) now, so a member's
+        'commented on the PR' must not be excused as a capability gap."""
         report = _report(activity_counts=(("azdo_repos", 4),))
         d = gap_taxonomy.classify(
             _claim(system_hint="azure_repos", artifact_hint="commented on the pull request"), report=report
         )
+        assert d is None or d.category.id != "capability_gap_in_supported_source"
+
+    def test_azdo_work_item_comments_resolve_to_comment_not_ticket(self):
+        """The load-bearing ordering case: Azure Boards fetches work items but
+        not their discussion, so 'commented on the work item' must not be read
+        as a ticket — that would hide a real capability gap."""
+        report = _report(activity_counts=(("azure_devops", 4),))
+        d = gap_taxonomy.classify(
+            _claim(system_hint="azure_devops", artifact_hint="commented on the work item"), report=report
+        )
         assert d.category.id == "capability_gap_in_supported_source"
         assert d.kind == "comment"
+
+    def test_manifest_matches_the_azdo_repos_fetchers(self):
+        """Truth-lock: azdevops_recent_reviews emits both thread comments and
+        dated reviewer votes, so the manifest must claim both. (The suite's
+        other manifest tests check key-shape only — this inverted once.)"""
+        assert gap_taxonomy.CAPABILITY_MANIFEST[("azdo_repos", "review")] == gap_taxonomy.FETCHED
+        assert gap_taxonomy.CAPABILITY_MANIFEST[("azdo_repos", "comment")] == gap_taxonomy.FETCHED
 
     def test_github_pr_comments_are_fetched_so_no_gap(self):
         d = gap_taxonomy.classify(

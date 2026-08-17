@@ -784,8 +784,13 @@ def _member_evidence(
     no link still says something). Rows are ordered newest-first — the day's
     movement (a ticket landing in Done) belongs in the visible top rows, while
     carried WIP (which Jira stamps with an empty timestamp) folds. Deduped in
-    that order — by URL when there is one, else by (kind, key, title) — so the
-    latest event for a ticket is the one that survives.
+    that order — by URL when there is one, else by (kind, key, title) — so
+    the latest event for a ticket is the one that survives (a Done transition
+    and the issue's own row share a URL on purpose). Review rows are the one
+    exception: they dedupe in their own URL namespace, because a review
+    legitimately shares its URL with a different piece of work (an AzDO vote
+    and the member's own PR row both point at the PR; GitHub review rows fall
+    back to the PR's html_url) and must not swallow it or be swallowed.
 
     ``prefixes``/``work_item_ids`` are the report-wide reference gates
     (references.tracker_prefixes / tracker_work_item_ids): with them, each
@@ -817,8 +822,13 @@ def _member_evidence(
         )
         if pr_number:
             dedupe = f"pr-merge:{a.get('repository', '')}:{pr_number}"
+        elif url:
+            # "review|" keeps a review's URL disjoint from the work it points
+            # at; other kinds share the plain-URL namespace so a ticket's
+            # latest event still wins.
+            dedupe = f"review|{url}" if a.get("kind") == "review" else url
         else:
-            dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
+            dedupe = f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
         if dedupe in seen:
             continue
         seen.add(dedupe)

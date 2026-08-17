@@ -306,7 +306,16 @@ func memberEvidence(acts []*pysem.Obj, cap int, prefixes, workItemIDs map[string
 		if prNumber != "" {
 			dedupe = "pr-merge:" + strOr(a, "repository") + ":" + prNumber
 		} else if url != "" {
-			dedupe = url
+			// f"review|{url}" if a.get("kind") == "review" else url — a review
+			// legitimately shares its URL with the work it points at (an AzDO
+			// vote row and the member's own PR row), so reviews dedupe in
+			// their own URL namespace; other kinds share the plain-URL one so
+			// a ticket's latest event still wins.
+			if strOr(a, "kind") == "review" {
+				dedupe = "review|" + url
+			} else {
+				dedupe = url
+			}
 		} else {
 			// f"{a.get('kind','')}:{a.get('key','')}:{a.get('title','')}" —
 			// str() of the raw values, so a present-but-null field says "None".

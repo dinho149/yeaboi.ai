@@ -1000,6 +1000,7 @@ class TestAzdoRepoActivity:
         ]
         git.get_threads.return_value = [
             SimpleNamespace(
+                id=9,
                 comments=(
                     SimpleNamespace(
                         id=7,
@@ -1007,14 +1008,16 @@ class TestAzdoRepoActivity:
                         author=SimpleNamespace(display_name="Rae", unique_name="rae@example.com"),
                         content="Looks good",
                     ),
-                )
+                ),
             )
         ]
 
         items = azdevops_recent_reviews("Project Space", days=1)
 
         assert len(items) == 1
-        assert items[0]["url"] == ("https://acme.visualstudio.com/Project%20Space/_git/API%20Service/pullrequest/42")
+        assert items[0]["url"] == (
+            "https://acme.visualstudio.com/Project%20Space/_git/API%20Service/pullrequest/42?discussionId=9"
+        )
         git.get_repository.assert_not_called()
 
     def test_review_skips_system_comments(self, monkeypatch):
@@ -1058,13 +1061,226 @@ class TestAzdoRepoActivity:
                         author=SimpleNamespace(display_name="Rae", unique_name="rae@example.com"),
                         content="One more nit",
                     ),
+                    # AzDO's pushed-N-commits notices are noise; an unknown
+                    # type from an odd payload is somebody's words — kept.
+                    _comment(4, "codeChange", "pushed 2 commits"),
+                    _comment(5, "unknown", "odd payload, still a human comment"),
                 )
             )
         ]
 
         items = azdevops_recent_reviews("Proj", days=1)
 
-        assert [i["key"] for i in items] == ["review-comment-2", "review-comment-3"]
+        # The "Rae voted 10" system comment sits on a thread with no
+        # properties, so it must not fabricate a vote row either.
+        assert [i["key"] for i in items] == ["review-comment-2", "review-comment-3", "review-comment-5"]
+
+    def _review_pr(self, repo, pr_id=1, *, status="active", created=None, closed=None, reviewers=()):
+        return SimpleNamespace(
+            pull_request_id=pr_id,
+            title="Review me",
+            status=status,
+            creation_date=created or (datetime.now(UTC) - timedelta(hours=3)),
+            closed_date=closed,
+            repository=repo,
+            reviewers=list(reviewers),
+        )
+
+    def _vote_thread(self, *, thread_id=11, vote="10", identity_index="1", voter, published):
+        # The wire shape of a VoteUpdate system thread: typed property wrappers,
+        # the voter behind an index into thread.identities, and a system comment
+        # whose published_date is the actual vote event time.
+        return SimpleNamespace(
+            id=thread_id,
+            properties={
+                "CodeReviewThreadType": {"$type": "System.String", "$value": "VoteUpdate"},
+                "CodeReviewVoteResult": {"$type": "System.String", "$value": vote},
+                "CodeReviewVotedByIdentity": {"$type": "System.String", "$value": identity_index},
+            },
+            identities={identity_index: voter},
+            comments=(
+                SimpleNamespace(
+                    id=100 + thread_id,
+                    published_date=published,
+                    author=voter,
+                    content=f"{getattr(voter, 'display_name', '')} voted {vote}",
+                    comment_type="system",
+                ),
+            ),
+        )
+
+    def test_vote_update_thread_becomes_dated_review_row(self, monkeypatch):
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
+        git.get_threads.return_value = [self._vote_thread(voter=vic, published=recent)]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert len(items) == 1
+        assert items[0]["kind"] == "review"
+        assert items[0]["status"] == "approved"
+        assert items[0]["author"] == "Vic"
+        assert items[0]["key"] == "review:42:guid-vic"
+        assert items[0]["timestamp"] == str(recent)[:19]
+        assert items[0]["url"] == "https://dev.azure.com/org/Proj/_git/api/pullrequest/42?discussionId=11"
+
+    def test_vote_update_before_window_is_not_emitted(self, monkeypatch):
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        old = datetime.now(UTC) - timedelta(days=30)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
+        git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
+        git.get_threads.return_value = [self._vote_thread(voter=vic, published=old)]
+
+        assert azdevops_recent_reviews("Proj", days=1) == []
+
+    def test_pr_closed_in_window_snapshots_reviewer_votes(self, monkeypatch):
+        # Votes are frozen at completion and the closed date passes through the
+        # window exactly once — credited on merge day, never re-credited.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        old = datetime.now(UTC) - timedelta(days=30)
+        reviewers = [
+            SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10),
+            SimpleNamespace(display_name="Ann", unique_name="ann@corp.com", id="guid-ann", vote=-10),
+            SimpleNamespace(display_name="Zed", unique_name="zed@corp.com", id="guid-zed", vote=0),
+        ]
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 7, status="completed", created=old, closed=recent, reviewers=reviewers)
+        ]
+        git.get_threads.return_value = []
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        # vote=0 is "no vote cast" and never becomes a row.
+        assert sorted(i["key"] for i in items) == ["review:7:guid-ann", "review:7:guid-vic"]
+        by_key = {i["key"]: i for i in items}
+        assert by_key["review:7:guid-vic"]["status"] == "approved"
+        assert by_key["review:7:guid-ann"]["status"] == "rejected"
+        assert by_key["review:7:guid-vic"]["timestamp"] == str(recent)[:19]
+        # Snapshot rows keep the bare PR URL — there is no thread to anchor to.
+        assert by_key["review:7:guid-vic"]["url"] == "https://dev.azure.com/org/Proj/_git/api/pullrequest/7"
+
+    def test_snapshot_votes_survive_past_the_thread_lookup_cap(self, monkeypatch):
+        # The completion snapshot needs no thread lookup, so it must cover
+        # every eligible PR — including those the cap excluded.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._MAX_REVIEW_THREAD_LOOKUPS", 1)
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        newest = datetime.now(UTC) - timedelta(hours=1)
+        older = datetime.now(UTC) - timedelta(hours=5)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 1, status="completed", created=older, closed=newest),
+            self._review_pr(repo, 2, status="completed", created=older, closed=older, reviewers=[vic]),
+        ]
+        git.get_threads.return_value = []
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert git.get_threads.call_count == 1  # the cap held
+        assert [i["key"] for i in items] == ["review:2:guid-vic"]  # the capped PR still credited
+
+    def test_stale_vote_on_old_active_pr_is_not_emitted(self, monkeypatch):
+        # An undated vote on a long-open PR would repeat in every standup.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        old = datetime.now(UTC) - timedelta(days=30)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 3, status="active", created=old, reviewers=[vic])
+        ]
+        git.get_threads.return_value = []
+
+        assert azdevops_recent_reviews("Proj", days=1) == []
+
+    def test_thread_vote_beats_completion_snapshot(self, monkeypatch):
+        # A VoteUpdate thread carries the real event time; the snapshot's
+        # closed-date approximation must not duplicate it.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        voted_at = datetime.now(UTC) - timedelta(hours=4)
+        closed_at = datetime.now(UTC) - timedelta(hours=1)
+        vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 8, status="completed", closed=closed_at, reviewers=[vic])
+        ]
+        git.get_threads.return_value = [self._vote_thread(voter=vic, published=voted_at)]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert [i["key"] for i in items] == ["review:8:guid-vic"]
+        assert items[0]["timestamp"] == str(voted_at)[:19]
+
+    def test_comment_threads_get_distinct_urls(self, monkeypatch):
+        # Engine evidence dedupes URL-first; comments sharing the PR's bare URL
+        # used to collapse into one row.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        rae = SimpleNamespace(display_name="Rae", unique_name="rae@example.com")
+
+        def _thread(tid, cid, content):
+            return SimpleNamespace(
+                id=tid,
+                comments=(SimpleNamespace(id=cid, published_date=recent, author=rae, content=content),),
+            )
+
+        git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 5)]
+        git.get_threads.return_value = [_thread(21, 1, "First thread"), _thread(22, 2, "Second thread")]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert [i["url"] for i in items] == [
+            "https://dev.azure.com/org/Proj/_git/api/pullrequest/5?discussionId=21",
+            "https://dev.azure.com/org/Proj/_git/api/pullrequest/5?discussionId=22",
+        ]
+
+    def test_freshest_prs_win_the_thread_lookup_cap(self, monkeypatch):
+        # When the cap bites, the PRs most likely to carry this window's review
+        # activity keep their lookups — not whatever the API listed first.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._MAX_REVIEW_THREAD_LOOKUPS", 1)
+        repo = SimpleNamespace(id="r1", name="api", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        newest = datetime.now(UTC) - timedelta(hours=1)
+        older = datetime.now(UTC) - timedelta(hours=6)
+        git.get_pull_requests_by_project.return_value = [
+            self._review_pr(repo, 1, created=older),
+            self._review_pr(repo, 2, created=newest),
+        ]
+        git.get_threads.return_value = []
+
+        azdevops_recent_reviews("Proj", days=1)
+
+        assert [call.args[1] for call in git.get_threads.call_args_list] == [2]
 
     def test_auth_error_raises_source_error(self, monkeypatch):
         from azure.devops.exceptions import AzureDevOpsServiceError
