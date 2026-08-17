@@ -281,34 +281,6 @@
   .rail > * { flex: 1 1 14rem; }
 }
 
-/* ── Which retro ──────────────────────────────────────────────────────── */
-/* Two arrows and a label, beside the sprint they are stepping through. */
-.timeSwitch {
-  display: flex;
-  align-items: center;
-  gap: var(--s1);
-  vertical-align: middle;
-}
-.timeStep {
-  display: inline-grid;
-  place-items: center;
-  width: var(--tap-min);
-  height: var(--tap-min);
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.timeStep:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
-.timeStep:disabled { opacity: 0.3; cursor: default; }
-.timeLabel { font-family: inherit; }
-/* A retro you cannot write on. The accent is what the board uses for "this is
-   what is happening", and looking at last month is not that. */
-.timeLabelPast { color: var(--accent2); }
-.subtleDot { color: var(--dim); margin: 0 var(--s2); }
-
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {
   flex: 1;
