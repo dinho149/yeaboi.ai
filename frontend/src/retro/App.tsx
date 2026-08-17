@@ -365,8 +365,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     );
   }
 
-  const shownCount = shownCards.length;
-
   const toolbar = (
     <Toolbar
       // No `brand`: the masthead above sets the wordmark, in the six-row face
@@ -376,13 +374,10 @@ export function App({ boot }: { boot: RetroBoot }) {
       // The duck rides in the toolbar, where it is in peripheral vision the
       // whole ceremony without ever being in the way.
       mark={<Duck state={duckState} size={30} />}
-        subtitle={
-          <>
-            {past ? `${past.sprint_name || past.date} · ` : boot.sprint ? `${boot.sprint} · ` : ''}
-            {shownCount} {shownCount === 1 ? 'card' : 'cards'}
-            {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
-          </>
-        }
+      // Which retro, and how many cards, are both already on the board — the
+      // rail names the one and every column counts the other. The subtitle is
+      // only where the connection speaks up.
+      subtitle={status === 'retrying' ? <span className={styles['offline']}>reconnecting…</span> : undefined}
     >
         <div className={styles['identity']}>
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
@@ -489,19 +484,12 @@ export function App({ boot }: { boot: RetroBoot }) {
           gone and every control is disabled — a stripe across the board says
           the same thing a fourth time, and costs a row to say it. It is still
           announced, once, to a screen reader. */}
+      {/* A sighted user reads "which retro" off the rail's picker, which goes
+          accent-coloured on a past one. Said out loud here for everyone else. */}
       <p className={styles['srOnly']} role="status" aria-live="polite">
+        {past ? `Showing ${past.sprint_name || 'a past retro'}, ${past.date}. ` : ''}
         {locked ? 'The host locked the board.' : ''}
       </p>
-
-      {past ? (
-        <p className={styles['pastBar']} role="status">
-          <Icon name="rotate-ccw" size={14} />
-          <strong>{past.sprint_name || 'A past retro'}</strong>
-          <span className={styles['pastWhen']}>{past.date}</span>
-          <span className={styles['pastSpacer']} />
-          <Button onClick={() => history.reset()}>Back to this retro</Button>
-        </p>
-      ) : null}
 
       {musicBlocked ? (
         <button
@@ -514,6 +502,24 @@ export function App({ boot }: { boot: RetroBoot }) {
       ) : null}
 
       <div className={styles['boardLayout']}>
+      <Board
+        key={swap.key}
+        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
+        cards={swap.payload.cards}
+        avatars={avatarsByName}
+        myReactions={myReactions}
+        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
+        locked={readOnly}
+        focus={focus}
+        arrivals={past ? NO_ARRIVALS : arrivals}
+        onAddCard={addCard}
+        onTyping={onTyping}
+        onEdit={(cardId, text) => void actions.editCard(cardId, text)}
+        onDelete={(cardId) => void actions.deleteCard(cardId)}
+        onReact={(cardId, emoji) => void react(cardId, emoji)}
+        onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
+      />
+
       {isHost ? (
         <HostRail
           history={history}
@@ -534,23 +540,6 @@ export function App({ boot }: { boot: RetroBoot }) {
           past={history.at > 0}
         />
       ) : null}
-      <Board
-        key={swap.key}
-        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
-        cards={swap.payload.cards}
-        avatars={avatarsByName}
-        myReactions={myReactions}
-        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
-        locked={readOnly}
-        focus={focus}
-        arrivals={past ? NO_ARRIVALS : arrivals}
-        onAddCard={addCard}
-        onTyping={onTyping}
-        onEdit={(cardId, text) => void actions.editCard(cardId, text)}
-        onDelete={(cardId) => void actions.deleteCard(cardId)}
-        onReact={(cardId, emoji) => void react(cardId, emoji)}
-        onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
-      />
 
       </div>
       </div>

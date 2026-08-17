@@ -81,6 +81,17 @@ export function Dropdown({ label, value, options, onChange, placeholder = '—',
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // The menu is as wide as its longest option, which the anchor's width does not
+  // predict — a picker near the right edge would run off it. Measured after the
+  // first paint and pulled back in; the shift converges in one pass because a
+  // menu that fits does not move.
+  useLayoutEffect(() => {
+    if (!open || !rect || !menu.current) return;
+    const box = menu.current.getBoundingClientRect();
+    const spill = box.right - (window.innerWidth - 8);
+    if (spill > 0) setRect((current) => (current ? { ...current, left: Math.max(8, current.left - spill) } : current));
+  }, [open, rect]);
+
   const choose = (next: string): void => {
     onChange(next);
     setOpen(false);

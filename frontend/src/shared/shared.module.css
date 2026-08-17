@@ -712,6 +712,11 @@ dialog.modal {
   width: min(92vw, 520px);
   box-shadow: var(--shadow-2);
 }
+/* `showModal()` focuses the dialog itself when nothing inside autofocuses, and
+   the UA rings that in its own blue. Controls inside still ring on Tab; this is
+   only the container. */
+dialog.modal:focus,
+dialog.modal:focus-visible { outline: none; }
 .modal::backdrop {
   background: rgb(0 0 0 / 55%);
   animation: modalVeil var(--dur-base) var(--ease) both;

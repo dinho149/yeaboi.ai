@@ -41,6 +41,8 @@ export interface HostRailProps {
   past: boolean;
 }
 
+const STATUS_LABELS = CARRIED_STATUSES.map((value) => CARRIED_STATUS_LABELS[value]);
+
 /** Labels have to be unique — two retros in one sprint would collide. */
 function labelFor(run: { retro_date: string; sprint_name?: string }): string {
   return run.sprint_name?.trim() || run.retro_date || '—';
@@ -75,17 +77,17 @@ export function HostRail({
 
         {/* The picker between the arrows: one control, read as one thing. The
             arrows are for "the one before this", which is the step people take;
-            the picker is for the one they remember by name. */}
+            the picker is for the one they remember by name. Same pair poker
+            pages its tickets with. */}
         <div className={styles['timeSwitch']} role="group" aria-label="Which retro">
-          <button
-            type="button"
-            className={styles['timeStep']}
+          <Button
+            size="s"
             aria-label="The retro before this one"
             disabled={!canBack || loading}
             onClick={() => history.step(1)}
           >
             <Icon name="chevron-left" size={14} />
-          </button>
+          </Button>
 
           <Dropdown
             label="Which retro"
@@ -95,20 +97,19 @@ export function HostRail({
             onChange={(next) => history.go(options.indexOf(next))}
           />
 
-          <button
-            type="button"
-            className={styles['timeStep']}
+          <Button
+            size="s"
             aria-label={at === 1 ? 'Back to this retro' : 'The retro after this one'}
             disabled={at === 0}
             onClick={() => history.step(-1)}
           >
             <Icon name="chevron-right" size={14} />
-          </button>
+          </Button>
         </div>
       </section>
 
       {carried.length ? (
-        <section>
+        <section key={`carried-${at}`}>
           <Eyebrow value={`${reviewed}/${carried.length}`}>Last retro</Eyebrow>
           <ul className={kit['railList']}>
             {carried.map((item) => {
@@ -117,21 +118,16 @@ export function HostRail({
                 <li key={item.id} className={styles['carriedRow']}>
                   <span className={cx(kit['railDot'], styles[`dot_${status}`])} aria-hidden="true" />
                   <span className={styles['carriedText']}>{item.text}</span>
-                  <select
-                    className={styles['carriedSelect']}
-                    value={status}
-                    disabled={past}
-                    aria-label={`Status for: ${item.text.slice(0, 60)}`}
-                    onChange={(event) =>
-                      onSetCarriedStatus(item.id, (event.target as HTMLSelectElement).value as CarriedStatuses)
-                    }
-                  >
-                    {CARRIED_STATUSES.map((value) => (
-                      <option key={value} value={value}>
-                        {CARRIED_STATUS_LABELS[value]}
-                      </option>
-                    ))}
-                  </select>
+                  <Dropdown
+                    label={`Status for: ${item.text.slice(0, 60)}`}
+                    className={styles['carriedPick']}
+                    value={CARRIED_STATUS_LABELS[status]}
+                    options={STATUS_LABELS}
+                    onChange={(next) => {
+                      const picked = CARRIED_STATUSES.find((value) => CARRIED_STATUS_LABELS[value] === next);
+                      if (picked && !past) onSetCarriedStatus(item.id, picked);
+                    }}
+                  />
                 </li>
               );
             })}
@@ -139,18 +135,34 @@ export function HostRail({
         </section>
       ) : null}
 
-      {/* The role is on the section, not the list: a `role="group"` on a `<ul>`
-          replaces list semantics and orphans every `<li>` in it. */}
+      {/* One of N, with the neutral option in the list rather than implied by
+          nothing being lit — otherwise the only clue the rows do anything is
+          clicking one. The role is on the section, not the `<ul>`: a role there
+          replaces list semantics and orphans every `<li>`. */}
       {people.length ? (
-        <section role="group" aria-label="Walkthrough">
-          <Eyebrow value={focus || 'everyone'}>Whose cards</Eyebrow>
+        <section key={`who-${at}`} role="group" aria-label="Show one person's cards">
+          <Eyebrow value={focus || 'everyone'}>Showing</Eyebrow>
           <ul className={kit['railList']}>
+            <li>
+              <button
+                type="button"
+                className={cx(kit['railItem'], !focus && kit['railCurrent'])}
+                aria-pressed={!focus}
+                onClick={() => onFocus('')}
+              >
+                <span className={styles['everyoneMark']} aria-hidden="true">
+                  <Icon name="users" size={13} />
+                </span>
+                <span className={styles['railName']}>Everyone</span>
+                <span className={styles['railCount']}>{people.reduce((sum, p) => sum + p.cards, 0)}</span>
+              </button>
+            </li>
             {people.map((person) => (
               <li key={person.name}>
                 <button
                   type="button"
                   className={cx(kit['railItem'], person.name === focus && kit['railCurrent'])}
-                  aria-label={`${person.name}, ${person.cards} ${person.cards === 1 ? 'card' : 'cards'}`}
+                  aria-label={`Only ${person.name}, ${person.cards} ${person.cards === 1 ? 'card' : 'cards'}`}
                   aria-pressed={person.name === focus}
                   onClick={() => onFocus(person.name === focus ? '' : person.name)}
                 >

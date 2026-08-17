@@ -1530,7 +1530,7 @@ svg._wordmark_hoxc3_223 {
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_1l2ir_17 {
+._appbar_5th3o_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1542,13 +1542,13 @@ svg._wordmark_hoxc3_223 {
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_1l2ir_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_1l2ir_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_5th3o_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_5th3o_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_1l2ir_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_1l2ir_35 {
+._brandTitle_5th3o_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_5th3o_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1557,13 +1557,13 @@ svg._wordmark_hoxc3_223 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_1l2ir_44 { flex: 1; }
-._tools_1l2ir_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_5th3o_44 { flex: 1; }
+._tools_5th3o_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_1l2ir_50 {
+._btn_5th3o_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1585,49 +1585,49 @@ svg._wordmark_hoxc3_223 {
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_1l2ir_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_5th3o_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_1l2ir_50:disabled { opacity: 0.45; cursor: default; }
+._btn_5th3o_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_1l2ir_79 {
+._btnS_5th3o_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_1l2ir_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_5th3o_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_1l2ir_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_5th3o_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_1l2ir_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_1l2ir_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_1l2ir_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_5th3o_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_5th3o_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_5th3o_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_1l2ir_95 {
+._btnPill_5th3o_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_1l2ir_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_5th3o_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_1l2ir_107 {
+._btnBare_5th3o_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_1l2ir_107:hover:not(:disabled), ._btnBare_1l2ir_107:focus-visible {
+._btnBare_5th3o_107:hover:not(:disabled), ._btnBare_5th3o_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
@@ -1639,15 +1639,15 @@ svg._wordmark_hoxc3_223 {
    which sat next to a ↩ it had become identical to. Two classes, so it beats
    `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
    where it happens to sit in the file. */
-._btnBare_1l2ir_107._btnDanger_1l2ir_91 { color: var(--danger); }
-._btnBare_1l2ir_107._btnDanger_1l2ir_91:hover:not(:disabled),
-._btnBare_1l2ir_107._btnDanger_1l2ir_91:focus-visible { color: var(--danger); border-color: transparent; }
+._btnBare_5th3o_107._btnDanger_5th3o_91 { color: var(--danger); }
+._btnBare_5th3o_107._btnDanger_5th3o_91:hover:not(:disabled),
+._btnBare_5th3o_107._btnDanger_5th3o_91:focus-visible { color: var(--danger); border-color: transparent; }
 
-._btnActive_1l2ir_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_5th3o_124 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_1l2ir_107._btnActive_1l2ir_124 {
+._btnBare_5th3o_107._btnActive_5th3o_124 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1657,45 +1657,45 @@ svg._wordmark_hoxc3_223 {
 /* The raised rendition of the delete confirmation. Three classes, because
    `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
    `--text` at the exact moment it is asking about a destructive action. */
-._btnBare_1l2ir_107._btnActive_1l2ir_124._btnDanger_1l2ir_91 { color: var(--danger); }
+._btnBare_5th3o_107._btnActive_5th3o_124._btnDanger_5th3o_91 { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_1l2ir_148:not(:disabled) { animation: _btnPulse_1l2ir_1 1.6s ease-in-out infinite; }
+._btnAttention_5th3o_148:not(:disabled) { animation: _btnPulse_5th3o_1 1.6s ease-in-out infinite; }
 /* Both ends spelled out, and one shadow at each: a surface that gives its
    buttons a raised shadow leaves the base as a list of two, and a list of two
    cannot interpolate to a list of one — the ring switches on and off instead of
    breathing. */
-@keyframes _btnPulse_1l2ir_1 {
+@keyframes _btnPulse_5th3o_1 {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 28%, transparent); }
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_1l2ir_158 { width: 100%; }
+._btnBlock_5th3o_158 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_1l2ir_162 { opacity: 0.72; }
-._btnDim_1l2ir_162:hover, ._btnDim_1l2ir_162:focus-visible { opacity: 1; }
+._btnDim_5th3o_162 { opacity: 0.72; }
+._btnDim_5th3o_162:hover, ._btnDim_5th3o_162:focus-visible { opacity: 1; }
 /* Except when it is filled: the fill is the whole point of a primary, and
    dimming it turns the accent into a wash. */
-._btnDim_1l2ir_162._btnPrimary_1l2ir_87 { opacity: 1; }
+._btnDim_5th3o_162._btnPrimary_5th3o_87 { opacity: 1; }
 
 /* Flex, so the glyph is centred rather than set on a baseline: an inline SVG
    picks up `vertical-align` and lands on a fractional row, which is the whole
    of why a vector icon can look out of focus. */
-._iconGlyph_1l2ir_171 { display: inline-flex; align-items: center; font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_5th3o_171 { display: inline-flex; align-items: center; font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._presetRow_1l2ir_176 {
+._presetRow_5th3o_176 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--s2);
 }
 
-._preset_1l2ir_176 {
+._preset_5th3o_176 {
   min-height: var(--tap);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-s);
@@ -1711,18 +1711,18 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._preset_1l2ir_176:hover {
+._preset_5th3o_176:hover {
   border-color: var(--accent);
   background: var(--panel);
   color: var(--accent);
 }
 
-._preset_1l2ir_176:active {
+._preset_5th3o_176:active {
   transform: scale(0.97);
 }
 
 /* A sentence inside a panel, rather than a control. */
-._panelNote_1l2ir_209 {
+._panelNote_5th3o_209 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1734,20 +1734,20 @@ svg._wordmark_hoxc3_223 {
    surface was already showing and becoming clickable should not make it louder.
    The underline is held back to hover for the same reason: on a slide deck's
    corner and a board's status strip it would read as a fifth rule line. */
-._credit_1l2ir_221 {
+._credit_5th3o_221 {
   color: inherit;
   text-decoration: none;
 }
-._credit_1l2ir_221:hover,
-._credit_1l2ir_221:focus-visible {
+._credit_5th3o_221:hover,
+._credit_5th3o_221:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_1l2ir_232 { display: contents; }
-._popoverAnchor_1l2ir_233 { position: relative; display: inline-flex; }
-._tbtn_1l2ir_234 {
+._popoverGroup_5th3o_232 { display: contents; }
+._popoverAnchor_5th3o_233 { position: relative; display: inline-flex; }
+._tbtn_5th3o_234 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1762,10 +1762,10 @@ svg._wordmark_hoxc3_223 {
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_1l2ir_234:hover { border-color: var(--accent); }
-._tbtnOpen_1l2ir_250 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_5th3o_234:hover { border-color: var(--accent); }
+._tbtnOpen_5th3o_250 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_1l2ir_232 {
+._popover_5th3o_232 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1781,13 +1781,13 @@ svg._wordmark_hoxc3_223 {
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_1l2ir_268 { right: auto; left: 0; }
+._popoverLeft_5th3o_268 { right: auto; left: 0; }
 
 /* Rendered into a host that already is a panel — the dock's drawer. It keeps
    only its padding: the ground, the border and the animation are the host's. */
 /* Docked: a panel of its own standing above the notch, wearing the same
    hairline and the same three shadows as the notch and the top bar. */
-._popoverDocked_1l2ir_274 {
+._popoverDocked_5th3o_274 {
   position: static;
   min-width: 240px;
   max-height: min(60vh, 420px);
@@ -1801,18 +1801,18 @@ svg._wordmark_hoxc3_223 {
 }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_1l2ir_288 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_1l2ir_232[hidden] { display: none; }
+._popoverAbove_5th3o_288 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_5th3o_232[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_1l2ir_292 {
+._fieldLabel_5th3o_292 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--dim);
 }
-._textInput_1l2ir_299, ._numberInput_1l2ir_299 {
+._textInput_5th3o_299, ._numberInput_5th3o_299 {
   min-width: 0;
   flex: 1;
   min-height: var(--tap);
@@ -1826,16 +1826,16 @@ svg._wordmark_hoxc3_223 {
   transition: border-color var(--dur-fast) var(--ease);
 }
 
-._textInput_1l2ir_299:focus-visible, ._numberInput_1l2ir_299:focus-visible {
+._textInput_5th3o_299:focus-visible, ._numberInput_5th3o_299:focus-visible {
   outline: none;
   border-color: var(--accent);
 }
-._textInput_1l2ir_299 { flex: 1; min-width: 0; }
-._numberInput_1l2ir_299 { width: 5.5rem; font-family: var(--font-mono); }
+._textInput_5th3o_299 { flex: 1; min-width: 0; }
+._numberInput_5th3o_299 { width: 5.5rem; font-family: var(--font-mono); }
 /* Drawn rather than tinted: `accent-color` colours the thumb and leaves a
    grey groove, so the control shows where the handle is and not what the
    value is. `--fill` is set by the component from the value itself. */
-._range_1l2ir_322 {
+._range_5th3o_322 {
   width: 100%;
   height: 20px;
   appearance: none;
@@ -1843,7 +1843,7 @@ svg._wordmark_hoxc3_223 {
   cursor: pointer;
 }
 
-._range_1l2ir_322::-webkit-slider-runnable-track {
+._range_5th3o_322::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1853,7 +1853,7 @@ svg._wordmark_hoxc3_223 {
   );
 }
 
-._range_1l2ir_322::-moz-range-track {
+._range_5th3o_322::-moz-range-track {
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(
@@ -1863,7 +1863,7 @@ svg._wordmark_hoxc3_223 {
   );
 }
 
-._range_1l2ir_322::-webkit-slider-thumb {
+._range_5th3o_322::-webkit-slider-thumb {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -1874,7 +1874,7 @@ svg._wordmark_hoxc3_223 {
   box-shadow: var(--shadow-1);
 }
 
-._range_1l2ir_322::-moz-range-thumb {
+._range_5th3o_322::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: 0;
@@ -1888,13 +1888,13 @@ svg._wordmark_hoxc3_223 {
    mono label above each control, one full-width action at the foot. The three
    panels were three layouts — a label beside a select, a bare row of buttons,
    a row of coloured squares — which is why they read as unrelated. */
-._panelForm_1l2ir_375 {
+._panelForm_5th3o_375 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._field_1l2ir_292 {
+._field_5th3o_292 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -1902,23 +1902,23 @@ svg._wordmark_hoxc3_223 {
   flex: 1;
 }
 
-._inputRow_1l2ir_389 {
+._inputRow_5th3o_389 {
   display: flex;
   gap: var(--s2);
 }
 
-._inputAction_1l2ir_394 {
+._inputAction_5th3o_394 {
   flex: none;
 }
 
-._panelAction_1l2ir_398 {
+._panelAction_5th3o_398 {
   width: 100%;
   justify-content: center;
 }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicHead_1l2ir_404 { display: flex; align-items: flex-end; gap: var(--s3); }
-._musicPlay_1l2ir_405 {
+._musicHead_5th3o_404 { display: flex; align-items: flex-end; gap: var(--s3); }
+._musicPlay_5th3o_405 {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1933,16 +1933,16 @@ svg._wordmark_hoxc3_223 {
   transition: transform var(--dur-fast) var(--ease);
 }
 
-._musicPlay_1l2ir_405:hover {
+._musicPlay_5th3o_405:hover {
   transform: scale(1.06);
 }
 
 /* Waiting on the stream. Suppressed by the global reduced-motion guard. */
-._musicPlayBusy_1l2ir_425 {
-  animation: _musicWait_1l2ir_1 1.1s ease-in-out infinite;
+._musicPlayBusy_5th3o_425 {
+  animation: _musicWait_5th3o_1 1.1s ease-in-out infinite;
 }
 
-@keyframes _musicWait_1l2ir_1 {
+@keyframes _musicWait_5th3o_1 {
   50% {
     opacity: 0.55;
   }
@@ -1953,12 +1953,12 @@ svg._wordmark_hoxc3_223 {
 /* A dock stood on end has no room for a word beside the glyph. Keyed on the
    attribute, not the class, because the dock's class is hashed into another
    module. */
-[data-edge='left'] ._iconLabel_1l2ir_440,
-[data-edge='right'] ._iconLabel_1l2ir_440 {
+[data-edge='left'] ._iconLabel_5th3o_440,
+[data-edge='right'] ._iconLabel_5th3o_440 {
   display: none;
 }
 
-._viz_1l2ir_445 {
+._viz_5th3o_445 {
   flex: none;
   width: 0;
   height: 22px;
@@ -1971,7 +1971,7 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-base) var(--ease);
 }
 
-._vizOn_1l2ir_458 {
+._vizOn_5th3o_458 {
   width: 34px;
   opacity: 1;
   transform: none;
@@ -1981,7 +1981,7 @@ svg._wordmark_hoxc3_223 {
 /* Unfolds like the visualiser does. Without it the dock's width snapped the
    moment a timer started and then eased back into place — two motions where
    there should be one. */
-._timerReadout_1l2ir_468 {
+._timerReadout_5th3o_468 {
   display: inline-block;
   overflow: hidden;
   max-width: 6ch;
@@ -1990,10 +1990,10 @@ svg._wordmark_hoxc3_223 {
   font-weight: 700;
   color: var(--accent);
   text-align: right;
-  animation: _readoutIn_1l2ir_1 var(--dur-base) var(--ease) both;
+  animation: _readoutIn_5th3o_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _readoutIn_1l2ir_1 {
+@keyframes _readoutIn_5th3o_1 {
   from {
     max-width: 0;
     opacity: 0;
@@ -2003,18 +2003,18 @@ svg._wordmark_hoxc3_223 {
 
 /* And back out the same way, including the flex gap its parent holds for it —
    which is a gap around nothing once the text is gone. */
-._readoutOut_1l2ir_490 {
-  animation: _readoutOut_1l2ir_490 200ms var(--ease) forwards;
+._readoutOut_5th3o_490 {
+  animation: _readoutOut_5th3o_490 200ms var(--ease) forwards;
 }
 
-@keyframes _readoutOut_1l2ir_490 {
+@keyframes _readoutOut_5th3o_490 {
   to {
     max-width: 0;
     opacity: 0;
     margin-left: calc(var(--s2) * -1);
   }
 }
-._confetti_1l2ir_501 {
+._confetti_5th3o_501 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -2026,13 +2026,13 @@ svg._wordmark_hoxc3_223 {
 /* ── Themes ───────────────────────────────────────────────────────
    A theme is a ground and an accent, so a swatch shows both — and its own
    name, because "the dark blue one" is not how anyone asks for Solarized. */
-._swatches_1l2ir_513 {
+._swatches_5th3o_513 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   gap: var(--s2);
 }
 
-._swatch_1l2ir_513 {
+._swatch_5th3o_513 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2050,16 +2050,16 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._swatch_1l2ir_513:hover {
+._swatch_5th3o_513:hover {
   transform: translateY(-1px);
 }
 
-._swatchOn_1l2ir_541 {
+._swatchOn_5th3o_541 {
   border-color: var(--swatch-accent, var(--accent));
   box-shadow: 0 0 0 1px var(--swatch-accent, var(--accent));
 }
 
-._swatchName_1l2ir_546 {
+._swatchName_5th3o_546 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: var(--track-label);
@@ -2067,24 +2067,24 @@ svg._wordmark_hoxc3_223 {
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_1l2ir_554 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_1l2ir_555 { display: inline-flex; align-items: center; }
-._stacked_1l2ir_556 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_1l2ir_556:first-child { margin-left: 0; }
-._presenceMore_1l2ir_558 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_1l2ir_559 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_5th3o_554 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_5th3o_555 { display: inline-flex; align-items: center; }
+._stacked_5th3o_556 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_5th3o_556:first-child { margin-left: 0; }
+._presenceMore_5th3o_558 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_5th3o_559 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_1l2ir_561 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_1l2ir_562 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_1l2ir_563 { flex: 1; }
-._rosterYou_1l2ir_564 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_1l2ir_565 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_5th3o_561 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_5th3o_562 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_5th3o_563 { flex: 1; }
+._rosterYou_5th3o_564 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_5th3o_565 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
 /* An even grid rather than a wrapping row: the last line of a wrap is short
    and the block reads as ragged next to a full-width field above it. Eight
    columns, square cells, the same gutter in both directions. */
-._avatarGrid_1l2ir_571 {
+._avatarGrid_5th3o_571 {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: var(--s2);
@@ -2093,7 +2093,7 @@ svg._wordmark_hoxc3_223 {
 /* The emoji, and nothing else — no box, no disc, no ground. The chosen one is
    the one at full strength and slightly forward; the rest step back. Nothing
    is conveyed by that alone: each is a `role="radio"` carrying `aria-checked`. */
-._avatarChoice_1l2ir_580 {
+._avatarChoice_5th3o_580 {
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -2110,25 +2110,25 @@ svg._wordmark_hoxc3_223 {
     transform var(--dur-fast) var(--ease);
 }
 
-._avatarChoice_1l2ir_580:hover {
+._avatarChoice_5th3o_580:hover {
   opacity: 1;
   transform: scale(1.1);
 }
 
-._avatarChoiceOn_1l2ir_602 {
+._avatarChoiceOn_5th3o_602 {
   opacity: 1;
   transform: scale(1.14);
 }
 
 @media (max-width: 699px) {
-  ._avatarGrid_1l2ir_571 {
+  ._avatarGrid_5th3o_571 {
     grid-template-columns: repeat(6, 1fr);
   }
 }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_1l2ir_614 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
-._qr_1l2ir_615 {
+._invite_5th3o_614 { display: flex; flex-direction: column; align-items: stretch; gap: var(--s3); }
+._qr_5th3o_615 {
   width: 280px;
   height: 280px;
   max-width: 100%;
@@ -2137,18 +2137,18 @@ svg._wordmark_hoxc3_223 {
   background: var(--paper);
   padding: var(--s3);
 }
-._inviteCode_1l2ir_624 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_1l2ir_625 {
+._inviteCode_5th3o_624 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_5th3o_625 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_1l2ir_632 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_5th3o_632 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_1l2ir_635 {
+._copyField_5th3o_635 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -2162,7 +2162,7 @@ svg._wordmark_hoxc3_223 {
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_1l2ir_649 {
+._copyValue_5th3o_649 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -2170,10 +2170,10 @@ svg._wordmark_hoxc3_223 {
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_1l2ir_657 { flex: none; }
+._copyBtn_5th3o_657 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_1l2ir_660 {
+._toast_5th3o_660 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -2185,10 +2185,10 @@ svg._wordmark_hoxc3_223 {
   color: var(--text);
   font-size: var(--fs-2xs);
   text-align: center;
-  animation: _toastIn_1l2ir_1 var(--dur-base) var(--ease) both;
+  animation: _toastIn_5th3o_1 var(--dur-base) var(--ease) both;
 }
 
-@keyframes _toastIn_1l2ir_1 {
+@keyframes _toastIn_5th3o_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -2197,11 +2197,11 @@ svg._wordmark_hoxc3_223 {
 
 /* Folds rather than blinks: the height and the margin go with the opacity, so
    the panel closes the gap instead of jumping when it leaves. */
-._toastOut_1l2ir_684 {
-  animation: _toastOut_1l2ir_684 220ms var(--ease) forwards;
+._toastOut_5th3o_684 {
+  animation: _toastOut_5th3o_684 220ms var(--ease) forwards;
 }
 
-@keyframes _toastOut_1l2ir_684 {
+@keyframes _toastOut_5th3o_684 {
   to {
     opacity: 0;
     max-height: 0;
@@ -2216,7 +2216,7 @@ svg._wordmark_hoxc3_223 {
 /* `dialog.modal`, not `.modal`: the element qualifier outranks the global
    `* { margin: 0 }` reset and every `.x > * + *` stacking rule, both of which
    override the UA `margin: auto` that centres an open dialog. */
-dialog._modal_1l2ir_700 {
+dialog._modal_5th3o_700 {
   margin: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-l);
@@ -2228,59 +2228,64 @@ dialog._modal_1l2ir_700 {
   width: min(92vw, 520px);
   box-shadow: var(--shadow-2);
 }
-._modal_1l2ir_700::backdrop {
+/* `showModal()` focuses the dialog itself when nothing inside autofocuses, and
+   the UA rings that in its own blue. Controls inside still ring on Tab; this is
+   only the container. */
+dialog._modal_5th3o_700:focus,
+dialog._modal_5th3o_700:focus-visible { outline: none; }
+._modal_5th3o_700::backdrop {
   background: rgb(0 0 0 / 55%);
-  animation: _modalVeil_1l2ir_1 var(--dur-base) var(--ease) both;
+  animation: _modalVeil_5th3o_1 var(--dur-base) var(--ease) both;
 }
 
-._modal_1l2ir_700[open] {
-  animation: _modalIn_1l2ir_1 var(--dur-base) var(--ease) both;
+._modal_5th3o_700[open] {
+  animation: _modalIn_5th3o_1 var(--dur-base) var(--ease) both;
 }
 
 /* Held open for this long by the component — a `<dialog>` that closes itself
    leaves the box tree with no frame left to animate in. */
-._modalOut_1l2ir_726[open],
-._modalOut_1l2ir_726[open]::backdrop {
-  animation: _modalOut_1l2ir_726 180ms var(--ease) forwards;
+._modalOut_5th3o_731[open],
+._modalOut_5th3o_731[open]::backdrop {
+  animation: _modalOut_5th3o_731 180ms var(--ease) forwards;
 }
 
-@keyframes _modalOut_1l2ir_726 {
+@keyframes _modalOut_5th3o_731 {
   to {
     opacity: 0;
     transform: translateY(6px) scale(0.99);
   }
 }
 
-@keyframes _modalIn_1l2ir_1 {
+@keyframes _modalIn_5th3o_1 {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
 
-@keyframes _modalVeil_1l2ir_1 {
+@keyframes _modalVeil_5th3o_1 {
   from {
     opacity: 0;
   }
 }
-._modalBody_1l2ir_750 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
-._modalTitle_1l2ir_751 { font-size: var(--fs-l); margin: 0; }
+._modalBody_5th3o_755 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
+._modalTitle_5th3o_756 { font-size: var(--fs-l); margin: 0; }
 /* The dialog's action is the width of the dialog. Floated bottom-right it sat
    in a corner of its own, with the content it applies to nowhere near it. */
-._modalActions_1l2ir_754 {
+._modalActions_5th3o_759 {
   display: flex;
   gap: var(--s2);
   margin-top: var(--s1);
 }
 
-._modalActions_1l2ir_754 > * {
+._modalActions_5th3o_759 > * {
   flex: 1;
   justify-content: center;
 }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_1l2ir_767 {
+._srOnly_5th3o_772 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -3865,7 +3870,7 @@ dialog._modal_1l2ir_700 {
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_1mk1v_24 {
+._app_176jm_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3879,24 +3884,20 @@ dialog._modal_1l2ir_700 {
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_1mk1v_38 {
+._boardRegion_176jm_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  /* Clear of the dock, which floats over the bottom edge. Every column ends in
-     its own composer, so without this the one control each column always has is
-     the one permanently under the notch. */
-  padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
 }
 
-._offline_1mk1v_49 { color: var(--warn); font-family: var(--font-sans); }
+._offline_176jm_45 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
    cluster, so its cards line up with the chip above them. `--room-lead` is how
    far in the chip's own avatar sits, which is what they line up *with*. */
-._identity_1mk1v_55 {
+._identity_176jm_51 {
   position: relative;
   --room-lead: var(--s1);
   display: flex;
@@ -3906,7 +3907,7 @@ dialog._modal_1l2ir_700 {
 
 /* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
    It is your own name, not a control you are meant to find. */
-._meChip_1mk1v_65 {
+._meChip_176jm_61 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3923,23 +3924,23 @@ dialog._modal_1l2ir_700 {
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._meChip_1mk1v_65:hover {
+._meChip_176jm_61:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
-._meName_1mk1v_86 {
+._meName_176jm_82 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
-._pen_1mk1v_93 { display: inline-flex; color: var(--muted); }
-._roomCount_1mk1v_94 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._pen_176jm_89 { display: inline-flex; color: var(--muted); }
+._roomCount_176jm_90 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._musicBanner_1mk1v_98 {
+._musicBanner_176jm_94 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
@@ -3958,7 +3959,7 @@ dialog._modal_1l2ir_700 {
   cursor: pointer;
 }
 
-._popNote_1mk1v_117 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_176jm_113 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Switching sprints ────────────────────────────────────────────────── */
 /*
@@ -3967,47 +3968,27 @@ dialog._modal_1l2ir_700 {
  * The columns move together rather than card by card: they are all being
  * replaced at once, and a stagger would read as a board loading.
  */
-._boardOut_1mk1v_126 {
-  animation: _sprintOut_1mk1v_1 170ms var(--ease) both;
+._boardOut_176jm_122 {
+  animation: _sprintOut_176jm_1 170ms var(--ease) both;
   pointer-events: none;
 }
-._boardIn_1mk1v_130 {
-  animation: _sprintIn_1mk1v_1 220ms var(--ease) both;
+._boardIn_176jm_126 {
+  animation: _sprintIn_176jm_1 220ms var(--ease) both;
 }
 
-@keyframes _sprintOut_1mk1v_1 {
+@keyframes _sprintOut_176jm_1 {
   to {
     opacity: 0;
     transform: translateX(-10px);
   }
 }
 
-@keyframes _sprintIn_1mk1v_1 {
+@keyframes _sprintIn_176jm_1 {
   from {
     opacity: 0;
     transform: translateX(14px);
   }
 }
-
-/* ── A retro that already happened ────────────────────────────────────── */
-/*
- * Said plainly, once. Nothing else on the board tells you the cards are from
- * last month — they are the same cards in the same columns — and the fact that
- * you cannot write on them is only discoverable by trying.
- */
-._pastBar_1mk1v_154 {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin: 0;
-  padding: var(--s2) var(--s4);
-  color: var(--accent2);
-  font-size: var(--fs-s);
-  border-bottom: 1px solid color-mix(in srgb, var(--accent2) 35%, transparent);
-  background: color-mix(in srgb, var(--accent2) 8%, transparent);
-}
-._pastWhen_1mk1v_165 { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
-._pastSpacer_1mk1v_166 { flex: 1; }
 
 /* ── The facilitator's column ─────────────────────────────────────────── */
 /*
@@ -4015,26 +3996,41 @@ dialog._modal_1l2ir_700 {
  * in here is framed: a rail of boxes beside four columns of cards is twice the
  * furniture for a quarter of the content.
  */
-._boardLayout_1mk1v_174 {
+._boardLayout_176jm_150 {
   display: flex;
   min-height: 0;
   flex: 1;
 }
-._rail_1mk1v_179 {
+._rail_176jm_155 {
   flex: none;
   width: 16rem;
   display: flex;
   flex-direction: column;
   gap: var(--s5);
-  padding: var(--s3) var(--s2) var(--s3) var(--s4);
+  padding: var(--s3) var(--s4) var(--s3) var(--s2);
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
-._rail_1mk1v_179::-webkit-scrollbar { display: none; }
-._railPast_1mk1v_190 { color: var(--accent2); }
+._rail_176jm_155::-webkit-scrollbar { display: none; }
+._railPast_176jm_166 { color: var(--accent2); }
+
+/* The rail arrives with the board it belongs to. Sections in turn, rows within
+   a section in turn, so a sprint switch reads as the controls being replaced
+   rather than the list flickering. */
+._rail_176jm_155 > section { animation: _railIn_176jm_1 240ms var(--ease) both; }
+._rail_176jm_155 > section:nth-child(2) { animation-delay: 60ms; }
+._rail_176jm_155 > section:nth-child(3) { animation-delay: 120ms; }
+._rail_176jm_155 > section:nth-child(4) { animation-delay: 180ms; }
+
+@keyframes _railIn_176jm_1 {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
 
 /* The picker between its two arrows, filling the rail's width. */
-._timeSwitch_1mk1v_193 {
+._timeSwitch_176jm_184 {
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -4042,13 +4038,13 @@ dialog._modal_1l2ir_700 {
 }
 /* The rail is borderless, so the picker is too — it is a name you can change,
    not a field you fill in. */
-._timePick_1mk1v_201 {
+._timePick_176jm_192 {
   flex: 1;
   min-width: 0;
 }
 /* The underline goes with every other border in the rail — it is a name you
    can change, not a field you fill in. */
-._timePick_1mk1v_201 button {
+._timePick_176jm_192 button {
   width: 100%;
   padding: 0 var(--s2);
   min-height: var(--tap);
@@ -4057,28 +4053,14 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-m);
   font-weight: 600;
 }
-._timePick_1mk1v_201 button:hover {
+._timePick_176jm_192 button:hover {
   box-shadow: none;
   background: var(--panel-2);
 }
-._timeStep_1mk1v_220 {
-  display: inline-grid;
-  place-items: center;
-  width: var(--tap-min);
-  height: var(--tap-min);
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-._timeStep_1mk1v_220:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
-._timeStep_1mk1v_220:disabled { opacity: 0.3; cursor: default; }
 
 /* A carried item is a row, like everything else in the rail. Its status is the
    dot the kit already puts at the head of one. */
-._carriedRow_1mk1v_237 {
+._carriedRow_176jm_214 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4087,33 +4069,43 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
-._carriedText_1mk1v_246 { flex: 1; min-width: 0; }
-._carriedSelect_1mk1v_247 {
-  flex: none;
-  max-width: 7rem;
+._carriedText_176jm_223 { flex: 1; min-width: 0; }
+._carriedPick_176jm_224 { flex: none; }
+._carriedPick_176jm_224 button {
   padding: 0;
-  border: 0;
-  background: none;
+  min-height: 0;
+  box-shadow: none;
   color: var(--dim);
-  font: inherit;
   font-size: var(--fs-2xs);
-  cursor: pointer;
 }
-._carriedSelect_1mk1v_247:hover:not(:disabled) { color: var(--text); }
-._dot_done_1mk1v_259 { background: var(--ok); }
-._dot_in_progress_1mk1v_260 { background: var(--info); }
-._dot_carried_over_1mk1v_261 { background: var(--warn); }
-._dot_not_relevant_1mk1v_262 { opacity: 0.4; }
+._carriedPick_176jm_224 button:hover { box-shadow: none; background: none; color: var(--text); }
+._dot_done_176jm_233 { background: var(--ok); }
+._dot_in_progress_176jm_234 { background: var(--info); }
+._dot_carried_over_176jm_235 { background: var(--warn); }
+._dot_not_relevant_176jm_236 { opacity: 0.4; }
 
-._railName_1mk1v_264 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._railCount_1mk1v_265 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-._railAction_1mk1v_266 { display: flex; flex-direction: column; gap: var(--s2); }
+/* Stands in for an avatar on the "everyone" row, so it lines up with the faces
+   under it rather than sitting a glyph-width to the left. */
+._everyoneMark_176jm_240 {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+._railName_176jm_248 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._railCount_176jm_249 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._railAction_176jm_250 { display: flex; flex-direction: column; gap: var(--s2); }
 
 /* Under a laptop's width there is no room beside the board, so it goes above it
    and lies down. */
 @media (max-width: 1099px) {
-  ._boardLayout_1mk1v_174 { flex-direction: column; }
-  ._rail_1mk1v_179 {
+  ._boardLayout_176jm_150 { flex-direction: column; }
+  /* Still above the board, where it is beside on a wide screen — a facilitator
+     scrolling past four columns of cards to reach the controls is not it. */
+  ._rail_176jm_155 {
+    order: -1;
     width: auto;
     overflow-y: visible;
     flex-direction: row;
@@ -4122,11 +4114,11 @@ dialog._modal_1l2ir_700 {
     gap: var(--s4);
     padding: var(--s3) var(--s4) 0;
   }
-  ._rail_1mk1v_179 > * { flex: 1 1 14rem; }
+  ._rail_176jm_155 > * { flex: 1 1 14rem; }
 }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_1mk1v_34 {
+._board_176jm_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4136,7 +4128,7 @@ dialog._modal_1l2ir_700 {
      forcing one wider than its share. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s3);
-  padding: var(--s3) var(--s4);
+  padding: var(--s3) var(--s5);
   /* Plus the home-indicator inset: with the board-wide composer gone, the
      columns are the lowest thing on the screen. */
   padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
@@ -4144,13 +4136,13 @@ dialog._modal_1l2ir_700 {
 }
 
 @media (max-width: 1099px) {
-  ._board_1mk1v_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_176jm_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_1mk1v_34 {
+  ._board_176jm_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4160,14 +4152,14 @@ dialog._modal_1l2ir_700 {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_1mk1v_34::-webkit-scrollbar { display: none; }
-  ._column_1mk1v_320 { scroll-snap-align: center; }
+  ._board_176jm_34::-webkit-scrollbar { display: none; }
+  ._column_176jm_307 { scroll-snap-align: center; }
 }
 
-._pager_1mk1v_323 { display: none; }
+._pager_176jm_310 { display: none; }
 @media (max-width: 699px) {
-  ._pager_1mk1v_323 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_1mk1v_326 {
+  ._pager_176jm_310 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_176jm_313 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4176,7 +4168,7 @@ dialog._modal_1l2ir_700 {
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_1mk1v_326::after {
+  ._pagerDot_176jm_313::after {
     content: "";
     display: block;
     width: 8px;
@@ -4185,7 +4177,7 @@ dialog._modal_1l2ir_700 {
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_1mk1v_344::after { background: var(--accent); }
+  ._pagerDotOn_176jm_331::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4195,12 +4187,12 @@ dialog._modal_1l2ir_700 {
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_1mk1v_320 {
+._column_176jm_307 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_1mk1v_359 {
+._columnHead_176jm_346 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4209,7 +4201,7 @@ dialog._modal_1l2ir_700 {
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_1mk1v_368 {
+._columnTitle_176jm_355 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4218,40 +4210,46 @@ dialog._modal_1l2ir_700 {
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_1mk1v_377 { color: var(--dim); }
-._columnCount_1mk1v_378 {
+._columnDot_176jm_364 { color: var(--dim); }
+._columnCount_176jm_365 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_1mk1v_383 {
+._cards_176jm_370 {
   /* The containing block for an empty column's drop indicator. */
   position: relative;
   transition: background-color var(--dur-fast) var(--ease);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--s2) var(--s2);
+  /* Hidden, like the rail's: a column is one of four side by side, and a bar
+     appearing only in the ones that overflow shifts their cards by its width. */
+  scrollbar-width: none;
+  /* Runs under the floating dock rather than stopping above it — the last card
+     is still scrollable clear of it. */
+  padding: 0 var(--s2) calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cardsOver_1mk1v_397 {
+._cards_176jm_370::-webkit-scrollbar { display: none; }
+._cardsOver_176jm_390 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_1mk1v_403 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_176jm_396 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._cardSlot_1mk1v_405 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._cardSlot_176jm_398 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
    midpoints the drop index is computed against, which made the indicator
    oscillate between two slots at the boundary. */
-._dropLine_1mk1v_410 {
+._dropLine_176jm_403 {
   position: absolute;
   left: 0;
   right: 0;
@@ -4260,17 +4258,17 @@ dialog._modal_1l2ir_700 {
   border-radius: var(--r-pill);
   background: var(--col-tone, var(--accent));
 }
-._dropLineTail_1mk1v_419 {
+._dropLineTail_176jm_412 {
   top: auto;
   bottom: calc(var(--s2) / -2 - 1px);
 }
 /* Drawn from the middle out. It moves by being torn down in one slot and built
    in another, so an entrance is the only thing that can smooth the change. */
-._dropLine_1mk1v_410 {
-  animation: _dropIn_1mk1v_1 var(--dur-fast) var(--ease) both;
+._dropLine_176jm_403 {
+  animation: _dropIn_176jm_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _dropIn_1mk1v_1 {
+@keyframes _dropIn_176jm_1 {
   from {
     opacity: 0;
     transform: scaleX(0.4);
@@ -4286,7 +4284,7 @@ dialog._modal_1l2ir_700 {
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_1mk1v_383 {
+._card_176jm_370 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4301,21 +4299,21 @@ dialog._modal_1l2ir_700 {
      animation after the landing rather than as feedback. */
   transition: border-color var(--dur-fast) var(--ease);
 }
-._card_1mk1v_383:hover {
+._card_176jm_370:hover {
   border-color: var(--hairline-strong);
 }
-._card_1mk1v_383:active { cursor: grabbing; }
+._card_176jm_370:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
    underneath it — and a sweep across the board would otherwise light up every
    card it crossed. */
-._board_1mk1v_34[data-dragging='true'] ._card_1mk1v_383:hover {
+._board_176jm_34[data-dragging='true'] ._card_176jm_370:hover {
   border-color: var(--hairline);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_1mk1v_471 { cursor: default; }
+._cardLocked_176jm_464 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_1mk1v_474 { border-left: 3px solid var(--accent2); }
+._cardAI_176jm_467 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4323,16 +4321,16 @@ dialog._modal_1l2ir_700 {
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_1mk1v_482 {
+._cardDragging_176jm_475 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_1mk1v_482 > * { opacity: 0; }
+._cardDragging_176jm_475 > * { opacity: 0; }
 
-._dragLayer_1mk1v_491 {
+._dragLayer_176jm_484 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4341,7 +4339,7 @@ dialog._modal_1l2ir_700 {
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_1mk1v_500 {
+._dragCard_176jm_493 {
   position: absolute;
   top: 0;
   left: 0;
@@ -4359,19 +4357,19 @@ dialog._modal_1l2ir_700 {
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_1mk1v_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_176jm_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_1mk1v_1 {
+@keyframes _cardLift_176jm_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
 /* A card you wrote opens for editing where you read it. `text`, because that is
    what the pointer is over and what it is about to do. */
-._cardTextMine_1mk1v_526 {
+._cardTextMine_176jm_519 {
   cursor: text;
 }
 
-._cardText_1mk1v_526 {
+._cardText_176jm_519 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4382,16 +4380,16 @@ dialog._modal_1l2ir_700 {
 
 /* `min-height` because the carried copy of a card carries no controls, and
    without it the card in the air is a different size from the one it becomes. */
-._cardMeta_1mk1v_541 {
+._cardMeta_176jm_534 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
   margin-top: var(--s2);
 }
-._metaSpacer_1mk1v_548 { flex: 1; }
-._author_1mk1v_549 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_1mk1v_550 {
+._metaSpacer_176jm_541 { flex: 1; }
+._author_176jm_542 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_176jm_543 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4399,8 +4397,8 @@ dialog._modal_1l2ir_700 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_1mk1v_558 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_1mk1v_559 {
+._aiBadge_176jm_551 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_176jm_552 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4410,8 +4408,8 @@ dialog._modal_1l2ir_700 {
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_1mk1v_569 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_1mk1v_570 {
+._confirmRow_176jm_562 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_176jm_563 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4419,18 +4417,18 @@ dialog._modal_1l2ir_700 {
   text-transform: uppercase;
 }
 
-._gripWrap_1mk1v_578 { position: relative; display: inline-flex; }
+._gripWrap_176jm_571 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_1mk1v_578 {
+._grip_176jm_571 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_1mk1v_578:active { cursor: grabbing; }
+._grip_176jm_571:active { cursor: grabbing; }
 
-._moveMenu_1mk1v_589 {
+._moveMenu_176jm_582 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4444,7 +4442,7 @@ dialog._modal_1l2ir_700 {
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_1mk1v_603 {
+._moveItem_176jm_596 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4456,11 +4454,11 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_1mk1v_603:hover { background: var(--panel-2); }
+._moveItem_176jm_596:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_1mk1v_618 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_1mk1v_619 {
+._editor_176jm_611 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_176jm_612 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -4471,7 +4469,7 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_1mk1v_630 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_176jm_623 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
@@ -4480,7 +4478,7 @@ dialog._modal_1l2ir_700 {
 /* `nowrap` and a floor of zero: the row is the card's last line and must stay
    one line whatever is in it, so a card with eight reactions scrolls them
    rather than growing a second row and pushing the board about. */
-._reactions_1mk1v_639 {
+._reactions_176jm_632 {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -4489,13 +4487,13 @@ dialog._modal_1l2ir_700 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._reactions_1mk1v_639::-webkit-scrollbar {
+._reactions_176jm_632::-webkit-scrollbar {
   display: none;
 }
-._rxChip_1mk1v_651 {
+._rxChip_176jm_644 {
   flex: none;
 }
-._rxChip_1mk1v_651, ._rxPick_1mk1v_654 {
+._rxChip_176jm_644, ._rxPick_176jm_647 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4514,44 +4512,44 @@ dialog._modal_1l2ir_700 {
   cursor: pointer;
 }
 /* A ground only under the pointer, in the tray. */
-._rxPick_1mk1v_654:hover, ._rxPick_1mk1v_654:focus-visible {
+._rxPick_176jm_647:hover, ._rxPick_176jm_647:focus-visible {
   background: var(--panel-2);
 }
 /* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
    an emoji is a second shape competing with the one that carries the meaning. */
-._rxGlyph_1mk1v_678 {
+._rxGlyph_176jm_671 {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
 
 /* A reaction is somebody pressing a button, so it arrives and it leaves. The
    `scale` property rather than a transform, so nothing here has to know what
    else may be transforming the chip. Neither changes the row's height. */
-._rxChipIn_1mk1v_685 {
-  animation: _rxIn_1mk1v_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+._rxChipIn_176jm_678 {
+  animation: _rxIn_176jm_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
-._rxChipOut_1mk1v_688 {
-  animation: _rxOut_1mk1v_1 150ms var(--ease) both;
+._rxChipOut_176jm_681 {
+  animation: _rxOut_176jm_1 150ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _rxIn_1mk1v_1 {
+@keyframes _rxIn_176jm_1 {
   from {
     opacity: 0;
     scale: 0.4;
   }
 }
 
-@keyframes _rxOut_1mk1v_1 {
+@keyframes _rxOut_176jm_1 {
   to {
     opacity: 0;
     scale: 0.4;
   }
 }
-._rxChip_1mk1v_651:hover { border-color: var(--accent); }
-._rxPick_1mk1v_654:hover { border-color: transparent; }
-._rxChip_1mk1v_651:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_1mk1v_709 { border-color: var(--accent); }
-._rxCount_1mk1v_710 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_176jm_644:hover { border-color: var(--accent); }
+._rxPick_176jm_647:hover { border-color: transparent; }
+._rxChip_176jm_644:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_176jm_702 { border-color: var(--accent); }
+._rxCount_176jm_703 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
@@ -4561,7 +4559,7 @@ dialog._modal_1l2ir_700 {
  * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
  * size, not a ragged last line.
  */
-._rxTray_1mk1v_720 {
+._rxTray_176jm_713 {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -4575,30 +4573,30 @@ dialog._modal_1l2ir_700 {
   border: 0;
   border-radius: var(--r-l);
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  animation: _trayIn_1mk1v_1 var(--dur-fast) var(--ease) both;
+  animation: _trayIn_176jm_1 var(--dur-fast) var(--ease) both;
 }
 
 /* Without the filter there is nothing behind the emoji at all, so the ground
    comes back rather than the tray being unreadable over a card. */
 @supports not (backdrop-filter: blur(1px)) {
-  ._rxTray_1mk1v_720 {
+  ._rxTray_176jm_713 {
     background: var(--panel);
   }
 }
 
-._rxTrayOut_1mk1v_745 {
-  animation: _trayOut_1mk1v_1 140ms var(--ease) both;
+._rxTrayOut_176jm_738 {
+  animation: _trayOut_176jm_1 140ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _trayOut_1mk1v_1 {
+@keyframes _trayOut_176jm_1 {
   to {
     opacity: 0;
     transform: translateY(-4px);
   }
 }
 
-@keyframes _trayIn_1mk1v_1 {
+@keyframes _trayIn_176jm_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -4618,7 +4616,7 @@ dialog._modal_1l2ir_700 {
 /* Holds the two states in one box: the invitation, and the draft that folds
    over it. Relative so the folding box can leave the flow on its way out and
    let the invitation back underneath it. */
-._composeSlot_1mk1v_777 {
+._composeSlot_176jm_770 {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -4626,7 +4624,7 @@ dialog._modal_1l2ir_700 {
   min-height: var(--tap);
 }
 
-._composeArea_1mk1v_785 {
+._composeArea_176jm_778 {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
   display: grid;
@@ -4638,7 +4636,7 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   cursor: pointer;
 }
-._composeHint_1mk1v_797 {
+._composeHint_176jm_790 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4647,18 +4645,18 @@ dialog._modal_1l2ir_700 {
   font-size: var(--fs-xs);
   transition: opacity var(--dur-fast) var(--ease);
 }
-._composeArea_1mk1v_785:hover ._composeHint_1mk1v_797,
-._composeArea_1mk1v_785:focus-visible ._composeHint_1mk1v_797 {
+._composeArea_176jm_778:hover ._composeHint_176jm_790,
+._composeArea_176jm_778:focus-visible ._composeHint_176jm_790 {
   opacity: 1;
 }
 /* Nothing invites a card while one is in the air. */
-._board_1mk1v_34[data-dragging='true'] ._composeHint_1mk1v_797 { opacity: 0; }
+._board_176jm_34[data-dragging='true'] ._composeHint_176jm_790 { opacity: 0; }
 
 /* The draft is a card: the same ground, hairline, corner and shadows as the
    one it is about to become, with the column's tone on its edge. The box
    inside it is bare — a second bordered field inside a bordered card is two
    objects for one thing. */
-._columnCompose_1mk1v_817 {
+._columnCompose_176jm_810 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4671,24 +4669,24 @@ dialog._modal_1l2ir_700 {
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
-._columnCompose_1mk1v_817:focus-within {
+._columnCompose_176jm_810:focus-within {
   border-color: var(--col-tone, var(--accent));
 }
 /* Unfolds where the card will be, and folds back into it. `both` holds the
    `from` state through the delay so the box does not flash at full size first. */
-._columnCompose_1mk1v_817 {
-  animation: _draftIn_1mk1v_1 180ms var(--ease) both;
+._columnCompose_176jm_810 {
+  animation: _draftIn_176jm_1 180ms var(--ease) both;
 }
-._columnComposeOut_1mk1v_838 {
+._columnComposeOut_176jm_831 {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  animation: _draftOut_1mk1v_1 160ms var(--ease) both;
+  animation: _draftOut_176jm_1 160ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _draftIn_1mk1v_1 {
+@keyframes _draftIn_176jm_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
@@ -4696,14 +4694,14 @@ dialog._modal_1l2ir_700 {
   }
 }
 
-@keyframes _draftOut_1mk1v_1 {
+@keyframes _draftOut_176jm_1 {
   to {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
     transform-origin: 50% 0%;
   }
 }
-._composeBox_1mk1v_862 {
+._composeBox_176jm_855 {
   width: 100%;
   min-height: 3lh;
   max-height: 8rem;
@@ -4716,12 +4714,12 @@ dialog._modal_1l2ir_700 {
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeBox_1mk1v_862::placeholder {
+._composeBox_176jm_855::placeholder {
   color: var(--dim);
 }
-._composeActions_1mk1v_878 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_176jm_871 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
-._srOnly_1mk1v_880 {
+._srOnly_176jm_873 {
   position: absolute;
   width: 1px;
   height: 1px;
