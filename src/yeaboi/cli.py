@@ -1956,6 +1956,11 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
 
     result_box: list = [None]
     cancel = threading.Event()
+    # The engine hands its run id back the moment it exists. Anything else in
+    # the store belongs to ANOTHER session (a TUI in another terminal, a stale
+    # process) — prompting for one of those would let this user approve, and
+    # push, a diff they are not looking at.
+    mine: list[str] = [""]
 
     def _work() -> None:
         result_box[0] = engine.run_ship(
@@ -1965,14 +1970,10 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
             check_command=args.check,
             timeout_minutes=args.timeout_minutes,
             dry_run=args.dry_run,
+            on_run_id=lambda run_id: mine.__setitem__(0, run_id),
             cancel_event=cancel,
         )
 
-    with ShipStore() as preexisting:
-        # Runs that already exist belong to OTHER sessions (a TUI in another
-        # terminal, a stale process). Prompting for those would let this user
-        # approve a diff they are not looking at — and push it.
-        known = {r.run_id for r in preexisting.list_runs(limit=100)}
     worker = threading.Thread(target=_work, daemon=True)
     worker.start()
     try:
@@ -1981,11 +1982,13 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                 worker.join(timeout=0.5)
                 if not worker.is_alive() or cancel.is_set():
                     continue  # a cancelled run winds down on its own; stop prompting
+                if not mine[0]:
+                    continue  # the id has not been minted yet; nothing can be ours
                 # An open gate is one this loop has not answered yet: resolving
                 # stamps gate_resolution, and a rework clears it again — so the
                 # reopened gate prompts again by construction.
                 for run in store.list_runs(limit=3):
-                    if run.run_id in known or run.status != "awaiting_approval" or run.gate_resolution:
+                    if run.run_id != mine[0] or run.status != "awaiting_approval" or run.gate_resolution:
                         continue
                     # The gate is the only control before a push; it shows the
                     # patch, not a file count.

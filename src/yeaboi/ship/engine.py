@@ -148,6 +148,7 @@ def run_ship(
     db_path: Path | None = None,
     dry_run: bool = False,
     on_progress: Callable | None = None,
+    on_run_id: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
     driver: object | None = None,
 ) -> ShipRun:
@@ -156,6 +157,12 @@ def run_ship(
     ``driver`` is an injection seam (an ``AgentDriver``); the default is
     Claude Code headless. The human gate always resolves through
     ``ShipStore.resolve_gate`` — this function only waits for it.
+
+    ``on_run_id`` fires once, as soon as the id exists, because the surfaces
+    poll a shared store for the gate: without it they can only identify "my
+    run" as "one that was not there when I started", which stops being true
+    the moment two runs are allowed at once — and then a user is asked to
+    approve, and push, a diff they have never seen.
     """
     if dry_run:
         return _dry_run_artifact(story_id, repo)
@@ -178,6 +185,11 @@ def run_ship(
         )
 
     run_id = _new_run_id(story_id)
+    if on_run_id is not None:
+        try:
+            on_run_id(run_id)
+        except Exception:  # a surface's bookkeeping must never kill the run
+            logger.debug("on_run_id callback failed", exc_info=True)
     run = ShipRun(
         run_id=run_id,
         story_id=story_id,

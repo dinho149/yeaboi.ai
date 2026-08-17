@@ -199,6 +199,11 @@ def _launch(
     result_box: list = [None, None]
     cancel = threading.Event()
 
+    # The engine hands its run id back as soon as it exists; everything else
+    # in the shared store belongs to another session, and this loop must never
+    # open a gate over a diff this user did not launch.
+    mine: list[str] = [""]
+
     def _work() -> None:
         try:
             result_box[0] = engine.run_ship(
@@ -207,17 +212,16 @@ def _launch(
                 session_id=session_id,
                 check_command=check_command,
                 on_progress=progress_q.put,
+                on_run_id=lambda run_id: mine.__setitem__(0, run_id),
                 cancel_event=cancel,
             )
         except BaseException as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
             result_box[1] = exc
 
     with ShipStore() as watch:
-        known = {r.run_id for r in watch.list_runs(limit=50)}
         thread = duck_working_thread(_work, name="ship-run")
         thread.start()
         events_by_id: dict[str, dict] = {}
-        run_id = ""
         start = time.monotonic()
         last_poll = 0.0
 
@@ -230,12 +234,10 @@ def _launch(
                 if is_component_progress(item):
                     events_by_id[item["component_id"]] = item
             gated = None
-            if time.monotonic() - last_poll > 0.5:
+            if mine[0] and time.monotonic() - last_poll > 0.5:
                 last_poll = time.monotonic()
                 for row in watch.list_runs(limit=5):
-                    if row.run_id not in known:
-                        run_id = row.run_id
-                    if row.run_id == run_id and row.status == "awaiting_approval" and not row.gate_resolution:
+                    if row.run_id == mine[0] and row.status == "awaiting_approval" and not row.gate_resolution:
                         gated = row
             if gated is not None:
                 outcome = _gate_loop(console, live, read_key, frame_time, supports_timeout, watch, gated, cancel)

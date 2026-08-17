@@ -1401,6 +1401,37 @@ class TestShipCommand:
         assert checked == [str(repo.resolve())]
         assert launched == [str(repo.resolve())]
 
+    def test_the_gate_prompt_ignores_a_run_this_invocation_did_not_start(self, monkeypatch, capsys, tmp_path):
+        # Concurrency is user-settable (YEABOI_AI_MAX_CONCURRENT), so a second
+        # terminal's run can open its gate mid-loop. Prompting for it would
+        # ask this user to approve — and push — a diff they never saw.
+        import time
+
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.ship.store import ShipStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        repo, _ = self._git_repo(tmp_path / "proj")
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+
+        def _refuse_to_prompt(*_a, **_kw):
+            raise AssertionError("the gate prompted for a foreign run")
+
+        monkeypatch.setattr("builtins.input", _refuse_to_prompt)
+
+        def _fake_run_ship(story_id, target, **kw):
+            # Another session's run opens its gate while ours is working.
+            with ShipStore(db) as store:
+                store.record_run(ShipRun(run_id="someone-else", story_id="US-999", status="awaiting_approval"))
+            kw["on_run_id"]("ours")
+            time.sleep(1.2)  # long enough for the loop to poll the store
+            return ShipRun(run_id="ours", story_id=story_id, status="failed")
+
+        monkeypatch.setattr("yeaboi.ship.engine.run_ship", _fake_run_ship)
+        args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo)])
+        assert _run_subcommand(args) == 0
+
     def test_run_strict_exits_3_when_not_approved(self, monkeypatch, capsys, tmp_path):
         monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
         monkeypatch.setattr("sys.stdin", __import__("io").StringIO(""))
