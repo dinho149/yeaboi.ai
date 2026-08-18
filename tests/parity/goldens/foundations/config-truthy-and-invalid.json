@@ -1,9 +1,12 @@
 {
   "dump": {
     "config": {
-      "beta_notices_acked": [],
+      "beta_notices_acked": [
+        "poker",
+        "retro"
+      ],
       "detect_proxy": null,
-      "get_ac_format": "",
+      "get_ac_format": "gwt",
       "get_allowed_paths": [],
       "get_anonymize_mask_terms": [],
       "get_anthropic_api_key": null,
@@ -27,11 +30,11 @@
       "get_jira_email": null,
       "get_jira_project_key": null,
       "get_jira_token": null,
-      "get_last_category": "humans",
+      "get_last_category": "agents",
       "get_llm_model": null,
       "get_llm_provider": "anthropic",
       "get_log_level": "WARNING",
-      "get_music_channel": 0,
+      "get_music_channel": 7,
       "get_notion_export_parent_page_id": null,
       "get_notion_root_page_id": null,
       "get_notion_token": null,
@@ -72,25 +75,25 @@
       "get_voice_device": "",
       "get_voice_model": "base",
       "is_beta_notice_enabled": true,
-      "is_duck_enabled": true,
-      "is_langsmith_enabled": false,
+      "is_duck_enabled": false,
+      "is_langsmith_enabled": true,
       "is_llm_configured": [
         false,
         "ANTHROPIC_API_KEY not set"
       ],
-      "is_music_enabled": false,
+      "is_music_enabled": true,
       "is_team_analysis_azdo_pr_search_enabled": false,
-      "is_team_analysis_jira_dev_links_enabled": false,
-      "is_tips_enabled": true,
-      "is_voice_install_offer_enabled": true,
-      "tunnels_disabled": false,
-      "voice_extra_was_installed": false
+      "is_team_analysis_jira_dev_links_enabled": true,
+      "is_tips_enabled": false,
+      "is_voice_install_offer_enabled": false,
+      "tunnels_disabled": true,
+      "voice_extra_was_installed": true
     },
     "config_keyed": {
       "is_beta_notice_seen": {
         "": false,
         "poker": false,
-        "retro": false,
+        "retro": true,
         "roadmap": false
       }
     },
@@ -323,7 +326,25 @@
     }
   },
   "env": {
-    "HOME": "{tmp}/home"
+    "BETA_NOTICES_ACK": " retro , poker ,,retro",
+    "BETA_NOTICES_ENABLED": "no",
+    "DUCK_ENABLED": "False",
+    "HOME": "{tmp}/home",
+    "LANGSMITH_API_KEY": "ls-key",
+    "LANGSMITH_TRACING": "TRUE",
+    "LOG_LEVEL": "verbose",
+    "MUSIC_CHANNEL": " 7 ",
+    "MUSIC_ENABLED": " TRUE ",
+    "TEAM_ANALYSIS_AZDO_BRANCH_SEARCH": "off",
+    "TEAM_ANALYSIS_JIRA_DEV_LINKS": "on",
+    "TIPS_ENABLED": "  FALSE  ",
+    "VOICE_EXTRA_INSTALLED": "yes",
+    "VOICE_INSTALL_OFFER": "Off",
+    "YEABOI_AC_FORMAT": "Given/When/Then",
+    "YEABOI_FORCE_BETA_NOTICE": "poker, roadmap",
+    "YEABOI_FORCE_VOICE_OFFER": "0",
+    "YEABOI_LAST_CATEGORY": "AGENTS",
+    "YEABOI_NO_TUNNEL": "Yes"
   },
   "files": {}
 }

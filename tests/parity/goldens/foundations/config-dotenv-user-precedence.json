@@ -15,20 +15,20 @@
       "get_bedrock_region": "us-east-1",
       "get_config_dir": "{tmp}/home/.yeaboi",
       "get_config_file": "{tmp}/home/.yeaboi/.env",
-      "get_confluence_base_url": null,
-      "get_confluence_email": null,
+      "get_confluence_base_url": "https://user.atlassian.net",
+      "get_confluence_email": "proj@acme.dev",
       "get_confluence_export_parent_page_id": null,
-      "get_confluence_space_key": null,
+      "get_confluence_space_key": "ENV-SPACE",
       "get_confluence_token": null,
       "get_data_dir": "",
       "get_github_token": null,
       "get_google_api_key": null,
-      "get_jira_base_url": null,
-      "get_jira_email": null,
+      "get_jira_base_url": "https://user.atlassian.net",
+      "get_jira_email": "proj@acme.dev",
       "get_jira_project_key": null,
       "get_jira_token": null,
       "get_last_category": "humans",
-      "get_llm_model": null,
+      "get_llm_model": "from-project",
       "get_llm_provider": "anthropic",
       "get_log_level": "WARNING",
       "get_music_channel": 0,
@@ -37,7 +37,7 @@
       "get_notion_token": null,
       "get_ollama_base_url": "http://localhost:11434",
       "get_ollama_num_ctx": 16384,
-      "get_openai_api_key": null,
+      "get_openai_api_key": "sk-user",
       "get_performance_framework_path": "",
       "get_poker_server_port": 5273,
       "get_retro_server_port": 5173,
@@ -47,7 +47,7 @@
       "get_smtp_host": "",
       "get_smtp_password": "",
       "get_smtp_port": 587,
-      "get_smtp_sender": "",
+      "get_smtp_sender": "proj@acme.dev",
       "get_smtp_user": "",
       "get_standup_email_recipients": [],
       "get_standup_github_repo": "",
@@ -57,7 +57,9 @@
       "get_team_analysis_azdo_projects": [],
       "get_team_analysis_azdo_repo_allowlist": null,
       "get_team_analysis_code_max_concurrency": 6,
-      "get_team_analysis_confluence_spaces": [],
+      "get_team_analysis_confluence_spaces": [
+        "ENV-SPACE"
+      ],
       "get_team_analysis_doc_max_concurrency": 8,
       "get_team_analysis_doc_request_timeout_seconds": 30,
       "get_team_analysis_enrichment_timeout_seconds": 120,
@@ -318,12 +320,16 @@
             "via config"
           ]
         ],
-        "text": "YEABOI_SET_KEY_PROBE='via config'\n"
+        "text": "LLM_MODEL=from-user\nJIRA_BASE_URL='https://user.atlassian.net'\nJIRA_EMAIL=user@acme.dev\nCONFLUENCE_SPACE_KEY=USER-SPACE\nOPENAI_API_KEY=sk-user\nSTANDUP_SMTP_SENDER=${JIRA_EMAIL:-none}\nYEABOI_SET_KEY_PROBE='via config'\n"
       }
     }
   },
   "env": {
+    "CONFLUENCE_SPACE_KEY": "ENV-SPACE",
     "HOME": "{tmp}/home"
   },
-  "files": {}
+  "files": {
+    ".env": "LLM_MODEL=from-project\nJIRA_EMAIL=proj@acme.dev\n",
+    "home/.yeaboi/.env": "LLM_MODEL=from-user\nJIRA_BASE_URL='https://user.atlassian.net'\nJIRA_EMAIL=user@acme.dev\nCONFLUENCE_SPACE_KEY=USER-SPACE\nOPENAI_API_KEY=sk-user\nSTANDUP_SMTP_SENDER=${JIRA_EMAIL:-none}\n"
+  }
 }

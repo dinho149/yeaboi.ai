@@ -29,7 +29,7 @@
       "get_jira_token": null,
       "get_last_category": "humans",
       "get_llm_model": null,
-      "get_llm_provider": "anthropic",
+      "get_llm_provider": "bedrock",
       "get_log_level": "WARNING",
       "get_music_channel": 0,
       "get_notion_export_parent_page_id": null,
@@ -76,7 +76,7 @@
       "is_langsmith_enabled": false,
       "is_llm_configured": [
         false,
-        "ANTHROPIC_API_KEY not set"
+        "AWS credentials/region not configured for Bedrock"
       ],
       "is_music_enabled": false,
       "is_team_analysis_azdo_pr_search_enabled": false,
@@ -323,7 +323,10 @@
     }
   },
   "env": {
-    "HOME": "{tmp}/home"
+    "HOME": "{tmp}/home",
+    "LLM_PROVIDER": "bedrock"
   },
-  "files": {}
+  "files": {
+    "home/.aws/config": "[profile dup]\nrole_arn = arn:x\n[profile dup]\nrole_arn = arn:y\n"
+  }
 }

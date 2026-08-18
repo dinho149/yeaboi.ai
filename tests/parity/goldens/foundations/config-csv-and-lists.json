@@ -4,8 +4,17 @@
       "beta_notices_acked": [],
       "detect_proxy": null,
       "get_ac_format": "",
-      "get_allowed_paths": [],
-      "get_anonymize_mask_terms": [],
+      "get_allowed_paths": [
+        "/a/b",
+        "/c",
+        "/d"
+      ],
+      "get_anonymize_mask_terms": [
+        "YouLend",
+        "YL",
+        "Acme",
+        "YL"
+      ],
       "get_anthropic_api_key": null,
       "get_aws_profile": null,
       "get_azure_devops_org_url": null,
@@ -49,20 +58,30 @@
       "get_smtp_port": 587,
       "get_smtp_sender": "",
       "get_smtp_user": "",
-      "get_standup_email_recipients": [],
+      "get_standup_email_recipients": [
+        "a@b.com",
+        "c@d.com",
+        "a@b.com"
+      ],
       "get_standup_github_repo": "",
       "get_standup_user_name": "Me",
       "get_team_analysis_azdo_pr_search_max_repos": 10,
       "get_team_analysis_azdo_pr_search_top": 75,
       "get_team_analysis_azdo_projects": [],
-      "get_team_analysis_azdo_repo_allowlist": null,
+      "get_team_analysis_azdo_repo_allowlist": [
+        "repo-a",
+        "repo-b"
+      ],
       "get_team_analysis_code_max_concurrency": 6,
       "get_team_analysis_confluence_spaces": [],
       "get_team_analysis_doc_max_concurrency": 8,
       "get_team_analysis_doc_request_timeout_seconds": 30,
       "get_team_analysis_enrichment_timeout_seconds": 120,
       "get_team_analysis_fast_model": null,
-      "get_team_analysis_github_owners": [],
+      "get_team_analysis_github_owners": [
+        "acme",
+        "octo"
+      ],
       "get_team_analysis_llm_max_concurrency": 6,
       "get_team_analysis_llm_target_seconds": 600,
       "get_team_analysis_max_change_lookups": 500,
@@ -323,7 +342,12 @@
     }
   },
   "env": {
-    "HOME": "{tmp}/home"
+    "ANONYMIZE_MASK_TERMS": " YouLend, YL ,,Acme , YL ",
+    "HOME": "{tmp}/home",
+    "STANDUP_EMAIL_RECIPIENTS": " a@b.com ,, c@d.com , a@b.com ",
+    "TEAM_ANALYSIS_AZDO_REPO_ALLOWLIST": "Repo-A, repo-b ,REPO-A",
+    "TEAM_ANALYSIS_GITHUB_OWNERS": "acme, acme ,octo",
+    "YEABOI_ALLOWED_PATHS": "/a/b, /c ,/a/b,,/d "
   },
   "files": {}
 }

@@ -203,6 +203,19 @@ class TestSelectionIsRunnable:
         for path in scope_mod.unit_paths(scope_mod.resolve(changed)):
             assert (ROOT / path).exists(), f"{path} was selected but does not exist"
 
+    def test_a_changed_support_file_is_not_handed_to_pytest(self):
+        """A parity golden rides into scope.tests as "a changed test runs",
+        but pytest cannot collect a .json file — handing one over is the same
+        exit-4 breakage as an unresolved glob. The golden's area still runs."""
+        golden = "tests/parity/goldens/foundations/default.json"
+        assert (ROOT / golden).exists(), "the fixture this test leans on moved"
+        scope = scope_mod.resolve([golden])
+        selected = scope_mod.unit_paths(scope)
+        assert golden not in selected, "a non-collectible support file reached the pytest command line"
+        for path in selected:
+            assert path.endswith(".py") or (ROOT / path).is_dir(), path
+        assert scope.full or {"go", "parity"} <= scope.jobs, "the golden must still schedule the parity gate"
+
     def test_a_scoped_selection_is_a_subset_of_the_full_one(self):
         scoped = set(scope_mod.unit_paths(scope_mod.resolve(["src/yeaboi/poker/board.py"])))
         every = set(collected_test_files())

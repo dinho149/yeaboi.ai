@@ -108,6 +108,133 @@ class TestCorpusSelfGuards:
         )
 
 
+class TestConfigCorpusSelfGuards:
+    """W8 phase 2: the config surface's own discovery and trap guards."""
+
+    def test_the_dump_covers_every_config_getter(self):
+        """Discovery, not a list to hand-maintain: every public zero-arg
+        callable in config.py must join the dump (or the exempt table, with
+        a reason); key-taking getters must join CONFIG_KEYED_GETTERS.
+        Setters take arguments and fall outside both by construction."""
+        import inspect
+
+        import yeaboi.config as config
+
+        zero_arg, keyed = set(), set()
+        for name in dir(config):
+            if name.startswith("_"):
+                continue
+            fn = getattr(config, name)
+            if not inspect.isfunction(fn) or inspect.getmodule(fn) is not config:
+                continue
+            params = [
+                p
+                for p in inspect.signature(fn).parameters.values()
+                if p.default is inspect.Parameter.empty and p.kind is not inspect.Parameter.KEYWORD_ONLY
+            ]
+            if not params:
+                zero_arg.add(name)
+            elif name.startswith(("is_", "get_")) and len(params) == 1:
+                keyed.add(name)
+
+        dumped = set(dump_mod.CONFIG_GETTERS) | set(dump_mod.CONFIG_DUMP_EXEMPT)
+        assert zero_arg == dumped, (
+            "config.py getters and the foundations dump diverged — add the new getter to "
+            f"dump.CONFIG_GETTERS (or CONFIG_DUMP_EXEMPT, with a reason): {sorted(zero_arg ^ dumped)}"
+        )
+        assert keyed == set(dump_mod.CONFIG_KEYED_GETTERS), (
+            f"key-taking config getters diverged from CONFIG_KEYED_GETTERS: "
+            f"{sorted(keyed ^ set(dump_mod.CONFIG_KEYED_GETTERS))}"
+        )
+
+    def test_sanitize_list_covers_every_env_read(self):
+        """matrix.CONFIG_ENV_VARS is what keeps a developer's real
+        credentials out of regenerated goldens — scan config.py's source so
+        a new os.getenv read cannot land without joining it."""
+        import inspect
+        import re
+
+        import yeaboi.config as config
+
+        src = inspect.getsource(config)
+        read = set()
+        # Direct os.getenv reads, plus the ones routed through the
+        # name-taking helpers — by string literal or module-level constant.
+        pattern = r'(?:os\.(?:getenv|environ\.get)|_csv_config|_env_truthy)\(\s*([A-Za-z_]\w*|"[^"]+")'
+        for match in re.finditer(pattern, src):
+            token = match.group(1)
+            if token.startswith('"'):
+                read.add(token.strip('"'))
+            else:
+                value = getattr(config, token, None)
+                if isinstance(value, str):
+                    read.add(value)
+        read.update(config._PROXY_ENV_VARS)
+
+        sanitized = set(matrix.CONFIG_ENV_VARS) | {"YEABOI_HOME", "HOME"}  # popped separately by launch_env
+        missing = read - sanitized
+        assert not missing, f"config.py reads env vars launch_env does not sanitize: {sorted(missing)}"
+        stale = set(matrix.CONFIG_ENV_VARS) - read - {"PYTHON_DOTENV_DISABLED"}
+        assert not stale, f"CONFIG_ENV_VARS names vars config.py no longer reads: {sorted(stale)}"
+
+    def test_fixtures_still_exercise_the_config_traps(self):
+        values: dict[str, str] = {}
+        for fixture in matrix.FIXTURES:
+            values.update(fixture.env)
+        # The two truthy conventions, kept distinct on purpose.
+        assert values.get("BETA_NOTICES_ENABLED") not in (None, "false"), (
+            "the opt-out-gate trap (a non-'false' value that still means on) left the corpus"
+        )
+        assert any(
+            v.strip().lower() in ("1", "true", "yes", "on") for k, v in values.items() if "TEAM_ANALYSIS" in k
+        ), "the opt-in truthy convention left the corpus"
+        # Clamps: out of range on both sides, plus the two int() parse traps.
+        assert any(v.strip().lstrip("-").isdigit() and v.strip().startswith("-") for v in values.values()), (
+            "the below-minimum clamp vector left the corpus"
+        )
+        assert "5.0" in values.values(), 'the int("5.0")-raises trap left the corpus'
+        assert any(v != v.strip() and v.strip().isdigit() for v in values.values()), (
+            "the int-with-whitespace tolerance trap left the corpus"
+        )
+        # CSV dedup vs the recipient list that keeps duplicates.
+        csv_fixture = {f.name: f for f in matrix.FIXTURES}["config-csv-and-lists"]
+        assert "STANDUP_EMAIL_RECIPIENTS" in csv_fixture.env and "YEABOI_ALLOWED_PATHS" in csv_fixture.env
+
+    def test_fixture_files_still_exercise_the_dotenv_and_aws_traps(self):
+        entries = [(rel, text) for f in matrix.FIXTURES for rel, text in f.files.items()]
+        project_envs = [text for rel, text in entries if rel == ".env"]
+        assert project_envs, "the project-.env fixture left the corpus"
+        joined = "\n".join(project_envs)
+        assert "${" in joined, "interpolation left the dotenv corpus"
+        assert ":-" in joined, "the ${VAR:-default} form left the dotenv corpus"
+        assert "export " in joined, "the export prefix left the dotenv corpus"
+        assert "\\'" in joined, "the escaped-quote trap left the dotenv corpus"
+        assert "\r\n" in joined, "the CRLF trap left the dotenv corpus"
+        assert any(line.startswith("=") for line in joined.splitlines()), (
+            "the unparseable-line trap left the dotenv corpus"
+        )
+        assert any(rel == "home/.yeaboi/.env" for rel, _ in entries), "the user-.env precedence fixture left the corpus"
+        aws = [text for rel, text in entries if rel == "home/.aws/config"]
+        assert any("role_arn" in text for text in aws), "the AWS autodetect fixture left the corpus"
+        assert any(text.count("[profile dup]") == 2 for text in aws), (
+            "the unparseable-AWS-config fixture left the corpus"
+        )
+
+    def test_set_key_scenarios_still_exercise_the_writer_traps(self):
+        scenarios = {s["name"]: s for s in dump_mod.SET_KEY_SCENARIOS}
+        assert any(s["initial"] is None for s in scenarios.values()), "the create-missing-file scenario left"
+        assert any(s["initial"] is not None and not s["initial"].endswith("\n") for s in scenarios.values()), (
+            "the newline-less-tail append scenario left"
+        )
+        ops = [value for s in scenarios.values() for _, value in s["ops"]]
+        assert any("'" in value for value in ops), "the quote-escaping scenario left"
+        assert any("\n" in value for value in ops), "the multiline-value scenario left"
+        assert "" in ops, "the empty-value scenario left"
+        assert any(s["initial"] and "export " in s["initial"] for s in scenarios.values()), (
+            "the export-line rewrite scenario left"
+        )
+
+
 @needs_cli_binary
 @pytest.mark.parametrize("fixture", matrix.FIXTURES, ids=lambda f: f.name)
 def test_go_binary_matches_python_dump(fixture, tmp_path):

@@ -1,5 +1,99 @@
 {
   "dump": {
+    "config": {
+      "beta_notices_acked": [],
+      "detect_proxy": null,
+      "get_ac_format": "",
+      "get_allowed_paths": [],
+      "get_anonymize_mask_terms": [],
+      "get_anthropic_api_key": null,
+      "get_aws_profile": null,
+      "get_azure_devops_org_url": null,
+      "get_azure_devops_project": null,
+      "get_azure_devops_team": null,
+      "get_azure_devops_token": null,
+      "get_bedrock_region": "us-east-1",
+      "get_config_dir": "{tmp}/home/.yeaboi",
+      "get_config_file": "{tmp}/home/.yeaboi/.env",
+      "get_confluence_base_url": null,
+      "get_confluence_email": null,
+      "get_confluence_export_parent_page_id": null,
+      "get_confluence_space_key": null,
+      "get_confluence_token": null,
+      "get_data_dir": "{tmp}/./custom/../elsewhere",
+      "get_github_token": null,
+      "get_google_api_key": null,
+      "get_jira_base_url": null,
+      "get_jira_email": null,
+      "get_jira_project_key": null,
+      "get_jira_token": null,
+      "get_last_category": "humans",
+      "get_llm_model": null,
+      "get_llm_provider": "anthropic",
+      "get_log_level": "WARNING",
+      "get_music_channel": 0,
+      "get_notion_export_parent_page_id": null,
+      "get_notion_root_page_id": null,
+      "get_notion_token": null,
+      "get_ollama_base_url": "http://localhost:11434",
+      "get_ollama_num_ctx": 16384,
+      "get_openai_api_key": null,
+      "get_performance_framework_path": "",
+      "get_poker_server_port": 5273,
+      "get_retro_server_port": 5173,
+      "get_session_prune_days": 30,
+      "get_sessions_db": "{tmp}/home/.yeaboi/sessions.db",
+      "get_slack_webhook_url": "",
+      "get_smtp_host": "",
+      "get_smtp_password": "",
+      "get_smtp_port": 587,
+      "get_smtp_sender": "",
+      "get_smtp_user": "",
+      "get_standup_email_recipients": [],
+      "get_standup_github_repo": "",
+      "get_standup_user_name": "Me",
+      "get_team_analysis_azdo_pr_search_max_repos": 10,
+      "get_team_analysis_azdo_pr_search_top": 75,
+      "get_team_analysis_azdo_projects": [],
+      "get_team_analysis_azdo_repo_allowlist": null,
+      "get_team_analysis_code_max_concurrency": 6,
+      "get_team_analysis_confluence_spaces": [],
+      "get_team_analysis_doc_max_concurrency": 8,
+      "get_team_analysis_doc_request_timeout_seconds": 30,
+      "get_team_analysis_enrichment_timeout_seconds": 120,
+      "get_team_analysis_fast_model": null,
+      "get_team_analysis_github_owners": [],
+      "get_team_analysis_llm_max_concurrency": 6,
+      "get_team_analysis_llm_target_seconds": 600,
+      "get_team_analysis_max_change_lookups": 500,
+      "get_team_analysis_notion_roots": [],
+      "get_team_analysis_tracker_max_concurrency": 4,
+      "get_tunnel_timeout_minutes": 60,
+      "get_voice_device": "",
+      "get_voice_model": "base",
+      "is_beta_notice_enabled": true,
+      "is_duck_enabled": true,
+      "is_langsmith_enabled": false,
+      "is_llm_configured": [
+        false,
+        "ANTHROPIC_API_KEY not set"
+      ],
+      "is_music_enabled": false,
+      "is_team_analysis_azdo_pr_search_enabled": false,
+      "is_team_analysis_jira_dev_links_enabled": false,
+      "is_tips_enabled": true,
+      "is_voice_install_offer_enabled": true,
+      "tunnels_disabled": false,
+      "voice_extra_was_installed": false
+    },
+    "config_keyed": {
+      "is_beta_notice_seen": {
+        "": false,
+        "poker": false,
+        "retro": false,
+        "roadmap": false
+      }
+    },
     "constants": {
       "AGENTWATCH_EXPORTS_DIR": "{tmp}/custom/../elsewhere/exports/agentwatch",
       "AGENTWATCH_LOGS_DIR": "{tmp}/custom/../elsewhere/logs/agentwatch",
@@ -148,10 +242,89 @@
       " nbsp ": "nbsp",
       "İstanbul CI": "i̇stanbul ci",
       "🚀 Launch/Q3": "🚀 launch-q3"
+    },
+    "set_key": {
+      "append-after-newline-less-tail": {
+        "initial": "A=1",
+        "ops": [
+          [
+            "B",
+            "2"
+          ]
+        ],
+        "text": "A=1\nB='2'\n"
+      },
+      "create-missing": {
+        "initial": null,
+        "ops": [
+          [
+            "FOO",
+            "bar"
+          ]
+        ],
+        "text": "FOO='bar'\n"
+      },
+      "quote-escaping": {
+        "initial": null,
+        "ops": [
+          [
+            "Q",
+            "it's got 'quotes'"
+          ],
+          [
+            "NL",
+            "line1\nline2"
+          ],
+          [
+            "UNI",
+            "café 🚀"
+          ],
+          [
+            "EMPTY",
+            ""
+          ]
+        ],
+        "text": "Q='it\\'s got \\'quotes\\''\nNL='line1\nline2'\nUNI='café 🚀'\nEMPTY=''\n"
+      },
+      "replace-preserving": {
+        "initial": "# comment\nFOO=old\nOTHER=1\nexport FOO=older\n=junk\nBARE\n",
+        "ops": [
+          [
+            "FOO",
+            "new"
+          ]
+        ],
+        "text": "# comment\nFOO='new'\nOTHER=1\nFOO='new'\n=junk\nBARE\n"
+      },
+      "replace-then-append": {
+        "initial": "KEEP='x'\n",
+        "ops": [
+          [
+            "KEEP",
+            "y"
+          ],
+          [
+            "NEW",
+            "z"
+          ]
+        ],
+        "text": "KEEP='y'\nNEW='z'\n"
+      },
+      "via-config-choke-point": {
+        "mode": "0o600",
+        "ops": [
+          [
+            "YEABOI_SET_KEY_PROBE",
+            "via config"
+          ]
+        ],
+        "text": "YEABOI_SET_KEY_PROBE='via config'\n"
+      }
     }
   },
   "env": {
     "HOME": "{tmp}/home",
     "YEABOI_HOME": "{tmp}/./custom/../elsewhere"
-  }
+  },
+  "files": {}
 }

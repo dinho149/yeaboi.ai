@@ -2,7 +2,7 @@
   "dump": {
     "config": {
       "beta_notices_acked": [],
-      "detect_proxy": null,
+      "detect_proxy": "http://lower:3128",
       "get_ac_format": "",
       "get_allowed_paths": [],
       "get_anonymize_mask_terms": [],
@@ -29,7 +29,7 @@
       "get_jira_token": null,
       "get_last_category": "humans",
       "get_llm_model": null,
-      "get_llm_provider": "anthropic",
+      "get_llm_provider": "ollama",
       "get_log_level": "WARNING",
       "get_music_channel": 0,
       "get_notion_export_parent_page_id": null,
@@ -61,7 +61,7 @@
       "get_team_analysis_doc_max_concurrency": 8,
       "get_team_analysis_doc_request_timeout_seconds": 30,
       "get_team_analysis_enrichment_timeout_seconds": 120,
-      "get_team_analysis_fast_model": null,
+      "get_team_analysis_fast_model": "fast-1",
       "get_team_analysis_github_owners": [],
       "get_team_analysis_llm_max_concurrency": 6,
       "get_team_analysis_llm_target_seconds": 600,
@@ -69,14 +69,14 @@
       "get_team_analysis_notion_roots": [],
       "get_team_analysis_tracker_max_concurrency": 4,
       "get_tunnel_timeout_minutes": 60,
-      "get_voice_device": "",
-      "get_voice_model": "base",
+      "get_voice_device": "Shure MV7",
+      "get_voice_model": "small",
       "is_beta_notice_enabled": true,
       "is_duck_enabled": true,
       "is_langsmith_enabled": false,
       "is_llm_configured": [
-        false,
-        "ANTHROPIC_API_KEY not set"
+        true,
+        ""
       ],
       "is_music_enabled": false,
       "is_team_analysis_azdo_pr_search_enabled": false,
@@ -323,7 +323,15 @@
     }
   },
   "env": {
-    "HOME": "{tmp}/home"
+    "HOME": "{tmp}/home",
+    "LLM_MODEL": "",
+    "LLM_PROVIDER": "ollama",
+    "STANDUP_USER_NAME": "   ",
+    "TEAM_ANALYSIS_FAST_MODEL": " fast-1 ",
+    "VOICE_DEVICE": "  Shure MV7  ",
+    "VOICE_MODEL": "small",
+    "all_proxy": "socks5://lower:1080",
+    "https_proxy": "http://lower:3128"
   },
   "files": {}
 }

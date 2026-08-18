@@ -7,7 +7,7 @@
       "get_allowed_paths": [],
       "get_anonymize_mask_terms": [],
       "get_anthropic_api_key": null,
-      "get_aws_profile": null,
+      "get_aws_profile": "assumed",
       "get_azure_devops_org_url": null,
       "get_azure_devops_project": null,
       "get_azure_devops_team": null,
@@ -29,7 +29,7 @@
       "get_jira_token": null,
       "get_last_category": "humans",
       "get_llm_model": null,
-      "get_llm_provider": "anthropic",
+      "get_llm_provider": "bedrock",
       "get_log_level": "WARNING",
       "get_music_channel": 0,
       "get_notion_export_parent_page_id": null,
@@ -75,8 +75,8 @@
       "is_duck_enabled": true,
       "is_langsmith_enabled": false,
       "is_llm_configured": [
-        false,
-        "ANTHROPIC_API_KEY not set"
+        true,
+        "AWS credentials/region not configured for Bedrock"
       ],
       "is_music_enabled": false,
       "is_team_analysis_azdo_pr_search_enabled": false,
@@ -323,7 +323,10 @@
     }
   },
   "env": {
-    "HOME": "{tmp}/home"
+    "HOME": "{tmp}/home",
+    "LLM_PROVIDER": "bedrock"
   },
-  "files": {}
+  "files": {
+    "home/.aws/config": "# global comment\n[default]\nregion = us-east-1\n\n[profile plain]\nregion = eu-west-1\n\n[profile  assumed ]\nrole_arn = arn:aws:iam::123456789012:role/dev\nsource_profile = plain\n\n[profile second]\ncredential_source = Ec2InstanceMetadata\n"
+  }
 }

@@ -696,11 +696,15 @@ def unit_paths(scope: Scope) -> list[str]:
         return list(FULL_UNIT)
     # Globs that match nothing make pytest exit 4 ("file or directory not
     # found"), so they are resolved here rather than handed over verbatim.
+    # Same exit code for a changed *support* file under tests/ — a parity
+    # golden, a syrupy snapshot — which rides into scope.tests as "a changed
+    # test runs" but is nothing pytest can collect: only .py files and
+    # directories go to the command line (the file's area still runs).
     resolved: set[str] = set()
     for pattern in scope.tests:
         if any(ch in pattern for ch in "*?["):
-            resolved.update(str(p.relative_to(ROOT)) for p in ROOT.glob(pattern))
-        elif (ROOT / pattern).exists():
+            resolved.update(str(p.relative_to(ROOT)) for p in ROOT.glob(pattern) if p.suffix == ".py" or p.is_dir())
+        elif (ROOT / pattern).exists() and (pattern.endswith(".py") or (ROOT / pattern).is_dir()):
             resolved.add(pattern)
     return sorted(resolved)
 

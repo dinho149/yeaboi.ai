@@ -92,6 +92,13 @@ type Paths struct {
 // OSEnv is the production Env: the process environment.
 func OSEnv(key string) (string, bool) { return os.LookupEnv(key) }
 
+// HomeDir exposes Path.home() to sibling ports (config.py's live
+// Path.home() reads in get_config_dir and the ~/.aws/config autodetect).
+func HomeDir(env Env) (string, error) { return homeDir(env) }
+
+// Join exposes the Path `/` operator to sibling ports.
+func Join(base string, names ...string) string { return joinPath(base, names...) }
+
 // resolveRoot ports _resolve_root: $YEABOI_HOME (stripped, expanduser-ed)
 // when set, else the default home. str.strip() strips unicode whitespace,
 // hence pysem.Strip.

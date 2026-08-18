@@ -338,3 +338,27 @@ func TestQuoteAll(t *testing.T) {
 		}
 	}
 }
+
+func TestParseInt(t *testing.T) {
+	good := map[string]int64{
+		"5":    5,
+		"  5 ": 5,
+		" 7 ":  7, // int() strips unicode whitespace
+		"-12":  -12,
+		"+3":   3,
+		"1_0":  10, // underscores between digits are legal literals
+		"0":    0,
+	}
+	for in, want := range good {
+		got, err := ParseInt(in)
+		if err != nil || got != want {
+			t.Errorf("ParseInt(%q) = %d, %v; want %d", in, got, err, want)
+		}
+	}
+	bad := []string{"", "   ", "5.0", "5..", "abc", "_5", "5_", "1__0", "-", "+", "5 5", "0x10"}
+	for _, in := range bad {
+		if _, err := ParseInt(in); err == nil {
+			t.Errorf("ParseInt(%q) succeeded, want ValueError", in)
+		}
+	}
+}
