@@ -120,6 +120,7 @@ class AgentDriver(Protocol):
         timeout_s: float = DEFAULT_TIMEOUT_S,
         cancel_event: threading.Event | None = None,
         on_line: Callable[[str], None] | None = None,
+        stream: bool = False,
     ) -> DriverResult: ...
 
     def get_type(self) -> str: ...
@@ -149,29 +150,59 @@ def _terminate_group(proc: subprocess.Popen) -> None:
 
 
 def _parse_envelope(raw: str) -> dict:
-    """The ``--output-format json`` envelope, or {} — never an exception."""
+    """The run's final result object, or {} — never an exception.
+
+    Two output shapes are accepted so the ``json`` and ``stream-json`` formats
+    share one reader:
+
+    - **json**: the whole output is one object — accepted as-is (older CLIs
+      omit ``type``; newer ones set ``type == "result"``).
+    - **stream-json**: newline-delimited events, where only the trailing
+      ``{"type": "result", …}`` line summarises the run. Requiring ``type ==
+      "result"`` in the tail scan is load-bearing: a run killed mid-stream
+      leaves a partial ``assistant``/``tool_use`` line last, and returning
+      *that* as the envelope would let ``is_error``/``cost``/``session_id`` read
+      from an event that never summarised anything. A summary-bearing object
+      with no ``type`` (an older json envelope printed behind progress lines)
+      is accepted only as a fallback, behind any explicit result line.
+    """
     text = raw.strip()
     if not text:
         return {}
+    # Whole-output json: one object IS the envelope — but a stream run that
+    # emitted a single event before dying also parses whole, so a typed event
+    # that is not the result must fall through to the scan rather than pose as
+    # the envelope. `type` absent ⇒ an older json envelope, accepted.
     try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else {}
+        whole = json.loads(text)
     except ValueError:
-        pass
-    # Some CLI versions print progress lines before the envelope; try the tail.
+        whole = None
+    if isinstance(whole, dict) and whole.get("type", "result") == "result":
+        return whole
+    fallback: dict | None = None
     for line in reversed(text.splitlines()):
         line = line.strip()
-        if line.startswith("{"):
-            try:
-                data = json.loads(line)
-                return data if isinstance(data, dict) else {}
-            except ValueError:
-                continue
-    return {}
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("type") == "result":
+            return data
+        # A stream event (assistant/tool_use/system) never carries these
+        # top-level summary keys, so a summary-bearing object here is an older
+        # json envelope printed behind progress lines — accept it, but only
+        # behind any explicit result line.
+        if fallback is None and any(k in data for k in ("result", "is_error", "session_id", "total_cost_usd")):
+            fallback = data
+    return fallback or {}
 
 
 class ClaudeCodeDriver:
-    """Run Claude Code headless: ``claude --print --output-format json``."""
+    """Run Claude Code headless: ``claude --print`` in ``json`` or ``stream-json``."""
 
     def __init__(self, binary: str = "claude") -> None:
         self._binary = binary
@@ -215,13 +246,27 @@ class ClaudeCodeDriver:
         timeout_s: float = DEFAULT_TIMEOUT_S,
         cancel_event: threading.Event | None = None,
         on_line: Callable[[str], None] | None = None,
+        stream: bool = False,
     ) -> DriverResult:
-        """Supervise one run to completion, cancellation, or timeout. Never raises."""
+        """Supervise one run to completion, cancellation, or timeout. Never raises.
+
+        ``stream=True`` selects ``--output-format stream-json`` (with the
+        ``--verbose`` the CLI requires alongside ``--print``), so ``on_line``
+        receives one JSON event per line as the agent works — that is what a
+        live board renders. The default (``json``) is one object at the end and
+        is byte-for-byte the historical behaviour, so a caller that does not opt
+        in is entirely unaffected. Either way the run is judged by the diff on
+        disk, not by these events (# See docs: "The ReAct Loop").
+        """
         started = time.monotonic()
         warnings: list[str] = []
+        # stream-json requires --verbose next to --print, and it is the only way
+        # to see the agent mid-run; the deterministic result envelope is still
+        # the trailing {"type":"result"} line either way (see _parse_envelope).
+        format_args = ["--output-format", "stream-json", "--verbose"] if stream else ["--output-format", "json"]
         try:
             proc = subprocess.Popen(  # noqa: S603 — fixed binary + flags; prompt over stdin
-                [self._binary, "--print", "--output-format", "json", *_PERMISSION_ARGS],
+                [self._binary, "--print", *format_args, *_PERMISSION_ARGS],
                 cwd=str(cwd),
                 env=self._child_env(),
                 stdin=subprocess.PIPE,
@@ -291,12 +336,27 @@ class ClaudeCodeDriver:
             raw = "\n".join(tail)
         envelope = _parse_envelope(raw)
         if not envelope and raw.strip():
-            warnings.append("agent output was not the expected JSON envelope; using raw text")
-        output = str(envelope.get("result") or "") or raw
+            # A missing envelope must be loud, never a silent cost=0/turns=0.
+            warnings.append(
+                "agent produced no result envelope; cost and turn counts are unavailable"
+                if stream
+                else "agent output was not the expected JSON envelope; using raw text"
+            )
+        # In stream mode ``raw`` is JSONL noise, not readable text, so it must
+        # never become the human-facing output; the result line is the only
+        # readable summary and its absence is already warned above.
+        output = str(envelope.get("result") or "") or ("" if stream else raw)
         ok = proc.returncode == 0 and not timed_out and not cancelled and not bool(envelope.get("is_error"))
         error = ""
         if not ok:
-            error = raw[-2000:] if raw else (f"exit {proc.returncode}" if not timed_out else "timed out")
+            if timed_out:
+                error = "timed out"
+            elif stream:
+                # raw is JSONL noise in stream mode (same reason output is emptied
+                # above), so it must not reach the budget ledger's paused_reason.
+                error = str(envelope.get("result") or "") or f"exit {proc.returncode}"
+            else:
+                error = raw[-2000:] if raw else f"exit {proc.returncode}"
         logger.info(
             "Agent run finished: exit=%s ok=%s timed_out=%s cancelled=%s %.1fs",
             proc.returncode,

@@ -2,6 +2,38 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.20.0",
+      "date": "2026-08-17",
+      "summary": "Ship mode now surfaces a live, shareable web board — teammates can watch the story→PR pipeline run in real time over a browser, including the five-phase checklist, live agent activity, the diff, validation results, and cost estimates. The board is read-only for this release; guests watch from any device via a Cloudflare tunnel while you drive approval/rejection from the TUI. The board reuses the existing retro/poker live-board infrastructure and security model. Additionally, ship mode fixes a critical plan-finding bug where plans saved in the interactive planning chat were invisible (\"no stories found\") and adds cloud-friendly Cloudflare tunnel option for remote team collaboration.",
+      "highlights": [
+        {
+          "text": "Live ship board shows the five-phase checklist, agent activity, diff, validation results, and cost in real-time over the browser",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Share the board with teammates over a Cloudflare tunnel — read-only guests watch the run while you drive from the TUI",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Ship mode now finds plans saved in both the interactive planning chat and the project store, fixing the \"no stories found\" bug on chat-built plans",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Live agent output streams over the TUI and the web board via stream-json format with hardened envelope parsing",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.19.0",
       "date": "2026-08-17",
       "summary": "yeaboi now runs on a clock. Ceremonies let you schedule any of six catalogued modes — standup, report, and four agentwatch digests — to fire at a specific time on weekdays and deliver results to Slack, email, or terminal while yeaboi is closed. The OS installs the job (launchd on macOS, cron elsewhere); yeaboi's scheduler catches its fire, runs the engine, records the outcome and cost in a ledger, and applies three guards that block stale fires, cap spending, or respect pauses. You declare a ceremony once, and it runs unattended every week. The ceremony CLI lives under `yeaboi ceremonies` (add/list/remove/pause/resume/run/history/modes), with a dedicated TUI page for viewing schedules, pausing runs, and seeing OS/store drift.",

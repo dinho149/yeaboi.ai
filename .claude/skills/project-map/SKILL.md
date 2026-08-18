@@ -242,6 +242,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
 - `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
+- `SHIP_PORT` — same for the Ship board (default 5473), the live view over a supervised ship run
+- `YEABOI_SHIP_BOARD` — optional, `1`/`true`/`yes` opts the Ship board in (`config.get_ship_board_enabled()`, default off). Read-only: guests watch; approval stays in the TUI
 - `YEABOI_NO_TUNNEL` — optional, `1`/`true`/`yes` stops the live boards opening a Cloudflare tunnel (`config.tunnels_disabled()`). The board still runs for the host on `127.0.0.1` but has nothing to share. Needed because the tunnel now auto-starts: without it `make run-dry` would download ~40 MB and publish a public URL
 - `CLOUDFLARED_PATH` — optional, path to an existing `cloudflared` binary for Retro remote tunnels (else the app auto-downloads one to `~/.yeaboi/bin/`)
 - `TUNNEL_TIMEOUT_MINUTES` — auto-expiry for every Cloudflare share tunnel (Retro, Poker, and the generic Share Online flow), in minutes (default: 60, 0 = disabled). Enforced once inside `CloudflareTunnel` itself (`retro/tunnel.py`), so all three call sites inherit it uniformly. On the Settings page (System tab, next to Session Prune Days).

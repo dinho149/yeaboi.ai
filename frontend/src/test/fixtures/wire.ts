@@ -53,7 +53,7 @@ import type { PokerBoot } from '../../poker/boot';
 import type { RetroBoot } from '../../retro/boot';
 import type { ExportBoot, ExportReport } from '../../export/boot';
 import type { EditDocState } from '../../export/editing/state';
-import type { InviteInfo, PokerState, RetroState, TicketView } from '../../types/board';
+import type { InviteInfo, PokerState, RetroState, ShipState, TicketView } from '../../types/board';
 
 import deckJson from './deck.json';
 import editableJson from './editable.json';
@@ -74,6 +74,7 @@ import pokerRevealedJson from './poker.revealed.json';
 import pokerVotingJson from './poker.voting.json';
 import retroBootJson from './retro.boot.json';
 import retroJson from './retro.json';
+import shipJson from './ship.json';
 import ticketPeekJson from './ticket.peek.json';
 
 /** A full deck: every slide kind, a custom style, and all four palettes. */
@@ -134,6 +135,7 @@ type BootOf<K extends ExportReport['kind']> = ExportBoot & { report: Extract<Exp
 
 // The assertions themselves — the lines that fail when the wire moves.
 void (retroJson satisfies Widened<RetroState>);
+void (shipJson satisfies Widened<ShipState>);
 void (pokerVotingJson satisfies Widened<PokerState>);
 void (pokerRevealedJson satisfies Widened<PokerState>);
 void (pokerDuelJson satisfies Widened<PokerState>);

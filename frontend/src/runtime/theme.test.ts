@@ -121,7 +121,7 @@ describe('mode accents', () => {
     // accent here silently inherits the theme's, which is how poker ended up
     // green while its TUI theme was gold.
     expect(modes.slice().sort()).toEqual(
-      ['analysis', 'performance', 'planning', 'poker', 'reporting', 'retro', 'standup', 'usage'].sort()
+      ['analysis', 'performance', 'planning', 'poker', 'reporting', 'retro', 'ship', 'standup', 'usage'].sort()
     );
   });
 

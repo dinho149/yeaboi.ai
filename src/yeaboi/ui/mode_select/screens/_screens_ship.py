@@ -162,6 +162,8 @@ def _build_ship_progress_screen(
     width: int = 80,
     height: int = 24,
     status: str = "",
+    board_link: str = "",
+    board_code: str = "",
 ) -> Panel:
     """The in-flight page: the phase checklist fed by the engine's events."""
     theme = SHIP_THEME
@@ -170,6 +172,15 @@ def _build_ship_progress_screen(
         ship_title(None, width=width),
         build_reveal_subtitle("Supervising the coding agent", None, justify="center"),
     ]
+    if board_link:
+        # The shareable board line, once the tunnel is up. It carries no secret
+        # (the join code is separate), so it is safe to render.
+        parts.append(Text(f"📺 watch/share: {board_link}", style=theme.accent, justify="center", no_wrap=True))
+        if board_code:
+            # A teammate opening the share link lands on the join gate and needs
+            # this code. Without it here the code lives only in the log file, so
+            # the headline capability is unusable — retro and poker both show it.
+            parts.append(Text(f"join code: {board_code}", style=f"bold {theme.accent}", justify="center", no_wrap=True))
     parts.extend(_build_agent_progress_body(SHIP_PHASES, progress, tick=tick, theme=theme, status=status))
     parts.append(Text(""))
     parts.append(
