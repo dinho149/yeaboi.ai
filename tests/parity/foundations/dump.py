@@ -218,6 +218,8 @@ CONFIG_GETTERS = [
     "get_team_analysis_max_change_lookups",
     "get_retro_server_port",
     "get_poker_server_port",
+    "get_ship_server_port",
+    "get_ship_board_enabled",
     "tunnels_disabled",
     "get_tunnel_timeout_minutes",
     "get_slack_webhook_url",

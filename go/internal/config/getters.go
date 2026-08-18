@@ -436,6 +436,25 @@ func (c *Config) GetPokerServerPort() int64 {
 	return v
 }
 
+// GetShipServerPort ports get_ship_server_port.
+func (c *Config) GetShipServerPort() int64 {
+	v, err := pysem.ParseInt(c.getenv("SHIP_PORT", "5473"))
+	if err != nil {
+		return 5473
+	}
+	return v
+}
+
+// GetShipBoardEnabled ports get_ship_board_enabled — the opt-in truthy
+// convention, and (like tunnels_disabled below) WITHOUT "on".
+func (c *Config) GetShipBoardEnabled() bool {
+	switch stripLower(c.getenv("YEABOI_SHIP_BOARD", "")) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
 // TunnelsDisabled ports tunnels_disabled.
 func (c *Config) TunnelsDisabled() bool {
 	switch stripLower(c.getenv("YEABOI_NO_TUNNEL", "")) {

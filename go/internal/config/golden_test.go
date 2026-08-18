@@ -97,6 +97,8 @@ var configFields = map[string]func(*Config) any{
 	"get_team_analysis_max_change_lookups":          func(c *Config) any { return c.GetTeamAnalysisMaxChangeLookups() },
 	"get_retro_server_port":                         func(c *Config) any { return c.GetRetroServerPort() },
 	"get_poker_server_port":                         func(c *Config) any { return c.GetPokerServerPort() },
+	"get_ship_server_port":                          func(c *Config) any { return c.GetShipServerPort() },
+	"get_ship_board_enabled":                        func(c *Config) any { return c.GetShipBoardEnabled() },
 	"tunnels_disabled":                              func(c *Config) any { return c.TunnelsDisabled() },
 	"get_tunnel_timeout_minutes":                    func(c *Config) any { return c.GetTunnelTimeoutMinutes() },
 	"get_slack_webhook_url":                         func(c *Config) any { return c.GetSlackWebhookURL() },

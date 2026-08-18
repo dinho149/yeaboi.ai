@@ -43,6 +43,8 @@
       "get_retro_server_port": 5173,
       "get_session_prune_days": 30,
       "get_sessions_db": "{tmp}/home2/.yeaboi/sessions.db",
+      "get_ship_board_enabled": false,
+      "get_ship_server_port": 5473,
       "get_slack_webhook_url": "",
       "get_smtp_host": "",
       "get_smtp_password": "",
