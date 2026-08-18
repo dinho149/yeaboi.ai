@@ -181,10 +181,19 @@ jobs:
       - run: make go-lint
       - run: make go-test
       - run: make go-build
+      # W8: the future CLI binary rides the same job so the parity job can
+      # replay the foundations/help/argv goldens against it (contracts/cli/).
+      # Hidden and unshipped: nothing packages bin/yeaboi until W19.
+      - run: make go-build-cli
       - uses: actions/upload-artifact@v4
         with:
           name: yeaboi-core
           path: bin/yeaboi-core
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yeaboi-cli
+          path: bin/yeaboi
           retention-days: 1
       # The yeaboi[core] wheel end-to-end: build it for this platform via the
       # hatch_build.py hook, install it into a clean venv, and prove the two
@@ -210,6 +219,10 @@ jobs:
           assert result["contract_version"] == 1, result
           print(f"wheel smoke ok: {path} -> {result['name']} {result['version']}")
           EOF
+      # W8: the core wheel ships ONLY the sidecar — the future `yeaboi` CLI
+      # binary (cmd/yeaboi) is hidden and unshipped until W19. The assertion
+      # lives in scripts/check_core_wheel.py so it also runs locally.
+      - run: python3 scripts/check_core_wheel.py dist-core
 
   # ── Python ↔ Go parity ───────────────────────────────────────────────────
   # tests/parity skips itself when the binary is absent (keeping `make test`
@@ -228,8 +241,14 @@ jobs:
         with:
           name: yeaboi-core
           path: bin
-      - run: chmod +x bin/yeaboi-core
-      - run: YEABOI_CORE_BIN=$PWD/bin/yeaboi-core uv run pytest tests/parity -v
+      - uses: actions/download-artifact@v4
+        with:
+          name: yeaboi-cli
+          path: bin
+      - run: chmod +x bin/yeaboi-core bin/yeaboi
+      # Both env vars, mirroring `make parity`: YEABOI_CORE_BIN unskips the RPC
+      # suites, YEABOI_CLI_BIN unskips the W8 CLI golden gate (contracts/cli/).
+      - run: YEABOI_CORE_BIN=$PWD/bin/yeaboi-core YEABOI_CLI_BIN=$PWD/bin/yeaboi uv run pytest tests/parity -v
 
   # ── Golden evaluators ────────────────────────────────────────────────────
   # LLM-output quality checks against the golden dataset.

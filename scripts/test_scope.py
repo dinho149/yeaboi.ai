@@ -368,6 +368,7 @@ AREAS: tuple[Area, ...] = (
             "go/",
             "contracts/",
             "scripts/migration_progress.py",
+            "scripts/check_core_wheel.py",
         ),
         tests=(
             "tests/unit/test_gocore_*.py",
