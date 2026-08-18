@@ -9,7 +9,7 @@ CODE ?= code
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
+.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-build-cli go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -405,6 +405,9 @@ cowork-teardown: ## Delete the cowork GitHub labels + model repo variables (prom
 go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
 	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
 
+go-build-cli: ## Build the future yeaboi CLI into bin/yeaboi (hidden, unshipped until W19)
+	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi ./cmd/yeaboi
+
 go-test: ## Run the Go unit tests
 	cd go && go test ./...
 
@@ -412,8 +415,8 @@ go-lint: ## Vet + gofmt check for the Go tree
 	cd go && go vet ./...
 	@cd go && files="$$(gofmt -l .)"; if [ -n "$$files" ]; then echo "$$files"; echo "gofmt: files need formatting"; exit 1; fi
 
-parity: go-build ## Build the sidecar and run the Python↔Go parity suite unskipped
-	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core $(UV) run pytest tests/parity -v
+parity: go-build go-build-cli ## Build both binaries and run the Python↔Go parity suite unskipped
+	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core YEABOI_CLI_BIN=$(CURDIR)/bin/yeaboi $(UV) run pytest tests/parity -v
 
 clean: ## Remove build artifacts and caches
 	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info bin

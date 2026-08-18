@@ -7,10 +7,15 @@ correspondence, and the corpus must keep exercising the traps the spec
 names. ``go/internal/home``'s golden test replays the same committed files
 against the Go port, so a golden regenerated here re-gates Go automatically.
 
-The subprocess-vs-binary diff arms in W8 phase 3, when ``cmd/yeaboi`` gains
-``__dump-foundations``: set ``YEABOI_CLI_BIN`` (the ``make parity`` wiring
-lands with it). Until then that test skips, the same way the RPC parity
-suites skip without ``YEABOI_CORE_BIN``.
+W8 phase 3 armed the subprocess-vs-binary arms: ``cmd/yeaboi`` serves
+``__dump-foundations`` and ``__dump-args``, and ``make parity`` builds it
+and exports ``YEABOI_CLI_BIN``. Without the binary those tests skip, the
+same way the RPC parity suites skip without ``YEABOI_CORE_BIN``.
+
+Phase 3 also added the argv gate: every ``argvectors.VECTORS`` argv runs
+through ``cli.build_parser()`` (``argdump.py``), the outcomes freeze into
+``tests/parity/goldens/cli/args.json``, and both the Go parse tree
+(``go/cmd/yeaboi/args_golden_test.go``) and the binary replay them.
 
 To regenerate after a deliberate behaviour change:
 ``uv run python -m tests.parity.foundations.regen``.
@@ -21,17 +26,18 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
+from tests.parity.foundations import argdump, argvectors, matrix
 from tests.parity.foundations import dump as dump_mod
-from tests.parity.foundations import matrix
 
 CLI_BINARY = os.environ.get("YEABOI_CLI_BIN")
 
 needs_cli_binary = pytest.mark.skipif(
     not CLI_BINARY or not os.path.isfile(CLI_BINARY or ""),
-    reason="yeaboi CLI binary not available (arrives in W8 phase 3; run `make parity`)",
+    reason="yeaboi CLI binary not available (run `make parity`)",
 )
 
 
@@ -235,6 +241,83 @@ class TestConfigCorpusSelfGuards:
         )
 
 
+def test_args_golden_matches_live():
+    """The Python side of the argv gate is frozen: a build_parser() change
+    must regenerate the golden deliberately, never drift silently."""
+    assert argdump.GOLDEN_PATH.exists(), (
+        f"missing golden {argdump.GOLDEN_PATH} — run `uv run python -m tests.parity.foundations.regen`"
+    )
+    expected = json.loads(argdump.GOLDEN_PATH.read_text(encoding="utf-8"))
+    got = {"vectors": argdump.build_results()}
+    assert got == expected, (
+        "live argparse outcomes disagree with the committed golden — if the cli.py change is "
+        "deliberate, regenerate (and mirror go/cmd/yeaboi/parser.go first)"
+    )
+
+
+class TestArgVectorSelfGuards:
+    """The corpus must keep exercising the traps the W8 spec names."""
+
+    def test_vector_names_are_unique(self):
+        names = [name for name, _ in argvectors.VECTORS]
+        assert len(names) == len(set(names))
+
+    def test_no_help_or_version_vectors(self):
+        """Their outputs belong to the phase-4 help goldens (and --version
+        embeds the product version, which would rot this golden)."""
+        for name, argv in argvectors.VECTORS:
+            assert not set(argv) & {"-h", "--help", "--version"}, name
+
+    def test_vectors_still_exercise_the_argparse_traps(self):
+        results = [entry["result"] for entry in argdump.build_results()]
+        messages = [r["message"] for r in results if r["status"] == "error"]
+        args_dumps = [r["args"] for r in results if r["status"] == "ok"]
+        assert any(m.startswith("ambiguous option: --export") for m in messages), (
+            "the --export abbreviation collision left the corpus"
+        )
+        assert any("invalid choice:" in m and "choose from 1, 2, 3, 4" in m for m in messages), (
+            "the int-choices trap left the corpus"
+        )
+        assert any("invalid int value:" in m for m in messages), "the int() rejection trap left the corpus"
+        assert any("invalid float value:" in m for m in messages), "the float() rejection trap left the corpus"
+        assert any("expected at least one argument" in m for m in messages), 'the empty nargs="+" trap left'
+        assert any("ignored explicit argument" in m for m in messages), "the --flag=value trap left the corpus"
+        assert any(m.startswith("the following arguments are required:") for m in messages), (
+            "the required-arguments trap left the corpus"
+        )
+        assert any(m.startswith("unrecognized arguments:") for m in messages), "the extras trap left the corpus"
+        assert any(a.get("resume") == "__pick__" for a in args_dumps), 'the nargs="?" const trap left the corpus'
+        assert any(a.get("team_size") == 5 for a in args_dumps), "the int-whitespace tolerance trap left the corpus"
+        assert any(
+            a.get("review_transcripts") is False or a.get("include_local_sessions") is False for a in args_dumps
+        ), "the store_false dest inversion left the corpus"
+        assert any("--" in argv for _, argv in argvectors.VECTORS), "the -- separator left the corpus"
+        assert any(any("=" in tok for tok in argv) for _, argv in argvectors.VECTORS), (
+            "the --opt=value form left the corpus"
+        )
+
+    def test_error_vectors_pin_the_erroring_parser(self):
+        """Sub-parser errors carry the sub prog — the difference between
+        `yeaboi: error:` and `yeaboi perf prep: error:` is contractual."""
+        progs = {r["prog"] for r in (e["result"] for e in argdump.build_results()) if r["status"] == "error"}
+        assert any(p != "yeaboi" for p in progs), "every error vector collapsed to the top-level parser"
+        assert "yeaboi" in progs, "no error vector exercises the top-level parser"
+
+
+@needs_cli_binary
+@pytest.mark.parametrize("entry", argdump.build_results() if CLI_BINARY else [], ids=lambda e: e["name"])
+def test_go_binary_matches_python_argdump(entry):
+    """The argv gate's subprocess arm: `yeaboi __dump-args ARGS...` must
+    reproduce the Python outcome for every vector."""
+    out = subprocess.run(
+        [CLI_BINARY, "__dump-args", *entry["argv"]],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(out.stdout) == entry["result"], f"vector {entry['name']}: Go and Python outcomes disagree"
+
+
 @needs_cli_binary
 @pytest.mark.parametrize("fixture", matrix.FIXTURES, ids=lambda f: f.name)
 def test_go_binary_matches_python_dump(fixture, tmp_path):
@@ -244,11 +327,16 @@ def test_go_binary_matches_python_dump(fixture, tmp_path):
     py_tmp = tmp_path / "py"
     go_tmp = tmp_path / "go"
     py = matrix.normalize(matrix.run_dump(fixture, py_tmp), py_tmp)
+    # Materialise the Go sandbox exactly the way run_dump does the Python
+    # one: realized HOME pre-created, fixture files written.
     go_tmp.mkdir(parents=True, exist_ok=True)
+    env = matrix.launch_env(fixture, go_tmp)
+    Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+    matrix.write_files(fixture, go_tmp)
     out = subprocess.run(
         [CLI_BINARY, "__dump-foundations"],
         cwd=go_tmp,
-        env=matrix.launch_env(fixture, go_tmp),
+        env=env,
         capture_output=True,
         text=True,
         check=True,
