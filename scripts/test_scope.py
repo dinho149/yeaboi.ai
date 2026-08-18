@@ -560,6 +560,15 @@ _MIRRORED = (
     # Not a twin, but every literal it asserts is a parity fixture — changing it
     # changes what the Go side is checked against.
     "tests/unit/test_code_health.py",
+    # Wave 8 (foundations). paths.py, config.py and logging_setup.py are in
+    # GLOBAL, so their edits already run everything; these four route to the
+    # platform/security areas and would otherwise merge green with the CLI
+    # help/argv goldens, the go:embed changelog copy, or the redaction twin
+    # stale — the exact CURRENT_SCHEMA_VERSION shape CLAUDE.md documents.
+    "src/yeaboi/cli.py",
+    "src/yeaboi/changelog.py",
+    "src/yeaboi/changelog_data.json",
+    "src/yeaboi/redaction.py",
 )
 
 JOBS: tuple[Job, ...] = (

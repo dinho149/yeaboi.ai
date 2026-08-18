@@ -1,10 +1,9 @@
 // yeaboi — the future single-binary CLI. Hidden and unshipped until W19:
 // every real command exits 1 pointing at the Python yeaboi, and nothing
-// packages this binary. What is live today are the W8 gate commands:
-//
-//	yeaboi __dump-foundations   the Go twin of tests/parity/foundations/dump.py
-//	yeaboi __dump-args ARGS...  parse ARGS with the cli.py-twin tree, dump JSON
-//	yeaboi __dump-changelog     the embedded changelog, parsed + rendered
+// packages this binary. The W8 gate commands (`__dump-foundations`,
+// `__dump-args`, `__dump-changelog`) live in dump_gate.go and compile only
+// under -tags paritydump (make go-build-cli) — see that file's header for
+// why the product build must not carry them.
 //
 // Python twin: src/yeaboi/cli.py main()'s argparse layer (parser.go holds
 // the tree). The version is injected via -ldflags "-X main.version=..." from
@@ -12,15 +11,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
 	ap "github.com/yeaboi-ai/yeaboi/go/internal/argparse"
 	"github.com/yeaboi-ai/yeaboi/go/internal/argview"
-	"github.com/yeaboi-ai/yeaboi/go/internal/changelog"
-	"github.com/yeaboi-ai/yeaboi/go/internal/foundations"
-	"github.com/yeaboi-ai/yeaboi/go/internal/home"
 )
 
 // parserByProg finds the (sub)parser whose prog is the one a help action or
@@ -45,16 +40,17 @@ func parserByProg(p *ap.Parser, prog string) *ap.Parser {
 // version is stamped by -ldflags; the fallback marks a local dev build.
 var version = "0.0.0+dev"
 
+// dumpGate is the W8 parity hook: nil in a product build, wired by
+// dump_gate.go's init under -tags paritydump. Keeping the hook a variable
+// (rather than tagging main itself) is what lets the untagged build compile
+// with zero hidden argv surface.
+var dumpGate func(args []string) (code int, handled bool)
+
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 {
-		switch args[0] {
-		case "__dump-foundations":
-			os.Exit(runDumpFoundations())
-		case "__dump-args":
-			os.Exit(runDumpArgs(args[1:]))
-		case "__dump-changelog":
-			os.Exit(runDumpChangelog())
+	if len(args) > 0 && dumpGate != nil {
+		if code, handled := dumpGate(args); handled {
+			os.Exit(code)
 		}
 	}
 
@@ -85,39 +81,8 @@ func main() {
 	os.Exit(1)
 }
 
-// runDumpFoundations prints the foundations dump for the current process
-// environment — the subprocess arm of the W8 foundations gate.
-func runDumpFoundations() int {
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "__dump-foundations: %v\n", err)
-		return 1
-	}
-	dump, err := foundations.Dump(home.OSEnv, cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "__dump-foundations: %v\n", err)
-		return 1
-	}
-	return printJSON(dump)
-}
-
-// runDumpChangelog prints the embedded changelog — parsed entries plus the
-// rendered Markdown — as JSON. The subprocess arm of the W8 changelog gate:
-// tests/parity/foundations/changelogdump.py build_live_dump() is the twin,
-// so the embedded copy and yeaboi.changelog's parse must agree end to end.
-func runDumpChangelog() int {
-	entries := changelog.Load()
-	return printJSON(changelog.DumpPayload(entries))
-}
-
-// runDumpArgs parses the given argv against the cli.py-twin tree and prints
-// the outcome as JSON — the subprocess arm of the W8 argv gate. The result
-// shape matches tests/parity/foundations/argdump.py exactly.
-func runDumpArgs(argv []string) int {
-	return printJSON(dumpArgsResult(buildParser().ParseArgs(argv)))
-}
-
-// dumpArgsResult mirrors argdump._outcome: what one parse ended as.
+// dumpArgsResult mirrors argdump._outcome: what one parse ended as. It stays
+// outside dump_gate.go because the argv golden test replays it untagged.
 func dumpArgsResult(result ap.Result) map[string]any {
 	switch result.Kind {
 	case ap.ResultOk:
@@ -134,15 +99,4 @@ func dumpArgsResult(result ap.Result) map[string]any {
 	default:
 		return map[string]any{"status": "exit", "code": 0, "action": "help"}
 	}
-}
-
-func printJSON(v any) int {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(os.Stderr, "encode: %v\n", err)
-		return 1
-	}
-	return 0
 }

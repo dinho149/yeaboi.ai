@@ -406,13 +406,17 @@ go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
 	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
 
 go-build-cli: ## Build the future yeaboi CLI into bin/yeaboi (hidden, unshipped until W19)
-	cd go && CGO_ENABLED=0 go build -ldflags "-X main.version=$$(sed -n 's/^version = "\(.*\)"/\1/p' ../pyproject.toml | head -1)" -o ../bin/yeaboi ./cmd/yeaboi
+	# -tags paritydump compiles the __dump-* gate commands in; a product
+	# build (no tag) has no hidden argv and cannot dump secrets.
+	cd go && CGO_ENABLED=0 go build -tags paritydump -ldflags "-X main.version=$$(sed -n 's/^version = "\(.*\)"/\1/p' ../pyproject.toml | head -1)" -o ../bin/yeaboi ./cmd/yeaboi
 
 go-test: ## Run the Go unit tests
 	cd go && go test ./...
 
 go-lint: ## Vet + gofmt check for the Go tree
 	cd go && go vet ./...
+	# The paritydump files are excluded from the untagged vet above.
+	cd go && go vet -tags paritydump ./cmd/yeaboi
 	@cd go && files="$$(gofmt -l .)"; if [ -n "$$files" ]; then echo "$$files"; echo "gofmt: files need formatting"; exit 1; fi
 
 parity: go-build go-build-cli ## Build both binaries and run the Python↔Go parity suite unskipped

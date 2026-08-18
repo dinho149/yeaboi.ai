@@ -58,3 +58,8 @@ and is legitimate only if it is invisible under the pinned goldens.
 - Every real command in `go/cmd/yeaboi` exits 1 with a "not yet implemented"
   message — dispatch arrives with W10/W17/W18; only the parse tree, help, and
   the hidden `__dump-*` commands are contractual today.
+- The `__dump-*` commands compile only under `-tags paritydump`
+  (`go/cmd/yeaboi/dump_gate.go`, built by `make go-build-cli`): the gate
+  binary and the product binary are different artifacts, because
+  `__dump-foundations` prints every configured secret verbatim and a W19
+  product build must not carry that argv at all.
