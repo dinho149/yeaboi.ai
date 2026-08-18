@@ -52,7 +52,8 @@ const (
 	TypeFloat
 )
 
-// Action mirrors argparse.Action for the fields that shape parse behaviour.
+// Action mirrors argparse.Action for the fields that shape parse behaviour,
+// plus (since W8 phase 4) the help text internal/argview renders.
 type Action struct {
 	OptionStrings []string // empty ⇒ positional
 	Dest          string   // "" ⇒ SUPPRESS (help/version)
@@ -68,6 +69,7 @@ type Action struct {
 	Metavar  string
 	Version  string      // KindVersion only ("%(prog)s" substituted)
 	Sub      *SubParsers // KindSubParsers only
+	Help     string      // "" ⇒ help=None (rendered without a help column)
 }
 
 // name mirrors argparse._get_action_name.
@@ -81,6 +83,10 @@ func (a *Action) name() string {
 	return a.Dest
 }
 
+// NargsZero reports whether the action consumes no arguments — exported
+// because internal/argview's usage/invocation rendering branches on it.
+func (a *Action) NargsZero() bool { return a.nargsZero() }
+
 // nargsZero reports whether the action consumes no arguments.
 func (a *Action) nargsZero() bool {
 	switch a.Kind {
@@ -91,25 +97,40 @@ func (a *Action) nargsZero() bool {
 }
 
 // SubParsers is the name → parser map behind a KindSubParsers action, in
-// add_parser order (the order "invalid choice" lists them in).
+// add_parser order (the order "invalid choice" lists them in). Helps holds
+// each add_parser(help=...) string — argparse turns those into the
+// _ChoicesPseudoAction rows the parent's help lists (a missing entry mirrors
+// help=None: the choice is parsed but never listed).
 type SubParsers struct {
 	Names   []string
 	Parsers map[string]*Parser
+	Helps   map[string]string
 }
 
-// AddParser mirrors subparsers.add_parser(name): child prog is
+// AddParser mirrors subparsers.add_parser(name, help=...): child prog is
 // "<parent prog> <name>" and every parser grows -h/--help first.
-func (s *SubParsers) AddParser(parent *Parser, name string) *Parser {
+func (s *SubParsers) AddParser(parent *Parser, name, help string) *Parser {
 	p := NewParser(parent.Prog + " " + name)
 	s.Names = append(s.Names, name)
 	s.Parsers[name] = p
+	if help != "" {
+		if s.Helps == nil {
+			s.Helps = map[string]string{}
+		}
+		s.Helps[name] = help
+	}
 	return p
 }
 
-// Parser mirrors argparse.ArgumentParser (parsing only).
+// Parser mirrors argparse.ArgumentParser (parsing only, plus the fields
+// internal/argview renders: description, epilog, and which formatter class
+// build_parser() picked — Raw is RawDescriptionHelpFormatter).
 type Parser struct {
-	Prog    string
-	Actions []*Action
+	Prog        string
+	Actions     []*Action
+	Description string
+	Epilog      string
+	Raw         bool
 
 	optionStrings []string           // registration order — abbreviation listing order
 	optionActions map[string]*Action // option string → action
@@ -124,7 +145,7 @@ func NewParser(prog string) *Parser {
 		optionActions: map[string]*Action{},
 		conflicts:     map[*Action][]*Action{},
 	}
-	p.Add(&Action{OptionStrings: []string{"-h", "--help"}, Kind: KindHelp})
+	p.Add(&Action{OptionStrings: []string{"-h", "--help"}, Kind: KindHelp, Help: "show this help message and exit"})
 	return p
 }
 

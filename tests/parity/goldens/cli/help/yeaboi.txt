@@ -1,0 +1,149 @@
+usage: yeaboi [-h] [--version] [--resume [SESSION_ID]] [--list-sessions]
+              [--clear-sessions] [--export-questionnaire [PATH]]
+              [--questionnaire PATH] [--quick] [--export-only]
+              [--prior-art REPO_KEY] [--ac-format {gwt,bullets}]
+              [--architecture-spike {auto,include,skip}] [--no-bell]
+              [--theme {dark,light}] [--mode {project-planning}] [--setup]
+              [--allow-path PATH] [--list-audio-devices] [--install-voice]
+              [--dry-run] [--non-interactive]
+              [--output {markdown,json,html,prd}] [--description TEXT]
+              [--team-size N] [--sprint-length WEEKS] [--standup-run]
+              [--standup-session SESSION_ID]
+              [--standup-output {terminal,desktop,slack,email,all}]
+              [--standup-interactive] [--standup-remind-transcript] [--learn]
+              [--team-profile] [--retro [SESSION_ID]]
+              {report,standup,standup-review,perf,retro,poker,analyze,agents}
+              ...
+
+yeaboi.ai — best friend to engineers and agents. Runs your team's scrum, and watches your AI agents work.
+
+positional arguments:
+  {report,standup,standup-review,perf,retro,poker,analyze,agents}
+    report              Generate a stakeholder delivery report (Reporting
+                        mode)
+    standup             Run a Daily Standup (alias of --standup-run, more
+                        knobs)
+    standup-review      Review standup meeting transcripts to find what
+                        standup missed, and why
+    perf                Performance mode (beta): 1:1 prep/completion, reviews,
+                        notes
+    retro               Read past retrospectives (the live board runs in the
+                        TUI)
+    poker               Read past poker sessions (the live voting board runs
+                        in the TUI)
+    ceremonies          Run a mode on a cadence — declare it once, the OS
+                        fires it
+    agents              Agents mode (beta): monitor your AI coding agents
+                        (cost, recoverable spend, activity, security)
+    provenance          Audit the tamper-evident decision chain behind
+                        yeaboi's signals
+    ship                Implement a story from your plan via a supervised
+                        coding agent
+    analyze             Analyse team board history into a calibration profile
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+  --resume [SESSION_ID]
+                        Resume a previous session. Without an argument, shows
+                        an interactive session picker. Pass 'latest' to resume
+                        the most recent session, or a session ID to resume a
+                        specific one.
+  --list-sessions       List all saved sessions and exit.
+  --clear-sessions      Interactively delete saved sessions (pick one or clear
+                        all) and exit.
+  --export-questionnaire [PATH]
+                        Export a blank questionnaire template as Markdown
+                        (default: scrum-questionnaire.md).
+  --questionnaire PATH  Import a filled-in questionnaire Markdown file and
+                        jump to confirmation.
+  --quick               Quick intake — only ask team size and tech stack,
+                        auto-fill everything else.
+  --export-only         Auto-accept all review checkpoints and exit after the
+                        full plan is generated. Combine with --quick or
+                        --questionnaire for fully non-interactive runs.
+  --prior-art REPO_KEY  Existing repository to build this plan on, as a key
+                        like 'github:acme/auth' (repeatable). Requires --non-
+                        interactive; an interactive run asks about prior art
+                        in the intake instead, so the flag is ignored there.
+  --ac-format {gwt,bullets}
+                        Acceptance-criteria style for generated stories: 'gwt'
+                        (Given/When/Then) or 'bullets' (clear testable
+                        statements). Default: follow the learned team profile
+                        (or YEABOI_AC_FORMAT).
+  --architecture-spike {auto,include,skip}
+                        Whether to add an architecture-validation spike when
+                        the analyzer's decision is open (2+ options):
+                        'include'/'skip' force it, 'auto' adds it unless the
+                        analyzer's confidence is high. Default: ask
+                        interactively (auto in non-interactive runs).
+  --no-bell             Disable terminal bell after pipeline steps.
+  --theme {dark,light}  Terminal colour theme (default: dark). Use 'light' for
+                        white/cream backgrounds.
+  --mode {project-planning}
+                        Skip the startup menu and launch directly into a
+                        specific mode.
+  --setup               Re-run the first-time setup wizard to update
+                        credentials.
+  --allow-path PATH     Allow filesystem access to PATH for this run only
+                        (repeatable). yeaboi is sandboxed to ~/.yeaboi;
+                        persistent allowances live in YEABOI_ALLOWED_PATHS or
+                        Settings → Allowed Paths.
+  --list-audio-devices  List the microphones yeaboi can record from, then
+                        exit. Set the one you want with VOICE_DEVICE (or
+                        Settings → Voice Input).
+  --install-voice       Install the dictation packages and speech model into
+                        this environment, then exit. The same thing double-
+                        tapping Space offers inside the app — this is the non-
+                        TUI path for CI, dev containers and terminals the
+                        full-screen UI cannot drive.
+  --dry-run             Run the TUI with mock data and fake delays — no LLM
+                        calls. For UI development.
+  --non-interactive     Run the full pipeline headlessly (no user
+                        interaction). Requires --description.
+  --output {markdown,json,html,prd}
+                        Output format for the generated plan ('prd' writes a
+                        Product Requirements Document; one extra LLM call).
+                        Only valid with --non-interactive or --export-only.
+  --description TEXT    Project description for headless mode. Use @file.txt
+                        to read from a file.
+  --team-size N         Team size (maps to intake Q6). Only used with --non-
+                        interactive.
+  --sprint-length WEEKS
+                        Sprint length in weeks (maps to intake Q8). Only used
+                        with --non-interactive.
+  --standup-run         Run a daily standup headlessly and deliver it (used by
+                        the OS scheduler).
+  --standup-session SESSION_ID
+                        Session to run the standup for. Defaults to the most
+                        recent session. Only used with --standup-run.
+  --standup-output {terminal,desktop,slack,email,all}
+                        Override delivery channel(s) for --standup-run
+                        (default: the session's saved channels).
+  --standup-interactive
+                        With --standup-run: prompt for your update + confirm
+                        (timed) before generating. What the scheduler opens in
+                        a terminal; falls back to headless when no TTY.
+  --standup-remind-transcript
+                        Post a desktop reminder if standups went unchecked
+                        against their meetings (used by the OS scheduler).
+  --learn               Analyse historical Jira/AzDO sprint data and store a
+                        team calibration profile. Subsequent planning sessions
+                        use this profile to calibrate estimates.
+  --team-profile        Display the current stored team calibration profile
+                        and exit.
+  --retro [SESSION_ID]  Compare a past session's plan to actual Jira/AzDO
+                        outcomes. Pass a session ID or omit for the most
+                        recent session.
+
+examples:
+  yeaboi                        interactive mode (recommended)
+  yeaboi --quick                quick intake (2 questions only)
+  yeaboi --questionnaire q.md   import pre-filled questionnaire
+  yeaboi --export-only --quick  non-interactive, auto-accept all
+  yeaboi --resume               resume last session (interactive picker)
+  yeaboi --resume latest         resume most recent session
+  yeaboi --list-sessions         list all saved sessions
+  yeaboi --clear-sessions        delete saved sessions
+  yeaboi --non-interactive --description "Build a todo app"  headless mode
+  yeaboi --non-interactive --description "..." --output json  JSON to stdout

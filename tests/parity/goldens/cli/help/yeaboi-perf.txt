@@ -1,0 +1,16 @@
+usage: yeaboi perf [-h] {roster,prep,complete,review,note} ...
+
+Performance mode is in beta — its output is not yet verified against real
+delivery data. Treat every 1:1 prep, summary and review as a draft to edit,
+not a verdict.
+
+positional arguments:
+  {roster,prep,complete,review,note}
+    roster              List the engineer roster from recent tracker assignees
+    prep                Prepare a 1:1 for an engineer
+    complete            Complete a held 1:1 from its transcript
+    review              Draft a periodic performance review
+    note                Record a note about an engineer
+
+options:
+  -h, --help            show this help message and exit

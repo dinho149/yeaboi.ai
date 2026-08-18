@@ -1,0 +1,36 @@
+usage: yeaboi standup-review [-h] [--session ID]
+                             [--transcript PATH [PATH ...]]
+                             [--transcript-text TEXT] [--transcript-dir DIR]
+                             [--date YYYY-MM-DD]
+                             [--max-transcripts MAX_TRANSCRIPTS]
+                             [--include-reviewed] [--file-issues]
+                             [--list-gaps] [--strict] [--format {text,json}]
+                             [PATH ...]
+
+positional arguments:
+  PATH                  Transcript files to review (same as --transcript; '-'
+                        reads the transcript from stdin)
+
+options:
+  -h, --help            show this help message and exit
+  --session ID          Session to use (default: most recent)
+  --transcript PATH [PATH ...]
+                        Review specific transcript files instead of sweeping
+                        the transcript folders
+  --transcript-text TEXT
+                        Review transcript text directly; it is saved to
+                        ~/.yeaboi/transcripts first
+  --transcript-dir DIR  An extra transcript folder for this run
+                        (~/.yeaboi/transcripts is always swept)
+  --date YYYY-MM-DD     Attribute transcripts to this standup date when their
+                        own date can't be inferred
+  --max-transcripts MAX_TRANSCRIPTS
+                        Cap on distinct standup dates reviewed (one AI call
+                        each)
+  --include-reviewed    Re-review transcripts that have already been processed
+  --file-issues         File the drafted gaps as GitHub issues (writes to a
+                        PUBLIC repo; off by default)
+  --list-gaps           List past reviews and the gap→issue ledger instead of
+                        running a review
+  --strict              Exit 3 on a degraded run (warnings present)
+  --format {text,json}  Output format

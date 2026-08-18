@@ -1,0 +1,26 @@
+usage: yeaboi agents standup [-h] [--days N] [--tracker-sources [SRC ...]]
+                             [--github-owners OWNER [OWNER ...]]
+                             [--azdo-projects NAME [NAME ...]]
+                             [--no-local-sessions] [--deliver]
+                             [--format {text,json}] [--strict]
+
+The Agents modes are in beta — costs and activity are estimates from local
+session logs and public rate tables, not your provider's bill. Treat every
+number as an estimate to verify, not an invoice.
+
+options:
+  -h, --help            show this help message and exit
+  --days N              Days to look back (default: since the previous working
+                        day)
+  --tracker-sources [SRC ...]
+                        Trackers to scan for agent-authored work (default
+                        both; pass none for local-only)
+  --github-owners OWNER [OWNER ...]
+                        GitHub owners/orgs to scan (default configured)
+  --azdo-projects NAME [NAME ...]
+                        Azure DevOps projects to scan (default configured)
+  --no-local-sessions   Skip local session logs for a tracker-only digest (use
+                        off this machine)
+  --deliver             Post the digest to the configured Slack webhook
+  --format {text,json}  Output format
+  --strict              Exit 3 on a degraded run (warnings present)

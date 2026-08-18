@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from tests.parity.foundations import argdump, argvectors, matrix
+from tests.parity.foundations import argdump, argvectors, helpdump, matrix
 from tests.parity.foundations import dump as dump_mod
 
 CLI_BINARY = os.environ.get("YEABOI_CLI_BIN")
@@ -302,6 +303,70 @@ class TestArgVectorSelfGuards:
         progs = {r["prog"] for r in (e["result"] for e in argdump.build_results()) if r["status"] == "error"}
         assert any(p != "yeaboi" for p in progs), "every error vector collapsed to the top-level parser"
         assert "yeaboi" in progs, "no error vector exercises the top-level parser"
+
+
+class TestHelpGoldens:
+    """W8 phase 4: the help screens are frozen. `go/internal/argview`'s
+    golden test replays the same committed files, so a screen regenerated
+    here re-gates the Go renderer automatically."""
+
+    def test_help_goldens_match_live(self):
+        """Every parser's --help at COLUMNS=80 must equal its committed
+        golden — the drift detector for anyone editing cli.py's help text."""
+        screens = helpdump.build_screens()
+        committed = {p.name: p.read_text(encoding="utf-8") for p in helpdump.GOLDENS_DIR.glob("*.txt")}
+        assert set(committed) == set(screens), (
+            "help goldens and the parser tree diverged — run `uv run python -m tests.parity.foundations.regen` "
+            f"(and mirror go/cmd/yeaboi/parser.go + go/internal/argview first): {sorted(set(committed) ^ set(screens))}"
+        )
+        for name, text in screens.items():
+            assert committed[name] == text, (
+                f"help screen {name}: live render disagrees with the committed golden — if the "
+                "cli.py change is deliberate, regenerate (and mirror the Go tree first)"
+            )
+
+    def test_version_action_matches_the_template(self):
+        """The --version line is pinned as a template because the product
+        version changes per release; the shape must not drift."""
+        from yeaboi import __version__
+
+        assert helpdump.render_version() == f"yeaboi {__version__}\n"
+        assert helpdump.VERSION_GOLDEN.read_text(encoding="utf-8") == helpdump.VERSION_TEMPLATE
+
+    def test_every_subcommand_has_a_help_golden(self):
+        """The walk must keep reaching every add_parser leaf: a parser whose
+        prog collides with another's golden name would silently shadow it."""
+        progs = [prog for prog, _ in helpdump.iter_parsers()]
+        names = [helpdump.golden_name(prog) for prog in progs]
+        assert len(names) == len(set(names)), "two parsers map to one golden file name"
+        assert len(progs) >= 34, "the parser walk stopped finding the nested subcommands"
+
+
+@needs_cli_binary
+@pytest.mark.parametrize(
+    "prog", [prog for prog, _ in helpdump.iter_parsers()] if CLI_BINARY else [], ids=lambda p: p.replace(" ", "-")
+)
+def test_go_binary_matches_help_goldens(prog):
+    """The help gate's subprocess arm: the Go binary's --help under
+    COLUMNS=80 must reproduce the committed screen byte-for-byte."""
+    golden = (helpdump.GOLDENS_DIR / helpdump.golden_name(prog)).read_text(encoding="utf-8")
+    env = dict(os.environ, COLUMNS=helpdump.COLUMNS)
+    out = subprocess.run(
+        [CLI_BINARY, *prog.split(" ")[1:], "--help"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    assert out.stdout == golden, f"{prog} --help: Go and Python screens disagree"
+
+
+@needs_cli_binary
+def test_go_binary_version_matches_the_template():
+    """The binary's --version must keep the template's shape (`yeaboi X`);
+    the version value itself is stamped at build time and not compared."""
+    out = subprocess.run([CLI_BINARY, "--version"], capture_output=True, text=True, check=True)
+    assert re.fullmatch(r"yeaboi \S+\n", out.stdout), out.stdout
 
 
 @needs_cli_binary

@@ -1,0 +1,5 @@
+usage: yeaboi ceremonies modes [-h] [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --format {text,json}  Output format

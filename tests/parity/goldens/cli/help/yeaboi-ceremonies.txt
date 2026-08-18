@@ -1,0 +1,16 @@
+usage: yeaboi ceremonies [-h]
+                         {list,add,remove,pause,resume,run,history,modes} ...
+
+positional arguments:
+  {list,add,remove,pause,resume,run,history,modes}
+    list                Show this session's ceremonies and what they last did
+    add                 Declare a ceremony and install its job
+    remove              Forget a ceremony and tear its job down
+    pause               Stop a ceremony firing, keeping it declared
+    resume              Start it again
+    run                 Run one now (this is what the scheduled job invokes)
+    history             What the ceremonies actually did
+    modes               Which modes can run on a cadence, and which cannot
+
+options:
+  -h, --help            show this help message and exit

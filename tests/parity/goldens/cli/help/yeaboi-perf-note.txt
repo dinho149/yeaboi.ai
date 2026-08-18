@@ -1,0 +1,12 @@
+usage: yeaboi perf note [-h] --text TEXT engineer
+
+Performance mode is in beta — its output is not yet verified against real
+delivery data. Treat every 1:1 prep, summary and review as a draft to edit,
+not a verdict.
+
+positional arguments:
+  engineer     Engineer name
+
+options:
+  -h, --help   show this help message and exit
+  --text TEXT  The note text

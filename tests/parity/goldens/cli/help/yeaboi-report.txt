@@ -1,0 +1,35 @@
+usage: yeaboi report [-h]
+                     [--period {last_week,last_sprint,last_month,quarter,window}]
+                     [--session ID] [--window-start YYYY-MM-DD]
+                     [--window-end YYYY-MM-DD] [--sprint-names A,B]
+                     [--label TEXT] [--jira-project KEY] [--azdo-project NAME]
+                     [--source {jira,azdevops,both}]
+                     [--code-sources SOURCE [SOURCE ...]]
+                     [--documentation-sources SOURCE [SOURCE ...]] [--strict]
+                     [--format {text,json}] [--theme NAME]
+
+options:
+  -h, --help            show this help message and exit
+  --period {last_week,last_sprint,last_month,quarter,window}
+  --session ID          Session to use (default: most recent)
+  --window-start YYYY-MM-DD
+                        Explicit window start (quarter/window periods)
+  --window-end YYYY-MM-DD
+                        Explicit window end
+  --sprint-names A,B    Comma-separated sprint names framing a quarter report
+  --label TEXT          Period label override (e.g. "Q3 2026")
+  --jira-project KEY    Jira project key override
+  --azdo-project NAME   Azure DevOps project override
+  --source {jira,azdevops,both}
+                        Ticketing source(s) for delivered work (default: every
+                        configured tracker)
+  --code-sources SOURCE [SOURCE ...]
+                        Code hosts to pull supporting PR/commit context from
+                        (default: all configured)
+  --documentation-sources SOURCE [SOURCE ...]
+                        Doc platforms to pull supporting doc-update context
+                        from (default: all configured)
+  --strict              Exit 3 on a degraded run (warnings/empty report)
+  --format {text,json}  Output format
+  --theme NAME          Export palette: midnight/aurora/sunset/mono or a
+                        custom name from reporting_themes.json

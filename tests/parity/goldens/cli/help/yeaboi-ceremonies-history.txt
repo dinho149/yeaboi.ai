@@ -1,0 +1,12 @@
+usage: yeaboi ceremonies history [-h] [--session ID] [--limit LIMIT]
+                                 [--format {text,json}]
+                                 [name]
+
+positional arguments:
+  name                  Only this ceremony (default: all)
+
+options:
+  -h, --help            show this help message and exit
+  --session ID
+  --limit LIMIT         Rows to show (default 20)
+  --format {text,json}  Output format

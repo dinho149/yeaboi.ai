@@ -1,0 +1,17 @@
+usage: yeaboi perf prep [-h] [--session ID] [--jira-project KEY]
+                        [--azdo-project NAME] [--strict]
+                        engineer
+
+Performance mode is in beta — its output is not yet verified against real
+delivery data. Treat every 1:1 prep, summary and review as a draft to edit,
+not a verdict.
+
+positional arguments:
+  engineer             Engineer name (see `yeaboi perf roster`)
+
+options:
+  -h, --help           show this help message and exit
+  --session ID         Session for team context (default: most recent)
+  --jira-project KEY   Jira project key override
+  --azdo-project NAME  Azure DevOps project override
+  --strict             Exit 3 on a degraded run (warnings present)

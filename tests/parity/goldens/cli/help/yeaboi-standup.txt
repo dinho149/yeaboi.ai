@@ -1,0 +1,56 @@
+usage: yeaboi standup [-h] [--session ID] [--deliver]
+                      [--channels {terminal,desktop,slack,email} [{terminal,desktop,slack,email} ...]]
+                      [--days DAYS]
+                      [--tracker-sources {jira,azure_devops} [{jira,azure_devops} ...]]
+                      [--team-members NAME [NAME ...]]
+                      [--code-sources {github,azure_devops} [{github,azure_devops} ...]]
+                      [--github-owners OWNER [OWNER ...]]
+                      [--github-repositories OWNER/REPO [OWNER/REPO ...]]
+                      [--github-excluded-repositories OWNER/REPO [OWNER/REPO ...]]
+                      [--azdo-projects PROJECT [PROJECT ...]]
+                      [--azdo-repositories PROJECT/REPO [PROJECT/REPO ...]]
+                      [--documentation-sources {confluence,notion} [{confluence,notion} ...]]
+                      [--list-members] [--schedule {install,remove,status}]
+                      [--no-transcript-review] [--strict]
+                      [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session ID          Session to use (default: most recent)
+  --deliver             Send to the configured channels (default: print)
+  --channels {terminal,desktop,slack,email} [{terminal,desktop,slack,email} ...]
+                        Override delivery channels
+  --days DAYS           Activity look-back window override
+  --tracker-sources {jira,azure_devops} [{jira,azure_devops} ...]
+                        Override saved standup tracker sources
+  --team-members NAME [NAME ...]
+                        Override the saved authoritative team roster for this
+                        run
+  --code-sources {github,azure_devops} [{github,azure_devops} ...]
+                        Override saved code providers for this run
+  --github-owners OWNER [OWNER ...]
+                        Override saved GitHub owner/organisation scope (covers
+                        every active repo inside each)
+  --github-repositories OWNER/REPO [OWNER/REPO ...]
+                        Override saved GitHub repository scope (exact repos,
+                        unioned with --github-owners)
+  --github-excluded-repositories OWNER/REPO [OWNER/REPO ...]
+                        Override saved GitHub repos to drop from an included
+                        owner's expansion
+  --azdo-projects PROJECT [PROJECT ...]
+                        Override saved Azure DevOps project scope (all
+                        repositories in each project)
+  --azdo-repositories PROJECT/REPO [PROJECT/REPO ...]
+                        Legacy Azure Repos override
+  --documentation-sources {confluence,notion} [{confluence,notion} ...]
+                        Override saved documentation providers for this run
+  --list-members        List discovered members for the selected/saved tracker
+                        sources and exit
+  --schedule {install,remove,status}
+                        Manage the OS schedule (launchd/cron) that runs the
+                        standup daily, instead of running one now
+  --no-transcript-review
+                        Skip the pre-standup review of any unreviewed meeting
+                        transcripts
+  --strict              Exit 3 on a degraded run (warnings present)
+  --format {text,json}  Output format

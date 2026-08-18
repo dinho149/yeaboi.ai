@@ -1,0 +1,15 @@
+usage: yeaboi provenance [-h] {audit,trace} ...
+
+Every deterministic signal yeaboi surfaces (practice nudges, blocker flags,
+confidence adjustments, conflict cards, performance preps and reviews) is
+recorded in a tamper-evident hash chain with its evidence. This command
+verifies and reads that chain — deterministic, local, no LLM involved.
+
+positional arguments:
+  {audit,trace}
+    audit        Verify every chain link and summarise the recorded decisions
+    trace        The "why" trail behind one recorded decision, evidence
+                 included
+
+options:
+  -h, --help     show this help message and exit

@@ -1,0 +1,9 @@
+usage: yeaboi retro [-h] [--session ID] [--limit LIMIT] [--export-latest]
+                    [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session ID          Session to read (default: most recent)
+  --limit LIMIT         Number of past retros to show (default 10)
+  --export-latest       Also export the latest retro to Markdown + HTML
+  --format {text,json}  Output format

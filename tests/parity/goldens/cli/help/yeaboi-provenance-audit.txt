@@ -1,0 +1,14 @@
+usage: yeaboi provenance audit [-h] [--window-days N] [--format {text,json}]
+                               [--strict]
+
+Every deterministic signal yeaboi surfaces (practice nudges, blocker flags,
+confidence adjustments, conflict cards, performance preps and reviews) is
+recorded in a tamper-evident hash chain with its evidence. This command
+verifies and reads that chain — deterministic, local, no LLM involved.
+
+options:
+  -h, --help            show this help message and exit
+  --window-days N       Days to look back (default 30)
+  --format {text,json}  Output format
+  --strict              Exit 3 on a broken chain or an empty one (warnings
+                        present)

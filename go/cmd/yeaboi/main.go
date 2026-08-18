@@ -16,9 +16,29 @@ import (
 	"os"
 
 	ap "github.com/yeaboi-ai/yeaboi/go/internal/argparse"
+	"github.com/yeaboi-ai/yeaboi/go/internal/argview"
 	"github.com/yeaboi-ai/yeaboi/go/internal/foundations"
 	"github.com/yeaboi-ai/yeaboi/go/internal/home"
 )
+
+// parserByProg finds the (sub)parser whose prog is the one a help action or
+// error carried — the tree is small, so a walk beats bookkeeping.
+func parserByProg(p *ap.Parser, prog string) *ap.Parser {
+	if p.Prog == prog {
+		return p
+	}
+	for _, a := range p.Actions {
+		if a.Kind != ap.KindSubParsers {
+			continue
+		}
+		for _, name := range a.Sub.Names {
+			if found := parserByProg(a.Sub.Parsers[name], prog); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
 
 // version is stamped by -ldflags; the fallback marks a local dev build.
 var version = "0.0.0+dev"
@@ -34,18 +54,26 @@ func main() {
 		}
 	}
 
-	result := buildParser().ParseArgs(args)
+	parser := buildParser()
+	result := parser.ParseArgs(args)
 	switch result.Kind {
 	case ap.ResultError:
-		// Usage rendering arrives with internal/argview (W8 phase 4); the
-		// error line itself is already argparse's.
+		// argparse prints the erroring parser's usage block above the
+		// error line, both on stderr.
+		if p := parserByProg(parser, result.Prog); p != nil {
+			fmt.Fprint(os.Stderr, argview.FormatUsage(p))
+		}
 		fmt.Fprintf(os.Stderr, "%s: error: %s\n", result.Prog, result.Message)
 		os.Exit(2)
 	case ap.ResultVersion:
 		fmt.Printf("yeaboi %s\n", version)
 		os.Exit(0)
 	case ap.ResultHelp:
-		fmt.Fprintf(os.Stderr, "%s: help text arrives with internal/argview (W8 phase 4)\n", result.Prog)
+		// -h fires on the parser it reached (a subcommand's -h prints that
+		// subcommand's screen), to stdout, exit 0 — exactly argparse.
+		if p := parserByProg(parser, result.Prog); p != nil {
+			fmt.Print(argview.FormatHelp(p))
+		}
 		os.Exit(0)
 	}
 	_ = fromNamespace(result.Ns)

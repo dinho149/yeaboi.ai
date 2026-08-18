@@ -1,0 +1,19 @@
+usage: yeaboi agents [-h] {cost,advisor,standup,security} ...
+
+The Agents modes are in beta — costs and activity are estimates from local
+session logs and public rate tables, not your provider's bill. Treat every
+number as an estimate to verify, not an invoice.
+
+positional arguments:
+  {cost,advisor,standup,security}
+    cost                What your agents cost: per-model/project/source
+                        breakdowns + daily trend
+    advisor             How much of your agent spend is recoverable: Read
+                        waste, cache health, prompt-prefix churn
+    standup             Daily digest of what your agents did (sessions +
+                        agent-authored commits/PRs)
+    security            Audit your agent setup: permissions, MCP servers,
+                        secrets exposure, risky commands
+
+options:
+  -h, --help            show this help message and exit
