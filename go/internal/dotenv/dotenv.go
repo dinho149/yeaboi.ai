@@ -207,11 +207,38 @@ func SetKey(path, key, value string) error {
 		b.WriteString(lineOut)
 	}
 
-	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+	if err := writeFileAtomic(path, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	if hadMode {
 		return os.Chmod(path, originalMode)
 	}
 	return nil
+}
+
+// writeFileAtomic mirrors rewrite()'s NamedTemporaryFile + shutil.move: the
+// new content lands in a same-directory temp file that is renamed over path,
+// so an error or a kill mid-write leaves the original file — the one holding
+// every configured API key — completely intact. It also means a symlink at
+// path is replaced by a regular file rather than written through, exactly
+// as shutil.move replaces it.
+func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".env-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename has happened
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

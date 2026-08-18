@@ -106,6 +106,28 @@ func TestRotationDropsTheOldestBackup(t *testing.T) {
 	}
 }
 
+func TestRegistryEmitSurvivesABrokenHandler(t *testing.T) {
+	// Handler.emit wraps its write in "except Exception: handleError", and
+	// callHandlers keeps iterating — a broken sink must never raise into
+	// the caller or silence the handlers attached after it.
+	dir := t.TempDir()
+	f := &Formatter{Loc: time.UTC, Lookup: noEnv}
+	reg := NewRegistry(func() string { return "INFO" }, f)
+	if err := reg.Attach("broken", filepath.Join(dir, "broken", "a.log")); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Attach("tui", filepath.Join(dir, "tui", "yeaboi.log")); err != nil {
+		t.Fatal(err)
+	}
+	reg.handlers["broken"].file.Close() // the first sink breaks after attach
+	reg.Emit(Record{Name: "yeaboi.x", Level: LevelError, Message: "still heard", Created: 1755500000})
+	b, err := os.ReadFile(filepath.Join(dir, "tui", "yeaboi.log"))
+	if err != nil || !strings.Contains(string(b), "still heard") {
+		t.Errorf("a broken handler must not silence the others: %v %q", err, b)
+	}
+	reg.Detach("tui")
+}
+
 func TestRegistryIdempotenceAndSessionReplace(t *testing.T) {
 	dir := t.TempDir()
 	f := &Formatter{Loc: time.UTC, Lookup: noEnv}
@@ -127,9 +149,7 @@ func TestRegistryIdempotenceAndSessionReplace(t *testing.T) {
 	if len(keys) != 2 || keys[0] != "session" || keys[1] != "tui" {
 		t.Fatalf("keys: %v", keys)
 	}
-	if err := reg.Emit(Record{Name: "yeaboi.x", Level: LevelError, Message: "boom", Created: 1755500000}); err != nil {
-		t.Fatal(err)
-	}
+	reg.Emit(Record{Name: "yeaboi.x", Level: LevelError, Message: "boom", Created: 1755500000})
 	reg.Close()
 	if raw, _ := os.ReadFile(filepath.Join(dir, "elsewhere.log")); len(raw) != 0 {
 		t.Error("re-attaching an existing key must be a no-op")

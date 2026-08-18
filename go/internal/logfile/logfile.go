@@ -13,6 +13,11 @@
 //     module (debug/info). The parity scenario disables that logger on the
 //     Python side because those lines carry wall-clock timestamps; the Go
 //     twin follows the exports-package precedent and logs nothing at all.
+//   - Python's Handler.handleError prints a traceback to sys.stderr when a
+//     handler write fails (raiseExceptions defaults true); Registry.Emit
+//     swallows the error silently instead — the invariant that matters
+//     (never raise into the caller, never stop the other handlers) is
+//     matched, and nothing observable depends on that stderr text.
 package logfile
 
 import (
@@ -307,20 +312,21 @@ func (r *Registry) effectiveLevel() int {
 
 // Emit mirrors “logger.log“ through the namespace logger: the
 // isEnabledFor gate, then callHandlers' per-handler level check, in attach
-// order.
-func (r *Registry) Emit(rec Record) error {
+// order. Handler.emit wraps its rollover and write in
+// “except Exception: self.handleError(record)“, and callHandlers keeps
+// iterating whatever any one handler did — so logging never raises into
+// the caller, and one broken sink (a read-only mode log directory) never
+// silences the others. A failed handler is skipped and the loop continues.
+func (r *Registry) Emit(rec Record) {
 	if rec.Level < r.effectiveLevel() {
-		return nil
+		return
 	}
 	for _, key := range r.order {
 		h := r.handlers[key]
 		if rec.Level >= h.Level() {
-			if err := h.Emit(rec); err != nil {
-				return err
-			}
+			_ = h.Emit(rec) // handleError: swallowed, see the deviations block
 		}
 	}
-	return nil
 }
 
 // Keys returns the registered handler keys, sorted (the parity dump's

@@ -160,7 +160,8 @@ func dumpLogfile(paths *home.Paths, cfg *config.Config) (map[string]any, error) 
 	// --- registry scenario ----------------------------------------------
 	reg := logfile.NewRegistry(cfg.GetLogLevel, formatter)
 	emit := func(name string, level int, msg string, offset int64) error {
-		return reg.Emit(logfile.Record{Name: name, Level: level, Message: msg, Created: logTS + offset})
+		reg.Emit(logfile.Record{Name: name, Level: level, Message: msg, Created: logTS + offset})
+		return nil
 	}
 	tuiLog, err := paths.GetTUILogPath()
 	if err != nil {

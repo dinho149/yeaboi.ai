@@ -189,6 +189,37 @@ func TestSetKeySemantics(t *testing.T) {
 		}
 	})
 
+	t.Run("replaces a symlink instead of writing through it", func(t *testing.T) {
+		// rewrite() writes a NamedTemporaryFile and shutil.moves it over
+		// path, so a symlinked .env becomes a regular file and its old
+		// target is never touched; writeFileAtomic must do the same.
+		dir := t.TempDir()
+		target := filepath.Join(dir, "target.env")
+		if err := os.WriteFile(target, []byte("FOO=old\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(dir, ".env")
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		if err := SetKey(link, "FOO", "new"); err != nil {
+			t.Fatal(err)
+		}
+		if fi, err := os.Lstat(link); err != nil || !fi.Mode().IsRegular() {
+			t.Errorf("path must become a regular file, got %v %v", fi.Mode(), err)
+		}
+		if data, _ := os.ReadFile(target); string(data) != "FOO=old\n" {
+			t.Errorf("the symlink target must be untouched, got %q", data)
+		}
+		if data, _ := os.ReadFile(link); string(data) != "FOO='new'\n" {
+			t.Errorf("content = %q", data)
+		}
+		leftovers, _ := filepath.Glob(filepath.Join(dir, ".env-*"))
+		if len(leftovers) != 0 {
+			t.Errorf("temp files must not survive a successful rename: %v", leftovers)
+		}
+	})
+
 	t.Run("appends after a newline-less tail", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), ".env")
 		if err := os.WriteFile(path, []byte("A=1"), 0o600); err != nil {
