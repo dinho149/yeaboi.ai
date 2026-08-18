@@ -392,3 +392,158 @@ machine's `$HOME`/terminal).
   published to PyPI. Install docs advertise `uv tool install yeaboi` (README ~33–88,
   `docs/index.html` hero/#start); Homebrew deliberately removed; `tests/unit/test_site_seo.py`
   pins site metadata; `docs/` is the GH Pages site (CNAME yeaboi.ai) — serves `install.sh` at W19.
+
+---
+
+## 9. PR 3 — Wave 9: persistence
+
+**Base**: `cowork/migration-w9` off `origin/chore/go-migration` (carries W7+W8). No RPC methods —
+§5 names W9 a future-binary wave, exercised by its gate, never RPC: `binaryVersion` untouched, no
+`contracts/v1/` change, no `packaging/yeaboi-core` bump. No new go.mod deps (`modernc.org/sqlite`
+is already the driver).
+
+### Verified ground truth (surveyed 2026-08-18 on the integration branch)
+
+- **One database.** `~/.yeaboi/data/sessions.db` (`paths.DB_PATH`; legacy `~/.yeaboi/sessions.db`
+  = `LEGACY_DB_PATH`). Every mode store opens its **own** sqlite3 connection to the same file:
+  autocommit (`isolation_level=None`), `check_same_thread=False`, owner-only perms re-hardened at
+  open. There is no cross-store transaction anywhere.
+- **The ladder moved since §3 was written: `CURRENT_SCHEMA_VERSION = 30`**, not 27 (v28 standup
+  GitHub owner scope, v29 repo exclusions, v30 planning prior-art feedback). The §3 row's "v27"
+  stays as history; this wave ports v1→v30 and whatever lands before its last phase — the ladder
+  is append-only upstream, so extending is cheap and mandatory at rebase time.
+- **`sessions.py` (1,239 L) owns the single ladder.** Contractual behaviors beyond the DDL:
+  the 8B `ALTER TABLE … ADD COLUMN session_state` try/except at every open; `schema_info`
+  create + duplicate-row dedupe (COUNT first so steady-state opens stay read-only; keep the
+  highest version via one atomic DELETE); no-row ⇒ stamp `CURRENT_SCHEMA_VERSION` guarded
+  against racing opens, then `_run_migrations(0)` (a fresh DB takes the full ladder); stored >
+  current ⇒ `schema_mismatch = True`, **no write except** the always-applied idempotent v26
+  self-heal `_apply_edit_provenance()`; stored < current ⇒ migrate then UPDATE the stamp.
+- **Ladder quirks that are the port's real subject**: v11 roadmap singleton→list **data**
+  migration (seed from `roadmap_config` falling back to newest `roadmap_history`, locator
+  doubling as label); v17 `azdo_projects` derived from `azdo_repositories` (str.partition on
+  "/", order-preserving dedupe via dict.fromkeys, only when the column set is complete); the
+  v19/v20 renumbering; the v21/v26 number-collision repair (`if 21 <= from_version < 26`
+  re-runs the v21 body); v28/v29's bare-except + `added` flag (log only when the ALTER landed).
+- **Dual DDL paths, deliberately.** Per-mode stores ALSO self-migrate at open with idempotent
+  CREATE-IF-NOT-EXISTS + try/except ALTERs (StandupStore alone carries ~19 such ALTERs, a
+  superset of the ladder's standup steps); `agent_advisor_reports`, ceremonies (2 tables),
+  ship (2), provenance (2), `team_roster_cache`, `standup_metadata_cache` and the team_profile
+  caches exist **only** via store-open DDL, never via the ladder. A real DB's schema is the
+  union of both paths; 43 tables total incl. `schema_info`.
+- **`paths.get_db_path()`** re-hardens 0700/0600 on every call; both-exist branch merges legacy
+  `team_profiles` (INSERT OR IGNORE, `team_id.split("-", 1)` → source/project_key) and
+  `token_usage` into the new DB then unlinks legacy; new-missing branch renames legacy into
+  place. W8 ported everything except the merge — `// W9:` markers at
+  `go/internal/home/helpers.go:40,59`, `home.go:10`, `migrate.go:3`.
+- **Go today**: `go/internal/agentwatch/store.go` pins `currentSchemaVersion = 30`
+  (refuse-newer → error 1001, `PRAGMA user_version` fallback when `schema_info` is absent) and
+  runs agentwatch DDL only. `TestSchemaGuardLockstep` pins that const to Python's by regex over
+  that one file.
+- **`persistence.py` (978 L) is not SQLite** — `projects.json` flat file + states dir. Out.
+- **`fs_policy.py` (201 L)** — user-supplied-path sandbox. `sessions.db` lives under
+  `~/.yeaboi`, which is not a user-supplied path; W9 never crosses that boundary. Out.
+
+### Scope IN
+
+1. **`go/internal/sessions`** (new; the twin of `sessions.py`'s store-open + ladder surface):
+   `Open(dbPath)` reproducing `SessionStore.__init__` exactly — `_SCHEMA`/`_SCHEMA_INFO` DDL,
+   the 8B ALTER, schema_info dedupe/stamp/compare semantics, the mismatch flag, the
+   v26-on-newer self-heal — and `runMigrations(fromVersion)` carrying all thirty steps
+   including the v11/v17 data migrations and the v21/v26 repair. The schema ceiling moves
+   here: `sessions.CurrentSchemaVersion` becomes the one Go source; `internal/agentwatch`
+   drops its local const and imports it (comment and refusal behavior unchanged).
+2. **Per-store open-time DDL twins**, in the same package: the union-schema repair set — every
+   store's CREATE-IF-NOT-EXISTS scripts and idempotent ALTER lists (standup, agentwatch,
+   artifacts, team_profile + its two caches, retro, poker, performance, reporting, roadmap,
+   ceremonies, ship, provenance, team_roster, standup metadata cache, prior-art feedback) as
+   data-driven DDL, exposed as `OpenStoreDDL(name, conn)`. **CRUD does not port here** — W10
+   brings each engine's accessors with the engine.
+3. **`go/internal/home`**: the deferred `GetDBPath` both-exist merge + legacy-rename branches,
+   byte-for-byte semantics incl. INSERT OR IGNORE dedupe and the split fallback for
+   un-prefixed team_ids; delete the three `// W9:` markers.
+4. **Gate plumbing on `go/cmd/yeaboi`** behind `-tags paritydump` (W8 precedent, dump_gate.go):
+   `__migrate-db <path>` (Open semantics; prints `{schema_mismatch, stamped_version}` JSON),
+   `__dump-db <path>` (canonical JSON: per table, `PRAGMA table_info` projection + all rows
+   deterministically ordered), `__open-stores <path>` (run every store's open-time DDL).
+
+**Scope OUT**: store CRUD/queries (W10, per engine); `persistence.py` (flat JSON, no ladder —
+moves with its TUI callers at W17/W18); `fs_policy.py` (→ W10, the first Go user-path access:
+engine inputs); provenance chain verification logic (W10); `standup/cache.py` read/write logic
+(the table's DDL is in, the caching is W10); any change observable from the Python product.
+
+### The gate — `tests/parity/persistence/`
+
+- **Fixture builder** (`make_fixture.py`, committed, deterministic, pinned timestamps): seeded
+  DBs at every ladder version v1…v29, built by running the real historical DDL forward and
+  inserting rows into every table that exists at that version — nasty-string corpus (NBSP,
+  U+2028, astral emoji, Turkish İ, `|`, embedded quotes/newlines, NULLs, huge ints, floats
+  that exercise json widening) so v11 seeding, v17 derivation and v26 repair migrate **data**,
+  not just DDL. Plus the pathological set: pre-8C DB with no schema_info row; 8A DB without
+  `session_state`; duplicate schema_info rows (dedupe must keep the highest); the v21-collision
+  lineage (stamped 21 meaning transcript review, advanced to 25, provenance columns missing);
+  a v31 "from the future" DB (mismatch flag, v26 self-heal applied, nothing else written);
+  crash-mid-migration (DDL ahead of stamp); store-open-only DBs (built via each Python store,
+  no SessionStore ever constructed).
+- **Both sides migrate a copy; diff full projections.** Python dumper subprocess opens through
+  `SessionStore` then dumps; Go via `__migrate-db` + `__dump-db`. Canonical JSON per table
+  (schema projection + rows in deterministic order), compared with `_diff.approx_equal` plus
+  an exact-bytes compare of the dumps. Corpus self-guards run unskipped; the suite skips only
+  when `YEABOI_CLI_BIN` is absent (existing pattern; CI builds it).
+- **Union-schema convergence test**: fresh DB via ladder vs fresh DB via every-store-open,
+  dumped on both sides — all four projections identical. This pins the dual-path invariant
+  nothing currently guards.
+- **Mismatch parity**: the v31 fixture's `{schema_mismatch, stamped_version}` output equal on
+  both sides, and the post-open dump proves neither side wrote beyond the v26 self-heal.
+
+### Lockstep bumps
+
+`TestSchemaGuardLockstep` retargets its regex to `go/internal/sessions` (agentwatch's local
+const is deleted, so the old anchor vanishes — the test fails loudly until retargeted, which is
+the right failure). CLAUDE.md dual-maintenance gains the persistence row: `sessions.py`'s
+store-open + ladder + `paths.get_db_path`'s merge ↔ `go/internal/sessions` +
+`go/internal/home`. Freeze-table entries for **W8's area** land on this branch
+(`tests/unit/test_migration_freeze.py`): `config.py`, `paths.py`, `logging_setup.py`,
+`redaction.py` — whole files, their mirrored surface IS the file; `cli.py` deliberately NOT
+frozen (the help goldens are already its drift detector, and the file is mostly W10/W17
+dispatch work a hash freeze would block), recorded in the table comment per the W6/W7
+precedent. CLAUDE.md's W8 wording flips to Go-as-reference for the frozen four.
+
+### Phase commits
+
+1. `scaffold the persistence parity gate` — fixture builder, Python dumper, dump canonicalizer,
+   gate test running Python-vs-Python (self-test green without the Go side; Go assertions skip
+   on missing `YEABOI_CLI_BIN`, the existing pattern).
+2. `port the sessions store open semantics and ladder v1→v17` — `go/internal/sessions` Open +
+   schema_info semantics + migrations through v17 (incl. the v11 and v17 data migrations);
+   `__migrate-db`/`__dump-db` land; gate covers fixtures v1…v16.
+3. `port ladder v18→v30 and the newer-db semantics` — the v19/v20 renumber, v21/v26 repair,
+   v28/v29 flag logging, fresh-DB full-DDL path, mismatch fixtures; ceiling const moves to
+   `sessions.CurrentSchemaVersion`; lockstep test retargeted.
+4. `port the store open-time ddl and pin the union schema` — `OpenStoreDDL` for all stores,
+   `__open-stores`, store-open-only fixtures, convergence test.
+5. `port the get_db_path legacy merge and wire the wave` — `internal/home` merge/rename port,
+   `// W9:` markers deleted, Makefile/ci parity globs (platform's `**Extends**` sites, named
+   operations only), CLAUDE.md row + reference flip, W8 freeze entries.
+6. (reserved) review followups after the independent review.
+
+Verification per phase: `make go-test && make go-lint && make parity && make test && make lint`;
+final: fresh-clone `make parity` proving fixtures are hermetic, plus E2E — copy a real dev
+`sessions.db`, migrate it with `yeaboi __migrate-db` and with Python, byte-diff the dumps.
+
+### Risks
+
+- **Dump canonicalization is the gate's own correctness surface**: compare `PRAGMA table_info`
+  projections + ordered rows, never `sqlite_master.sql` text (CPython's SQLite and
+  modernc.org/sqlite may normalize stored DDL differently). `sqlite_sequence` included
+  deliberately (v11 seeding writes it); retreat = exclude it and document, if the two engines'
+  counter behavior diverges.
+- **json.Number echo vs float widening** (`3` vs `3.0`) in seeded JSON columns — same trap as
+  W7, hence the exact-bytes compare.
+- **executescript vs stepwise exec**: Python's `executescript` issues an implicit COMMIT;
+  autocommit connections make this invisible, but the Go port must not batch differently
+  around the crash-mid-migration fixtures.
+- **The ladder moves under the wave**: any new vN on main forces a rebase + one more ported
+  step before the last phase; append-only, bounded, but it resets phase-3 review.
+- **Windows chmod best-effort** — W19, unchanged. Surface-parity/web-bundle DoD items:
+  `Exempt("no product surface — future-binary wave, gate-only")`, recorded explicitly.
