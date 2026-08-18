@@ -1,0 +1,2921 @@
+{
+  "dump": {
+    "agent_advisor_reports": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "period_start",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          4,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          5,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "agent_ingest_files": {
+      "columns": [
+        [
+          0,
+          "path",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "source",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "size",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          3,
+          "mtime",
+          "REAL",
+          1,
+          "0",
+          0
+        ],
+        [
+          4,
+          "first_line_sha",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "last_ingested_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_agent_ingest_files_1"
+      ],
+      "rows": []
+    },
+    "agent_security_findings": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "category",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "severity",
+          "TEXT",
+          1,
+          "'info'",
+          0
+        ],
+        [
+          3,
+          "pattern",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "source_path",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "line_no",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          6,
+          "session_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "detail",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "created_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_agent_security_findings_1"
+      ],
+      "rows": []
+    },
+    "agent_security_reports": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "scan_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          4,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          5,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "agent_sessions": {
+      "columns": [
+        [
+          0,
+          "source_path",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "source",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "project_path",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "git_branch",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "cli_version",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "started_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "ended_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "turns",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          9,
+          "model_usage_json",
+          "TEXT",
+          1,
+          "'{}'",
+          0
+        ],
+        [
+          10,
+          "tool_counts_json",
+          "TEXT",
+          1,
+          "'{}'",
+          0
+        ],
+        [
+          11,
+          "updated_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [
+        "idx_agent_sessions_ended",
+        "idx_agent_sessions_session",
+        "sqlite_autoindex_agent_sessions_1"
+      ],
+      "rows": []
+    },
+    "agent_standup_digests": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "on_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          4,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          5,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "agent_usage_reports": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "period_start",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "period_end",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          5,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          6,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "analysis_enrichment_cache": {
+      "columns": [
+        [
+          0,
+          "task",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "cache_key",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "model",
+          "TEXT",
+          1,
+          null,
+          3
+        ],
+        [
+          3,
+          "result_json",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "last_used_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_analysis_enrichment_cache_1"
+      ],
+      "rows": []
+    },
+    "analysis_ticket_cache": {
+      "columns": [
+        [
+          0,
+          "source",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "project_key",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "issue_key",
+          "TEXT",
+          1,
+          null,
+          3
+        ],
+        [
+          3,
+          "content_hash",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "parsed_json",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "last_used_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_analysis_ticket_cache_1"
+      ],
+      "rows": [
+        [
+          "plain value ⟨analysis_ticket_cache:0:0⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨analysis_ticket_cache:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨analysis_ticket_cache:2:0⟩",
+          "ünïcode côté ¡final! ⟨analysis_ticket_cache:3:0⟩",
+          "line sep and\r\ncrlf ⟨analysis_ticket_cache:4:0⟩",
+          "2026-01-10T05:15:00+00:00"
+        ],
+        [
+          "nbsp and em space ⟨analysis_ticket_cache:0:1⟩",
+          "turkish İstanbul ı ⟨analysis_ticket_cache:1:1⟩",
+          "newline\nand\ttab ⟨analysis_ticket_cache:2:1⟩",
+          "plain value ⟨analysis_ticket_cache:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨analysis_ticket_cache:4:1⟩",
+          "2026-01-11T05:15:01+00:00"
+        ],
+        [
+          "line sep and\r\ncrlf ⟨analysis_ticket_cache:0:2⟩",
+          "pipe | and *emphasis* _under_ ⟨analysis_ticket_cache:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨analysis_ticket_cache:2:2⟩",
+          "nbsp and em space ⟨analysis_ticket_cache:3:2⟩",
+          "turkish İstanbul ı ⟨analysis_ticket_cache:4:2⟩",
+          "2026-01-12T05:15:02+00:00"
+        ]
+      ]
+    },
+    "artifact_edits": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "edit_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "share_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "artifact_kind",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "artifact_ref",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "base_hash",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "seq",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          7,
+          "op",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "path",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          9,
+          "value",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          10,
+          "base",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          11,
+          "label",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          12,
+          "target",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          13,
+          "author",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          14,
+          "avatar",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          15,
+          "pid",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          16,
+          "ip_hash",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          17,
+          "created_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [
+        "idx_artifact_edits_edit_id",
+        "idx_artifact_edits_ref",
+        "idx_artifact_edits_seq"
+      ],
+      "rows": []
+    },
+    "performance_notes": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "engineer",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "note_text",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨performance_notes:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨performance_notes:2:0⟩",
+          "2026-01-10T03:15:00+00:00"
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨performance_notes:1:1⟩",
+          "newline\nand\ttab ⟨performance_notes:2:1⟩",
+          "2026-01-11T03:15:01+00:00"
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨performance_notes:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨performance_notes:2:2⟩",
+          "2026-01-12T03:15:02+00:00"
+        ]
+      ]
+    },
+    "performance_one_on_ones": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "engineer",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "session_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "kind",
+          "TEXT",
+          1,
+          "'prep'",
+          0
+        ],
+        [
+          4,
+          "on_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "action_items_json",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          7,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          8,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          9,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨performance_one_on_ones:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨performance_one_on_ones:2:0⟩",
+          "ünïcode côté ¡final! ⟨performance_one_on_ones:3:0⟩",
+          "line sep and\r\ncrlf ⟨performance_one_on_ones:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨performance_one_on_ones:5:0⟩",
+          "escape \\back \u0000 null-byte ⟨performance_one_on_ones:6:0⟩",
+          "2026-01-10T07:15:00+00:00",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨performance_one_on_ones:1:1⟩",
+          "newline\nand\ttab ⟨performance_one_on_ones:2:1⟩",
+          "plain value ⟨performance_one_on_ones:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨performance_one_on_ones:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨performance_one_on_ones:5:1⟩",
+          "ünïcode côté ¡final! ⟨performance_one_on_ones:6:1⟩",
+          "2026-01-11T07:15:01+00:00",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨performance_one_on_ones:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨performance_one_on_ones:2:2⟩",
+          "nbsp and em space ⟨performance_one_on_ones:3:2⟩",
+          "turkish İstanbul ı ⟨performance_one_on_ones:4:2⟩",
+          "newline\nand\ttab ⟨performance_one_on_ones:5:2⟩",
+          "plain value ⟨performance_one_on_ones:6:2⟩",
+          "2026-01-12T07:15:02+00:00",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "performance_reviews": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "engineer",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "session_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "period_start",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "period_end",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          7,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          8,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨performance_reviews:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨performance_reviews:2:0⟩",
+          "ünïcode côté ¡final! ⟨performance_reviews:3:0⟩",
+          "line sep and\r\ncrlf ⟨performance_reviews:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨performance_reviews:5:0⟩",
+          "2026-01-10T06:15:00+00:00",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨performance_reviews:1:1⟩",
+          "newline\nand\ttab ⟨performance_reviews:2:1⟩",
+          "plain value ⟨performance_reviews:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨performance_reviews:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨performance_reviews:5:1⟩",
+          "2026-01-11T06:15:01+00:00",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨performance_reviews:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨performance_reviews:2:2⟩",
+          "nbsp and em space ⟨performance_reviews:3:2⟩",
+          "turkish İstanbul ı ⟨performance_reviews:4:2⟩",
+          "newline\nand\ttab ⟨performance_reviews:5:2⟩",
+          "2026-01-12T06:15:02+00:00",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "planning_prior_art_feedback": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "repo_key",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "verdict",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "reason",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "repo_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "project",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_planning_prior_art_feedback_1"
+      ],
+      "rows": []
+    },
+    "poker_history": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "run_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "poker_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "project_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "source",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "scope_label",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "ticket_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          8,
+          "estimated_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          9,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "reporting_history": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "run_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "period",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "period_end",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "project_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "item_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          7,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          9,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨reporting_history:1:0⟩",
+          "2026-01-10T02:15:00+00:00",
+          "ünïcode côté ¡final! ⟨reporting_history:3:0⟩",
+          "line sep and\r\ncrlf ⟨reporting_history:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨reporting_history:5:0⟩",
+          13,
+          "nbsp and em space ⟨reporting_history:7:0⟩",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨reporting_history:1:1⟩",
+          "2026-01-11T02:15:01+00:00",
+          "plain value ⟨reporting_history:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨reporting_history:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨reporting_history:5:1⟩",
+          -3,
+          "line sep and\r\ncrlf ⟨reporting_history:7:1⟩",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨reporting_history:1:2⟩",
+          "2026-01-12T02:15:02+00:00",
+          "nbsp and em space ⟨reporting_history:3:2⟩",
+          "turkish İstanbul ı ⟨reporting_history:4:2⟩",
+          "newline\nand\ttab ⟨reporting_history:5:2⟩",
+          9223372036854775807,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨reporting_history:7:2⟩",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "retro_history": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "run_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "retro_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "project_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "card_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          6,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          8,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨retro_history:1:0⟩",
+          "2026-01-10T02:15:00+00:00",
+          "ünïcode côté ¡final! ⟨retro_history:3:0⟩",
+          "line sep and\r\ncrlf ⟨retro_history:4:0⟩",
+          12,
+          "escape \\back \u0000 null-byte ⟨retro_history:6:0⟩",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨retro_history:1:1⟩",
+          "2026-01-11T02:15:01+00:00",
+          "plain value ⟨retro_history:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨retro_history:4:1⟩",
+          -3,
+          "ünïcode côté ¡final! ⟨retro_history:6:1⟩",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨retro_history:1:2⟩",
+          "2026-01-12T02:15:02+00:00",
+          "nbsp and em space ⟨retro_history:3:2⟩",
+          "turkish İstanbul ı ⟨retro_history:4:2⟩",
+          9223372036854775807,
+          "plain value ⟨retro_history:6:2⟩",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "roadmap_config": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "source_type",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "source_locator",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "source_label",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "updated_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨roadmap_config:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨roadmap_config:2:0⟩",
+          "ünïcode côté ¡final! ⟨roadmap_config:3:0⟩",
+          "2026-01-10T04:15:00+00:00"
+        ]
+      ]
+    },
+    "roadmap_history": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "run_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "source_type",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "source_locator",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "project_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          5,
+          "analysis_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          7,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "2026-01-10T01:15:00+00:00",
+          "quotes \"double\" 'single' `tick` ⟨roadmap_history:2:0⟩",
+          "ünïcode côté ¡final! ⟨roadmap_history:3:0⟩",
+          11,
+          "pipe | and *emphasis* _under_ ⟨roadmap_history:5:0⟩",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "2026-01-11T01:15:01+00:00",
+          "newline\nand\ttab ⟨roadmap_history:2:1⟩",
+          "plain value ⟨roadmap_history:3:1⟩",
+          -3,
+          "quotes \"double\" 'single' `tick` ⟨roadmap_history:5:1⟩",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "2026-01-12T01:15:02+00:00",
+          "escape \\back \u0000 null-byte ⟨roadmap_history:2:2⟩",
+          "nbsp and em space ⟨roadmap_history:3:2⟩",
+          9223372036854775807,
+          "newline\nand\ttab ⟨roadmap_history:5:2⟩",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "roadmaps": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "label",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "source_type",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "source_locator",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "source_label",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "analysis_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "project_count",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          7,
+          "created_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "updated_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨roadmaps:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨roadmaps:2:0⟩",
+          "ünïcode côté ¡final! ⟨roadmaps:3:0⟩",
+          "line sep and\r\ncrlf ⟨roadmaps:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨roadmaps:5:0⟩",
+          13,
+          "2026-01-10T07:15:00+00:00",
+          "2026-01-10T08:15:00+00:00"
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨roadmaps:1:1⟩",
+          "newline\nand\ttab ⟨roadmaps:2:1⟩",
+          "plain value ⟨roadmaps:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨roadmaps:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨roadmaps:5:1⟩",
+          -3,
+          "2026-01-11T07:15:01+00:00",
+          "2026-01-11T08:15:01+00:00"
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨roadmaps:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨roadmaps:2:2⟩",
+          "nbsp and em space ⟨roadmaps:3:2⟩",
+          "turkish İstanbul ı ⟨roadmaps:4:2⟩",
+          "newline\nand\ttab ⟨roadmaps:5:2⟩",
+          9223372036854775807,
+          "2026-01-12T07:15:02+00:00",
+          "2026-01-12T08:15:02+00:00"
+        ]
+      ]
+    },
+    "schema_info": {
+      "columns": [
+        [
+          0,
+          "schema_version",
+          "INT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          30
+        ]
+      ]
+    },
+    "sessions_meta": {
+      "columns": [
+        [
+          0,
+          "session_id",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "project_name",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "last_modified",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "last_node_completed",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "session_state",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "session_mode",
+          "TEXT",
+          1,
+          "'planning'",
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_sessions_meta_1"
+      ],
+      "rows": [
+        [
+          "plain value ⟨sessions_meta:0:0⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨sessions_meta:1:0⟩",
+          "2026-01-10T02:15:00+00:00",
+          "2026-01-10T03:15:00+00:00",
+          "line sep and\r\ncrlf ⟨sessions_meta:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨sessions_meta:5:0⟩",
+          "escape \\back \u0000 null-byte ⟨sessions_meta:6:0⟩"
+        ],
+        [
+          "nbsp and em space ⟨sessions_meta:0:1⟩",
+          "turkish İstanbul ı ⟨sessions_meta:1:1⟩",
+          "2026-01-11T02:15:01+00:00",
+          "2026-01-11T03:15:01+00:00",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨sessions_meta:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨sessions_meta:5:1⟩",
+          "ünïcode côté ¡final! ⟨sessions_meta:6:1⟩"
+        ],
+        [
+          "line sep and\r\ncrlf ⟨sessions_meta:0:2⟩",
+          "pipe | and *emphasis* _under_ ⟨sessions_meta:1:2⟩",
+          "2026-01-12T02:15:02+00:00",
+          "2026-01-12T03:15:02+00:00",
+          "turkish İstanbul ı ⟨sessions_meta:4:2⟩",
+          "newline\nand\ttab ⟨sessions_meta:5:2⟩",
+          "plain value ⟨sessions_meta:6:2⟩"
+        ]
+      ]
+    },
+    "sqlite_sequence": {
+      "columns": [],
+      "indexes": [],
+      "rows": [
+        [
+          "performance_notes",
+          3
+        ],
+        [
+          "performance_one_on_ones",
+          3
+        ],
+        [
+          "performance_reviews",
+          3
+        ],
+        [
+          "reporting_history",
+          3
+        ],
+        [
+          "retro_history",
+          3
+        ],
+        [
+          "roadmap_history",
+          3
+        ],
+        [
+          "roadmaps",
+          3
+        ],
+        [
+          "standup_history",
+          3
+        ],
+        [
+          "standup_updates",
+          3
+        ],
+        [
+          "token_usage",
+          3
+        ]
+      ]
+    },
+    "standup_config": {
+      "columns": [
+        [
+          0,
+          "session_id",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "enabled",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          2,
+          "time",
+          "TEXT",
+          1,
+          "'10:00'",
+          0
+        ],
+        [
+          3,
+          "timezone",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "weekdays",
+          "TEXT",
+          1,
+          "'1-5'",
+          0
+        ],
+        [
+          5,
+          "delivery_channels",
+          "TEXT",
+          1,
+          "'[\"terminal\"]'",
+          0
+        ],
+        [
+          6,
+          "repo_path",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "tracker_sources",
+          "TEXT",
+          1,
+          "'[\"jira\"]'",
+          0
+        ],
+        [
+          8,
+          "team_members",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          9,
+          "roster_configured",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          10,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          11,
+          "updated_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          12,
+          "code_sources",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          13,
+          "github_repositories",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          14,
+          "azdo_repositories",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          15,
+          "code_scope_configured",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          16,
+          "documentation_sources",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          17,
+          "documentation_scope_configured",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          18,
+          "azdo_projects",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          19,
+          "transcript_dir",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          20,
+          "transcript_review_enabled",
+          "INTEGER",
+          1,
+          "1",
+          0
+        ],
+        [
+          21,
+          "habit_detection",
+          "TEXT",
+          1,
+          "'on'",
+          0
+        ],
+        [
+          22,
+          "habit_rules",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          23,
+          "habit_ai_match",
+          "TEXT",
+          1,
+          "'on'",
+          0
+        ],
+        [
+          24,
+          "github_owners",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ],
+        [
+          25,
+          "github_excluded_repositories",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_standup_config_1"
+      ],
+      "rows": [
+        [
+          "plain value ⟨standup_config:0:0⟩",
+          8,
+          "quotes \"double\" 'single' `tick` ⟨standup_config:2:0⟩",
+          "ünïcode côté ¡final! ⟨standup_config:3:0⟩",
+          "line sep and\r\ncrlf ⟨standup_config:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨standup_config:5:0⟩",
+          "escape \\back \u0000 null-byte ⟨standup_config:6:0⟩",
+          "nbsp and em space ⟨standup_config:7:0⟩",
+          "turkish İstanbul ı ⟨standup_config:8:0⟩",
+          16,
+          "2026-01-10T10:15:00+00:00",
+          "2026-01-10T11:15:00+00:00",
+          "[]",
+          "[]",
+          "[]",
+          0,
+          "[]",
+          0,
+          "[]",
+          "",
+          1,
+          "on",
+          "",
+          "on",
+          "[]",
+          "[]"
+        ],
+        [
+          "nbsp and em space ⟨standup_config:0:1⟩",
+          -3,
+          "newline\nand\ttab ⟨standup_config:2:1⟩",
+          "plain value ⟨standup_config:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_config:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨standup_config:5:1⟩",
+          "ünïcode côté ¡final! ⟨standup_config:6:1⟩",
+          "line sep and\r\ncrlf ⟨standup_config:7:1⟩",
+          "pipe | and *emphasis* _under_ ⟨standup_config:8:1⟩",
+          -3,
+          "2026-01-11T10:15:01+00:00",
+          "2026-01-11T11:15:01+00:00",
+          "[]",
+          "[]",
+          "[]",
+          0,
+          "[]",
+          0,
+          "[]",
+          "",
+          1,
+          "on",
+          "",
+          "on",
+          "[]",
+          "[]"
+        ],
+        [
+          "line sep and\r\ncrlf ⟨standup_config:0:2⟩",
+          9223372036854775807,
+          "escape \\back \u0000 null-byte ⟨standup_config:2:2⟩",
+          "nbsp and em space ⟨standup_config:3:2⟩",
+          "turkish İstanbul ı ⟨standup_config:4:2⟩",
+          "newline\nand\ttab ⟨standup_config:5:2⟩",
+          "plain value ⟨standup_config:6:2⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_config:7:2⟩",
+          "quotes \"double\" 'single' `tick` ⟨standup_config:8:2⟩",
+          9223372036854775807,
+          "2026-01-12T10:15:02+00:00",
+          "2026-01-12T11:15:02+00:00",
+          "[]",
+          "[]",
+          "[]",
+          0,
+          "[]",
+          0,
+          "[]",
+          "",
+          1,
+          "on",
+          "",
+          "on",
+          "[]",
+          "[]"
+        ]
+      ]
+    },
+    "standup_gap_issues": {
+      "columns": [
+        [
+          0,
+          "fingerprint",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "category",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          2,
+          "title",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "issue_number",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          4,
+          "issue_url",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "state",
+          "TEXT",
+          1,
+          "'drafted'",
+          0
+        ],
+        [
+          6,
+          "via",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "first_seen_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "filed_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          9,
+          "last_seen_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          10,
+          "last_commented_at",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          11,
+          "occurrences",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          12,
+          "last_review_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_standup_gap_issues_1"
+      ],
+      "rows": []
+    },
+    "standup_history": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "run_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "standup_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "sprint_day",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          5,
+          "confidence_pct",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          6,
+          "report_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "delivery_status",
+          "TEXT",
+          1,
+          "'{}'",
+          0
+        ],
+        [
+          8,
+          "status",
+          "TEXT",
+          1,
+          "'success'",
+          0
+        ],
+        [
+          9,
+          "error",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          10,
+          "origin",
+          "TEXT",
+          1,
+          "'generated'",
+          0
+        ],
+        [
+          11,
+          "edited_from_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_history:1:0⟩",
+          "2026-01-10T02:15:00+00:00",
+          "ünïcode côté ¡final! ⟨standup_history:3:0⟩",
+          11,
+          12,
+          "escape \\back \u0000 null-byte ⟨standup_history:6:0⟩",
+          "nbsp and em space ⟨standup_history:7:0⟩",
+          "turkish İstanbul ı ⟨standup_history:8:0⟩",
+          "newline\nand\ttab ⟨standup_history:9:0⟩",
+          "generated",
+          0
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨standup_history:1:1⟩",
+          "2026-01-11T02:15:01+00:00",
+          "plain value ⟨standup_history:3:1⟩",
+          -3,
+          -3,
+          "ünïcode côté ¡final! ⟨standup_history:6:1⟩",
+          "line sep and\r\ncrlf ⟨standup_history:7:1⟩",
+          "pipe | and *emphasis* _under_ ⟨standup_history:8:1⟩",
+          "escape \\back \u0000 null-byte ⟨standup_history:9:1⟩",
+          "generated",
+          0
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨standup_history:1:2⟩",
+          "2026-01-12T02:15:02+00:00",
+          "nbsp and em space ⟨standup_history:3:2⟩",
+          9223372036854775807,
+          9223372036854775807,
+          "plain value ⟨standup_history:6:2⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_history:7:2⟩",
+          "quotes \"double\" 'single' `tick` ⟨standup_history:8:2⟩",
+          "ünïcode côté ¡final! ⟨standup_history:9:2⟩",
+          "generated",
+          0
+        ]
+      ]
+    },
+    "standup_practice_feedback": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "rule",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "handle",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "verdict",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "note",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "member",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          7,
+          "subject",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          8,
+          "standup_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          9,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_standup_practice_feedback_1"
+      ],
+      "rows": []
+    },
+    "standup_reviews": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "run_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ],
+        [
+          3,
+          "standup_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          4,
+          "reviewed_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "review_json",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "status",
+          "TEXT",
+          1,
+          "'drafted'",
+          0
+        ],
+        [
+          7,
+          "warnings_json",
+          "TEXT",
+          1,
+          "'[]'",
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": []
+    },
+    "standup_transcripts": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "path",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          3,
+          "content_hash",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "covered_date",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "reviewed_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          6,
+          "review_id",
+          "INTEGER",
+          1,
+          "0",
+          0
+        ]
+      ],
+      "indexes": [
+        "idx_standup_transcripts_date",
+        "sqlite_autoindex_standup_transcripts_1"
+      ],
+      "rows": []
+    },
+    "standup_updates": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "session_id",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "standup_date",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "member",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "update_text",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_updates:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨standup_updates:2:0⟩",
+          "ünïcode côté ¡final! ⟨standup_updates:3:0⟩",
+          "line sep and\r\ncrlf ⟨standup_updates:4:0⟩",
+          "2026-01-10T05:15:00+00:00"
+        ],
+        [
+          2,
+          "turkish İstanbul ı ⟨standup_updates:1:1⟩",
+          "newline\nand\ttab ⟨standup_updates:2:1⟩",
+          "plain value ⟨standup_updates:3:1⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨standup_updates:4:1⟩",
+          "2026-01-11T05:15:01+00:00"
+        ],
+        [
+          3,
+          "pipe | and *emphasis* _under_ ⟨standup_updates:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨standup_updates:2:2⟩",
+          "nbsp and em space ⟨standup_updates:3:2⟩",
+          "turkish İstanbul ı ⟨standup_updates:4:2⟩",
+          "2026-01-12T05:15:02+00:00"
+        ]
+      ]
+    },
+    "team_profiles": {
+      "columns": [
+        [
+          0,
+          "team_id",
+          "TEXT",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "project_key",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "source",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          3,
+          "profile_json",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          4,
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "updated_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "indexes": [
+        "sqlite_autoindex_team_profiles_1"
+      ],
+      "rows": [
+        [
+          "plain value ⟨team_profiles:0:0⟩",
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨team_profiles:1:0⟩",
+          "quotes \"double\" 'single' `tick` ⟨team_profiles:2:0⟩",
+          "ünïcode côté ¡final! ⟨team_profiles:3:0⟩",
+          "2026-01-10T04:15:00+00:00",
+          "2026-01-10T05:15:00+00:00"
+        ],
+        [
+          "nbsp and em space ⟨team_profiles:0:1⟩",
+          "turkish İstanbul ı ⟨team_profiles:1:1⟩",
+          "newline\nand\ttab ⟨team_profiles:2:1⟩",
+          "plain value ⟨team_profiles:3:1⟩",
+          "2026-01-11T04:15:01+00:00",
+          "2026-01-11T05:15:01+00:00"
+        ],
+        [
+          "line sep and\r\ncrlf ⟨team_profiles:0:2⟩",
+          "pipe | and *emphasis* _under_ ⟨team_profiles:1:2⟩",
+          "escape \\back \u0000 null-byte ⟨team_profiles:2:2⟩",
+          "nbsp and em space ⟨team_profiles:3:2⟩",
+          "2026-01-12T04:15:02+00:00",
+          "2026-01-12T05:15:02+00:00"
+        ]
+      ]
+    },
+    "token_usage": {
+      "columns": [
+        [
+          0,
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          1,
+          "timestamp",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          2,
+          "input_tokens",
+          "INT",
+          1,
+          "0",
+          0
+        ],
+        [
+          3,
+          "output_tokens",
+          "INT",
+          1,
+          "0",
+          0
+        ],
+        [
+          4,
+          "model",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          5,
+          "provider",
+          "TEXT",
+          1,
+          "''",
+          0
+        ],
+        [
+          6,
+          "duration_ms",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          7,
+          "eval_duration_ms",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          8,
+          "load_duration_ms",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          9,
+          "tokens_per_sec",
+          "REAL",
+          0,
+          null,
+          0
+        ]
+      ],
+      "indexes": [],
+      "rows": [
+        [
+          1,
+          "2026-01-10T01:15:00+00:00",
+          9,
+          10,
+          "line sep and\r\ncrlf ⟨token_usage:4:0⟩",
+          "pipe | and *emphasis* _under_ ⟨token_usage:5:0⟩",
+          1.5,
+          1.5,
+          1.5,
+          1.5
+        ],
+        [
+          2,
+          "2026-01-11T01:15:01+00:00",
+          -3,
+          -3,
+          "emoji 😀🐍 astral 𝔘𝔫𝔦 ⟨token_usage:4:1⟩",
+          "quotes \"double\" 'single' `tick` ⟨token_usage:5:1⟩",
+          3.0,
+          3.0,
+          3.0,
+          3.0
+        ],
+        [
+          3,
+          "2026-01-12T01:15:02+00:00",
+          9223372036854775807,
+          9223372036854775807,
+          "turkish İstanbul ı ⟨token_usage:4:2⟩",
+          "newline\nand\ttab ⟨token_usage:5:2⟩",
+          null,
+          null,
+          null,
+          null
+        ]
+      ]
+    }
+  },
+  "open": {
+    "schema_mismatch": false,
+    "stamped_version": 30
+  }
+}
