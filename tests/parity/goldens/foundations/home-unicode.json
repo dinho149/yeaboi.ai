@@ -226,6 +226,211 @@
         "İZMİR \\ Ops": "{tmp}/données/yeaboi-путь/exports/standup/i̇zmi̇r - ops"
       }
     },
+    "logfile": {
+      "apply_level": {
+        "": 30,
+        " warning ": 30,
+        "CRITICAL": 50,
+        "DEBUG": 10,
+        "ERROR": 40,
+        "Error": 40,
+        "INFO": 20,
+        "VERBOSE": 30,
+        "WARNING": 30,
+        "debug": 10,
+        "fatal": 50,
+        "notset": 0,
+        "warn": 30
+      },
+      "configured_level": 30,
+      "files": {
+        "planning/sess-alpha.log": "2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n",
+        "planning/sess-beta.log": "2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n",
+        "poker/poker.log": "2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n",
+        "retro/retro.log": "2025-08-18 06:53:23 WARNING yeaboi.retro.engine: card parse fallback used\n2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n",
+        "rotation/rot.log": "2025-08-18 06:55:07 INFO    yeaboi.rot: small after the oversize one\n2025-08-18 06:55:08 INFO    yeaboi.rot: closing line of the rotation corpus\n",
+        "rotation/rot.log.1": "2025-08-18 06:55:06 INFO    yeaboi.rot: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+        "rotation/rot.log.2": "2025-08-18 06:55:05 INFO    yeaboi.rot: token [REDACTED] rides along\n",
+        "rotation/rot.log.3": "2025-08-18 06:55:03 INFO    yeaboi.rot: fourth line arrives after the unicode run\n2025-08-18 06:55:04 INFO    yeaboi.rot: fifth line pushes the byte count over\n",
+        "tui/yeaboi.log": "2025-08-18 06:53:22 ERROR   yeaboi.tools.github: auth failed: token [REDACTED] rejected\n2025-08-18 06:53:23 WARNING yeaboi.retro.engine: card parse fallback used\n2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n"
+      },
+      "format": [
+        "2025-08-18 06:53:20 INFO    yeaboi.cli: startup complete",
+        "2025-08-18 06:53:21 DEBUG   yeaboi.agent.llm: prompt cached",
+        "2025-08-18 07:54:21 WARNING yeaboi.tools.github: retrying",
+        "2025-08-19 07:39:59 ERROR   yeaboi.retro: boom with [REDACTED] token",
+        "2025-08-19 07:40:00 CRITICAL yeaboi: unicode café 🚀 %s literal"
+      ],
+      "log_safe": [
+        [
+          "clean value",
+          "clean value"
+        ],
+        [
+          "crlf\r\ninjected\tline",
+          "crlf  injected line"
+        ],
+        [
+          "controls \u0000\u0001 kept?  end",
+          "controls  kept?  end"
+        ],
+        [
+          "vertical\u000btab\fformfeed",
+          "verticaltabformfeed"
+        ],
+        [
+          "nbsp stays",
+          "nbsp stays"
+        ],
+        [
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        ],
+        [
+          "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy…"
+        ],
+        [
+          "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééétail",
+          "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…"
+        ],
+        [
+          "secret ghp_ABCDEFGHIJKLMNOPQRST inside",
+          "secret ghp_ABCDEFGHIJKLMNOPQRST inside"
+        ]
+      ],
+      "modes": {
+        "planning/": "0o700",
+        "planning/sess-alpha.log": "0o600",
+        "planning/sess-beta.log": "0o600",
+        "poker/": "0o700",
+        "poker/poker.log": "0o600",
+        "retro/": "0o700",
+        "retro/retro.log": "0o600",
+        "rotation/": "0o700",
+        "rotation/rot.log": "0o600",
+        "rotation/rot.log.1": "0o600",
+        "rotation/rot.log.2": "0o600",
+        "rotation/rot.log.3": "0o600",
+        "tui/": "0o700",
+        "tui/yeaboi.log": "0o600"
+      },
+      "redact": [
+        [
+          "plain text with no secrets at all, port 8080 true",
+          "plain text with no secrets at all, port 8080 true"
+        ],
+        [
+          "anthropic sk-ant-api03-AbCdEf123456 trailing",
+          "anthropic [REDACTED] trailing"
+        ],
+        [
+          "unicode tail sk-ant-abcé2345678é9 done",
+          "unicode tail [REDACTED] done"
+        ],
+        [
+          "openai sk-abcdefghijklmnopqrst123 x",
+          "openai [REDACTED] x"
+        ],
+        [
+          "github ghp_ABCDEFGHIJKLMNOPQRST clean",
+          "github [REDACTED] clean"
+        ],
+        [
+          "fine ghp_short7 stays",
+          "fine ghp_short7 stays"
+        ],
+        [
+          "pat github_pat_11ABCDEFGHIJKLMNOPQRSTUV done",
+          "pat [REDACTED] done"
+        ],
+        [
+          "slack xoxb-1234567890-abc token",
+          "slack [REDACTED] token"
+        ],
+        [
+          "google AIzaSyA-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa end",
+          "google [REDACTED] end"
+        ],
+        [
+          "aws AKIAIOSFODNN7EXAMPLE key",
+          "aws [REDACTED] key"
+        ],
+        [
+          "atlassian ATATT3xFfGF0T-abc+def/ghi=jkl end",
+          "atlassian [REDACTED] end"
+        ],
+        [
+          "notion ntn_abcdefghijklmnopqrst123 page",
+          "notion [REDACTED] page"
+        ],
+        [
+          "notion secret_abcdefghijklmnopqrstuvwxyz1234 page",
+          "notion [REDACTED] page"
+        ],
+        [
+          "webhook hooks.slack.com/services/T0AA/B0BB/curly done",
+          "webhook [REDACTED] done"
+        ],
+        [
+          "webhook at https://hooks.slack.com/services/T0AA/B0BB/curly end",
+          "webhook at https://[REDACTED] end"
+        ],
+        [
+          "auth Bearer abcdef1234567890XYZ sent",
+          "auth [REDACTED] sent"
+        ],
+        [
+          "auth bEaReR abcdef1234567890XYZ sent",
+          "auth [REDACTED] sent"
+        ],
+        [
+          "auth Basic dGVzdDp0ZXN0cGFzcw== ok",
+          "auth [REDACTED] ok"
+        ],
+        [
+          "auth Bearer short1 ok",
+          "auth Bearer short1 ok"
+        ],
+        [
+          "url https://svc:AKCp8fffffff@nexus.corp/simple pinned",
+          "url https://[REDACTED]@nexus.corp/simple pinned"
+        ],
+        [
+          "url https://svc:pw@nexus.corp/simple short-password",
+          "url https://svc:pw@nexus.corp/simple short-password"
+        ],
+        [
+          "url ftp://ghp_ABCDEFGHIJKLMNOPQRST:pw12@x positional-preference",
+          "url ftp://[REDACTED]:pw12@x positional-preference"
+        ],
+        [
+          "no scheme svc:longpassword@host untouched",
+          "no scheme svc:longpassword@host untouched"
+        ],
+        [
+          "value hush-hush-value-123 and hush-hush-value-123-extended overlap",
+          "value hush-hush-value-123 and hush-hush-value-123-extended overlap"
+        ],
+        [
+          "value fallback-key from the project env",
+          "value fallback-key from the project env"
+        ],
+        [
+          "mail env-wins@acme.dev interpolated into GOOGLE_API_KEY",
+          "mail env-wins@acme.dev interpolated into GOOGLE_API_KEY"
+        ],
+        [
+          "tiny short-secret value stays: tiny",
+          "tiny short-secret value stays: tiny"
+        ]
+      ],
+      "registry": [
+        "poker",
+        "session",
+        "tui"
+      ]
+    },
     "safe_key": {
       "": "fb",
       "  padded  ": "padded",
@@ -324,6 +529,7 @@
   },
   "env": {
     "HOME": "{tmp}/home",
+    "TZ": "UTC",
     "YEABOI_HOME": "{tmp}/données/yeaboi-путь"
   },
   "files": {}

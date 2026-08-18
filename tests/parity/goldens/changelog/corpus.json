@@ -1,0 +1,34 @@
+{
+  "_comment": "Hand-written malformed-entry corpus for the changelog parity gate. Every shape here must survive load_changelog's parse (skips and coercions, never a crash) — see changelogdump.py for the one crash shape deliberately left out.",
+  "schema_version": 1,
+  "entries": [
+    {
+      "version": "9.9.9",
+      "date": "2099-01-02",
+      "summary": "well formed",
+      "highlights": [
+        {"text": "a retro thing", "areas": ["retro"]},
+        {"text": "two areas deduped", "areas": ["retro", "general", "retro"]},
+        {"text": "unknown area coerced", "areas": ["retro", "warp-drive"]},
+        {"text": "non-string area coerced", "areas": ["standup", 7]},
+        {"text": "areas not a list", "areas": "retro"},
+        {"text": "areas missing"},
+        {"text": "empty areas list", "areas": []},
+        {"text": "", "areas": ["retro"]},
+        {"text": 42, "areas": ["retro"]},
+        "not a dict highlight",
+        {"no_text": "skipped"}
+      ]
+    },
+    {"version": "9.9.8", "summary": "date missing"},
+    {"version": "9.9.7", "date": 20990101, "summary": 5, "highlights": []},
+    {"version": "9.9.6", "date": "2099-01-01", "highlights": "stringy"},
+    {"version": "9.9.5", "highlights": {"keyed": "highlights"}},
+    {"version": "", "summary": "empty version skipped"},
+    {"summary": "no version skipped"},
+    "not a dict entry",
+    17,
+    null,
+    {"version": "9.9.4", "summary": "unicode café 🚀 — em dash"}
+  ]
+}

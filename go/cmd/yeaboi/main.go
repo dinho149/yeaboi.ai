@@ -4,6 +4,7 @@
 //
 //	yeaboi __dump-foundations   the Go twin of tests/parity/foundations/dump.py
 //	yeaboi __dump-args ARGS...  parse ARGS with the cli.py-twin tree, dump JSON
+//	yeaboi __dump-changelog     the embedded changelog, parsed + rendered
 //
 // Python twin: src/yeaboi/cli.py main()'s argparse layer (parser.go holds
 // the tree). The version is injected via -ldflags "-X main.version=..." from
@@ -17,6 +18,7 @@ import (
 
 	ap "github.com/yeaboi-ai/yeaboi/go/internal/argparse"
 	"github.com/yeaboi-ai/yeaboi/go/internal/argview"
+	"github.com/yeaboi-ai/yeaboi/go/internal/changelog"
 	"github.com/yeaboi-ai/yeaboi/go/internal/foundations"
 	"github.com/yeaboi-ai/yeaboi/go/internal/home"
 )
@@ -51,6 +53,8 @@ func main() {
 			os.Exit(runDumpFoundations())
 		case "__dump-args":
 			os.Exit(runDumpArgs(args[1:]))
+		case "__dump-changelog":
+			os.Exit(runDumpChangelog())
 		}
 	}
 
@@ -95,6 +99,15 @@ func runDumpFoundations() int {
 		return 1
 	}
 	return printJSON(dump)
+}
+
+// runDumpChangelog prints the embedded changelog — parsed entries plus the
+// rendered Markdown — as JSON. The subprocess arm of the W8 changelog gate:
+// tests/parity/foundations/changelogdump.py build_live_dump() is the twin,
+// so the embedded copy and yeaboi.changelog's parse must agree end to end.
+func runDumpChangelog() int {
+	entries := changelog.Load()
+	return printJSON(changelog.DumpPayload(entries))
 }
 
 // runDumpArgs parses the given argv against the cli.py-twin tree and prints

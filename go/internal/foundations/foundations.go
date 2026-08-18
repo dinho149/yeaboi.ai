@@ -337,6 +337,11 @@ func Dump(env home.Env, cwd string) (map[string]any, error) {
 		return nil, err
 	}
 
+	logfileDump, err := dumpLogfile(paths, c)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
 		"constants":     constants,
 		"helpers":       helpers,
@@ -345,6 +350,7 @@ func Dump(env home.Env, cwd string) (map[string]any, error) {
 		"config":        configDump,
 		"config_keyed":  configKeyed,
 		"set_key":       setKey,
+		"logfile":       logfileDump,
 	}, nil
 }
 

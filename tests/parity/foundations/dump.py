@@ -27,6 +27,18 @@ W8 phase 2 extends the dump to ``yeaboi.config``:
   a scratch file and records the resulting text (plus, for the
   ``set_config_value`` choke point, the file's post-write permission bits)
 
+W8 phase 5 extends it to the logfile surface (``yeaboi.logging_setup`` +
+``yeaboi.redaction``):
+
+- ``logfile.configured_level`` / ``logfile.apply_level`` — level resolution
+- ``logfile.redact`` / ``logfile.log_safe`` — [input, output] vector pairs
+  (the value-based layer reads the fixture's env, so outputs differ by
+  fixture on purpose)
+- ``logfile.format`` — ``RedactingFormatter`` lines under pinned record
+  times (TZ=UTC comes from the launch env)
+- ``logfile.files`` / ``modes`` / ``registry`` — the scripted registry +
+  rotation scenario's on-disk outcome under the sandbox's logs dir
+
 One pinned normalisation: ``build_dump`` sets ``sys.frozen`` before
 importing ``yeaboi.config``, which makes python-dotenv's ``find_dotenv()``
 walk up from the *working directory* (the sandbox) instead of from the
@@ -284,6 +296,119 @@ KEYED_HELPERS = [
     "get_attachments_dir",
 ]
 
+# ---------------------------------------------------------------------------
+# W8 phase 5 — the logfile surface (logging_setup.py + redaction.py).
+# ---------------------------------------------------------------------------
+
+# apply_level resolves via getattr(logging, level.upper(), WARNING) — the
+# vectors pin the aliases the logging module happens to export (WARN, FATAL,
+# NOTSET), the invalid names that must fall back, and the fact that nothing
+# strips whitespace on the way in. Keep every vector resolving to an int:
+# a name that resolves to a non-level module attribute would crash setLevel
+# in the product too, so it is not a behaviour to pin here.
+LOG_LEVEL_VECTORS = [
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+    "CRITICAL",
+    "debug",
+    "Error",
+    "warn",
+    "fatal",
+    "notset",
+    "VERBOSE",
+    "",
+    " warning ",
+]
+
+# redact() inputs, exercising every token-pattern family, the value-based
+# layer (via env vars each fixture sets), the unicode \s and \w semantics
+# the Go port must reproduce under RE2, and the positional preference of
+# Python's single-alternation scan (the ftp:// vector: the ghp_ token and
+# the URL-credential pattern both match at the same offset, and the token
+# wins because it is listed first).
+LOG_REDACT_VECTORS = [
+    "plain text with no secrets at all, port 8080 true",
+    "anthropic sk-ant-api03-AbCdEf123456 trailing",
+    "unicode tail sk-ant-abcé2345678é9 done",
+    "openai sk-abcdefghijklmnopqrst123 x",
+    "github ghp_ABCDEFGHIJKLMNOPQRST clean",
+    "fine ghp_short7 stays",
+    "pat github_pat_11ABCDEFGHIJKLMNOPQRSTUV done",
+    "slack xoxb-1234567890-abc token",
+    "google AIzaSyA-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa end",
+    "aws AKIAIOSFODNN7EXAMPLE key",
+    "atlassian ATATT3xFfGF0T-abc+def/ghi=jkl end",
+    "notion ntn_abcdefghijklmnopqrst123 page",
+    "notion secret_abcdefghijklmnopqrstuvwxyz1234 page",
+    "webhook hooks.slack.com/services/T0AA/B0BB/curly done",
+    "webhook at https://hooks.slack.com/services/T0AA/B0BB/curly end",
+    "auth Bearer abcdef1234567890XYZ sent",
+    "auth bEaReR\u00a0abcdef1234567890XYZ sent",  # NBSP separator — Python \\s is unicode-aware
+    "auth Basic dGVzdDp0ZXN0cGFzcw== ok",
+    "auth Bearer short1 ok",
+    "url https://svc:AKCp8fffffff@nexus.corp/simple pinned",
+    "url https://svc:pw@nexus.corp/simple short-password",
+    "url ftp://ghp_ABCDEFGHIJKLMNOPQRST:pw12@x positional-preference",
+    "no scheme svc:longpassword@host untouched",
+    "value hush-hush-value-123 and hush-hush-value-123-extended overlap",
+    "value fallback-key from the project env",
+    "mail env-wins@acme.dev interpolated into GOOGLE_API_KEY",
+    "tiny short-secret value stays: tiny",
+]
+
+# log_safe() inputs: newline/CR/tab collapse, control-char removal, the
+# 200-code-point truncation (sliced by characters, never bytes — hence the
+# multi-byte run), and the fact that log_safe does NOT redact.
+LOG_SAFE_VECTORS = [
+    "clean value",
+    "crlf\r\ninjected\tline",
+    "controls \x00\x01 kept? \x7f end",
+    "vertical\x0btab\x0cformfeed",
+    "nbsp\u00a0stays",  # NBSP is not collapsed and not a control char — it survives
+    "x" * 200,
+    "y" * 201,
+    "é" * 230 + "tail",
+    "secret ghp_ABCDEFGHIJKLMNOPQRST inside",
+]
+
+# RedactingFormatter vectors: levelname %-7s padding (CRITICAL overflows it,
+# unpadded), dotted logger names, redaction of the assembled line, and a
+# literal %s that must survive (args is None, so no interpolation).
+LOG_FORMAT_VECTORS = [
+    {"name": "yeaboi.cli", "level": "INFO", "msg": "startup complete", "created": 1755500000},
+    {"name": "yeaboi.agent.llm", "level": "DEBUG", "msg": "prompt cached", "created": 1755500001},
+    {"name": "yeaboi.tools.github", "level": "WARNING", "msg": "retrying", "created": 1755503661},
+    {
+        "name": "yeaboi.retro",
+        "level": "ERROR",
+        "msg": "boom with ghp_ABCDEFGHIJKLMNOPQRST token",
+        "created": 1755589199,
+    },
+    {"name": "yeaboi", "level": "CRITICAL", "msg": "unicode café \U0001f680 %s literal", "created": 1755589200},
+]
+
+# The rotation corpus: maxBytes=192 makes every semantic visible in a few
+# lines — CPython's rollover check compares stream.tell() (bytes) plus
+# len(formatted + "\n") (characters), so the é-run drifts the two apart;
+# the 300-char line forces roll-then-write-oversize; nine records cycle the
+# backups past backupCount so the oldest file drops.
+LOG_ROTATION_MAX_BYTES = 192
+LOG_ROTATION_MSGS = [
+    "first line of the rotation corpus",
+    "second line, a bit longer than the first one is",
+    "unicode " + "é" * 29 + " run",
+    "fourth line arrives after the unicode run",
+    "fifth line pushes the byte count over",
+    "token ghp_ABCDEFGHIJKLMNOPQRST rides along",
+    "x" * 300,
+    "small after the oversize one",
+    "closing line of the rotation corpus",
+]
+
+_LOG_TS = 1755500000  # 2026-08-18 06:53:20 UTC — every scenario timestamp offsets from here
+
 
 def _jsonable(value):
     """Config getters return Paths, tuples, sets and (bool, str) pairs; the
@@ -354,6 +479,108 @@ def _set_key_dump(config) -> dict:
     return out
 
 
+def _logfile_dump(paths) -> dict:
+    """W8 phase 5: dump the logging_setup + redaction surface.
+
+    Everything here is deterministic under the fixture env: record times are
+    pinned (TZ=UTC comes from the launch env), the registry scenario and the
+    rotation corpus write real files inside the sandbox, and the walk at the
+    end freezes their names, contents and permission bits. The
+    ``logging_setup`` module's own logger is disabled first — its
+    attach/apply debug lines carry wall-clock timestamps, which would break
+    the golden under a DEBUG fixture.
+    """
+    import logging
+    import time
+
+    from yeaboi import logging_setup
+    from yeaboi.config import restrict_permissions
+    from yeaboi.redaction import RedactingFormatter, log_safe, redact
+
+    time.tzset()  # the launch env pins TZ=UTC; make sure strftime saw it
+    logging.getLogger("yeaboi.logging_setup").disabled = True
+
+    out = {
+        "configured_level": logging_setup._level(),
+        "apply_level": {v: getattr(logging, v.upper(), logging.WARNING) for v in LOG_LEVEL_VECTORS},
+        "redact": [[v, redact(v)] for v in LOG_REDACT_VECTORS],
+        "log_safe": [[v, log_safe(v)] for v in LOG_SAFE_VECTORS],
+    }
+
+    def record(name: str, level: int, msg: str, created: int) -> logging.LogRecord:
+        rec = logging.LogRecord(name, level, "dump.py", 0, msg, None, None)
+        rec.created = created
+        rec.msecs = 0.0
+        return rec
+
+    formatter = RedactingFormatter(logging_setup.LOG_FORMAT, datefmt=logging_setup.DATE_FORMAT)
+    out["format"] = [
+        formatter.format(record(v["name"], getattr(logging, v["level"]), v["msg"], v["created"]))
+        for v in LOG_FORMAT_VECTORS
+    ]
+
+    # --- rotation corpus: a small-maxBytes handler, driven directly -------
+    import os
+
+    rot_dir = paths.LOGS_DIR / "rotation"
+    rot_dir.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(rot_dir, mode=0o700)
+    rot = logging_setup._SecureRotatingFileHandler(
+        rot_dir / "rot.log", maxBytes=LOG_ROTATION_MAX_BYTES, backupCount=3, encoding="utf-8"
+    )
+    rot.setFormatter(RedactingFormatter(logging_setup.LOG_FORMAT, datefmt=logging_setup.DATE_FORMAT))
+    for i, msg in enumerate(LOG_ROTATION_MSGS):
+        rot.emit(record("yeaboi.rot", logging.INFO, msg, _LOG_TS + 100 + i))
+    rot.flush()
+    rot.close()
+
+    # --- registry scenario: the public logging_setup API, scripted --------
+    def emit(name: str, level: int, msg: str, offset: int) -> None:
+        lg = logging.getLogger("yeaboi")
+        if lg.isEnabledFor(level):
+            lg.handle(record(name, level, msg, _LOG_TS + offset))
+
+    logging_setup.configure_logging()
+    emit("yeaboi.cli", logging.INFO, "startup complete", 0)
+    emit("yeaboi.agent.llm", logging.DEBUG, "prompt tokens: 512", 1)
+    emit("yeaboi.tools.github", logging.ERROR, "auth failed: token ghp_abcdefghij0123456789 rejected", 2)
+    logging_setup.attach_mode_handler("retro")
+    logging_setup.attach_mode_handler("retro")  # idempotent page re-entry
+    emit("yeaboi.retro.engine", logging.WARNING, "card parse fallback used", 3)
+    logging_setup.attach_session_log("sess-alpha")
+    emit("yeaboi.agent.nodes", logging.ERROR, "plan node failed", 4)
+    logging_setup.attach_session_log("sess-beta")  # replaces sess-alpha
+    emit("yeaboi.agent.nodes", logging.CRITICAL, "graph aborted", 5)
+    logging_setup.apply_level("debug")
+    emit("yeaboi.agent.llm", logging.DEBUG, "cache hit", 6)
+    # _attach resets the namespace logger (and only the new handler) to the
+    # env level — the quirk the next two emits pin.
+    logging_setup.attach_mode_handler("poker")
+    emit("yeaboi.poker.engine", logging.DEBUG, "vote recorded", 7)
+    emit("yeaboi.poker.engine", logging.ERROR, "sync failed", 8)
+    logging_setup.detach("retro")
+    emit("yeaboi.cli", logging.WARNING, "shutting down", 9)
+    emit("yeaboi.tools.notion", logging.ERROR, "post failed for token " + os.environ.get("NOTION_TOKEN", "<unset>"), 10)
+    out["registry"] = sorted(logging_setup._handlers)
+    for key in list(logging_setup._handlers):
+        logging_setup.detach(key)
+
+    files: dict[str, str] = {}
+    modes: dict[str, str] = {}
+    for p in sorted(paths.LOGS_DIR.rglob("*")):
+        if p.is_file():
+            rel = p.relative_to(paths.LOGS_DIR).as_posix()
+            files[rel] = p.read_text(encoding="utf-8")
+            modes[rel] = oct(stat.S_IMODE(p.stat().st_mode))
+    # Only the dirs the scenario itself hardened — everything else's mode is
+    # umask-dependent and would make the golden machine-specific.
+    for rel in ("tui", "retro", "poker", "planning", "rotation"):
+        modes[rel + "/"] = oct(stat.S_IMODE((paths.LOGS_DIR / rel).stat().st_mode))
+    out["files"] = files
+    out["modes"] = modes
+    return out
+
+
 def build_dump() -> dict:
     """Import yeaboi.paths (resolving the root from this process's env) and
     yeaboi.config (loading the sandbox's project .env, then its user .env)
@@ -381,6 +608,7 @@ def build_dump() -> dict:
     dump["config"] = _config_dump(config)
     dump["config_keyed"] = _config_keyed_dump(config)
     dump["set_key"] = _set_key_dump(config)
+    dump["logfile"] = _logfile_dump(paths)
     return dump
 
 

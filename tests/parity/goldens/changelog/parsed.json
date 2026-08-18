@@ -1,0 +1,87 @@
+{
+  "entries": [
+    {
+      "date": "2099-01-02",
+      "highlights": [
+        {
+          "areas": [
+            "retro"
+          ],
+          "text": "a retro thing"
+        },
+        {
+          "areas": [
+            "retro",
+            "general"
+          ],
+          "text": "two areas deduped"
+        },
+        {
+          "areas": [
+            "retro",
+            "general"
+          ],
+          "text": "unknown area coerced"
+        },
+        {
+          "areas": [
+            "standup",
+            "general"
+          ],
+          "text": "non-string area coerced"
+        },
+        {
+          "areas": [
+            "general"
+          ],
+          "text": "areas not a list"
+        },
+        {
+          "areas": [
+            "general"
+          ],
+          "text": "areas missing"
+        },
+        {
+          "areas": [
+            "general"
+          ],
+          "text": "empty areas list"
+        }
+      ],
+      "summary": "well formed",
+      "version": "9.9.9"
+    },
+    {
+      "date": "",
+      "highlights": [],
+      "summary": "date missing",
+      "version": "9.9.8"
+    },
+    {
+      "date": "",
+      "highlights": [],
+      "summary": "",
+      "version": "9.9.7"
+    },
+    {
+      "date": "2099-01-01",
+      "highlights": [],
+      "summary": "",
+      "version": "9.9.6"
+    },
+    {
+      "date": "",
+      "highlights": [],
+      "summary": "",
+      "version": "9.9.5"
+    },
+    {
+      "date": "",
+      "highlights": [],
+      "summary": "unicode café 🚀 — em dash",
+      "version": "9.9.4"
+    }
+  ],
+  "text": "# yeaboi — Changelog\n\n## 9.9.9 — 2099-01-02\n\nwell formed\n- a retro thing\n- two areas deduped\n- unknown area coerced\n- non-string area coerced\n- areas not a list\n- areas missing\n- empty areas list\n\n## 9.9.8\n\ndate missing\n\n## 9.9.7\n\n## 9.9.6 — 2099-01-01\n\n## 9.9.5\n\n## 9.9.4\n\nunicode café 🚀 — em dash\n"
+}

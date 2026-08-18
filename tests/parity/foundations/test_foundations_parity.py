@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.parity.foundations import argdump, argvectors, helpdump, matrix
+from tests.parity.foundations import argdump, argvectors, changelogdump, helpdump, matrix
 from tests.parity.foundations import dump as dump_mod
 
 CLI_BINARY = os.environ.get("YEABOI_CLI_BIN")
@@ -242,6 +242,133 @@ class TestConfigCorpusSelfGuards:
         )
 
 
+class TestLogfileCorpusSelfGuards:
+    """W8 phase 5: the logfile surface's trap guards — they run in the
+    ordinary suite, binary or not."""
+
+    def test_redact_vectors_cover_every_token_family(self):
+        joined = "\n".join(dump_mod.LOG_REDACT_VECTORS)
+        for marker in (
+            "sk-ant-",
+            "openai sk-",
+            "ghp_",
+            "github_pat_",
+            "xox",
+            "AIza",
+            "AKIA",
+            "ATATT",
+            "ntn_",
+            "secret_",
+            "hooks.slack.com/services/",
+            "Bearer",
+            "Basic",
+        ):
+            assert marker in joined, f"the {marker} token family left the redact corpus"
+
+    def test_redact_vectors_keep_the_semantics_traps(self):
+        vectors = dump_mod.LOG_REDACT_VECTORS
+        assert any("\u00a0" in v for v in vectors), "the unicode-\\s Bearer separator left the corpus"
+        assert any("é" in v and "sk-ant-" in v for v in vectors), "the unicode-\\w token tail left the corpus"
+        assert any("://" in v and "ghp_" in v and ":pw12@" in v for v in vectors), (
+            "the alternation positional-preference vector left the corpus"
+        )
+        assert any("hush-hush" in v for v in vectors), "the fixture-driven value-overlap vector left the corpus"
+        assert any("://" in v and ":pw@" in v for v in vectors), "the short-password URL vector left the corpus"
+
+    def test_log_safe_vectors_keep_the_traps(self):
+        vectors = dump_mod.LOG_SAFE_VECTORS
+        assert any("\r" in v and "\n" in v and "\t" in v for v in vectors), "the CR/LF/tab collapse vector left"
+        assert any("\x00" in v for v in vectors), "the control-char removal vector left"
+        assert any(len(v) == 200 for v in vectors) and any(len(v) == 201 for v in vectors), (
+            "the truncation boundary vectors left"
+        )
+        assert any(len(v) > 201 and any(ord(c) > 127 for c in v) for v in vectors), (
+            "the multi-byte truncation vector left (code points, never bytes)"
+        )
+
+    def test_level_vectors_keep_the_aliases(self):
+        stripped = {v.strip().lower() for v in dump_mod.LOG_LEVEL_VECTORS}
+        assert {"warn", "fatal", "notset"} <= stripped, "the logging-module alias vectors left"
+        assert "verbose" in stripped, "the invalid-name fallback vector left"
+        assert "" in dump_mod.LOG_LEVEL_VECTORS and " warning " in dump_mod.LOG_LEVEL_VECTORS, (
+            "the empty / unstripped vectors left"
+        )
+
+    def test_rotation_corpus_still_rotates(self):
+        msgs = dump_mod.LOG_ROTATION_MSGS
+        assert sum(len(m) + 45 for m in msgs) > 4 * dump_mod.LOG_ROTATION_MAX_BYTES, (
+            "the corpus no longer cycles a backup off the end"
+        )
+        assert any(len(m) > dump_mod.LOG_ROTATION_MAX_BYTES for m in msgs), "the oversize-line vector left"
+        assert any("é" in m for m in msgs), "the bytes-vs-characters rollover vector left"
+
+    def test_scenario_exercises_the_logging_setup_api(self):
+        """mode_log and detach_session_log are one-line compositions of
+        attach+detach; everything else must appear in the scenario."""
+        import inspect
+
+        src = inspect.getsource(dump_mod._logfile_dump)
+        for name in ("configure_logging", "attach_mode_handler", "attach_session_log", "apply_level", "detach"):
+            assert name in src, f"the scenario stopped exercising logging_setup.{name}"
+
+    def test_logfile_redaction_fixture_pins_the_value_layer(self):
+        env = {f.name: f for f in matrix.FIXTURES}["logfile-redaction"].env
+        assert len(env["GITHUB_TOKEN"]) < 8, "the below-_MIN_SECRET_LEN value left the fixture"
+        assert env["ANTHROPIC_API_KEY"] in env["NOTION_TOKEN"] and env["ANTHROPIC_API_KEY"] != env["NOTION_TOKEN"], (
+            "the substring-overlap secret pair left the fixture"
+        )
+        assert env["LOG_LEVEL"] != env["LOG_LEVEL"].upper(), "the mixed-case LOG_LEVEL left the fixture"
+
+
+class TestChangelogGolden:
+    """W8 phase 5: the changelog parse is frozen over the malformed corpus;
+    go/internal/changelog replays the same two files."""
+
+    def test_corpus_golden_matches_live(self):
+        assert changelogdump.PARSED_GOLDEN.exists(), (
+            f"missing golden {changelogdump.PARSED_GOLDEN} — run `uv run python -m tests.parity.foundations.regen`"
+        )
+        expected = json.loads(changelogdump.PARSED_GOLDEN.read_text(encoding="utf-8"))
+        assert changelogdump.build_corpus_dump() == expected, (
+            "changelog parse disagrees with the committed golden — if the changelog.py change is "
+            "deliberate, regenerate (and mirror go/internal/changelog first)"
+        )
+
+    def test_corpus_still_exercises_the_traps(self):
+        data = json.loads(changelogdump.CORPUS_PATH.read_text(encoding="utf-8"))
+        entries = data["entries"]
+        dicts = [e for e in entries if isinstance(e, dict)]
+        assert any(not isinstance(e, dict) for e in entries), "the non-dict entry left the corpus"
+        assert any(e.get("version") == "" for e in dicts), "the empty-version entry left the corpus"
+        assert any("version" not in e for e in dicts), "the missing-version entry left the corpus"
+        assert any(not isinstance(e.get("date"), str) and "date" in e for e in dicts), (
+            "the non-string date left the corpus"
+        )
+        assert any(isinstance(e.get("highlights"), str) for e in dicts), "the string highlights left the corpus"
+        assert any(isinstance(e.get("highlights"), dict) for e in dicts), "the dict highlights left the corpus"
+        highlights = [h for e in dicts for h in (e.get("highlights") or []) if isinstance(e.get("highlights"), list)]
+        hdicts = [h for h in highlights if isinstance(h, dict)]
+        assert any(not isinstance(h, dict) for h in highlights), "the non-dict highlight left the corpus"
+        assert any(h.get("text") == "" for h in hdicts), "the empty-text highlight left the corpus"
+        assert any(isinstance(h.get("areas"), str) for h in hdicts), "the non-list areas left the corpus"
+        assert any(
+            isinstance(h.get("areas"), list) and any(not isinstance(a, str) for a in h["areas"]) for h in hdicts
+        ), "the non-string area left the corpus"
+        assert any(
+            isinstance(h.get("areas"), list)
+            and len([a for a in h["areas"] if isinstance(a, str)]) != len({a for a in h["areas"] if isinstance(a, str)})
+            for h in hdicts
+        ), "the duplicate-area dedupe vector left the corpus"
+
+    def test_the_areas_vocabulary_is_frozen_with_the_go_twin(self):
+        """AreaColors / VALID_AREAS are duplicated in go/internal/changelog;
+        a vocabulary change must touch both — this pins the Python half the
+        corpus golden can't see (colors)."""
+        from yeaboi.changelog import AREA_COLORS, VALID_AREAS
+
+        assert set(AREA_COLORS) == VALID_AREAS
+
+
 def test_args_golden_matches_live():
     """The Python side of the argv gate is frozen: a build_parser() change
     must regenerate the golden deliberately, never drift silently."""
@@ -381,6 +508,18 @@ def test_go_binary_matches_python_argdump(entry):
         check=True,
     )
     assert json.loads(out.stdout) == entry["result"], f"vector {entry['name']}: Go and Python outcomes disagree"
+
+
+@needs_cli_binary
+def test_go_binary_matches_python_changelog():
+    """The changelog gate's subprocess arm: the binary's embedded copy,
+    parsed and rendered, must equal yeaboi.changelog over the bundled
+    file. Catches parse drift and embed drift in one diff."""
+    out = subprocess.run([CLI_BINARY, "__dump-changelog"], capture_output=True, text=True, check=True)
+    assert json.loads(out.stdout) == changelogdump.build_live_dump(), (
+        "Go and Python changelog dumps disagree — if changelog_data.json changed, re-copy it into "
+        "go/internal/changelog/ (the embed lockstep guard names the rule)"
+    )
 
 
 @needs_cli_binary

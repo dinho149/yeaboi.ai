@@ -78,6 +78,14 @@ func Load(env home.Env, cwd string, envFile string) (*Config, error) {
 	return &Config{env: effective, homeDir: homeDir}, nil
 }
 
+// Env exposes the layered effective environment — what os.environ holds
+// after Python's two override=False dotenv loads. redaction.py reads its
+// secrets from exactly that view, so the logfile surface resolves through
+// this rather than the raw process env.
+func (c *Config) Env() home.Env {
+	return c.env
+}
+
 // getenv mirrors os.getenv(key, default): an empty value is a value.
 func (c *Config) getenv(key, def string) string {
 	if v, ok := c.env(key); ok {

@@ -251,6 +251,24 @@ FIXTURES = [
             "home/.aws/config": ("[profile dup]\nrole_arn = arn:x\n[profile dup]\nrole_arn = arn:y\n"),
         },
     ),
+    # ------------------------------------------------------------------
+    # W8 phase 5 — the logfile surface. The traps: value-based redaction
+    # with one secret a substring of another (longest-first matching), a
+    # value below _MIN_SECRET_LEN that must never redact, a webhook that is
+    # both a value hit and a pattern hit, and a mixed-case LOG_LEVEL that
+    # pins get_log_level's upper() while opening every DEBUG arm of the
+    # registry scenario.
+    # ------------------------------------------------------------------
+    Fixture(
+        "logfile-redaction",
+        {
+            "LOG_LEVEL": "Debug",
+            "ANTHROPIC_API_KEY": "hush-hush-value-123",
+            "NOTION_TOKEN": "hush-hush-value-123-extended",
+            "GITHUB_TOKEN": "tiny",
+            "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T0AA/B0BB/curly",
+        },
+    ),
 ]
 
 # Every environment variable yeaboi.config reads (the proxy getters read
@@ -351,8 +369,12 @@ CONFIG_ENV_VARS = (
 
 
 def template_env(fixture: Fixture) -> dict[str, str]:
-    """The fixture's full launch-environment template (base + overlay)."""
-    return {"HOME": "{tmp}/home", **fixture.env}
+    """The fixture's full launch-environment template (base + overlay).
+
+    ``TZ`` is pinned because the phase-5 logfile dump formats pinned record
+    timestamps through ``time.localtime`` — without it the goldens would
+    depend on the regenerating machine's zone."""
+    return {"HOME": "{tmp}/home", "TZ": "UTC", **fixture.env}
 
 
 def realized_env(fixture: Fixture, tmp: Path) -> dict[str, str]:

@@ -17,7 +17,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from tests.parity.foundations import argdump, helpdump, matrix
+from tests.parity.foundations import argdump, changelogdump, helpdump, matrix
 
 
 def main() -> None:
@@ -36,6 +36,10 @@ def main() -> None:
     argdump.GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     argdump.GOLDEN_PATH.write_text(argdump.render_golden(), encoding="utf-8")
     print(f"wrote {argdump.GOLDEN_PATH}")
+
+    changelogdump.PARSED_GOLDEN.parent.mkdir(parents=True, exist_ok=True)
+    changelogdump.PARSED_GOLDEN.write_text(changelogdump.render_golden(), encoding="utf-8")
+    print(f"wrote {changelogdump.PARSED_GOLDEN}")
 
     helpdump.GOLDENS_DIR.mkdir(parents=True, exist_ok=True)
     screens = helpdump.build_screens()
