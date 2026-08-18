@@ -33,6 +33,19 @@ FROZEN_SURFACES: dict[str, str] = {
     # work that file mostly is, and behavioural drift in the mirrored pieces is
     # still caught by `make parity` — the freeze only adds byte-level cover.
     "src/yeaboi/analysis/doc_quality.py": "57df80a38a94c8a41fdff7f8112600c76016bb19a9871fe9bc31b6e67bdcb28d",
+    # Wave 7 — retro/poker export builders, frozen when Wave 8 landed. The three
+    # files whose mirrored surface IS the file: the two export modules (their
+    # impure remainder — fs writes, paths, the HTML shell — exists to serve the
+    # frozen builders and moves with them) and artifacts/render.py (mirrored
+    # whole). The shared pieces the dual-maintenance exports row also names
+    # (`html_theme.py`, `markdown_convert.py`, `artifacts/paths.py`,
+    # `retro/board.py`, the stores) are deliberately NOT here, for
+    # `team_learning.py`'s reason: those files are mostly five other exporters'
+    # and the modes' own work, and drift in their mirrored pieces is still
+    # caught by `make parity` — the freeze only adds byte-level cover.
+    "src/yeaboi/retro/export.py": "d63322e33b4ecb5596f7e0883bb75a8373ae7ae9d08dd995102027e7bfee4033",
+    "src/yeaboi/poker/export.py": "c8e64fa6c15bce94f052582c8679b7907a3dbfb20fc6867aa7f54253c5763b8d",
+    "src/yeaboi/artifacts/render.py": "5722c952978bbb0c91abc8144dc294203da981ce0fab3a4f02fcceae3ed53986",
 }
 
 
