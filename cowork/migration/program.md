@@ -59,7 +59,7 @@ and not from `main`.
 | ✔ | PR | Wave | Contents (phase commits inside) | Size | Gate |
 |---|---|---|---|---|---|
 | ✔ | 1 | W7 | Retro/poker export builders | S | existing parity harness |
-| ☐ | 2 | W8 | Foundations: config/paths, 85 env vars, CLI parser skeleton | M | golden-subprocess diff (`--help`, config/paths resolution) |
+| ✔ | 2 | W8 | Foundations: config/paths, 85 env vars, CLI parser skeleton | M | golden-subprocess diff (`--help`, config/paths resolution) |
 | ☐ | 3 | W9 | Persistence: sessions v1→v27 ladder + ~30 tables across per-mode stores | L | migrate fixture DBs both sides, diff full projections |
 | ☐ | 4 | W10 | Mode engines headless (phase per mode: standup remainder, retro, poker, performance, reporting, roadmap, analysis, artifacts/sharing) | XL | parity per engine |
 | ☐ | 5 | W11 | Web layer: 3 stdlib HTTP servers, SSE, tunnel, gate + the four prep refactors from the boards ruling | L | new HTTP replay harness |

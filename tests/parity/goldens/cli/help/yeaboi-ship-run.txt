@@ -1,0 +1,23 @@
+usage: yeaboi ship run [-h] [--repo PATH] [--session ID] [--check CMD]
+                       [--timeout-minutes N] [--dry-run]
+                       [--format {text,json}] [--strict]
+                       STORY
+
+Hand a story from your saved sprint plan to a supervised coding agent (Claude
+Code headless): isolated worktree and branch, deterministic validation, a
+human approval gate at the terminal, and a PR only after approval. A user-
+global launch budget caps runs.
+
+positional arguments:
+  STORY                 Story id from the plan (e.g. US-001)
+
+options:
+  -h, --help            show this help message and exit
+  --repo PATH           Target git repository (default: current dir)
+  --session ID          Planning session id (default: latest)
+  --check CMD           Validation command run in the worktree (e.g. 'make
+                        test')
+  --timeout-minutes N   Agent run timeout (default 30)
+  --dry-run             Canned run — no agent, no git, no network
+  --format {text,json}  Output format
+  --strict              Exit 3 when the run did not end approved

@@ -57,6 +57,7 @@ class FakeDriver:
     def __init__(self, behaviors=("work",)):
         self.behaviors = list(behaviors)
         self.calls: list[str] = []  # the prompts, for assertions
+        self.streamed: list[bool] = []  # the `stream` flag per call, for assertions
 
     def available(self):
         return True, "fake 1.0"
@@ -67,8 +68,11 @@ class FakeDriver:
     def get_capabilities(self):
         return {}
 
-    def run(self, prompt, cwd, *, timeout_s=0, cancel_event=None, on_line=None):
+    def run(self, prompt, cwd, *, timeout_s=0, cancel_event=None, on_line=None, stream=False):
         self.calls.append(prompt)
+        self.streamed.append(stream)
+        if on_line is not None:
+            on_line('{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}')
         behavior = self.behaviors.pop(0) if self.behaviors else "nothing"
         if behavior == "work":
             (Path(cwd) / f"agent_{len(self.calls)}.py").write_text("x = 1\n", encoding="utf-8")

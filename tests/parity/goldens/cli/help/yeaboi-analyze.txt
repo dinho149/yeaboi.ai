@@ -1,0 +1,55 @@
+usage: yeaboi analyze [-h] [--source {jira,azdevops,both}] [--project KEY]
+                      [--sprints SPRINTS] [--depth {quick,deep}]
+                      [--window-days WINDOW_DAYS] [--analysis-model MODEL]
+                      [--features FEATURE [FEATURE ...]]
+                      [--github-owner OWNER] [--azdo-code-project PROJECT]
+                      [--confluence-space SPACE] [--notion-root PAGE_ID]
+                      [--samples] [--no-insights] [--no-ai-usage]
+                      [--no-doc-quality] [--delivery TRACKER [TRACKER ...]]
+                      [--code HOST [HOST ...]]
+                      [--docs PLATFORM [PLATFORM ...]]
+                      [--members NAME [NAME ...]] [--strict]
+                      [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --source {jira,azdevops,both}
+                        Tracker: jira, azdevops, or both (default: auto-detect
+                        a single tracker)
+  --project KEY         Project key (default: configured)
+  --sprints SPRINTS     Closed sprints to analyse (default 8)
+  --depth {quick,deep}  Analysis depth: deep provides exhaustive AI
+                        enrichment; quick is metrics-only (default deep)
+  --window-days WINDOW_DAYS
+                        Changed-content window shared by Code and Docs
+                        (default 120)
+  --analysis-model MODEL
+                        Per-run model for structured Analysis tasks (final
+                        synthesis still uses the primary model)
+  --features FEATURE [FEATURE ...]
+                        Analysis areas to run (default: all supported by the
+                        selected integrations)
+  --github-owner OWNER
+  --azdo-code-project PROJECT
+  --confluence-space SPACE
+  --notion-root PAGE_ID
+  --samples             Also generate sample tickets (requires --depth deep;
+                        extra LLM calls)
+  --no-insights         Skip the coaching-insights LLM call
+  --no-ai-usage         Skip the AI-adoption scan (commit/PR AI-tool markers)
+  --no-doc-quality      Skip the documentation usefulness and clarity scan
+  --delivery TRACKER [TRACKER ...]
+                        Delivery (velocity/calibration) trackers to analyse.
+                        e.g. --delivery jira
+  --code HOST [HOST ...]
+                        Code hosts for the AI-usage scan. e.g. --code github
+                        azdo
+  --docs PLATFORM [PLATFORM ...]
+                        Doc platforms for the clarity/usefulness read. e.g.
+                        --docs confluence
+  --members NAME [NAME ...]
+                        Selected members for delivery and code. Code analysis
+                        is empty without an explicit member scope; it never
+                        falls back to whole-team activity.
+  --strict              Exit 3 on a degraded run (warnings present)
+  --format {text,json}  Output format

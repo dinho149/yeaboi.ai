@@ -368,6 +368,7 @@ AREAS: tuple[Area, ...] = (
             "go/",
             "contracts/",
             "scripts/migration_progress.py",
+            "scripts/check_core_wheel.py",
         ),
         tests=(
             "tests/unit/test_gocore_*.py",
@@ -559,6 +560,15 @@ _MIRRORED = (
     # Not a twin, but every literal it asserts is a parity fixture — changing it
     # changes what the Go side is checked against.
     "tests/unit/test_code_health.py",
+    # Wave 8 (foundations). paths.py, config.py and logging_setup.py are in
+    # GLOBAL, so their edits already run everything; these four route to the
+    # platform/security areas and would otherwise merge green with the CLI
+    # help/argv goldens, the go:embed changelog copy, or the redaction twin
+    # stale — the exact CURRENT_SCHEMA_VERSION shape CLAUDE.md documents.
+    "src/yeaboi/cli.py",
+    "src/yeaboi/changelog.py",
+    "src/yeaboi/changelog_data.json",
+    "src/yeaboi/redaction.py",
 )
 
 JOBS: tuple[Job, ...] = (
@@ -696,11 +706,15 @@ def unit_paths(scope: Scope) -> list[str]:
         return list(FULL_UNIT)
     # Globs that match nothing make pytest exit 4 ("file or directory not
     # found"), so they are resolved here rather than handed over verbatim.
+    # Same exit code for a changed *support* file under tests/ — a parity
+    # golden, a syrupy snapshot — which rides into scope.tests as "a changed
+    # test runs" but is nothing pytest can collect: only .py files and
+    # directories go to the command line (the file's area still runs).
     resolved: set[str] = set()
     for pattern in scope.tests:
         if any(ch in pattern for ch in "*?["):
-            resolved.update(str(p.relative_to(ROOT)) for p in ROOT.glob(pattern))
-        elif (ROOT / pattern).exists():
+            resolved.update(str(p.relative_to(ROOT)) for p in ROOT.glob(pattern) if p.suffix == ".py" or p.is_dir())
+        elif (ROOT / pattern).exists() and (pattern.endswith(".py") or (ROOT / pattern).is_dir()):
             resolved.add(pattern)
     return sorted(resolved)
 

@@ -783,6 +783,31 @@ def get_poker_server_port() -> int:
         return 5273
 
 
+def get_ship_server_port() -> int:
+    """Return the base port for the Ship board server (default 5473).
+
+    5473 sits clear of retro's 5173..5193 and poker's 5273..5293 walk ranges so
+    a ship board can run alongside either. The server walks upward from this
+    port if it is busy (ship/server.py).
+    """
+    try:
+        return int(os.getenv("SHIP_PORT", "5473"))
+    except ValueError:
+        return 5473
+
+
+def get_ship_board_enabled() -> bool:
+    """True when a ship run should open its live, shareable web board.
+
+    Opt-in for now (``YEABOI_SHIP_BOARD=1``). The board is read-only and safe,
+    but it turns on the driver's ``stream-json`` path and, unless
+    :func:`tunnels_disabled`, brings up a Cloudflare tunnel — both are new
+    behaviour a plain terminal run should not get by surprise. Flip it on to
+    watch a run from a browser and share it with teammates.
+    """
+    return os.getenv("YEABOI_SHIP_BOARD", "").strip().lower() in ("1", "true", "yes")
+
+
 def tunnels_disabled() -> bool:
     """True when the live boards must not open a Cloudflare tunnel.
 

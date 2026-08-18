@@ -1,0 +1,23 @@
+usage: yeaboi ceremonies add [-h] --mode MODE [--at HH:MM] [--weekdays SPEC]
+                             [--channels LIST] [--arg KEY=VALUE]
+                             [--session ID] [--stale-after MIN]
+                             [--monthly-cap USD] [--format {text,json}]
+                             name
+
+positional arguments:
+  name                  A short name — lowercase letters, digits, dot, dash,
+                        underscore
+
+options:
+  -h, --help            show this help message and exit
+  --mode MODE           Which mode runs (see `ceremonies modes`)
+  --at HH:MM            Local time it should happen (default 09:00)
+  --weekdays SPEC       e.g. 1-5, 1,3,5 (default: the mode's own)
+  --channels LIST       Comma-separated: terminal, desktop, slack, email
+                        (default terminal)
+  --arg KEY=VALUE       A mode argument; repeatable (see `ceremonies modes`)
+  --session ID          Session to attach it to
+  --stale-after MIN     Skip a scheduled run this many minutes late (0
+                        disables; default 120)
+  --monthly-cap USD     Skip scheduled runs past this month's spend
+  --format {text,json}  Output format

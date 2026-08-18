@@ -1,0 +1,10 @@
+usage: yeaboi ceremonies remove [-h] [--session ID] [--format {text,json}]
+                                name
+
+positional arguments:
+  name
+
+options:
+  -h, --help            show this help message and exit
+  --session ID
+  --format {text,json}  Output format

@@ -169,6 +169,55 @@ func IntOrZero(v any) (int64, error) {
 	return 0, &Error{Class: "TypeError", Msg: "int() argument has wrong type"}
 }
 
+// ParseInt mirrors int(str): unicode-whitespace strip, optional sign, ASCII
+// digits with single underscores allowed only between digits; anything else
+// raises ValueError. Two bounded deviations, both outside every parity
+// corpus: non-ASCII decimal digits (int("١٢") works in CPython) are
+// rejected, and a value past int64 saturates instead of growing arbitrarily
+// — every config.py caller clamps or defaults immediately after parsing, so
+// the observable result is identical.
+func ParseInt(s string) (int64, error) {
+	valueError := &Error{Class: "ValueError", Msg: fmt.Sprintf("invalid literal for int() with base 10: %s", ReprStr(s))}
+	t := Strip(s)
+	if t == "" {
+		return 0, valueError
+	}
+	digits := t
+	if digits[0] == '+' || digits[0] == '-' {
+		digits = digits[1:]
+	}
+	if digits == "" {
+		return 0, valueError
+	}
+	prevDigit := false
+	for i := 0; i < len(digits); i++ {
+		c := digits[i]
+		if c == '_' {
+			if !prevDigit {
+				return 0, valueError // leading or doubled underscore
+			}
+			prevDigit = false
+			continue
+		}
+		if c < '0' || c > '9' {
+			return 0, valueError
+		}
+		prevDigit = true
+	}
+	if !prevDigit {
+		return 0, valueError // trailing underscore
+	}
+	v, err := strconv.ParseInt(strings.ReplaceAll(t, "_", ""), 10, 64)
+	if err != nil {
+		var numErr *strconv.NumError
+		if errors.As(err, &numErr) && errors.Is(numErr.Err, strconv.ErrRange) {
+			return v, nil // saturated — see the deviation note above
+		}
+		return 0, valueError
+	}
+	return v, nil
+}
+
 // RoundN mirrors Python round(x, n) for n >= 0: round to the closest multiple
 // of 10^-n with ties to even, computed over the float's exact decimal
 // expansion. strconv's fixed-precision formatting is a correctly-rounded

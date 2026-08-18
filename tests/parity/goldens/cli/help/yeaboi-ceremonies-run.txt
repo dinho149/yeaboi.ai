@@ -1,0 +1,14 @@
+usage: yeaboi ceremonies run [-h] [--session ID] [--scheduled] [--dry-run]
+                             [--format {text,json}]
+                             name
+
+positional arguments:
+  name
+
+options:
+  -h, --help            show this help message and exit
+  --session ID
+  --scheduled           Arm the guards a fired run needs: staleness, the
+                        monthly cap, and pause
+  --dry-run             Run the engine without LLM calls or delivery
+  --format {text,json}  Output format

@@ -1,0 +1,10 @@
+usage: yeaboi poker [-h] [--session ID] [--limit LIMIT] [--export-latest]
+                    [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session ID          Only show sessions recorded under this id
+  --limit LIMIT         Number of past sessions to show (default 10)
+  --export-latest       Also export the latest poker session to Markdown +
+                        HTML
+  --format {text,json}  Output format

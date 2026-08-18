@@ -168,3 +168,24 @@ class TestSchemaGuardLockstep:
             "the migration is one the sidecar genuinely must not write behind, leave it and say so "
             "here, because the sidecar will refuse every upgraded database until it is raised."
         )
+
+
+class TestChangelogEmbedLockstep:
+    """The go:embed changelog copy must track the Python bundle.
+
+    ``go/internal/changelog`` embeds ``changelog_data.json`` at build time;
+    the auto-version workflow rewrites only ``src/yeaboi/changelog_data.json``
+    on release. Byte-identity is the whole contract — the Go side has its own
+    twin of this check (``TestEmbeddedDataMatchesPythonBundle``), but that one
+    runs only when the ``go`` CI job is scoped in, and a changelog edit is a
+    Python-side change, so this guard rides the Python lane too.
+    """
+
+    def test_embedded_changelog_matches_the_python_bundle(self):
+        python = (REPO / "src" / "yeaboi" / "changelog_data.json").read_bytes()
+        embedded = (REPO / "go" / "internal" / "changelog" / "changelog_data.json").read_bytes()
+        assert embedded == python, (
+            "go/internal/changelog/changelog_data.json is not byte-identical to "
+            "src/yeaboi/changelog_data.json — re-copy the Python bundle over the embed: "
+            "cp src/yeaboi/changelog_data.json go/internal/changelog/changelog_data.json"
+        )

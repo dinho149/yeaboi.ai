@@ -1,0 +1,11 @@
+usage: yeaboi agents security [-h] [--deep] [--format {text,json}] [--strict]
+
+The Agents modes are in beta — costs and activity are estimates from local
+session logs and public rate tables, not your provider's bill. Treat every
+number as an estimate to verify, not an invoice.
+
+options:
+  -h, --help            show this help message and exit
+  --deep                Re-scan every transcript, not just new/changed ones
+  --format {text,json}  Output format
+  --strict              Exit 3 on a degraded run (warnings present)

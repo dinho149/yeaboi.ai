@@ -1,0 +1,10 @@
+usage: yeaboi ship status [-h] [--format {text,json}]
+
+Hand a story from your saved sprint plan to a supervised coding agent (Claude
+Code headless): isolated worktree and branch, deterministic validation, a
+human approval gate at the terminal, and a PR only after approval. A user-
+global launch budget caps runs.
+
+options:
+  -h, --help            show this help message and exit
+  --format {text,json}  Output format

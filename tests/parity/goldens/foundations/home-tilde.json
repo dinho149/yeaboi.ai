@@ -1,0 +1,538 @@
+{
+  "dump": {
+    "config": {
+      "beta_notices_acked": [],
+      "detect_proxy": null,
+      "get_ac_format": "",
+      "get_allowed_paths": [],
+      "get_anonymize_mask_terms": [],
+      "get_anthropic_api_key": null,
+      "get_aws_profile": null,
+      "get_azure_devops_org_url": null,
+      "get_azure_devops_project": null,
+      "get_azure_devops_team": null,
+      "get_azure_devops_token": null,
+      "get_bedrock_region": "us-east-1",
+      "get_config_dir": "{tmp}/home/.yeaboi",
+      "get_config_file": "{tmp}/home/.yeaboi/.env",
+      "get_confluence_base_url": null,
+      "get_confluence_email": null,
+      "get_confluence_export_parent_page_id": null,
+      "get_confluence_space_key": null,
+      "get_confluence_token": null,
+      "get_data_dir": "~/data dir/yeaboi",
+      "get_github_token": null,
+      "get_google_api_key": null,
+      "get_jira_base_url": null,
+      "get_jira_email": null,
+      "get_jira_project_key": null,
+      "get_jira_token": null,
+      "get_last_category": "humans",
+      "get_llm_model": null,
+      "get_llm_provider": "anthropic",
+      "get_log_level": "WARNING",
+      "get_music_channel": 0,
+      "get_notion_export_parent_page_id": null,
+      "get_notion_root_page_id": null,
+      "get_notion_token": null,
+      "get_ollama_base_url": "http://localhost:11434",
+      "get_ollama_num_ctx": 16384,
+      "get_openai_api_key": null,
+      "get_performance_framework_path": "",
+      "get_poker_server_port": 5273,
+      "get_retro_server_port": 5173,
+      "get_session_prune_days": 30,
+      "get_sessions_db": "{tmp}/home/.yeaboi/sessions.db",
+      "get_ship_board_enabled": false,
+      "get_ship_server_port": 5473,
+      "get_slack_webhook_url": "",
+      "get_smtp_host": "",
+      "get_smtp_password": "",
+      "get_smtp_port": 587,
+      "get_smtp_sender": "",
+      "get_smtp_user": "",
+      "get_standup_email_recipients": [],
+      "get_standup_github_repo": "",
+      "get_standup_user_name": "Me",
+      "get_team_analysis_azdo_pr_search_max_repos": 10,
+      "get_team_analysis_azdo_pr_search_top": 75,
+      "get_team_analysis_azdo_projects": [],
+      "get_team_analysis_azdo_repo_allowlist": null,
+      "get_team_analysis_code_max_concurrency": 6,
+      "get_team_analysis_confluence_spaces": [],
+      "get_team_analysis_doc_max_concurrency": 8,
+      "get_team_analysis_doc_request_timeout_seconds": 30,
+      "get_team_analysis_enrichment_timeout_seconds": 120,
+      "get_team_analysis_fast_model": null,
+      "get_team_analysis_github_owners": [],
+      "get_team_analysis_llm_max_concurrency": 6,
+      "get_team_analysis_llm_target_seconds": 600,
+      "get_team_analysis_max_change_lookups": 500,
+      "get_team_analysis_notion_roots": [],
+      "get_team_analysis_tracker_max_concurrency": 4,
+      "get_tunnel_timeout_minutes": 60,
+      "get_voice_device": "",
+      "get_voice_model": "base",
+      "is_beta_notice_enabled": true,
+      "is_duck_enabled": true,
+      "is_langsmith_enabled": false,
+      "is_llm_configured": [
+        false,
+        "ANTHROPIC_API_KEY not set"
+      ],
+      "is_music_enabled": false,
+      "is_team_analysis_azdo_pr_search_enabled": false,
+      "is_team_analysis_jira_dev_links_enabled": false,
+      "is_tips_enabled": true,
+      "is_voice_install_offer_enabled": true,
+      "tunnels_disabled": false,
+      "voice_extra_was_installed": false
+    },
+    "config_keyed": {
+      "is_beta_notice_seen": {
+        "": false,
+        "poker": false,
+        "retro": false,
+        "roadmap": false
+      }
+    },
+    "constants": {
+      "AGENTWATCH_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/agentwatch",
+      "AGENTWATCH_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/agentwatch",
+      "ANALYSIS_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/analysis",
+      "ANALYSIS_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/analysis",
+      "ANONYMIZE_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/anonymize",
+      "ATTACHMENTS_DIR": "{tmp}/home/data dir/yeaboi/attachments",
+      "BIN_DIR": "{tmp}/home/data dir/yeaboi/bin",
+      "CEREMONIES_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/ceremonies",
+      "DATA_DIR": "{tmp}/home/data dir/yeaboi/data",
+      "DB_PATH": "{tmp}/home/data dir/yeaboi/data/sessions.db",
+      "DEFAULT_ROOT_DIR": "{tmp}/home/.yeaboi",
+      "ENV_FILE": "{tmp}/home/.yeaboi/.env",
+      "EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports",
+      "LEGACY_DB_PATH": "{tmp}/home/data dir/yeaboi/sessions.db",
+      "LEGACY_PROJECTS_FILE": "{tmp}/home/data dir/yeaboi/projects.json",
+      "LEGACY_ROOT_DIR": "{tmp}/home/.scrum-agent",
+      "LEGACY_STATES_DIR": "{tmp}/home/data dir/yeaboi/states",
+      "LEGACY_TUI_LOG": "{tmp}/home/data dir/yeaboi/scrum-agent.log",
+      "LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs",
+      "MCP_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/mcp",
+      "PERFORMANCE_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/performance",
+      "PERFORMANCE_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/performance",
+      "PLANNING_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/planning",
+      "PLANNING_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/planning",
+      "POKER_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/poker",
+      "POKER_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/poker",
+      "PROJECTS_FILE": "{tmp}/home/data dir/yeaboi/data/projects.json",
+      "REPL_HISTORY": "{tmp}/home/data dir/yeaboi/repl-history",
+      "REPORTING_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/reporting",
+      "REPORTING_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/reporting",
+      "REPORTING_PREFS_FILE": "{tmp}/home/data dir/yeaboi/data/reporting_prefs.json",
+      "REPORTING_THEMES_FILE": "{tmp}/home/data dir/yeaboi/data/reporting_themes.json",
+      "RETRO_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/retro",
+      "RETRO_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/retro",
+      "ROADMAP_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/roadmap",
+      "ROADMAP_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/roadmap",
+      "ROOT_DIR": "{tmp}/home/data dir/yeaboi",
+      "SCRUM_DOCS_DIR": "{tmp}/home/data dir/yeaboi/scrum-docs",
+      "SHIP_BUDGET_FILE": "{tmp}/home/data dir/yeaboi/ship/ai-budget.json",
+      "SHIP_BUDGET_LOCK": "{tmp}/home/data dir/yeaboi/ship/ai-budget.lock",
+      "SHIP_BUDGET_RECEIPTS": "{tmp}/home/data dir/yeaboi/ship/ai-budget-receipts.jsonl",
+      "SHIP_DIR": "{tmp}/home/data dir/yeaboi/ship",
+      "SHIP_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/ship",
+      "SHIP_WORKTREES_DIR": "{tmp}/home/data dir/yeaboi/ship/worktrees",
+      "SHIP_WORKTREE_REGISTRY": "{tmp}/home/data dir/yeaboi/ship/worktrees.json",
+      "STANDUP_EXPORTS_DIR": "{tmp}/home/data dir/yeaboi/exports/standup",
+      "STANDUP_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/standup",
+      "STATES_DIR": "{tmp}/home/data dir/yeaboi/data/states",
+      "TRANSCRIPTS_DIR": "{tmp}/home/data dir/yeaboi/transcripts",
+      "TUI_LOGS_DIR": "{tmp}/home/data dir/yeaboi/logs/tui",
+      "VOICE_INSTALL_FILE": "{tmp}/home/data dir/yeaboi/data/voice_install.json"
+    },
+    "helpers": {
+      "get_agentwatch_log_dir": "{tmp}/home/data dir/yeaboi/logs/agentwatch",
+      "get_analysis_log_dir": "{tmp}/home/data dir/yeaboi/logs/analysis",
+      "get_bin_dir": "{tmp}/home/data dir/yeaboi/bin",
+      "get_ceremonies_log_dir": "{tmp}/home/data dir/yeaboi/logs/ceremonies",
+      "get_db_path": "{tmp}/home/data dir/yeaboi/data/sessions.db",
+      "get_mcp_log_dir": "{tmp}/home/data dir/yeaboi/logs/mcp",
+      "get_performance_log_dir": "{tmp}/home/data dir/yeaboi/logs/performance",
+      "get_planning_log_dir": "{tmp}/home/data dir/yeaboi/logs/planning",
+      "get_poker_log_dir": "{tmp}/home/data dir/yeaboi/logs/poker",
+      "get_reporting_log_dir": "{tmp}/home/data dir/yeaboi/logs/reporting",
+      "get_reporting_prefs_path": "{tmp}/home/data dir/yeaboi/data/reporting_prefs.json",
+      "get_reporting_themes_path": "{tmp}/home/data dir/yeaboi/data/reporting_themes.json",
+      "get_retro_log_dir": "{tmp}/home/data dir/yeaboi/logs/retro",
+      "get_roadmap_log_dir": "{tmp}/home/data dir/yeaboi/logs/roadmap",
+      "get_ship_dir": "{tmp}/home/data dir/yeaboi/ship",
+      "get_ship_log_dir": "{tmp}/home/data dir/yeaboi/logs/ship",
+      "get_standup_log_dir": "{tmp}/home/data dir/yeaboi/logs/standup",
+      "get_transcripts_dir": "{tmp}/home/data dir/yeaboi/transcripts",
+      "get_tui_log_path": "{tmp}/home/data dir/yeaboi/logs/tui/yeaboi.log",
+      "get_voice_install_path": "{tmp}/home/data dir/yeaboi/data/voice_install.json"
+    },
+    "keyed_helpers": {
+      "get_agentwatch_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/agentwatch/report",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/agentwatch/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/agentwatch/i̇zmi̇r - ops"
+      },
+      "get_analysis_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/analysis/project",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/analysis/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/analysis/i̇zmi̇r - ops"
+      },
+      "get_anonymize_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/anonymize/output",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/anonymize/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/anonymize/i̇zmi̇r - ops"
+      },
+      "get_attachments_dir": {
+        "": "{tmp}/home/data dir/yeaboi/attachments/misc",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/attachments/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/attachments/i̇zmi̇r - ops"
+      },
+      "get_performance_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/performance/engineer",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/performance/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/performance/i̇zmi̇r - ops"
+      },
+      "get_planning_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/planning/project",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/planning/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/planning/i̇zmi̇r - ops"
+      },
+      "get_poker_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/poker/project",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/poker/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/poker/i̇zmi̇r - ops"
+      },
+      "get_reporting_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/reporting/report",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/reporting/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/reporting/i̇zmi̇r - ops"
+      },
+      "get_retro_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/retro/project",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/retro/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/retro/i̇zmi̇r - ops"
+      },
+      "get_roadmap_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/roadmap/roadmap",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/roadmap/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/roadmap/i̇zmi̇r - ops"
+      },
+      "get_standup_export_dir": {
+        "": "{tmp}/home/data dir/yeaboi/exports/standup/project",
+        "Team/Alpha": "{tmp}/home/data dir/yeaboi/exports/standup/team-alpha",
+        "İZMİR \\ Ops": "{tmp}/home/data dir/yeaboi/exports/standup/i̇zmi̇r - ops"
+      }
+    },
+    "logfile": {
+      "apply_level": {
+        "": 30,
+        " warning ": 30,
+        "CRITICAL": 50,
+        "DEBUG": 10,
+        "ERROR": 40,
+        "Error": 40,
+        "INFO": 20,
+        "VERBOSE": 30,
+        "WARNING": 30,
+        "debug": 10,
+        "fatal": 50,
+        "notset": 0,
+        "warn": 30
+      },
+      "configured_level": 30,
+      "files": {
+        "planning/sess-alpha.log": "2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n",
+        "planning/sess-beta.log": "2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n",
+        "poker/poker.log": "2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n",
+        "retro/retro.log": "2025-08-18 06:53:23 WARNING yeaboi.retro.engine: card parse fallback used\n2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n",
+        "rotation/rot.log": "2025-08-18 06:55:07 INFO    yeaboi.rot: small after the oversize one\n2025-08-18 06:55:08 INFO    yeaboi.rot: closing line of the rotation corpus\n",
+        "rotation/rot.log.1": "2025-08-18 06:55:06 INFO    yeaboi.rot: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+        "rotation/rot.log.2": "2025-08-18 06:55:05 INFO    yeaboi.rot: token [REDACTED] rides along\n",
+        "rotation/rot.log.3": "2025-08-18 06:55:03 INFO    yeaboi.rot: fourth line arrives after the unicode run\n2025-08-18 06:55:04 INFO    yeaboi.rot: fifth line pushes the byte count over\n",
+        "tui/yeaboi.log": "2025-08-18 06:53:22 ERROR   yeaboi.tools.github: auth failed: token [REDACTED] rejected\n2025-08-18 06:53:23 WARNING yeaboi.retro.engine: card parse fallback used\n2025-08-18 06:53:24 ERROR   yeaboi.agent.nodes: plan node failed\n2025-08-18 06:53:25 CRITICAL yeaboi.agent.nodes: graph aborted\n2025-08-18 06:53:26 DEBUG   yeaboi.agent.llm: cache hit\n2025-08-18 06:53:28 ERROR   yeaboi.poker.engine: sync failed\n2025-08-18 06:53:29 WARNING yeaboi.cli: shutting down\n2025-08-18 06:53:30 ERROR   yeaboi.tools.notion: post failed for token <unset>\n"
+      },
+      "format": [
+        "2025-08-18 06:53:20 INFO    yeaboi.cli: startup complete",
+        "2025-08-18 06:53:21 DEBUG   yeaboi.agent.llm: prompt cached",
+        "2025-08-18 07:54:21 WARNING yeaboi.tools.github: retrying",
+        "2025-08-19 07:39:59 ERROR   yeaboi.retro: boom with [REDACTED] token",
+        "2025-08-19 07:40:00 CRITICAL yeaboi: unicode café 🚀 %s literal"
+      ],
+      "log_safe": [
+        [
+          "clean value",
+          "clean value"
+        ],
+        [
+          "crlf\r\ninjected\tline",
+          "crlf  injected line"
+        ],
+        [
+          "controls \u0000\u0001 kept?  end",
+          "controls  kept?  end"
+        ],
+        [
+          "vertical\u000btab\fformfeed",
+          "verticaltabformfeed"
+        ],
+        [
+          "nbsp stays",
+          "nbsp stays"
+        ],
+        [
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        ],
+        [
+          "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy…"
+        ],
+        [
+          "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééétail",
+          "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…"
+        ],
+        [
+          "secret ghp_ABCDEFGHIJKLMNOPQRST inside",
+          "secret ghp_ABCDEFGHIJKLMNOPQRST inside"
+        ]
+      ],
+      "modes": {
+        "planning/": "0o700",
+        "planning/sess-alpha.log": "0o600",
+        "planning/sess-beta.log": "0o600",
+        "poker/": "0o700",
+        "poker/poker.log": "0o600",
+        "retro/": "0o700",
+        "retro/retro.log": "0o600",
+        "rotation/": "0o700",
+        "rotation/rot.log": "0o600",
+        "rotation/rot.log.1": "0o600",
+        "rotation/rot.log.2": "0o600",
+        "rotation/rot.log.3": "0o600",
+        "tui/": "0o700",
+        "tui/yeaboi.log": "0o600"
+      },
+      "redact": [
+        [
+          "plain text with no secrets at all, port 8080 true",
+          "plain text with no secrets at all, port 8080 true"
+        ],
+        [
+          "anthropic sk-ant-api03-AbCdEf123456 trailing",
+          "anthropic [REDACTED] trailing"
+        ],
+        [
+          "unicode tail sk-ant-abcé2345678é9 done",
+          "unicode tail [REDACTED] done"
+        ],
+        [
+          "openai sk-abcdefghijklmnopqrst123 x",
+          "openai [REDACTED] x"
+        ],
+        [
+          "github ghp_ABCDEFGHIJKLMNOPQRST clean",
+          "github [REDACTED] clean"
+        ],
+        [
+          "fine ghp_short7 stays",
+          "fine ghp_short7 stays"
+        ],
+        [
+          "pat github_pat_11ABCDEFGHIJKLMNOPQRSTUV done",
+          "pat [REDACTED] done"
+        ],
+        [
+          "slack xoxb-1234567890-abc token",
+          "slack [REDACTED] token"
+        ],
+        [
+          "google AIzaSyA-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa end",
+          "google [REDACTED] end"
+        ],
+        [
+          "aws AKIAIOSFODNN7EXAMPLE key",
+          "aws [REDACTED] key"
+        ],
+        [
+          "atlassian ATATT3xFfGF0T-abc+def/ghi=jkl end",
+          "atlassian [REDACTED] end"
+        ],
+        [
+          "notion ntn_abcdefghijklmnopqrst123 page",
+          "notion [REDACTED] page"
+        ],
+        [
+          "notion secret_abcdefghijklmnopqrstuvwxyz1234 page",
+          "notion [REDACTED] page"
+        ],
+        [
+          "webhook hooks.slack.com/services/T0AA/B0BB/curly done",
+          "webhook [REDACTED] done"
+        ],
+        [
+          "webhook at https://hooks.slack.com/services/T0AA/B0BB/curly end",
+          "webhook at https://[REDACTED] end"
+        ],
+        [
+          "auth Bearer abcdef1234567890XYZ sent",
+          "auth [REDACTED] sent"
+        ],
+        [
+          "auth bEaReR abcdef1234567890XYZ sent",
+          "auth [REDACTED] sent"
+        ],
+        [
+          "auth Basic dGVzdDp0ZXN0cGFzcw== ok",
+          "auth [REDACTED] ok"
+        ],
+        [
+          "auth Bearer short1 ok",
+          "auth Bearer short1 ok"
+        ],
+        [
+          "url https://svc:AKCp8fffffff@nexus.corp/simple pinned",
+          "url https://[REDACTED]@nexus.corp/simple pinned"
+        ],
+        [
+          "url https://svc:pw@nexus.corp/simple short-password",
+          "url https://svc:pw@nexus.corp/simple short-password"
+        ],
+        [
+          "url ftp://ghp_ABCDEFGHIJKLMNOPQRST:pw12@x positional-preference",
+          "url ftp://[REDACTED]:pw12@x positional-preference"
+        ],
+        [
+          "no scheme svc:longpassword@host untouched",
+          "no scheme svc:longpassword@host untouched"
+        ],
+        [
+          "value hush-hush-value-123 and hush-hush-value-123-extended overlap",
+          "value hush-hush-value-123 and hush-hush-value-123-extended overlap"
+        ],
+        [
+          "value fallback-key from the project env",
+          "value fallback-key from the project env"
+        ],
+        [
+          "mail env-wins@acme.dev interpolated into GOOGLE_API_KEY",
+          "mail env-wins@acme.dev interpolated into GOOGLE_API_KEY"
+        ],
+        [
+          "tiny short-secret value stays: tiny",
+          "tiny short-secret value stays: tiny"
+        ]
+      ],
+      "registry": [
+        "poker",
+        "session",
+        "tui"
+      ]
+    },
+    "safe_key": {
+      "": "fb",
+      "  padded  ": "padded",
+      ".": "fb",
+      "...": "...",
+      "../../../etc/passwd": "etc-passwd",
+      "MiXeD CASE": "mixed case",
+      "PROJ.1": "proj.1",
+      "Team/Alpha": "team-alpha",
+      "a/./b/../c": "a-b-c",
+      "a//b": "a-b",
+      "a\\b\\c": "a-b-c",
+      "trailing/": "trailing",
+      " nbsp ": "nbsp",
+      "İstanbul CI": "i̇stanbul ci",
+      "🚀 Launch/Q3": "🚀 launch-q3"
+    },
+    "set_key": {
+      "append-after-newline-less-tail": {
+        "initial": "A=1",
+        "ops": [
+          [
+            "B",
+            "2"
+          ]
+        ],
+        "text": "A=1\nB='2'\n"
+      },
+      "create-missing": {
+        "initial": null,
+        "ops": [
+          [
+            "FOO",
+            "bar"
+          ]
+        ],
+        "text": "FOO='bar'\n"
+      },
+      "quote-escaping": {
+        "initial": null,
+        "ops": [
+          [
+            "Q",
+            "it's got 'quotes'"
+          ],
+          [
+            "NL",
+            "line1\nline2"
+          ],
+          [
+            "UNI",
+            "café 🚀"
+          ],
+          [
+            "EMPTY",
+            ""
+          ]
+        ],
+        "text": "Q='it\\'s got \\'quotes\\''\nNL='line1\nline2'\nUNI='café 🚀'\nEMPTY=''\n"
+      },
+      "replace-preserving": {
+        "initial": "# comment\nFOO=old\nOTHER=1\nexport FOO=older\n=junk\nBARE\n",
+        "ops": [
+          [
+            "FOO",
+            "new"
+          ]
+        ],
+        "text": "# comment\nFOO='new'\nOTHER=1\nFOO='new'\n=junk\nBARE\n"
+      },
+      "replace-then-append": {
+        "initial": "KEEP='x'\n",
+        "ops": [
+          [
+            "KEEP",
+            "y"
+          ],
+          [
+            "NEW",
+            "z"
+          ]
+        ],
+        "text": "KEEP='y'\nNEW='z'\n"
+      },
+      "via-config-choke-point": {
+        "mode": "0o600",
+        "ops": [
+          [
+            "YEABOI_SET_KEY_PROBE",
+            "via config"
+          ]
+        ],
+        "text": "YEABOI_SET_KEY_PROBE='via config'\n"
+      }
+    }
+  },
+  "env": {
+    "HOME": "{tmp}/home",
+    "TZ": "UTC",
+    "YEABOI_HOME": "~/data dir/yeaboi"
+  },
+  "files": {}
+}

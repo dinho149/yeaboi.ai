@@ -1,0 +1,22 @@
+usage: yeaboi perf complete [-h] --transcript TEXT [--deliver] [--session ID]
+                            [--images PATH [PATH ...]]
+                            [--recipients EMAIL [EMAIL ...]] [--strict]
+                            engineer
+
+Performance mode is in beta — its output is not yet verified against real
+delivery data. Treat every 1:1 prep, summary and review as a draft to edit,
+not a verdict.
+
+positional arguments:
+  engineer              Engineer name
+
+options:
+  -h, --help            show this help message and exit
+  --transcript TEXT     Transcript text; @file.txt reads from file
+  --deliver             Email the summary via the configured SMTP
+  --session ID          Session for team context
+  --images PATH [PATH ...]
+                        Whiteboard/notes photos to attach to the summary
+  --recipients EMAIL [EMAIL ...]
+                        Email recipients override (with --deliver)
+  --strict              Exit 3 on a degraded run (warnings present)

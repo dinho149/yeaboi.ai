@@ -1,0 +1,15 @@
+usage: yeaboi ship [-h] {run,status,history} ...
+
+Hand a story from your saved sprint plan to a supervised coding agent (Claude
+Code headless): isolated worktree and branch, deterministic validation, a
+human approval gate at the terminal, and a PR only after approval. A user-
+global launch budget caps runs.
+
+positional arguments:
+  {run,status,history}
+    run                 Run one story through the pipeline
+    status              The latest run and the launch budget
+    history             Recent runs, newest first
+
+options:
+  -h, --help            show this help message and exit

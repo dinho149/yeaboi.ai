@@ -1,0 +1,6 @@
+usage: yeaboi ceremonies list [-h] [--session ID] [--format {text,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session ID          Session to read (default: most recent)
+  --format {text,json}  Output format

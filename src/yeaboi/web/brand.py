@@ -64,7 +64,9 @@ MODE_SHARE_PHRASES: dict[str, str] = {
 # Modes that own a ``[data-mode]`` accent in frontend/src/design/tokens.css.
 # Every entry here must have both a dark and a light rendition there;
 # ``test_every_mode_accent_has_a_light_rendition`` enforces that side.
-_ACCENT_MODES = frozenset({"retro", "poker", "analysis", "usage", "reporting", "standup", "planning", "performance"})
+_ACCENT_MODES = frozenset(
+    {"retro", "poker", "analysis", "usage", "reporting", "standup", "planning", "performance", "ship"}
+)
 
 # Modes with no accent of their own, and whose accent they borrow. This was
 # copy-pasted into roadmap/export.py and anonymize/export.py, which is exactly

@@ -23,7 +23,7 @@ from yeaboi.web.assets import FAVICON_PATH, STATIC_DIR, json_island, read_asset,
 
 # Every Vite entry that exists today. Grows one row per phase of the React
 # migration; the parametrized guards below then cover the new bundle for free.
-BUNDLES = ("deck", "export", "gate", "poker", "retro")
+BUNDLES = ("deck", "export", "gate", "poker", "retro", "ship")
 
 
 class TestReadAsset:
