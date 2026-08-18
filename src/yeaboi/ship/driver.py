@@ -349,7 +349,14 @@ class ClaudeCodeDriver:
         ok = proc.returncode == 0 and not timed_out and not cancelled and not bool(envelope.get("is_error"))
         error = ""
         if not ok:
-            error = raw[-2000:] if raw else (f"exit {proc.returncode}" if not timed_out else "timed out")
+            if timed_out:
+                error = "timed out"
+            elif stream:
+                # raw is JSONL noise in stream mode (same reason output is emptied
+                # above), so it must not reach the budget ledger's paused_reason.
+                error = str(envelope.get("result") or "") or f"exit {proc.returncode}"
+            else:
+                error = raw[-2000:] if raw else f"exit {proc.returncode}"
         logger.info(
             "Agent run finished: exit=%s ok=%s timed_out=%s cancelled=%s %.1fs",
             proc.returncode,

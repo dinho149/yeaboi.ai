@@ -14,6 +14,37 @@ from yeaboi.ship.board import ShipBoard, _summarise_event
 from yeaboi.ship.store import ShipStore
 
 
+class TestPhaseOrder:
+    """The board must project phases in pipeline order, not alphabetical.
+
+    ``sorted(component_ids)`` reads finalize → gate → implement → setup →
+    validate, which would tell a watcher the run pushes the PR first.
+    """
+
+    def test_phases_project_in_pipeline_order(self, tmp_path):
+        board = ShipBoard("r", db_path=tmp_path / "s.db")
+        # Fed out of order; the projection must still read setup→gate→finalize.
+        for cid in ("ship-finalize", "ship-gate", "ship-setup", "ship-validate", "ship-implement"):
+            board.note_component({"component_id": cid, "label": cid, "status": "completed"})
+        ids = [p["component_id"] for p in board.state_snapshot()["phases"]]
+        assert ids == ["ship-setup", "ship-implement", "ship-validate", "ship-gate", "ship-finalize"]
+
+    def test_unreported_phases_are_simply_absent(self, tmp_path):
+        board = ShipBoard("r", db_path=tmp_path / "s.db")
+        board.note_component({"component_id": "ship-implement", "label": "x", "status": "running"})
+        board.note_component({"component_id": "ship-setup", "label": "x", "status": "completed"})
+        ids = [p["component_id"] for p in board.state_snapshot()["phases"]]
+        assert ids == ["ship-setup", "ship-implement"]
+
+    def test_order_matches_the_canonical_tui_tuple(self):
+        # The backend duplicates the id order rather than importing from ui/;
+        # this keeps the two tuples in lockstep so neither drifts silently.
+        from yeaboi.ship.board import _PHASE_ORDER
+        from yeaboi.ui.mode_select.screens._screens_ship import SHIP_PHASES
+
+        assert list(_PHASE_ORDER) == [cid for cid, _label in SHIP_PHASES]
+
+
 class TestActivityAllowlist:
     """`_summarise_event` is the server-side allowlist over stream-json events."""
 

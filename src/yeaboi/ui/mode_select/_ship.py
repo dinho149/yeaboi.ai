@@ -340,6 +340,7 @@ def _drive_progress(
         w, h = console.size
         board = board_box[0]
         board_link = board.share_url if board is not None else ""
+        board_code = board.display_code if board is not None and board_link else ""
         live.update(
             _build_ship_progress_screen(
                 list(events_by_id.values()),
@@ -347,6 +348,7 @@ def _drive_progress(
                 width=w,
                 height=h,
                 board_link=board_link,
+                board_code=board_code,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()

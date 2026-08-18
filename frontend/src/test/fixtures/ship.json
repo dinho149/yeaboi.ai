@@ -24,9 +24,9 @@
   "gate_resolution": "",
   "phases": [
     {
-      "component_id": "ship-gate",
-      "label": "Awaiting human approval",
-      "status": "running"
+      "component_id": "ship-setup",
+      "label": "Preparing isolated worktree",
+      "status": "completed"
     },
     {
       "component_id": "ship-implement",
@@ -34,9 +34,9 @@
       "status": "completed"
     },
     {
-      "component_id": "ship-setup",
-      "label": "Preparing isolated worktree",
-      "status": "completed"
+      "component_id": "ship-gate",
+      "label": "Awaiting human approval",
+      "status": "running"
     }
   ],
   "pr_url": "",

@@ -34,6 +34,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Pipeline order the board projects phases in. The ids match the engine's
+# _report() calls; the canonical human order is SHIP_PHASES in
+# ui/mode_select/screens/_screens_ship.py, which the TUI walks. Duplicated here
+# rather than imported so the web backend does not depend on ui/ — TestPhaseOrder
+# in test_ship_board.py keeps the two tuples in lockstep.
+_PHASE_ORDER = ("ship-setup", "ship-implement", "ship-validate", "ship-gate", "ship-finalize")
+
 _ACTIVITY_MAX = 200  # bounded ring of agent-activity entries; a long run cannot grow it without bound
 _TEXT_SNIPPET = 240  # chars of an assistant text block shown live (scrubbed); the full diff is the record
 _PRESENCE_TTL_S = 12.0  # a watcher is "here" if it heartbeat within this window
@@ -237,7 +244,13 @@ class ShipBoard:
         """
         with self._lock:
             run = dict(self._run_json)
-            components = [self._components[k] for k in sorted(self._components)]
+            # Project in pipeline order, not alphabetical: sorted() by id would
+            # read finalize → gate → implement → setup → validate. Unreported
+            # phases are simply absent; an unknown id sorts to the end.
+            order = {cid: i for i, cid in enumerate(_PHASE_ORDER)}
+            components = [
+                self._components[k] for k in sorted(self._components, key=lambda cid: (order.get(cid, len(order)), cid))
+            ]
             activity = list(self._activity)
             presence = self._presence_snapshot_locked()
             revision = self._rev
