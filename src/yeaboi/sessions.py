@@ -1181,6 +1181,18 @@ class SessionStore:
         row = self._conn.execute("SELECT session_id FROM sessions_meta ORDER BY last_modified DESC LIMIT 1").fetchone()
         return row[0] if row else None
 
+    def recent_session_ids(self, limit: int = 25) -> list[str]:
+        """The most recently modified session ids, newest first.
+
+        Lightweight — reads ids only, never the (potentially large) state blob —
+        so a caller can scan a bounded window for the first session that carries
+        what it needs without loading every session's state.
+        """
+        rows = self._conn.execute(
+            "SELECT session_id FROM sessions_meta ORDER BY last_modified DESC LIMIT ?", (max(1, limit),)
+        ).fetchall()
+        return [r[0] for r in rows]
+
     def delete_session(self, session_id: str) -> bool:
         """Delete a single session by ID.
 

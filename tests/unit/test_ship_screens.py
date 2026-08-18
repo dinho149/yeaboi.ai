@@ -118,6 +118,23 @@ class TestProgressScreen:
         assert "Await your approval" in out  # pending rows render too
         assert "esc cancels the run" in out
 
+    def test_share_link_and_join_code_render_together(self):
+        # A teammate opening the link lands on the join gate; without the code
+        # shown here the feature is unusable (the code otherwise lives only in
+        # the log file). The code rides a *separate* line from the token-free URL.
+        out = _render(
+            _build_ship_progress_screen(
+                [], tick=1.0, board_link="https://abc.trycloudflare.com", board_code="WXYZ-1234"
+            )
+        )
+        assert "abc.trycloudflare.com" in out
+        assert "WXYZ-1234" in out
+
+    def test_no_code_line_before_the_tunnel_is_up(self):
+        # Loopback-only (no share_url yet): no code line, nothing half-shown.
+        out = _render(_build_ship_progress_screen([], tick=1.0, board_link="", board_code=""))
+        assert "join code" not in out
+
 
 class TestGateScreen:
     # The TUI refuses to run below 84x40 (`_screens.py` _MIN_WIDTH/_MIN_HEIGHT),
