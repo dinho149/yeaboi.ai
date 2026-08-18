@@ -93,6 +93,7 @@ FIXTURES = [
             "MUSIC_ENABLED": " TRUE ",
             "MUSIC_CHANNEL": " 7 ",
             "YEABOI_NO_TUNNEL": "Yes",
+            "YEABOI_SHIP_BOARD": "on",  # ship's opt-in set has NO "on": must stay false
             "TEAM_ANALYSIS_JIRA_DEV_LINKS": "on",
             "TEAM_ANALYSIS_AZDO_BRANCH_SEARCH": "off",  # opt-in flag: "off" stays false
             "VOICE_INSTALL_OFFER": "Off",
@@ -112,6 +113,7 @@ FIXTURES = [
     Fixture(
         "config-int-clamps",
         {
+            "SHIP_PORT": "5473.0",  # int() rejects float strings: default, unclamped
             "TEAM_ANALYSIS_ENRICHMENT_TIMEOUT_SECONDS": "5",
             "TEAM_ANALYSIS_LLM_TARGET_SECONDS": "999999",
             "TEAM_ANALYSIS_LLM_MAX_CONCURRENCY": "  3 ",

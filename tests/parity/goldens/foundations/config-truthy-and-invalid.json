@@ -552,7 +552,8 @@
     "YEABOI_FORCE_BETA_NOTICE": "poker, roadmap",
     "YEABOI_FORCE_VOICE_OFFER": "0",
     "YEABOI_LAST_CATEGORY": "AGENTS",
-    "YEABOI_NO_TUNNEL": "Yes"
+    "YEABOI_NO_TUNNEL": "Yes",
+    "YEABOI_SHIP_BOARD": "on"
   },
   "files": {}
 }

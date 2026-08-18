@@ -50,6 +50,11 @@ and is legitimate only if it is invisible under the pinned goldens.
   expressed in RE2, so Go scans by hand, reproducing `re.sub`'s
   leftmost-scan, first-alternative-wins semantics; redaction.py's
   env-snapshot cache has no twin.
+- Changelog: a non-iterable `highlights` value (an int, say) crashes Python's
+  `load_changelog` (the comprehension sits outside its try block) where
+  `go/internal/changelog.Parse` yields zero highlights. Freezing a crash into
+  a golden pins nothing useful, so the corpus sticks to the iterable malformed
+  shapes both sides survive (`tests/parity/foundations/changelogdump.py`).
 - Every real command in `go/cmd/yeaboi` exits 1 with a "not yet implemented"
   message — dispatch arrives with W10/W17/W18; only the parse tree, help, and
   the hidden `__dump-*` commands are contractual today.

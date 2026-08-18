@@ -406,7 +406,7 @@ go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
 	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
 
 go-build-cli: ## Build the future yeaboi CLI into bin/yeaboi (hidden, unshipped until W19)
-	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi ./cmd/yeaboi
+	cd go && CGO_ENABLED=0 go build -ldflags "-X main.version=$$(sed -n 's/^version = "\(.*\)"/\1/p' ../pyproject.toml | head -1)" -o ../bin/yeaboi ./cmd/yeaboi
 
 go-test: ## Run the Go unit tests
 	cd go && go test ./...

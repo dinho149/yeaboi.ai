@@ -1,4 +1,4 @@
-// Port of python-dotenv's parser (site-packages/dotenv/parser.py, v1.1) —
+// Port of python-dotenv's parser (site-packages/dotenv/parser.py, v1.2.2) —
 // keep in lockstep; the library is pinned by uv.lock and yeaboi/config.py
 // leans on its exact parse of ~/.yeaboi/.env and the project .env, so the
 // Go reader must accept and reject byte-for-byte the same statements.

@@ -1,4 +1,4 @@
-// Port of python-dotenv's main.py + variables.py (v1.1) — keep in lockstep;
+// Port of python-dotenv's main.py + variables.py (v1.2.2) — keep in lockstep;
 // this is the half yeaboi/config.py actually calls: load_dotenv (project
 // .env + ~/.yeaboi/.env, override=False, interpolate=True), set_key
 // (quote_mode "always"), and find_dotenv. tests/parity/foundations/ replays
