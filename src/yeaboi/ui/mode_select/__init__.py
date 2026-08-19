@@ -80,7 +80,7 @@ from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
-from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live, take_settings_jump
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
@@ -1439,6 +1439,10 @@ def _collect_settings_data() -> dict:
     _keys = [
         "LLM_PROVIDER",
         "LLM_MODEL",
+        # How the Anthropic credential is obtained, and the subscription token the
+        # "subscription" mode mints (the API key covers the other mode).
+        "ANTHROPIC_AUTH_MODE",
+        "CLAUDE_CODE_OAUTH_TOKEN",
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GOOGLE_API_KEY",
@@ -1505,6 +1509,115 @@ def _launch_setup_wizard(console: Console, live) -> None:
         logger.info("Config reloaded after setup wizard")
     finally:
         live.start()
+
+
+# How long the sign-in result ignores input before a key may dismiss it. Long
+# enough to swallow the tail of a paste or a double-tapped Enter, short enough
+# that nobody waiting to press a key notices it.
+_ACK_SETTLE_SECONDS = 0.35
+
+
+def _run_subscription_sign_in(
+    console: Console, live, read_key, frame_time, supports_timeout, render_page
+) -> tuple[str, str]:
+    """Drive `claude setup-token` to a token in the duck's speech bubble.
+
+    The CLI runs on a pty this process owns, so its browser flow is drawn as a
+    bubble over the page rather than at a bare shell prompt — and ``render_page``
+    keeps drawing the settings underneath, so the screen the user was on stays
+    exactly where it was. Returns ``(token, message)``; the token is empty on every
+    cancel and failure path.
+
+    The code field reuses ``_settings_edit_keypress`` — the same buffer/cursor
+    editor every settings row uses — so paste, arrows and backspace behave here
+    exactly as they do on the page behind it.
+    """
+    from functools import partial
+
+    from yeaboi.claude_auth import SubscriptionSignIn
+    from yeaboi.ui.mode_select.screens._screens import _draw_signin_bubble
+    from yeaboi.ui.shared._input import drain_pending_input, set_text_entry
+    from yeaboi.ui.shared._screensaver import suppress_screensaver
+
+    spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    session = SubscriptionSignIn()
+    edit = {"buf": "", "cur": 0}
+    copied = False
+    frame = 0
+
+    def _render() -> None:
+        panel = render_page()
+        panel._overlay = partial(
+            _draw_signin_bubble,
+            state={
+                "url": session.url,
+                "spinner": spin[frame % len(spin)],
+                "awaiting_code": session.awaiting_code,
+                "code": edit["buf"],
+                "cursor": edit["cur"],
+                "copied": copied,
+                "done": session.done,
+                "ok": bool(session.token),
+                "detail": session.error,
+            },
+        )
+        live.update(panel)
+
+    if not session.start():
+        return "", session.message
+
+    # The code is typed, so bare-key bindings must not eat the keystrokes; cleared
+    # in `finally` alongside the child.
+    set_text_entry(True)
+    # A browser round-trip is long, and an idle screensaver over a half-finished
+    # sign-in would lose the pasted code.
+    with suppress_screensaver():
+        try:
+            while True:
+                session.poll()
+                if session.done:
+                    break
+                _render()
+                frame += 1
+                key = read_key(timeout=frame_time) if supports_timeout else read_key()
+                if key == "esc":
+                    logger.info("Subscription sign-in: cancelled")
+                    return "", "Sign-in cancelled"
+                if key == "enter":
+                    if session.awaiting_code and edit["buf"].strip():
+                        session.send_code(edit["buf"])
+                        edit["buf"], edit["cur"] = "", 0
+                    continue
+                if key == "tab" and session.url:
+                    # Tab, not `c`: the code field is live for almost the whole of
+                    # this screen's life, and there `c` is a character of the code.
+                    from yeaboi.clipboard import copy_text
+
+                    copied = bool(copy_text(session.url))
+                    continue
+                if key:
+                    _settings_edit_keypress(key, edit)
+            # Result frame, then acknowledge — so a success is seen rather than
+            # flashing past. Nothing typed BEFORE the result appeared may dismiss
+            # it: a pasted code can overrun its field, and a leftover keystroke
+            # both skipped the confirmation and fell through to the settings row
+            # underneath — where Enter means "sign in again", so saving a token
+            # immediately started minting another one.
+            _render()
+            drain_pending_input()
+            _settled_at = time.monotonic() + _ACK_SETTLE_SECONDS
+            while True:
+                _k = read_key(timeout=frame_time) if supports_timeout else read_key()
+                if _k and time.monotonic() >= _settled_at:
+                    break
+        finally:
+            set_text_entry(False)
+            session.cancel()
+            # Whatever was typed at the bubble stays with the bubble.
+            drain_pending_input()
+
+    logger.info("Subscription sign-in: %s", "token received" if session.token else "no token")
+    return session.token, session.message
 
 
 def _settings_edit_keypress(sk: str, edit: dict) -> None:
@@ -12011,9 +12124,10 @@ def _run_category_screen(
         _CATEGORY_CARDS,
         _build_category_screen,
         category_at_pos,
+        category_index,
     )
 
-    selected = next((i for i, c in enumerate(_CATEGORY_CARDS) if c["key"] == preselected), 0)
+    selected = category_index(preselected)
     start = time.monotonic()
     logger.info("category screen shown (preselected: %s)", preselected)
     while True:
@@ -12057,6 +12171,25 @@ def _run_category_screen(
                 logger.info("category click-chosen: %s", chosen)
                 return chosen
             selected = hit
+
+
+def _landing_first_frame(category: str, *, width: int, height: int):
+    """The frame ``select_mode``'s Live is seeded with.
+
+    Rich paints the seed on entry, before any loop body runs, so it has to be the
+    opening frame of whatever the loop shows first — Phase 0, the landing split,
+    at intro 0. Seed the *menu* instead and its hint row and music pocket flash
+    over the tail of the splash for a frame.
+    """
+    from yeaboi.ui.mode_select.screens._screens_category import _build_category_screen, category_index
+
+    return _build_category_screen(
+        category_index(category),
+        width=width,
+        height=height,
+        shimmer_tick=0.0,
+        intro=0.0,
+    )
 
 
 def select_mode(
@@ -12120,24 +12253,13 @@ def select_mode(
     # shimmer, the cross-fading tip, the idle duck, the music equalizer), so in
     # inline mode Rich rewrites scattered lines across the full height every frame
     # — the visible "reprint"/flicker. Alt-screen swaps composite frames cleanly.
-    # A single, brief flash at the splash→menu boundary is the accepted trade for
-    # a flicker-free steady state. 60fps keeps the shimmer/duck/tip motion smooth
-    # (the input loop already polls at _FRAME_TIME = 1/60, so the Live refresh cap
-    # was the bottleneck); alt-screen double-buffering means the higher rate costs
-    # redraw work but never flickers.
+    # 60fps keeps the shimmer/duck/tip motion smooth (the input loop already polls
+    # at _FRAME_TIME = 1/60, so the Live refresh cap was the bottleneck);
+    # alt-screen double-buffering means the higher rate costs redraw work but
+    # never flickers.
+    #
     with make_live(
-        # Seed the first frame with NOTHING revealed (sweep front at 0) so the
-        # diagonal intro wipes titles in from an empty screen — otherwise every
-        # item flashes in for one frame before animating.
-        _build_mode_screen(
-            selected,
-            width=w,
-            height=h,
-            shimmer_tick=0.0,
-            desc_reveal=0,
-            sweep_front=0.0,
-            companion_intro=0.0,  # duck stays off-screen until it slides in post-wipe
-        ),
+        _landing_first_frame(category, width=w, height=h),
         console=console,
         refresh_per_second=60,
         screen=True,
@@ -12214,6 +12336,18 @@ def select_mode(
                     continue
 
                 key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+
+                # A pending Ctrl+R (stale subscription token) selects Settings and
+                # enters it, from wherever the key was pressed: inside a mode it is
+                # claimed on the way back out here, since the hub is the only thing
+                # that routes. Selecting rather than jumping keeps the normal
+                # transition, so the destination still arrives the usual way.
+                if take_settings_jump():
+                    _s_idx = next((i for i, c in enumerate(cards) if c.get("key") == "settings"), None)
+                    if _s_idx is not None:
+                        logger.info("Opening Settings for a stale subscription token")
+                        selected = _s_idx
+                        key = "enter"
 
                 if _compose is not None:
                     # The duck's feedback bubble owns every key while it's open —
@@ -13668,6 +13802,58 @@ def select_mode(
                         _settings_data["_message"] = _msg
                         _settings_voice().say(_msg)
                         logger.info("Settings: VOICE_DEVICE set to %r", _picked)
+                        return
+                    from yeaboi.ui.mode_select.screens._screens_secondary import SETTINGS_ACTION_ENVS
+
+                    if env in SETTINGS_ACTION_ENVS:
+                        # `claude setup-token` is interactive, but it runs on a pty
+                        # this process owns rather than on the real terminal — so the
+                        # TUI never goes away. The renderer goes with it, so these
+                        # settings keep drawing underneath while the duck's bubble
+                        # carries the flow (see yeaboi.claude_auth).
+                        logger.info("Settings: running subscription sign-in for %s", env)
+                        _tok, _msg = _run_subscription_sign_in(
+                            console,
+                            live,
+                            read_key,
+                            _FRAME_TIME,
+                            _supports_timeout,
+                            lambda: _render_settings(time.monotonic() - _s_anim_start),
+                        )
+                        if _tok:
+                            from yeaboi.auth_state import clear_subscription_stale
+                            from yeaboi.config import apply_config_value
+
+                            apply_config_value(env, _tok)
+                            clear_subscription_stale()  # the warning is answered
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = _msg
+                        _settings_voice().say(_msg)
+                        return
+                    # A fixed-choice row has no editor either: Enter steps to the next
+                    # option and saves it outright. Routed through the ordinary commit
+                    # path so the write, the environment update, the status line and
+                    # the logging are all the same code the typed fields use.
+                    from yeaboi.ui.mode_select.screens._screens_secondary import (
+                        SETTINGS_CHOICES,
+                        settings_choice_value,
+                    )
+
+                    _choices = SETTINGS_CHOICES.get(env)
+                    if _choices:
+                        # Step on from the option the ROW is lighting, resolved by the
+                        # same helper the builder uses. Reading the raw stored value
+                        # here instead is how "unset" lit WARNING while Enter jumped
+                        # to INFO — an unset var is not the same as the first option.
+                        _at = _choices.index(settings_choice_value(env, _settings_data.get(env, ""))) + 1
+                        _s_edit = {
+                            "env": env,
+                            "label": label,
+                            "masked": False,
+                            "buf": _choices[_at % len(_choices)],
+                            "cur": 0,
+                        }
+                        _s_commit_edit()
                         return
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.

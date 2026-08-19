@@ -945,3 +945,57 @@ class TestWarnIfContextOverflow:
         with caplog.at_level("WARNING", logger="yeaboi.agent.llm"):
             warn_if_context_overflow("x" * 200_000)
         assert "OLLAMA_NUM_CTX" not in caplog.text
+
+
+class TestGetLlmAnthropicSubscription:
+    """Subscription auth sends a bearer token, not an API key.
+
+    The API rejects a request carrying both ``x-api-key`` and ``Authorization``,
+    so these assert on the headers of a request the client actually builds — a
+    check on the constructor arguments alone would pass while the wire form was
+    wrong, which is the whole failure mode here.
+    """
+
+    @staticmethod
+    def _headers(llm):
+        import anthropic
+
+        opts = anthropic._models.FinalRequestOptions.construct(method="post", url="/v1/messages", json_data={})
+        return llm._client._build_request(opts).headers
+
+    def test_bearer_replaces_the_api_key_header(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-should-not-be-sent")
+        headers = self._headers(get_llm())
+        assert headers.get("authorization") == "Bearer sk-ant-oat01-abc"
+        assert headers.get("x-api-key") is None
+        assert headers.get("anthropic-beta") == "oauth-2025-04-20"
+
+    def test_async_client_carries_the_bearer_too(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-should-not-be-sent")
+        llm = get_llm()
+        assert llm._async_client.auth_token == "sk-ant-oat01-abc"
+        assert llm._async_client.api_key is None
+
+    def test_api_key_mode_is_untouched(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "api_key")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-123")
+        headers = self._headers(get_llm())
+        assert headers.get("x-api-key") == "test-key-123"
+        assert headers.get("authorization") is None
+        assert headers.get("anthropic-beta") is None
+
+    def test_unset_mode_still_uses_the_api_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-123")
+        headers = self._headers(get_llm())
+        assert headers.get("x-api-key") == "test-key-123"
+        assert headers.get("authorization") is None

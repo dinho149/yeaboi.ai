@@ -630,6 +630,32 @@ def current_chrome_mascot() -> str:
     return _chrome_mascot
 
 
+# What the duck says while the subscription token is no good, and the sequence
+# number it says it under. A FIXED seq (rather than a bump each frame) is what
+# stops the fade restarting on every render — the text is identical every time.
+SUBSCRIPTION_STALE_LINE = "subscription expired — ctrl+r to refresh"
+_STALE_SAY_SEQ = -1
+
+# Set by the app-wide Ctrl+R binding, consumed by the mode hub. A flag rather than
+# a direct call because the key can be pressed from inside any mode, and only the
+# hub owns routing — it is read on the way back out.
+_settings_jump_requested = False
+
+
+def request_settings_jump() -> None:
+    """Ask the hub to open Settings at the credentials tab, next time it looks."""
+    global _settings_jump_requested
+    _settings_jump_requested = True
+    logger.info("settings jump requested (stale subscription token)")
+
+
+def take_settings_jump() -> bool:
+    """True once per request — the hub calls this to claim the pending jump."""
+    global _settings_jump_requested
+    claimed, _settings_jump_requested = _settings_jump_requested, False
+    return claimed
+
+
 def duck_region() -> tuple[int, int, int, int] | None:
     """Clickable rect of the chrome companion duck this frame (1-based inclusive)."""
     return _duck_region
@@ -1033,6 +1059,11 @@ class _MusicPocketFrame:
         self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
         self.duck_say_hold = None  # per-message dwell override (None = default)
         self.duck_say_seq = 0  # bump to restart the fade for identical text
+        # A page's own compositor, run last so it draws over the finished chrome.
+        # Takes (console, options, lines) and edits `lines` in place — the seam a
+        # page uses to overlay something anchored on the duck without owning the
+        # whole frame. See _draw_signin_bubble.
+        self.overlay = None
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -1063,6 +1094,14 @@ class _MusicPocketFrame:
                 say_seq=self.duck_say_seq,
                 mascot=self.duck_mascot,
             )
+        if self.overlay is not None:
+            # Last, so a page's overlay sits over the duck and the pockets rather
+            # than under them — it is anchored on the duck, so it has to know
+            # where he ended up.
+            try:
+                self.overlay(console, options, lines)
+            except Exception:  # noqa: BLE001 - a page overlay must never kill the frame
+                logger.debug("page overlay failed", exc_info=True)
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -1190,6 +1229,17 @@ class MusicLive(Live):
             _hold = getattr(renderable, "_duck_say_hold", None)
             _seq = int(getattr(renderable, "_duck_say_seq", 0) or 0)
             if not duck_say and with_duck:
+                # A stale subscription token outranks every page's own line and the
+                # ambient chatter: LLM features are broken until it is refreshed, so
+                # the duck says so wherever you are rather than only where it broke.
+                # auth_state is a leaf (no UI imports) — this is the one condition
+                # that earns the chrome knowing about credentials at all.
+                from yeaboi.auth_state import subscription_stale
+
+                if subscription_stale():
+                    duck_say = SUBSCRIPTION_STALE_LINE
+                    _sticky, _hold, _seq = True, None, _STALE_SAY_SEQ
+            if not duck_say and with_duck:
                 # A page that didn't stamp a line itself gets the app-wide
                 # shared voice (lazy import — _duck_voice imports our fade
                 # constants). Fenced so a bubble can never overlap content:
@@ -1241,6 +1291,7 @@ class MusicLive(Live):
             _frame.duck_say_sticky = _sticky
             _frame.duck_say_hold = _hold
             _frame.duck_say_seq = _seq
+            _frame.overlay = getattr(renderable, "_overlay", None)
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()

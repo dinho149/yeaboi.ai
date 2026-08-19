@@ -129,6 +129,19 @@ def get_anthropic_api_key() -> str:
     return key
 
 
+def get_anthropic_subscription_token() -> str:
+    """The Claude subscription token to authenticate with, or ``""`` for key auth.
+
+    Both halves must agree before this returns anything: the user has to have
+    picked subscription auth in Settings *and* have a token stored. Returning the
+    token on its own presence would silently hijack a working API key for anyone
+    who happens to have the Claude Code CLI logged in.
+    """
+    if os.getenv("ANTHROPIC_AUTH_MODE", "").strip().lower() != "subscription":
+        return ""
+    return os.getenv("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+
+
 def is_langsmith_enabled() -> bool:
     """Check whether LangSmith tracing is enabled."""
     return os.getenv("LANGSMITH_TRACING", "").lower() == "true" and bool(os.getenv("LANGSMITH_API_KEY"))

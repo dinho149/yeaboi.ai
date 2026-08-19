@@ -1045,3 +1045,46 @@ class TestGetAcFormat:
         from yeaboi.config import get_ac_format
 
         assert get_ac_format() == ""
+
+
+class TestGetAnthropicSubscriptionToken:
+    """Both halves must agree before subscription auth engages.
+
+    Returning the token on its own presence would silently hijack a working API
+    key for anyone who happens to have the Claude Code CLI logged in.
+    """
+
+    def test_returns_the_token_when_the_mode_selects_it(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == "sk-ant-oat01-abc"
+
+    def test_empty_when_the_mode_is_api_key(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "api_key")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == ""
+
+    def test_empty_when_the_mode_is_unset(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        assert get_anthropic_subscription_token() == ""
+
+    def test_empty_when_selected_but_no_token_stored(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        assert get_anthropic_subscription_token() == ""
+
+    def test_mode_match_is_case_and_space_insensitive(self, monkeypatch):
+        from yeaboi.config import get_anthropic_subscription_token
+
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "  Subscription ")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "  sk-ant-oat01-abc  ")
+        assert get_anthropic_subscription_token() == "sk-ant-oat01-abc"
