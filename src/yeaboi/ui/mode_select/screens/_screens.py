@@ -1307,6 +1307,163 @@ def _build_companion(
     return Align.center(Group(*parts), vertical="bottom")
 
 
+_SIGNIN_OVERLAY_COLS = 72  # widest the sign-in bubble grows before it stops
+_SIGNIN_LEFT_MARGIN = 6  # frame columns kept clear to its left
+_SIGNIN_TOP_MARGIN = 2  # …and above it
+
+
+def _build_subscription_bubble(
+    *,
+    cols: int,
+    url: str = "",
+    spinner: str = "",
+    awaiting_code: bool = False,
+    code: str = "",
+    cursor: int = 0,
+    copied: bool = False,
+    done: bool = False,
+    ok: bool = False,
+    detail: str = "",
+) -> RenderableType:
+    """The duck's sign-in bubble: the `claude setup-token` flow, as something he says.
+
+    ``claude setup-token`` runs on a pty the TUI owns (see
+    :class:`yeaboi.claude_auth.SubscriptionSignIn`), and its stages are drawn here:
+    waiting for the authorize URL, showing that URL while the code is typed back,
+    and the result. It is the duck's bubble rather than a page of its own because
+    the flow is a detour from Settings — the settings behind it stay on screen and
+    stay readable, which a full-screen takeover cost.
+
+    The URL is the one thing the user must be able to act on, so it is an OSC-8
+    hyperlink *and* copyable. Copy is ``tab``, not ``c``: once the code field is
+    live, ``c`` is a character of the code.
+    """
+    amber = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
+    body, dim, muted = "rgb(198,198,208)", "rgb(120,130,140)", "rgb(150,150,165)"
+    inner = max(12, cols - 4)
+    rows: list[RenderableType] = []
+
+    if done and ok:
+        rows.append(Align.center(Text("\u2713  signed in", style=f"bold {amber}")))
+        rows.append(Align.center(Text("your subscription token is saved", style=body)))
+        rows.append(Align.center(Text("press any key", style=dim)))
+        border = amber
+    elif done:
+        rows.append(Align.center(Text("sign-in failed", style="bold rgb(226,110,90)")))
+        if detail:
+            rows.append(Align.center(Text(detail[:inner], style=body)))
+        rows.append(Align.center(Text("press any key", style=dim)))
+        border = "rgb(226,110,90)"
+    elif not url:
+        line = Text(justify="center")
+        line.append(f"{spinner} ", style=amber)
+        line.append("opening your browser\u2026", style=body)
+        rows.append(line)
+        rows.append(Align.center(Text("esc to cancel", style=dim)))
+        border = amber
+    else:
+        # "if it asks" rather than "then paste": the browser callback often
+        # completes the flow on its own and no code is ever shown, which made the
+        # old wording read as a step that had gone missing.
+        rows.append(Align.center(Text("approve in the browser — paste a code if it asks", style=body)))
+        rows.append(Text(""))
+        # The URL has no spaces, so nothing will break it for us — it is sliced to
+        # the bubble's inner width. Left-aligned rather than centred per line: the
+        # lines are full-width except the last, and centring that one floats it out
+        # of the block. Every line links to the whole URL.
+        for offset in range(0, len(url), inner):
+            rows.append(Text(url[offset : offset + inner], justify="left", style=f"{muted} underline link {url}"))
+        rows.append(Text(""))
+        field = Text(justify="center")
+        field.append("code  ", style=muted)
+        if awaiting_code:
+            # Block cursor drawn into the value, the same gesture the settings rows
+            # use for an in-place edit.
+            field.append((code[:cursor] + "\u2588" + code[cursor:]) or "\u2588", style=body)
+        else:
+            field.append("waiting for the browser\u2026", style=dim)
+        rows.append(field)
+        border = amber
+
+    bubble = Panel(
+        Group(*rows),
+        box=rich.box.ROUNDED,
+        border_style=border,
+        padding=(0, 1),
+        width=cols,
+        title=Text("sign in", style=f"bold {border}") if not done else None,
+        title_align="left",
+    )
+    if not done and url:
+        # Controls ride the bottom border, the way the tip bubble's do.
+        bubble.subtitle = Text.assemble(
+            ("tab", f"bold {amber}"),
+            (" copied" if copied else " copy", dim),
+            ("  enter", f"bold {amber}"),
+            (" submit", dim),
+            ("  esc", f"bold {amber}"),
+            (" cancel", dim),
+        )
+        bubble.subtitle_align = "center"
+    return bubble
+
+
+def _draw_signin_bubble(console, options, lines: list, state: dict) -> None:
+    """Composite the sign-in bubble over the finished frame, in place.
+
+    Same anchoring as :func:`_draw_compose_bubble`: the duck occupies the last
+    ``_COMPANION_HEAD_H`` rows above the music pocket, so his top row is a fixed
+    offset from the foot and the bubble stacks up from there, right-aligned with
+    where his tip bubble sits and growing leftward. Drawn over the frame rather
+    than inside a lane so the page underneath is untouched — which is the point:
+    the settings stay exactly where they were.
+    """
+    from rich.segment import Segment
+
+    if not lines or not lines[-1]:
+        return
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    height = len(lines)
+    base = lines[-1][0].style
+    bg_style = Style(bgcolor=base.bgcolor) if base and base.bgcolor else None
+
+    duck_top = height - 1 - _MUSIC_POCKET_ROWS - _COMPANION_HEAD_H
+    bottom = duck_top - 1 - _COMPOSE_TAIL_ROWS
+    right = width - 5
+    cols = min(_SIGNIN_OVERLAY_COLS, right - _SIGNIN_LEFT_MARGIN)
+    if cols < 32 or bottom < 4:
+        return  # too cramped to overlay — the flow still works, it just isn't drawn
+
+    bubble = _build_subscription_bubble(cols=cols, **state)
+    # height=None matters: the incoming options carry the frame's full height, and
+    # a Panel rendered under it expands to fill the screen instead of sizing to its
+    # content — which is how this drew nothing at all rather than a bubble.
+    bubble_opts = options.update(width=cols, height=None)
+    rendered = console.render_lines(bubble, bubble_opts, pad=True, style=bg_style)
+    top = bottom - len(rendered) + 1
+    if top < _SIGNIN_TOP_MARGIN:
+        return
+    left = right - cols + 1
+    for i, row in enumerate(rendered):
+        r = top + i
+        if not 0 <= r < height:
+            continue
+        before, _mid, after = Segment.divide(lines[r], [left, right + 1, width])
+        lines[r] = list(before) + list(row) + list(after)
+    # Tail pointing down at the duck, level with his head.
+    tail_row = bottom + 1
+    if 0 <= tail_row < height:
+        tail = console.render_lines(
+            Align.right(Text("\u25be", style="rgb(90,100,110)")),
+            bubble_opts,
+            pad=True,
+            style=bg_style,
+        )
+        if tail:
+            before, _mid, after = Segment.divide(lines[tail_row], [left, right + 1, width])
+            lines[tail_row] = list(before) + list(tail[0]) + list(after)
+
+
 def _build_update_screen(
     width: int,
     height: int,

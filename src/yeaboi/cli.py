@@ -2802,6 +2802,13 @@ def main(argv: list[str] | None = None) -> None:
     # so only a forced include/skip needs the override).
     if getattr(args, "architecture_spike", None) in ("include", "skip"):
         os.environ["YEABOI_ARCHITECTURE_SPIKE"] = args.architecture_spike
+    # A subscription token expires and says nothing about when, so check it once
+    # per launch — off the startup path, since nothing on the first screen waits
+    # on the answer and the duck picks the warning up on a later frame. A no-op
+    # unless subscription auth is actually configured.
+    from yeaboi.auth_state import probe_in_background
+
+    probe_in_background()
 
     # ── --list-audio-devices: print the mic table and exit ───────────────────
     # After load_user_config() so the currently-configured VOICE_DEVICE can be

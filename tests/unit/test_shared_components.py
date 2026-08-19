@@ -680,7 +680,9 @@ class TestSettingsScreen:
             _build_settings_screen,
         )
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=4, sel_field=1)
+        # box 3 / field 1 is Session Prune Days on the System tab (AWS Bedrock used
+        # to sit here as a fifth box; its rows moved beside the provider).
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=3, sel_field=1)
         rows = self._segments(panel, width=130, height=44)
         barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
         assert len(barred) == 1  # exactly one value is highlighted
@@ -702,12 +704,16 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
-        # Five sections dealt into two balanced columns, nothing in the wide tail.
-        assert sorted(b for col in panel._box_cols for b in col) == [0, 1, 2, 3, 4]
+        # Four sections dealt into two balanced columns, nothing in the wide tail.
+        assert sorted(b for col in panel._box_cols for b in col) == [0, 1, 2, 3]
         assert len(panel._box_cols) == 2 and not panel._box_tail
         envs = [f[0] for box in panel._box_fields for f in box]
-        assert "LOG_LEVEL" in envs and "AWS_REGION" in envs
+        assert "LOG_LEVEL" in envs
         assert "_config_path" not in envs  # read-only rows aren't navigable
+        # AWS credentials are navigable on the Credentials tab now, under the
+        # provider that uses them, and only when Bedrock is the live provider.
+        creds = _build_settings_screen({"LLM_PROVIDER": "bedrock"}, width=130, height=44, active_tab=0)
+        assert "AWS_REGION" in [f[0] for box in creds._box_fields for f in box]
 
     def test_boxes_keep_their_own_height_and_the_columns_end_level(self):
         # Boxes are sized to their content (a one-row section is not padded up to
@@ -1308,3 +1314,40 @@ class TestBackTabVersusEscKey:
         _esc(from_tab=True)  # leave the flag set, so this proves it resets
         assert _esc() == "esc"
         assert esc_came_from_back_tab() is False
+
+
+class TestSettingsScrollbar:
+    """The settings scrollbar appears only when something can actually scroll.
+
+    It used to be forced on (always_show=True), so a wide terminal — where the
+    boxes deal into two columns and everything fits — drew a dim full-height track
+    beside content with nothing below it, which reads as "there is more".
+    """
+
+    @staticmethod
+    def _geometry_and_bars(width: int, height: int) -> tuple[int, int]:
+        import io
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        meta: dict = {}
+        panel = _build_settings_screen({}, width=width, height=height, active_tab=0, scroll_meta=meta)
+        console = Console(file=io.StringIO(), width=width, height=height, force_terminal=False, legacy_windows=False)
+        rows = [
+            "".join(s.text for s in line).rstrip()
+            for line in console.render_lines(panel, console.options.update(width=width, height=height), pad=True)
+        ]
+        bars = sum(1 for r in rows if r[-4:-1].strip() in ("│", "┃"))
+        return meta["max_offset"], bars
+
+    def test_no_track_when_everything_fits(self):
+        max_offset, bars = self._geometry_and_bars(185, 40)
+        assert max_offset == 0, "this width is supposed to fit — pick another for the test"
+        assert bars == 0
+
+    def test_a_thumb_appears_when_it_scrolls(self):
+        max_offset, bars = self._geometry_and_bars(120, 40)
+        assert max_offset > 0, "this width is supposed to overflow — pick another for the test"
+        assert bars > 0

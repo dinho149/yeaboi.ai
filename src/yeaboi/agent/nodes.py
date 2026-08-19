@@ -101,7 +101,22 @@ def _is_llm_auth_or_billing_error(exc: Exception) -> bool:
     LLM feature silently degrades and the app appears broken.
 
     Covers Anthropic, OpenAI, and Google provider error classes.
+
+    Every mode's engine routes its LLM failures through here, which makes this the
+    one place that learns a subscription token has stopped working — so a positive
+    answer also records that (in memory only; see :mod:`yeaboi.auth_state`). The
+    alternative was the same three lines in eleven engines.
     """
+    if not _auth_or_billing_error(exc):
+        return False
+    from yeaboi.auth_state import note_auth_failure
+
+    note_auth_failure(exc)
+    return True
+
+
+def _auth_or_billing_error(exc: Exception) -> bool:
+    """The pure classification behind :func:`_is_llm_auth_or_billing_error`."""
     # Anthropic: AuthenticationError, PermissionDeniedError, BadRequestError (billing)
     try:
         import anthropic
