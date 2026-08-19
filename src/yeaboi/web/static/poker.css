@@ -343,6 +343,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      rather than a design system. */
   --paper: #ffffff;
 
+  /* Mask stops. A `mask-image` reads alpha and nothing else, so this is not a
+     colour the theme has any opinion about — it is "opaque", spelled the only
+     way CSS gradients let you spell it. */
+  --mask-opaque: #000000;
+
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur-base: 200ms;

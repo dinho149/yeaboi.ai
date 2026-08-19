@@ -171,9 +171,13 @@ CAPABILITIES: dict[str, dict] = {
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
         # retro's action items) the TUI/browser adapt for the review column.
+        # history_providers/report_payload: the board's step-back through previous
+        # retros — the same runs `retro_history` already reads, shaped as cards.
         "engines": {
             ("yeaboi.retro.engine", "generate_action_items"),
             ("yeaboi.retro.engine", "carried_action_items_for_session"),
+            ("yeaboi.retro.engine", "history_providers"),
+            ("yeaboi.retro.engine", "report_payload"),
         },
         "mcp_tools": {"retro_history", "retro_export"},  # carried data rides along in retro_history's report
         "tui_mode": "retro",

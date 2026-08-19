@@ -440,10 +440,10 @@
 /* Fades only on the edges that have something past them — `data-fade` is set
    from the scroll position, because an always-on mask dims the top of the first
    card in a column holding one. */
-.cards[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, #000 var(--s5)); }
-.cards[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, #000 var(--s5)); }
+.cards[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5)); }
+.cards[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, var(--mask-opaque) var(--s5)); }
 .cards[data-fade='both'] {
-  mask-image: linear-gradient(to bottom, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5), var(--mask-opaque) calc(100% - var(--s5)), transparent);
 }
 /* The set that survives a filter arrives together — one move, not a dozen
    staggered ones, because it is one decision. */

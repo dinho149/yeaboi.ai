@@ -343,6 +343,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      rather than a design system. */
   --paper: #ffffff;
 
+  /* Mask stops. A `mask-image` reads alpha and nothing else, so this is not a
+     colour the theme has any opinion about — it is "opaque", spelled the only
+     way CSS gradients let you spell it. */
+  --mask-opaque: #000000;
+
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -3872,7 +3877,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
    that scrolls away, a one-viewport region holding the sticky toolbar and this
    board, and a credit under it. What is left here is the surface it is painted
    on. */
-._app_edbby_24 {
+._app_9uhof_24 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -3886,20 +3891,20 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside their share of the viewport instead of growing past it — the
    shell's region is a flex column of definite height for exactly this reason. */
-._boardRegion_edbby_38 {
+._boardRegion_9uhof_38 {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
 }
 
-._offline_edbby_45 { color: var(--warn); font-family: var(--font-sans); }
+._offline_9uhof_45 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
 /* `relative` is load-bearing: the Room's roster is positioned against this
    cluster, so its cards line up with the chip above them. `--room-lead` is how
    far in the chip's own avatar sits, which is what they line up *with*. */
-._identity_edbby_51 {
+._identity_9uhof_51 {
   position: relative;
   --room-lead: var(--s1);
   display: flex;
@@ -3909,7 +3914,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 
 /* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
    It is your own name, not a control you are meant to find. */
-._meChip_edbby_61 {
+._meChip_9uhof_61 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -3926,23 +3931,23 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._meChip_edbby_61:hover {
+._meChip_9uhof_61:hover {
   background: var(--panel-2);
   border-color: var(--hairline);
 }
-._meName_edbby_82 {
+._meName_9uhof_82 {
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
-._pen_edbby_89 { display: inline-flex; color: var(--muted); }
-._roomCount_edbby_90 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._pen_9uhof_89 { display: inline-flex; color: var(--muted); }
+._roomCount_9uhof_90 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._musicBanner_edbby_94 {
+._musicBanner_9uhof_94 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
@@ -3963,7 +3968,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 
 /* Bottom middle, clear of the dock on the right. Glass rather than a panel:
    it sits over the columns and must not read as another one. */
-._lockNote_edbby_115 {
+._lockNote_9uhof_115 {
   position: fixed;
   left: 50%;
   bottom: calc(var(--s3) + env(safe-area-inset-bottom));
@@ -3980,34 +3985,34 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   box-shadow: var(--shadow-1);
   font-size: var(--fs-xs);
   pointer-events: none;
-  animation: _lockNoteIn_edbby_1 220ms var(--ease) both;
+  animation: _lockNoteIn_9uhof_1 220ms var(--ease) both;
 }
 /* The two ways a board goes read-only, in the colours the rest of the board
    already uses for them: the host's lock is a warning, a past retro is the
    accent the picker goes when you step back to one. */
-._lockNoteLocked_edbby_137 { color: var(--warn); }
-._lockNotePast_edbby_138 { color: var(--accent2); }
+._lockNoteLocked_9uhof_137 { color: var(--warn); }
+._lockNotePast_9uhof_138 { color: var(--accent2); }
 @supports not (backdrop-filter: blur(1px)) {
-  ._lockNote_edbby_115 { background: var(--panel); }
+  ._lockNote_9uhof_115 { background: var(--panel); }
 }
 
-@keyframes _lockNoteIn_edbby_1 {
+@keyframes _lockNoteIn_9uhof_1 {
   from {
     opacity: 0;
     translate: 0 8px;
   }
 }
 
-._lockNoteOut_edbby_150 { animation: _lockNoteOut_edbby_150 180ms var(--ease) both; }
+._lockNoteOut_9uhof_150 { animation: _lockNoteOut_9uhof_150 180ms var(--ease) both; }
 
-@keyframes _lockNoteOut_edbby_150 {
+@keyframes _lockNoteOut_9uhof_150 {
   to {
     opacity: 0;
     translate: 0 8px;
   }
 }
 
-._popNote_edbby_159 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_9uhof_159 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Switching sprints ────────────────────────────────────────────────── */
 /*
@@ -4016,22 +4021,22 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * The columns move together rather than card by card: they are all being
  * replaced at once, and a stagger would read as a board loading.
  */
-._boardOut_edbby_168 {
-  animation: _sprintOut_edbby_1 170ms var(--ease) both;
+._boardOut_9uhof_168 {
+  animation: _sprintOut_9uhof_1 170ms var(--ease) both;
   pointer-events: none;
 }
-._boardIn_edbby_172 {
-  animation: _sprintIn_edbby_1 220ms var(--ease) both;
+._boardIn_9uhof_172 {
+  animation: _sprintIn_9uhof_1 220ms var(--ease) both;
 }
 
-@keyframes _sprintOut_edbby_1 {
+@keyframes _sprintOut_9uhof_1 {
   to {
     opacity: 0;
     transform: translateX(-10px);
   }
 }
 
-@keyframes _sprintIn_edbby_1 {
+@keyframes _sprintIn_9uhof_1 {
   from {
     opacity: 0;
     transform: translateX(14px);
@@ -4044,12 +4049,12 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * in here is framed: a rail of boxes beside four columns of cards is twice the
  * furniture for a quarter of the content.
  */
-._boardLayout_edbby_196 {
+._boardLayout_9uhof_196 {
   display: flex;
   min-height: 0;
   flex: 1;
 }
-._rail_edbby_201 {
+._rail_9uhof_201 {
   flex: none;
   width: 16rem;
   display: flex;
@@ -4059,21 +4064,21 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
-._rail_edbby_201::-webkit-scrollbar { display: none; }
-._railPast_edbby_212 { color: var(--accent2); }
+._rail_9uhof_201::-webkit-scrollbar { display: none; }
+._railPast_9uhof_212 { color: var(--accent2); }
 
 /* The rail arrives with the board it belongs to. Sections in turn, rows within
    a section in turn, so a sprint switch reads as the controls being replaced
    rather than the list flickering. */
-._rail_edbby_201 > section { animation: _railIn_edbby_1 240ms var(--ease) both; }
-._rail_edbby_201 > section:nth-child(2) { animation-delay: 60ms; }
-._rail_edbby_201 > section:nth-child(3) { animation-delay: 120ms; }
-._rail_edbby_201 > section:nth-child(4) { animation-delay: 180ms; }
+._rail_9uhof_201 > section { animation: _railIn_9uhof_1 240ms var(--ease) both; }
+._rail_9uhof_201 > section:nth-child(2) { animation-delay: 60ms; }
+._rail_9uhof_201 > section:nth-child(3) { animation-delay: 120ms; }
+._rail_9uhof_201 > section:nth-child(4) { animation-delay: 180ms; }
 
 /* Keyed on which retro is open, so it replays on a switch and never on a poll. */
-._railSwap_edbby_223 { animation: _railIn_edbby_1 240ms var(--ease) both; }
+._railSwap_9uhof_223 { animation: _railIn_9uhof_1 240ms var(--ease) both; }
 
-@keyframes _railIn_edbby_1 {
+@keyframes _railIn_9uhof_1 {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -4081,7 +4086,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 }
 
 /* The picker between its two arrows, filling the rail's width. */
-._timeSwitch_edbby_233 {
+._timeSwitch_9uhof_233 {
   display: flex;
   align-items: center;
   gap: var(--s1);
@@ -4089,13 +4094,13 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 }
 /* The rail is borderless, so the picker is too — it is a name you can change,
    not a field you fill in. */
-._timePick_edbby_241 {
+._timePick_9uhof_241 {
   flex: 1;
   min-width: 0;
 }
 /* The underline goes with every other border in the rail — it is a name you
    can change, not a field you fill in. */
-._timePick_edbby_241 button {
+._timePick_9uhof_241 button {
   width: 100%;
   padding: 0 var(--s2);
   min-height: var(--tap);
@@ -4104,14 +4109,14 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font-size: var(--fs-m);
   font-weight: 600;
 }
-._timePick_edbby_241 button:hover {
+._timePick_9uhof_241 button:hover {
   box-shadow: none;
   background: var(--panel-2);
 }
 
 /* A carried item is a row, like everything else in the rail. Its status is the
    dot the kit already puts at the head of one. */
-._carriedRow_edbby_263 {
+._carriedRow_9uhof_263 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -4120,24 +4125,24 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font-size: var(--fs-xs);
   color: var(--muted);
 }
-._carriedText_edbby_272 { flex: 1; min-width: 0; }
-._carriedPick_edbby_273 { flex: none; }
-._carriedPick_edbby_273 button {
+._carriedText_9uhof_272 { flex: 1; min-width: 0; }
+._carriedPick_9uhof_273 { flex: none; }
+._carriedPick_9uhof_273 button {
   padding: 0;
   min-height: 0;
   box-shadow: none;
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
-._carriedPick_edbby_273 button:hover { box-shadow: none; background: none; color: var(--text); }
-._dot_done_edbby_282 { background: var(--ok); }
-._dot_in_progress_edbby_283 { background: var(--info); }
-._dot_carried_over_edbby_284 { background: var(--warn); }
-._dot_not_relevant_edbby_285 { opacity: 0.4; }
+._carriedPick_9uhof_273 button:hover { box-shadow: none; background: none; color: var(--text); }
+._dot_done_9uhof_282 { background: var(--ok); }
+._dot_in_progress_9uhof_283 { background: var(--info); }
+._dot_carried_over_9uhof_284 { background: var(--warn); }
+._dot_not_relevant_9uhof_285 { opacity: 0.4; }
 
 /* Stands in for an avatar on the "everyone" row, so it lines up with the faces
    under it rather than sitting a glyph-width to the left. */
-._everyoneMark_edbby_289 {
+._everyoneMark_9uhof_289 {
   flex: none;
   display: inline-grid;
   place-items: center;
@@ -4145,18 +4150,18 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   height: 20px;
   color: var(--muted);
 }
-._railNote_edbby_297 { margin: var(--s2); color: var(--dim); font-size: var(--fs-xs); }
-._railName_edbby_298 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._railCount_edbby_299 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-._railAction_edbby_300 { display: flex; flex-direction: column; gap: var(--s2); }
+._railNote_9uhof_297 { margin: var(--s2); color: var(--dim); font-size: var(--fs-xs); }
+._railName_9uhof_298 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._railCount_9uhof_299 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._railAction_9uhof_300 { display: flex; flex-direction: column; gap: var(--s2); }
 
 /* Under a laptop's width there is no room beside the board, so it goes above it
    and lies down. */
 @media (max-width: 1099px) {
-  ._boardLayout_edbby_196 { flex-direction: column; }
+  ._boardLayout_9uhof_196 { flex-direction: column; }
   /* Still above the board, where it is beside on a wide screen — a facilitator
      scrolling past four columns of cards to reach the controls is not it. */
-  ._rail_edbby_201 {
+  ._rail_9uhof_201 {
     order: -1;
     width: auto;
     overflow-y: visible;
@@ -4166,11 +4171,11 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     gap: var(--s4);
     padding: var(--s3) var(--s4) 0;
   }
-  ._rail_edbby_201 > * { flex: 1 1 14rem; }
+  ._rail_9uhof_201 > * { flex: 1 1 14rem; }
 }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_edbby_34 {
+._board_9uhof_34 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -4188,13 +4193,13 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 }
 
 @media (max-width: 1099px) {
-  ._board_edbby_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_9uhof_34 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_edbby_34 {
+  ._board_9uhof_34 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -4204,14 +4209,14 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_edbby_34::-webkit-scrollbar { display: none; }
-  ._column_edbby_357 { scroll-snap-align: center; }
+  ._board_9uhof_34::-webkit-scrollbar { display: none; }
+  ._column_9uhof_357 { scroll-snap-align: center; }
 }
 
-._pager_edbby_360 { display: none; }
+._pager_9uhof_360 { display: none; }
 @media (max-width: 699px) {
-  ._pager_edbby_360 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_edbby_363 {
+  ._pager_9uhof_360 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_9uhof_363 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -4220,7 +4225,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_edbby_363::after {
+  ._pagerDot_9uhof_363::after {
     content: "";
     display: block;
     width: 8px;
@@ -4229,7 +4234,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_edbby_381::after { background: var(--accent); }
+  ._pagerDotOn_9uhof_381::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -4239,12 +4244,12 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * stack. `--col-tone` is set per column by Column.tsx from the typed map in
  * gridTone.ts, and says the column's identity once, on its head.
  */
-._column_edbby_357 {
+._column_9uhof_357 {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-._columnHead_edbby_396 {
+._columnHead_9uhof_396 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
@@ -4253,7 +4258,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
   margin-bottom: var(--s2);
 }
-._columnTitle_edbby_405 {
+._columnTitle_9uhof_405 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4262,13 +4267,13 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_edbby_414 { color: var(--dim); }
-._columnCount_edbby_415 {
+._columnDot_9uhof_414 { color: var(--dim); }
+._columnCount_9uhof_415 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_edbby_420 {
+._cards_9uhof_420 {
   /* The containing block for an empty column's drop indicator. */
   position: relative;
   transition: background-color var(--dur-fast) var(--ease);
@@ -4287,40 +4292,40 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 }
 /* The only thing that draws the column's bounds, and only while a card is over
    it — the region is otherwise unpainted. */
-._cards_edbby_420::-webkit-scrollbar { display: none; }
+._cards_9uhof_420::-webkit-scrollbar { display: none; }
 /* Fades only on the edges that have something past them — `data-fade` is set
    from the scroll position, because an always-on mask dims the top of the first
    card in a column holding one. */
-._cards_edbby_420[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, #000 var(--s5)); }
-._cards_edbby_420[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, #000 var(--s5)); }
-._cards_edbby_420[data-fade='both'] {
-  mask-image: linear-gradient(to bottom, transparent, #000 var(--s5), #000 calc(100% - var(--s5)), transparent);
+._cards_9uhof_420[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5)); }
+._cards_9uhof_420[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, var(--mask-opaque) var(--s5)); }
+._cards_9uhof_420[data-fade='both'] {
+  mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5), var(--mask-opaque) calc(100% - var(--s5)), transparent);
 }
 /* The set that survives a filter arrives together — one move, not a dozen
    staggered ones, because it is one decision. */
-._cardFiltered_edbby_450 { animation: _cardFilterIn_edbby_1 200ms var(--ease) both; }
+._cardFiltered_9uhof_450 { animation: _cardFilterIn_9uhof_1 200ms var(--ease) both; }
 
-@keyframes _cardFilterIn_edbby_1 {
+@keyframes _cardFilterIn_9uhof_1 {
   from {
     opacity: 0;
     transform: translateY(6px);
   }
 }
 
-._cardsOver_edbby_459 {
+._cardsOver_9uhof_459 {
   background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
   outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
   outline-offset: -1px;
   border-radius: var(--r-l);
 }
-._columnEmpty_edbby_465 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnEmpty_9uhof_465 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._cardSlot_edbby_467 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._cardSlot_9uhof_467 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 /* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
    stack's gap pushed every card below it ten pixels down — including the
    midpoints the drop index is computed against, which made the indicator
    oscillate between two slots at the boundary. */
-._dropLine_edbby_472 {
+._dropLine_9uhof_472 {
   position: absolute;
   left: 0;
   right: 0;
@@ -4329,17 +4334,17 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   border-radius: var(--r-pill);
   background: var(--col-tone, var(--accent));
 }
-._dropLineTail_edbby_481 {
+._dropLineTail_9uhof_481 {
   top: auto;
   bottom: calc(var(--s2) / -2 - 1px);
 }
 /* Drawn from the middle out. It moves by being torn down in one slot and built
    in another, so an entrance is the only thing that can smooth the change. */
-._dropLine_edbby_472 {
-  animation: _dropIn_edbby_1 var(--dur-fast) var(--ease) both;
+._dropLine_9uhof_472 {
+  animation: _dropIn_9uhof_1 var(--dur-fast) var(--ease) both;
 }
 
-@keyframes _dropIn_edbby_1 {
+@keyframes _dropIn_9uhof_1 {
   from {
     opacity: 0;
     transform: scaleX(0.4);
@@ -4355,7 +4360,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * The whole card is the drag handle, so it says so — `grab`, and it lifts a
  * little under the pointer.
  */
-._card_edbby_420 {
+._card_9uhof_420 {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: var(--r-l);
@@ -4370,21 +4375,21 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
      animation after the landing rather than as feedback. */
   transition: border-color var(--dur-fast) var(--ease);
 }
-._card_edbby_420:hover {
+._card_9uhof_420:hover {
   border-color: var(--hairline-strong);
 }
-._card_edbby_420:active { cursor: grabbing; }
+._card_9uhof_420:active { cursor: grabbing; }
 /* A card in the air takes no pointer events, so the pointer is over whatever is
    underneath it — and a sweep across the board would otherwise light up every
    card it crossed. */
-._board_edbby_34[data-dragging='true'] ._card_edbby_420:hover {
+._board_9uhof_34[data-dragging='true'] ._card_9uhof_420:hover {
   border-color: var(--hairline);
 }
 /* A locked board is read-only, and a grab cursor over it is a lie. */
-._cardLocked_edbby_533 { cursor: default; }
+._cardLocked_9uhof_533 { cursor: default; }
 /* The one card that is not a colleague's. The column's own tone stays on the
    head, so a rule here means one thing only: an agent wrote this. */
-._cardAI_edbby_536 { border-left: 3px solid var(--accent2); }
+._cardAI_9uhof_536 { border-left: 3px solid var(--accent2); }
 
 /* ── Carried ──────────────────────────────────────────────────────────── */
 /*
@@ -4392,16 +4397,16 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * the hole it came out of. A faded copy of it was worse: two of the same card
  * on screen, one of them under the pointer and one of them not.
  */
-._cardDragging_edbby_544 {
+._cardDragging_9uhof_544 {
   transform: none;
   box-shadow: none;
   background: none;
   border-style: dashed;
   border-color: var(--line);
 }
-._cardDragging_edbby_544 > * { opacity: 0; }
+._cardDragging_9uhof_544 > * { opacity: 0; }
 
-._dragLayer_edbby_553 {
+._dragLayer_9uhof_553 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
@@ -4410,7 +4415,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 /* Off the board and in the hand: bigger shadow, no hover transition to fight
    the per-frame transform, and a transform origin near the pointer so the lean
    pivots where it is being held rather than around the middle of the card. */
-._dragCard_edbby_562 {
+._dragCard_9uhof_562 {
   position: absolute;
   top: 0;
   left: 0;
@@ -4428,19 +4433,19 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     var(--edge),
     0 2px 4px rgb(0 0 0 / 18%),
     0 18px 40px rgb(0 0 0 / 34%);
-  animation: _cardLift_edbby_1 var(--dur-fast) var(--ease) both;
+  animation: _cardLift_9uhof_1 var(--dur-fast) var(--ease) both;
 }
-@keyframes _cardLift_edbby_1 {
+@keyframes _cardLift_9uhof_1 {
   from { scale: 1; }
   to { scale: 1.03; }
 }
 /* A card you wrote opens for editing where you read it. `text`, because that is
    what the pointer is over and what it is about to do. */
-._cardTextMine_edbby_588 {
+._cardTextMine_9uhof_588 {
   cursor: text;
 }
 
-._cardText_edbby_588 {
+._cardText_9uhof_588 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -4451,16 +4456,16 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 
 /* `min-height` because the carried copy of a card carries no controls, and
    without it the card in the air is a different size from the one it becomes. */
-._cardMeta_edbby_603 {
+._cardMeta_9uhof_603 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
   margin-top: var(--s2);
 }
-._metaSpacer_edbby_610 { flex: 1; }
-._author_edbby_611 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_edbby_612 {
+._metaSpacer_9uhof_610 { flex: 1; }
+._author_9uhof_611 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_9uhof_612 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -4468,8 +4473,8 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_edbby_620 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_edbby_621 {
+._aiBadge_9uhof_620 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_9uhof_621 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4479,8 +4484,8 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_edbby_631 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_edbby_632 {
+._confirmRow_9uhof_631 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_9uhof_632 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -4488,18 +4493,18 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   text-transform: uppercase;
 }
 
-._gripWrap_edbby_640 { position: relative; display: inline-flex; }
+._gripWrap_9uhof_640 { position: relative; display: inline-flex; }
 /* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
    like comes from `.btn shape="bare"`. */
-._grip_edbby_640 {
+._grip_9uhof_640 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_edbby_640:active { cursor: grabbing; }
+._grip_9uhof_640:active { cursor: grabbing; }
 
-._moveMenu_edbby_651 {
+._moveMenu_9uhof_651 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -4513,7 +4518,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_edbby_665 {
+._moveItem_9uhof_665 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -4525,13 +4530,13 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_edbby_665:hover { background: var(--panel-2); }
+._moveItem_9uhof_665:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
 /* Editing happens where the text is. No frame, no ground, no buttons: the only
    thing that changes when you click your own card is that a caret appears in
    it. Enter commits, Shift-Enter is the newline, clicking away commits too. */
-._editBox_edbby_683 {
+._editBox_9uhof_683 {
   display: block;
   width: 100%;
   padding: 0;
@@ -4554,7 +4559,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 /* `nowrap` and a floor of zero: the row is the card's last line and must stay
    one line whatever is in it, so a card with eight reactions scrolls them
    rather than growing a second row and pushing the board about. */
-._reactions_edbby_706 {
+._reactions_9uhof_706 {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -4563,13 +4568,13 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   overflow-x: auto;
   scrollbar-width: none;
 }
-._reactions_edbby_706::-webkit-scrollbar {
+._reactions_9uhof_706::-webkit-scrollbar {
   display: none;
 }
-._rxChip_edbby_718 {
+._rxChip_9uhof_718 {
   flex: none;
 }
-._rxChip_edbby_718, ._rxPick_edbby_721 {
+._rxChip_9uhof_718, ._rxPick_9uhof_721 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4588,45 +4593,45 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   cursor: pointer;
 }
 /* A ground only under the pointer, in the tray. */
-._rxPick_edbby_721:hover, ._rxPick_edbby_721:focus-visible {
+._rxPick_9uhof_721:hover, ._rxPick_9uhof_721:focus-visible {
   background: var(--panel-2);
 }
 /* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
    an emoji is a second shape competing with the one that carries the meaning. */
-._rxGlyph_edbby_745 {
+._rxGlyph_9uhof_745 {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
 }
 
 /* A reaction is somebody pressing a button, so it arrives and it leaves. The
    `scale` property rather than a transform, so nothing here has to know what
    else may be transforming the chip. Neither changes the row's height. */
-._rxChipIn_edbby_752 {
-  animation: _rxIn_edbby_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+._rxChipIn_9uhof_752 {
+  animation: _rxIn_9uhof_1 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
 }
-._rxChipOut_edbby_755 {
-  animation: _rxOut_edbby_1 150ms var(--ease) both;
+._rxChipOut_9uhof_755 {
+  animation: _rxOut_9uhof_1 150ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _rxIn_edbby_1 {
+@keyframes _rxIn_9uhof_1 {
   from {
     opacity: 0;
     scale: 0.4;
   }
 }
 
-@keyframes _rxOut_edbby_1 {
+@keyframes _rxOut_9uhof_1 {
   to {
     opacity: 0;
     scale: 0.4;
   }
 }
-._rxChip_edbby_718:disabled { opacity: 0.5; cursor: default; }
+._rxChip_9uhof_718:disabled { opacity: 0.5; cursor: default; }
 /* Yours, without a pill around the glyph: the count carries it. The ring used
    to, and it could not survive a reload — the server never sends raw pids, so
    "did I react" is only knowable from the toggle that answered. */
-._rxChipMine_edbby_777 ._rxCount_edbby_777 { color: var(--accent); font-weight: 600; }
-._rxCount_edbby_777 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChipMine_9uhof_777 ._rxCount_9uhof_777 { color: var(--accent); font-weight: 600; }
+._rxCount_9uhof_777 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
@@ -4636,7 +4641,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
  * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
  * size, not a ragged last line.
  */
-._rxTray_edbby_788 {
+._rxTray_9uhof_788 {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -4650,30 +4655,30 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   border: 0;
   border-radius: var(--r-l);
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  animation: _trayIn_edbby_1 var(--dur-fast) var(--ease) both;
+  animation: _trayIn_9uhof_1 var(--dur-fast) var(--ease) both;
 }
 
 /* Without the filter there is nothing behind the emoji at all, so the ground
    comes back rather than the tray being unreadable over a card. */
 @supports not (backdrop-filter: blur(1px)) {
-  ._rxTray_edbby_788 {
+  ._rxTray_9uhof_788 {
     background: var(--panel);
   }
 }
 
-._rxTrayOut_edbby_813 {
-  animation: _trayOut_edbby_1 140ms var(--ease) both;
+._rxTrayOut_9uhof_813 {
+  animation: _trayOut_9uhof_1 140ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _trayOut_edbby_1 {
+@keyframes _trayOut_9uhof_1 {
   to {
     opacity: 0;
     transform: translateY(-4px);
   }
 }
 
-@keyframes _trayIn_edbby_1 {
+@keyframes _trayIn_9uhof_1 {
   from {
     opacity: 0;
     transform: translateY(-4px);
@@ -4693,7 +4698,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
 /* Holds the two states in one box: the invitation, and the draft that folds
    over it. Relative so the folding box can leave the flow on its way out and
    let the invitation back underneath it. */
-._composeSlot_edbby_845 {
+._composeSlot_9uhof_845 {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -4701,7 +4706,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   min-height: var(--tap);
 }
 
-._composeArea_edbby_853 {
+._composeArea_9uhof_853 {
   flex: 1 0 var(--tap);
   min-height: var(--tap);
   display: grid;
@@ -4713,7 +4718,7 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font: inherit;
   cursor: pointer;
 }
-._composeHint_edbby_865 {
+._composeHint_9uhof_865 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -4722,18 +4727,18 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font-size: var(--fs-xs);
   transition: opacity var(--dur-fast) var(--ease);
 }
-._composeArea_edbby_853:hover ._composeHint_edbby_865,
-._composeArea_edbby_853:focus-visible ._composeHint_edbby_865 {
+._composeArea_9uhof_853:hover ._composeHint_9uhof_865,
+._composeArea_9uhof_853:focus-visible ._composeHint_9uhof_865 {
   opacity: 1;
 }
 /* Nothing invites a card while one is in the air. */
-._board_edbby_34[data-dragging='true'] ._composeHint_edbby_865 { opacity: 0; }
+._board_9uhof_34[data-dragging='true'] ._composeHint_9uhof_865 { opacity: 0; }
 
 /* The draft is a card: the same ground, hairline, corner and shadows as the
    one it is about to become, with the column's tone on its edge. The box
    inside it is bare — a second bordered field inside a bordered card is two
    objects for one thing. */
-._columnCompose_edbby_885 {
+._columnCompose_9uhof_885 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -4746,24 +4751,24 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
     0 1px 1px rgb(0 0 0 / 12%),
     0 4px 12px rgb(0 0 0 / 10%);
 }
-._columnCompose_edbby_885:focus-within {
+._columnCompose_9uhof_885:focus-within {
   border-color: var(--col-tone, var(--accent));
 }
 /* Unfolds where the card will be, and folds back into it. `both` holds the
    `from` state through the delay so the box does not flash at full size first. */
-._columnCompose_edbby_885 {
-  animation: _draftIn_edbby_1 180ms var(--ease) both;
+._columnCompose_9uhof_885 {
+  animation: _draftIn_9uhof_1 180ms var(--ease) both;
 }
-._columnComposeOut_edbby_906 {
+._columnComposeOut_9uhof_906 {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  animation: _draftOut_edbby_1 160ms var(--ease) both;
+  animation: _draftOut_9uhof_1 160ms var(--ease) both;
   pointer-events: none;
 }
 
-@keyframes _draftIn_edbby_1 {
+@keyframes _draftIn_9uhof_1 {
   from {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
@@ -4771,14 +4776,14 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   }
 }
 
-@keyframes _draftOut_edbby_1 {
+@keyframes _draftOut_9uhof_1 {
   to {
     opacity: 0;
     transform: translateY(-4px) scaleY(0.92);
     transform-origin: 50% 0%;
   }
 }
-._composeBox_edbby_930 {
+._composeBox_9uhof_930 {
   width: 100%;
   min-height: 3lh;
   max-height: 8rem;
@@ -4791,12 +4796,12 @@ dialog._modal_5th3o_700:focus-visible { outline: none; }
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeBox_edbby_930::placeholder {
+._composeBox_9uhof_930::placeholder {
   color: var(--dim);
 }
-._composeActions_edbby_946 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_9uhof_946 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
-._srOnly_edbby_948 {
+._srOnly_9uhof_948 {
   position: absolute;
   width: 1px;
   height: 1px;
