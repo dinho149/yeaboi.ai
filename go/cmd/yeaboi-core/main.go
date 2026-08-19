@@ -30,7 +30,8 @@ import (
 // binaryVersion is the sidecar's own semver, reported by core.hello.
 // 0.2.0: standup.aggregate joined the method set (additive; contract v1).
 // 0.3.0: analysis.classify_markers + analysis.score_code (additive; contract v1).
-const binaryVersion = "0.3.0"
+// 0.4.0: analysis.score_docs (additive; contract v1).
+const binaryVersion = "0.4.0"
 
 var methods = []string{
 	"agentwatch.refresh",
@@ -40,6 +41,7 @@ var methods = []string{
 	"standup.aggregate",
 	"analysis.classify_markers",
 	"analysis.score_code",
+	"analysis.score_docs",
 }
 
 func main() {
@@ -203,11 +205,11 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: aggErr.Error()}
 		}
 		return result, nil
-	case "analysis.classify_markers", "analysis.score_code":
+	case "analysis.classify_markers", "analysis.score_code", "analysis.score_docs":
 		// Same ordered decode as standup.aggregate: the params are
 		// Python-dict-shaped data whose object key order is contractual, and
 		// the result goes back out the same way (pysem.Obj.MarshalJSON).
-		// Emits no progress: both calls are milliseconds of pure compute.
+		// Emits no progress: these calls are milliseconds of pure compute.
 		if len(req.Params) == 0 {
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params are required"}
 		}
@@ -220,8 +222,11 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "params must be an object"}
 		}
 		run := analysis.RunClassifyMarkers
-		if req.Method == "analysis.score_code" {
+		switch req.Method {
+		case "analysis.score_code":
 			run = analysis.RunScoreCode
+		case "analysis.score_docs":
+			run = analysis.RunScoreDocs
 		}
 		result, runErr := run(params)
 		if runErr != nil {

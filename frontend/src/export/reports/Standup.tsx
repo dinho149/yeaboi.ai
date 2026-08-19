@@ -44,6 +44,7 @@ import type {
   EvidenceLink,
   Run,
   StandupCategory,
+  StandupConflict,
   StandupMember,
   StandupPractice,
   Trend,
@@ -53,6 +54,7 @@ import { Field } from '../editing/Field';
 import { votePractice, type Verdict } from '../vote';
 import { EvidenceList, EvidenceRow, statusCategory, VISIBLE_ROWS, type EvidenceVariant } from './Evidence';
 import styles from './reports.module.css';
+import { memberSlug, Timeline } from './Timeline';
 import { TrendCard } from './Trend';
 
 /** `confidence.LABEL_*` from `standup/confidence.py`. Unknown → muted. */
@@ -80,8 +82,6 @@ const CATEGORY_TONE_BY_LABEL: Record<string, Tone> = {
   Code: 'accent2',
   Documentation: 'info',
 };
-/** Legend headings. Always plural — they label a series, not a count. */
-const CATEGORY_LABELS = ['Tickets', 'Code', 'Docs'] as const;
 /** `[singular, plural]` for the count chips. "Code" is uncountable either way. */
 const CATEGORY_NOUNS: ReadonlyArray<readonly [string, string]> = [
   ['ticket', 'tickets'],
@@ -106,16 +106,6 @@ function sourceLabel(source: string): string {
 
 function tone(map: Record<string, Tone>, key: string): Tone {
   return map[key] ?? 'low';
-}
-
-/** Anchor-safe member id for the jump strip, `#m-ada-lovelace`. */
-function memberSlug(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'member'
-  );
 }
 
 /** Evidence that is not already an inline link in the prose, as chips. */
@@ -568,6 +558,55 @@ function Practice({
   );
 }
 
+/** `provenance.conflicts.Severity` words. Unknown → muted, the same policy as
+ * every other engine-produced vocabulary on this page. The word always
+ * renders beside the colour. */
+const CONFLICT_TONE: Record<string, Tone> = {
+  low: 'low',
+  medium: 'warn',
+  high: 'danger',
+  critical: 'danger',
+};
+
+function ConflictCards({ conflicts }: { conflicts: StandupConflict[] }) {
+  if (!conflicts.length) return null;
+  return (
+    <section id="conflicts">
+      <h2 className={styles['h2']}>Conflicts</h2>
+      <ul className={styles['conflictList']}>
+        {conflicts.map((conflict) => (
+          <li key={conflict.fingerprint} className={styles['conflict']}>
+            <p className={styles['conflictTitle']}>
+              <Chip tone={tone(CONFLICT_TONE, conflict.severity)}>{conflict.severity}</Chip>
+              <strong>{conflict.title}</strong>
+            </p>
+            <p className={styles['conflictDetail']}>{conflict.detail}</p>
+            <p className={styles['conflictClaims']}>
+              {conflict.claims.map((claim, index) => {
+                const url = safeUrl(claim.url);
+                return (
+                  <span key={index} className={styles['conflictClaim']}>
+                    <Eyebrow>{claim.source}</Eyebrow>{' '}
+                    {url ? (
+                      <a href={url} target="_blank" rel="noreferrer">
+                        {claim.label}
+                      </a>
+                    ) : (
+                      claim.label
+                    )}{' '}
+                    — {claim.value}
+                  </span>
+                );
+              })}
+            </p>
+            {conflict.action ? <p className={styles['conflictAction']}>{conflict.action}</p> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Practices({
   member,
   practices,
@@ -817,35 +856,6 @@ function QuietStrip({ names }: { names: string[] }) {
   );
 }
 
-/** Per-member stacked bars, each scaled against the busiest member. */
-function TeamActivity({ members }: { members: StandupMember[] }) {
-  const rows = members
-    .map((m) => ({ name: m.name, counts: m.counts, total: m.counts[0] + m.counts[1] + m.counts[2] }))
-    .filter((row) => row.total > 0);
-  if (!rows.length) return null;
-  const busiest = Math.max(...rows.map((row) => row.total));
-
-  return (
-    <div className={styles['activity']}>
-      <Eyebrow>Team activity</Eyebrow>
-      <Legend items={CATEGORY_LABELS.map((label, i) => ({ label, tone: CATEGORY_TONES[i] as Tone }))} />
-      {rows.map((row) => (
-        <div key={row.name} className={styles['activityRow']}>
-          <span className={styles['activityName']}>{row.name}</span>
-          <SegmentBar
-            segments={row.counts.map((value, i) => ({ value, tone: CATEGORY_TONES[i] as Tone }))}
-            label={`${row.name}: ${row.total} activity item(s)`}
-            // Scaled against the busiest member rather than each filling the
-            // track: bars that all reach the end are four pictures of 100%.
-            widthPct={(row.total / busiest) * 100}
-          />
-          <span className={styles['activityTotal']}>{row.total}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function Standup({
   sprint,
   confidence,
@@ -855,9 +865,11 @@ export function Standup({
   quietMembers = [],
   activityCounts,
   activityWindow,
+  window: activityBounds,
   coverage,
   skipped,
   practices,
+  conflicts = [],
   images,
   trend,
   warnings,
@@ -873,9 +885,14 @@ export function Standup({
   quietMembers?: string[];
   activityCounts: Array<[string, number]>;
   activityWindow: string;
+  /** Machine-readable window bounds; both `""` on legacy reports, and the
+   * timeline then derives its axis from the event times. */
+  window?: { start: string; end: string } | undefined;
   coverage: Array<[string, string]>;
   skipped: Array<[string, string]>;
   practices: Array<{ rule: string; count: number; title: string }>;
+  /** Cross-source disagreements. Empty on a clean day; absent on legacy payloads. */
+  conflicts?: StandupConflict[];
   images: string[];
   trend: Trend | null;
   warnings: string[];
@@ -894,6 +911,9 @@ export function Standup({
     <>
       <section id="overview">
         <h2 className={styles['h2']}>Overview</h2>
+        {/* The day's shape first: who did what, when, before a single card is
+            read. Clicking a dot jumps to that member's card below. */}
+        <Timeline members={members} window={activityBounds} />
         <StatGrid>
           {sprint.total ? (
             <StatTile value={`${sprint.day} / ${sprint.total}`} label="Sprint day" hint={sprint.name}>
@@ -923,7 +943,6 @@ export function Standup({
         </p>
 
         <TrendCard trend={trend} endTone={confidenceTone} />
-        <TeamActivity members={members} />
         {practices?.length ? (
           <p className={styles['practiceRollup']}>
             <Eyebrow>Practices</Eyebrow>
@@ -964,6 +983,8 @@ export function Standup({
           </Field>
         </section>
       ) : null}
+
+      <ConflictCards conflicts={conflicts} />
 
       <section id="updates">
         <h2 className={styles['h2']}>Updates</h2>

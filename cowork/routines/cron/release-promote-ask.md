@@ -1,140 +1,71 @@
 # release promote ask
 
 **Trigger** — cron `0 9 * * 1` (Mondays 09:00 UTC, after the digest)
-**Summary** — asks once a week whether the accumulated pre-releases should become an official version
-**Workstream** — none; this routine is the release channel's one human decision.
+**Summary** — reminds the human, once a week, that fleet work is waiting for a release batch
+**Workstream** — none; this routine is the release channel's one standing reminder.
 **Model** — `fast` ([models.md](../../models.md))
 
-**The fleet's merges do not ship to users; a human's do.** Every release-worthy merge publishes a
-PyPI **pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see. An unattended merge stops
-there and accumulates; a human's own merge also cuts the official `X.Y.Z`, because a maintainer
-merging their own PR has already signed for it and holding that for a weekly ask was the gate
-misfiring on its author. `scripts/release_lane.py` draws the line, over `pr_feedback.py`'s
-`COWORK_LABEL` / `UNATTENDED_BRANCH_PREFIXES`.
-
-So this routine's batch is whatever the fleet built that no human merge has carried out since. That
-is usually smaller than it used to be, and in a week with any human merge in it, often empty — the
-ask is skipped in that case rather than posted with nothing in it. This is still the one place a
-human is asked to turn an *unattended* batch into an official version — the last backstop in
-[house-rules.md](../../house-rules.md)'s gate, and the only one that involves somebody who has
-actually been running the code.
-
-It composes nothing. `scripts/release_channel.py` owns every comparison: which pre-release HEAD is,
-what sits between the last final tag and now, and whether there is anything to promote at all. The
-routine runs it and posts what it prints. A batch summarised by eye is a batch that quietly drops an
-entry, and the entry it drops is the one nobody then knows shipped.
+**The fleet's PRs do not merge; a human's batch does.** Fleet PRs accumulate open and gate-green,
+and reach `main` — and users — only inside a `batch/<date>` PR that a human assembles with
+`make batch-assemble`, hand-tests, and merges ([release-signoff.md](../../release-signoff.md)).
+None of that is this routine's to do. **This routine reads and reminds, and that is all it can
+do**: its grant holds `gh pr list` and `gh pr view` and no write verb at all — no `gh pr merge`,
+no `gh pr ready`, no `gh pr edit`, no labels. The routine that asks may not answer, and under the
+batch model the answer is a merge.
 
 ## Run
 
-1. **Read the batch** — `uv run python scripts/release_channel.py --manifest --json`.
+1. **Read what is waiting.**
 
-   **If `promotable` is `false`, stop. Post nothing, open nothing, comment nothing.** That is the
-   ordinary state of a quiet week: `main` moved but the version line did not, so there is no new
-   version to release and promoting would only re-tag one already out. A weekly message that says
-   "nothing to promote" every week trains everyone to ignore the channel.
+   ```bash
+   gh pr list --base main --state open --limit 100 --json number,title,labels,headRefName,isDraft,statusCheckRollup
+   ```
 
-   **If an ask is already open and its `<!-- beta: … -->` marker names the same tag as
-   `installable_tag`, stop too.** Nothing has been published since it was written, so the open
-   issue already describes this batch exactly. Re-asking would close a live issue, open an
-   identical one, and put a second unanswered ✅ prompt in Slack — two things to react to for one
-   decision, which is the shape that lets a stale reply get approved a week later.
+   A PR is *fleet-lane* if it carries the `cowork` label or its head starts with an unattended
+   prefix (`cowork/`, `feature/issue-`, `security/codeql-triage`, `ci-sentinel/` — the same list
+   `scripts/release_lane.py` reads). A fleet PR is *waiting* if it is not a draft and every check
+   on it reports success. Count the waiting ones; note the ones that are fleet-lane but red or
+   draft separately — they are not ready and are not counted, but a red one is worth one line.
 
-2. **Find what was already signed off on** — `installable` is what is on PyPI; the newest
-   `<!-- tested: beta/X.Y.ZrcN -->` comment across
-   `gh issue list --label release:promotion --state all --limit 5` is what a human has actually
-   run. `make beta-check` writes those. If one exists and it is not the newest published
-   pre-release, pass it as `--since <tag>`.
+2. **Read the open batch, if any** — `gh pr list --label release:promotion --state open`.
 
-   That is what keeps a skipped week bounded. An unanswered batch grows every merge, and the
-   fourth Monday of re-reading the same twelve entries to find the two new ones is the Monday it
-   gets skimmed. The delta is the part with new risk in it; the rest was reviewed already.
+3. **Decide whether to post.**
 
-   When the signed-off tag *is* the newest published one, `nothing_new` is true and the rendered
-   body says so instead of printing a checklist — everything since is on `main` and in nothing
-   installable, so there is a promotion to make and nothing new to test. Post it as rendered.
+   - **Nothing waiting and no batch open → stop. Post nothing.** That is the ordinary state of a
+     quiet week, and a weekly message that says "nothing to do" trains everyone to ignore the
+     channel.
+   - **A batch is already open** → one short reminder that it exists and is waiting on the
+     hand-test, with its link. Do not restate its contents; the PR body carries them.
+   - **Fleet PRs are waiting and no batch is open** → the reminder below.
 
-3. **Render the body** — `uv run python scripts/release_channel.py --manifest --markdown`
-   (with `--since <tag>` when step 2 found one). Use it verbatim. It carries the changelog
-   entries, the commit list, the install line for the pre-release that **really exists**, the
-   hand-test checklist for the surfaces this batch touched, and two markers `publish.yml` reads:
-   `<!-- promote: X.Y.Z -->` for what was asked, and `<!-- beta: beta/X.Y.ZrcN -->` for the commit
-   to cut it from. **Never edit a marker, and never write one by hand.**
-
-4. **Open the issue, and never reuse a stale one** —
-   `gh issue list --label release:promotion --state open --limit 1`.
-   - None open: `gh issue create --label release:promotion --label type:chore` titled
-     `[chore] promote X.Y.Z — N pre-releases pending`, with the rendered body.
-   - One already open: **close it and open a fresh one.** Comment on the old one first, saying it
-     is superseded and linking the new issue, then `gh issue close`.
-
-   Commenting a refreshed manifest onto the open issue would be the obvious move and it is wrong.
-   `publish.yml` reads the version the human approved from `<!-- promote: X.Y.Z -->` in the
-   **issue body**, and this routine holds no `gh issue edit`, so it cannot update that body — the
-   marker would keep saying last week's version while the manifest the human actually read sat in
-   a comment underneath. Every promotion of a reused issue would then take the drift branch and
-   announce a discrepancy that did not happen, which is worse than no disclosure because it is
-   confidently wrong about the common case. A fresh issue per ask keeps the body, the title and
-   the marker describing the same batch.
-
-   Never leave two open. A ✅ on a stale ask promotes against a manifest nobody read.
-
-5. **Ask, through `cowork-scribe`** — one message to `#yeaboi-claude`:
+4. **Remind, through `cowork-scribe`** — one message to `#yeaboi-claude`:
 
    ```slack
-   🏷️ **Promote 3.7.0?** — 8 changes over 6 days · tested build `3.7.0rc8`
+   🏷️ **Release batch waiting** — 5 fleet PRs are gate-green and unshipped
 
-   Everything merged since `v3.6.0` is already installable as a pre-release. Promoting cuts the
-   official `3.7.0` to PyPI from that exact build and opens a GitHub release.
+   - fix the retro export CSP (#301)
+   - integration(gitlab): wizard step (#303)
+   - …
 
-   [The batch, and what to check](https://github.com/dinho149/yeaboi.ai/issues/244)
-
-   Try it first: `pip install --pre yeaboi==3.7.0rc8`  ·  or run `make beta-check`
-   ✅ on the reply below to release · ❌ to wait another week
+   Assemble and test when it suits: `make batch-assemble`, then `make beta-check`.
+   Your merge of the batch PR is what ships them — see cowork/release-signoff.md.
    ```
 
-   The rc named here is `installable`, never `latest_prerelease`. The second is what the *next*
-   merge would be numbered — every docs and chore commit raises it past anything on PyPI — so
-   quoting it hands out an install command that 404s, and the person it fails for is the one
-   person who did what was asked.
+   Every number and title is copied from the `gh pr list` you just read, never restated from
+   memory. No ✅/❌ footer and no parsed thread reply: there is nothing a reaction could safely
+   do here — the next step is a local command only a human can run.
 
-   **Every number here is copied from the manifest you just read, never restated from memory** —
-   the version, the count, the span, the rc. This message is *composed*, unlike the issue body,
-   which `scripts/release_channel.py --manifest --markdown` renders and which you post byte for
-   byte; `cowork-scribe.md` draws that line explicitly because it is the one place a composed
-   sentence could name a version the issue does not.
-
-   The ✅/❌ pair is a footer that instructs, which is the one context those two glyphs are
-   allowed in — never in the title line, never in a heading.
-
-   Then **one thread reply in the parsed contract**, plain text, no emoji and no bold:
-
-   ```slack-reply
-   #<issue> — promote X.Y.Z — <issue link>
-   ```
-
-   `scripts/cowork_relay.py` parses that line before any human reads it (`PROMOTE_RE`), and a ✅ from
-   an allowlisted human on it is what applies `release:promote` and cuts the release. Any other
-   shape is read as an ordinary proposal approval, so this line is a contract, not a style.
-
-6. **Check in.** Whatever happened above — including nothing — close the run by following
+5. **Check in.** Whatever happened above — including nothing — close the run by following
    [check-in.md](../../check-in.md). It is the last thing you do.
 
 ## Stop conditions
 
-- **Nothing pending, or nothing new since the open ask → nothing posted.** Step 1 is the whole
-  gate, and its second half is what stops a skipped week producing a fresh ask every Monday for a
-  batch that has not changed.
-- **Never quote `latest_prerelease` as something to install.** `installable` is the only field
-  backed by a `beta/*` tag, and a tag is only pushed after the upload succeeds.
-- **Never apply `release:promote` yourself**, and never hold a grant that could. The routine that
-  asks the question must not be able to answer it — this is the same rule that keeps a sweep from
-  applying `claude-implement` to its own proposal.
-- **Never leave two `release:promotion` issues open.** Superseding one is closing it, not
-  commenting on it.
-- **Never apply a label to an issue.** Closing and creating are the only two writes here; the grant
-  withholds `gh issue edit` precisely so this routine cannot label its own ask `release:promote`.
-- **Never edit or invent a version.** Everything numeric on the page comes from
-  `release_channel.py`; if it refuses to number the commit, report its message and stop rather than
-  working around it — a version that goes backwards is exactly what it is refusing to let happen.
-- A ❌ on the ask closes the issue and means "not this week". Next Monday opens a fresh one against
-  the grown batch. Do not re-ask in between.
+- **Nothing waiting → nothing posted.** Step 3 is the whole gate.
+- **Never assemble, label, ready, or merge anything.** The grant already withholds every verb;
+  this line is here so the closed allowlist covers the intent and not just the mechanics.
+- **Never comment on the batch PR.** Its comments are the sign-off record —
+  `scripts/beta_signoff.py` reads maintainer comments for `<!-- tested: … -->` markers — and a
+  routine's noise in that stream is noise in an authorization channel, even though the
+  `authorAssociation` filter would discard it.
+- **One message, once.** A batch that waits two weeks gets one reminder each Monday, not an
+  escalation.

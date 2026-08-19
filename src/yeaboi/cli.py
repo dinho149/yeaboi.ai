@@ -369,6 +369,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--ac-format",
+        choices=["gwt", "bullets"],
+        default=None,
+        help="Acceptance-criteria style for generated stories: 'gwt' (Given/When/Then) or "
+        "'bullets' (clear testable statements). Default: follow the learned team profile "
+        "(or YEABOI_AC_FORMAT).",
+    )
+
+    parser.add_argument(
+        "--architecture-spike",
+        choices=["auto", "include", "skip"],
+        default=None,
+        help="Whether to add an architecture-validation spike when the analyzer's decision is "
+        "open (2+ options): 'include'/'skip' force it, 'auto' adds it unless the analyzer's "
+        "confidence is high. Default: ask interactively (auto in non-interactive runs).",
+    )
+
+    parser.add_argument(
         "--no-bell",
         action="store_true",
         default=False,
@@ -443,9 +461,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        choices=["markdown", "json", "html"],
+        choices=["markdown", "json", "html", "prd"],
         default=None,
-        help="Output format for the generated plan. Only valid with --non-interactive or --export-only.",
+        help="Output format for the generated plan ('prd' writes a Product Requirements "
+        "Document; one extra LLM call). Only valid with --non-interactive or --export-only.",
     )
     parser.add_argument(
         "--description",
@@ -808,12 +827,86 @@ def build_parser() -> argparse.ArgumentParser:
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    ceremonies_p = subparsers.add_parser(
+        "ceremonies",
+        help="Run a mode on a cadence — declare it once, the OS fires it",
+    )
+    ceremonies_sub = ceremonies_p.add_subparsers(dest="ceremonies_command", required=True)
+
+    cer_list = ceremonies_sub.add_parser("list", help="Show this session's ceremonies and what they last did")
+    cer_list.add_argument("--session", default="", metavar="ID", help="Session to read (default: most recent)")
+    cer_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_add = ceremonies_sub.add_parser("add", help="Declare a ceremony and install its job")
+    cer_add.add_argument("name", help="A short name — lowercase letters, digits, dot, dash, underscore")
+    cer_add.add_argument("--mode", required=True, help="Which mode runs (see `ceremonies modes`)")
+    cer_add.add_argument("--at", default="09:00", metavar="HH:MM", help="Local time it should happen (default 09:00)")
+    cer_add.add_argument("--weekdays", default="", metavar="SPEC", help="e.g. 1-5, 1,3,5 (default: the mode's own)")
+    cer_add.add_argument(
+        "--channels",
+        default="terminal",
+        metavar="LIST",
+        help="Comma-separated: terminal, desktop, slack, email (default terminal)",
+    )
+    cer_add.add_argument(
+        "--arg",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="A mode argument; repeatable (see `ceremonies modes`)",
+    )
+    cer_add.add_argument("--session", default="", metavar="ID", help="Session to attach it to")
+    cer_add.add_argument(
+        "--stale-after",
+        type=int,
+        default=120,
+        metavar="MIN",
+        help="Skip a scheduled run this many minutes late (0 disables; default 120)",
+    )
+    cer_add.add_argument(
+        "--monthly-cap", type=float, default=0.0, metavar="USD", help="Skip scheduled runs past this month's spend"
+    )
+    cer_add.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_rm = ceremonies_sub.add_parser("remove", help="Forget a ceremony and tear its job down")
+    cer_rm.add_argument("name")
+    cer_rm.add_argument("--session", default="", metavar="ID")
+    cer_rm.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    for verb, blurb in (("pause", "Stop a ceremony firing, keeping it declared"), ("resume", "Start it again")):
+        sub = ceremonies_sub.add_parser(verb, help=blurb)
+        sub.add_argument("name")
+        sub.add_argument("--session", default="", metavar="ID")
+        sub.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_run = ceremonies_sub.add_parser("run", help="Run one now (this is what the scheduled job invokes)")
+    cer_run.add_argument("name")
+    cer_run.add_argument("--session", default="", metavar="ID")
+    cer_run.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="Arm the guards a fired run needs: staleness, the monthly cap, and pause",
+    )
+    cer_run.add_argument("--dry-run", action="store_true", help="Run the engine without LLM calls or delivery")
+    cer_run.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_hist = ceremonies_sub.add_parser("history", help="What the ceremonies actually did")
+    cer_hist.add_argument("name", nargs="?", default="", help="Only this ceremony (default: all)")
+    cer_hist.add_argument("--session", default="", metavar="ID")
+    cer_hist.add_argument("--limit", type=int, default=20, help="Rows to show (default 20)")
+    cer_hist.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
+    cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     agents_p = subparsers.add_parser(
         "agents",
-        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
+        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
         description=AGENTWATCH_BETA_NOTICE,
     )
-    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,standup,security}", required=True)
+    agents_sub = agents_p.add_subparsers(
+        dest="agents_command", metavar="{cost,advisor,standup,security}", required=True
+    )
     # Every child carries the same description — `yeaboi agents cost --help` is
     # a perfectly normal place to arrive without ever seeing the parent's help.
     cost_p = agents_sub.add_parser(
@@ -826,6 +919,14 @@ def build_parser() -> argparse.ArgumentParser:
     cost_p.add_argument("--source", default="", choices=["", "claude_code"], help="Filter by telemetry source")
     cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    advisor_p = agents_sub.add_parser(
+        "advisor",
+        help="How much of your agent spend is recoverable: Read waste, cache health, prompt-prefix churn",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    advisor_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    advisor_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    advisor_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     astandup_p = agents_sub.add_parser(
         "standup",
         help="Daily digest of what your agents did (sessions + agent-authored commits/PRs)",
@@ -877,6 +978,67 @@ def build_parser() -> argparse.ArgumentParser:
     asec_p.add_argument("--deep", action="store_true", help="Re-scan every transcript, not just new/changed ones")
     asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+
+    provenance_desc = (
+        "Every deterministic signal yeaboi surfaces (practice nudges, blocker flags, confidence "
+        "adjustments, conflict cards, performance preps and reviews) is recorded in a tamper-evident "
+        "hash chain with its evidence. This command verifies and reads that chain — deterministic, "
+        "local, no LLM involved."
+    )
+    provenance_p = subparsers.add_parser(
+        "provenance",
+        help="Audit the tamper-evident decision chain behind yeaboi's signals",
+        description=provenance_desc,
+    )
+    provenance_sub = provenance_p.add_subparsers(dest="provenance_command", metavar="{audit,trace}", required=True)
+    # Every child carries the same description — `yeaboi provenance audit --help`
+    # is a perfectly normal place to arrive without ever seeing the parent's help.
+    paudit_p = provenance_sub.add_parser(
+        "audit",
+        help="Verify every chain link and summarise the recorded decisions",
+        description=provenance_desc,
+    )
+    paudit_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    paudit_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    paudit_p.add_argument(
+        "--strict", action="store_true", help="Exit 3 on a broken chain or an empty one (warnings present)"
+    )
+    ptrace_p = provenance_sub.add_parser(
+        "trace",
+        help='The "why" trail behind one recorded decision, evidence included',
+        description=provenance_desc,
+    )
+    ptrace_p.add_argument("entity_id", metavar="ENTITY", help="Entity id, as listed by `yeaboi provenance audit`")
+    ptrace_p.add_argument("--depth", type=int, default=2, metavar="N", help="Evidence hops to follow (default 2)")
+    ptrace_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    ship_desc = (
+        "Hand a story from your saved sprint plan to a supervised coding agent (Claude Code headless): "
+        "isolated worktree and branch, deterministic validation, a human approval gate at the terminal, "
+        "and a PR only after approval. A user-global launch budget caps runs."
+    )
+    ship_p = subparsers.add_parser(
+        "ship",
+        help="Implement a story from your plan via a supervised coding agent",
+        description=ship_desc,
+    )
+    ship_sub = ship_p.add_subparsers(dest="ship_command", metavar="{run,status,history}", required=True)
+    srun_p = ship_sub.add_parser("run", help="Run one story through the pipeline", description=ship_desc)
+    srun_p.add_argument("story_id", metavar="STORY", help="Story id from the plan (e.g. US-001)")
+    srun_p.add_argument("--repo", default=".", metavar="PATH", help="Target git repository (default: current dir)")
+    srun_p.add_argument("--session", default="", metavar="ID", help="Planning session id (default: latest)")
+    srun_p.add_argument(
+        "--check", default="", metavar="CMD", help="Validation command run in the worktree (e.g. 'make test')"
+    )
+    srun_p.add_argument("--timeout-minutes", type=int, default=30, metavar="N", help="Agent run timeout (default 30)")
+    srun_p.add_argument("--dry-run", action="store_true", help="Canned run — no agent, no git, no network")
+    srun_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    srun_p.add_argument("--strict", action="store_true", help="Exit 3 when the run did not end approved")
+    sstatus_p = ship_sub.add_parser("status", help="The latest run and the launch budget", description=ship_desc)
+    sstatus_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    shistory_p = ship_sub.add_parser("history", help="Recent runs, newest first", description=ship_desc)
+    shistory_p.add_argument("--limit", type=int, default=10, metavar="N", help="Runs to show (default 10)")
+    shistory_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
@@ -1327,6 +1489,9 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
         "agents": _cmd_agents,
+        "provenance": _cmd_provenance,
+        "ship": _cmd_ship,
+        "ceremonies": _cmd_ceremonies,
     }
     try:
         return handlers[args.command](args, console)
@@ -1747,6 +1912,380 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
+    """The provenance audit headless: same engine the MCP tools use
+    (CLAUDE.md "REQUIRED: Surface Parity")."""
+    import json
+    from dataclasses import asdict
+
+    logging.getLogger(__name__).info("provenance %s", args.provenance_command)
+
+    if args.provenance_command == "audit":
+        from yeaboi.provenance.engine import run_provenance_audit
+        from yeaboi.provenance.render import format_audit_rich
+
+        report = run_provenance_audit(window_days=args.window_days)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_audit_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.total_records == 0)
+
+    # trace
+    from yeaboi.provenance.engine import trace_entity
+    from yeaboi.provenance.render import format_trace_rich
+
+    trace = trace_entity(args.entity_id, depth=args.depth)
+    for warning in trace.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    if args.format == "json":
+        print(json.dumps(asdict(trace), indent=2))
+    else:
+        console.print(format_trace_rich(trace))
+    return 0 if trace.found else 1
+
+
+def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
+    """Declare, inspect and fire recurring runs.
+
+    ``ceremonies run --scheduled`` is what the installed OS job invokes, so this
+    handler is on the unattended path: it prints, exits with a code, and never
+    prompts. Every write goes through the store (which validates) and then the
+    scheduler, in that order — a job installed for a ceremony the store refused
+    would be one nothing can describe or remove.
+    """
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.agent.state import Ceremony
+    from yeaboi.ceremonies import catalog, render, scheduler
+    from yeaboi.ceremonies.store import CeremonyStore
+
+    command = args.ceremonies_command
+    to_json = getattr(args, "format", "text") == "json"
+    logging.getLogger(__name__).info("ceremonies %s", command)
+
+    if command == "modes":
+        if to_json:
+            print(
+                json.dumps(
+                    {
+                        "schedulable": [asdict(m) for m in catalog.CATALOG],
+                        "refused": catalog.UNSCHEDULABLE,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            console.print(render.format_modes_rich())
+        return 0
+
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+
+    session_id = resolve_session_id(getattr(args, "session", ""))
+
+    with CeremonyStore() as store:
+        if command == "list":
+            declared = store.list(session_id)
+            # The store and the operating system are two different things, and
+            # the gap between them is invisible until something does not fire.
+            # Three states, not two: "installed but paused" is a bug, whereas
+            # "declared but not installed" is exactly what pause is for.
+            installed = set(scheduler.installed_ceremonies(session_id))
+            known = {c.name for c in declared}
+            expected = {c.name for c in declared if c.enabled}
+            drift = [
+                f"a job is installed for {orphan!r}, which is not declared here" for orphan in sorted(installed - known)
+            ]
+            drift += [
+                f"{zombie!r} is paused but its job is still installed"
+                for zombie in sorted((installed & known) - expected)
+            ]
+            drift += [
+                f"{missing!r} is declared but has no scheduled job — re-add it"
+                for missing in sorted(expected - installed)
+            ]
+            if to_json:
+                # Drift and the OS's own view ride along, because a scripted
+                # caller is exactly who cannot notice a morning going quiet.
+                print(
+                    json.dumps(
+                        {
+                            "ceremonies": [asdict(c) for c in declared],
+                            "installed_jobs": sorted(installed),
+                            "drift": drift,
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
+            last = {c.name: store.last_run(session_id, c.name) for c in declared}
+            console.print(render.format_ceremonies_rich(declared, last))
+            for line in drift:
+                console.print(f"[yellow]![/yellow] {line}")
+            return 0
+
+        if command == "history":
+            runs = store.runs(session_id, getattr(args, "name", ""), limit=args.limit)
+            if to_json:
+                print(json.dumps([asdict(r) for r in runs], indent=2))
+            else:
+                console.print(render.format_history_rich(runs))
+            return 0
+
+        if command == "add":
+            mode = catalog.lookup(args.mode)
+            if mode is None:
+                print(f"Error: {catalog.refuse_reason(args.mode)}", file=sys.stderr)
+                return 2
+            declared_args: list[tuple[str, str]] = []
+            for pair in args.arg:
+                key, sep, value = pair.partition("=")
+                if not sep:
+                    print(f"Error: --arg expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+                    return 2
+                declared_args.append((key.strip(), value.strip()))
+            channels = tuple(c.strip() for c in args.channels.split(",") if c.strip())
+            ceremony = store.save(
+                Ceremony(
+                    session_id=session_id,
+                    name=args.name,
+                    mode=mode.key,
+                    args=tuple(declared_args),
+                    weekdays=args.weekdays or mode.default_weekdays,
+                    at=args.at,
+                    channels=channels,
+                    stale_after_min=args.stale_after,
+                    monthly_cap_usd=args.monthly_cap,
+                )
+            )
+            message = scheduler.install_ceremony(session_id, ceremony.name, ceremony.at, ceremony.weekdays)
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} — {render.cadence_label(ceremony)}")
+                console.print(f"  → {', '.join(ceremony.channels)}")
+                console.print(f"  {message}", style="dim")
+            return 0
+
+        if command == "remove":
+            message = scheduler.remove_ceremony(session_id, args.name)
+            removed = store.remove(session_id, args.name)
+            if to_json:
+                print(json.dumps({"removed": removed, "scheduler": message}, indent=2))
+            elif removed:
+                console.print(f"[green]✓[/green] removed {args.name}. {message}")
+            else:
+                # Still report the scheduler's half: an orphaned job with no
+                # declaration is exactly the state worth telling someone about.
+                console.print(f"No ceremony named {args.name!r}. {message}")
+            return 0 if removed else 1
+
+        if command in ("pause", "resume"):
+            enabled = command == "resume"
+            ceremony = store.set_enabled(session_id, args.name, enabled)
+            if ceremony is None:
+                print(f"Error: no ceremony named {args.name!r}", file=sys.stderr)
+                return 1
+            if enabled:
+                message = scheduler.install_ceremony(session_id, ceremony.name, ceremony.at, ceremony.weekdays)
+            else:
+                # Pause removes the JOB and keeps the declaration: a paused
+                # ceremony that still fires is the thing users report as a bug.
+                message = scheduler.remove_ceremony(session_id, ceremony.name)
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} {command}d. {message}")
+            return 0
+
+    # run — outside the store context: the engine opens its own connection.
+    from yeaboi.ceremonies.engine import CeremonyNotFoundError, run_ceremony
+
+    try:
+        run = run_ceremony(
+            args.name,
+            session_id=session_id,
+            scheduled=args.scheduled,
+            dry_run=args.dry_run,
+            on_progress=None if to_json else lambda step: console.print(f"  {step}", style="dim"),
+        )
+    except CeremonyNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if to_json:
+        print(json.dumps(asdict(run), indent=2))
+    else:
+        console.print(render.format_history_rich([run]))
+    # A declined run is not a failed one: the guards did their job, and a
+    # scheduled wrapper treating "skipped because the laptop was asleep" as a
+    # crash would fill the logs with alarms about working behaviour.
+    return 1 if run.outcome == "failed" else 0
+
+
+def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
+    """The ship pipeline headless: same engine the TUI page uses
+    (CLAUDE.md "REQUIRED: Surface Parity"). The approval gate prompts on the
+    terminal and resolves through the same ShipStore CAS as the TUI screen."""
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.beta import SHIP_BETA_NOTICE
+
+    logging.getLogger(__name__).info("ship %s (beta)", args.ship_command)
+    _print_beta_notice(SHIP_BETA_NOTICE)
+
+    if args.ship_command == "history":
+        from yeaboi.ship.render import format_history_rich
+        from yeaboi.ship.store import ShipStore, listing_dict
+
+        with ShipStore() as store:
+            runs = store.list_runs(limit=args.limit)
+        if args.format == "json":
+            # `listing_dict` drops the stored patch: capped per run is not
+            # capped per response, and a listing is polled in a loop. The
+            # single run `ship run --format json` prints keeps it.
+            print(json.dumps([listing_dict(r) for r in runs], indent=2))
+        else:
+            console.print(format_history_rich(runs))
+        return 0
+
+    if args.ship_command == "status":
+        from yeaboi.ship import budget
+        from yeaboi.ship.render import format_budget_rich, format_run_rich
+        from yeaboi.ship.store import ShipStore, listing_dict
+
+        with ShipStore() as store:
+            runs = store.list_runs(limit=1)
+        posture = budget.status()
+        if args.format == "json":
+            print(json.dumps({"latest": listing_dict(runs[0]) if runs else None, "budget": asdict(posture)}, indent=2))
+        else:
+            if runs:
+                console.print(format_run_rich(runs[0]))
+            else:
+                console.print("No ship runs yet.")
+            console.print(format_budget_rich(posture))
+        return 0
+
+    # run
+    return _ship_run(args, console)
+
+
+def _ship_run(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi ship run` — engine on a worker thread, the gate answered here."""
+    import json
+    import threading
+    import time
+    from dataclasses import asdict
+
+    from yeaboi import fs_policy
+    from yeaboi.ship import engine, worktree
+    from yeaboi.ship.render import format_run_rich
+    from yeaboi.ship.store import ShipStore
+
+    repo = str(Path(args.repo).expanduser().resolve())
+    if not args.dry_run:
+        try:
+            # Resolve the toplevel BEFORE the consent check: every write lands
+            # there (`git worktree add` into <toplevel>/.git, the later push),
+            # and fs_policy containment is `is_relative_to` — so granting a
+            # subdirectory would let yeaboi write outside the approved root.
+            repo = str(worktree.resolve_repo(repo))
+        except worktree.WorktreeError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
+        try:
+            fs_policy.resolve_and_check(repo, mode="write", context="ship: run a coding agent against this repository")
+        except PermissionError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
+        if not sys.stdin.isatty():
+            # The gate is a human decision made at a terminal; without one the
+            # run would hang forever awaiting an approval nobody can give.
+            print("✗ ship run needs an interactive terminal — the approval gate prompts here.", file=sys.stderr)
+            return 2
+
+    result_box: list = [None]
+    cancel = threading.Event()
+    # The engine hands its run id back the moment it exists. Anything else in
+    # the store belongs to ANOTHER session (a TUI in another terminal, a stale
+    # process) — prompting for one of those would let this user approve, and
+    # push, a diff they are not looking at.
+    mine: list[str] = [""]
+
+    def _work() -> None:
+        result_box[0] = engine.run_ship(
+            args.story_id,
+            repo,
+            session_id=args.session,
+            check_command=args.check,
+            timeout_minutes=args.timeout_minutes,
+            dry_run=args.dry_run,
+            on_run_id=lambda run_id: mine.__setitem__(0, run_id),
+            cancel_event=cancel,
+        )
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    try:
+        with ShipStore() as store:
+            while worker.is_alive():
+                worker.join(timeout=0.5)
+                if not worker.is_alive() or cancel.is_set():
+                    continue  # a cancelled run winds down on its own; stop prompting
+                if not mine[0]:
+                    continue  # the id has not been minted yet; nothing can be ours
+                # Fetched by id, never scanned out of a newest-first page: with
+                # concurrency raised, runs started after ours would push it off
+                # the end and its gate would never render here. An open gate is
+                # one this loop has not answered yet — resolving stamps
+                # gate_resolution and a rework clears it, so a reopened gate
+                # prompts again by construction.
+                run = store.get_run(mine[0])
+                if run is not None and run.status == "awaiting_approval" and not run.gate_resolution:
+                    # The gate is the only control before a push; it shows the
+                    # patch, not a file count.
+                    console.print(format_run_rich(run, show_diff=True))
+                    try:
+                        answer = input("Approve and open a PR? [y]es / [n]o with feedback / [c]ancel run: ")
+                    except EOFError:
+                        answer = "c"
+                    answer = answer.strip().lower()
+                    if answer in ("y", "yes"):
+                        store.resolve_gate(run.run_id, "approved")
+                    elif answer in ("n", "no"):
+                        try:
+                            comment = input("Feedback for the agent's rework: ").strip()
+                        except EOFError:
+                            comment = ""
+                        store.resolve_gate(run.run_id, "rejected", comment)
+                    else:
+                        cancel.set()
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        cancel.set()
+        print("Cancelling the run — the agent is stopped and nothing is pushed…", file=sys.stderr)
+        worker.join(timeout=60)
+    worker.join(timeout=5)
+    run = result_box[0]
+    if run is None:
+        print("✗ the run did not report a result — see logs", file=sys.stderr)
+        return 1
+    for warning in run.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    if args.format == "json":
+        print(json.dumps(asdict(run), indent=2))
+    else:
+        console.print(format_run_rich(run))
+    if args.strict and run.status != "approved":
+        print(f"strict: run ended {run.status} — exit 3", file=sys.stderr)
+        return 3
+    return 0
+
+
 def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
     """The Agents family headless: same engines the TUI cards and MCP tools use
     (CLAUDE.md "REQUIRED: Surface Parity")."""
@@ -1767,6 +2306,22 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
             print(json.dumps(asdict(report), indent=2))
         else:
             console.print(format_usage_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
+
+    if args.agents_command == "advisor":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.advisor import run_agent_advisor
+        from yeaboi.agentwatch.render import format_advisor_rich
+
+        report = run_agent_advisor(window_days=args.window_days)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_advisor_rich(report))
         return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
 
     if args.agents_command == "standup":
@@ -2238,6 +2793,22 @@ def main(argv: list[str] | None = None) -> None:
     # Load ~/.yeaboi/.env before any credential reads.
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
+
+    # --ac-format rides the YEABOI_AC_FORMAT env override that resolve_ac_style
+    # already reads — one seam serves the TUI, REPL and headless paths alike.
+    if getattr(args, "ac_format", None):
+        os.environ["YEABOI_AC_FORMAT"] = args.ac_format
+    # Same seam for the architecture spike ("auto" = the built-in behaviour,
+    # so only a forced include/skip needs the override).
+    if getattr(args, "architecture_spike", None) in ("include", "skip"):
+        os.environ["YEABOI_ARCHITECTURE_SPIKE"] = args.architecture_spike
+    # A subscription token expires and says nothing about when, so check it once
+    # per launch — off the startup path, since nothing on the first screen waits
+    # on the answer and the duck picks the warning up on a later frame. A no-op
+    # unless subscription auth is actually configured.
+    from yeaboi.auth_state import probe_in_background
+
+    probe_in_background()
 
     # ── --list-audio-devices: print the mic table and exit ───────────────────
     # After load_user_config() so the currently-configured VOICE_DEVICE can be

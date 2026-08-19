@@ -76,7 +76,8 @@ def validate_ac_coverage(stories: list[UserStory]) -> list[str]:
             continue
 
         # Check if any AC covers a negative/edge case
-        has_negative = any(_NEGATIVE_KEYWORDS.search(f"{ac.given} {ac.when} {ac.then}") for ac in acs)
+        # flat_text covers both AC shapes (GWT triple and free-text criterion).
+        has_negative = any(_NEGATIVE_KEYWORDS.search(ac.flat_text) for ac in acs)
         if not has_negative:
             warnings.append(f"{s.id}: all ACs appear to be happy-path — consider adding negative/edge cases")
     if warnings:

@@ -120,6 +120,16 @@ def read_probes(probe: Probe, pr: int) -> None:
     probe.get("releases: latest", "routine prose", f"/repos/{slug}/releases/latest")
     probe.get("commit statuses: read", "routine prose", f"/repos/{slug}/commits/HEAD/status")
 
+    # The one non-repository-scoped read anything in the fleet makes. `agents
+    # standup` and the analysis estate expand an *owner* into repositories before
+    # reading any of them, and on 2026-08-17 that came back 403 with a refusal in
+    # its own words: "sessions are bound to their configured repositories". Probed
+    # here so the next re-derivation of the fixture records it as a class rather
+    # than as one routine's bad day — every `/users/…`, `/orgs/…` and `/search/…`
+    # path is refused the same way, which is why `cron/agents-standup.md` names a
+    # repository instead.
+    probe.get("owner repos: list", "agents-standup", f"/users/{slug.split('/', 1)[0]}/repos?per_page=1")
+
 
 def write_probes(probe: Probe, pr: int) -> None:
     """The writes, each one a no-op by construction.

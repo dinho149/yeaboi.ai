@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from yeaboi.agent.state import (
+    ConflictCard,
     MemberUpdate,
     StandupGap,
     StandupReport,
@@ -543,6 +544,40 @@ class TestSavedRunsHub:
             store.record_run(report)
             latest = store.get_latest_report("s1")
         assert latest.activity_window == "Fri 2026-07-17 00:00 → now"
+
+    def test_activity_window_bounds_round_trip(self, db_path):
+        """The machine-readable pair the web timeline draws its axis from.
+
+        ``activity_window`` beside it is the human string; only these two are
+        parseable, and this is the path that feeds "open instantly from a saved
+        report", so a report read back without them draws an axis derived from
+        event times alone and silently loses the window's quiet edges.
+        """
+        report = _make_report(
+            activity_window_start="2026-07-17T00:00:00+01:00",
+            activity_window_end="2026-07-17T18:30:00+01:00",
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest.activity_window_start == "2026-07-17T00:00:00+01:00"
+        assert latest.activity_window_end == "2026-07-17T18:30:00+01:00"
+
+    def test_a_report_stored_before_the_bounds_existed_still_reads(self, db_path):
+        """Rows written by an older build carry neither key — they must default."""
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report())
+            (raw,) = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(raw)
+            d.pop("activity_window_start", None)
+            d.pop("activity_window_end", None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None
+        assert latest.activity_window_start == ""
+        assert latest.activity_window_end == ""
 
     def test_my_name_round_trips(self, db_path):
         report = _make_report(my_name="Omar Din")
@@ -1208,3 +1243,39 @@ class TestPracticeReportRoundTrip:
             loaded = store.get_latest_report("s1")
         assert loaded.member_updates[0].practices == ()
         assert loaded.practice_rollup == ()
+
+
+class TestConflictsRoundTrip:
+    def test_conflict_cards_survive_the_store(self, db_path):
+        card = ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done on the board while a PR still names it.",
+            severity="medium",
+            entity_id="YEA-12",
+            property_name="status",
+            claims=(("jira", "Done", "YEA-12", "https://j/12"), ("github", "open", "fix", "https://g/41")),
+            recommended_action="Reopen YEA-12, or merge the pull request.",
+            members=("Bob",),
+        )
+        report = _make_report(conflicts=(card,))
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            loaded = store.get_latest_report("s1")
+        assert loaded.conflicts == (card,)
+
+    def test_report_without_conflicts_key_still_deserializes(self, db_path):
+        import json
+
+        # A report stored before conflict cards existed has no "conflicts" key.
+        report = _make_report()
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            row = store._conn.execute("SELECT id, report_json FROM standup_history").fetchone()
+            payload = json.loads(row[1])
+            payload.pop("conflicts", None)
+            store._conn.execute(
+                "UPDATE standup_history SET report_json = ? WHERE id = ?", (json.dumps(payload), row[0])
+            )
+            loaded = store.get_latest_report("s1")
+        assert loaded.conflicts == ()

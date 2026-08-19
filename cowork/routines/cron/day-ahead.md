@@ -56,8 +56,9 @@ So:
 
 ## Post every day
 
-Including Sundays, when no sweep fires at all and the message is a short one. This is the one
-routine in the fleet exempt from "nothing to do is a valid outcome, exit quietly", and
+Including Sundays, when no sweep fires at all and the message is a short one. This is one of the
+three routines in the fleet exempt from "nothing to do is a valid outcome, exit quietly" — the
+others being `agents-standup.md`'s daily digest and `go-migration-daily.md`'s bar — and
 deliberately so: silence from a *findings* routine means it found nothing, which is
 information. Silence from a *schedule* routine is ambiguous — nothing scheduled, or the
 routine broke? — and a reminder you cannot rely on arriving is not a reminder. "No sweeps

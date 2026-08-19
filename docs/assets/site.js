@@ -427,7 +427,7 @@ function _smallTalk(query) {
     return { text: "🦆 I'm the yeaboi docs duck — a little helper that reads the whole documentation and answers your questions in plain English, with links to the exact page.", cards: [] };
   }
   if (has(/what can you (do|help)|help me|what do you know|how (can|do) you (help|work)/)) {
-    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the modes for your team (planning, standup, retro, poker, performance, reporting, analysis), the Agents family that watches your AI coding agents (usage, standup, security), integrations & exports, tools, session management, and architecture. What are you trying to do?", cards: [] };
+    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the modes for your team (planning, standup, retro, poker, performance, reporting, analysis), the Agents family that watches your AI coding agents (usage, advisor, standup, security), integrations & exports, tools, session management, and architecture. What are you trying to do?", cards: [] };
   }
   if (has(/^\s*(what is|what's|whats) yeaboi/)) {
     return null; // real question — let the composer answer it from the docs
@@ -1664,6 +1664,7 @@ var NAV_GROUPS = [
   { label: "Agents", entries: [
     { title: "Overview", path: "/docs/agents/index.html", children: [
       { title: "Agent Usage", path: "/docs/agents/usage.html" },
+      { title: "Agent Advisor", path: "/docs/agents/advisor.html" },
       { title: "Agent Standup", path: "/docs/agents/standup.html" },
       { title: "Agent Security", path: "/docs/agents/security.html" },
     ] },

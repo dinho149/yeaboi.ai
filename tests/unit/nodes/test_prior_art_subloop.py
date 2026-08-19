@@ -3,7 +3,8 @@
 Sits between the PTO sub-loop and the confirmation summary. The properties
 worth defending: it only fires for greenfield, it never blocks the summary
 when there is nothing to ask, every exit routes back through the funnel, and
-rejections reach the global ledger while a bail-out does not.
+only explicit verdicts reach the global ledger — a candidate merely left
+unpicked in the batch answer is passed over for this project only.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from langchain_core.messages import HumanMessage
 from yeaboi.agent import prior_art
 from yeaboi.agent.nodes import (
     _finish_prior_art,
-    _prior_art_advance,
+    _parse_prior_art_answer,
     _prior_art_applies,
     _prior_art_prompt,
     _show_summary_or_pto,
@@ -153,66 +154,133 @@ class TestPtoExitsReachTheGuard:
         assert result["pending_review"] == "project_intake"
 
 
-class TestVerdicts:
+class TestParseGrammar:
+    """_parse_prior_art_answer — the one grammar every surface speaks."""
+
+    def test_indices_commas_and_whitespace(self):
+        assert _parse_prior_art_answer("1 3", 3) == ({0, 2}, set())
+        assert _parse_prior_art_answer("1,3", 3) == ({0, 2}, set())
+        assert _parse_prior_art_answer(" 2 ", 3) == ({1}, set())
+
+    def test_all_none_skip_and_empty(self):
+        assert _parse_prior_art_answer("all", 2) == ({0, 1}, set())
+        assert _parse_prior_art_answer("none", 2) == (set(), set())
+        assert _parse_prior_art_answer("skip", 2) == (set(), set())
+        assert _parse_prior_art_answer("", 2) == (set(), set())
+
+    def test_bang_bans(self):
+        assert _parse_prior_art_answer("1 !2", 3) == ({0}, {1})
+        assert _parse_prior_art_answer("!3", 3) == (set(), {2})
+
+    def test_ban_wins_over_select_of_the_same_index(self):
+        assert _parse_prior_art_answer("1 !1", 2) == (set(), {0})
+        assert _parse_prior_art_answer("all !2", 2) == ({0}, {1})
+
+    def test_out_of_range_and_unknown_tokens_fail_whole(self):
+        # Half an answer must not be recorded as a verdict.
+        assert _parse_prior_art_answer("1 9", 3) is None
+        assert _parse_prior_art_answer("0", 3) is None
+        assert _parse_prior_art_answer("what?", 3) is None
+        assert _parse_prior_art_answer("!x", 3) is None
+
+    def test_unicode_digits_reprompt_rather_than_raise(self):
+        # "²".isdigit() is True but int("²") raises — the parser must treat
+        # it as an unknown token, not blow up the turn.
+        assert _parse_prior_art_answer("²", 3) is None
+        assert _parse_prior_art_answer("!²", 3) is None
+
+
+class TestBatchVerdicts:
     def _state(self, reply, qs):
         return {"messages": [HumanMessage(content=reply)], "questionnaire": qs}
 
-    def test_accept_advances_and_records_the_candidate(self):
-        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
-        result = project_intake(self._state("1", qs))
-        assert [c["key"] for c in qs._prior_art_accepted] == ["github:acme/auth"]
-        assert qs._prior_art_index == 1
-        assert "acme/pay" in result["messages"][0].content
-
-    def test_reject_asks_why_before_advancing(self):
-        qs = _qs(stage="ask", candidates=[_candidate()])
-        result = project_intake(self._state("2", qs))
-        assert qs._prior_art_stage == "reason"
-        assert qs._prior_art_index == 0
-        assert "Why isn't" in result["messages"][0].content
-
-    def test_the_reason_is_recorded_then_the_loop_advances(self, _no_ledger_writes):
-        qs = _qs(stage="reason", candidates=[_candidate()])
-        project_intake(self._state("it's the service we're retiring", qs))
-        assert qs._prior_art_rejected == [
-            {"key": "github:acme/auth", "name": "acme/auth", "reason": "it's the service we're retiring"}
+    def _three(self):
+        return [
+            _candidate(),
+            _candidate("github:acme/pay", "acme/pay"),
+            _candidate("github:acme/web", "acme/web"),
         ]
-        assert qs._prior_art_stage == "done"
 
-    def test_an_empty_reason_is_still_a_rejection(self, _no_ledger_writes):
-        # Demanding a reason would train people to accept things to get past
-        # the prompt.
-        qs = _qs(stage="reason", candidates=[_candidate()])
-        project_intake(self._state("", qs))
-        assert qs._prior_art_rejected[0]["reason"] == ""
-        assert any(w["verdict"] == "down" for w in _no_ledger_writes)
-
-    def test_skip_the_rest_ends_the_loop_without_rejecting_anything(self, _no_ledger_writes):
-        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
-        result = project_intake(self._state("3", qs))
+    def test_indices_select_relevant_and_finish_in_one_turn(self):
+        qs = _qs(stage="ask", candidates=self._three())
+        result = project_intake(self._state("1 3", qs))
+        assert [c["key"] for c in qs._prior_art_accepted] == ["github:acme/auth", "github:acme/web"]
         assert qs._prior_art_stage == "done"
+        # The whole batch is one graph turn — the summary follows immediately.
+        assert result["pending_review"] == "project_intake"
+
+    def test_all_selects_everything(self):
+        qs = _qs(stage="ask", candidates=self._three())
+        project_intake(self._state("all", qs))
+        assert len(qs._prior_art_accepted) == 3
+
+    def test_none_selects_nothing_and_writes_nothing(self, _no_ledger_writes):
+        qs = _qs(stage="ask", candidates=self._three())
+        result = project_intake(self._state("none", qs))
+        assert qs._prior_art_accepted == []
         assert qs._prior_art_rejected == []
-        # Bailing out is not a verdict — nothing reaches the ledger.
+        # Passing over the batch is not a verdict — nothing reaches the ledger.
         assert _no_ledger_writes == []
         assert result["pending_review"] == "project_intake"
 
-    def test_unrecognised_reply_reprompts_without_advancing(self):
-        qs = _qs(stage="ask", candidates=[_candidate()])
-        result = project_intake(self._state("what?", qs))
-        assert qs._prior_art_index == 0
-        assert qs._prior_art_stage == "ask"
-        assert "Please choose" in result["messages"][0].content
+    def test_skip_still_means_none(self, _no_ledger_writes):
+        qs = _qs(stage="ask", candidates=self._three())
+        result = project_intake(self._state("skip", qs))
+        assert qs._prior_art_stage == "done"
+        assert _no_ledger_writes == []
+        assert result["pending_review"] == "project_intake"
 
-    def test_word_forms_work_as_well_as_digits(self):
-        qs = _qs(stage="ask", candidates=[_candidate()])
-        project_intake(self._state("yes", qs))
-        assert len(qs._prior_art_accepted) == 1
+    def test_bang_bans_with_an_empty_reason(self, _no_ledger_writes):
+        qs = _qs(stage="ask", candidates=self._three())
+        project_intake(self._state("1 !2", qs))
+        assert qs._prior_art_rejected == [{"key": "github:acme/pay", "name": "acme/pay", "reason": ""}]
+        verdicts = {w["repo_key"]: w["verdict"] for w in _no_ledger_writes}
+        assert verdicts == {"github:acme/auth": "up", "github:acme/pay": "down"}
+
+    def test_a_ban_beats_a_select_of_the_same_repo(self):
+        qs = _qs(stage="ask", candidates=self._three())
+        project_intake(self._state("1 !1", qs))
+        assert qs._prior_art_accepted == []
+        assert [r["key"] for r in qs._prior_art_rejected] == ["github:acme/auth"]
+
+    def test_invalid_token_reprompts_without_finishing(self):
+        qs = _qs(stage="ask", candidates=self._three())
+        result = project_intake(self._state("what?", qs))
+        assert qs._prior_art_stage == "ask"
+        assert qs._prior_art_accepted == []
+        assert "Reply with the numbers" in result["messages"][0].content
+
+    def test_a_resubmission_replaces_rather_than_appends(self):
+        # The submission is the whole verdict: pre-filled lists (a legacy
+        # half-loop carried in by a resumed session) are re-derived, never
+        # added to — the double-write guard.
+        qs = _qs(stage="ask", candidates=self._three())
+        qs._prior_art_accepted = [_candidate("github:acme/pay", "acme/pay")]
+        qs._prior_art_rejected = [{"key": "github:acme/web", "name": "acme/web", "reason": "old"}]
+        project_intake(self._state("1", qs))
+        assert [c["key"] for c in qs._prior_art_accepted] == ["github:acme/auth"]
+        assert qs._prior_art_rejected == []
 
     def test_an_emptied_candidate_list_closes_out_instead_of_looping(self):
         qs = _qs(stage="ask", candidates=[])
         result = project_intake(self._state("1", qs))
         assert qs._prior_art_stage == "done"
         assert result["pending_review"] == "project_intake"
+
+
+class TestLegacyReasonStage:
+    """Sessions serialized mid-"reason" by the old per-repo loop."""
+
+    def test_a_resumed_reason_stage_reasks_the_batch(self, _no_ledger_writes):
+        qs = _qs(stage="reason", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
+        result = project_intake({"messages": [HumanMessage(content="it is being retired")], "questionnaire": qs})
+        # The text answered a question this build no longer asks — nothing is
+        # recorded from it; the batch prompt goes out instead.
+        assert qs._prior_art_stage == "ask"
+        assert qs._prior_art_rejected == []
+        assert _no_ledger_writes == []
+        body = result["messages"][0].content
+        assert "acme/auth" in body and "acme/pay" in body
 
 
 class TestLedger:
@@ -289,33 +357,33 @@ class TestSummaryAndPromotion:
 
 
 class TestPrompt:
-    def test_shows_position_pitch_and_stack(self):
+    def test_lists_every_candidate_numbered(self):
         qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
         text = _prior_art_prompt(qs)
-        assert "1 of 2" in text
-        assert "acme/auth" in text
+        assert "**1. acme/auth**" in text
+        assert "**2. acme/pay**" in text
         assert "does OIDC login" in text
         assert "Python, FastAPI" in text
 
+    def test_explains_the_answer_grammar(self):
+        """The markdown is the whole interface on the text surfaces (REPL,
+        form, headless), so the grammar has to be in the prompt itself."""
+        qs = _qs(stage="ask", candidates=[_candidate()])
+        text = _prior_art_prompt(qs)
+        assert '"all"' in text
+        assert '"none"' in text
+        assert "never suggest" in text
+
+    def test_pitches_are_condensed_to_two_bullets(self):
+        candidate = _candidate()
+        candidate["pitch"] = ["one", "two", "three", "four"]
+        qs = _qs(stage="ask", candidates=[candidate])
+        text = _prior_art_prompt(qs)
+        assert "one" in text and "two" in text
+        assert "three" not in text
+
     def test_exhausted_list_renders_nothing(self):
         assert _prior_art_prompt(_qs(stage="ask", candidates=[], index=5)) == ""
-
-    def test_says_that_answering_reaches_the_rest(self):
-        """One candidate is on screen at a time on every surface, so the prompt
-        has to say what the position indicator cannot: that a verdict is the
-        way to the others."""
-        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")])
-        assert "1 more after this" in _prior_art_prompt(qs)
-
-    def test_the_last_candidate_promises_nothing_further(self):
-        qs = _qs(stage="ask", candidates=[_candidate(), _candidate("github:acme/pay", "acme/pay")], index=1)
-        assert "after this" not in _prior_art_prompt(qs)
-
-    def test_advance_past_the_end_finishes(self, _no_ledger_writes):
-        qs = _qs(stage="ask", candidates=[_candidate()], index=0)
-        result = _prior_art_advance(qs)
-        assert qs._prior_art_stage == "done"
-        assert result["pending_review"] == "project_intake"
 
 
 class TestEmptyCard:

@@ -39,6 +39,14 @@ export interface InviteQRProps {
    */
   inviteUrl?: string | undefined;
   /**
+   * The board's bare address, without the code in its fragment.
+   *
+   * Only the ship board sends it: retro and poker deliberately offer the one
+   * link that carries the code, because a second URL beside it is the same
+   * invite said twice.
+   */
+  shareUrl?: string | undefined;
+  /**
    * Why there is no link yet. Boards that do not report it get `pending`, which
    * is what an empty url used to mean unconditionally.
    */
@@ -53,7 +61,7 @@ const WAITING: Record<'pending' | 'failed' | 'off', string> = {
   off: 'Sharing is off for this board, so there is no link to send.',
 };
 
-export function InviteQR({ qrSrc, joinCode, inviteUrl, shareState, className }: InviteQRProps) {
+export function InviteQR({ qrSrc, joinCode, inviteUrl, shareUrl, shareState, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
   // The endpoint answers 503 until the tunnel is up, and a broken image with
   // its alt text showing is the worst of the three things it could do.
@@ -92,6 +100,7 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, shareState, className }: 
           The code stays below it, separately copyable, for the host who wants
           to read it out while the link goes in a channel. */}
       {inviteUrl ? <CopyField label="Invite link" value={inviteUrl} /> : null}
+      {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>
   );

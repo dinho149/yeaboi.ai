@@ -280,7 +280,15 @@ def _no_real_gh_calls(monkeypatch):
     import sys as _sys
 
     reachable = []
-    for name in ("_gh_transport", "cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff"):
+    for name in (
+        "_gh_transport",
+        "cowork_setup",
+        "cowork_relay",
+        "pr_feedback",
+        "beta_signoff",
+        "batch_assemble",
+        "migration_progress",
+    ):
         module = _sys.modules.get(name)
         if module is None:
             continue
@@ -302,6 +310,23 @@ def _no_real_gh_calls(monkeypatch):
             return _real(argv, *args, **kwargs)
 
         monkeypatch.setattr(transport, "_run", _blocked)
+
+        def _blocked_http(request, *args, **kwargs):
+            # The REST half. `_run` covers the `gh` CLI; this covers the transport
+            # a routine session actually uses, which authenticates from GH_TOKEN in
+            # the environment — so on any machine that exports one, an unstubbed
+            # call here reaches the real repository and writes to it. That is the
+            # same accident `_run` was named for, through the seam that did not
+            # exist yet when it was.
+            #
+            # Unconditional, unlike `_run`'s `gh`-only test: there is no local,
+            # read-only call through this seam to spare. Every one of them is
+            # api.github.com.
+            method = getattr(request, "get_method", lambda: "?")()
+            url = getattr(request, "full_url", request)
+            raise RealGitHubWriteBlocked(f"test tried to reach the real GitHub API: {method} {url}")
+
+        monkeypatch.setattr(transport, "_urlopen", _blocked_http)
 
 
 @pytest.fixture(autouse=True)

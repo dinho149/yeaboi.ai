@@ -123,6 +123,10 @@ def standup_card_order(data: dict) -> list[str]:
     order = ["summary", "my_update", "team"]
     if data.get("team_expanded"):
         order += [f"member:{m.name}" for m in _team_members(data)]
+    # Only when a disagreement was actually detected — same earn-the-card rule
+    # as "gaps" below: an empty Conflicts card would advertise, not report.
+    if getattr(report, "conflicts", ()):
+        order.append("conflicts")
     order += ["activity"]
     # Only when a transcript has actually been reviewed — an empty card would
     # advertise a feature the user hasn't used rather than report a result.
@@ -183,6 +187,7 @@ def standup_card_title(key: str, data: dict) -> str:
         "summary": "Team Summary",
         "my_update": "My Update",
         "team": "Team",
+        "conflicts": "Conflicts",
         "activity": "Activity",
         "gaps": "Transcript Review",
         "schedule": "Schedule",
@@ -223,6 +228,13 @@ def standup_card_teaser(key: str, data: dict) -> str:
         if practices := getattr(m, "practices", ()) or ():
             gist = f"◇{len(practices)} · {gist}"
         return gist[: _TEASER_W - 1] + "…" if len(gist) > _TEASER_W else gist
+    if key == "conflicts":
+        cards = getattr(report, "conflicts", ()) or ()
+        n = len(cards)
+        gist = f"{n} disagreement{'s' if n != 1 else ''}"
+        if cards:
+            gist += f" · {cards[0].entity_id}"
+        return gist[:_TEASER_W]
     if key == "activity":
         if report is None or not report.activity_counts:
             return "no sources"
@@ -633,6 +645,25 @@ def _detail_notices(ctx: _StandupCtx, data: dict) -> None:
         ctx.wrapped(f"- {w}", ctx.theme.warn)
 
 
+def _detail_conflicts(ctx: _StandupCtx, data: dict) -> None:
+    """Cross-source disagreements, both claims spelled out with their sources.
+
+    The severity word always renders in the text — the colour is a highlight,
+    never the message (same rule as the coverage dots).
+    """
+    theme = ctx.theme
+    ctx.heading("Conflicts")
+    severity_style = {"low": theme.muted, "medium": theme.warn, "high": theme.bad, "critical": theme.bad}
+    for card in getattr(data["report"], "conflicts", ()) or ():
+        ctx.wrapped(f"[{card.severity}] {card.title}", severity_style.get(card.severity, theme.muted))
+        ctx.wrapped(f"    {card.detail}", theme.muted)
+        for source, value, label, _url in card.claims:
+            ctx.line(f"    · {source}: {value} — {label}", theme.dim)
+        if card.recommended_action:
+            ctx.wrapped(f"    → {card.recommended_action}", theme.muted)
+        ctx.blank()
+
+
 def _gaps_nudge(ctx: _StandupCtx, nudge) -> None:
     """The standups that ran but were never checked against their meetings."""
     theme = ctx.theme
@@ -731,6 +762,7 @@ def build_standup_detail(ctx: _StandupCtx, key: str, data: dict) -> None:
         return
     builder = {
         "summary": _detail_summary,
+        "conflicts": _detail_conflicts,
         "activity": _detail_activity,
         "gaps": _detail_gaps,
         "schedule": _detail_schedule,

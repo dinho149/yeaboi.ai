@@ -6,6 +6,20 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = web-ux`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — the export builders and chart primitives, which accumulate helpers a redesign
+  stopped calling.
+- `assertion-free-tests`
+- `layering` — this charter *declares* `static-through-assets`, `headers-through-security` and
+  `chrome-through-brand`, and every other sweep runs them over its own paths. What you see here is
+  only the boundary crossed inside `web-ux`'s own files, which is the smallest and least likely
+  place for it. The lens working looks like the other twelve sweeps staying silent.
+- `duplication` — propose only.
+
 ## Focus
 
 - **Bundle freshness** — run `make web-check`. Stale committed bundles are auto lane.

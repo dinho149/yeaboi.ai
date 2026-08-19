@@ -41,6 +41,20 @@ If the ticket carries `security:approved` but no `workstream:security`, **do not
 relay applies the first from a Slack message and only this sweep applies the second, so that pair
 means something reached the label by a route the fleet does not own. Report it and stop.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — a guardrail helper nothing calls is a guardrail nobody is behind, which is a finding
+  of a different weight here than anywhere else. Confirm the caller is really gone before filing.
+- `assertion-free-tests` — a guardrail test that asserts nothing is worse than no test: it reports
+  green on a surface somebody chose to trust.
+- `layering`
+
+**Nothing a lens returns is a `security` find on its own.** Run them, then classify against
+`house-rules.md` like any other evidence; a dead helper is a `chore` even in this charter.
+
 ## Focus
 
 Alternate between the two weekly runs:

@@ -19,19 +19,11 @@
 #
 # UNLIKE the flaky hunter, this one writes code — a flake fix needs judgment, a
 # SHA pin does not. What keeps that safe is not trust, it is the merge path:
-# `gh pr merge --auto --squash` (never a direct merge, the dependabot-auto.yml
-# rule) hands the decision to the main-branch ruleset. The PR merges only once
-# CI is green AND the `pr-feedback` status is green, which means Claude Review
-# ran and every blocking finding was answered. A wrong fix does not merge; it
-# sits red until a human looks.
-#
-# That argument has a precondition, and the survey step checks it rather than
-# assuming it: `pr-feedback` must be a REQUIRED status check on the ruleset.
-# Adding it is a manual step (see cowork/README.md), so it can be missing — and
-# with it missing, `--auto` would merge as soon as the five CI contexts pass,
-# with no review involved. When the check is absent the job opens the PR and
-# leaves auto-merge disarmed, because a promise this job cannot keep is worse
-# than a PR somebody has to click.
+# this job NEVER merges and never arms auto-merge. Its PR goes through CI,
+# Claude Review and the `pr-feedback` status like every fleet PR, then waits
+# gate-green for the next release batch — a human assembles, hand-tests and
+# merges it (see release-signoff.md in the cowork docs). A wrong fix does not
+# ship; it sits red on its own PR, or unshipped until a human carries it.
 #
 # Loop-safe: the PR is github-actions[bot]-authored. claude-review.yml skips bot
 # authors *unless* the PR carries the `cowork` label — which this one does, on
@@ -114,25 +106,11 @@ jobs:
           uv run python scripts/codeql_triage.py \
             --alerts alerts-raw.json --issues issues-raw.json
 
-          # `--auto` is only a gate if the ruleset actually requires the check we
-          # are leaning on. `pr-feedback` is the one carrying DoD item 10 — Claude
-          # Review ran and every blocking finding was answered — and adding it to
-          # the ruleset is a MANUAL setup step (cowork/README.md lists it among
-          # the things neither `make cowork-setup` nor `/cowork deploy` can do).
-          # So it can simply be absent, and when it is, GitHub merges the moment
-          # the five CI contexts go green with no review in the loop at all.
-          #
-          # Refuse to arm auto-merge in that state rather than quietly downgrade
-          # what this job promises. Checked here, deterministically, rather than
-          # left to the model to notice.
-          if gh api "repos/$REPO/rules/branches/main" \
-               --jq 'any(.[]; .type=="required_status_checks" and any(.parameters.required_status_checks[]; .context=="pr-feedback"))' \
-             | grep -qx true; then
-            echo "automerge=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "automerge=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::pr-feedback is not a required status check on the main-branch ruleset, so --auto would merge without waiting for review. Opening the PR without auto-merge; a human must merge it."
-          fi
+          # No auto-merge probe any more, because nothing here arms auto-merge:
+          # fleet PRs — this one included, by its `security/codeql-triage`
+          # branch prefix — wait open and ship inside the next batch a human
+          # assembles, hand-tests and merges (`cowork/release-signoff.md`). The
+          # gate still runs on the PR itself; only the merge moved.
 
       - name: Fix and propose with Claude
         if: steps.detect.outputs.found == 'true'
@@ -192,21 +170,18 @@ jobs:
                before continuing. Re-run the gate afterwards.
             7. Push and open ONE pull request:
                - title: `fix the open CodeQL alerts on <rule>, <rule>` (name the rules)
-               - labels: `cowork`, `workstream:security`, `type:security`
+               - labels: `cowork`, `workstream:security`, `type:security`, and
+                 `semver:none` — fleet PRs never bump the version; the batch PR
+                 that ships them gets the one bump, and a bump here would
+                 collide with every other constituent at assembly.
                - body: a table of every alert — number, rule, file:line, and a
                  link — plus a section naming anything you moved to the propose
                  lane. The `cowork` label is required: claude-review.yml skips
                  bot-authored PRs without it, and that review is this job's gate.
-            8. Auto-merge is armed for this run: **${{ steps.detect.outputs.automerge }}**.
-               - `true` → `gh pr merge <number> --auto --squash`. NEVER merge
-                 directly, never `--admin`. Auto-merge waits for the required
-                 checks, so CI and the `pr-feedback` status decide, not you.
-               - `false` → do NOT enable auto-merge. `pr-feedback` is not a
-                 required check on this repo right now, so `--auto` would merge
-                 the moment CI went green with no review in the loop — the one
-                 thing this job may not do. Leave the PR open and comment that it
-                 needs a human merge because auto-merge is disarmed, naming the
-                 missing required status check so it can be fixed once.
+            8. Do NOT merge and do NOT arm auto-merge. The PR waits, gate-green,
+               for the next release batch: a human runs `make batch-assemble`,
+               hand-tests the assembled batch, and merges the batch PR
+               (`cowork/release-signoff.md`). NEVER `gh pr merge` in any form.
 
             ## The propose lane (for `codeql-propose.json`)
 

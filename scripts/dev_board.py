@@ -59,7 +59,9 @@ def main() -> int:
         if board.add_card(grid=grid, text=text, author=author, origin="seed", pid="dev-seed") is None:
             print(f"! seed rejected (unknown grid?): {grid}", file=sys.stderr)
 
-    board.seed_carried([RetroCard(id=f"carried-{i}", text=text, author="last sprint") for i, text in enumerate(CARRIED)])
+    board.seed_carried(
+        [RetroCard(id=f"carried-{i}", text=text, author="last sprint") for i, text in enumerate(CARRIED)]
+    )
 
     # Two retros behind this one, so the back arrow has somewhere to go. Real
     # boards read these from the store (see engine.history_providers); this is

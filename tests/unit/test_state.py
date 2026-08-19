@@ -11,6 +11,8 @@ from yeaboi.agent.state import (
     PHASE_QUESTION_RANGES,
     TOTAL_QUESTIONS,
     AcceptanceCriterion,
+    ArchitectureDecision,
+    ArchitectureOption,
     Discipline,
     Feature,
     MemberUpdate,
@@ -29,6 +31,7 @@ from yeaboi.agent.state import (
     TaskLabel,
     UserStory,
     _merge_dicts,
+    architecture_from_dict,
 )
 
 # ── Enum tests ─────────────────────────────────────────────────────────
@@ -138,7 +141,105 @@ class TestAcceptanceCriterion:
     def test_asdict(self):
         ac = AcceptanceCriterion(given="a", when="b", then="c")
         d = asdict(ac)
-        assert d == {"given": "a", "when": "b", "then": "c"}
+        assert d == {"given": "a", "when": "b", "then": "c", "text": ""}
+
+    def test_old_session_dict_still_constructs(self):
+        # Saved sessions predate the `text` field — three-key dicts must load.
+        ac = AcceptanceCriterion(**{"given": "a", "when": "b", "then": "c"})
+        assert ac.text == ""
+        assert ac.flat_text == "Given a, when b, then c"
+
+    def test_free_text_criterion(self):
+        ac = AcceptanceCriterion(text="Search results return within 200ms.")
+        assert ac.flat_text == "Search results return within 200ms."
+
+
+class TestResolveAcStyle:
+    """resolve_ac_style precedence: session state > env override > profile > GWT."""
+
+    class _Patterns:
+        def __init__(self, gwt=False, median=0.0, personas=()):
+            self.uses_given_when_then = gwt
+            self.median_ac_count = median
+            self.common_personas = personas
+
+    class _Profile:
+        def __init__(self, patterns):
+            self.writing_patterns = patterns
+
+    def test_default_is_gwt(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        assert resolve_ac_style() == "gwt"
+
+    def test_session_state_wins_over_everything(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.setenv("YEABOI_AC_FORMAT", "gwt")
+        profile = self._Profile(self._Patterns(gwt=True))
+        assert resolve_ac_style({"ac_format": "bullets"}, profile) == "bullets"
+
+    def test_env_override_beats_profile(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.setenv("YEABOI_AC_FORMAT", "bullets")
+        profile = self._Profile(self._Patterns(gwt=True))
+        assert resolve_ac_style({}, profile) == "bullets"
+
+    def test_profile_gwt_flag(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        assert resolve_ac_style({}, self._Profile(self._Patterns(gwt=True))) == "gwt"
+
+    def test_profile_with_writing_data_but_no_gwt_means_bullets(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        assert resolve_ac_style({}, self._Profile(self._Patterns(median=2.0))) == "bullets"
+        assert resolve_ac_style({}, self._Profile(self._Patterns(personas=("dev",)))) == "bullets"
+
+    def test_profile_without_writing_data_defaults_gwt(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        assert resolve_ac_style({}, self._Profile(self._Patterns())) == "gwt"
+
+    def test_invalid_persisted_value_ignored(self, monkeypatch):
+        from yeaboi.agent.state import resolve_ac_style
+
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        assert resolve_ac_style({"ac_format": "haiku"}) == "gwt"
+
+
+class TestMapTemplateHeadings:
+    def test_maps_known_headings(self):
+        from yeaboi.agent.state import map_template_headings
+
+        mapping = map_template_headings(("What is this about?", "Acceptance Criteria ✅", "Done looks like"))
+        assert mapping == {
+            "summary": "What is this about?",
+            "acceptance_criteria": "Acceptance Criteria ✅",
+            "dod": "Done looks like",
+        }
+
+    def test_unmatched_headings_ignored(self):
+        from yeaboi.agent.state import map_template_headings
+
+        assert map_template_headings(("Risks", "Rollout plan")) == {}
+
+    def test_empty_and_none(self):
+        from yeaboi.agent.state import map_template_headings
+
+        assert map_template_headings(None) == {}
+        assert map_template_headings(()) == {}
+
+    def test_first_match_wins(self):
+        from yeaboi.agent.state import map_template_headings
+
+        mapping = map_template_headings(("Background", "Description"))
+        assert mapping["summary"] == "Background"
 
 
 class TestFeature:
@@ -211,7 +312,17 @@ class TestTask:
 
 class TestTaskLabel:
     def test_all_values(self):
-        assert set(TaskLabel) == {TaskLabel.CODE, TaskLabel.DOCUMENTATION, TaskLabel.INFRASTRUCTURE, TaskLabel.TESTING}
+        assert set(TaskLabel) == {
+            TaskLabel.CODE,
+            TaskLabel.DOCUMENTATION,
+            TaskLabel.INFRASTRUCTURE,
+            TaskLabel.TESTING,
+            TaskLabel.SPIKE,
+        }
+
+    def test_spike_label(self):
+        # Set only by the deterministic spike injector, never requested from the LLM.
+        assert TaskLabel("Spike") is TaskLabel.SPIKE
 
     def test_string_values(self):
         assert TaskLabel.CODE.value == "Code"
@@ -356,6 +467,61 @@ class TestProjectAnalysis:
         assert analysis.prompt_quality is not None
         assert analysis.prompt_quality.grade == "B"
         assert analysis.prompt_quality.score_pct == 74
+
+
+class TestArchitectureFromDict:
+    """Rebuilding ArchitectureDecision from its asdict() form on resume."""
+
+    def _decision(self) -> ArchitectureDecision:
+        return ArchitectureDecision(
+            options=(
+                ArchitectureOption(
+                    name="Modular monolith",
+                    summary="One deployable, clear internal seams",
+                    pros=("simple ops",),
+                    cons=("scaling ceiling",),
+                ),
+            ),
+            chosen="Modular monolith",
+            confidence="medium",
+            rationale="Team of two, one product",
+            pinned_by_constraint=True,
+        )
+
+    def test_round_trip_from_asdict(self):
+        decision = self._decision()
+        rebuilt = architecture_from_dict(asdict(decision))
+        assert rebuilt == decision
+        # Nested containers come back as real dataclasses/tuples, not lists.
+        assert isinstance(rebuilt.options[0], ArchitectureOption)
+        assert isinstance(rebuilt.options[0].pros, tuple)
+
+    def test_non_dict_non_decision_returns_none(self):
+        assert architecture_from_dict("not a dict") is None
+        assert architecture_from_dict(None) is None
+        assert architecture_from_dict(42) is None
+
+    def test_decision_instance_passes_through_unchanged(self):
+        decision = self._decision()
+        assert architecture_from_dict(decision) is decision
+
+    def test_non_dict_option_entries_are_skipped(self):
+        raw = {
+            "options": [
+                "garbage",
+                {"name": "Serverless", "summary": "s", "pros": ["cheap"], "cons": []},
+                None,
+            ],
+            "chosen": "Serverless",
+        }
+        rebuilt = architecture_from_dict(raw)
+        assert [o.name for o in rebuilt.options] == ["Serverless"]
+        assert rebuilt.options[0].pros == ("cheap",)
+
+    def test_missing_keys_default(self):
+        rebuilt = architecture_from_dict({})
+        assert rebuilt == ArchitectureDecision()
+        assert rebuilt.pinned_by_constraint is False
 
 
 class TestPromptQualityRating:

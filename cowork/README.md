@@ -61,20 +61,38 @@ rule is in [house-rules.md](house-rules.md); the arithmetic is
 
 ## What arrives in Slack, and what does not
 
-Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is two to four
-channel messages a day**, worst case about six, plus thread replies. Two of them bookend the day
-and always arrive; the rest are exceptions reporting themselves. Every message opens with a
-title line carrying a fixed emoji, so a message is identifiable from its notification preview
-before it is opened.
+Everything the fleet says goes to one channel, `#yeaboi-claude`. **Steady state is three to six
+channel messages a day**, worst case about eight, plus thread replies. Three of them always arrive
+— 📅, 🧭 and the daily 🐹 — and the rest are exceptions reporting themselves. **The evening post
+is not one of the three**: an area that did nothing says nothing, which is why the fan-out costs
+so much less than one message per area per day would. Every message opens with a title line
+carrying a fixed emoji, so a message is identifiable from its notification preview before it is
+opened.
+
+**Every message about the work is about one area.** When a workstream ships, opens or gets stuck,
+that arrives as a message naming that workstream in its title line and containing nothing else.
+That was not true until 2026-08-16: the evening post was one roll-up grouped by *type*, so a fix in
+`analysis/` arrived as a `[bug]` line between a go-migration wave and a platform chore, and the
+twelve areas with no other voice had no voice at all.
+
+**The messages that are not about the work are not about an area, and could not be.** 🗳️ spans all
+seventeen because it is the daily digest and the one message that *asks* rather than tells — a
+reader answering it wants everything waiting on them in one place. 📅 is a schedule, 🩺 reports the
+routines that never ran (a no-show has no area), and 🏷️/🎉/🚀/🚨 are about the release and the fleet
+itself. The rule is not "one area per message" but **one subject per message**, and for anything a
+workstream did, the subject is that workstream.
 
 **Every run also checks in, and the budget above is unchanged, because a check-in is a reply.**
 Each routine closes with two lines under that morning's 📅 message — worked or not, what it did,
 what it spent, and a link to its log ([check-in.md](check-in.md)). That is eight to a dozen replies
-on a weekday: seven or eight timed runs, `cd-deploy` once per merge, whatever GitHub events fire,
-and one from `slack-relay`, which is the one routine that does *not* check in on every fire. It
-polls seventeen times a day, so it reports on its first fire and on any fire that acted — sixteen
-more lines saying "nothing to relay" would bury the two that mattered, and prove nothing the first
-did not.
+on a weekday: seven or eight timed runs, whatever GitHub events fire, and one each from the two
+routines that do *not* check in on every fire. `slack-relay` polls seventeen times a day, so it
+reports on its first fire and on any fire that acted — sixteen more lines saying "nothing to relay"
+would bury the two that mattered, and prove nothing the first did not. `cd-deploy` is woken by a
+push to *any* branch, which on a busy afternoon is once a minute; it passes `--quiet-repeat`, so
+the first check-in of the day at a given status posts and the rest record to the ledger silently.
+Both exemptions buy the same thing: a heartbeat is worth one line a day, and the count of firings
+belongs in `make cowork-metrics`, which reads the ledger.
 
 Any of those in the channel would mute the channel; under 📅 they cost a reader nothing and land
 where they mean the most, since 📅 already listed what would run today and each reply closes out one
@@ -85,24 +103,29 @@ of its lines.
 | Daily 05:45 UTC | 📅 **Today** — what runs today and when, in local time | never — a schedule that goes quiet is a schedule you cannot trust |
 | Weekdays 06:15 UTC | 🧭 **Agents** — what the AI agents shipped, spent and left open | never — a quiet day still posts one line |
 | Daily 08:15 UTC | 🗳️ **Decisions** — proposals waiting on your ✅/❌, in its thread, plus ⏸️ **Held** and 🛠️ **Queued** — what the fleet owes you, which asks nothing | nothing is waiting, and neither fault fired |
-| Daily 18:00 UTC | 🚢 **Shipped** — what merged, what proved it, which pre-release, and 🔴 which routines never ran | nothing shipped, building, stuck — and nothing missing |
-| Mondays 09:00 UTC | 🏷️ **Promote X.Y.Z?** — the weekly release ask | nothing is promotable |
+| Daily 18:00 UTC | **one message per area that moved today** — what merged there, what proved it, what is building, what is stuck | that area merged nothing, opened nothing and got stuck on nothing today |
+| Daily 18:00 UTC | 🩺 **Fleet health** — the routines that were due and never checked in | the schedule and the check-ins agree, which is most days |
+| Mondays 09:00 UTC | 🏷️ **Release batch waiting** — the gate-green fleet PRs awaiting your `make batch-assemble` | nothing is waiting and no batch is open |
 | A release is published | 🎉 **X.Y.Z is out** — what changed, PyPI and GitHub links | pre-releases never announce |
 | A deploy reconciles the fleet | 🚀 **cd-deploy** — every field that changed | the plan was empty, which is most runs |
-| A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause on the same commit already posted today |
+| A deploy is blocked | 🚨 **cd-deploy** — what is blocked, and the one thing you can do | the same cause already has an open `[blocked]` issue, which is every firing after the first |
 | A disclosure-class security find | 🔐 **Security** — that one exists, its linked ticket, and the call it wants | rare by construction |
 | Hourly 07:00–23:00 UTC | relay acks — **thread replies only, never the channel** | nothing to relay, which is the common case |
+| Daily 17:00 UTC | 🐹 **Go Migration** — what landed, what is moving, and how to test it | never — a bar that only appears when it grows cannot be trusted |
+| A migration wave merges | 🌊 **Go Migration** — the wave, the new bar, the core version shipped | non-wave merges say nothing here |
 | The 13 maintenance sweeps | **nothing in the channel, ever** | always — a sweep files a GitHub issue and exits |
-| The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
+| The end of every run | a check-in — **thread reply under 📅 only** | it fired before 📅 went up (overnight merges, GitHub events), or it is `slack-relay` on a quiet repeat fire, or `cd-deploy` firing again the same day at the same status. Finding nothing is *not* one: that posts 🟢 `nothing to do`, which is the only thing that is not silence |
 
 Three things follow from that table, and they are the whole design:
 
-- **Silence is the default and it is load-bearing.** Every routine but the two that bookend the
-  day — 📅 at 05:45 and 🧭 at 06:15 — is allowed to say nothing, and most of them say nothing most
-  days. A routine that reports every morning is a routine nobody reads by Thursday, and a muted
-  channel is worse than no channel — the one day it matters, nobody looks. The two exceptions
-  earn it by being the ones you *wait* for: silence from a findings routine means it found
-  nothing, silence from a schedule is ambiguous.
+- **Silence is the default and it is load-bearing.** Every routine but three — 📅 at 05:45, 🧭 at
+  06:15 and 🐹 at 17:00 — is allowed to say nothing, and most of them say nothing most days. A
+  routine that reports every morning is a routine nobody reads by Thursday, and a muted channel is
+  worse than no channel — the one day it matters, nobody looks. The three exceptions earn it by
+  being the ones you *wait* for, and each is a report on a **standing** thing rather than a
+  findings run: silence from a findings routine means it found nothing, while silence from a
+  schedule, a daily agent digest or a progress bar is ambiguous — a bar that only appears when it
+  grows cannot be trusted, which is the same argument the other two make.
 - **Asking and telling never mix.** 🗳️ is the only message that wants something from you, and the
   only one whose thread does — 📅's thread is the day's run ledger and asks nothing, which is why
   check-ins carry none of the glyphs an answer is spelled with. ✅ and ❌ mean approve and reject, they are never decoration, and
@@ -115,6 +138,65 @@ Three things follow from that table, and they are the whole design:
   and reads it back the same way. Reacting 🤖 to a digest item yourself hides that item from every
   future run.
 
+## The area glyphs
+
+One glyph per workstream, and it is the same glyph in every message that speaks for that area. This
+table is the source of truth: `scripts/cowork_setup.py --glyphs` parses it, `make cowork-check`
+fails if it and `workstreams/` disagree, and `.claude/agents/cowork-scribe.md` reads it rather than
+choosing. The point is the notification preview — 🔬 tells you the message is about team analysis
+before you open it, and a glyph that moved would silently retrain a reader who had learnt it.
+
+| Glyph | Workstream | In a title line |
+|---|---|---|
+| 📋 | `planning` | Planning |
+| 🌅 | `standup` | Standup |
+| 🔬 | `analysis` | Analysis |
+| 📈 | `reporting` | Reporting |
+| 🃏 | `poker` | Poker |
+| 🪞 | `retro` | Retro |
+| 🎯 | `performance` | Performance |
+| 🔭 | `roadmap` | Roadmap |
+| 🧭 | `agents` | Agents |
+| 🔗 | `artifacts-sharing` | Artifacts |
+| 🐚 | `tui-ux` | Terminal UI |
+| 🌐 | `web-ux` | Web UI |
+| 🧰 | `platform` | Platform |
+| 🦺 | `security` | Security |
+| 🧩 | `integrations` | Integrations |
+| 🐹 | `go-migration` | Go Migration |
+| 🪛 | `fleet` | Fleet |
+
+The third column is there because the slug is not a name: title-casing `tui-ux`
+gives "Tui Ux", which is what a reader would have met in the channel every week.
+It is the display name and nothing else — the *label* stays `workstream:tui-ux`,
+and no code joins on the third column.
+
+**Two are grandfathered, and that is the rule working rather than an exception to it.** 🧭 and 🐹
+already led the title lines of `cron/agents-standup.md` and `cron/go-migration-daily.md` before
+this table existed, and both of those messages speak for exactly the workstream the glyph now
+names. So an area can post twice in a day under one glyph — 🧭 at 06:15 about what other agents
+shipped, 🧭 in the evening about what the fleet changed in `agentwatch/` — and both are about
+agents, which is what the glyph promises. The clause after the em-dash is what tells them apart.
+
+**One carve-out: 🔐 is not security's area glyph.** It stays reserved for the disclosure lane, which
+is an ALERT that wants a decision and is answerable with ✅ at the top level — the one message in
+the fleet where that works. Security's area glyph is 🦺 — the guardrails, not the lock, because 🔐
+is that disclosure and 🔒 heads the digest's Security *section*, and a routine TELL that looked like
+either in a preview is the one confusion here that costs something.
+
+Three rules bound the rest, and each one has already been paid for elsewhere:
+
+- an area glyph may coincide with a **title-line** emoji only when that emoji already belongs to
+  the same workstream, and may never coincide with a **section** emoji. That is why `integrations`
+  is 🧩 rather than the obvious 🔌 — 🔌 heads the digest's Integration *section*, and a glyph meaning
+  "area" on one line and "section" on the next means neither;
+- **no variation sequences.** Every glyph here is a single codepoint with no trailing U+FE0F, the
+  same rule `SECTION_EMOJI` follows in `scripts/cowork_setup.py` and for the same reason: a
+  presentation selector one client honours and another drops is a title line that renders two ways.
+  It is why `tui-ux` is 🐚 and not ⌨️, `platform` 🧰 and not ⚙️;
+- **a glyph is never reused for a second meaning**, including against ✅ / ❌ / 🤖, which are verbs,
+  and 🟢 / 🟡 / 🔴, which are check-in statuses.
+
 ## Where things live
 
 | File | What it is |
@@ -123,11 +205,13 @@ Three things follow from that table, and they are the whole design:
 | [house-rules.md](house-rules.md) | Guardrails + the closed auto-lane allowlist. |
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
+| [calibration.md](calibration.md) | What each workstream keeps getting wrong. Appended by `cron/retune.md`, **read by every scout before it surveys**. The only file the fleet writes for its own future runs. |
+| [hygiene-lenses.md](hygiene-lenses.md) | The six standing detectors a sweep runs before scouting, each with a command behind it. Their exclusions live in `.github/hygiene/lens-policy.yml`; `crash-fuzz` is driven by `scripts/tui_fuzz.py`. |
 | [check-in.md](check-in.md) | How every run closes: one thread reply under 📅, composed by `scripts/cowork_checkin.py` and posted verbatim. |
-| [release-signoff.md](release-signoff.md) | The weekly human ritual: test a pre-release, promote it. |
+| [release-signoff.md](release-signoff.md) | The human ritual: assemble the batch, test the build, merge it. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
-| `workstreams/*.md` | Fifteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
+| `workstreams/*.md` | Seventeen charters — fifteen over the code, **go-migration** over the Go rewrite program, plus **fleet** over `cowork/` itself: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one of the fifteen; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
 
@@ -168,6 +252,11 @@ which is the normal steady state and not a fault.
 **And a merge to `main` deploys itself.** `cron/cd-deploy.md` is fired by a push webhook (with a daily
 cron as the safety net) and runs the same reconcile `/cowork deploy` does, from `origin/main`. So
 *editing* a routine is the whole workflow: merge it, and the fleet catches up within a minute.
+One deliberate cost of the batch model rides here: a routine edit the *fleet* authors reaches
+`main` only with the release batch, so it deploys weekly rather than on merge — pointing deploy at
+unmerged fleet branches would let the fleet loosen its own rules past the sign-off
+([workstreams/fleet.md](workstreams/fleet.md)). An urgent routine fix is a human's PR, which
+merges and deploys immediately.
 
 *Adding* one still needs the slash command. `cd-deploy` runs with `--no-create`, because two runs
 fired seconds apart would both see the same routine missing and both register it — there is no lock,
@@ -232,7 +321,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | — |
+| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01EPy41L2yD7YLKzuRXVfxw1 |
 | `cron/integrations-campaign.md` | `20 7 * * 1-5` weekdays | integrations | `deep` | https://claude.ai/code/routines/trig_019w6RJqz8aWJ13TkXmPUgtX |
 | `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | https://claude.ai/code/routines/trig_013tsooGjdnEMLRQcm7ZKU57 |
 | `cron/shipped-standup.md` | `0 18 * * *` daily | — | `standard` | https://claude.ai/code/routines/trig_0118jEhPuaKrCaUWCYQtVgEv |
@@ -240,9 +329,13 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `cron/release-promote-ask.md` | `0 9 * * 1` Mon | — | `fast` | https://claude.ai/code/routines/trig_01G4TuU1wYY7GXJ1cEXZUNSu |
 | `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | https://claude.ai/code/routines/trig_01AkW6ojpjKcra8H64R3Astr |
+| `cron/retune.md` | `0 8 * * 0` Sun | fleet | `standard` | https://claude.ai/code/routines/trig_01KYYfRyy1kKCYXq8EFn6ac6 |
+| `cron/go-migration-campaign.md` | `54 * * * *` hourly | go-migration | `heavy` | https://claude.ai/code/routines/trig_01M9VRz8rvNTusXLuxBwzwSB |
+| `cron/go-migration-daily.md` | `0 17 * * *` daily | go-migration | `fast` | https://claude.ai/code/routines/trig_01A9NbWuCDoS137MH3u3scsn |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | https://claude.ai/code/routines/trig_01Egz2NXy4GwzJzRRC7Z4Zm3 |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | https://claude.ai/code/routines/trig_019gLyX5qWx7g5rXZkUKaDAo |
 | `events/release-published-announce.md` | Release published | — | `standard` | https://claude.ai/code/routines/trig_01VXdR2FbPJUsMqVWghA7C5T |
+| `events/go-migration-wave-merged.md` | PR closed (merged wave) | go-migration | `fast` | https://claude.ai/code/routines/trig_0158sWhFEhPhZy28nfMFu3iK |
 
 > **Cron trap.** The fortnightly and monthly slots restrict **day-of-month only**. Standard cron
 > *ORs* day-of-month with day-of-week when both are restricted, so `30 7 1-7,15-21 * 2` fires every
@@ -267,9 +360,8 @@ one, whereas a workflow is only a repo file, so merging really is the whole depl
 holds it. It fixes only rule ids listed under `auto` in
 [`.github/codeql/triage-policy.yml`](../.github/codeql/triage-policy.yml) — the test being "can CI
 catch a wrong fix", not "is it low severity". It opens at most one PR at a time, gated on
-`make test` + `make lint` + `make security` and a `code-reviewer` pass, and merges via
-`gh pr merge --auto` so the main-branch ruleset decides — including the `pr-feedback` status, which
-means Claude Review ran and every blocking finding was answered. It never dismisses an alert, and it
+`make test` + `make lint` + `make security` and a `code-reviewer` pass, and the PR then waits —
+gate-green, `pr-feedback` answered — for the next release batch a human assembles and merges. It never dismisses an alert, and it
 never applies `claude-implement`. The three guardrail exemptions it takes are written down in
 [house-rules.md](house-rules.md), not assumed.
 
@@ -287,10 +379,12 @@ independent `code-reviewer` before the PR opens, `claude-review.yml` after CI, a
 unattended branch — so a machine may *fix* a finding and never *dismiss* one. Before that refusal
 existed, the routine that opened a PR could also declare the review of it answered.
 
-**And nothing the fleet merges ships to users on merge.** An unattended merge publishes a PyPI
-pre-release; the accumulated batch becomes an official version only when a human ✅s
-[`cron/release-promote-ask.md`](routines/cron/release-promote-ask.md)'s weekly question. That is the
-last backstop, and the only one involving somebody who has actually been running the code.
+**And nothing the fleet builds merges at all until a human ships it.** Fleet PRs wait open,
+gate-green, and reach `main` only inside the release batch a human assembles with
+`make batch-assemble`, hand-tests, and merges ([release-signoff.md](release-signoff.md)).
+[`cron/release-promote-ask.md`](routines/cron/release-promote-ask.md) is the Monday reminder that
+work is waiting. That is the last backstop, and the only one involving somebody who has actually
+been running the code.
 
 ## Setting this up
 
@@ -323,27 +417,29 @@ is it a degradation, and under `--strict` that is what exits non-zero.
 
 **And a token is not the same as access.** That session's egress goes through a proxy with its own
 allowlist, which was probed on 2026-08-11 and written down in
-`tests/fixtures/cowork_github_access_live.json` — 15 of 19 operations served, and the four refusals
-each close off an approach that looks obvious:
+`tests/fixtures/cowork_github_access_live.json` — 15 of 19 operations served. Those four refusals,
+plus a fifth met in the wild since and added to the probe rather than typed into the fixture, each
+close off an approach that looks obvious:
 
 | Refused there | Consequence |
 |---|---|
 | `POST /graphql` — *"only the pinned set of PR-review operations is served. Use REST … instead"* | Installing `gh` fixes nothing: `gh pr list --json` and `gh issue list --json` are GraphQL underneath, so the reads the sweeps and the digest are built on are exactly what would still fail. And `pr_feedback.py` cannot answer at all there — `reviewDecision` and thread resolution are v4-only — so it says so rather than reporting a PR it never read. |
-| `GET`/`PATCH /repos/…/actions/variables` | The `YEABOI_MODEL_*` half of `cd-deploy` step 3 can never succeed in-session. It moved to `.github/workflows/cowork-repo-setup.yml`, where a runner has no proxy. |
+| `GET`/`PATCH /repos/…/actions/variables` | The `YEABOI_MODEL_*` half of `cd-deploy` step 4 can never succeed in-session. It moved to `.github/workflows/cowork-repo-setup.yml`, where a runner has no proxy. |
 | `POST /repos/…/statuses/{sha}` | The `pr-feedback` commit status can only be posted from CI — which is where `.github/workflows/pr-feedback.yml` already posts it. |
+| Anything not repository-scoped — `GET /users/{owner}/repos` and its `/orgs/…`, `/search/…` neighbours — *"sessions are bound to their configured repositories"* (observed 2026-08-17, probed from the next re-derivation on) | A routine can read repositories it is told about and can never *discover* them. `cron/agents-standup.md` names a repository rather than an owner for exactly this reason; anything that expands an estate first belongs on a runner. |
 
 The labels half, by contrast, is genuinely repaired by the REST path: `gh label list` is GraphQL and
 was refused, while `GET /repos/{slug}/labels` is served. Re-derive any of this by re-running
 `scripts/probe_github_access.py`; never edit the fixture by feel.
 
-**What each command covers.** `make cowork-setup` does the thirty-two GitHub labels (`cowork`,
-`cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`, the
-`release:promotion`/`release:promote`
-pair the promotion path fires on, the `integration:candidate`/`integration:approved` pair the
-campaign lane fires on, `workstream:<name>` for each of the fifteen, and the seven `type:*` labels
+**What each command covers.** `make cowork-setup` does the thirty-six GitHub labels (`cowork`,
+`cowork:proposal`, `cowork:queued`, `claude-implement`, `feedback-override`,
+`release:promotion` marking the live batch PR, `semver:none` on every fleet PR so
+`auto-version.yml` bumps only the batch, the `integration:candidate`/`integration:approved` pair the
+campaign lane fires on, `workstream:<name>` for each of the seventeen, and the seven `type:*` labels
 shared with the feedback system — of which a scout may emit only four) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-four routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-eight routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

@@ -292,3 +292,62 @@ class TestStandupPlaintextHeadline:
             assert "1 agent-authored tracker item(s)" in text, f"{surface} does not count what the run measured"
             assert "session(s)" not in text, f"{surface} still reports sessions it never collected"
             assert "$0.00" not in text, f"{surface} still reports $0.00, which reads as free"
+
+
+class TestAdvisorMarkdownAndScreen:
+    """The advisor's export document and TUI page, in the family's shape."""
+
+    @staticmethod
+    def _report():
+        from tests.unit.test_agentwatch_render import make_advisor_report
+
+        return make_advisor_report()
+
+    def test_markdown_document_structure(self):
+        from yeaboi.agentwatch.export import build_advisor_markdown
+
+        md = build_advisor_markdown(self._report())
+        assert md.startswith("# Agent Advisor — 2026-07-10 → 2026-08-08")
+        assert "**~$2.75 recoverable** of $31.10 estimated spend" in md
+        assert "## Waste by mechanism" in md
+        assert "Stale reads (edited after) \\*" in md
+        assert "not counted in the recoverable total" in md
+        assert "## Cache health" in md
+        assert "**80/100**" in md
+        assert "## Volatile content in prompt-prefix files" in md
+        assert "uuid×2" in md
+        # The honesty framing must travel with the file, not only the screen.
+        assert "a floor, not an invoice" in md
+
+    def test_export_writes_dated_markdown(self, monkeypatch, tmp_path):
+        import yeaboi.agentwatch.export as export_mod
+
+        monkeypatch.setattr("yeaboi.paths.get_agentwatch_export_dir", lambda kind: tmp_path)
+        paths = export_mod.export_artifact(self._report(), kind="advisor")
+        assert set(paths) == {"markdown"}
+        assert paths["markdown"].read_text(encoding="utf-8").startswith("# Agent Advisor")
+
+    def test_screen_running_state_shows_checklist_phases(self):
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_advisor_screen
+
+        out = _render(_build_agent_advisor_screen(None, width=100, height=40, shimmer_tick=0.2, progress=[]))
+        for label in ("Scan agent sessions", "Audit Read waste", "Check cache health", "Write advice"):
+            assert label in out
+
+    def test_screen_report_state_shows_dashboard_and_actions(self):
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_advisor_screen
+
+        out = _render(_build_agent_advisor_screen(self._report(), width=100, height=44, shimmer_tick=None))
+        assert "recoverable" in out
+        assert "Export" in out and "Re-run" in out
+
+    def test_screen_caps_volatile_rows_and_notes_the_export(self):
+        from dataclasses import replace
+
+        from yeaboi.agent.state import VolatileFileSignal
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_advisor_screen
+
+        many = tuple(VolatileFileSignal(location=f"/p/{i}/CLAUDE.md", total=1) for i in range(6))
+        report = replace(self._report(), volatile_signals=many)
+        out = _render(_build_agent_advisor_screen(report, width=100, height=44, shimmer_tick=None))
+        assert "more file(s) in the export" in out

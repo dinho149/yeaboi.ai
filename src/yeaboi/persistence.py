@@ -189,6 +189,12 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
         "velocity_source",
         "sprint_start_date",
         "starting_sprint_number",
+        "sprint_target_mode",
+        "target_sprint_name",
+        "target_sprint_external_id",
+        "ac_format",
+        "ticket_template_sections",
+        "spike_choice",
         "capacity_bank_holiday_days",
         "capacity_planned_leave_days",
         "capacity_unplanned_leave_pct",
@@ -327,6 +333,10 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
                 )
             if "dod_applicable" in item_dict and isinstance(item_dict["dod_applicable"], list):
                 item_dict["dod_applicable"] = tuple(item_dict["dod_applicable"])
+        if cls is ProjectAnalysis and "architecture" in item_dict:
+            from yeaboi.agent.state import architecture_from_dict
+
+            item_dict["architecture"] = architecture_from_dict(item_dict["architecture"])
         return item_dict
 
     def _filter_known_fields(cls, item_dict: dict) -> dict:
@@ -382,6 +392,12 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         "velocity_source",
         "sprint_start_date",
         "starting_sprint_number",
+        "sprint_target_mode",
+        "target_sprint_name",
+        "target_sprint_external_id",
+        "ac_format",
+        "ticket_template_sections",
+        "spike_choice",
         "capacity_bank_holiday_days",
         "capacity_planned_leave_days",
         "capacity_unplanned_leave_pct",

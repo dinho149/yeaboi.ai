@@ -23,7 +23,7 @@ import sys
 
 import pytest
 
-SPAWNERS = ("cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff")
+SPAWNERS = ("cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff", "batch_assemble", "migration_progress")
 
 
 def _loaded_transports() -> dict[str, object]:
@@ -72,15 +72,25 @@ def test_the_guard_fires_on_a_write_through_cowork_setup(monkeypatch):
 
 
 def test_the_guard_fires_on_beta_signoffs_write_path():
-    """`beta_signoff._gh` writes too — `gh issue comment` on the release ask, and
-    `--add-label release:promote`. It had its own `subprocess.run` outside the
-    seam, so the fixture's "no test may shell out to the real gh" was narrower
-    than it read."""
+    """`beta_signoff._gh` writes too — `gh pr comment` markers on the batch PR,
+    and `gh pr ready`. It once had its own `subprocess.run` outside the seam, so
+    the fixture's "no test may shell out to the real gh" was narrower than it
+    read."""
     signoff = sys.modules.get("beta_signoff")
     if signoff is None:
         pytest.skip("beta_signoff not loaded in this selection")
     with pytest.raises(BaseException, match="real gh CLI"):
-        signoff._gh("issue", "comment", "1", "--body", "x")
+        signoff._gh("pr", "comment", "1", "--body", "x")
+
+
+def test_the_guard_fires_on_batch_assembles_write_path():
+    """`batch_assemble._gh` opens the batch PR and closes constituents — writes
+    that must never reach the real repo from a test that forgot to stub."""
+    assemble = sys.modules.get("batch_assemble")
+    if assemble is None:
+        pytest.skip("batch_assemble not loaded in this selection")
+    with pytest.raises(BaseException, match="real gh CLI"):
+        assemble._gh("pr", "close", "1")
 
 
 def test_a_local_git_read_is_not_blocked():

@@ -98,9 +98,13 @@ def _story_to_text(story: UserStory) -> str:
     for i, ac in enumerate(story.acceptance_criteria, 1):
         if i > 1:
             lines.append("")
-        lines.append(f"[{i}] Given: {ac.given}")
-        lines.append(f"    {'When:':<7}{ac.when}")
-        lines.append(f"    {'Then:':<7}{ac.then}")
+        if ac.text:
+            # Free-text criterion (team style) — a single editable AC line.
+            lines.append(f"[{i}] AC: {ac.text}")
+        else:
+            lines.append(f"[{i}] Given: {ac.given}")
+            lines.append(f"    {'When:':<7}{ac.when}")
+            lines.append(f"    {'Then:':<7}{ac.then}")
     lines.append("")
     lines.append(_ADD_AC_MARKER)
     if len(story.dod_applicable) == len(DOD_ITEMS):
@@ -122,13 +126,21 @@ def _parse_edited_story(text: str, original: UserStory) -> UserStory:
         if m:
             fields[m.group(1).lower()] = m.group(2).strip()
 
-    # Parse acceptance criteria
+    # Parse acceptance criteria — GWT triples ("[N] Given:") and free-text
+    # criteria ("[N] AC:", the team-style single-line shape) both round-trip.
     criteria: list[AcceptanceCriterion] = []
     ac_pat = re.compile(r"^\[(\d+)\]\s*Given\s*:\s*(.*)$", re.IGNORECASE)
+    text_ac_pat = re.compile(r"^\[(\d+)\]\s*AC\s*:\s*(.*)$", re.IGNORECASE)
     when_pat = re.compile(r"^\s*When\s*:\s*(.*)$", re.IGNORECASE)
     then_pat = re.compile(r"^\s*Then\s*:\s*(.*)$", re.IGNORECASE)
     i = 0
     while i < len(lines):
+        text_m = text_ac_pat.match(lines[i].strip())
+        if text_m:
+            if text_m.group(2).strip():
+                criteria.append(AcceptanceCriterion(text=text_m.group(2).strip()))
+            i += 1
+            continue
         ac_m = ac_pat.match(lines[i].strip())
         if ac_m:
             given = ac_m.group(2).strip()
@@ -199,7 +211,7 @@ def _editable_start(line: str) -> int | None:
     m = re.match(r"^(Persona|Goal|Benefit|Points|Priority|Discipline)\s*:\s*", line)
     if m:
         return m.end()
-    ac_m = re.match(r"^\[\d+\]\s*Given\s*:\s*", line)
+    ac_m = re.match(r"^\[\d+\]\s*(Given|AC)\s*:\s*", line)
     if ac_m:
         return ac_m.end()
     wt_m = re.match(r"^\s*(When|Then)\s*:\s*", line)
@@ -579,12 +591,18 @@ def edit_story(
             unsupported_notice(_core._set_editor_notice)
         elif key == "enter":
             if _is_add_marker(buffer, cursor_row):
-                ac_count = sum(1 for ln in buffer if re.match(r"^\[\d+\]\s*Given", ln))
+                ac_count = sum(1 for ln in buffer if re.match(r"^\[\d+\]\s*(Given|AC)", ln))
+                # Match the story's dominant style: a free-text (team-style)
+                # story gets a "[N] AC:" line, a GWT story gets the triple.
+                free_text_story = any(re.match(r"^\[\d+\]\s*AC\s*:", ln) for ln in buffer)
                 new_num = ac_count + 1
                 insert_at = cursor_row
                 need_sep = insert_at > 0 and buffer[insert_at - 1].strip() != ""
                 new_lines = [""] if need_sep else []
-                new_lines += [f"[{new_num}] Given: ", f"    {'When:':<7}", f"    {'Then:':<7}"]
+                if free_text_story:
+                    new_lines += [f"[{new_num}] AC: "]
+                else:
+                    new_lines += [f"[{new_num}] Given: ", f"    {'When:':<7}", f"    {'Then:':<7}"]
                 for i, nl in enumerate(new_lines):
                     buffer.insert(insert_at + i, nl)
                 cursor_row = insert_at + (1 if need_sep else 0)

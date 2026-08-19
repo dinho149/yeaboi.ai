@@ -219,6 +219,20 @@ class TestStates:
         assert "[x] " in out
         assert "[ ] " in out
 
+    def test_banned_carousel_rows_show_the_cross_and_stay_unchecked(self):
+        choices = ChoiceRows(
+            options=[("acme/auth", True), ("acme/pay", False)],
+            highlight=0,
+            multi=True,
+            carousel=True,
+            banned={1},
+        )
+        out = _ANSI.sub("", _render(_screen(choices=choices)))
+        assert "✗" in out
+        assert "never suggest" in out
+        # The banned row draws no checkbox — one mark per row, never both.
+        assert "[ ] 2." not in out and "[x] 2." not in out
+
     def test_command_menu_lists_matches(self):
         from yeaboi.ui.session.chat._commands import COMMANDS
 
@@ -261,6 +275,23 @@ class TestHintRow:
             out = _ANSI.sub("", _render(_screen(width=width, console=_console(width), choices=choices), width=width))
             line = next(ln for ln in out.splitlines() if "Enter" in ln and "send" in ln)
             assert "…" not in line, f"hint clipped at {width} cols with a menu up"
+            assert "Ctrl+N newline" in line
+            assert "Esc Esc" in line
+
+    def test_carousel_hint_names_its_keys_when_there_is_room(self):
+        choices = ChoiceRows(options=[("acme/auth", False)], highlight=0, multi=True, carousel=True)
+        out = _ANSI.sub("", _render(_screen(width=160, console=_console(160), choices=choices), width=160))
+        assert "X never suggest" in out
+        assert "←/→" in out and "browse" in out
+
+    def test_carousel_row_never_ellipsizes(self):
+        # X is sacrificed before Space (the core toggle), and the combined
+        # browse pair last — the row must still finish its sentences at 80.
+        choices = ChoiceRows(options=[("acme/auth", False)], highlight=0, multi=True, carousel=True)
+        for width in (80, 100, 120, 160):
+            out = _ANSI.sub("", _render(_screen(width=width, console=_console(width), choices=choices), width=width))
+            line = next(ln for ln in out.splitlines() if "Enter" in ln and "send" in ln)
+            assert "…" not in line, f"hint clipped at {width} cols with the carousel up"
             assert "Ctrl+N newline" in line
             assert "Esc Esc" in line
 

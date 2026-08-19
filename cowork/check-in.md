@@ -3,7 +3,7 @@
 How every run in the fleet closes, written once. Your routine supplies three facts; everything
 else is measured here. It is the last thing a run does, and no routine is exempt.
 
-The fleet ran twenty-four routines a day and reported nothing about its own running. On
+The fleet ran two dozen routines a day and reported nothing about its own running. On
 2026-08-06 the security sweep died on `Authentication error` after one turn; nothing said so, in
 Slack or anywhere else, and the next thing anybody knew was the following Thursday. That is not a
 gap in the reporting — it is what the reporting was *for*: [README.md](README.md) makes silence
@@ -23,11 +23,16 @@ schedule becomes the ledger, and "did everything run" is answered by reading one
 
 ## Run
 
-1. **Compose it.** `.venv/bin/python scripts/cowork_checkin.py --line`, with the facts on stdin:
+1. **Compose it.** `.venv/bin/python scripts/cowork_checkin.py --line --record`, with the facts on
+   stdin:
 
    ```json
    {"name": "security-sweep", "status": "ok", "note": "1 PR (#261), 2 proposals filed"}
    ```
+
+   Add `--quiet-repeat` only if your routine's own stop conditions say to (see the exemption
+   below). It suppresses the printed line — and nothing else — when this routine already checked
+   in with this status today.
 
    Four keys, and you supply three of them. `name` is your routine's name as
    [README.md](README.md)'s table spells it. `status` is `ok`, `degraded` or `failed` — see below.
@@ -35,6 +40,21 @@ schedule becomes the ledger, and "did everything run" is answered by reading one
    describing effort: *"nothing to do"*, *"1 PR (#261), 2 proposals filed"*, *"digest posted"*,
    *"blocked at step 3"*. `url` is optional and you will not need it — the script finds this run's
    own log link by itself.
+
+   **`--record` also appends this run to the month's ledger** — one GitHub issue labelled
+   `fleet-ledger`, one comment per run, carrying what the Slack line shows plus the numbers it has
+   no room for. It is what lets `make cowork-metrics` answer "what did the fleet cost, and which
+   routines are failing" a month later; without it those numbers exist for the length of one run and
+   then do not. Nothing in the fleet reads that issue — it is a record, not a queue — so recording
+   to it changes no routine's behaviour, including yours. **A ledger failure never fails your
+   check-in**: the script prints the line first, reports the ledger problem on stderr, and exits on
+   the strength of the line. Post the line either way.
+
+   Running this on a laptop refuses the ledger write and says so, which is correct rather than a
+   fault to work around. The token figure comes from every transcript under `~/.claude/projects`,
+   and that is this run only inside a sandbox built fresh per firing — on a real machine it is
+   everything you have ever done. The first live test recorded one check-in as 800 hours and
+   $8,699. There is no honest local number to write, so there is nothing to force.
 
    Use `uv run` unless your run already built a venv, in which case
    `./.venv/bin/python` does the same thing and leaves `uv.lock` alone. Either is fine
@@ -94,11 +114,40 @@ found nothing" from "never fired", and the fleet had no way to tell those apart.
 posts a green line and nothing else — no issue, no channel message, nothing changed about what it
 files.
 
-**One routine is exempt from that, and only partly.** `cron/slack-relay.md` polls seventeen times a
+**Two routines are exempt from that, and only partly.** `cron/slack-relay.md` polls seventeen times a
 day. It checks in on its first fire and on any fire that acted or degraded; a quiet repeat fire
 posts nothing. One line a morning proves the poller is alive, which is all a no-op check-in is for,
-and sixteen repeats of it would bury the ones that mattered. The exemption is written into that
-routine's own stop conditions, not here — nothing else in the fleet fires often enough to earn it.
+and sixteen repeats of it would bury the ones that mattered. `cron/cd-deploy.md` is woken by a push
+webhook that cannot be scoped to a branch, so it fires once per push to *any* branch in a repo that
+runs many worktrees — five firings in three minutes on 2026-08-17, all of them reporting the same
+tracked environment gap in the same 🟡 line. Both exemptions are written into those routines' own
+stop conditions, not here; nothing else in the fleet fires often enough to earn one.
+
+**`cd-deploy`'s is enforced by the script rather than by judgement**, which is the difference
+between the two. It passes `--quiet-repeat`, and `cowork_checkin.py` then prints no line when a
+check-in with the same `(name, status)` is already in today's ledger — recording the run either
+way. So the ledger still counts every firing, `make cowork-metrics` still prices them, and the
+thread carries one line a day per status.
+
+Three properties of that gate, because each one is a decision:
+
+- **The key is the name and the status, never the note.** A repeat firing's note is written by a
+  model and varies in wording, so keying on it would let the same standing fault through on every
+  push. The cost is real and bounded: a *second*, genuinely different degradation on the same day
+  is not heard in the thread. It is still heard where it belongs — a routine's channel ALERT is
+  gated on its own marker, not on this.
+- **Every failure of the gate answers "not a repeat".** An unreadable ledger prints the line. This
+  is the opposite of the rule an unreadable *queue* follows (`--proposal-slots` reads as zero
+  slots), and deliberately: a duplicated heartbeat is noise, a suppressed one is a routine that
+  looks dead.
+- **Nothing prints means post nothing.** The routine posts what the script printed, and an empty
+  stdout is the instruction. Never reconstruct the line from the note on stderr.
+
+**It is a read-then-write gate with no lock, so it thins rather than deduplicates.** Firings that
+overlap — and a merge delivers two push events seconds apart, which is exactly the pair that made
+`cd-deploy`'s old channel-history rule useless — both read a ledger neither has written to yet, and
+both post. Thirty lines become two or three, not one. That is the same shape as the `[blocked]`
+issue gate and the same honest limit: what it fixes is the recurrence, not the race.
 
 ## Stop conditions
 

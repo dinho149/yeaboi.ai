@@ -1,7 +1,7 @@
 """Unit tests for the standup engine pipeline (mocked LLM + sources)."""
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -325,17 +325,24 @@ class TestRunStandup:
 
         delivered = {}
 
-        def fake_deliver(report, channels):
+        def fake_deliver(dispatch, channels):
             delivered["channels"] = channels
+            delivered["dispatch"] = dispatch
             return {c: True for c in channels}
 
-        import yeaboi.standup.delivery as delivery_mod
+        # Patched on the real module rather than standup/delivery.py's shim: the
+        # shim re-exports the object, so rebinding a name there is invisible to
+        # anything that imports from ceremonies.delivery directly.
+        import yeaboi.ceremonies.delivery as delivery_mod
 
         monkeypatch.setattr(delivery_mod, "deliver", fake_deliver)
         engine.run_standup(
             seeded_session, deliver=True, channels=["terminal"], db_path=db_path, today=date(2026, 7, 10)
         )
         assert delivered["channels"] == ["terminal"]
+        # The channels take a Dispatch now, carrying the standup's own plaintext
+        # rendering rather than a re-wording of it.
+        assert "Daily Standup" in delivered["dispatch"].title
 
 
 class TestAutomationFilter:
@@ -664,6 +671,13 @@ class TestActivityWindow:
         assert "days" not in captured
         assert report.activity_window.startswith("Fri 2026-07-17")
         assert report.activity_window.endswith("→ now")
+        # Machine-readable bounds for the timeline axis: tz-aware ISO, start
+        # at the window's midnight, end stamped at collection time.
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert (start.year, start.month, start.day, start.hour) == (2026, 7, 17, 0)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert start < end
 
     def test_explicit_days_keeps_legacy_window(self, monkeypatch, db_path, seeded_session):
         captured: dict = {}
@@ -686,6 +700,10 @@ class TestActivityWindow:
         assert captured["days"] == 3
         assert "since" not in captured
         assert report.activity_window == "last 3 day(s)"
+        start = datetime.fromisoformat(report.activity_window_start)
+        end = datetime.fromisoformat(report.activity_window_end)
+        assert start.tzinfo is not None and end.tzinfo is not None
+        assert (end - start).days == 3
 
 
 class TestIdentityResolution:
@@ -1441,6 +1459,29 @@ class TestMemberEvidence:
         assert (row.kind, row.key, row.title) == ("commit", "78e4201d", "Fix login redirect")
         assert (row.repository, row.timestamp) == ("yeaboi/web", "2026-07-30T09:15:00")
 
+    def test_review_sharing_the_pr_url_stays_a_separate_row(self):
+        # An AzDO review vote and the member's own PR row both point at the PR
+        # URL; GitHub review rows fall back to the PR's html_url. Reviewing and
+        # authoring are different work — neither may swallow the other.
+        acts = [
+            {
+                "kind": "pr",
+                "title": "Add retry",
+                "key": "!7",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T16:00:00",
+            },
+            {
+                "kind": "review",
+                "title": "approved PR !7: Add retry",
+                "key": "review:7:guid-vic",
+                "url": "https://a/pullrequest/7",
+                "timestamp": "2026-08-07T15:00:00",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert [(r.kind, r.key) for r in rows] == [("pr", "!7"), ("review", "review:7:guid-vic")]
+
     def test_urlless_items_survive_and_dedupe_by_identity(self):
         # Unlike _member_links, an in-progress ticket with no URL still says something.
         acts = [
@@ -1505,11 +1546,11 @@ class TestMemberEvidence:
         ]
         assert len(engine._member_evidence(acts)) == 2
 
-    def test_caps_at_eight_preserving_order(self):
-        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]
+    def test_caps_at_thirty_preserving_order(self):
+        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(35)]
         rows = engine._member_evidence(acts)
-        assert len(rows) == 8
-        assert rows[0].key == "#0" and rows[7].key == "#7"
+        assert len(rows) == 30
+        assert rows[0].key == "#0" and rows[29].key == "#29"
 
     def test_prefers_clean_summary_over_action_title(self):
         # Jira update/comment titles are action phrases ("updated KEY '…'");
@@ -2726,3 +2767,73 @@ class TestAggregateDispatchProtocol:
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         assert len(calls) == 1  # no second pass — deterministic verdicts stand
         assert report.date == "2026-07-10"
+
+
+class TestConflictAndProvenanceWiring:
+    ITEMS = [
+        {
+            "author": "Alice",
+            "kind": "issue",
+            "key": "YEA-12",
+            "status": "Done",
+            "title": "auth epic",
+            "source": "jira",
+            "url": "https://j/12",
+        },
+        {
+            "author": "Alice",
+            "kind": "pr",
+            "status": "open",
+            "title": "YEA-12 auth fix",
+            "source": "github",
+            "url": "https://g/41",
+        },
+    ]
+
+    def test_conflict_cards_and_audit_trail_land(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+
+        assert len(report.conflicts) == 1
+        card = report.conflicts[0]
+        assert card.entity_id == "YEA-12"
+        assert {claim[0] for claim in card.claims} == {"jira", "github"}
+
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            assert chain.verify().valid is True
+            conflict = chain.get("standup:2026-07-10:conflict:YEA-12:status:status_conflict")
+            assert conflict is not None
+            assert conflict.inputs == ("https://j/12", "https://g/41")
+            assert chain.get("standup:2026-07-10:confidence") is not None
+
+    def test_dry_run_records_no_audit_trail(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        report = engine.run_standup(
+            seeded_session, deliver=False, dry_run=True, db_path=db_path, today=date(2026, 7, 10)
+        )
+
+        # The cards still render — only the side-effecting chain write is skipped.
+        assert len(report.conflicts) == 1
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            assert chain.total() == 0
+
+    def test_failed_audit_write_warns_but_never_fails_the_run(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("github", 1), ("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        from yeaboi.standup import provenance_log
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(provenance_log, "record_run", _boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert any("Audit trail not recorded" in w for w in report.warnings)

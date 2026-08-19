@@ -118,6 +118,7 @@
       "trend": "",
       "trendText": ""
     },
+    "conflicts": [],
     "coverage": [],
     "edit": {
       "confidence_rationale": {
@@ -203,7 +204,11 @@
       ]
     ],
     "trend": null,
-    "warnings": []
+    "warnings": [],
+    "window": {
+      "end": "",
+      "start": ""
+    }
   },
   "revision": 3
 }

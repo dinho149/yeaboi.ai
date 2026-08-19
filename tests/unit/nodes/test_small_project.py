@@ -13,6 +13,7 @@ from tests._node_helpers import VALID_ANALYSIS_JSON, make_completed_questionnair
 from yeaboi.agent.nodes import (
     _essentials_for_mode,
     _extract_capacity_deductions,
+    _fetch_sprint_targets,
     _is_small_project_mode,
     _prepare_bank_holiday_choices,
     _reopen_intake_for_epic,
@@ -40,13 +41,17 @@ class TestModeConstants:
         assert keys == ["chat", "roadmap", "offline"]
 
     def test_small_essentials_include_sprint_length(self):
-        # Small essentials = project type, problem, DoD, team size, sprint length, stack.
-        assert SMALL_PROJECT_ESSENTIALS == frozenset({2, 3, 4, 6, 8, 11})
+        # Small essentials = project type, problem, DoD, team size, sprint
+        # length, stack, and sprint targeting (existing sprint vs new).
+        assert SMALL_PROJECT_ESSENTIALS == frozenset({2, 3, 4, 6, 8, 11, 27})
 
     def test_small_essentials_drop_capacity_questions(self):
-        # No target sprints (Q10) or sprint selection (Q27) — Small does no capacity work.
+        # No target sprints (Q10) and none of the capacity questions (Q28-Q30)
+        # — Small does no capacity work. Q27 IS asked (with a tracker) but as
+        # "add to an existing sprint or create new?", not capacity planning.
         assert 10 not in SMALL_PROJECT_ESSENTIALS
-        assert 27 not in SMALL_PROJECT_ESSENTIALS
+        for q in (28, 29, 30):
+            assert q not in SMALL_PROJECT_ESSENTIALS
 
 
 class TestEssentialsForMode:
@@ -154,6 +159,252 @@ class TestSmallProjectAdvisory:
         assert result["_small_project_oversized"] is False
         # Smart mode keeps the analyzer's own values (not coerced to a flat plan).
         assert result["project_analysis"].target_sprints == 4
+
+
+class TestSprintTargetQuestion:
+    """Small-mode Q27: add to an existing sprint, or create a new one."""
+
+    def _targets(self):
+        return [
+            {
+                "name": "PSOT Sprint 104",
+                "external_id": "88",
+                "state": "active",
+                "start_date": "2026-03-02",
+                "number": 104,
+            },
+            {
+                "name": "PSOT Sprint 105",
+                "external_id": "89",
+                "state": "future",
+                "start_date": "2026-03-16",
+                "number": 105,
+            },
+        ]
+
+    def test_setup_parks_choices_and_options(self, monkeypatch):
+        from yeaboi.agent.nodes import _setup_small_sprint_target_question
+
+        monkeypatch.setattr("yeaboi.agent.nodes._fetch_sprint_targets", lambda pref="": (self._targets(), "ok"))
+        monkeypatch.setattr("yeaboi.agent.nodes._is_jira_configured", lambda: True)
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_target_question(qs)
+
+        assert prompt is not None
+        assert "existing sprint" in prompt
+        assert qs._follow_up_choices[27] == (
+            "Add to PSOT Sprint 104 (active)",
+            "Add to PSOT Sprint 105",
+            "Create a new sprint",
+            "Backlog (no sprint)",
+        )
+        assert qs._sprint_target_options == {"PSOT Sprint 104": "88", "PSOT Sprint 105": "89"}
+        # The active sprint feeds the start-date offset machinery.
+        assert qs._active_sprint_number == 104
+        assert qs._active_sprint_start_date == "2026-03-02"
+        assert qs.answers[27] == "_active:104"
+
+    def test_setup_returns_none_on_fetch_failure(self, monkeypatch):
+        from yeaboi.agent.nodes import _setup_small_sprint_target_question
+
+        monkeypatch.setattr("yeaboi.agent.nodes._fetch_sprint_targets", lambda pref="": ([], "connection failed"))
+        qs = QuestionnaireState(intake_mode="small_project")
+        assert _setup_small_sprint_target_question(qs) is None
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_add_to_strips_active_suffix(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"PSOT Sprint 104": "88"}
+        qs.answers[27] = "Add to PSOT Sprint 104 (active)"
+        qs._follow_up_choices[27] = ("Add to PSOT Sprint 104 (active)",)
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Add to PSOT Sprint 104"
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_create_new_uses_max_plus_one(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"PSOT Sprint 104": "88", "PSOT Sprint 105": "89"}
+        qs._active_sprint_number = 104
+        qs.answers[27] = "Create a new sprint"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Sprint 106"
+
+    def test_resolve_create_new_without_numbers_falls_back(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs._sprint_target_options = {"Hardening": "12"}
+        qs.answers[27] = "Create a new sprint"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Fresh start (today)"
+
+    def test_resolve_backlog_keeps_the_sentinel(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.answers[27] = "Backlog (no sprint)"
+        qs._follow_up_choices[27] = ("Create a new sprint", "Backlog (no sprint)")
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Backlog (no sprint)"
+        assert 27 not in qs._follow_up_choices
+
+    def test_resolve_backlog_from_free_text(self):
+        from yeaboi.agent.nodes import _resolve_small_sprint_target_answer
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.answers[27] = "just put it in the backlog"
+        _resolve_small_sprint_target_answer(qs)
+        assert qs.answers[27] == "Backlog (no sprint)"
+
+    def test_fallback_question_with_known_number(self):
+        from yeaboi.agent.nodes import _setup_small_sprint_fallback_question
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_fallback_question(qs, 24, "Last analysed sprint: **Sprint 24**.\n\n")
+        assert "backlog" in prompt
+        assert qs._follow_up_choices[27] == ("Create Sprint 25 (next)", "Backlog (no sprint)")
+        assert qs.answers[27] == "_active:24"
+        assert qs._active_sprint_number == 24
+
+    def test_fallback_question_without_number(self):
+        from yeaboi.agent.nodes import _setup_small_sprint_fallback_question
+
+        qs = QuestionnaireState(intake_mode="small_project")
+        prompt = _setup_small_sprint_fallback_question(qs, None, "")
+        assert "backlog" in prompt
+        assert qs._follow_up_choices[27] == ("Create a new sprint", "Backlog (no sprint)")
+        assert qs.answers[27] == "_targets"
+
+    def test_analyzer_clamps_to_one_sprint_when_targeting_existing(self, monkeypatch):
+        fake = MagicMock()
+        fake.content = VALID_ANALYSIS_JSON
+        llm = MagicMock()
+        llm.invoke.return_value = fake
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: llm)
+
+        qs = make_completed_questionnaire()
+        state = {
+            "messages": [HumanMessage(content="continue")],
+            "questionnaire": qs,
+            "team_size": 3,
+            "velocity_per_sprint": 15,
+            "_intake_mode": "small_project",
+            "sprint_target_mode": "existing",
+            "target_sprint_name": "PSOT Sprint 104",
+        }
+        result = project_analyzer(state)
+        assert result["project_analysis"].target_sprints == 1
+
+    def test_analyzer_clamps_to_one_sprint_for_backlog(self, monkeypatch):
+        fake = MagicMock()
+        fake.content = VALID_ANALYSIS_JSON
+        llm = MagicMock()
+        llm.invoke.return_value = fake
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: llm)
+
+        qs = make_completed_questionnaire()
+        state = {
+            "messages": [HumanMessage(content="continue")],
+            "questionnaire": qs,
+            "team_size": 3,
+            "velocity_per_sprint": 15,
+            "_intake_mode": "small_project",
+            "sprint_target_mode": "backlog",
+        }
+        result = project_analyzer(state)
+        assert result["project_analysis"].target_sprints == 1
+
+
+class TestFetchSprintTargets:
+    """Board-sprint targets for the Q27 "add to an existing sprint" menu."""
+
+    def _patch_trackers(self, monkeypatch, jira: bool = False, azdo: bool = False) -> None:
+        monkeypatch.setattr("yeaboi.agent.nodes._is_jira_configured", lambda: jira)
+        monkeypatch.setattr("yeaboi.agent.nodes._is_azdevops_configured", lambda: azdo)
+
+    def test_jira_targets_carry_fields_and_parse_trailing_numbers(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        fake_client = object()
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: fake_client)
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", lambda jira, key: 7)
+        calls: dict = {}
+
+        def fake_fetch(jira, board_id, states):
+            calls["jira"], calls["board_id"], calls["states"] = jira, board_id, states
+            return [
+                {"id": 101, "name": "Sprint 12", "state": "active", "start_date": "2026-08-10", "end_date": ""},
+                {"id": None, "name": "Hardening", "state": "future", "start_date": "", "end_date": ""},
+            ]
+
+        monkeypatch.setattr("yeaboi.tools.jira.fetch_board_sprints", fake_fetch)
+
+        targets, status = _fetch_sprint_targets()
+        # The same scrum-filtered board and only the open states.
+        assert calls["jira"] is fake_client
+        assert calls["board_id"] == 7
+        assert calls["states"] == ("active", "future")
+        assert targets[0] == {
+            "name": "Sprint 12",
+            "external_id": "101",
+            "state": "active",
+            "start_date": "2026-08-10",
+            "number": 12,
+        }
+        # No trailing digits → number None; a None id → empty external_id.
+        assert targets[1]["number"] is None
+        assert targets[1]["external_id"] == ""
+        assert status == "2 open sprint(s) on the board"
+
+    def test_no_jira_board_returns_empty_with_reason(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: object())
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", lambda jira, key: None)
+
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "No Jira board found for project PROJ"
+
+    def test_jira_fetch_error_degrades_to_empty_with_message(self, monkeypatch):
+        self._patch_trackers(monkeypatch, jira=True)
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: object())
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PROJ")
+
+        def _boom(jira, key):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("yeaboi.tools.jira.find_scrum_board_id", _boom)
+
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "Jira connection failed: boom"
+
+    def test_azdo_targets_drop_past_and_sort_active_first(self, monkeypatch):
+        self._patch_trackers(monkeypatch, azdo=True)
+        iterations = [
+            {"name": "Sprint 3", "path": "\\P\\Sprint 3", "time_frame": "future", "start_date": "2026-09-01"},
+            {"name": "Sprint 1", "path": "\\P\\Sprint 1", "time_frame": "past", "start_date": "2026-07-01"},
+            {"name": "Sprint 2", "path": "\\P\\Sprint 2", "time_frame": "current", "start_date": "2026-08-10"},
+        ]
+        monkeypatch.setattr("yeaboi.tools.azure_devops.fetch_team_iterations_meta", lambda: iterations)
+
+        targets, status = _fetch_sprint_targets()
+        assert [t["name"] for t in targets] == ["Sprint 2", "Sprint 3"]  # past dropped, active first
+        assert targets[0]["state"] == "active"
+        assert targets[0]["external_id"] == "\\P\\Sprint 2"
+        assert targets[1]["state"] == "future"
+        assert status == "2 open iteration(s) for the team"
+
+    def test_no_tracker_configured(self, monkeypatch):
+        self._patch_trackers(monkeypatch)
+        targets, status = _fetch_sprint_targets()
+        assert targets == []
+        assert status == "No tracker configured"
 
 
 class TestApplyEpicSwitch:

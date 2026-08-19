@@ -32,6 +32,16 @@ routines could have collided on a file. A header or CSP change is a security pro
 - **Merge conflicts in minified output**: never hand-resolve, never a `union` merge driver. Always
   `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`.
 - **`read_asset` is `lru_cache`d** — restart dev servers after `make web`.
+- **Three boundaries you declare and every other sweep runs.** `static-through-assets` (Python
+  reaches the bundles only through `assets.py`), `headers-through-security` (no request handler
+  writes its own headers), and `chrome-through-brand` (`brand.py` is the only place a masthead, a
+  frame title, an accent or the byline is built). They are `layering` invariants with
+  `applies_to: "*"` in `.github/hygiene/lens-policy.yml`, so each charter scans them over its own
+  files and a crossing in `standup/` is **standup's** find, not yours. Your own run should be silent
+  on all three — the files that *are* the boundary are exempt, and everything else here is
+  downstream of them. **`headers-through-security` points at a file that is not yours**: `security`
+  owns `web/security.py` whole, and you declare the invariant because the surfaces that must obey it
+  are. Declaring a boundary is not claiming the file.
 - **Site SEO** — `make site-check` must stay green; the terms *not* to chase are recorded in the SEO
   notes.
 

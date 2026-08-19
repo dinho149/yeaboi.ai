@@ -1,12 +1,12 @@
 name: Cowork repo setup
 
-# Apply the cowork GitHub half — the thirty-one labels and the four
+# Apply the cowork GitHub half — the thirty-six labels and the four
 # `YEABOI_MODEL_*` repository variables — on every merge that changes what they
 # are derived from.
 #
 # WHY THIS IS A WORKFLOW AND NOT PART OF cd-deploy.
 #
-# `cron/cd-deploy.md` step 3 was meant to do this, and could not: the routine
+# `cron/cd-deploy.md` step 4 was meant to do this, and could not: the routine
 # session it runs in reaches GitHub through a proxy that refuses the calls. It
 # was probed on 2026-08-11 and the answers are recorded in
 # `tests/fixtures/cowork_github_access_live.json` — `GET/PATCH

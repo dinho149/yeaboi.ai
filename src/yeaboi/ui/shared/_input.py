@@ -581,6 +581,11 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         # to consume the event as its wake-only key.
         if ch in ("\x10", "\x0f"):
             return "ctrl+p" if ch == "\x10" else "ctrl+o"
+        if ch == "\x12":
+            # Ctrl+R → refresh an expired subscription token. Bound app-wide (see
+            # read_key) but live only while one IS expired, so it stays free
+            # otherwise.
+            return "ctrl+r"
         if ch == "\x19":
             return "ctrl+y"
         if ch == "\x03":
@@ -617,6 +622,21 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
         from yeaboi.ui.shared._music_bar import skip_duck_entrance
 
         skip_duck_entrance()
+
+    # Ctrl+R jumps to the subscription row in Settings, but only while the token
+    # is actually stale — otherwise it falls through as an ordinary key so nothing
+    # is shadowed for the sake of a state that is almost never on. The jump is a
+    # request, not a navigation: the key can be pressed from inside any mode, and
+    # only the hub knows how to route (see mode_select's pending-jump check).
+    if key == "ctrl+r":
+        from yeaboi.auth_state import subscription_stale
+
+        if subscription_stale():
+            from yeaboi.ui.shared._music_bar import nudge_music_bar, request_settings_jump
+
+            request_settings_jump()
+            nudge_music_bar()
+            return ""
 
     # 'c' toggles the app-wide controls drawer, but ONLY where its tab is showing
     # and nothing is being typed into — a bare letter must not shadow a page's own
@@ -693,6 +713,23 @@ def exit_raw_mode(stdin=None) -> None:
         pass
     finally:
         _saved_term_settings = None
+
+
+def drain_pending_input(stdin=None) -> None:
+    """Discard anything typed but not yet read.
+
+    For the moment a flow hands control back: a paste can overrun its field, and a
+    key pressed while something was still finishing is not an instruction to the
+    screen that appears next. Without this, a leftover keystroke arrives as a
+    command the user never aimed at what is now in front of them.
+
+    Never raises — a terminal that will not flush is not a reason to fail.
+    """
+    try:
+        fd = (stdin or sys.stdin).fileno()
+        termios.tcflush(fd, termios.TCIFLUSH)
+    except Exception:  # noqa: BLE001 - not a tty, or a platform without tcflush
+        pass
 
 
 def enable_bracketed_paste() -> None:

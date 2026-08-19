@@ -6,6 +6,24 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = retro`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering`
+- `duplication`
+
+**This charter is the control.** 2.5k LOC on a fortnightly cadence is exactly the size where a
+detector starts inventing work, which is why cadence is tiered in the first place. All four
+lenses return nothing here today, and that has stayed true through two rounds of new detectors —
+which is the only evidence anyone has that the detectors are detectors.
+
+**A lens that starts finding something every fortnight without the code changing is the fault** — say so in the run log and file it against `platform`; do not
+build it.
+
 ## Focus
 
 - **Tunnel and process lifecycle** — trace every path that opens the loopback server or a tunnel and

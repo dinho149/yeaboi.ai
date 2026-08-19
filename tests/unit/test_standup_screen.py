@@ -1951,3 +1951,48 @@ class TestRunPracticeReviewLoop:
         with StandupStore(db) as store:
             rows = {r["rule"]: r["verdict"] for r in store.load_practice_feedback("s1")}
             assert rows == {"untracked-work": "down", "large-change": "up"}
+
+
+class TestConflictsCard:
+    def _data(self):
+        from yeaboi.agent.state import ConflictCard
+
+        card = ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done on the board while a PR still names it.",
+            severity="medium",
+            entity_id="YEA-12",
+            claims=(("jira", "Done", "YEA-12", "https://j/12"), ("github", "open", "auth fix", "https://g/41")),
+            recommended_action="Reopen YEA-12, or merge the pull request.",
+            members=("Bob",),
+        )
+        rep = StandupReport(date="2026-07-10", member_updates=_report().member_updates, conflicts=(card,))
+        return {"report": rep, "my_name": "Bob", "schedule": {}, "config": {}}
+
+    def test_card_appears_only_when_a_conflict_exists(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        with_card = standup_card_order(self._data())
+        assert "conflicts" in with_card
+        # Team-level state renders before the activity rollup.
+        assert with_card.index("conflicts") < with_card.index("activity")
+        clean = {"report": StandupReport(date="2026-07-10"), "my_name": "Bob"}
+        assert "conflicts" not in standup_card_order(clean)
+
+    def test_teaser_counts_and_names_the_first_entity(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        assert standup_card_teaser("conflicts", self._data()) == "1 disagreement · YEA-12"
+
+    def test_detail_renders_both_claims_and_the_action(self):
+        panel = _build_standup_screen(self._data(), width=100, height=40, view="conflicts")
+        assert isinstance(panel, Panel)
+        console = Console(width=110, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "[medium]" in out
+        assert "jira: Done" in out
+        assert "github: open" in out
+        assert "Reopen YEA-12" in out

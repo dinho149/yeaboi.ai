@@ -76,21 +76,22 @@ announce who is unauthorized.
    The run log's `channel_ignored` is the count of top-level messages that were not disclosure
    posts; it climbing while `item_replies` falls means a thread got sorted into the wrong key.
 
-   **Two replies are actionable and are not proposals.** Both have the leading `#<number>`, and both
-   are told apart by the script, never by you:
+   **One reply is actionable and is not a proposal.** It has the leading `#<number>`, and it is
+   told apart by the script, never by you:
 
-   - `cron/release-promote-ask.md`'s `#<issue> — promote X.Y.Z — <link>` (`PROMOTE_RE`) — a ✅ there
-     applies `release:promote`.
    - the digest's `#<issue> — integration candidate: <provider> — <link>` (`CANDIDATE_RE`), filed by
      `cron/integrations-campaign.md` — a ✅ there applies `integration:approved`, which is what tells
      the next campaign run which provider it is building.
 
-   Neither applies `claude-implement`, and the second one especially must not: `claude.yml` fires a
-   110-turn unattended implement job on anything receiving that label, and a candidate issue
-   describes a week of work across six workstreams' files. In both cases the script confirms against
-   a label only the filing routine can apply, so a crafted issue title routes nothing — and when it
-   cannot confirm, the verb is `ask`. You do not decide any of that; it is the script's plan you
-   carry out.
+   It does not apply `claude-implement`, and must not: `claude.yml` fires a 110-turn unattended
+   implement job on anything receiving that label, and a candidate issue describes a week of work
+   across six workstreams' files. The script confirms against a label only the filing routine can
+   apply, so a crafted issue title routes nothing — and when it cannot confirm, the verb is `ask`.
+   You do not decide any of that; it is the script's plan you carry out.
+
+   **There is no release verb here, on purpose.** Releasing is merging the batch PR
+   ([release-signoff.md](../../release-signoff.md)), no routine may merge, and this relay holds no
+   verb in that direction — a ✅ can approve work *starting*, never work *shipping*.
 
    **Follow `slack_read_thread`'s pagination to the end; never read the first page and stop.** Since
    the digest gained a section per proposal type, one thread carries up to twenty-one item replies
@@ -141,14 +142,22 @@ announce who is unauthorized.
    - post one reply in the message's thread — for an action, exactly what was done ("added
      `claude-implement` to #231", "closed #232", "paused `cowork: security-sweep`"), one line, no
      preamble; for anything else, the answer, the refusal, or the question;
-   - for issue and PR verbs, leave an audit comment on the GitHub item:
-     `approved via Slack ✅ by <who> — <message permalink>` (or `closed via Slack ❌ …`). If no
-     permalink tool is available, the channel name plus the message timestamp identifies the message;
-     use that. The comment is what makes a label applied by a routine auditable as a human decision.
+   - for issue and PR verbs, run the entry's **`audit`** argv — **verbatim, as given**, exactly as
+     you ran its `command`. It is a `gh issue comment` recording who decided what, and it is
+     composed by the helper for the same reason `command` is: this step used to be a sentence
+     telling you to leave a comment, and #172 carries two identical `approved via Slack ✅` ones.
+     An entry whose `audit` is `null` needs none — `refire` is already a comment, and `ask` has no
+     action to audit.
+
+     A rejection's audit comment is the only place the fleet records **why** a proposal died: a ❌
+     used to be a bare `gh issue close`, so the fact reached GitHub and the reason stayed in Slack.
+     The comment ends with `<!-- rejected: reason=slack-veto by=<who> ts=<ts> -->`, which
+     `scripts/cowork_metrics.py` counts. Do not edit or re-word it — a marker you improved is a
+     marker the reader no longer matches.
 
    **Both of these happen only for work this run actually did.** If the `gh` state check in
    Idempotency below says the verb already happened, mark the message and stop there: no thread
-   reply, no audit comment. #172 carries two identical `approved via Slack ✅` comments because a
+   reply, no audit comment — do not run the `audit` argv either. #172 carries two identical `approved via Slack ✅` comments because a
    run that correctly found the label already applied announced it anyway.
 
 5. **Account for the run** — end the session's own output with the helper's `counts` (replies read,

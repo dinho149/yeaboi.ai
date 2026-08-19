@@ -1309,6 +1309,22 @@ def _signal(**over):
     return PracticeSignal(**base)
 
 
+class TestWindowBounds:
+    def test_payload_carries_the_window_verbatim(self):
+        report = _report(
+            activity_window_start="2026-07-12T00:00:00+02:00",
+            activity_window_end="2026-07-13T10:30:00+02:00",
+        )
+        data = island(build_standup_html(report))["report"]
+        assert data["window"] == {"start": "2026-07-12T00:00:00+02:00", "end": "2026-07-13T10:30:00+02:00"}
+
+    def test_window_is_always_present_and_empty_on_a_legacy_report(self):
+        # A report stored before the timeline existed re-exports forever with
+        # empty bounds — the page derives the axis from event times instead.
+        data = island(build_standup_html(_report()))["report"]
+        assert data["window"] == {"start": "", "end": ""}
+
+
 class TestPracticesInExports:
     def _report_with_practices(self, *signals, rollup=(("untracked-work", 1),)):
         return _report(
@@ -1378,3 +1394,68 @@ class TestPracticesInExports:
 
     def test_html_stays_self_contained_with_practices(self):
         assert_self_contained(build_standup_html(self._report_with_practices(_signal())))
+
+
+class TestConflictCards:
+    def _card(self):
+        from yeaboi.agent.state import ConflictCard
+
+        return ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done on the board while a PR still names it.",
+            severity="medium",
+            entity_id="YEA-12",
+            property_name="status",
+            claims=(("jira", "Done", "YEA-12", "https://j/12"), ("github", "open", "auth fix", "https://g/41")),
+            recommended_action="Reopen YEA-12, or merge the pull request.",
+            members=("Bob",),
+        )
+
+    def test_payload_carries_conflicts_and_nav(self):
+        args = export.standup_export_args(_report(conflicts=(self._card(),)))
+        assert ("conflicts", "Conflicts") in args["nav"]
+        cards = args["report"]["conflicts"]
+        assert len(cards) == 1
+        assert cards[0]["fingerprint"] == "YEA-12:status:status_conflict"  # the stable list key
+        assert cards[0]["severity"] == "medium"  # a word, never a colour
+        assert cards[0]["action"] == "Reopen YEA-12, or merge the pull request."
+        assert cards[0]["claims"][0] == {"source": "jira", "value": "Done", "label": "YEA-12", "url": "https://j/12"}
+        assert cards[0]["members"] == ["Bob"]
+
+    def test_clean_day_keeps_the_key_but_not_the_nav(self):
+        # The key is always emitted (the fixture guard needs to see it); the
+        # nav entry only exists when there is a section to jump to.
+        args = export.standup_export_args(_report())
+        assert args["report"]["conflicts"] == []
+        assert ("conflicts", "Conflicts") not in args["nav"]
+
+    def test_markdown_renders_a_conflicts_section(self):
+        md = export.build_standup_markdown(_report(conflicts=(self._card(),)))
+        assert "## Conflicts" in md
+        assert "the board says Done" in md
+        assert "[YEA-12](https://j/12)" in md
+        assert "Reopen YEA-12" in md
+
+    def test_markdown_has_no_section_on_a_clean_day(self):
+        assert "## Conflicts" not in export.build_standup_markdown(_report())
+
+    def test_markdown_neutralises_link_syntax_in_card_text(self):
+        # A PR title is attacker-authored text that travels inside card.detail,
+        # and this Markdown lands on Notion/Slack where [x](url) is a live
+        # link. The bracket syntax must come out neutralised.
+        from yeaboi.agent.state import ConflictCard
+
+        card = ConflictCard(
+            fingerprint="YEA-12:status:status_conflict",
+            title="YEA-12 — the board says Done, but a pull request is still open",
+            detail="YEA-12 is Done, while “[Approve access](https://evil.example)” still names it.",
+            entity_id="YEA-12",
+            claims=(("jira", "Done", "[click](https://evil.example)", ""),),
+            recommended_action="Reopen [YEA-12](https://evil.example) maybe.",
+        )
+        md = export.build_standup_markdown(_report(conflicts=(card,)))
+        assert "[Approve access](https://evil.example)" not in md
+        assert "[click](https://evil.example)" not in md
+        assert "[YEA-12](https://evil.example)" not in md
+        assert "\\[Approve access\\]" in md

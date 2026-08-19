@@ -1,193 +1,199 @@
 # release sign-off
 
-**Summary** — the weekly ritual that turns accumulated pre-releases into an official version
+**Summary** — the ritual that turns the fleet's accumulated PRs into an official version
 
-**The fleet's merges do not ship to users; a human's do.** Every release-worthy merge publishes a
-PyPI **pre-release** (`X.Y.ZrcN`) that `pip install yeaboi` cannot see. An unattended merge stops
-there and accumulates until somebody who has actually run the code says yes; a human's own merge
-cuts the official `X.Y.Z` on the spot, because merging your own PR is that yes.
+**The fleet's PRs do not merge; a human's batch does.** Every fleet PR — the `cowork` label or an
+unattended branch prefix, the same line `scripts/release_lane.py` draws — waits open against
+`main`, individually CI-green, reviewed, and `pr-feedback`-clean. None of it reaches `main`, and
+none of it reaches users, until you fold the waiting PRs into one **batch PR**, install the
+assembled build, exercise it, and merge. The merge is the sign-off. Your own PRs are untouched by
+all of this: a human merge still cuts the official `X.Y.Z` on the spot, exactly as it always did.
 
-This page is the first person's job, start to finish. It takes two commands and about twenty
-minutes, and it applies to a batch the fleet built alone — a stretch of `main` with no human merge
-in it. Note what that does NOT mean: one branch, one version line, so an official release carries
-whatever the fleet merged below it. The lane decides *when* a release is cut, never what is in it.
-Unattended work reaches users the moment a human merges anything — the ritual below is what makes
-sure somebody has looked when the fleet has been shipping alone.
-
-Everything a machine can decide is already decided by the time an rc exists: `make test`,
-`make lint`, `make parity` and `make web-check` all ran, an independent reviewer read the diff, and
-`pr-feedback` held the merge until every finding was answered. What is left is the part no gate
-covers — installing the real wheel and using it.
+This page is that person's job, start to finish. It takes three commands and about twenty minutes.
+Everything a machine can decide is already decided by the time the batch exists: every constituent
+passed `make test`, `make lint`, an independent review, and `pr-feedback` held it until every
+finding was answered — and the batch PR's own CI runs on the assembled tree, the first time the
+constituents are tested *together*. What is left is the part no gate covers — installing the real
+wheel and using it.
 
 ## The week
 
-**Monday 09:00 UTC** — `cron/release-promote-ask.md` checks whether anything is pending. If the
-version line has not moved since the last release, it stays silent. Otherwise it opens one
-`release:promotion` issue and posts one Slack ask to `#yeaboi-claude`, with a thread reply to
-react to.
+**Monday 09:00 UTC** — `cron/release-promote-ask.md` checks whether anything is waiting. If no
+gate-green fleet PRs exist and no batch is open, it stays silent. Otherwise it posts one Slack
+reminder to `#yeaboi-claude` naming what is waiting. It is a reminder only: it cannot assemble,
+label, or merge anything.
 
 **You, whenever suits** —
+
+```bash
+make batch-assemble
+```
+
+It selects every open fleet PR that is gate-green (CI green **and** `pr-feedback` success — a red
+or unreviewed PR is skipped and named), folds them into a `batch/<date>` branch — **one squash
+commit per PR**, so `main`'s history stays one commit per item — pushes it, opens a **PR**
+labelled `release:promotion`, and builds the wheel:
+
+- A constituent that **conflicts** (with `main` or with an earlier constituent) is skipped,
+  reported with the conflicting pair, and left open — its workstream rebases it and it joins the
+  next batch. One bad item never blocks the batch.
+- A constituent that **bumps the version** is skipped too: fleet PRs carry `semver:none` so that
+  `auto-version.yml` bumps nothing on their branches. The batch PR is the one that gets the bump —
+  it targets `main`, so the existing auto-version machinery fires on it, sees the whole batch as
+  its diff, and pushes one bump + one `changelog_data.json` entry onto the batch branch. Put a
+  `semver:*` label on the batch PR to override the level by hand.
+- The `Closes #N` / `Closes YEA-NN` lines from every constituent are carried into the batch PR
+  body, so queued issues and Linear tickets close on your merge exactly as they would have.
+
+Then:
 
 ```bash
 make beta-check
 ```
 
-It **reports and records nothing** — that is `beta-sign-*`'s job, below. It prints four things:
-
-- **`install`** — the exact `pip install --pre yeaboi==X.Y.ZrcN` that works. Backed by a
-  `beta/X.Y.ZrcN` git tag, which `publish-beta.yml` pushes only after the upload succeeds.
-- **the batch** — what changed, from `changelog_data.json`, newest version first.
-- **TEST THIS WEEK** — the baseline (`install`, `boot`), and then **one section per track**.
-- **NOT IN THIS RELEASE** — commits on `main` that are in no pre-release. They ride the next one.
+It **reports and records nothing** — that is `beta-sign-*`'s job, below. It prints the batch PR,
+its head, its constituents, and **TEST THIS BATCH**: the baseline (`install`, `boot`) and one
+section per track, derived from *which paths this batch actually touched*, from the table in
+`scripts/release_surfaces.py`.
 
 ### Two sections, because the fleet does two things
 
 The fleet maintains what already exists, and it builds one provider integration a week. Those are
 different things to sit down and exercise, so they are two sessions:
 
-- **MAINTENANCE** — security, bugs, chores and docs. A checklist derived from *which paths this
-  batch actually touched*, from the table in `scripts/release_surfaces.py`. Every row carries why
-  it is there: these are the failures this repository has already shipped below its own test suite.
-  A CSP that only breaks for the remote teammate. A launchd plist that only breaks at fire time. A
-  Go sidecar that reverts to Python with CI fully green. Most weeks it is three or four rows.
+- **MAINTENANCE** — security, bugs, chores and docs. A checklist derived from the batch's changed
+  paths. Every row carries why it is there: these are the failures this repository has already
+  shipped below its own test suite. A CSP that only breaks for the remote teammate. A launchd
+  plist that only breaks at fire time. A Go sidecar that reverts to Python with CI fully green.
+  Most weeks it is three or four rows.
 - **INTEGRATION: `<provider>`** — one row per angle of the week's campaign, from
-  `INTEGRATION_ANGLES` in the same file, mirroring the reach matrix in `integrations-map.md`. Angles
-  the batch did not reach are printed as `··· <angle> — not wired in this batch` rather than
-  omitted: an angle that vanishes reads as an angle that was not needed.
+  `INTEGRATION_ANGLES` in the same file. Angles the batch did not reach are printed as
+  `··· <angle> — not wired in this batch` rather than omitted: an angle that vanishes reads as an
+  angle that was not needed.
 
-Which section a batch gets is decided by **paths**, not by who wrote the commit — if `tools/jira.py`
-moved, somebody should drive Jira through the modes, whoever changed it and why. The
-`integration(<provider>):` PR-title prefix is a second, corroborating signal, and it is the only one
-that catches a campaign's reach angle, which touches no provider module at all. A forgotten prefix
-therefore costs a redundant checklist row and never a wrong release.
+Which section a batch gets is decided by **paths**, not by who wrote the commit. The
+`integration(<provider>):` PR-title prefix is a second, corroborating signal, read off the batch
+PR's constituent lines. **A track with nothing in it is never asked for** — an empty checklist
+reads as "signed off" when it means "never asked".
 
-**A track with nothing in it is never asked for.** A week with no campaign does not stop for an
-integration session with an empty checklist — an empty checklist reads as "signed off" when it means
-"never asked".
-
-Install it, work through a section, and record that section:
+Install the wheel `batch-assemble` built, work through a section, and record it:
 
 ```bash
 make beta-sign-maintenance
 make beta-sign-integration    # only when there is a campaign in the batch
 ```
 
-Two targets and not `make beta-sign integration`, because Make reads a bare word as a second goal.
-Each writes a per-track marker; the **last required one** also writes the bare `<!-- tested: -->`
-marker that `publish.yml` reads. Then:
+Each writes a per-track marker comment on the batch PR, **pinned to the head sha you tested**; the
+**last required one** also writes the bare completion marker. A signature counts only while that
+sha IS the batch's head — any commit after it (a re-assembly, a late constituent) makes the
+signature stale, because the tree it names is not the tree that would merge. Then:
 
 ```bash
-make beta-promote        # prompts, then labels the ask release:promote
+make beta-promote        # verifies, prints the merge command. STOPS.
+gh pr merge <n> --merge  # yours — the one command nothing here will run for you
 ```
 
-`beta-promote` refuses while a required track is unsigned, and names which. `--yes` overrides and
-says on the way past that it did.
+`beta-promote` refuses while a required track is unsigned at the current head, and names which.
+`--yes` overrides and says on the way past that it did. It also refuses a batch PR that would
+classify as a fleet merge — a stray `cowork` label on it would make your merge release *nothing*,
+silently.
 
-or ✅ the Slack thread reply, which does the same thing through
-`cron/slack-relay.md` → `scripts/cowork_relay.py` → the same `gh issue edit --add-label`.
+**Merge with `--merge`, never squash.** The batch branch is one tidy commit per constituent plus
+the version bump; a merge commit is what keeps `git log <prev-tag>..<tag>` — the release notes,
+the announcement, the next batch's manifest — reading one item per line. A squash collapses the
+week into a single commit and silently degrades all three.
 
-`publish.yml` then cuts `X.Y.Z` **from the commit behind the pre-release you tested**, uploads it,
-tags `vX.Y.Z` there, writes the GitHub Release, and closes the issue with a comment naming the
-commit and anything left behind.
+Your merge is a human-lane push to `main`, so `publish.yml` tests the merged tree, publishes the
+official `X.Y.Z`, tags `v X.Y.Z`, and writes the GitHub Release — from exactly the tree you
+tested, plus only the metadata-only version-bump commit. Afterwards, close the constituents:
 
-Not ready? ❌ closes the issue and means "not this week". Next Monday asks again.
+```bash
+uv run python scripts/batch_assemble.py --close <batch-pr-number>
+```
+
+It refuses on an unmerged batch — closing constituents of a batch that never shipped reads as a
+pile of rejections to the next sweep's dedupe pass — and it refuses on a merged PR that is not a
+batch at all: the number you pass must carry the `<!-- batch: … -->` marker or the
+`release:promotion` label. `- <title> (#N)` is an ordinary bullet in an ordinary PR body, so
+without that check a mistyped number closes a set of unrelated open PRs, which the fleet then
+reads as rejections.
+
+**The batch PR's gate is the hand-test, not a re-review.** Every constituent was reviewed and
+gated individually; requiring a fresh review of the assembled diff would be a rubber stamp with a
+reviewer's name on it. Do not "fix" the batch by adding one.
+
+**But the batch PR is opened ready for review, never as a draft, and that is not a style
+choice.** `claude-review.yml` skips drafts, and `pr_feedback.py` forgives a missing review verdict
+only while a PR *is* a draft — so a draft batch that got flipped ready at sign-off time would fail
+the required `pr-feedback` context with no way to clear it: neither CI nor the review re-fires on
+`ready_for_review`, and the only commit that would re-trigger them moves the head sha and voids
+every signature you just collected. Opening it ready means the review lands on the first CI run,
+says its piece, and holds nothing (this is a human-lane branch, where the review is advisory).
 
 ## What each marker means
 
-The promotion issue carries four kinds of HTML comment. Never write one by hand — every one is
-rendered by `scripts/release_channel.py` or `scripts/beta_signoff.py`.
+Markers live as comments on the batch PR. Never write one by hand — `make beta-sign-*` renders
+them. Only a maintainer's comments count: `beta_signoff.py` filters on `authorAssociation`
+(OWNER / MEMBER / COLLABORATOR), and that filter is the whole authorization — the batch is an
+open PR on a public repository, and anybody can comment on it.
 
-| marker | written by | read by | means |
-|---|---|---|---|
-| `<!-- promote: X.Y.Z -->` | the ask routine | `publish.yml` | the version the human was asked about |
-| `<!-- beta: beta/X.Y.ZrcN -->` | the ask routine | `publish.yml` | the pre-release the ask is about |
-| `<!-- tested: beta/X.Y.ZrcN track=<track> -->` | `make beta-sign-<track>` | `beta_signoff.py` only | one session, run |
-| `<!-- tested: beta/X.Y.ZrcN -->` | the last `beta-sign-*` | `publish.yml`, next week's ask | **every required track** is signed |
+| marker | written by | means |
+|---|---|---|
+| `<!-- tested: <sha> track=<track> -->` | `make beta-sign-<track>` | one session, run, at that head |
+| `<!-- tested: <sha> -->` | the last required `beta-sign-*` | **every required track** is signed at that head |
 
-**The per-track marker is shaped so that neither `publish.yml` nor `TESTED_RE` can match it**, and
-that is the mechanism rather than an accident. Both require ` -->` immediately after the digits, so
-a `track=…` marker is invisible to them — which means a half-signed batch physically cannot be
-promoted by a workflow that only ever learned to read one marker, and `publish.yml` needed no edit
-at all.
-
-It also means **an existing bare marker keeps meaning what it meant**: "I ran this build and signed
-the whole thing off", which under the split is exactly the completion marker. A bare marker seeds
-*every* track's floor, so nothing written before the split has to be reinterpreted.
-
-`publish.yml` prefers `tested:` over `beta:` over `main`, most-trusted first, and never fails for
-want of one — a missing marker means less pinning, not no release.
+The per-track marker is shaped so the bare regex cannot match it — ` -->` must follow the sha
+directly — and that is the mechanism rather than an accident: a half-signed batch physically
+cannot look complete to any reader that only ever learned the bare marker.
 
 ## If you skip a week
 
-Nothing breaks, and nothing is asked twice.
+Nothing breaks, and nothing merges without you.
 
-- **The ask does not repeat itself.** If an ask is already open and nothing new has been published
-  since it was written, Monday's routine posts nothing. One live issue, one Slack prompt, one
-  decision.
-- **When something *has* shipped**, the routine closes the stale ask, opens a fresh one, and — if
-  you signed one off — leads with **only what is new since the rc you signed off on**. The part you
-  already reviewed is still there, collapsed. You re-test the new surface, not all of it.
-- **A track you already signed stays signed while nothing of its shape lands.** Sign integration at
-  `rc7`, and if `rc8` and `rc9` are maintenance-only, integration is still covered at `rc9` — you
-  are not asked to re-run a checklist for work that did not change. One integration commit anywhere
-  in between and you are, because the carry is refused the moment *either* signal says something
-  landed.
-- **If you already tested the newest build**, the ask says so and prints no checklist. Everything
-  merged since is on `main` and in nothing installable — there is a promotion to make, and nothing
-  new to check before making it.
-- **A ✅ on last week's Slack message does nothing.** `is_promotion` in `cowork_relay.py` reads
-  issue state, and a closed ask routes to `ask` rather than `promote`. That hole is real —
-  `publish.yml`'s guard fires on the `labeled` event and never looks at state — and it is closed on
-  the relay side because the stale artifact lives in Slack, where the "never leave two open" rule
-  cannot reach it.
-- **Two ✅s do not release twice.** The second run finds the version already tagged, comments
-  `already released`, closes the duplicate ask and exits green. It is a race, not a fault.
-
-## The two versions, and why only one is installable
-
-`release_channel.py` reports both. They are not the same thing and only one belongs in front of a
-human.
-
-- **`installable`** — the newest `beta/*` tag. A tag exists only if the PyPI upload returned, so
-  this is a file somebody can download.
-- **`latest_prerelease`** — `next_prerelease(HEAD)`: what the *next* release-worthy merge would be
-  numbered. It is a commit count since the last final tag, so every docs, CI and chore merge raises
-  it — including all the ones that publish nothing.
-
-Quote the second as an install command and it 404s, for the one person who did what was asked.
-Routines quote `installable`.
+- **The reminder does not nag.** One Slack line on Mondays when something is waiting; silence
+  otherwise.
+- **The waiting PRs keep their gates.** Each stays individually green (or goes red, visibly, on
+  its own PR) — nothing rots invisibly inside a branch.
+- **A skipped week makes a bigger batch**, and a bigger batch has more conflict surface at
+  assembly. The mitigation is that conflicts land in the assembler's report, named per PR, and a
+  conflicted item simply waits for its workstream's rebase — the batch still ships without it.
+- **A re-assembled batch needs a re-sign.** Signatures pin the head sha, so adding late work to a
+  batch honestly invalidates the sign-off on the old tree. Sign after the batch is final.
 
 ## Escape hatches
 
 ```bash
-# what really exists on PyPI for this batch
-uv run python scripts/release_channel.py --published
+# assemble locally without pushing or opening anything
+uv run python scripts/batch_assemble.py --dry-run
 
-# the batch as the ask sees it (add --since beta/X.Y.ZrcN for the delta)
-uv run python scripts/release_channel.py --manifest --json
-
-# promote with no issue at all — cuts main's HEAD, NOT a pinned pre-release
+# release main's HEAD directly — your own merges normally make this unnecessary
 gh workflow run publish.yml -f version=X.Y.Z
-
-# force a pre-release for a push that did not move the version line
-gh workflow run publish-beta.yml -f force=true
 
 # print the checklist for an arbitrary set of paths
 uv run python scripts/release_surfaces.py src/yeaboi/cli.py frontend/src/app.tsx
 ```
 
+The `workflow_dispatch` hatch releases whatever `main`'s HEAD is. Under the batch model that is
+already a human-verified line, so its old warning ("not a pinned pre-release") no longer applies —
+the caveat now is that it bypasses nothing *except* your own judgement about whether `main` is
+ready to be the release.
+
 ## Manual prerequisites
 
 These fail invisibly and no routine can fix them:
 
-- `publish-beta.yml` needs **its own PyPI trusted-publisher entry** on the `yeaboi` project
-  (workflow `publish-beta.yml`, environment `pypi`), alongside `publish.yml`'s. Without it every
-  pre-release dies at the upload step with `invalid-publisher`.
-- `pr-feedback` must be a required status check on the `main-branch` ruleset, or the unattended
-  merge lane is unarmed.
+- **Merge commits must be allowed** in the repository's settings (Settings → Pull Requests). The
+  batch merge uses `--merge`; if only squash is enabled, the model silently degrades into
+  per-item history loss and mis-counted release notes.
+- `pr-feedback` must be a required status check on the `main-branch` ruleset, or fleet PRs are
+  gate-green without any review having run — and `batch-assemble` will happily fold them in.
+- `publish-beta.yml` still needs **its own PyPI trusted-publisher entry** (workflow
+  `publish-beta.yml`, environment `pypi`) while it remains in service. Under the batch model the
+  pre-release channel is redundant — fleet work is tested from the locally built wheel, and every
+  merge to `main` is verified — and it is slated for retirement once a full batch cycle has run.
 
 ## Related
 
 - [definition-of-done.md](definition-of-done.md) — what has to be true before a PR opens at all
-- [house-rules.md](house-rules.md) — which work merges unattended and which asks first
-- `cron/release-promote-ask.md` · `cron/slack-relay.md` · `cron/shipped-standup.md`
+- [house-rules.md](house-rules.md) — which work merges how, and why the fleet never merges
+- `cron/release-promote-ask.md` · `cron/shipped-standup.md` · `scripts/batch_assemble.py`

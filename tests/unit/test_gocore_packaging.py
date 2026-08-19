@@ -101,6 +101,25 @@ class TestMethodSetLockstep:
         )
 
 
+class TestAnalysisPrivacyInvariant:
+    """The Go analysis package must never log.
+
+    Page BODIES and item titles/bodies cross the wire as analysis.* params,
+    and the privacy invariant says input content never reaches a log line.
+    The package upholds it by importing no logging facility at all — a
+    convention every file header states but nothing enforced until here.
+    """
+
+    def test_go_analysis_package_imports_no_logger(self):
+        for path in sorted((REPO / "go" / "internal" / "analysis").glob("*.go")):
+            imports = re.findall(r'^\s*(?:import\s+)?(?:\w+\s+|\.\s+|_\s+)?"([^"]+)"', path.read_text("utf-8"), re.M)
+            offenders = [name for name in imports if name == "log" or name.startswith("log/")]
+            assert not offenders, (
+                f"{path.name} imports {offenders} — the analysis package receives page bodies as "
+                "params and must not log; counts and rule labels only, and never in error strings"
+            )
+
+
 class TestSchemaGuardLockstep:
     """The Go schema guard's ceiling must track ``sessions.CURRENT_SCHEMA_VERSION``.
 

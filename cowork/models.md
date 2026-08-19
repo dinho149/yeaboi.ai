@@ -51,6 +51,9 @@ tier belongs in one place. The rest do model-worthy work in their own session an
 |---|---|---|
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
 | `cron/integrations-campaign.md` | `deep` | Not a survey. It reads one provider's API docs, writes a client against them, and appends that provider to six other workstreams' registration sites — the one lane that adds capability, and the one that edits outside its own charter |
+| `cron/go-migration-campaign.md` | `heavy` | Long-running unattended implementation is exactly what the tier exists for: many-session waves behind a byte-parity gate, never security judgement. One caveat: W8 ports `redaction.py` mechanically behind the byte gate — porting, not security scouting; if a Fable reroute is ever observed mid-wave, the fix is a one-line flip to `deep` here |
+| `cron/go-migration-daily.md` | `fast` | Runs one script and posts what it printed; every number in the message was made in Python |
+| `events/go-migration-wave-merged.md` | `fast` | Reads two fields, runs one script, posts what it printed |
 | the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
 | `cron/shipped-standup.md` | `standard` | Reads a day of merged PRs and their checks, and writes the one-line-each trace of what shipped |
 | `cron/digest.md` | `standard` | Buckets ~20 issue titles by type and ranks each bucket into one message |
@@ -58,6 +61,7 @@ tier belongs in one place. The rest do model-worthy work in their own session an
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
 | `cron/release-promote-ask.md` | `fast` | Runs one script and posts what it printed; the batch, the version and the go/no-go are all decided in Python |
 | `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
+| `cron/retune.md` | `standard` | Reads a month of failure markers and decides whether three of a kind is a pattern or a coincidence — bounded judgement over a known input, and the one routine whose output edits `cowork/` |
 | `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
 | `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done and write a Notion page from a merged PR; the daily standup carries the Slack line |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |

@@ -6,6 +6,15 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = reporting`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering`
+
 ## Focus
 
 - **Renderer agreement** — diff what the `.pptx` renderer emits against what the HTML deck renders

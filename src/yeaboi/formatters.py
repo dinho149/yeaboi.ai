@@ -318,9 +318,12 @@ def render_stories_table(stories: list[UserStory], features: list[Feature], *, c
             if not compact:
                 story_text.append("\n")
                 for ac in story.acceptance_criteria:
-                    story_text.append(f"\n  Given {ac.given}", style="dim")
-                    story_text.append(f"\n  When {ac.when}", style="dim")
-                    story_text.append(f"\n  Then {ac.then}", style="dim")
+                    if ac.text:
+                        story_text.append(f"\n  - {ac.text}", style="dim")
+                    else:
+                        story_text.append(f"\n  Given {ac.given}", style="dim")
+                        story_text.append(f"\n  When {ac.when}", style="dim")
+                        story_text.append(f"\n  Then {ac.then}", style="dim")
 
                 # Definition of Done — applicable items shown normally,
                 # non-applicable items struck through so the reader can see

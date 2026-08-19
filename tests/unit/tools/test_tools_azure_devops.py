@@ -682,6 +682,99 @@ class TestAzdevopsFetchActiveIteration:
         assert "No active iteration" in result
 
 
+class TestFetchTeamIterationsMeta:
+    """Time-frame derivation for the plain iterations helper (not a @tool)."""
+
+    @staticmethod
+    def _iteration(name: str, start, finish, path: str = ""):
+        return SimpleNamespace(
+            name=name,
+            path=path or f"\\MyProject\\{name}",
+            attributes=SimpleNamespace(start_date=start, finish_date=finish),
+        )
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_time_frames_derived_from_aware_dates(self, mock_clients, *_):
+        from datetime import datetime, timedelta
+
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+        mock_work = MagicMock()
+        mock_clients.return_value = (MagicMock(), mock_work)
+        now = datetime.now(UTC)
+        mock_work.get_team_iterations.return_value = [
+            self._iteration("Sprint 1", now - timedelta(days=21), now - timedelta(days=8)),
+            self._iteration("Sprint 2", now - timedelta(days=7), now + timedelta(days=7)),
+            self._iteration("Sprint 3", now + timedelta(days=8), now + timedelta(days=21)),
+        ]
+
+        items = fetch_team_iterations_meta()
+        assert [it["time_frame"] for it in items] == ["past", "current", "future"]
+        assert items[1]["name"] == "Sprint 2"
+        assert items[1]["path"] == "\\MyProject\\Sprint 2"
+        # Dates are plain "YYYY-MM-DD" strings.
+        assert items[1]["start_date"] == (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        assert items[1]["finish_date"] == (now + timedelta(days=7)).strftime("%Y-%m-%d")
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_undated_iteration_counts_as_future(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+        mock_work = MagicMock()
+        mock_clients.return_value = (MagicMock(), mock_work)
+        mock_work.get_team_iterations.return_value = [self._iteration("Backlog", None, None)]
+
+        items = fetch_team_iterations_meta()
+        assert items == [
+            {
+                "name": "Backlog",
+                "path": "\\MyProject\\Backlog",
+                "time_frame": "future",
+                "start_date": "",
+                "finish_date": "",
+            }
+        ]
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_naive_sdk_datetimes_do_not_raise(self, mock_clients, *_):
+        # Regression: the SDK can return tzinfo-less datetimes; comparing one
+        # against the aware `now` used to raise TypeError. _aware coerces them.
+        from datetime import datetime, timedelta
+
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+        mock_work = MagicMock()
+        mock_clients.return_value = (MagicMock(), mock_work)
+        naive_now = datetime.now(UTC).replace(tzinfo=None)
+        mock_work.get_team_iterations.return_value = [
+            self._iteration("Sprint 1", naive_now - timedelta(days=21), naive_now - timedelta(days=8)),
+            self._iteration("Sprint 2", naive_now - timedelta(days=7), naive_now + timedelta(days=7)),
+        ]
+
+        items = fetch_team_iterations_meta()
+        assert [it["time_frame"] for it in items] == ["past", "current"]
+        assert items[0]["finish_date"] == (naive_now - timedelta(days=8)).strftime("%Y-%m-%d")
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_config_error_propagates_to_caller(self, mock_clients, *_):
+        # The helper raises (callers degrade) — no error-string swallowing.
+        import pytest
+
+        from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+        mock_clients.side_effect = ValueError("AZURE_DEVOPS_ORG_URL is not set")
+        with pytest.raises(ValueError, match="AZURE_DEVOPS_ORG_URL"):
+            fetch_team_iterations_meta()
+
+
 class TestGetTools:
     def test_returns_thirty_tools(self):
         tools = get_tools()

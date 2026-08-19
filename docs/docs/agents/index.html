@@ -68,15 +68,16 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
   <main class="docs-content">
     <article>
       <h1>Agents <span class="beta-pill">Beta</span></h1>
-      <p class="lede">The other half of your team doesn't come to standup. The Agents family answers the three questions nobody else is asking about your AI coding agents: what they cost, what they did, and what they can reach.</p>
+      <p class="lede">The other half of your team doesn't come to standup. The Agents family answers the questions nobody else is asking about your AI coding agents: what they cost, how much of that was avoidable, what they did, and what they can reach.</p>
       <p><strong>Beta.</strong> The Agents family is new, and every number it shows is computed from telemetry your agents happen to leave behind. Treat it as an indicator, not an audit.</p>
 
       <h2 id="the-split">Two audiences, one command</h2>
       <p>yeaboi opens on a landing split — <em>Who are we working with today?</em> — with a world-card for each side. <strong>Humans</strong> opens the scrum modes: planning, standups, retros, poker, reviews. <strong>Agents</strong> opens this family. The split is always shown on a fresh launch; the side you picked last is preselected, never auto-skipped, so neither family can become invisible. Inside a menu, <kbd>esc</kbd> returns to the split and <kbd>q</kbd> quits.</p>
 
-      <h2 id="modes">The three modes</h2>
+      <h2 id="modes">The four modes</h2>
       <ul>
         <li><a href="/docs/agents/usage.html"><strong>Usage</strong></a> — tokens, cache traffic, and spend per model, per project and per day.</li>
+        <li><a href="/docs/agents/advisor.html"><strong>Advisor</strong></a> — the recoverable share of that spend: re-read waste priced in dollars, prompt-cache health, prefix churn.</li>
         <li><a href="/docs/agents/standup.html"><strong>Standup</strong></a> — a daily digest of the sessions your agents worked and the commits and PRs they authored.</li>
         <li><a href="/docs/agents/security.html"><strong>Security</strong></a> — an audit of the setup behind them: permissions, MCP servers, secrets exposure, risky commands.</li>
       </ul>
@@ -92,8 +93,9 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       <p>The one narrow exception is your own configuration: a finding may quote a permission mode or an allow rule from your settings file, because &ldquo;an allow rule auto-approves bash&rdquo; is not actionable without naming the rule — and your settings are not session content.</p>
 
       <h2 id="surfaces">Every surface</h2>
-      <p>Like the rest of yeaboi, the Agents family is not TUI-only. The same three engines back the TUI cards, the <code>yeaboi agents</code> subcommands, the <code>agents_*</code> MCP tools, and the <code>agents-usage</code>, <code>agents-standup</code> and <code>agents-security</code> plugin skills.</p>
+      <p>Like the rest of yeaboi, the Agents family is not TUI-only. The same engines back the TUI cards, the <code>yeaboi agents</code> subcommands, the <code>agents_*</code> MCP tools, and the <code>agents-usage</code>, <code>agents-advisor</code>, <code>agents-standup</code> and <code>agents-security</code> plugin skills.</p>
       <pre><code>yeaboi agents cost       # what they cost
+yeaboi agents advisor    # what was avoidable
 yeaboi agents standup    # what they did
 yeaboi agents security   # what they can reach</code></pre>
       <p>See the <a href="/docs/cli-reference.html">CLI Reference</a> for every flag.</p>
@@ -128,6 +130,7 @@ yeaboi agents security   # what they can reach</code></pre>
       <ul>
         <li><a href="/docs/agents/index.html" aria-current="page">Overview</a></li>
         <li><a href="/docs/agents/usage.html">Agent Usage</a></li>
+        <li><a href="/docs/agents/advisor.html">Agent Advisor</a></li>
         <li><a href="/docs/agents/standup.html">Agent Standup</a></li>
         <li><a href="/docs/agents/security.html">Agent Security</a></li>
       </ul>

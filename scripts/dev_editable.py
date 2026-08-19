@@ -51,6 +51,11 @@ REPORT = StandupReport(
         "Ada is unblocked on staging; Grace is still waiting on a review for the billing work."
     ),
     activity_window="last 24 hours",
+    # Timestamped bounds + evidence so the activity timeline has a real day to
+    # draw: a burst that clusters, a PR with child commits, a review, an
+    # undated WIP row (the "+1 undated" note), and a doc edit.
+    activity_window_start="2026-08-01T00:00:00+00:00",
+    activity_window_end="2026-08-01T18:00:00+00:00",
     member_updates=(
         MemberUpdate(
             name="Ada Lovelace",
@@ -61,7 +66,46 @@ REPORT = StandupReport(
             ticketing_summary="Closed YB-12 and moved YB-14 into review.",
             ticketing_activity_count=2,
             ticketing_evidence=(
-                ActivityEvidence(kind="issue", key="YB-12", title="Login redirect loop", status="Done"),
+                ActivityEvidence(
+                    kind="issue",
+                    key="YB-12",
+                    title="Login redirect loop",
+                    status="Done",
+                    timestamp="2026-08-01T15:40:00",
+                ),
+                ActivityEvidence(kind="wip", key="YB-14", title="Session expiry", status="In Progress"),
+            ),
+            code_summary="Merged the login PR after a morning of fixes.",
+            code_activity_count=4,
+            code_evidence=(
+                ActivityEvidence(
+                    kind="pr",
+                    key="#91",
+                    title="Fix login redirect",
+                    # GitHub-shaped on purpose: the timeline reads the pull-request
+                    # number out of `/pull/<n>` to thread this PR to Grace's review
+                    # of it below. An invented path draws no thread.
+                    url="https://example.invalid/acme/web/pull/91",
+                    repository="yeaboi/web",
+                    status="merged",
+                    timestamp="2026-08-01T14:05:00",
+                    children=(
+                        ActivityEvidence(
+                            kind="commit",
+                            key="aaa1",
+                            title="Add redirect guard",
+                            url="https://example.invalid/c/aaa1",
+                            timestamp="2026-08-01T09:12:00",
+                        ),
+                        ActivityEvidence(
+                            kind="commit",
+                            key="bbb2",
+                            title="Fix the Safari case",
+                            url="https://example.invalid/c/bbb2",
+                            timestamp="2026-08-01T09:14:30",
+                        ),
+                    ),
+                ),
             ),
         ),
         MemberUpdate(
@@ -70,6 +114,35 @@ REPORT = StandupReport(
             outlook="Likely to continue on billing reconciliation.",
             code_summary="Opened one PR against yeaboi/web; reviewed three others.",
             code_activity_count=4,
+            code_evidence=(
+                ActivityEvidence(
+                    kind="review",
+                    key="review:91:grace",
+                    title="approved PR #91: Fix login redirect",
+                    url="https://example.invalid/acme/web/pull/91#pullrequestreview-7",
+                    repository="yeaboi/web",
+                    status="approved",
+                    timestamp="2026-08-01T11:20:00",
+                ),
+                ActivityEvidence(
+                    kind="commit",
+                    key="ccc3",
+                    title="Start reconciliation job",
+                    url="https://example.invalid/c/ccc3",
+                    timestamp="2026-08-01T16:45:00",
+                ),
+            ),
+            documentation_summary="Updated the billing runbook.",
+            documentation_activity_count=1,
+            documentation_evidence=(
+                ActivityEvidence(
+                    kind="page",
+                    key="1892385692",
+                    title="Billing runbook",
+                    url="https://example.invalid/wiki/billing",
+                    timestamp="2026-08-01T13:05:00",
+                ),
+            ),
         ),
     ),
     warnings=("Confluence was not reachable — documentation activity is missing from this run.",),

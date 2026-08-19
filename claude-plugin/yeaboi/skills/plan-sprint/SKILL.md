@@ -67,6 +67,9 @@ moving, never rush.
 6. **Offer follow-ups.** The plan is saved as a session (`data.session_id`).
    Offer to:
    - export it to a file (`plan_export`, markdown or HTML),
+   - export a Product Requirements Document (`plan_export` with
+     `format: "prd"`, or `plan_publish` with `content: "prd"` — one extra
+     LLM call writes the prose sections; check `llm_mode` for fallback runs),
    - publish it to the user's docs (`plan_publish`, `destination: "notion"` or
      `"confluence"` — confirm before publishing),
    - push it into the tracker (`plan_sync`, `destination: "jira"` or

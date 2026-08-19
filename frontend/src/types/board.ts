@@ -360,3 +360,67 @@ export interface PokerState {
   /** Last tracker-write error. Rendered to the host only. */
   notice: string;
 }
+
+
+// ── Ship board ─────────────────────────────────────────────────────────────
+// A read-only projection of one supervised story → PR run (`ship/board.py`).
+// Guests watch: the phase checklist, the agent's live activity, the scrubbed
+// diff, the validation verdict. Everything sensitive is scrubbed server-side.
+
+/** One progress component — the five-phase checklist. Raw `analysis_component`. */
+export interface ShipPhaseEvent {
+  component_id: string;
+  label: string;
+  status: string;
+  detail?: string;
+}
+
+/** One safe agent-activity entry. Never carries a tool input or command output. */
+export interface ShipActivity {
+  /** `text` (an assistant line), `tool` (a tool name), or `system` (the model). */
+  kind: string;
+  text?: string;
+  name?: string;
+}
+
+/** The deterministic validation verdict shown at the gate. Tail is scrubbed. */
+export interface ShipValidationView {
+  configured: boolean;
+  command: string;
+  passed: boolean;
+  exit_code: number;
+  output_tail: string;
+}
+
+/** A watcher on the board — self-asserted name/avatar, no pid crosses the wire. */
+export interface ShipWatcher {
+  name: string;
+  avatar: string;
+}
+
+/** The full ship-board snapshot. */
+export interface ShipState {
+  revision: number;
+  run_id: string;
+  /** planned | running | awaiting_approval | approved | rejected | cancelled | failed | starting */
+  status: string;
+  story: string;
+  project: string;
+  phases: ShipPhaseEvent[];
+  activity: ShipActivity[];
+  diff_stat: string;
+  /** The scrubbed patch. Rendered as text content, never as markup. */
+  diff_text: string;
+  validation: ShipValidationView;
+  cost_usd: number;
+  /** `[kind, severity, label]` triples — labels only, never transcript content. */
+  findings: string[][];
+  pr_url: string;
+  /** `''` (open) | approved | rejected */
+  gate_resolution: string;
+  gate_comment: string;
+  rejection_count: number;
+  warnings: string[];
+  branch: string;
+  presence: ShipWatcher[];
+}
