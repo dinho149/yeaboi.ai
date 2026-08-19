@@ -1,9 +1,8 @@
 /**
  * Pointer drag.
  *
- * jsdom has no layout, so the two things a drag reads from the document —
- * `elementFromPoint` and each card's rectangle — are stubbed with a deliberate
- * fake geometry. That is not a weakened test: the arithmetic that decides
+ * jsdom has no layout, so the rectangles the drag measures once on pickup —
+ * each column's and each card's — are stubbed with a deliberate fake geometry. That is not a weakened test: the arithmetic that decides
  * *which column* and *which index* is exactly what is under test here, and it
  * is the part a browser would not tell you was wrong.
  */
@@ -61,8 +60,21 @@ function installLayout(): void {
       ({ left: 0, right: 300, top: index * 50, bottom: index * 50 + 50, width: 300, height: 50 }) as DOMRect;
   });
 
-  document.elementFromPoint = ((x: number) =>
-    screen.getByTestId(x < 300 ? 'col-went_well' : 'col-demos')) as typeof document.elementFromPoint;
+}
+
+/**
+ * Run the drag's frame as soon as it is asked for.
+ *
+ * Pointer moves are coalesced into one `requestAnimationFrame`, which jsdom
+ * defers — so without this the assertions read the DOM a frame before the drag
+ * has done anything with the move that was just dispatched.
+ */
+function runFramesInline(): void {
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    cb(0);
+    return 0;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => undefined);
 }
 
 /** A pointer event jsdom will dispatch. MouseEvent carries the coordinates. */
@@ -88,6 +100,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('useCardDrag', () => {
   function setup() {
     const onMove = vi.fn();
+    runFramesInline();
     render(<Harness onMove={onMove} />);
     installLayout();
     return { onMove, grip: screen.getByRole('button', { name: 'grip' }) };
@@ -150,11 +163,12 @@ describe('useCardDrag', () => {
     // cancelled", which reads as though the board rejected the move. Nothing
     // went wrong — the card was simply released nowhere.
     const { onMove, grip } = setup();
-    document.elementFromPoint = (() => document.body) as typeof document.elementFromPoint;
 
+    // x = 700 is past the right edge of both columns — the gap beside the
+    // board, the toolbar, anywhere that is not a column.
     fire(grip, pointer('pointerdown', 10, 10));
-    fire(document, pointer('pointermove', 400, 20));
-    fire(document, pointer('pointerup', 400, 20));
+    fire(document, pointer('pointermove', 700, 20));
+    fire(document, pointer('pointerup', 700, 20));
 
     expect(onMove).not.toHaveBeenCalled();
     expect(screen.getByTestId('say').textContent).toBe('Dropped outside a column. The card did not move.');

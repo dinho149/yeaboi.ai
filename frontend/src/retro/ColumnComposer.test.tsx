@@ -57,24 +57,21 @@ describe('ColumnComposer', () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it('submits on ⌘-Enter but not on a bare Enter', async () => {
+  it('submits on Enter and keeps Shift-Enter for a second line', async () => {
     const { user, onSubmit } = setup();
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
 
-    // Bare Enter has to insert a newline: cards are routinely multi-line, and a
-    // submitting Enter would make the second line unreachable.
-    await user.type(box(), 'two{Enter}lines');
+    await user.type(box(), 'two{Shift>}{Enter}{/Shift}lines');
     expect(onSubmit).not.toHaveBeenCalled();
 
-    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    await user.keyboard('{Enter}');
     expect(onSubmit).toHaveBeenCalledWith('two\nlines');
   });
 
   it('stays open and focused after adding, ready for the next card', async () => {
     const { user, onSubmit } = setup();
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
-    await user.type(box(), 'first');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(box(), 'first{Enter}');
 
     // A retro is written in bursts. Re-opening the box between each card was
     // the whole cost of the change, so this is the case that pays for it.
@@ -82,24 +79,24 @@ describe('ColumnComposer', () => {
     expect(box()).toHaveProperty('value', '');
     expect(document.activeElement).toBe(box());
 
-    await user.type(box(), 'second');
-    await user.keyboard('{Control>}{Enter}{/Control}');
+    await user.type(box(), 'second{Enter}');
     expect(onSubmit).toHaveBeenLastCalledWith('second');
   });
 
-  it('disables Add until there is more than whitespace', async () => {
-    const { user } = setup();
+  it('will not post whitespace', async () => {
+    const { user, onSubmit } = setup();
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
-    expect(screen.getByRole('button', { name: 'Add' })).toHaveProperty('disabled', true);
 
-    await user.type(box(), '   ');
-    expect(screen.getByRole('button', { name: 'Add' })).toHaveProperty('disabled', true);
+    await user.type(box(), '   {Enter}');
+    expect(onSubmit).not.toHaveBeenCalled();
+    // Still open, so the Enter that did nothing did not also cost the draft.
+    expect(box()).toBeTruthy();
 
-    await user.type(box(), 'a real card');
-    expect(screen.getByRole('button', { name: 'Add' })).toHaveProperty('disabled', false);
+    await user.type(box(), 'a real card{Enter}');
+    expect(onSubmit).toHaveBeenCalledWith('   a real card');
   });
 
-  it('collapses on Escape and on Cancel, discarding the draft', async () => {
+  it('collapses on Escape, discarding the draft', async () => {
     const { user, onSubmit } = setup();
 
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
@@ -109,8 +106,7 @@ describe('ColumnComposer', () => {
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
     expect(box()).toHaveProperty('value', '');
 
-    await user.type(box(), 'nor this');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.type(box(), 'nor this{Escape}');
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(onSubmit).not.toHaveBeenCalled();
   });

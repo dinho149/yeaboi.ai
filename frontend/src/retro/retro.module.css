@@ -45,39 +45,61 @@
 .offline { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-.identity { display: flex; align-items: center; gap: var(--s3); }
+/* `relative` is load-bearing: the Room's roster is positioned against this
+   cluster, so its cards line up with the chip above them. `--room-lead` is how
+   far in the chip's own avatar sits, which is what they line up *with*. */
+.identity {
+  position: relative;
+  --room-lead: var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
 
+/* Poker's chip, verbatim: nothing at rest, a ground only under the pointer.
+   It is your own name, not a control you are meant to find. */
 .meChip {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
   min-height: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  padding: var(--s1) var(--s2) var(--s1) var(--s1);
+  border: 1px solid transparent;
   border-radius: var(--r-pill);
+  background: none;
   color: var(--text);
   font: inherit;
-  font-size: var(--fs-s);
+  font-size: var(--fs-xs);
   cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
-.meChip:hover { border-color: var(--accent); }
-.meName { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pen { color: var(--muted); font-size: var(--fs-2xs); }
+.meChip:hover {
+  background: var(--panel-2);
+  border-color: var(--hairline);
+}
+.meName {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pen { display: inline-flex; color: var(--muted); }
 .roomCount { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-.viewCtl { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-.lockBanner, .musicBanner {
+.musicBanner {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
-  border-bottom: 1px solid var(--line);
-}
-.lockBanner { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-.musicBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -88,87 +110,213 @@
   cursor: pointer;
 }
 
+/* Bottom middle, clear of the dock on the right. Glass rather than a panel:
+   it sits over the columns and must not read as another one. */
+.lockNote {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+  animation: lockNoteIn 220ms var(--ease) both;
+}
+/* The two ways a board goes read-only, in the colours the rest of the board
+   already uses for them: the host's lock is a warning, a past retro is the
+   accent the picker goes when you step back to one. */
+.lockNoteLocked { color: var(--warn); }
+.lockNotePast { color: var(--accent2); }
+@supports not (backdrop-filter: blur(1px)) {
+  .lockNote { background: var(--panel); }
+}
+
+@keyframes lockNoteIn {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+.lockNoteOut { animation: lockNoteOut 180ms var(--ease) both; }
+
+@keyframes lockNoteOut {
+  to {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
 .popNote { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
-/* ── Carried-over review strip ────────────────────────────────────────── */
-.carried { border-bottom: 1px solid var(--line); background: var(--panel); }
-.carriedHead { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-.carriedToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: var(--tap);
-  padding: 0;
-  background: none;
-  border: 0;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-s);
-  font-weight: 600;
-  cursor: pointer;
+/* ── Switching sprints ────────────────────────────────────────────────── */
+/*
+ * One board leaves, the next arrives. Only ever after a switch — the classes
+ * are not set on the first render, so opening the board still paints nothing.
+ * The columns move together rather than card by card: they are all being
+ * replaced at once, and a stagger would read as a board loading.
+ */
+.boardOut {
+  animation: sprintOut 170ms var(--ease) both;
+  pointer-events: none;
 }
-.chevron { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-.chevronOpen { transform: rotate(90deg); }
-.carriedProgress { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-.carriedBody { padding: 0 var(--s4) var(--s3); }
-.carriedBody[hidden] { display: none; }
-.carriedHint { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-.carriedList { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-.carriedItem {
+.boardIn {
+  animation: sprintIn 220ms var(--ease) both;
+}
+
+@keyframes sprintOut {
+  to {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes sprintIn {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* ── The facilitator's column ─────────────────────────────────────────── */
+/*
+ * The kit's rail carries the material; this is what retro adds to it. Nothing
+ * in here is framed: a rail of boxes beside four columns of cards is twice the
+ * furniture for a quarter of the content.
+ */
+.boardLayout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.rail {
+  flex: none;
+  width: 16rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  padding: var(--s3) var(--s4) var(--s3) var(--s2);
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+.railPast { color: var(--accent2); }
+
+/* The rail arrives with the board it belongs to. Sections in turn, rows within
+   a section in turn, so a sprint switch reads as the controls being replaced
+   rather than the list flickering. */
+.rail > section { animation: railIn 240ms var(--ease) both; }
+.rail > section:nth-child(2) { animation-delay: 60ms; }
+.rail > section:nth-child(3) { animation-delay: 120ms; }
+.rail > section:nth-child(4) { animation-delay: 180ms; }
+
+/* Keyed on which retro is open, so it replays on a switch and never on a poll. */
+.railSwap { animation: railIn 240ms var(--ease) both; }
+
+@keyframes railIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* The picker between its two arrows, filling the rail's width. */
+.timeSwitch {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+/* The rail is borderless, so the picker is too — it is a name you can change,
+   not a field you fill in. */
+.timePick {
+  flex: 1;
+  min-width: 0;
+}
+/* The underline goes with every other border in the rail — it is a name you
+   can change, not a field you fill in. */
+.timePick button {
+  width: 100%;
+  padding: 0 var(--s2);
+  min-height: var(--tap);
+  border-radius: var(--r-s);
+  box-shadow: none;
+  font-size: var(--fs-m);
+  font-weight: 600;
+}
+.timePick button:hover {
+  box-shadow: none;
+  background: var(--panel-2);
+}
+
+/* A carried item is a row, like everything else in the rail. Its status is the
+   dot the kit already puts at the head of one. */
+.carriedRow {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  flex: 1 1 320px;
-  padding: var(--s2) var(--s3);
-  background: var(--card);
-  border: 1px solid var(--line);
-  /* The status colour rides on the left edge, so the four states are
-     distinguishable at a glance without relying on the text alone. */
-  border-left-width: 3px;
-  border-radius: var(--r-s);
-  font-size: var(--fs-s);
+  min-height: var(--tap);
+  padding: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--muted);
 }
 .carriedText { flex: 1; min-width: 0; }
-.carriedSelect {
-  min-height: var(--tap);
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  font: inherit;
-  font-size: var(--fs-xs);
+.carriedPick { flex: none; }
+.carriedPick button {
+  padding: 0;
+  min-height: 0;
+  box-shadow: none;
+  color: var(--dim);
+  font-size: var(--fs-2xs);
 }
-.statusPending { border-left-color: var(--line); }
-.statusDone { border-left-color: var(--ok); }
-.statusProgress { border-left-color: var(--info); }
-.statusCarried { border-left-color: var(--warn); }
-.statusMuted { border-left-color: var(--muted); opacity: 0.7; }
+.carriedPick button:hover { box-shadow: none; background: none; color: var(--text); }
+.dot_done { background: var(--ok); }
+.dot_in_progress { background: var(--info); }
+.dot_carried_over { background: var(--warn); }
+.dot_not_relevant { opacity: 0.4; }
 
-/* ── Walkthrough bar ──────────────────────────────────────────────────── */
-.focusBar {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  padding: var(--s2) var(--s4);
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-  border-bottom: 1px solid var(--line);
-}
-.focusStep {
-  width: var(--tap);
-  height: var(--tap);
+/* Stands in for an avatar on the "everyone" row, so it lines up with the faces
+   under it rather than sitting a glyph-width to the left. */
+.everyoneMark {
+  flex: none;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
 }
-.focusStep:disabled { opacity: 0.4; cursor: default; }
-.focusWho { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-.focusName { font-size: var(--fs-m); }
-.focusCount { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+.railNote { margin: var(--s2); color: var(--dim); font-size: var(--fs-xs); }
+.railName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.railCount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.railAction { display: flex; flex-direction: column; gap: var(--s2); }
+
+/* Under a laptop's width there is no room beside the board, so it goes above it
+   and lies down. */
+@media (max-width: 1099px) {
+  .boardLayout { flex-direction: column; }
+  /* Still above the board, where it is beside on a wide screen — a facilitator
+     scrolling past four columns of cards to reach the controls is not it. */
+  .rail {
+    order: -1;
+    width: auto;
+    overflow-y: visible;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s4);
+    padding: var(--s3) var(--s4) 0;
+  }
+  .rail > * { flex: 1 1 14rem; }
+}
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
 .board {
@@ -177,23 +325,18 @@
      so the columns would grow past the viewport instead of scrolling inside it. */
   min-height: 0;
   display: grid;
-  /* Weighted by card count — see the `weights` memo in Board.tsx. The fallback
-     is the old equal split, so the board still lays out if the style attribute
-     is ever missing. `minmax(0, …)` in each track is what stops a long
-     unbroken word from forcing a column wider than its share. */
-  grid-template-columns: var(--col-weights, repeat(4, minmax(0, 1fr)));
+  /* Four equal columns. `minmax(0, …)` is what stops a long unbroken word from
+     forcing one wider than its share. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s3);
-  padding: var(--s3) var(--s4);
+  padding: var(--s3) var(--s5);
   /* Plus the home-indicator inset: with the board-wide composer gone, the
      columns are the lowest thing on the screen. */
   padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
   overflow: hidden;
-  transition: grid-template-columns var(--dur-base) var(--ease);
 }
 
 @media (max-width: 1099px) {
-  /* Weights are a wide-screen affordance only: in a 2x2 they would make the
-     two rows different heights for no reason. */
   .board { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
@@ -240,30 +383,24 @@
 
 /* ── Column ───────────────────────────────────────────────────────────── */
 /*
- * The four columns used to be identical — same border, same surface, same
- * heading weight — so their meaning was carried by the words alone. At a
- * glance, which is how a facilitator reads a board while somebody is talking,
- * the board was an undifferentiated grid.
- *
- * `--col-tone` and `--col-wash` are set per column by Column.tsx from the typed
- * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
- * four saturated columns would be a traffic jam, and the cards are the content.
+ * A region, not an object: no fill, no border, no shadow. The cards are the
+ * only raised thing on the board, which is what lets a stack of them read as a
+ * stack. `--col-tone` is set per column by Column.tsx from the typed map in
+ * gridTone.ts, and says the column's identity once, on its head.
  */
 .column {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--col-wash, var(--felt));
-  border: 1px solid var(--line-soft);
-  /* The identity, in two pixels. */
-  border-top: 2px solid var(--col-tone, var(--accent));
-  border-radius: var(--r-m);
 }
 .columnHead {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
   padding: var(--s3) var(--s3) var(--s2);
+  /* The identity, in one pixel, under the words that carry it. */
+  border-bottom: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 40%, transparent);
+  margin-bottom: var(--s2);
 }
 .columnTitle {
   margin: 0;
@@ -281,47 +418,177 @@
 }
 
 .cards {
+  /* The containing block for an empty column's drop indicator. */
+  position: relative;
+  transition: background-color var(--dur-fast) var(--ease);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--s2) var(--s2);
+  /* Hidden, like the rail's: a column is one of four side by side, and a bar
+     appearing only in the ones that overflow shifts their cards by its width. */
+  scrollbar-width: none;
+  /* Runs under the floating dock rather than stopping above it — the last card
+     is still scrollable clear of it. */
+  padding: 0 var(--s2) calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
-.cardsOver { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+/* The only thing that draws the column's bounds, and only while a card is over
+   it — the region is otherwise unpainted. */
+.cards::-webkit-scrollbar { display: none; }
+/* Fades only on the edges that have something past them — `data-fade` is set
+   from the scroll position, because an always-on mask dims the top of the first
+   card in a column holding one. */
+.cards[data-fade='top'] { mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5)); }
+.cards[data-fade='bottom'] { mask-image: linear-gradient(to top, transparent, var(--mask-opaque) var(--s5)); }
+.cards[data-fade='both'] {
+  mask-image: linear-gradient(to bottom, transparent, var(--mask-opaque) var(--s5), var(--mask-opaque) calc(100% - var(--s5)), transparent);
+}
+/* The set that survives a filter arrives together — one move, not a dozen
+   staggered ones, because it is one decision. */
+.cardFiltered { animation: cardFilterIn 200ms var(--ease) both; }
+
+@keyframes cardFilterIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.cardsOver {
+  background: color-mix(in srgb, var(--col-tone, var(--accent)) 7%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--col-tone, var(--accent)) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: var(--r-l);
+}
 .columnEmpty { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-.authorGroup { display: flex; flex-direction: column; gap: var(--s2); }
-.authorGroupHead {
-  margin: var(--s2) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.cardSlot { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+/* Out of the flow, so showing it moves nothing. In it, a 2px line plus the
+   stack's gap pushed every card below it ten pixels down — including the
+   midpoints the drop index is computed against, which made the indicator
+   oscillate between two slots at the boundary. */
+.dropLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--s2) / -2 - 1px);
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--col-tone, var(--accent));
+}
+.dropLineTail {
+  top: auto;
+  bottom: calc(var(--s2) / -2 - 1px);
+}
+/* Drawn from the middle out. It moves by being torn down in one slot and built
+   in another, so an entrance is the only thing that can smooth the change. */
+.dropLine {
+  animation: dropIn var(--dur-fast) var(--ease) both;
 }
 
-.cardSlot { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-.dropLine { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+@keyframes dropIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+}
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
+/*
+ * The bar's material, and the dock's: same ground, same hairline, same corner,
+ * the same three shadows. They are the furniture of the board and a card is
+ * one more piece of it.
+ *
+ * The whole card is the drag handle, so it says so — `grab`, and it lifts a
+ * little under the pointer.
+ */
 .card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  /* The column's tone, carried onto the card. --col-tone is set on the section
-     by Column.tsx, so a card picked up and dropped in another column changes
-     colour with it and nothing has to be told. */
-  border-left: 3px solid color-mix(in srgb, var(--col-tone, var(--accent)) 55%, transparent);
-  border-radius: var(--r-s);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
   padding: var(--s3);
-  /* No shadow. Four columns of shadowed cards on a dark surface reads as
-     grubby rather than raised; the 1px line and the tone rule do the work. */
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  cursor: grab;
+  /* Colour only. A card that lifts under the pointer also lifts the instant one
+     is dropped, because the pointer is on it — which reads as one more
+     animation after the landing rather than as feedback. */
+  transition: border-color var(--dur-fast) var(--ease);
 }
-/* An AI card is not the column's — it is the agent's, and it should be
-   obviously distinguishable from something a colleague wrote. */
-.cardAI { border-left-color: var(--accent2); }
-.cardDragging { opacity: 0.4; }
+.card:hover {
+  border-color: var(--hairline-strong);
+}
+.card:active { cursor: grabbing; }
+/* A card in the air takes no pointer events, so the pointer is over whatever is
+   underneath it — and a sweep across the board would otherwise light up every
+   card it crossed. */
+.board[data-dragging='true'] .card:hover {
+  border-color: var(--hairline);
+}
+/* A locked board is read-only, and a grab cursor over it is a lie. */
+.cardLocked { cursor: default; }
+/* The one card that is not a colleague's. The column's own tone stays on the
+   head, so a rule here means one thing only: an agent wrote this. */
+.cardAI { border-left: 3px solid var(--accent2); }
+
+/* ── Carried ──────────────────────────────────────────────────────────── */
+/*
+ * The card is gone from the list while it is in the air, and what is left is
+ * the hole it came out of. A faded copy of it was worse: two of the same card
+ * on screen, one of them under the pointer and one of them not.
+ */
+.cardDragging {
+  transform: none;
+  box-shadow: none;
+  background: none;
+  border-style: dashed;
+  border-color: var(--line);
+}
+.cardDragging > * { opacity: 0; }
+
+.dragLayer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  pointer-events: none;
+}
+/* Off the board and in the hand: bigger shadow, no hover transition to fight
+   the per-frame transform, and a transform origin near the pointer so the lean
+   pivots where it is being held rather than around the middle of the card. */
+.dragCard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: grabbing;
+  transform-origin: 50% 0%;
+  /* The position is written every frame and must not be smoothed, or the card
+     trails the pointer. The lean is a separate property, and is: it swings
+     between ±9° several times a second when a card is moved side to side, and
+     a rotation that steps from frame to frame reads as a shudder. */
+  transition: rotate 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Its own compositor layer. Without it every frame repaints a 40px-blurred
+     shadow, and the transform invalidates the document's layout with it. */
+  will-change: transform, rotate;
+  box-shadow:
+    var(--edge),
+    0 2px 4px rgb(0 0 0 / 18%),
+    0 18px 40px rgb(0 0 0 / 34%);
+  animation: cardLift var(--dur-fast) var(--ease) both;
+}
+@keyframes cardLift {
+  from { scale: 1; }
+  to { scale: 1.03; }
+}
+/* A card you wrote opens for editing where you read it. `text`, because that is
+   what the pointer is over and what it is about to do. */
+.cardTextMine {
+  cursor: text;
+}
+
 .cardText {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
@@ -331,7 +598,15 @@
   font-size: var(--fs-s);
 }
 
-.cardMeta { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+/* `min-height` because the carried copy of a card carries no controls, and
+   without it the card in the air is a different size from the one it becomes. */
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  margin-top: var(--s2);
+}
 .metaSpacer { flex: 1; }
 .author { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
 .authorName {
@@ -402,25 +677,47 @@
 .moveItem:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-.editor { display: flex; flex-direction: column; gap: var(--s2); }
+/* Editing happens where the text is. No frame, no ground, no buttons: the only
+   thing that changes when you click your own card is that a caret appears in
+   it. Enter commits, Shift-Enter is the newline, clicking away commits too. */
 .editBox {
+  display: block;
   width: 100%;
-  resize: vertical;
-  padding: var(--s2);
-  background: var(--panel-2);
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: none;
   color: var(--text);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
+  line-height: inherit;
+  caret-color: var(--accent);
 }
-.editActions { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-.reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+/* `nowrap` and a floor of zero: the row is the card's last line and must stay
+   one line whatever is in it, so a card with eight reactions scrolls them
+   rather than growing a second row and pushing the board about. */
+.reactions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.reactions::-webkit-scrollbar {
+  display: none;
+}
+.rxChip {
+  flex: none;
+}
 .rxChip, .rxPick {
   display: inline-flex;
   align-items: center;
@@ -429,111 +726,224 @@
   min-width: var(--tap-min);
   justify-content: center;
   padding: 0 var(--s1);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--r-pill);
-  background: var(--panel-2);
+  /* No ground. A counted reaction is a mark on the card, not a control sitting
+     on it, and the ring is enough to say which ones are yours. */
+  background: none;
   color: var(--text);
   font: inherit;
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-.rxChip:hover, .rxPick:hover { border-color: var(--accent); }
+/* A ground only under the pointer, in the tray. */
+.rxPick:hover, .rxPick:focus-visible {
+  background: var(--panel-2);
+}
+/* The glyph is the whole chip, so it is the glyph that is lifted. A pill under
+   an emoji is a second shape competing with the one that carries the meaning. */
+.rxGlyph {
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
+}
+
+/* A reaction is somebody pressing a button, so it arrives and it leaves. The
+   `scale` property rather than a transform, so nothing here has to know what
+   else may be transforming the chip. Neither changes the row's height. */
+.rxChipIn {
+  animation: rxIn 200ms cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+.rxChipOut {
+  animation: rxOut 150ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes rxIn {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+@keyframes rxOut {
+  to {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
 .rxChip:disabled { opacity: 0.5; cursor: default; }
-.rxChipMine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+/* Yours, without a pill around the glyph: the count carries it. The ring used
+   to, and it could not survive a reload — the server never sends raw pids, so
+   "did I react" is only knowable from the toggle that answered. */
+.rxChipMine .rxCount { color: var(--accent); font-weight: 600; }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
- * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
- * `position: absolute` over the card, and the column (`.cards`, overflow-y:
- * auto, which forces overflow-x: auto with it) clipped it to a couple of visible
- * emoji. Nothing here may be positioned, or the clipping comes back.
+ * On `document.body` and placed from the trigger's rect — see ReactionBar.tsx.
+ * `.cards` is a scroll box on both axes, so anything positioned inside a card
+ * is clipped to it.
  *
- * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
- * even rows of the same size, not a ragged last line.
+ * `auto-fill` rather than a wrap: sixteen emoji should be even rows of the same
+ * size, not a ragged last line.
  */
 .rxTray {
+  position: fixed;
+  z-index: var(--z-popover);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
-  margin-top: var(--s2);
   padding: var(--s2);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
+  /* Glass: no ground of its own and no outline, only what is behind it
+     blurred. The shadow is the whole of its edge. */
+  background: none;
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 0;
+  border-radius: var(--r-l);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  animation: trayIn var(--dur-fast) var(--ease) both;
+}
+
+/* Without the filter there is nothing behind the emoji at all, so the ground
+   comes back rather than the tray being unreadable over a card. */
+@supports not (backdrop-filter: blur(1px)) {
+  .rxTray {
+    background: var(--panel);
+  }
+}
+
+.rxTrayOut {
+  animation: trayOut 140ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes trayOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes trayIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* ── Column composer ──────────────────────────────────────────────────── */
 /*
- * The column's own writing surface, pinned as its footer — a sibling of the
- * scrolling `.cards`, so it never scrolls out of reach and a card lands
- * directly above it. This replaced a bar pinned below the whole board plus a
- * segmented destination picker; see ColumnComposer.tsx for why.
+ * The rest of the column is the control that opens it: the last item in the
+ * card stack, taking whatever height the cards left. Four dashed buttons
+ * across the bottom of the board were four permanent objects for something you
+ * do by pointing at the space you want the card in.
+ *
+ * A real button, so the keyboard and a screen reader reach it — it just draws
+ * nothing until the pointer is over it.
  */
+/* Holds the two states in one box: the invitation, and the draft that folds
+   over it. Relative so the folding box can leave the flow on its way out and
+   let the invitation back underneath it. */
+.composeSlot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+}
+
+.composeArea {
+  flex: 1 0 var(--tap);
+  min-height: var(--tap);
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: var(--s2) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.composeHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  opacity: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.composeArea:hover .composeHint,
+.composeArea:focus-visible .composeHint {
+  opacity: 1;
+}
+/* Nothing invites a card while one is in the air. */
+.board[data-dragging='true'] .composeHint { opacity: 0; }
+
+/* The draft is a card: the same ground, hairline, corner and shadows as the
+   one it is about to become, with the column's tone on its edge. The box
+   inside it is bare — a second bordered field inside a bordered card is two
+   objects for one thing. */
 .columnCompose {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  padding: var(--s2);
-  border-top: 1px solid var(--line-soft);
+  padding: var(--s3);
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--col-tone, var(--accent)) 35%, var(--hairline));
+  border-radius: var(--r-l);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
 }
-/* Dashed and quiet at rest: it is an invitation, and four solid buttons across
-   the bottom of the board would compete with the cards. */
-.composeGhost {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s1);
-  width: 100%;
-  min-height: var(--tap);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-.composeGhost:hover, .composeGhost:focus-visible {
-  border-style: solid;
+.columnCompose:focus-within {
   border-color: var(--col-tone, var(--accent));
-  color: var(--text);
+}
+/* Unfolds where the card will be, and folds back into it. `both` holds the
+   `from` state through the delay so the box does not flash at full size first. */
+.columnCompose {
+  animation: draftIn 180ms var(--ease) both;
+}
+.columnComposeOut {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  animation: draftOut 160ms var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes draftIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
+}
+
+@keyframes draftOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+    transform-origin: 50% 0%;
+  }
 }
 .composeBox {
   width: 100%;
-  min-height: var(--tap);
+  min-height: 3lh;
   max-height: 8rem;
   resize: vertical;
-  padding: var(--s2);
-  background: var(--panel-2);
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
   color: var(--text);
-  /* The column's own colour, so an open composer belongs to the column it is
-     going to add to — the thing the segmented control used to have to say. */
-  border: 1px solid var(--col-tone, var(--accent));
-  border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
 }
+.composeBox::placeholder {
+  color: var(--dim);
+}
 .composeActions { display: flex; justify-content: flex-end; gap: var(--s2); }
-
-/* ── Floating reaction overlay ────────────────────────────────────────── */
-.floatLayer {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-banner);
-  pointer-events: none;
-  overflow: hidden;
-}
-.floater {
-  position: absolute;
-  bottom: 0;
-  animation: rise 2.6s ease-out forwards;
-}
-
-@keyframes rise {
-  from { transform: translateY(0); opacity: 0; }
-  15% { opacity: 1; }
-  to { transform: translateY(-70vh); opacity: 0; }
-}
 
 .srOnly {
   position: absolute;

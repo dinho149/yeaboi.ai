@@ -10703,7 +10703,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     from yeaboi.config import get_retro_server_port
     from yeaboi.retro.board import RetroBoard, board_to_report
-    from yeaboi.retro.engine import carried_action_items_for_session
+    from yeaboi.retro.engine import carried_action_items_for_session, history_providers
     from yeaboi.retro.server import RetroServer
     from yeaboi.retro.store import RetroStore
 
@@ -10716,6 +10716,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         board.seed_carried(list(carried))
         logger.info("retro: seeded %d carried-over action item(s) (session=%s)", len(carried), session_id)
     server = RetroServer(board, port=get_retro_server_port())
+    # Previous retros, for the board's back arrow. Read lazily, so a store that
+    # cannot be opened costs a board with no history rather than a board.
+    server.history_list, server.history_report = history_providers(project_name=project_name, db_path=_ana_dbp)
     try:
         server.start()
         logger.info("retro: server started on port %s (session=%s)", server.port, session_id)
@@ -10786,6 +10789,8 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     remote["tunnel"] = None
                     remote["url"] = ""
                     server.set_public_url("")
+                    # So the board's own invite panel stops saying "coming".
+                    server.set_share_state("failed")
                     remote["status"] = (
                         "Secure link expired after the configured timeout — click Retry Link to reconnect."
                     )
@@ -10808,6 +10813,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     tunnel.stop()
                     remote["tunnel"] = None
                     logger.warning("retro: secure link failed — tunnel did not start within timeout")
+                    server.set_share_state("failed")
                     remote["status"] = "Secure link failed — tunnel did not start (see logs)."
                     remote["failed"] = True
                     return
@@ -10819,10 +10825,14 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 # hand out the tunnel URL rather than the loopback one the host's
                 # own browser arrived on.
                 server.set_public_url(remote["url"])
+                # Clears a previous attempt's failure, so Retry Link puts the
+                # board's own panel back to "ready" too.
+                server.set_share_state("pending")
                 remote["status"] = "Link ready — send it and the code to your team."
                 _duck_react("link_ready")
             except Exception as e:  # never let the worker crash anything
                 logger.error("retro: secure link setup failed: %s", e, exc_info=True)
+                server.set_share_state("failed")
                 remote["status"] = f"Secure link failed — {e}"
                 remote["failed"] = True
             finally:
@@ -10834,6 +10844,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             # Opt-out for dry runs and offline/locked-down networks. The board
             # still works for the host on loopback; it just has nothing to share.
             logger.info("retro: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
+            server.set_share_state("off")
             remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
             remote["starting"] = False
             remote["failed"] = False

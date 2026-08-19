@@ -13,6 +13,8 @@
  * of use.
  */
 
+import { useState } from 'react';
+
 import { safeImageSrc } from '../runtime/url';
 import { cx } from '../runtime/cx';
 import { CopyField } from './CopyField';
@@ -44,23 +46,45 @@ export interface InviteQRProps {
    * invite said twice.
    */
   shareUrl?: string | undefined;
+  /**
+   * Why there is no link yet. Boards that do not report it get `pending`, which
+   * is what an empty url used to mean unconditionally.
+   */
+  shareState?: 'ready' | 'pending' | 'failed' | 'off' | undefined;
   className?: string | undefined;
 }
 
-export function InviteQR({ qrSrc, joinCode, inviteUrl, shareUrl, className }: InviteQRProps) {
+/** What to say while there is nothing to send. */
+const WAITING: Record<'pending' | 'failed' | 'off', string> = {
+  pending: 'Setting up the shared link — this takes a moment.',
+  failed: 'The shared link could not be set up. Retry it from the terminal running this board.',
+  off: 'Sharing is off for this board, so there is no link to send.',
+};
+
+export function InviteQR({ qrSrc, joinCode, inviteUrl, shareUrl, shareState, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
+  // The endpoint answers 503 until the tunnel is up, and a broken image with
+  // its alt text showing is the worst of the three things it could do.
+  const [unavailable, setUnavailable] = useState(false);
+  // The QR having failed is the one signal from in here that the board is not
+  // shared. Not `!inviteUrl`, which is also true for the first frame after the
+  // panel opens, while both are still in flight.
+  const waiting = (unavailable || !src) && shareState !== 'ready';
 
   return (
     <div className={cx(styles['invite'], className)}>
-      {src ? (
+      {src && !unavailable ? (
         <img
           className={styles['qr']}
           src={src}
           width={280}
           height={280}
           alt="QR code linking to this board"
+          onError={() => setUnavailable(true)}
         />
       ) : null}
+
+      {waiting ? <p className={styles['panelNote']}>{WAITING[shareState ?? 'pending']}</p> : null}
 
       {/* Every field renders only once the values are in. They arrive from
           `GET /api/invite` rather than the boot payload, because the page is

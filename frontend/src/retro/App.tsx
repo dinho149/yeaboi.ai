@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Duck, useDuckPulse, type DuckRest } from '../design/primitives';
+import { Duck, Icon, useDuckPulse, type DuckRest } from '../design/primitives';
 import { useArrivals } from '../motion';
 import { useAlarm } from '../hooks/useAlarm';
 import { useBoardStream } from '../hooks/useBoardStream';
@@ -44,9 +44,7 @@ import {
   MusicPlayer,
   PageShell,
   Popover,
-  PresenceRow,
   ProfileModal,
-  Roster,
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
@@ -54,15 +52,18 @@ import {
   Toolbar,
   Visualizer,
 } from '../shared';
+import { cx } from '../runtime/cx';
+import { boardStyles as kit, Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
-import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
-import type { Participant, ReactionEvent, RetroCard, RetroState, TypingEntry } from '../types/board';
+import { AVATARS, type RetroGrids } from '../types/enums';
+import type { Participant, RetroCard, RetroState, TypingEntry } from '../types/board';
 import { createRetroActions } from './actions';
 import { Board } from './Board';
-import { CarriedStrip } from './CarriedStrip';
-import { FloatingEmoji } from './FloatingEmoji';
-import { FocusBar } from './FocusBar';
+import { HostRail } from './HostRail';
+import { useHistory } from './useHistory';
+import { useLinger } from './useLinger';
+import { useSwap } from './useSwap';
 import type { RetroBoot } from './boot';
 import styles from './retro.module.css';
 
@@ -70,7 +71,7 @@ import styles from './retro.module.css';
 const TYPING_LINGER_MS = 2500;
 
 /** Storage keys. Unchanged from the legacy page so an in-flight retro survives the flip. */
-const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar', grouped: 'retro_grouped' } as const;
+const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar' } as const;
 
 // Stable empty defaults. A fresh `[]` in a selector would be a new reference
 // every call, and `useSyncExternalStore` compares with Object.is — the board
@@ -78,7 +79,15 @@ const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar', grou
 const NO_CARDS: readonly RetroCard[] = [];
 const NO_PEOPLE: readonly Participant[] = [];
 const NO_TYPING: readonly TypingEntry[] = [];
-const NO_EVENTS: readonly ReactionEvent[] = [];
+// A retro that finished weeks ago has nobody typing into it and nothing arriving.
+const NO_TYPING_BY_GRID: ReadonlyMap<string, readonly string[]> = new Map();
+const NO_ARRIVALS: ReadonlySet<string> = new Set();
+
+/** How long one board takes to leave before the next arrives. Matches the sheet. */
+const SWAP_MS = 170;
+
+/** How long the read-only notice takes to fold away. Matches `lockNoteOut`. */
+const LOCK_NOTE_OUT_MS = 180;
 
 export function App({ boot }: { boot: RetroBoot }) {
   // ── Identity and session ───────────────────────────────────────────────
@@ -123,14 +132,32 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
-  const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
+  const history = useHistory(session);
+  const past = history.showing;
+  // A past retro is read-only in the strongest sense available: it reuses
+  // `locked`, so every composer, every control and every drag is already off.
+  const readOnly = locked || history.at > 0;
+  // Held on screen for its exit — see the notice at the foot of the board.
+  const lock = useLinger(readOnly, LOCK_NOTE_OUT_MS);
+
+  /** What the board is showing, held together so a sprint switch swaps once. */
+  const view = useMemo(
+    () => ({ cards: past ? past.cards : cards, carried: past ? past.carried : carried }),
+    [past, cards, carried]
+  );
+  // Stepping back is only settled once that retro's cards have arrived.
+  const swap = useSwap(view, history.at, SWAP_MS, history.at === 0 || Boolean(past));
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
   // anyone who reaches the board, token or not. Also puts it on the clipboard.
   const invite = useInvite(session, inviteOpen);
   const [musicBlocked, setMusicBlocked] = useState(false);
+  // The one action whose outcome is not visible in what it produces: an
+  // unconfigured LLM still adds items, and has to be able to say so.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState('');
   const [typingGrid, setTypingGrid] = useState('');
   // Which emoji *this browser* has reacted with, per card. The server does not
   // put raw pids on the wire, so "did I react" is only knowable from the
@@ -179,7 +206,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     for (const person of presence) if (person.avatar) map.set(person.name, person.avatar);
     return map;
   }, [presence]);
-  const others = useMemo(() => presence.filter((person) => person.name !== name), [presence, name]);
 
   const typingByGrid = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -203,7 +229,7 @@ export function App({ boot }: { boot: RetroBoot }) {
     const mine = new Set(cards.filter((card) => card.mine).map((card) => card.id));
     return (id: string): boolean => !mine.has(id);
   }, [cards]);
-  const arrivals = useArrivals(cardIds, notMine);
+  const arrivals = useArrivals(cardIds, notMine, Boolean(snapshot));
 
   /**
    * What the duck is doing.
@@ -232,11 +258,23 @@ export function App({ boot }: { boot: RetroBoot }) {
   }, [arrivals, duckPulse]);
 
   /** Human authors with at least one card, sorted — the walkthrough running order. */
+  const shownCards = past ? past.cards : cards;
   const authors = useMemo(() => {
     const set = new Set<string>();
-    for (const card of cards) if (card.origin !== 'ai' && card.author) set.add(card.author);
+    for (const card of shownCards) if (card.origin !== 'ai' && card.author) set.add(card.author);
     return [...set].sort();
-  }, [cards]);
+  }, [shownCards]);
+
+  /** The same people, with a face and a card count — what the panel shows. */
+  const roster = useMemo(
+    () =>
+      authors.map((name) => ({
+        name,
+        avatar: avatarsByName.get(name),
+        cards: shownCards.filter((card) => card.author === name && card.origin !== 'ai').length,
+      })),
+    [authors, avatarsByName, shownCards]
+  );
 
   // An author who has left mid-walkthrough would otherwise leave every column
   // filtered to nothing, with no obvious way back.
@@ -308,13 +346,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     []
   );
 
-  const toggleGrouped = useCallback(() => {
-    setGrouped((current) => {
-      write('local', KEY.grouped, current ? '0' : '1');
-      return !current;
-    });
-  }, []);
-
   // ── The gate ───────────────────────────────────────────────────────────
   if (!session.token) {
     // No `onJoined`: the default navigates to `/?token=…`, and the reload is
@@ -341,8 +372,6 @@ export function App({ boot }: { boot: RetroBoot }) {
     );
   }
 
-  const cardCount = cards.length;
-
   const toolbar = (
     <Toolbar
       // No `brand`: the masthead above sets the wordmark, in the six-row face
@@ -352,34 +381,55 @@ export function App({ boot }: { boot: RetroBoot }) {
       // The duck rides in the toolbar, where it is in peripheral vision the
       // whole ceremony without ever being in the way.
       mark={<Duck state={duckState} size={30} />}
-        subtitle={
-          <>
-            {boot.sprint ? `${boot.sprint} · ` : ''}
-            {cardCount} {cardCount === 1 ? 'card' : 'cards'}
-            {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
-          </>
-        }
-        tools={
-          <>
+      // Which retro, and how many cards, are both already on the board — the
+      // rail names the one and every column counts the other. The subtitle is
+      // only where the connection speaks up.
+      subtitle={status === 'retrying' ? <span className={styles['offline']}>reconnecting…</span> : undefined}
+    >
+        <div className={styles['identity']}>
+          <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
+            <span aria-hidden="true">{avatar}</span>
+            <span className={styles['meName']}>{name || 'Set your name'}</span>
+            <span className={styles['pen']}>
+              <Icon name="pencil" size={12} />
+            </span>
+          </button>
+
+          {/* One roster, not two. The Room's count is the headline and its
+              hover deals the room out; a row of the same faces beside it said
+              the same thing twice and only fitted four of them. */}
+          <Room people={presence} meName={name} />
+        </div>
+    </Toolbar>
+  );
+
+  return (
+    <PageShell
+      chrome={boot.chrome}
+      variant="app"
+      bar={toolbar}
+      className={cx(kit['board'], styles['app'])}
+      dock={
+        <>
             <Visualizer playing={music.playing} />
 
             {isHost ? (
               <IconButton
-                icon="🔒"
+                icon={<Icon name={locked ? 'lock' : 'lock-open'} size={16} />}
                 label={locked ? 'Unlock the board' : 'Lock the board'}
                 active={locked}
                 onClick={() => void actions.setLocked(!locked)}
               />
             ) : null}
 
-            <Popover trigger={<span aria-hidden="true">♪</span>} label="Music">
+            <Popover trigger={<Icon name="music" size={16} />} label="Music">
               <MusicPlayer
                 music={music}
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
                     <Button onClick={() => void actions.castMusic(music.playing, music.channel)}>
-                      <span aria-hidden="true">📣</span> Play for everyone
+                      <Icon name="megaphone" /> Play for everyone
                     </Button>
                   ) : null
                 }
@@ -389,7 +439,7 @@ export function App({ boot }: { boot: RetroBoot }) {
             <Popover
               trigger={
                 <>
-                  <span aria-hidden="true">⏱</span>
+                  <Icon name="timer" size={16} />
                   <TimerReadout remaining={remaining} />
                 </>
               }
@@ -406,76 +456,62 @@ export function App({ boot }: { boot: RetroBoot }) {
               )}
             </Popover>
 
-            <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme">
+            <Popover trigger={<Icon name="contrast" size={16} />} label="Theme">
               <ThemeSwitcher
                 value={theme}
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
                     <Button onClick={() => void actions.castTheme(theme)}>
-                      <span aria-hidden="true">📣</span> Apply to everyone
+                      <Icon name="megaphone" /> Apply to everyone
                     </Button>
                   ) : null
                 }
               />
             </Popover>
 
-            <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+            <IconButton
+              icon={<Icon name="mail" size={16} />}
+              label="Invite the team"
+              tone="primary"
+              compact
+              onClick={() => setInviteOpen(true)}
+            >
               Invite
             </IconButton>
-          </>
-        }
-      >
-        <div className={styles['identity']}>
-          <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
-            <span aria-hidden="true">{avatar}</span>
-            <span className={styles['meName']}>{name || 'Set your name'}</span>
-            <span aria-hidden="true" className={styles['pen']}>
-              ✎
-            </span>
-          </button>
-
-          <PresenceRow people={others} />
-
-          <Popover
-            align="left"
-            trigger={
-              <>
-                <span aria-hidden="true">👥</span>
-                <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
-              </>
-            }
-            label="Who is in the room"
-          >
-            <Roster people={presence} meName={name} />
-          </Popover>
-        </div>
-
-        <div className={styles['viewCtl']}>
-          <IconButton
-            icon="👤"
-            label="Walk through one person at a time"
-            active={Boolean(focus)}
-            disabled={!authors.length}
-            onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
-          />
-          <IconButton icon="⊞" label="Group cards by author" active={grouped} onClick={toggleGrouped} />
-        </div>
-    </Toolbar>
-  );
-
-  return (
-    <PageShell chrome={boot.chrome} variant="app" bar={toolbar} className={styles['app']}>
+        </>
+      }
+    >
       {/* One flex column inside the shell's scroll row. The banners, the
           carried strip and the focus bar are auto-height siblings above the
           board, which takes the rest — the same relationship they had when
           `.app` itself was the flex column. */}
       <div className={styles['boardRegion']}>
-      {locked ? (
-        <p className={styles['lockBanner']} role="alert">
-          <span aria-hidden="true">🔒</span> The host locked the board.
+      {/* Why nothing can be written, at the bottom middle where the composers
+          were. Not a stripe across the top: it is a footnote to a board you can
+          still read, not a headline. `aria-hidden`, because the same sentence is
+          in the live region below and announcing it twice is announcing it
+          wrong. */}
+      {lock.mounted ? (
+        <p
+          className={cx(
+            styles['lockNote'],
+            locked ? styles['lockNoteLocked'] : styles['lockNotePast'],
+            lock.leaving && styles['lockNoteOut']
+          )}
+          aria-hidden="true"
+        >
+          <Icon name={locked ? 'lock' : 'rotate-ccw'} size={13} />
+          {locked ? 'The host locked the board' : 'A retro that already happened'}
         </p>
       ) : null}
+
+      {/* A sighted user reads "which retro" off the rail's picker, which goes
+          accent-coloured on a past one. Said out loud here for everyone else. */}
+      <p className={styles['srOnly']} role="status" aria-live="polite">
+        {past ? `Showing ${past.sprint_name || 'a past retro'}, ${past.date}. ` : ''}
+        {locked ? 'The host locked the board.' : ''}
+      </p>
 
       {musicBlocked ? (
         <button
@@ -483,35 +519,21 @@ export function App({ boot }: { boot: RetroBoot }) {
           className={styles['musicBanner']}
           onClick={() => void music.play().then(() => setMusicBlocked(false)).catch(() => {})}
         >
-          <span aria-hidden="true">▶</span> The host started music — tap to listen
+          <Icon name="play" size={14} /> The host started music — tap to listen
         </button>
       ) : null}
 
-      <CarriedStrip
-        items={carried}
-        locked={locked}
-        onSetStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_ as CarriedStatuses)}
-      />
-
-      {focus ? (
-        <FocusBar
-          authors={authors}
-          current={focus}
-          avatars={avatarsByName}
-          onStep={stepFocus}
-          onExit={() => setFocus('')}
-        />
-      ) : null}
-
+      <div className={styles['boardLayout']}>
       <Board
-        cards={cards}
+        key={swap.key}
+        className={cx(swap.swapped && (swap.leaving ? styles['boardOut'] : styles['boardIn']))}
+        cards={swap.payload.cards}
         avatars={avatarsByName}
         myReactions={myReactions}
-        typing={typingByGrid}
-        locked={locked}
-        grouped={grouped}
+        typing={past ? NO_TYPING_BY_GRID : typingByGrid}
+        locked={readOnly}
         focus={focus}
-        arrivals={arrivals}
+        arrivals={past ? NO_ARRIVALS : arrivals}
         onAddCard={addCard}
         onTyping={onTyping}
         onEdit={(cardId, text) => void actions.editCard(cardId, text)}
@@ -519,11 +541,36 @@ export function App({ boot }: { boot: RetroBoot }) {
         onReact={(cardId, emoji) => void react(cardId, emoji)}
         onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
       />
+
+      {isHost ? (
+        <HostRail
+          history={history}
+          liveLabel={boot.sprint || 'This retro'}
+          carried={swap.payload.carried}
+          onSetCarriedStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_)}
+          people={roster}
+          focus={focus}
+          onFocus={setFocus}
+          suggesting={suggesting}
+          onSuggest={() => {
+            setSuggesting(true);
+            void actions.suggestActions().then((message) => {
+              setSuggesting(false);
+              setSuggestion(message);
+            });
+          }}
+          past={history.at > 0}
+          viewKey={swap.key}
+        />
+      ) : null}
+
+      </div>
       </div>
 
       {/* Overlays and modals are fixed-position, so they take no part in the
           layout above and can sit anywhere in the tree. */}
-      <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
+      <Toast message={suggestion} onDismiss={() => setSuggestion('')} />
+
       <ConfettiCanvas canvasRef={confettiRef} />
 
       <ProfileModal
@@ -539,15 +586,21 @@ export function App({ boot }: { boot: RetroBoot }) {
       />
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
-        <p className={styles['popNote']}>
-          Send the invite link — it carries the share code, so they land straight on the board.
-          Scanning the QR does the same. Keep both off anywhere public.
-        </p>
+        {/* No join code here: the link carries it, and the QR is the link. A
+            code to read out is a third way to say the same thing. Only shown
+            once there is one — instructions for a control that is not on the
+            screen are worse than no instructions. */}
+        {invite.invite?.inviteUrl ? (
+          <p className={styles['popNote']}>
+            Send the link, or let them scan it — either one lands them straight on the board. Keep both off
+            anywhere public.
+          </p>
+        ) : null}
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
         <InviteQR
           qrSrc={apiUrl(session, '/api/qr')}
           inviteUrl={invite.invite?.inviteUrl}
-          joinCode={invite.invite?.joinCode}
+          shareState={invite.invite?.shareState}
         />
       </Modal>
     </PageShell>

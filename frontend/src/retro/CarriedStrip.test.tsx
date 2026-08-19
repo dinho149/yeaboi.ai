@@ -22,7 +22,7 @@ describe('CarriedStrip', () => {
 
   it('opens expanded and reports progress while items are unreviewed', () => {
     render(<CarriedStrip items={[item('done'), item('pending')]} locked={false} onSetStatus={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /Last sprint/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /Last retro/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('1/2 reviewed')).toBeTruthy();
   });
 
@@ -30,7 +30,7 @@ describe('CarriedStrip', () => {
     // The point at which the review is genuinely finished — not a timer, and
     // not a guess. Until then it is the first thing the ceremony does.
     render(<CarriedStrip items={[item('done'), item('carried_over')]} locked={false} onSetStatus={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /Last sprint/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('button', { name: /Last retro/ }).getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByText('2/2 reviewed')).toBeTruthy();
   });
 
@@ -39,14 +39,14 @@ describe('CarriedStrip', () => {
     const items = [item('done')];
     const { rerender } = render(<CarriedStrip items={items} locked={false} onSetStatus={vi.fn()} />);
 
-    const toggle = screen.getByRole('button', { name: /Last sprint/ });
+    const toggle = screen.getByRole('button', { name: /Last retro/ });
     await user.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
 
     // A snapshot lands. Without the auto-collapse latch this would snap shut
     // again — the strip would fight anyone trying to look back at it.
     rerender(<CarriedStrip items={[...items]} locked={false} onSetStatus={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /Last sprint/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /Last retro/ }).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('reports a status change with the item it belongs to', async () => {

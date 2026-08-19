@@ -94,8 +94,8 @@ describe('retro App', () => {
     const wentWell = screen.getByRole('region', { name: 'What went well' });
     expect(within(wentWell).getByText('Zero flaky tests')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Action items' })).getByText('Alert on staging')).toBeTruthy();
-    // The subtitle counts every card on the board, not just one column.
-    expect(screen.getByText(/3 cards/)).toBeTruthy();
+    // Counting is the column heads' job — there is no board-wide total.
+    expect(within(wentWell).getByText('2')).toBeTruthy();
   });
 
   it("shows other people's typing but not your own", async () => {
@@ -133,8 +133,7 @@ describe('retro App', () => {
     // destination. Each column carries its own composer, opened from its own
     // "Add a card" row.
     await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
-    await user.type(screen.getByRole('textbox', { name: 'Add a card to Demos' }), 'a demo');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByRole('textbox', { name: 'Add a card to Demos' }), 'a demo{Enter}');
 
     await waitFor(() => {
       const post = server.mock.calls.find(([url]) => String(url).startsWith('/api/cards'));
@@ -148,16 +147,24 @@ describe('retro App', () => {
   });
 
   it('filters every column to one person during a walkthrough', async () => {
-    seedIdentity();
+    // Host: the walkthrough lives in the facilitator's rail, which a guest has
+    // no reason to see and does not get.
+    seedIdentity({ admin: true });
     const user = userEvent.setup();
     render(<App boot={BOOT} />);
     await screen.findByText('Pairing paid off');
 
-    await user.click(screen.getByRole('button', { name: /Walk through one person/ }));
+    // The panel's own list, not the identity chip that carries the same name.
+    const walk = screen.getByRole('group', { name: "Show one person's cards" });
+    await user.click(within(walk).getByRole('button', { name: /^Only Ada,/ }));
     // Ada is first alphabetically, so hers stay and Grace's go.
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
     expect(screen.queryByText('Zero flaky tests')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Walkthrough' }).textContent).toContain('1 of 2');
+    // The panel shows the running order and marks who is up.
+    expect(within(walk).getByRole('button', { name: /^Only Ada, 1 card$/, pressed: true })).toBeTruthy();
+    expect(within(walk).getByRole('button', { name: /^Only Grace,/, pressed: false })).toBeTruthy();
+    // "Everyone" is an option in the list, so the off state is visible too.
+    expect(within(walk).getByRole('button', { name: /Everyone/, pressed: false })).toBeTruthy();
 
     // → and Escape are bound at the document, so they step without the bar
     // holding focus — which is the point, since you are reading the cards.
@@ -165,9 +172,10 @@ describe('retro App', () => {
     expect(screen.getByText('Zero flaky tests')).toBeTruthy();
     expect(screen.queryByText('Pairing paid off')).toBeNull();
 
+    // Escape drops back to everyone's cards, wherever focus happens to be.
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('region', { name: 'Walkthrough' })).toBeNull();
     expect(screen.getByText('Pairing paid off')).toBeTruthy();
+    expect(screen.getByText('Zero flaky tests')).toBeTruthy();
   });
 
   it('announces the lock and takes the composer away with it', async () => {
@@ -175,8 +183,9 @@ describe('retro App', () => {
     vi.stubGlobal('fetch', fakeServer(state({ ...SNAPSHOT, revision: 5, locked: true })));
     render(<App boot={BOOT} />);
 
-    await screen.findByRole('alert');
-    expect(screen.getByRole('alert').textContent).toContain('locked');
+    // A status, not a banner: the notch's padlock lights, every composer goes,
+    // and a stripe across the board would say the same thing a fourth time.
+    await screen.findByText('The host locked the board.');
     expect(screen.queryByRole('textbox', { name: /Add a card/ })).toBeNull();
     // The invitation goes with the box. A lock that left four "Add a card" rows
     // on screen would be a board that looks writable and is not.

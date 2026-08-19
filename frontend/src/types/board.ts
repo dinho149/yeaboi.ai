@@ -222,6 +222,15 @@ export interface InviteInfo {
    * machine. Falls back to the requesting host only before the tunnel is up.
    */
   shareUrl: string;
+  /**
+   * Why there is no `shareUrl`, when there is none.
+   *
+   * An empty url means four different things and the browser cannot tell them
+   * apart: the tunnel is still coming up (up to a minute), it gave up, sharing
+   * was turned off with `YEABOI_NO_TUNNEL`, or — `"ready"` — there is a url and
+   * this says nothing. Optional, because poker's board does not send it.
+   */
+  shareState?: 'ready' | 'pending' | 'failed' | 'off';
 }
 
 /** A rail row: enough to list and mark a ticket, never its body. */

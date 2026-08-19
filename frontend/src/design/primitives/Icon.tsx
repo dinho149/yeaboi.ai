@@ -28,8 +28,6 @@ import styles from './primitives.module.css';
 export type IconName = keyof typeof PATHS | keyof typeof PATHS_16;
 
 const PATHS = {
-  'arrow-left': '<path d="m12 19-7-7 7-7" /> <path d="M19 12H5" />',
-  'arrow-right': '<path d="M5 12h14" /> <path d="m12 5 7 7-7 7" />',
   'circle-help': '<circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" />',
   'coffee': '<path d="M10 2v2" /> <path d="M14 2v2" /> <path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1" /> <path d="M6 2v2" />',
   'copy': '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />',
@@ -41,15 +39,13 @@ const PATHS = {
   'qr-code': '<rect width="5" height="5" x="3" y="3" rx="1" /> <rect width="5" height="5" x="16" y="3" rx="1" /> <rect width="5" height="5" x="3" y="16" rx="1" /> <path d="M21 16h-3a2 2 0 0 0-2 2v3" /> <path d="M21 21v.01" /> <path d="M12 7v3a2 2 0 0 1-2 2H7" /> <path d="M3 12h.01" /> <path d="M12 3h.01" /> <path d="M12 16v.01" /> <path d="M16 12h1" /> <path d="M21 12v.01" /> <path d="M12 21v-1" />',
   'rotate-ccw': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" />',
   'share-2': '<circle cx="18" cy="5" r="3" /> <circle cx="6" cy="12" r="3" /> <circle cx="18" cy="19" r="3" /> <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" /> <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />',
-  'smile': '<path d="M15 10V9" /> <path d="M16.472 15a6 6 0 01-8.943 0" /> <path d="M9 10V9" /> <circle cx="12" cy="12" r="10" />',
   'triangle-alert': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" />',
   'undo-2': '<path d="M9 14 4 9l5-5" /> <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />',
-  'user': '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /> <circle cx="12" cy="7" r="4" />',
   'wifi-off': '<path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" />'
 } as const;
 
 /**
- * The dock's own glyphs, drawn here rather than vendored.
+ * The board's own glyphs, drawn here rather than vendored.
  *
  * Two reasons, and the first is arithmetic. A 24-unit grid rendered at 16px is
  * scaled by two thirds, so a coordinate at 11 lands at 7.333 — every
@@ -64,6 +60,8 @@ const PATHS = {
  * thing. The attribute rides through the parser with every other one.
  */
 const PATHS_16 = {
+  'arrow-left': '<path data-part="shaft" d="M13.5 8.5h-11" /> <path data-part="head" d="M6.5 4 2 8.5 6.5 13" />',
+  'arrow-right': '<path data-part="shaft" d="M2.5 8.5h11" /> <path data-part="head" d="M9.5 4 14 8.5 9.5 13" />',
   'check': '<path data-part="tick" d="m3 8.5 3.5 3.5 6.5-8" />',
   'chevron-down': '<path data-part="v" d="M3.5 5.5 8 10l4.5-4.5" />',
   'chevron-left': '<path data-part="v" d="M9.5 3.5 5 8l4.5 4.5" />',
@@ -79,6 +77,18 @@ const PATHS_16 = {
     '<path data-part="staff" d="M6.5 12.5v-9l7-1v9" /> <circle data-part="low" cx="4.75" cy="12.5" r="1.75" /> <circle data-part="high" cx="11.75" cy="10.5" r="1.75" />',
   'timer':
     '<path data-part="crown" d="M6.5 1.5h3" /> <circle data-part="case" cx="8" cy="9.5" r="5.5" /> <path data-part="hand" d="M8 9.5 10.5 7" />',
+  /* Dots rather than strokes: a grip is a texture, and six 2px squares survive
+     any scale a stroke of the same weight would blur. */
+  'grip':
+    '<circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="4" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="4" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="8" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="8" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="6" cy="12" r="1" /> <circle data-part="dot" fill="currentColor" stroke="none" cx="10" cy="12" r="1" />',
+  'plus': '<path data-part="h" d="M3 8.5h11" /> <path data-part="v" d="M8.5 3v11" />',
+  'smile':
+    '<circle data-part="face" cx="8" cy="8" r="6.5" /> <path data-part="mouth" d="M5 8.75a3.2 3.2 0 0 0 6 0" /> <circle data-part="eye" fill="currentColor" stroke="none" cx="5.75" cy="6.25" r="0.85" /> <circle data-part="eye" fill="currentColor" stroke="none" cx="10.25" cy="6.25" r="0.85" />',
+  'trash': '<path data-part="lid" d="M2.5 4.5h11" /> <path data-part="grab" d="M6 4.5v-2h4v2" /> <path data-part="can" d="M4 4.5v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-9" />',
+  'undo':
+    '<path data-part="head" d="M6 3 2.5 6.5 6 10" /> <path data-part="arc" d="M2.5 6.5h6a4 4 0 0 1 0 8H5.5" />',
+  'user':
+    '<circle data-part="head" cx="8" cy="5.5" r="2.5" /> <path data-part="body" d="M2.5 14.5a5.5 5.5 0 0 1 11 0" />',
   'external-link':
     '<path data-part="frame" d="M13.5 8.5v4a1.5 1.5 0 0 1-1.5 1.5H4a1.5 1.5 0 0 1-1.5-1.5V4A1.5 1.5 0 0 1 4 2.5h4" /> <path data-part="out" d="M10.5 2.5h3v3" /> <path data-part="out" d="m8 8 5.5-5.5" />',
   'mic':

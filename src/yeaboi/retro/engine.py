@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
-from yeaboi.agent.state import RetroCard
+from yeaboi.agent.state import RetroCard, RetroReport
 from yeaboi.retro.board import CARRIED_OPEN_STATUSES, RetroBoard
 
 logger = logging.getLogger(__name__)
@@ -100,6 +103,70 @@ def carried_action_items_for_session(
         session_id,
     )
     return carried
+
+
+def history_providers(
+    *, project_name: str = "", db_path: Path | None = None
+) -> tuple[Callable[[], list[dict]], Callable[[int], dict | None]]:
+    """Readers the browser board uses to step back through previous retros.
+
+    Two callables rather than a store handle: the server never learns what a
+    retro is persisted in, and a board with nothing behind it (a dev fixture, a
+    retro run outside a session) simply reports no history.
+
+    Both are best-effort — a store that cannot be read is a board with no past,
+    never a board that fails to load.
+    """
+
+    def _open() -> Any:
+        from yeaboi.paths import get_db_path
+        from yeaboi.retro.store import RetroStore
+
+        return RetroStore(db_path or get_db_path())
+
+    def listing() -> list[dict]:
+        # Across sessions, like the carry-forward reader above and for the same
+        # reason: a retro runs under whatever quick session was open that day,
+        # so a same-session history is almost always empty. Project-first, so a
+        # board for project X shows X's retros before anyone else's.
+        try:
+            with _open() as store:
+                runs = store.get_all_history(limit=48)
+        except Exception as exc:  # pragma: no cover - defensive; history is best-effort
+            logger.warning("retro: could not list previous retros: %s", exc)
+            return []
+        # Already newest-first; a *stable* sort on the project match keeps it
+        # that way inside each group.
+        if project_name:
+            runs.sort(key=lambda r: r.get("project_name") != project_name)
+        return runs[:24]
+
+    def one(run_id: int) -> dict | None:
+        try:
+            with _open() as store:
+                report = store.get_run_by_id(run_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("retro: could not read retro id=%s: %s", run_id, exc)
+            return None
+        return report_payload(report) if report else None
+
+    return listing, one
+
+
+def report_payload(report: RetroReport) -> dict:
+    """A finished retro in the shape the browser board already renders.
+
+    The same card fields the live poll sends, so a past retro is drawn by the
+    same components — there is no second card renderer to keep in step.
+    """
+    return {
+        "date": report.date,
+        "sprint_name": report.sprint_name,
+        "project_name": report.project_name,
+        "participants": list(report.participants),
+        "cards": [asdict(c) | {"mine": False} for c in report.cards],
+        "carried": [asdict(c) | {"mine": False} for c in report.carried_action_items],
+    }
 
 
 def _parse_action_items(raw: str) -> list[str]:

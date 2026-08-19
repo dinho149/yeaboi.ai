@@ -43,6 +43,9 @@ export interface UseInvite {
   dismiss: () => void;
 }
 
+/** How often to re-ask while the tunnel is still coming up. */
+const RETRY_MS = 3000;
+
 export function useInvite(session: Session, open: boolean): UseInvite {
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,8 +57,13 @@ export function useInvite(session: Session, open: boolean): UseInvite {
     // Guards a fetch that resolves after the panel has been closed again, which
     // would otherwise raise a toast over a board with no panel on it.
     let live = true;
+    // Separate from `live`: one says the panel is still on screen, the other
+    // says there is nothing left to ask for. Reusing `live` for both would
+    // swallow the copy toast on the very fetch that succeeded.
+    let settled = false;
+    let timer = 0;
 
-    void (async () => {
+    const ask = async (): Promise<void> => {
       try {
         const response = await fetch(apiUrl(session, '/api/invite'));
         if (!response.ok) return;
@@ -73,7 +81,12 @@ export function useInvite(session: Session, open: boolean): UseInvite {
         // Gated on `inviteUrl`, which is the value actually copied: gating on
         // `shareUrl` would put `undefined` on the clipboard the moment the two
         // disagreed.
+        // Nothing more to ask for: there is a link, or sharing is off and
+        // there never will be one. A failed tunnel keeps polling, because
+        // Retry Link in the terminal is what fixes it.
+        if (data.shareState === 'off') settled = true;
         if (!data.inviteUrl) return;
+        settled = true;
 
         const copied = await copyText(data.inviteUrl);
         if (!live) return;
@@ -85,10 +98,21 @@ export function useInvite(session: Session, open: boolean): UseInvite {
         // The host closed the board, or the tunnel dropped. The panel still
         // shows the QR, and the board's own reconnect notice covers the rest.
       }
-    })();
+    };
+
+    // The tunnel takes up to a minute to come up, and the panel is usually
+    // opened while it still is. Asked again until there is a link rather than
+    // once, or "setting up the shared link" is what it says until you close the
+    // panel and open it again. Stops on the first success, and on close.
+    const poll = async (): Promise<void> => {
+      await ask();
+      if (live && !settled) timer = window.setTimeout(() => void poll(), RETRY_MS);
+    };
+    void poll();
 
     return () => {
       live = false;
+      window.clearTimeout(timer);
     };
   }, [open, session]);
 

@@ -15,14 +15,13 @@
  * the store/local-state split in `boardStore.ts` is drawn where it is.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 
-import { Avatar } from '../design/primitives';
+import { Avatar, Icon } from '../design/primitives';
 import { useDismiss } from '../hooks/useDismiss';
 import { fmtAgo } from '../runtime/format';
 import { cx } from '../runtime/cx';
 import { Button } from '../shared';
-import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { ReactionChips, ReactionTray, ReactionTrigger } from './ReactionBar';
 import motion from '../motion/motion.module.css';
@@ -47,11 +46,11 @@ export interface CardViewProps {
    * typing feel laggy.
    */
   arrived?: boolean;
-  onEdit(text: string): void;
-  onDelete(): void;
-  onReact(emoji: string): void;
-  onMoveTo(grid: RetroGrids): void;
-  onGripPointerDown(event: PointerEvent): void;
+  onEdit(cardId: string, text: string): void;
+  onDelete(cardId: string): void;
+  onReact(cardId: string, emoji: string): void;
+  /** A press on the card body. Mice pick up at once, fingers hold first. */
+  onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
 
 function CardEditor({
@@ -67,41 +66,70 @@ function CardEditor({
   // that `initial` is a starting value, not a binding — later snapshots for
   // this card change the prop and must not change what you have typed.
   const [text, setText] = useState(() => initial);
+  // Guards the blur that a save or a cancel causes from committing a second time.
+  const done = useRef(false);
+
+  const commit = (next: string): void => {
+    if (done.current) return;
+    done.current = true;
+    const trimmed = next.trim();
+    // An empty card is not a delete — the server refuses it, and ✕ is how you
+    // mean it. Leaving the field empty is a change of mind.
+    if (!trimmed || trimmed === initial.trim()) onCancel();
+    else onSave(trimmed);
+  };
+
+  const grow = (el: HTMLTextAreaElement): void => {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  // Focused here rather than by `autoFocus`: the press that opened the editor is
+  // still being handled by the drag machinery on the card above, and the caret
+  // goes to the end so appending a word needs no click first.
+  const box = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    // Once, on open. Re-running would drag the caret back on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className={styles['editor']}>
-      <textarea
-        className={styles['editBox']}
-        rows={3}
-        value={text}
-        aria-label="Edit card"
-        autoFocus
-        // Caret at the end rather than selecting everything, so the common case
-        // — appending a word — does not need a click first.
-        ref={(el) => {
-          if (el) el.setSelectionRange(el.value.length, el.value.length);
-        }}
-        onInput={(event) => setText((event.target as HTMLTextAreaElement).value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.stopPropagation();
-            onCancel();
-          } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            onSave(text);
-          }
-        }}
-      />
-      <div className={styles['editActions']}>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button tone="primary" onClick={() => onSave(text)}>
-          Save
-        </Button>
-      </div>
-    </div>
+    <textarea
+      className={cx(styles['cardText'], styles['editBox'])}
+      rows={1}
+      value={text}
+      aria-label="Edit card"
+      ref={(el) => {
+        box.current = el;
+        if (el) grow(el);
+      }}
+      onInput={(event) => {
+        const el = event.target as HTMLTextAreaElement;
+        setText(el.value);
+        grow(el);
+      }}
+      // Clicking away is a commit: there is no Save button to reach instead.
+      onBlur={() => commit(text)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          done.current = true;
+          onCancel();
+        } else if (event.key === 'Enter' && !event.shiftKey) {
+          // Enter saves; Shift-Enter is the newline. A card is a sentence.
+          event.preventDefault();
+          commit(text);
+        }
+      }}
+    />
   );
 }
 
-export function CardView({
+function CardViewBase({
   card,
   authorAvatar,
   myReactions,
@@ -111,11 +139,9 @@ export function CardView({
   onEdit,
   onDelete,
   onReact,
-  onMoveTo,
-  onGripPointerDown,
+  onCardPointerDown,
 }: CardViewProps) {
   const [editing, setEditing] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
   /**
    * A delete waiting to be confirmed.
@@ -128,8 +154,12 @@ export function CardView({
   const [confirming, setConfirming] = useState(false);
 
   const cardRef = useRef<HTMLElement | null>(null);
+  // Where the press that a click came from landed. A drag ends in a click too,
+  // on whatever the pointer is over, and that must not open an editor.
+  const pressAt = useRef<{ x: number; y: number } | null>(null);
   const confirmRef = useRef<HTMLSpanElement | null>(null);
   const trayTriggerRef = useRef<HTMLButtonElement>(null);
+  const trayRef = useRef<HTMLDivElement | null>(null);
   const trayId = useId();
 
   const isAI = card.origin === 'ai';
@@ -147,7 +177,7 @@ export function CardView({
   // The card, not the trigger, is the tray's boundary: the trigger and the tray
   // are no longer one element, and anything else in the action row is a click
   // you meant to make on this card.
-  useDismiss(trayOpen, cardRef, closeTray);
+  useDismiss(trayOpen, cardRef, closeTray, trayRef);
   useDismiss(confirming, confirmRef, cancelDelete);
 
   // A pending delete must not survive into a state where the card can no longer
@@ -162,11 +192,17 @@ export function CardView({
       className={cx(
         styles['card'],
         isAI && styles['cardAI'],
+        locked && styles['cardLocked'],
         dragging && styles['cardDragging'],
         arrived && motion['arrived']
       )}
       data-card-id={card.id}
       aria-label={`Card by ${isAI ? 'AI' : card.author}`}
+      // The whole card is the handle; the hook decides what a press means from
+      // the pointer type and skips one that landed on a control.
+      onPointerDown={(event) => {
+        if (!editing && !locked) onCardPointerDown(card.id, event as unknown as PointerEvent);
+      }}
     >
       {editing ? (
         <CardEditor
@@ -174,20 +210,41 @@ export function CardView({
           onCancel={() => setEditing(false)}
           onSave={(text) => {
             setEditing(false);
-            onEdit(text);
+            onEdit(card.id, text);
           }}
         />
       ) : (
         // pre-wrap, not a markdown or linkify pass: card text is whatever a
         // teammate typed and is rendered as a text child, so there is no path
         // by which it becomes markup. Newlines still survive.
-        <p className={styles['cardText']}>{card.text}</p>
+        //
+        // Your own text is the way into the editor — the card is the handle for
+        // a drag, and a press that never moves is a click on what it landed on.
+        // The pencil beside it is the same action for a keyboard.
+        <p
+          className={cx(styles['cardText'], canModify && styles['cardTextMine'])}
+          {...(canModify
+            ? {
+                onPointerDown: (event: { clientX: number; clientY: number }) => {
+                  pressAt.current = { x: event.clientX, y: event.clientY };
+                },
+                onClick: (event: { clientX: number; clientY: number }) => {
+                  const at = pressAt.current;
+                  pressAt.current = null;
+                  if (!at || Math.hypot(event.clientX - at.x, event.clientY - at.y) > 4) return;
+                  setEditing(true);
+                },
+              }
+            : {})}
+        >
+          {card.text}
+        </p>
       )}
 
       <div className={styles['cardMeta']}>
         {isAI ? (
           <span className={styles['aiBadge']}>
-            <span aria-hidden="true">🤖</span> AI
+            <Icon name="sparkles" size={14} /> AI
           </span>
         ) : (
           <span className={styles['author']}>
@@ -203,6 +260,16 @@ export function CardView({
         ) : null}
 
         <span className={styles['metaSpacer']} />
+
+        {/* In the row, not under it. Below the row it added a line to every card
+            that anyone had reacted to, so the board reflowed the first time
+            somebody pressed 👍 — and the row already has the height for it. */}
+        <ReactionChips
+          reactions={card.reactions}
+          mine={myReactions}
+          onReact={(emoji) => onReact(card.id, emoji)}
+          disabled={locked}
+        />
 
         {confirming ? (
           // The whole control cluster is replaced rather than added to: a
@@ -223,57 +290,17 @@ export function CardView({
               autoFocus
               onClick={() => {
                 setConfirming(false);
-                onDelete();
+                onDelete(card.id);
               }}
             >
-              <span aria-hidden="true">✓</span>
+              <Icon name="check" size={16} />
             </Button>
             <Button shape="bare" aria-label="Keep the card" onClick={cancelDelete}>
-              <span aria-hidden="true">↩</span>
+              <Icon name="undo" size={16} />
             </Button>
           </span>
         ) : (
           <>
-          {locked ? null : (
-            <span className={styles['gripWrap']}>
-              {/* `.grip` is not styling: its `touch-action: none` and
-                  `cursor: grab` are the drag mechanics useCardDrag reads. That
-                  is why it stays a class rather than becoming a `shape`. */}
-              <Button
-                shape="bare"
-                className={styles['grip']}
-                aria-label={`Move card: ${card.text.slice(0, 40)}`}
-                aria-haspopup="menu"
-                aria-expanded={moveOpen}
-                onPointerDown={(event) => onGripPointerDown(event as unknown as PointerEvent)}
-                onClick={() => setMoveOpen((v) => !v)}
-              >
-                <span aria-hidden="true">⠿</span>
-              </Button>
-              {moveOpen ? (
-                // The keyboard path. Dragging with arrow keys is a worse
-                // interaction than naming the destination, and this is also the
-                // only way to move a card with a screen reader running.
-                <div className={styles['moveMenu']} role="menu" aria-label="Move to column">
-                  {RETRO_GRIDS.filter((grid) => grid !== card.grid).map((grid) => (
-                    <button
-                      key={grid}
-                      type="button"
-                      role="menuitem"
-                      className={styles['moveItem']}
-                      onClick={() => {
-                        setMoveOpen(false);
-                        onMoveTo(grid);
-                      }}
-                    >
-                      {RETRO_GRID_LABELS[grid]}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </span>
-          )}
-
           {locked ? null : (
             <ReactionTrigger
               open={trayOpen}
@@ -291,7 +318,7 @@ export function CardView({
                 aria-label={`Edit card: ${card.text.slice(0, 40)}`}
                 onClick={() => setEditing(true)}
               >
-                <span aria-hidden="true">✎</span>
+                <Icon name="pencil" size={16} />
               </Button>
               <Button
                 shape="bare"
@@ -299,7 +326,7 @@ export function CardView({
                 aria-label={`Delete card: ${card.text.slice(0, 40)}`}
                 onClick={() => setConfirming(true)}
               >
-                <span aria-hidden="true">✕</span>
+                <Icon name="trash" size={16} />
               </Button>
             </>
           ) : null}
@@ -307,21 +334,25 @@ export function CardView({
         )}
       </div>
 
-      {/* In the flow, below the row that opened it — see the note in
-          ReactionBar.tsx about the column clipping a floating panel. */}
-      {trayOpen && !locked ? (
-        <ReactionTray
-          id={trayId}
-          mine={myReactions}
-          onPick={(emoji) => {
-            onReact(emoji);
-            setTrayOpen(false);
-            trayTriggerRef.current?.focus();
-          }}
-        />
-      ) : null}
-
-      <ReactionChips reactions={card.reactions} mine={myReactions} onReact={onReact} disabled={locked} />
+      <ReactionTray
+        open={trayOpen && !locked}
+        id={trayId}
+        anchorRef={trayTriggerRef}
+        trayRef={trayRef}
+        mine={myReactions}
+        onPick={(emoji) => {
+          onReact(card.id, emoji);
+          setTrayOpen(false);
+          trayTriggerRef.current?.focus();
+        }}
+      />
     </article>
   );
 }
+
+/**
+ * Memoised: a drag re-renders the board on every slot the pointer crosses, and
+ * without this that is every card on the board rather than the two whose drop
+ * indicator moved.
+ */
+export const CardView = memo(CardViewBase);

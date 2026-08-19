@@ -2,37 +2,40 @@
   "schema_version": 1,
   "entries": [
     {
-      "version": "3.22.0",
+      "version": "3.23.0",
       "date": "2026-08-19",
-      "summary": "The planning-poker board is redesigned with a new shared design kit that all browser-facing surfaces now build on. An elevation ladder, radius and motion scales, and a vendored icon set replace per-board glyph strings. The shared board kit (frontend/src/shared/board/) unifies the rail, roster, notch, dock and other components across retro and poker into one Button and one Dropdown that replace five previous variants. The poker board itself now has one entrance instead of three, an announced turn, a dancing duck that faces the page and sleeps during locks, and glyphs drawn on a grid that survives 16px windows. A light-theme contrast audit now runs and enforces contrast minimums. All built outputs are committed; no Node runtime is needed for pip install yeaboi.",
+      "summary": "The poker and retro live boards have been redesigned on a shared component kit with a unified design system. The new design introduces an elevation ladder, radius and motion scales, and vendored icon set that powers both boards. Retro cards are now draggable with GPU-accelerated transforms, reactions are displayed as a glass tray, and the facilitator controls moved to a right rail with real history of past retros and AI-powered action-item suggestions. Poker gained a dynamic duel experience with proper turn announcement, an improved table layout, and the duck mascot that responds to game events. Both boards now survive small windows down to 16px and share a unified toolbar and room roster.",
       "highlights": [
         {
-          "text": "Planning poker board redesigned with new entrance, announced turns, and a grid-based glyph set that renders at any window size",
+          "text": "Retro cards are now draggable with GPU-accelerated transforms and glass-tray reactions",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Facilitator rail shows retro history and provides admin-gated AI action-item suggestions",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Poker duel experience redesigned with proper turn announcement and improved table layout",
           "areas": [
             "planning"
           ]
         },
         {
-          "text": "Shared board kit unifies retro and poker surfaces with one Button, one Dropdown, and consistent rail/roster/notch/dock components",
+          "text": "Unified design system shared between poker and retro: elevation ladder, motion scales, and shared icon set",
           "areas": [
+            "retro",
+            "planning",
             "general"
           ]
         },
         {
-          "text": "Design basis established: elevation ladder, radius and motion scales, and vendored icon set replace board-local glyph strings",
+          "text": "Both boards now survive small windows and adapt gracefully on mobile devices",
           "areas": [
-            "general"
-          ]
-        },
-        {
-          "text": "Light theme contrast audit now active and enforced for all browser surfaces",
-          "areas": [
-            "general"
-          ]
-        },
-        {
-          "text": "Duck character gains real animation: faces the page, dances to the music, sleeps during locks, and bounces with physics",
-          "areas": [
+            "retro",
             "planning"
           ]
         }

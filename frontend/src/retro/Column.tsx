@@ -9,9 +9,9 @@
  * column with the same accessible name are worse than clutter.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { toneMix, toneVar } from '../design/tone';
+import { toneVar } from '../design/tone';
 import { Ticker } from '../motion';
 import { TypingIndicator } from '../shared';
 import { cx } from '../runtime/cx';
@@ -22,7 +22,11 @@ import { ColumnComposer } from './ColumnComposer';
 import { GRID_TONE } from './gridTone';
 import type { DropTarget } from './useCardDrag';
 import motion from '../motion/motion.module.css';
+import { useEdgeFade } from './useEdgeFade';
 import styles from './retro.module.css';
+
+/** How long the surviving cards take to arrive after a filter change. */
+const FILTER_MS = 200;
 
 const NO_REACTIONS: ReadonlySet<string> = new Set();
 
@@ -38,13 +42,17 @@ export interface ColumnProps {
   /** Card ids that just arrived from a peer, for the entrance animation. */
   arrivals: ReadonlySet<string>;
   locked: boolean;
-  /** Cluster cards under an author heading instead of listing them flat. */
-  grouped: boolean;
   /** Only this author's cards are shown, during a walkthrough. */
   focus: string;
   /** Where a card would land if dropped now — `null` when not over this column. */
   dropAt: DropTarget | null;
   draggingId: string | null;
+  /** True when this is the column being written in. One draft at a time. */
+  composing: boolean;
+  /** Bumped to pull the caret back into an already-open box. */
+  focusNonce: number;
+  onOpenComposer(): void;
+  onCloseComposer(): void;
   /** A card written in this column's own composer. */
   onAddCard(text: string): void;
   /** Fired as you type into this column, for the peer "is writing" ghost. */
@@ -52,20 +60,8 @@ export interface ColumnProps {
   onEdit(cardId: string, text: string): void;
   onDelete(cardId: string): void;
   onReact(cardId: string, emoji: string): void;
-  onMoveTo(cardId: string, grid: RetroGrids): void;
-  onGripPointerDown(cardId: string, event: PointerEvent): void;
-}
-
-/** Cards clustered by author, first-seen order preserved. */
-function groupByAuthor(cards: readonly RetroCard[]): [string, RetroCard[]][] {
-  const groups = new Map<string, RetroCard[]>();
-  for (const card of cards) {
-    const key = card.origin === 'ai' ? '🤖 AI' : card.author;
-    const bucket = groups.get(key);
-    if (bucket) bucket.push(card);
-    else groups.set(key, [card]);
-  }
-  return [...groups.entries()];
+  /** A press on the card body, which a mouse turns into a drag at once. */
+  onCardPointerDown(cardId: string, event: PointerEvent): void;
 }
 
 export function Column({
@@ -76,22 +72,38 @@ export function Column({
   typing,
   arrivals,
   locked,
-  grouped,
   focus,
   dropAt,
   draggingId,
+  composing,
+  focusNonce,
+  onOpenComposer,
+  onCloseComposer,
   onAddCard,
   onTyping,
   onEdit,
   onDelete,
   onReact,
-  onMoveTo,
-  onGripPointerDown,
+  onCardPointerDown,
 }: ColumnProps) {
-  const [composing, setComposing] = useState(false);
-  const [focusNonce, setFocusNonce] = useState(0);
   const label = RETRO_GRID_LABELS[grid];
   const visible = focus ? cards.filter((card) => card.author === focus) : cards;
+  const [scroller, edges] = useEdgeFade<HTMLDivElement>(visible.length);
+
+  // Filtering replaces what the column is showing, so the set that survives it
+  // arrives rather than appearing. A token cleared on a timer, not a remount:
+  // remounting would reseed the arrivals hook and drop the scroll position.
+  const [filtering, setFiltering] = useState(false);
+  const firstFocus = useRef(true);
+  useEffect(() => {
+    if (firstFocus.current) {
+      firstFocus.current = false;
+      return undefined;
+    }
+    setFiltering(true);
+    const timer = window.setTimeout(() => setFiltering(false), FILTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [focus]);
 
   // Drop positions skip the card being dragged, matching `indexAt` in
   // useCardDrag — count it and the indicator sits one slot off whenever you
@@ -102,16 +114,27 @@ export function Column({
   }
   const slots = positions.size;
 
-  const renderCard = (card: RetroCard) => (
+  const renderCard = (card: RetroCard, last: boolean) => (
     <div
       key={card.id}
       // Both classes, not one: `enter` places the card and `arrived` decays an
       // accent edge over the next 700ms, so a facilitator who was looking at
       // another column can still find what moved.
-      className={cx(styles['cardSlot'], arrivals.has(card.id) && motion['enter'])}
+      className={cx(
+        styles['cardSlot'],
+        arrivals.has(card.id) && motion['enter'],
+        filtering && styles['cardFiltered']
+      )}
     >
       {dropAt && dropAt.index === positions.get(card.id) ? (
-        <div className={styles['dropLine']} aria-hidden="true" />
+        <div className={styles['dropLine']} data-drop-line="lead" aria-hidden="true" />
+      ) : null}
+      {/* Past the last card. Rendered inside the slot rather than after it: the
+          indicator is positioned out of the flow, and a sibling in the flow
+          would push every card below it by its own height plus a gap — which
+          moves the very midpoints the drop index was computed from. */}
+      {last && dropAt && dropAt.index >= slots ? (
+        <div className={cx(styles['dropLine'], styles['dropLineTail'])} data-drop-line="tail" aria-hidden="true" />
       ) : null}
       <CardView
         arrived={arrivals.has(card.id)}
@@ -120,11 +143,10 @@ export function Column({
         myReactions={myReactions.get(card.id) ?? NO_REACTIONS}
         locked={locked}
         dragging={draggingId === card.id}
-        onEdit={(text) => onEdit(card.id, text)}
-        onDelete={() => onDelete(card.id)}
-        onReact={(emoji) => onReact(card.id, emoji)}
-        onMoveTo={(target) => onMoveTo(card.id, target)}
-        onGripPointerDown={(event) => onGripPointerDown(card.id, event)}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onReact={onReact}
+        onCardPointerDown={onCardPointerDown}
       />
     </div>
   );
@@ -135,11 +157,11 @@ export function Column({
     <section
       className={styles['column']}
       aria-labelledby={`col-${grid}`}
-      // The column's identity, as two custom properties the stylesheet reads.
-      // Set here rather than as four hand-written CSS rules so that the mapping
+      // The column's identity, as one custom property the stylesheet reads. Set
+      // here rather than as four hand-written CSS rules so that the mapping
       // lives in one typed place (gridTone.ts) and a new grid cannot ship
       // uncoloured.
-      style={{ '--col-tone': toneVar(tone), '--col-wash': toneMix(tone, 5, 'var(--bg)') } as never}
+      style={{ '--col-tone': toneVar(tone) } as never}
     >
       <header className={styles['columnHead']}>
         {/* The heading is mono and uppercase like every other label; the count
@@ -154,7 +176,12 @@ export function Column({
         <Ticker value={visible.length} className={styles['columnCount']} />
       </header>
 
-      <div className={cx(styles['cards'], dropAt && styles['cardsOver'])} data-grid={grid}>
+      <div
+        ref={scroller}
+        data-fade={edges}
+        className={cx(styles['cards'], dropAt && styles['cardsOver'])}
+        data-grid={grid}
+      >
         {typing.length > 0 ? (
           // A ghost card where the real one is about to land. The server has
           // always tracked typing; it used to be rendered only as a line of
@@ -165,34 +192,26 @@ export function Column({
         ) : null}
         {visible.length === 0 && typing.length === 0 ? (
           <p className={styles['columnEmpty']}>{focus ? `Nothing from ${focus} here.` : 'Nothing yet.'}</p>
-        ) : grouped ? (
-          groupByAuthor(visible).map(([author, group]) => (
-            <div key={author} className={styles['authorGroup']}>
-              <h3 className={styles['authorGroupHead']}>{author}</h3>
-              {group.map(renderCard)}
-            </div>
-          ))
         ) : (
-          visible.map(renderCard)
+          visible.map((card, index) => renderCard(card, index === visible.length - 1))
         )}
-        {/* Trailing indicator, for a drop past the last card. */}
-        {dropAt && dropAt.index >= slots ? <div className={styles['dropLine']} aria-hidden="true" /> : null}
-      </div>
+        {/* An empty column has no last slot to hang the tail indicator in. */}
+        {visible.length === 0 && dropAt ? <div className={styles['dropLine']} data-drop-line="empty" aria-hidden="true" /> : null}
 
-      {locked ? null : (
-        <ColumnComposer
-          label={label}
-          open={composing}
-          focusNonce={focusNonce}
-          onOpen={() => {
-            setComposing(true);
-            setFocusNonce((n) => n + 1);
-          }}
-          onClose={() => setComposing(false)}
-          onSubmit={onAddCard}
-          onTyping={onTyping}
-        />
-      )}
+        {/* Last in the stack, so a card lands where you were pointing and the
+            rest of the column is the control that opens it. */}
+        {locked ? null : (
+          <ColumnComposer
+            label={label}
+            open={composing}
+            focusNonce={focusNonce}
+            onOpen={onOpenComposer}
+            onClose={onCloseComposer}
+            onSubmit={onAddCard}
+            onTyping={onTyping}
+          />
+        )}
+      </div>
 
       {/* The ghost above says this visually and is aria-hidden; this keeps the
           announcement without printing the same sentence twice on screen. */}
