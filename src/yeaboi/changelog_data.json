@@ -2,7 +2,7 @@
   "schema_version": 1,
   "entries": [
     {
-      "version": "3.22.0",
+      "version": "3.23.0",
       "date": "2026-08-19",
       "summary": "The poker and retro live boards have been redesigned on a shared component kit with a unified design system. The new design introduces an elevation ladder, radius and motion scales, and vendored icon set that powers both boards. Retro cards are now draggable with GPU-accelerated transforms, reactions are displayed as a glass tray, and the facilitator controls moved to a right rail with real history of past retros and AI-powered action-item suggestions. Poker gained a dynamic duel experience with proper turn announcement, an improved table layout, and the duck mascot that responds to game events. Both boards now survive small windows down to 16px and share a unified toolbar and room roster.",
       "highlights": [
