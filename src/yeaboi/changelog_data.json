@@ -2,6 +2,39 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.21.0",
+      "date": "2026-08-19",
+      "summary": "yeaboi now supports Claude subscription authentication using long-lived OAuth tokens instead of just API keys. The settings page gains a new auth-mode row where you can choose between API key and subscription token, and a seamless in-app setup flow — `claude setup-token` runs interactively on a managed pty while you stay in the TUI, letting you authorize in a browser and paste the code without leaving the app. Tokens are monitored for staleness via a free probe at launch, and if one expires during use, the duck alerts you with a Ctrl+R shortcut to refresh. The implementation includes new guardrails for OAuth beta compatibility, token extraction from CLI output, and a new provider card in the setup wizard.",
+      "highlights": [
+        {
+          "text": "Choose between API key and subscription token in settings — new auth-mode row with derived provider list and credentials UI",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Sign in with `claude setup-token` without leaving the app — runs the CLI on a managed pty, opens a browser, and stays in the TUI throughout",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Subscription tokens are validated at launch via a free probe and monitored for staleness, with Ctrl+R to refresh when needed",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Full OAuth 2025-04-20 beta support with Bearer token auth instead of API key headers",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.20.0",
       "date": "2026-08-17",
       "summary": "Ship mode now surfaces a live, shareable web board — teammates can watch the story→PR pipeline run in real time over a browser, including the five-phase checklist, live agent activity, the diff, validation results, and cost estimates. The board is read-only for this release; guests watch from any device via a Cloudflare tunnel while you drive approval/rejection from the TUI. The board reuses the existing retro/poker live-board infrastructure and security model. Additionally, ship mode fixes a critical plan-finding bug where plans saved in the interactive planning chat were invisible (\"no stories found\") and adds cloud-friendly Cloudflare tunnel option for remote team collaboration.",
