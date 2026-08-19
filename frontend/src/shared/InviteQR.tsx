@@ -28,19 +28,26 @@ export interface InviteQRProps {
    * `GET /api/invite` after the panel opens, not from the boot payload.
    */
   joinCode?: string | undefined;
-  /** The URL to share. Shown as text so it can be read aloud as well as copied. */
-  shareUrl?: string | undefined;
   /**
-   * The whole invite as one URL — `shareUrl` with the code in its fragment.
+   * The whole invite as one URL — the board's address with the code in its
+   * fragment.
    *
    * Built by `sharing.access.invite_url` and never re-derived here; this
    * component only renders what arrived.
    */
   inviteUrl?: string | undefined;
+  /**
+   * The board's bare address, without the code in its fragment.
+   *
+   * Only the ship board sends it: retro and poker deliberately offer the one
+   * link that carries the code, because a second URL beside it is the same
+   * invite said twice.
+   */
+  shareUrl?: string | undefined;
   className?: string | undefined;
 }
 
-export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: InviteQRProps) {
+export function InviteQR({ qrSrc, joinCode, inviteUrl, shareUrl, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
 
   return (
@@ -49,8 +56,8 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: In
         <img
           className={styles['qr']}
           src={src}
-          width={200}
-          height={200}
+          width={280}
+          height={280}
           alt="QR code linking to this board"
         />
       ) : null}
@@ -66,9 +73,9 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: In
           `copyText` legitimately fails (insecure context, expired activation
           window) and the panel must still have a way out.
 
-          Link and Code stay below it, separately copyable, for the host who
-          wants to post the address in a channel and pass the code another way. */}
-      {inviteUrl ? <CopyField label="Invite" value={inviteUrl} /> : null}
+          The code stays below it, separately copyable, for the host who wants
+          to read it out while the link goes in a channel. */}
+      {inviteUrl ? <CopyField label="Invite link" value={inviteUrl} /> : null}
       {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>

@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Duck, useDuckPulse, type DuckRest } from '../design/primitives';
+import { Duck, Icon, type DuckRest, useDuckPulse } from '../design/primitives';
 import { useAlarm } from '../hooks/useAlarm';
 import { useBoardStream } from '../hooks/useBoardStream';
 import { useConfetti } from '../hooks/useConfetti';
@@ -51,7 +51,6 @@ import {
   Popover,
   PresenceRow,
   ProfileModal,
-  Roster,
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
@@ -59,21 +58,21 @@ import {
   Toolbar,
   Visualizer,
 } from '../shared';
+import { Room } from '../shared/board';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
 import { AVATARS } from '../types/enums';
 import type { Participant, PokerVote, TicketMeta, TicketView } from '../types/board';
-import { createPokerActions, type TicketEdit } from './actions';
+import { createPokerActions, type TicketEdit, type TrackerOptions } from './actions';
 import type { PokerBoot } from './boot';
 import { Console } from './Console';
 import { Deck } from './Deck';
-import { Duel } from './Duel';
-import { EditTicketModal } from './EditTicketModal';
 import { Rail } from './Rail';
 import { Results } from './Results';
 import { Table } from './Table';
-import { TicketPanel } from './Ticket';
+import { ticketOptions, TicketPanel } from './Ticket';
 import { useDuelMic } from './useDuelMic';
+import { boardStyles as kit } from '../shared/board';
 import styles from './poker.module.css';
 
 /** Storage keys. Unchanged from the page this replaces, so a live session survives. */
@@ -121,6 +120,8 @@ export function App({ boot }: { boot: PokerBoot }) {
   const duel = snapshot?.duel ?? null;
   const ticketIndex = snapshot?.ticket_index ?? 0;
   const ticketCount = snapshot?.ticket_count ?? 0;
+  const recording =
+    Boolean(snapshot?.room_mic) || Boolean(duel && (duel.recording.host || duel.recording.low || duel.recording.high));
 
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
@@ -131,6 +132,9 @@ export function App({ boot }: { boot: PokerBoot }) {
   const invite = useInvite(session, inviteOpen);
   const [railOpen, setRailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // What the tracker itself accepts, asked for once when the editor opens —
+  // it is a round-trip to Jira, so it has no business on the state poll.
+  const [trackerOptions, setTrackerOptions] = useState<TrackerOptions>({});
   const [musicBlocked, setMusicBlocked] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -164,7 +168,7 @@ export function App({ boot }: { boot: PokerBoot }) {
     onAutoplayBlocked: setMusicBlocked,
   });
 
-  const mic = useDuelMic(session, duel);
+  const mic = useDuelMic(session, duel, Boolean(snapshot?.room_mic));
 
   // ── Peek: reading a ticket the room is not voting on ───────────────────
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
@@ -209,7 +213,7 @@ export function App({ boot }: { boot: PokerBoot }) {
     peekIndex !== null
       ? 'Previewing a ticket — “Back to live” to vote'
       : locked
-        ? '🔒 Voting locked by the host'
+        ? 'Voting locked by the host'
         : !ticket
           ? 'No tickets loaded'
           : phase !== 'voting'
@@ -303,6 +307,13 @@ export function App({ boot }: { boot: PokerBoot }) {
     [actions, run, ticket]
   );
 
+  const openEdit = useCallback(() => {
+    setEditOpen(true);
+    setTrackerOptions({});
+    const key = ticket?.key;
+    if (key) void actions.trackerOptions(key).then(setTrackerOptions);
+  }, [actions, ticket]);
+
   // ── The gate ───────────────────────────────────────────────────────────
   if (!session.token) {
     return (
@@ -323,98 +334,112 @@ export function App({ boot }: { boot: PokerBoot }) {
   const estimated = snapshot?.progress.estimated ?? 0;
 
   return (
-    // `data-host` drives one CSS rule: lifting the sticky deck clear of the
-    // console's bottom sheet on a phone. Read from the same flag that renders
-    // the console, so a guest never gets the offset for a bar they do not have.
+    // `data-host` drives the room the board leaves for the console: at the foot
+    // of the ticket list below --bp-m, and across the whole column below --bp-s.
+    // Read from the same flag that renders it, so a guest never gets the gap for
+    // a panel they do not have.
     <PageShell
       chrome={boot.chrome}
       variant="app"
-      className={styles['app']}
+      className={kit['board']}
       data={{ 'data-host': isHost ? 'true' : undefined }}
+      dock={
+        <>
+          <Visualizer playing={music.playing} analyser={music.analyser} />
+
+          <IconButton
+            icon={<Icon name="menu" size={16} />}
+            label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
+            active={railOpen}
+            className={kit['railToggle']}
+            onClick={() => setRailOpen(!railOpen)}
+          />
+
+          {isHost ? (
+            <IconButton
+              icon={<Icon name={locked ? 'lock' : 'lock-open'} size={16} />}
+              label={locked ? 'Unlock voting' : 'Lock voting'}
+              active={locked}
+              onClick={() => run(actions.setLocked(!locked))}
+            />
+          ) : null}
+
+          <Popover trigger={<Icon name="music" size={16} />} label="Music" placement="above">
+            <MusicPlayer
+              music={music}
+              channels={boot.musicChannels}
+              footer={
+                isHost ? (
+                  <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
+                    <Icon name="megaphone" /> Play for everyone
+                  </Button>
+                ) : null
+              }
+            />
+          </Popover>
+
+          <Popover
+            trigger={
+              <>
+                <Icon name="timer" size={16} />
+                {/* Not while the floor is open: the count belongs between the
+                    two people it is counting for.
+
+                    Gated on the timer's own flag as well as the phase, because
+                    `remaining` is state and lags by a render: closing the floor
+                    clears the phase and the timer in one revision, but for the
+                    render in between the old count was still here — so the
+                    readout appeared, widened the dock, and folded away again. */}
+                <TimerReadout remaining={phase === 'duel' || !snapshot?.timer.running ? null : remaining} />
+              </>
+            }
+            label="Timer"
+            placement="above"
+          >
+            {isHost ? (
+              <TimerControls
+                running={Boolean(snapshot?.timer.running)}
+                onStart={(seconds) => run(actions.startTimer(seconds))}
+                onStop={() => run(actions.stopTimer())}
+              />
+            ) : (
+              <p className={styles['popNote']}>The host controls the timer.</p>
+            )}
+          </Popover>
+
+          <Popover trigger={<Icon name="contrast" size={16} />} label="Theme" placement="above">
+            <ThemeSwitcher
+              value={theme}
+              onChange={chooseTheme}
+              footer={
+                isHost ? (
+                  <Button onClick={() => run(actions.castTheme(theme))}>
+                    <Icon name="megaphone" /> Apply to everyone
+                  </Button>
+                ) : null
+              }
+            />
+          </Popover>
+
+          <IconButton
+            icon={<Icon name="mail" size={16} />}
+            label="Invite the team"
+            tone="primary"
+            compact
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite
+          </IconButton>
+        </>
+      }
       bar={
         <Toolbar
         // No `brand`: the masthead above already sets the word in the six-row
         // face. See the note on Toolbar's prop.
-        mark={<Duck state={duckState} size={30} />}
+        mark={<Duck state={duckState} jamming={music.playing} size={30} />}
         subtitle={
           <>
-            {boot.scope ? `${boot.scope} · ` : ''}
-            {ticketCount ? `${estimated}/${ticketCount} estimated` : 'no tickets'}
-            {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
-          </>
-        }
-        tools={
-          <>
-            <Visualizer playing={music.playing} />
-
-            <IconButton
-              icon="☰"
-              label={railOpen ? 'Hide the ticket list' : 'Show the ticket list'}
-              active={railOpen}
-              className={styles['railToggle']}
-              onClick={() => setRailOpen(!railOpen)}
-            />
-
-            {isHost ? (
-              <IconButton
-                icon="🔒"
-                label={locked ? 'Unlock voting' : 'Lock voting'}
-                active={locked}
-                onClick={() => run(actions.setLocked(!locked))}
-              />
-            ) : null}
-
-            <Popover trigger={<span aria-hidden="true">♪</span>} label="Music">
-              <MusicPlayer
-                music={music}
-                channels={boot.musicChannels}
-                footer={
-                  isHost ? (
-                    <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
-                      <span aria-hidden="true">📣</span> Play for everyone
-                    </Button>
-                  ) : null
-                }
-              />
-            </Popover>
-
-            <Popover
-              trigger={
-                <>
-                  <span aria-hidden="true">⏱</span>
-                  <TimerReadout remaining={remaining} />
-                </>
-              }
-              label="Timer"
-            >
-              {isHost ? (
-                <TimerControls
-                  running={Boolean(snapshot?.timer.running)}
-                  onStart={(seconds) => run(actions.startTimer(seconds))}
-                  onStop={() => run(actions.stopTimer())}
-                />
-              ) : (
-                <p className={styles['popNote']}>The host controls the timer.</p>
-              )}
-            </Popover>
-
-            <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme">
-              <ThemeSwitcher
-                value={theme}
-                onChange={chooseTheme}
-                footer={
-                  isHost ? (
-                    <Button onClick={() => run(actions.castTheme(theme))}>
-                      <span aria-hidden="true">📣</span> Apply to everyone
-                    </Button>
-                  ) : null
-                }
-              />
-            </Popover>
-
-            <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
-              Invite
-            </IconButton>
+            {status === 'retrying' ? <span className={styles['offline']}>reconnecting…</span> : null}
           </>
         }
       >
@@ -422,25 +447,24 @@ export function App({ boot }: { boot: PokerBoot }) {
           <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
             <span aria-hidden="true">{avatar}</span>
             <span className={styles['meName']}>{name || 'Set your name'}</span>
-            <span aria-hidden="true" className={styles['pen']}>
-              ✎
-            </span>
+
           </button>
 
           <PresenceRow people={presence.filter((person) => person.name !== name)} />
 
-          <Popover
-            align="left"
-            trigger={
-              <>
-                <span aria-hidden="true">👥</span>
-                <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
-              </>
-            }
-            label="Who is in the room"
-          >
-            <Roster people={presence} meName={name} />
-          </Popover>
+          <Room people={presence} meName={name} />
+
+          {/* Everyone's to see, not the host's: the one person who knows a mic
+              is open is the one who opened it, and the rest of the room is who
+              is being recorded. A light rather than a label — it sits beside
+              the headcount, which is the other thing that is true of the room
+              as a whole. `role="status"` announces it once when it starts. */}
+          {recording ? (
+            <span className={styles['recBadge']} role="status" title="The debate is being recorded">
+              <span className={styles['recDot']} aria-hidden="true" />
+              <span className={kit['srOnly']}>Recording</span>
+            </span>
+          ) : null}
         </div>
         </Toolbar>
       }
@@ -449,13 +473,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           inside row 3. `deckZone` is sticky at `bottom: 0`, so it parks against
           the bottom of this region rather than the viewport — which is where
           the credit begins, so the two no longer fight. */}
-      <div className={styles['scroll']}>
-      {locked ? (
-        <p className={styles['lockBanner']} role="alert">
-          <span aria-hidden="true">🔒</span> The host locked voting.
-        </p>
-      ) : null}
-
+      <div className={kit['scroll']}>
       {musicBlocked ? (
         <button
           type="button"
@@ -467,28 +485,33 @@ export function App({ boot }: { boot: PokerBoot }) {
               .catch(() => {})
           }
         >
-          <span aria-hidden="true">▶</span> The host started music — tap to listen
+          <Icon name="play" /> The host started music — tap to listen
         </button>
       ) : null}
 
-      <div className={styles['layout']}>
+      <div className={kit['layout']}>
         <Rail
           tickets={tickets}
           current={ticketIndex}
           peeking={peekIndex}
           estimated={estimated}
+          scope={boot.scope}
           open={railOpen}
-          onPick={setPeekIndex}
+          // The host's click moves the room. Previewing is what a *guest* does
+          // with the rail — they cannot move it — and asking the one person who
+          // can to preview first and then confirm is a step for nothing.
+          onPick={(next) => (isHost ? run(actions.goto(next)) : setPeekIndex(next))}
           onClose={() => setRailOpen(false)}
         />
         {/* Tapping outside the drawer closes it. A div rather than a button
             because it is a dismissal surface, not a control — the drawer's own
             toggle in the toolbar is the keyboard path. */}
-        {railOpen ? <div className={styles['railBackdrop']} onClick={() => setRailOpen(false)} /> : null}
+        {railOpen ? <div className={kit['railBackdrop']} onClick={() => setRailOpen(false)} /> : null}
 
-        <main className={styles['main']}>
+        <main className={kit['main']}>
           <TicketPanel
             ticket={ticket}
+            loaded={snapshot !== null}
             phase={phase}
             index={ticketIndex}
             count={ticketCount}
@@ -496,6 +519,12 @@ export function App({ boot }: { boot: PokerBoot }) {
             peekIndex={peekIndex}
             liveKey={tickets[ticketIndex]?.key ?? ''}
             isHost={isHost}
+            onEdit={openEdit}
+            editing={editOpen}
+            options={ticketOptions(ticket ? [ticket] : [], trackerOptions)}
+            onSaveEdit={saveEdit}
+            onCancelEdit={() => setEditOpen(false)}
+            onGoto={(next) => run(actions.goto(next))}
             onBackToLive={() => setPeekIndex(null)}
             onGotoPeek={() => {
               const target = peekIndex;
@@ -508,19 +537,28 @@ export function App({ boot }: { boot: PokerBoot }) {
             distribution={snapshot?.distribution ?? {}}
             median={snapshot?.median ?? null}
             suggestion={snapshot?.suggestion ?? null}
-            ai={snapshot?.ai ?? { pending: false, note: '', suggested: null, confidence: '', evidence: [] }}
+            ai={snapshot?.ai ?? { pending: false, from_llm: false, note: '', suggested: null, confidence: '', evidence: [] }}
+            duel={duel}
+            remaining={remaining}
+            isHost={isHost}
+            onNextTurn={() => run(actions.nextTurn())}
+            onCloseDuel={() => run(actions.closeDuel())}
             revealed={revealed}
           />
 
-          {duel ? <Duel duel={duel} mic={mic} /> : null}
-
-          <Table votes={votes} revealed={revealed} />
+          <Table
+            votes={votes}
+            revealed={revealed}
+            arguing={duel && duel.status === 'live' ? [duel.low.name, duel.high.name] : undefined}
+          />
 
           <Deck
             mine={vote.value}
             pending={vote.pending}
             disabled={deckClosed}
             reason={deckReason}
+            locked={locked}
+            waiting={votes.filter((seat) => !seat.voted).length}
             onVote={castVote}
           />
         </main>
@@ -534,17 +572,15 @@ export function App({ boot }: { boot: PokerBoot }) {
             onRevote={() => run(actions.revote())}
             onAskAi={() => run(actions.askAi())}
             onOpenDuel={(seconds) => run(actions.openDuel(seconds))}
-            onNextTurn={() => run(actions.nextTurn())}
             onCloseDuel={() => run(actions.closeDuel())}
+            mic={mic}
             onFinalize={(points) => run(actions.finalize(points))}
-            onGoto={(index) => run(actions.goto(index))}
-            onEdit={() => setEditOpen(true)}
           />
         ) : null}
       </div>
 
       {/* Phase changes are visual everywhere else on this page. */}
-      <div className={styles['srOnly']} role="status" aria-live="polite" aria-atomic="true">
+      <div className={kit['srOnly']} role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
 
@@ -562,20 +598,15 @@ export function App({ boot }: { boot: PokerBoot }) {
         required={!name}
       />
 
-      <EditTicketModal open={editOpen} ticket={ticket} onSave={saveEdit} onClose={() => setEditOpen(false)} />
-
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
+        {/* No join code here: the link carries it, and the QR is the link. A
+            code to read out is a third way to say the same thing. */}
         <p className={styles['popNote']}>
-          Send the invite link — it carries the share code, so they land straight on the board.
-          Scanning the QR does the same. Keep both off anywhere public.
+          Send the link, or let them scan it — either one lands them straight on the board. Keep both off
+          anywhere public.
         </p>
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
-        <InviteQR
-          qrSrc={apiUrl(session, '/api/qr')}
-          inviteUrl={invite.invite?.inviteUrl}
-          shareUrl={invite.invite?.shareUrl}
-          joinCode={invite.invite?.joinCode}
-        />
+        <InviteQR qrSrc={apiUrl(session, '/api/qr')} inviteUrl={invite.invite?.inviteUrl} />
       </Modal>
       </div>
     </PageShell>

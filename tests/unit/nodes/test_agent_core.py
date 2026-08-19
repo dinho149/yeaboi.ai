@@ -945,3 +945,33 @@ class TestHumanReviewImports:
         from yeaboi.agent.nodes import human_review as fn
 
         assert fn is human_review
+
+
+class TestIsLlmRateLimited:
+    """A 429 is told apart from an auth failure because the remedy differs:
+    a rate limit clears on its own, a bad key does not."""
+
+    def test_an_anthropic_rate_limit(self):
+        import anthropic
+        import httpx
+
+        from yeaboi.agent.nodes import _is_llm_rate_limited
+
+        exc = anthropic.RateLimitError(
+            "rate limited",
+            response=httpx.Response(429, request=httpx.Request("POST", "https://api.anthropic.com")),
+            body=None,
+        )
+        assert _is_llm_rate_limited(exc) is True
+
+    def test_a_bare_429_from_any_provider(self):
+        from yeaboi.agent.nodes import _is_llm_rate_limited
+
+        exc = RuntimeError("too many requests")
+        exc.status_code = 429  # type: ignore[attr-defined]
+        assert _is_llm_rate_limited(exc) is True
+
+    def test_anything_else_is_not(self):
+        from yeaboi.agent.nodes import _is_llm_rate_limited
+
+        assert _is_llm_rate_limited(RuntimeError("boom")) is False

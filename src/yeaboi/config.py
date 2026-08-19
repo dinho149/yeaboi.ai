@@ -1031,7 +1031,10 @@ def is_llm_configured() -> tuple[bool, str]:
     """
     provider = get_llm_provider()
     if provider == "anthropic":
-        return (bool(os.getenv("ANTHROPIC_API_KEY")), "ANTHROPIC_API_KEY not set")
+        # Either credential counts: a subscription token authenticates as a
+        # bearer and needs no key at all (see get_llm).
+        ok = bool(os.getenv("ANTHROPIC_API_KEY") or get_anthropic_subscription_token())
+        return (ok, "ANTHROPIC_API_KEY not set, and no Claude subscription signed in")
     if provider == "openai":
         return (bool(get_openai_api_key()), "OPENAI_API_KEY not set")
     if provider == "google":

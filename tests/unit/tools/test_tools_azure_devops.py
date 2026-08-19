@@ -1009,6 +1009,56 @@ class TestAzdevopsBacklogIssues:
         assert azdevops_backlog_issues() == []
 
 
+class TestAzdevopsWorkItemOptions:
+    """The editor's pickers. No types: AzDO cannot change one in place."""
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_reads_states_and_assignees(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_work_item_options
+
+        mock_wit = MagicMock()
+        mock_wit.get_work_item.return_value = MagicMock(fields={"System.WorkItemType": "User Story"})
+        active, closed = MagicMock(), MagicMock()
+        active.name, closed.name = "Active", "Closed"
+        mock_wit.get_work_item_type_states.return_value = [active, closed]
+        mock_clients.return_value = (mock_wit, MagicMock())
+
+        with patch(
+            "yeaboi.tools.azure_devops.azdevops_assignee_roster",
+            return_value=[{"name": "Grace"}, {"name": "Ada"}],
+        ):
+            options = azdevops_work_item_options(101)
+
+        assert options == {"states": ["Active", "Closed"], "assignees": ["Ada", "Grace"]}
+        assert "types" not in options
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_one_failed_lookup_does_not_empty_the_other(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_work_item_options
+
+        mock_wit = MagicMock()
+        mock_wit.get_work_item.return_value = MagicMock(fields={"System.WorkItemType": "Bug"})
+        mock_wit.get_work_item_type_states.side_effect = RuntimeError("no permission")
+        mock_clients.return_value = (mock_wit, MagicMock())
+
+        with patch("yeaboi.tools.azure_devops.azdevops_assignee_roster", return_value=[{"name": "Ada"}]):
+            options = azdevops_work_item_options(101)
+
+        assert options == {"assignees": ["Ada"]}
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_unreadable_work_item_answers_nothing(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_work_item_options
+
+        mock_wit = MagicMock()
+        mock_wit.get_work_item.side_effect = RuntimeError("gone")
+        mock_clients.return_value = (mock_wit, MagicMock())
+        assert azdevops_work_item_options(101) == {}
+
+
 class TestAzdevopsUpdateWorkItemFields:
     @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
     @patch("yeaboi.tools.azure_devops._make_azdo_clients")

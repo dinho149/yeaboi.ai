@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from tests._pages import assert_self_contained, island
+from tests._pages import assert_self_contained, island, without_inline_payloads
 from yeaboi.ship.board import ShipBoard
 from yeaboi.ship.page import _document_title, board_config, build_board_html
 from yeaboi.ship.server import ShipServer
@@ -36,8 +36,11 @@ class TestSelfContained:
         # Not a preference: the tunnel CSP forbids every external origin and a
         # page opened over file:// cannot fetch one at all.
         assert_self_contained(page)
-        assert 'src="http' not in page and 'href="http' not in page
-        assert "cdn" not in page.lower()
+        # Blunt substring guards look at the markup only: an inlined font or
+        # image is base64, so it contains any given three-letter run by chance.
+        markup = without_inline_payloads(page)
+        assert 'src="http' not in markup and 'href="http' not in markup
+        assert "cdn" not in markup.lower()
 
     def test_bundle_is_not_a_module_script(self, page: str):
         # A type="module" script does not execute over file:// at all.

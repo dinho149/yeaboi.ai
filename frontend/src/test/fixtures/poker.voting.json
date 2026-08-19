@@ -2,6 +2,7 @@
   "ai": {
     "confidence": "",
     "evidence": [],
+    "from_llm": false,
     "note": "",
     "pending": false,
     "suggested": null
@@ -32,6 +33,7 @@
     "total": 2
   },
   "revision": 3,
+  "room_mic": false,
   "suggestion": null,
   "ticket": {
     "acceptance_text": "Updates land in under a second.",

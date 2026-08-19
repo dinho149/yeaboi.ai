@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 
+from yeaboi.paths import get_poker_log_dir
 from yeaboi.poker.board import POKER_DECK, median_of, snap_to_deck
 
 logger = logging.getLogger(__name__)
@@ -208,7 +209,7 @@ def get_poker_perspective(
     # invoke_json tracks usage + turns on JSON mode + re-asks once on bad JSON.
     # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.llm import invoke_json
-    from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
+    from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _is_llm_rate_limited, _local_llm_hint
     from yeaboi.prompts.poker import get_poker_perspective_prompt
 
     prompt = get_poker_perspective_prompt(
@@ -228,12 +229,17 @@ def get_poker_perspective(
         if _is_llm_auth_or_billing_error(exc):
             logger.warning("poker: LLM auth/billing error — surfacing as warning: %s", exc)
             return _fallback("AI unavailable (API key/billing) — showing the vote median instead.")
+        if _is_llm_rate_limited(exc):
+            logger.warning("poker: LLM rate limited — surfacing as warning: %s", exc)
+            return _fallback("AI is rate limited right now — try again shortly, showing the vote median instead.")
         local_hint = _local_llm_hint(exc)
         if local_hint:
             logger.warning("poker: local Ollama failure: %s", exc)
             return _fallback(local_hint)
         logger.warning("poker: LLM request failed, using fallback: %s", exc)
-        return _fallback("AI request failed — showing the vote median instead (see logs).")
+        # Named, not "see logs": the log lives in a directory nobody would guess.
+        log_path = get_poker_log_dir() / "poker.log"
+        return _fallback(f"AI request failed ({log_path}) — showing the vote median instead.")
 
     if not note:
         return _fallback("AI returned nothing usable — showing the vote median instead.")

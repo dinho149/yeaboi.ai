@@ -15,7 +15,7 @@ import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { TicketMeta } from '../types/board';
 import { fmtPoints } from './points';
-import styles from './poker.module.css';
+import { boardStyles as kit } from '../shared/board';
 
 export interface RailProps {
   tickets: readonly TicketMeta[];
@@ -25,33 +25,36 @@ export interface RailProps {
   peeking: number | null;
   estimated: number;
   /** Narrow screens: the rail is a drawer. */
+  /** The board's scope — the sprint or batch these tickets came from. */
+  scope: string;
   open: boolean;
   onPick(index: number): void;
   onClose(): void;
 }
 
-export function Rail({ tickets, current, peeking, estimated, open, onPick, onClose }: RailProps) {
+export function Rail({ tickets, current, peeking, estimated, scope, open, onPick, onClose }: RailProps) {
   return (
     <aside
-      className={cx(styles['rail'], open && styles['railOpen'])}
+      className={cx(kit['rail'], open && kit['railOpen'])}
       // Hidden from assistive tech when the drawer is shut, so a phone user
       // tabbing the board does not walk through an off-screen ticket list.
       aria-hidden={open ? undefined : 'true'}
     >
-      <div className={styles['railHead']}>
+      <div className={kit['railHead']}>
+        {scope ? <p className={kit['railScope']}>{scope}</p> : null}
         <Eyebrow value={`${estimated}/${tickets.length}`}>Tickets</Eyebrow>
       </div>
 
-      <ul className={styles['railList']}>
+      <ul className={kit['railList']}>
         {tickets.map((ticket, index) => (
           <li key={`${ticket.key}:${index}`}>
             <button
               type="button"
               className={cx(
-                styles['railItem'],
-                index === current && styles['railCurrent'],
-                index === peeking && styles['railPeeking'],
-                ticket.estimated && styles['railDone']
+                kit['railItem'],
+                index === current && kit['railCurrent'],
+                index === peeking && kit['railPeeking'],
+                ticket.estimated && kit['railDone']
               )}
               aria-current={index === current ? 'true' : undefined}
               title={ticket.summary}
@@ -60,13 +63,13 @@ export function Rail({ tickets, current, peeking, estimated, open, onPick, onClo
                 onClose();
               }}
             >
-              <span className={styles['railDot']} aria-hidden="true" />
-              <span className={styles['railText']}>
-                {ticket.key ? <span className={styles['railKey']}>{ticket.key}</span> : null}
+              <span className={kit['railDot']} aria-hidden="true" />
+              <span className={kit['railText']}>
+                {ticket.key ? <span className={kit['railKey']}>{ticket.key}</span> : null}
                 {ticket.summary}
               </span>
-              {ticket.estimated ? <span className={styles['railPts']}>{fmtPoints(ticket.final_points)}</span> : null}
-              <span className={styles['srOnly']}>
+              {ticket.estimated ? <span className={kit['railPts']}>{fmtPoints(ticket.final_points)}</span> : null}
+              <span className={kit['srOnly']}>
                 {index === current ? ' — being voted on now' : ticket.estimated ? ' — estimated' : ''}
               </span>
             </button>

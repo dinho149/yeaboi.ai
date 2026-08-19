@@ -52,6 +52,9 @@ _FETCHES = (
 )
 
 
+_DATA_URI_RE = re.compile(r"data:[a-z0-9.+/-]*;base64,[A-Za-z0-9+/=]+")
+
+
 def assert_self_contained(html: str) -> None:
     """Assert the document fetches nothing as it loads.
 
@@ -68,6 +71,18 @@ def assert_self_contained(html: str) -> None:
         assert match is None, f"document fetches at load: {html[match.start() : match.start() + 60]!r}"
     for link in _LINK_RE.findall(html):
         assert 'rel="icon"' in link and 'href="data:' in link, f"non-inline <link>: {link}"
+
+
+def without_inline_payloads(html: str) -> str:
+    """The document with every ``data:`` payload blanked.
+
+    For blunt substring guards. An inlined font or image is base64, so it
+    eventually contains any given three-letter run by chance — the fonts made
+    ``"cdn" not in page`` fail on the letters of a woff2. Stripping the payloads
+    keeps those guards looking at markup, which is the only place an external
+    reference can appear anyway.
+    """
+    return _DATA_URI_RE.sub("data:blanked", html)
 
 
 def island(html: str) -> dict:

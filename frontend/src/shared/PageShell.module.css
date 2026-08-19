@@ -20,68 +20,57 @@
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board in three parts: a masthead that scrolls away, a region exactly
-   one viewport tall holding the sticky bar and the board, and a credit under
-   it. The window scrolls; the region does not move within it.
-
-   The shell itself sets no height at all. Everything below depends on that. */
+   A live board is one screen: masthead strip, sticky bar, board, credit.
+   Fixed rather than in flow, so the document has nothing to scroll. */
 .shellApp {
   max-width: none;
   padding: 0;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* Bottom corners always, top corners only when they have earned it.
+     `--screen-void` showing through a corner is what draws the shape, and it
+     reads as a device edge only when what sits behind it is one. Nothing of the
+     browser is ever *below* the viewport, so the bottom pair is always right.
+     The top pair is the pair that lands against a tab strip and a bookmarks bar,
+     where the same notch reads as a rendering fault — so it is opt-in, from
+     `.shellCurved`. */
+  border-radius: 0 0 var(--screen-radius) var(--screen-radius);
+  /* The top pair is decided a frame or two after the document renders, and going
+     fullscreen decides it again — so the corners round off rather than appear.
+     The void is the same box's shadow and follows without being told. */
+  transition: border-radius var(--dur-base) var(--ease);
+  background: var(--bg);
+  box-shadow: 0 0 0 50vmax var(--screen-void);
+  /* Clips the children to the curve. */
+  overflow: hidden;
 }
 
-/*
- * One viewport, without measuring anything.
+/* The top corners, once the page owns the whole display. The bottom pair is on
+ * the base rule and never in question; this adds the two that were sitting
+ * against browser chrome.
  *
- * Neither the bar nor the credit is a constant height — `.appbar` wraps to two
- * and three lines on a phone — so "board = 100dvh minus the furniture" cannot
- * be written as a `calc()`, and reaching for a ResizeObserver to publish the
- * numbers as custom properties is a lot of machinery for a layout question.
- *
- * It is not needed. `height: 100dvh` on a flex column holding the bar, the
- * board *and* the credit makes the three of them exactly one viewport, and
- * `flex: 1` hands the board whatever the other two did not take. The arithmetic
- * is the browser's.
- *
- * What falls out of it is the behaviour this variant exists for. The document
- * is taller than the viewport by exactly the masthead — nothing else is outside
- * this box — so the page scrolls by that much and no more. Scrolled to the end,
- * the board has the whole screen with the bar on its top edge and the credit on
- * its bottom, both fully visible; scroll back and the identity is still there.
- * Leaving the credit outside would add its height to the scroll, and those last
- * pixels would drag the board's column headings under the sticky bar.
- *
- * `height`, not `min-height`, and the distinction is the whole mechanism. A
- * column flex container with an indefinite height sizes to its content, so
- * `min-height` only raises the floor and never caps: one column with more cards
- * than fit made the *region* grow to 2213px against an 827px viewport, which
- * handed `.cards` its full content height and stopped the inner scrollers from
- * ever engaging. The board then scrolled as one document — column headings
- * sliding under the sticky bar, the other three columns stretched into empty
- * voids, and the page scrolling by 1630px instead of by the masthead's 244.
- * A definite height is what gives `min-height: 0` on the chain below something
- * to shrink *against*.
- *
- * Neither board wants to grow instead. Retro's phone rendition is a horizontal
- * snap carousel with `overflow-y: hidden` (retro.module.css, the 699px branch),
- * not a vertical stack; poker scrolls in `.scroll`, and its sticky card deck
- * parks against that scrollport's bottom edge — which only exists if the region
- * is viewport-tall. Both files' comments already say "the shell's region is a
- * flex column of definite height"; this is the declaration that makes it true.
- *
- * `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
- * the visible viewport, and most people open a tunnel link on a phone.
- *
- * `--app-inset-bottom` is for a surface that puts something `position: fixed`
- * along the bottom edge — poker's host console is a bottom sheet on a phone.
- * The region has to stop short of it, or anything sticky parked at the region's
- * bottom (poker's card deck) parks *underneath* the sheet. The surface sets the
- * property on its own root and it inherits down; nothing else needs to know.
- */
+ * Gated by a class from `useFillsDisplay` rather than by a media query. Two
+ * media features were tried first and both failed on a plainly windowed Chrome:
+ * `not all and (display-mode: fullscreen)` never matched at all — `not all` is
+ * hack territory, not a negation — and the positive `(display-mode: fullscreen)`
+ * matched when it should not have, so the notches stayed either way. The hook
+ * measures the browser's own furniture instead of asking the browser to describe
+ * itself, which is the thing actually being decided here. */
+.shellCurved {
+  border-radius: var(--screen-radius);
+}
+
+/* The board: whatever height the masthead strip left. `min-height: 0` lets it
+   be shorter than its content, so the inner scrollers engage.
+   `--app-inset-bottom` clears a fixed bottom sheet (poker's host console). */
 .appRegion {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--app-inset-bottom, 0px));
+  flex: 1;
+  min-height: 0;
+  margin-bottom: var(--app-inset-bottom, 0px);
 }
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
@@ -97,12 +86,263 @@
 .masthead {
   margin-bottom: var(--s5);
 }
-.shellApp .masthead {
-  /* The grid supplies the rhythm; a bottom margin here would double it and
-     round the frame's corners off against the bar below. */
-  margin-bottom: 0;
+
+/*
+ * The tool cluster, docked against the bottom of the board — the TUI's bottom
+ * strip, in the same place, and made of the same material as the masthead so
+ * the two read as one set of furniture.
+ *
+ * Pinned to the bottom rather than translated onto it: opening a tool grows the
+ * dock upward, and an element anchored by its top would need its offset
+ * recomputed every frame of that growth.
+ */
+.dockApp {
+  position: fixed;
+  z-index: var(--z-console);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* The bar at the top of the screen, upside down: same hairline, same three
+     shadows, the same inset off the edge it is anchored to, and the same corner.
+     Squarer than a pill, because a pill reads as a control and this is the other
+     end of the same piece of furniture — what tells them apart is where they
+     are anchored and that this one can be picked up. */
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+  cursor: grab;
+  touch-action: none;
+  left: 0;
+  bottom: calc(var(--app-inset-bottom, 0px) + var(--s3));
+  transform: translate3d(var(--dock-x, 0px), var(--dock-lift, 0px), 0);
+  /* No transition, and nothing to see, until it has been measured onto the wall
+     — otherwise the first placement animates out of the left-hand corner. */
+  transition: none;
+  visibility: var(--dock-vis, hidden);
+}
+
+.dockPlaced {
+  /* Coming back down: a spring that overshoots, so the dock has some weight to
+     it rather than sliding to a stop. Also the curve the wall-to-wall drag
+     lands on, which is the same motion at a different scale. */
+  transition: transform 520ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+
+/* The controls themselves. */
+.dockRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) var(--s2);
+}
+
+/*
+ * Where an open tool renders — its own panel, standing above the notch rather
+ * than growing out of it.
+ *
+ * A `0fr` → `1fr` row is what makes it unfold: `height: auto` cannot be
+ * interpolated, and a fractional track can. The panel inside clips while the
+ * track is short, which is why it needs `min-height: 0` and `overflow: hidden`.
+ *
+ * Driven by `data-open` rather than by whether a panel is present: on the way
+ * out the panel is still there for one beat, and it is the track that has to
+ * start collapsing under it.
+ */
+.dockDrawer {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--s2));
+  /* As wide as it needs, and never narrower than the notch it stands on. */
+  width: max-content;
+  min-width: 100%;
+  max-width: 90vw;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows var(--dur-base) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.dockDrawer[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* All in the one cell, so a panel on its way out and one on its way in do not
+   stack the drawer to the height of both. Its chrome is `popoverDocked`'s own —
+   a border on the collapsed track would be a line across the board. */
+.dockDrawer > * {
+  grid-area: 1 / 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Free of the edge while held, so it follows the pointer exactly. */
+/* Held: exact tracking, because easing a pointer drag reads as lag. */
+.dockDragging {
+  transition: none;
+  cursor: grabbing;
+  box-shadow: var(--shadow-hover);
+}
+
+/* The handle, and the only part of the dock that is not a control — so it
+   spans the dock's height rather than being a 3px mark. */
+.dockItem {
+  display: inline-flex;
+  align-items: center;
+}
+
+.dockGrip {
+  flex: none;
+  align-self: stretch;
+  width: 14px;
+  border-radius: var(--r-s);
+  background: repeating-linear-gradient(180deg, var(--screen-frame) 0 2px, transparent 2px 5px) center / 3px 15px
+    no-repeat;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.dockGrip:hover {
+  background-color: var(--panel-2);
+}
+
+.dockApp:hover .dockGrip,
+.dockDragging .dockGrip {
+  opacity: 1;
+}
+
+/* The dock's own controls only — its direct buttons and its popover triggers.
+   A bare `.dockApp button` also reaches inside the open panels and strips the
+   fill off things like the play button, which is how it went invisible. */
+/* The one filled control in the notch is a pill, like the presence chip it
+   sits opposite. Two class matches, so it outranks a surface's own button
+   material rather than depending on which stylesheet the bundler wrote last. */
+.dockApp [class*='btnPrimary'][class*='btn'] {
+  border-radius: var(--r-pill);
+  border-color: transparent;
+}
+
+.dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']),
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']) {
+  background: none;
+  border-color: transparent;
+  /* And no edge: a surface may give its own buttons a raised material, but the
+     notch's tools are glyphs on the notch, not controls sitting on it. */
+  box-shadow: none;
+}
+
+.dockRow > [class*='dockItem'] > button:not([class*='btnPrimary']):hover:not(:disabled),
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button:not([class*='btnPrimary']):hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: transparent;
+}
+
+/*
+ * Two kinds of "on", and only one of them is a state.
+ *
+ * A toggle that is ON — the lock — is coloured, not ringed: a ring around a
+ * borderless control reads as focus. An OPEN PANEL is not a state of the board,
+ * it is where you are looking, so its trigger only lifts. Colouring both put
+ * three or four accent fills in a row beside the accent Invite pill, and the
+ * one that meant something was lost among them.
+ *
+ * Same shape of selector as the rule above, or that one's `background: none`
+ * wins on specificity and only the glyph changes.
+ */
+.dockRow > [class*='dockItem'] > button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.dockRow > [class*='dockItem'] > button[aria-pressed='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-color: transparent;
+}
+
+.dockRow > [class*='dockItem'] > button[aria-expanded='true'],
+.dockRow > [class*='dockItem'] > [class*='popoverAnchor'] > button[aria-expanded='true'] {
+  background: var(--panel-2);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+}
+
+/* Identity and toolbar in one row, as a panel floating clear of the screen
+   edges. */
+.chromeApp {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  margin: var(--s3);
+  border: 1px solid var(--hairline);
+  /* Rounder than the concentric arithmetic asks for: 20px of screen minus a
+     12px inset is 8, and 8 inside a 20 reads as a square panel in a rounded
+     window. The eye wants the two curves to look related, not to be. */
+  border-radius: var(--r-l);
+  background: var(--panel);
+  /* It sits over the board and the board scrolls under it, so it casts — but
+     only just: it is fixed furniture, not something floating. */
+  box-shadow:
+    var(--edge),
+    0 1px 1px rgb(0 0 0 / 12%),
+    0 4px 12px rgb(0 0 0 / 10%);
+}
+
+/* The bar's corners are clipped by its children rather than by `overflow`,
+   which would also clip every popover opening out of it. Only the outer ones:
+   two rounded corners meeting in the middle leave a gap the bar's top edge
+   shows through, which reads as a notch cut out of it. */
+.chromeApp > * {
   border-radius: 0;
-  border-width: 0 0 1px;
+}
+.chromeApp > *:first-child {
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+}
+.chromeApp > *:last-child {
+  border-start-end-radius: inherit;
+  border-end-end-radius: inherit;
+}
+/* The bar takes the rest of the row, and the panel's edge is its closing rule. */
+.chromeApp > *:last-child {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+}
+
+/* Below --bp-s one row cannot hold both, so the title goes and the wordmark
+   alone carries the identity. */
+@media (max-width: 699px) {
+  .headMainApp h1 {
+    display: none;
+  }
+  .mastheadApp {
+    padding: var(--s2) var(--s4);
+  }
+}
+
+/* The identity: wordmark and title, closed by a rule against the bar. */
+.mastheadApp {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  padding: var(--s2) var(--s4);
+  background: var(--panel);
 }
 
 .head {
@@ -112,9 +352,31 @@
   gap: var(--s5);
   flex-wrap: wrap;
 }
+.headApp {
+  align-items: center;
+  gap: var(--s3);
+  /* A wrap would double the strip's height; the title ellipsizes instead. */
+  flex-wrap: nowrap;
+}
 .headMain {
   min-width: 0;
   flex: 1 1 320px;
+}
+/* Wordmark and title on one line, centred against each other. */
+.headMainApp {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 1 1 auto;
+}
+.headMainApp .wordmark {
+  margin-bottom: 0;
+}
+.headMainApp h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wordmark {
@@ -169,7 +431,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--s4);
-  padding: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
   margin-bottom: var(--s5);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -242,14 +504,21 @@
     max-width: none;
     padding: 0;
   }
-  /* An app surface printed is just a document — release the viewport height so
-     the content flows onto as many sheets as it needs instead of being clipped
-     to one, and let the bar print where it actually sits rather than once per
-     page. `auto`, not `0`: the region is a definite height on screen, so a
-     floor of zero would no longer release anything. */
+  /* Printed, a board is a document: release it from the viewport, or it comes
+     out as one clipped screen. The frame goes with it. */
+  .shellApp {
+    position: static;
+    display: block;
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+    background: none;
+  }
   .appRegion {
+    flex: none;
     height: auto;
     display: block;
+    margin-bottom: 0;
   }
   .barSticky {
     position: static;

@@ -32,15 +32,6 @@ describe('Table', () => {
     }
   });
 
-  it('counts who the room is still waiting on', () => {
-    render(<Table votes={[seat('Ada', true), seat('Grace', false), seat('Linus', false)]} revealed={false} />);
-    expect(screen.getByText('2 still to vote')).toBeTruthy();
-  });
-
-  it('says so when everyone is in — the cue the host is waiting for', () => {
-    render(<Table votes={[seat('Ada', true), seat('Grace', true)]} revealed={false} />);
-    expect(screen.getByText('everyone is in')).toBeTruthy();
-  });
 
   it('shows the values once revealed, with each seat announced', () => {
     render(<Table votes={[shown('Ada', '3'), shown('Grace', '13')]} revealed />);

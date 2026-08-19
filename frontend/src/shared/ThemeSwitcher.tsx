@@ -36,7 +36,8 @@ export function ThemeSwitcher({ value, onChange, footer, className }: ThemeSwitc
   };
 
   return (
-    <div className={cx(styles['themeSwitcher'], className)}>
+    <div className={cx(styles['panelForm'], className)}>
+      <span className={styles['fieldLabel']}>Theme</span>
       <div className={styles['swatches']} role="radiogroup" aria-label="Colour theme">
         {THEMES.map((theme) => {
           const preview = THEME_PREVIEW[theme];
@@ -52,7 +53,9 @@ export function ThemeSwitcher({ value, onChange, footer, className }: ThemeSwitc
               // classic way to make a keyboard user's life miserable.
               tabIndex={selected ? 0 : -1}
               className={cx(styles['swatch'], selected && styles['swatchOn'])}
-              style={{ background: preview.bg }}
+              // Two tones, because that is what a theme is here: the ground it
+              // paints and the accent it paints on top of it.
+              style={{ '--swatch-bg': preview.bg, '--swatch-accent': preview.accent } as never}
               title={theme}
               aria-label={theme}
               onClick={() => onChange(theme)}
@@ -66,7 +69,7 @@ export function ThemeSwitcher({ value, onChange, footer, className }: ThemeSwitc
                 }
               }}
             >
-              <span className={styles['swatchDot']} style={{ background: preview.accent }} aria-hidden="true" />
+              <span className={styles['swatchName']}>{theme}</span>
             </button>
           );
         })}

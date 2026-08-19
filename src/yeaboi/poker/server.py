@@ -204,14 +204,20 @@ def _run_ai(board: PokerBoard) -> None:
             project_name=board.project_name,
             debate_transcript=board.current_duel_transcript(),
         )
-        note = result.get("note", "")
-        if result.get("warnings"):
-            note = f"{note}\n({result['warnings'][0]})" if note else result["warnings"][0]
+        # A fallback's note is the vote median in a sentence, and the decision
+        # row already shows the median — so only the reason it fell back is
+        # worth landing. Nothing pretends to be a perspective it is not.
+        from_llm = result.get("llm_mode") == "llm"
+        warning = (result.get("warnings") or [""])[0]
+        note = result.get("note", "") if from_llm else warning
+        if from_llm and warning:
+            note = f"{note}\n({warning})" if note else warning
         board.set_ai_note(
             note,
-            result.get("suggested_points"),
-            confidence=result.get("confidence", ""),
-            evidence=tuple(result.get("evidence") or ()),
+            result.get("suggested_points") if from_llm else None,
+            confidence=result.get("confidence", "") if from_llm else "",
+            evidence=tuple(result.get("evidence") or ()) if from_llm else (),
+            from_llm=from_llm,
         )
     except Exception as exc:  # engine never raises, but the thread must never die loudly
         logger.warning("poker: AI perspective worker failed: %s", exc)
@@ -431,11 +437,13 @@ class _PokerHandler(BaseHTTPRequestHandler):
             "/api/admin/goto",
             "/api/admin/finalize",
             "/api/admin/ticket/edit",
+            "/api/admin/ticket/options",
             "/api/admin/ai",
             "/api/admin/duel/open",
             "/api/admin/duel/next",
             "/api/admin/duel/close",
             "/api/duel/mic",
+            "/api/admin/mic",
             "/api/admin/broadcast",
             "/api/admin/lock",
         )
@@ -505,6 +513,10 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._ticket_edit(payload, pid)
             return
 
+        if path == "/api/admin/ticket/options":
+            self._ticket_options(payload)
+            return
+
         if path == "/api/admin/ai":
             self._spawn_ai(pid)
             return
@@ -520,6 +532,13 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
         if path == "/api/admin/duel/close":
             self._duel_close(pid)
+            return
+
+        if path == "/api/admin/mic":
+            # The host's session recording. Not a duel flag: it is armed before
+            # there is a duel and stays on across rounds.
+            self._board.set_room_mic(bool(payload.get("on")))
+            self._send_json(200, {"ok": True, "state": _state()})
             return
 
         if path == "/api/duel/mic":
@@ -600,13 +619,46 @@ class _PokerHandler(BaseHTTPRequestHandler):
             {"ok": finalized, "state": self._board.state_snapshot(pid)},
         )
 
+    def _ticket_options(self, payload: dict) -> None:
+        """Answer the editor's pickers with what the tracker itself accepts.
+
+        A tracker round-trip, so it is asked for once when the editor opens
+        rather than carried on every state poll. Whatever the tracker does not
+        answer is filled from the board's own tickets — which is every value in
+        this batch, and the only vocabulary a demo board or an unreachable
+        tracker has. It is computed here rather than in the browser because the
+        rail's rows carry a key and a summary and nothing else.
+        """
+        key = str(payload.get("key", ""))
+        rows = self._board.tickets_snapshot()
+        ticket = next((t for t in rows if t.get("key") == key), None)
+        if ticket is None:
+            self._send_json(400, {"ok": False, "error": "unknown ticket"})
+            return
+        options = tickets_mod.ticket_options(self._board.source, ticket)
+        for name, field in (("types", "type"), ("states", "state"), ("assignees", "assignee")):
+            if options.get(name):
+                continue
+            seen = sorted({str(row.get(field, "")).strip() for row in rows if str(row.get(field, "")).strip()})
+            if seen:
+                options[name] = seen
+        self._send_json(200, {"ok": True, "options": options})
+
     def _ticket_edit(self, payload: dict, pid: str) -> None:
         """Push admin field edits to the tracker, then mirror them onto the board."""
         summary = payload.get("summary")
         description = payload.get("description")
         points = payload.get("points")
+        state = payload.get("state")
+        assignee = payload.get("assignee")
+        issue_type = payload.get("type")
+        acceptance = payload.get("acceptance")
         summary = str(summary).strip() if summary is not None else None
         description = str(description) if description is not None else None
+        state = str(state).strip() if state is not None else None
+        assignee = str(assignee).strip() if assignee is not None else None
+        issue_type = str(issue_type).strip() if issue_type is not None else None
+        acceptance = str(acceptance) if acceptance is not None else None
         if points is not None:
             try:
                 points = float(points)
@@ -615,7 +667,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
                     400, {"ok": False, "error": "bad points value", "state": self._board.state_snapshot(pid)}
                 )
                 return
-        if summary is None and description is None and points is None:
+        if all(v is None for v in (summary, description, points, state, assignee, issue_type, acceptance)):
             self._send_json(400, {"ok": False, "error": "nothing to update", "state": self._board.state_snapshot(pid)})
             return
         key = str(payload.get("key", ""))
@@ -624,14 +676,31 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"ok": False, "error": "unknown ticket", "state": self._board.state_snapshot(pid)})
             return
         ok, err = tickets_mod.update_ticket(
-            self._board.source, ticket, summary=summary, description=description, story_points=points
+            self._board.source,
+            ticket,
+            summary=summary,
+            description=description,
+            story_points=points,
+            state=state,
+            assignee=assignee,
+            issue_type=issue_type,
+            acceptance=acceptance,
         )
         if not ok:
             logger.warning("poker: ticket edit write-back failed for %s: %s", log_safe(key), log_safe(err))
             self._board.set_notice(err)
             self._send_json(200, {"ok": False, "error": err, "state": self._board.state_snapshot(pid)})
             return
-        self._board.apply_ticket_edit(key, summary=summary, description=description, story_points=points)
+        self._board.apply_ticket_edit(
+            key,
+            summary=summary,
+            description=description,
+            story_points=points,
+            state=state,
+            assignee=assignee,
+            issue_type=issue_type,
+            acceptance=acceptance,
+        )
         self._send_json(200, {"ok": True, "state": self._board.state_snapshot(pid)})
 
     # ── AI perspective (worker thread — see module docstring) ─────────────

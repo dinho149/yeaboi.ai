@@ -93,7 +93,7 @@ export function parsePalettes(css: string): Record<string, Record<string, string
     for (let t = tokenRe.exec(body); t !== null; t = tokenRe.exec(body)) {
       tokens[t[1] as string] = t[2] as string;
     }
-    out[name] = tokens;
+    out[name] = { ...(out[name] ?? {}), ...tokens };
   }
   return out;
 }

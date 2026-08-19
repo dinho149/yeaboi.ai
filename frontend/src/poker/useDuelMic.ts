@@ -26,14 +26,20 @@
  * ## Lifetime
  *
  * The stream is a hardware handle and a recording indicator in the user's
- * browser chrome. It is released when the duel ends, when the component
- * unmounts, and on any path that stops the recorder — never left open between
- * rounds, which is the failure people actually notice.
+ * browser chrome, and the two people holding one have different claims on it.
+ *
+ * A **duelist** armed theirs to argue, so it goes back when the floor closes —
+ * along with the light, which is the failure people actually notice. The
+ * **host's** is the room's mic and is held across tickets until they stop it or
+ * leave: that is what "Recording session" means, and the board shows the room
+ * that light on purpose. Both are released on unmount, and on any path that
+ * calls `disable`.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { apiUrl, type Session } from '../runtime/api';
+import { apiUrl, postJSON, type Session } from '../runtime/api';
+import { read, remove, write } from '../runtime/storage';
 import type { DuelSlice } from '../types/board';
 
 /** Containers to try, best first. Safari has neither webm option. */
@@ -41,6 +47,9 @@ const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
 
 /** One retry, after a second. Fits inside the server's post-close grace window. */
 const RETRY_MS = 1000;
+
+/** Per-tab, so a reload can tell that it interrupted its own recording. */
+const WAS_RECORDING = 'poker_room_mic';
 
 export interface DuelMic {
   /** Whether this browser could record at all — secure context + an API. */
@@ -51,6 +60,16 @@ export interface DuelMic {
   error: string;
   /** Ask for the mic. Must be called from a user gesture (the consent moment). */
   enable(): Promise<void>;
+  /** Hand the hardware back and tell the room the indicator should go out. */
+  disable(): void;
+  /**
+   * The board was recording when this page loaded, and this page is not the
+   * one doing it — a reload, a crash, a closed tab. Host-only, and answered by
+   * {@link enable} or {@link dismiss}.
+   */
+  interrupted: boolean;
+  /** Leave it stopped. */
+  dismiss(): void;
 }
 
 export function micCapable(): boolean {
@@ -89,8 +108,28 @@ async function upload(session: Session, blob: Blob, turn: number, attempt = 1): 
   }
 }
 
-export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
+/**
+ * Tell the room the light should be on, or out.
+ *
+ * The host's mic records the session, so it is board state and goes to the
+ * admin route; a duelist's browser mic is one source inside a live duel, and
+ * the board maps their pid to a role. Best-effort either way: a failure costs a
+ * stale light until the round ends, which is not worth surfacing to somebody
+ * who has just started talking.
+ */
+function micPath(session: Session): string {
+  return session.admin ? '/api/admin/mic' : '/api/duel/mic';
+}
+
+function announce(session: Session, on: boolean): void {
+  // `postJSON`, not a hand-rolled fetch: it is what merges `admin` into the
+  // body, and the admin route is the whole reason this one has two paths.
+  void postJSON(session, micPath(session), { on });
+}
+
+export function useDuelMic(session: Session, duel: DuelSlice | null, boardSaysRecording = false): DuelMic {
   const [armed, setArmed] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
   const [error, setError] = useState('');
   const [capable] = useState(micCapable);
 
@@ -120,14 +159,9 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     for (const track of stream.current.getTracks()) track.stop();
     stream.current = null;
     setArmed(false);
-    // Best-effort: tell the room the indicator should go out. A failure here
-    // costs a stale 🎙 on other screens until the duel ends, which is not worth
-    // surfacing to someone who has just stopped talking.
-    void fetch(apiUrl(sessionRef.current, '/api/duel/mic'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: sessionRef.current.pid, on: false }),
-    }).catch(() => {});
+    // Deliberate: this tab is not being interrupted next time it loads.
+    remove('session', WAS_RECORDING);
+    void announce(sessionRef.current, false);
   }, [stopRecorder]);
 
   const startRecorder = useCallback((turnNo: number) => {
@@ -168,30 +202,95 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
     }
     setError('');
     setArmed(true);
-    void fetch(apiUrl(sessionRef.current, '/api/duel/mic'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: sessionRef.current.pid, on: true }),
-    }).catch(() => {});
+    setInterrupted(false);
+    write('session', WAS_RECORDING, '1');
+    void announce(sessionRef.current, true);
   }, [capable]);
 
   const live = duel?.status === 'live';
   const role = duel?.mine_role ?? '';
   const myTurn = live && role !== '' && duel?.turn === role;
   const turnNo = duel?.turn_no ?? 0;
+  /* The host records the room. Everyone is usually on one call, so one device
+     catching both turns is the whole recording — and the host is the only
+     person who is certainly there for all of it. */
+  const roomMic = live && Boolean(session.admin);
+  /* A floor that has been and gone, as opposed to one that never opened. */
+  const floorOver = Boolean(duel) && !live;
 
-  // The choreography: record during my turn and at no other time.
+  // Record my turn, or every turn if this is the room's mic. Keyed on the turn
+  // number so the cleanup flushes each turn as its own clip: `onstop` is what
+  // uploads, so a recorder left running across the hand-off would arrive as one
+  // untellable blob.
   useEffect(() => {
-    if (!armed) return;
-    if (myTurn) startRecorder(turnNo);
-    else stopRecorder();
-  }, [armed, myTurn, turnNo, startRecorder, stopRecorder]);
+    if (!armed || !(myTurn || roomMic)) {
+      stopRecorder();
+      return undefined;
+    }
+    startRecorder(turnNo);
+    return () => stopRecorder();
+  }, [armed, myTurn, roomMic, turnNo, startRecorder, stopRecorder]);
 
-  // The floor closed — mid-turn or not. `stopRecorder` before `release` is what
-  // flushes a turn that was still running when the host closed the floor.
+  /*
+   * A duelist's mic belongs to the floor; the host's belongs to the session.
+   *
+   * Stopping the recorder above is not handing the hardware back: the tracks
+   * stay open and so does the indicator in the browser's own chrome. For a
+   * guest who armed their mic to argue, the floor closing is the end of
+   * everything they had to record, and leaving the light on afterwards is the
+   * failure people actually notice.
+   *
+   * The host's is deliberately not released here — "Recording session" means
+   * armed once and held across tickets, which is the whole point of it, and the
+   * room is shown that light on purpose.
+   *
+   * `floorOver` rather than `!live`, so arming before the host opens the floor
+   * is not immediately undone by the effect that is meant to clean up after it.
+   */
   useEffect(() => {
-    if (!live && armed) release();
-  }, [live, armed, release]);
+    if (!armed || session.admin || !floorOver) return;
+    release();
+  }, [armed, session.admin, floorOver, release]);
+
+  /*
+   * The light must not outlive the recording.
+   *
+   * A tab that is closed or reloaded takes the microphone with it, and a
+   * `fetch` started during unload is cancelled with the document — so the flag
+   * would stay on and every other screen would keep showing a red light for a
+   * recording that stopped. `sendBeacon` is the one request the browser
+   * promises to deliver after the page is gone.
+   */
+  useEffect(() => {
+    if (!armed) return undefined;
+    const clear = (): void => {
+      const body = JSON.stringify({ pid: session.pid, admin: session.admin, on: false });
+      navigator.sendBeacon?.(apiUrl(session, micPath(session)), new Blob([body], { type: 'application/json' }));
+    };
+    window.addEventListener('pagehide', clear);
+    return () => window.removeEventListener('pagehide', clear);
+  }, [armed, session]);
+
+  /*
+   * Was this tab recording when it went away?
+   *
+   * Not the board's flag: the beacon above clears that on the way out, so by
+   * the time the new page asks, it says no. `sessionStorage` is the one thing
+   * that survives a reload and dies with the tab, which is exactly the question
+   * — and it is read once, so answering the notice ends it.
+   */
+  useEffect(() => {
+    if (!session.admin || armed) return;
+    if (read('session', WAS_RECORDING) !== '1') return;
+    remove('session', WAS_RECORDING);
+    setInterrupted(true);
+    // And put the light out, since this tab's recording is the one that
+    // stopped. Deliberately not "the board says recording and I am not doing
+    // it": a host with a second tab open, or one who opens the board again on
+    // another device, is not evidence that the first tab has stopped — and on
+    // that reading every extra tab would extinguish a live recording.
+    if (boardSaysRecording) announce(session, false);
+  }, [session, boardSaysRecording, armed]);
 
   // Unmount: never leave the hardware held. Held in a ref so this runs on
   // unmount only, rather than every time `release` is re-created.
@@ -199,5 +298,5 @@ export function useDuelMic(session: Session, duel: DuelSlice | null): DuelMic {
   releaseRef.current = release;
   useEffect(() => () => releaseRef.current(), []);
 
-  return { capable, armed, error, enable };
+  return { capable, armed, error, enable, disable: release, interrupted, dismiss: () => setInterrupted(false) };
 }

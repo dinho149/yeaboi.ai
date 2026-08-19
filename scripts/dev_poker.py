@@ -10,17 +10,25 @@ The board is in-memory only. Nothing is written to ``~/.yeaboi``, so this is
 safe to run against a real install. The tickets are fake but shaped like real
 tracker rows: a long description, acceptance criteria, one already estimated,
 and one with nothing but a summary.
+
+The board's source is ``demo``, so finalizing an estimate and editing a ticket
+are no-op successes rather than writes to a tracker nobody configured — the
+rows are still shaped like Jira ones, which is what the UI renders. Point it at
+a real tracker with ``DEV_POKER_SOURCE=jira make dev-poker``.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from yeaboi.config import load_user_config  # noqa: E402
 from yeaboi.poker.board import PokerBoard  # noqa: E402
 from yeaboi.poker.server import PokerServer  # noqa: E402
 
@@ -70,11 +78,35 @@ SEED: list[dict] = [
     {"key": "YB-104", "summary": "Delete the hand-written poker page"},
 ]
 
+# The rest of the room. Avatars come from the server's own allowed set.
+CREW = [
+    ("dev-ada", "Ada", "🦊"),
+    ("dev-grace", "Grace", "🐙"),
+    ("dev-kit", "Kit", "🐼"),
+    ("dev-remy", "Remy", "🐸"),
+    ("dev-nico", "Nico", "🦉"),
+    ("dev-suki", "Suki", "🦄"),
+    ("dev-tobi", "Tobi", "🐝"),
+]
+
+
+def _keep_seated(board: PokerBoard) -> None:
+    """Re-announce the seeded crew forever, so the table does not empty out."""
+    while True:
+        for pid, name, avatar in CREW:
+            board.heartbeat(pid, name=name, avatar=avatar)
+        time.sleep(2)
+
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # The credentials, same as the CLI reads them. Without this the dev board is
+    # the one surface that cannot reach ~/.yeaboi/.env, so the AI perspective
+    # reports "no API key" on a machine that has one.
+    load_user_config()
 
-    board = PokerBoard("dev-poker", project_name="yeaboi", source="jira", scope_label="Sprint 42", tickets=SEED)
+    source = os.getenv("DEV_POKER_SOURCE", "demo")
+    board = PokerBoard("dev-poker", project_name="yeaboi", source=source, scope_label="Sprint 42", tickets=SEED)
     # One ticket already estimated, so the rail's done state and the progress
     # count are visible without having to run a round first. The full sequence
     # is required: `finalize_current` refuses outside the revealed phase, so a
@@ -86,18 +118,37 @@ def main() -> int:
     board.finalize_current(5.0)
     board.goto_ticket(0)
 
-    # Two seated teammates, so the table is not empty on first load. Their
-    # heartbeats expire after a few seconds — that is real presence behaviour,
-    # not a bug in the seed.
-    board.heartbeat("dev-ada", name="Ada", avatar="🦊")
-    board.heartbeat("dev-grace", name="Grace", avatar="🐙")
+    # A full table, so the seats, the spread and the duel all have something to
+    # work with. Half of them have voted: enough for a shape, with people still
+    # outstanding so the waiting line means something.
+    for pid, name, avatar in CREW:
+        board.heartbeat(pid, name=name, avatar=avatar)
     board.cast_vote("dev-ada", "3")
+    board.cast_vote("dev-grace", "13")
+    board.cast_vote("dev-kit", "3")
+    board.cast_vote("dev-remy", "5")
+
+    # Kept alive in the background, because presence expires in seconds — a
+    # seeded table that is not re-announced empties while you are looking at it.
+    threading.Thread(target=_keep_seated, args=(board,), daemon=True).start()
 
     server = PokerServer(board)
+    # Fixed credentials so a rebuild-and-restart does not invalidate the token
+    # already open tabs are holding. Dev only: in-memory board, loopback socket.
+    server.token = "dev-token"  # noqa: S105
+    server.admin_token = "dev-admin"  # noqa: S105
+    server.join_code = "DEVB-OARD"  # /api/join compares the XXXX-XXXX shape
     server.start()
+
+    # Stands in for the tunnel. Without one `invite_url` is empty by contract and
+    # /api/qr answers 503, so the invite modal cannot be worked on locally.
+    # Through the setter, not the attribute: the request handler reads it off the
+    # httpd, which is where `set_public_url` also writes it.
+    server.set_public_url(f"http://127.0.0.1:{server.port}")
 
     api = f"http://127.0.0.1:{server.port}"
     print("\n  dev poker ready")
+    print(f"    source     {source}{' (writes are no-ops)' if source == 'demo' else ''}")
     print(f"    host       {server.url}")
     print(f"    guest      {api}/?token={server.token}")
     print(f"    join code  {server.display_code}")

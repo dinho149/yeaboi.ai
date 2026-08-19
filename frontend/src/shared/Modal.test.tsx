@@ -10,10 +10,20 @@ import { fireEvent, render, screen } from '@testing-library/preact';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Modal } from './Modal';
+import sharedCss from './shared.module.css?raw';
 
 const dialog = (): HTMLDialogElement => document.querySelector('dialog') as HTMLDialogElement;
 
 describe('Modal', () => {
+  it('restores the auto margin the global reset takes away', () => {
+    // jsdom lays nothing out, so the declaration is the only thing to assert.
+    // The `dialog` qualifier matters: without it the rule ties on specificity
+    // with the `* { margin: 0 }` reset and every `.x > * + *` stacking rule.
+    const block = /dialog\.modal\s*\{([^}]*)\}/.exec(sharedCss)?.[1] ?? '';
+    expect(block, 'no `dialog.modal` rule in shared.module.css').toBeTruthy();
+    expect(block).toMatch(/margin\s*:\s*auto/);
+  });
+
   it('is closed until asked to open', () => {
     render(
       <Modal open={false} onClose={vi.fn()} title="Choose a name">

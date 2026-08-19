@@ -156,7 +156,14 @@ class TestRevealAndDistribution:
         snap = b.state_snapshot("p1")
         assert snap["phase"] == PHASE_VOTING
         assert snap["mine_value"] == ""
-        assert snap["ai"] == {"pending": False, "note": "", "suggested": None, "confidence": "", "evidence": []}
+        assert snap["ai"] == {
+            "pending": False,
+            "note": "",
+            "suggested": None,
+            "confidence": "",
+            "evidence": [],
+            "from_llm": False,
+        }
 
 
 class TestFinalize:
@@ -321,14 +328,22 @@ class TestAiState:
 
     def test_note_visible_in_snapshot(self):
         b = _board()
-        b.set_ai_note("Talk through the 13", 8.0)
+        b.set_ai_note("Talk through the 13", 8.0, from_llm=True)
         assert b.state_snapshot()["ai"] == {
             "pending": False,
             "note": "Talk through the 13",
             "suggested": 8.0,
             "confidence": "",
             "evidence": [],
+            "from_llm": True,
         }
+
+    def test_a_note_is_not_from_the_model_unless_said_so(self):
+        """The default is the safe one: a caller that forgets cannot pass a
+        deterministic note off as a perspective."""
+        b = _board()
+        b.set_ai_note("Votes span 1-8; the median lands on 5.")
+        assert b.state_snapshot()["ai"]["from_llm"] is False
 
     def test_confidence_and_evidence_in_snapshot(self):
         b = _board()

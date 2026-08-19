@@ -16,9 +16,19 @@
  * board can offer a "tap to hear the music" banner, which is the only thing
  * that can legally start playback for them.
  *
- * `crossOrigin = 'anonymous'` is set because these are third-party stream URLs;
- * it is what would let a real frequency-analyser read the samples. The
- * visualiser deliberately does not (see Visualizer.tsx).
+ * ## The analyser
+ *
+ * `crossOrigin = 'anonymous'` is what lets a real frequency analyser read the
+ * samples, and the stations do send `Access-Control-Allow-Origin: *`, so the
+ * visualiser is driven by the actual signal rather than a synthesised one.
+ *
+ * The graph is built **after playback has started**, and only once the context
+ * is actually running. That order is the whole safety of it: an element routed
+ * through a graph reaches the speakers *only* via that graph, and
+ * `createMediaElementSource` may be called once per element and never undone —
+ * so a context that turns out to be suspended captures the audio permanently
+ * and the board plays silence with every other sign of playing. Resuming first
+ * and wiring second means a context that will not run never gets the element.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +40,8 @@ export interface Channel {
 
 export interface MusicApi {
   playing: boolean;
+  /** Between the click and the first audio — a stream takes seconds to arrive. */
+  connecting: boolean;
   channel: number;
   volume: number;
   toggle(): void;
@@ -39,13 +51,19 @@ export interface MusicApi {
   setVolume(value: number): void;
   /** Apply a host command. Rejects when autoplay blocked a play request. */
   cast(index: number, on: boolean): Promise<void>;
+  /** Live frequency data, once the graph exists. Null before the first play. */
+  analyser: AnalyserNode | null;
 }
 
 const DEFAULT_VOLUME = 0.35;
 
 export function useMusic(channels: readonly Channel[]): MusicApi {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [channel, setChannelState] = useState(0);
   const [volume, setVolumeState] = useState(DEFAULT_VOLUME);
 
@@ -59,8 +77,14 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
     audio.volume = DEFAULT_VOLUME;
     audioRef.current = audio;
 
-    const onPlaying = (): void => setPlaying(true);
-    const onStopped = (): void => setPlaying(false);
+    const onPlaying = (): void => {
+      setPlaying(true);
+      setConnecting(false);
+    };
+    const onStopped = (): void => {
+      setPlaying(false);
+      setConnecting(false);
+    };
     audio.addEventListener('playing', onPlaying);
     audio.addEventListener('pause', onStopped);
     // A dead station is common enough that treating an error as "not playing"
@@ -75,6 +99,9 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
       audio.removeAttribute('src');
       audio.load();
       audioRef.current = null;
+      void ctxRef.current?.close();
+      ctxRef.current = null;
+      sourceRef.current = null;
     };
   }, []);
 
@@ -90,24 +117,69 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
     [channels]
   );
 
+  /** Wire the analyser in once audio is running. Never at the cost of sound. */
+  const connect = useCallback(async (audio: HTMLAudioElement): Promise<void> => {
+    if (sourceRef.current) {
+      void ctxRef.current?.resume();
+      return;
+    }
+    const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    let ctx: AudioContext | null = null;
+    try {
+      ctx = new Ctor();
+      // Running *before* the element is captured. A suspended context that
+      // never resumes would take the audio with it.
+      await ctx.resume();
+      if (ctx.state !== 'running') throw new Error('audio context did not start');
+      const source = ctx.createMediaElementSource(audio);
+      const node = ctx.createAnalyser();
+      node.fftSize = 128;
+      node.smoothingTimeConstant = 0.75;
+      source.connect(node);
+      node.connect(ctx.destination);
+      ctxRef.current = ctx;
+      sourceRef.current = source;
+      setAnalyser(node);
+    } catch {
+      // A tainted stream or a context that will not start: leave the element
+      // playing directly and let the visualiser fall back to its own bars.
+      void ctx?.close();
+      ctxRef.current = null;
+      sourceRef.current = null;
+      setAnalyser(null);
+    }
+  }, []);
+
   const play = useCallback(async (): Promise<void> => {
     const audio = audioRef.current;
     if (!audio) return;
     if (!audio.src) load(channel);
-    await audio.play();
-  }, [channel, load]);
+    setConnecting(true);
+    try {
+      await audio.play();
+    } catch (error) {
+      setConnecting(false);
+      throw error;
+    }
+    // After, not before: see the note at the top of this file.
+    void connect(audio);
+  }, [channel, load, connect]);
 
   const stop = useCallback((): void => {
+    setConnecting(false);
     audioRef.current?.pause();
   }, []);
 
   const api = useMemo<MusicApi>(
     () => ({
       playing,
+      connecting,
       channel,
       volume,
+      analyser,
       toggle() {
-        if (playing) stop();
+        if (playing || connecting) stop();
         else void play().catch(() => setPlaying(false));
       },
       play,
@@ -140,7 +212,7 @@ export function useMusic(channels: readonly Channel[]): MusicApi {
         await audioRef.current?.play();
       },
     }),
-    [playing, channel, volume, play, stop, load]
+    [playing, connecting, channel, volume, analyser, play, stop, load]
   );
 
   return api;

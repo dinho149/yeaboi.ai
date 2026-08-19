@@ -1,57 +1,30 @@
 /**
- * The masthead and footer every yeaboi surface wears.
+ * The masthead every yeaboi surface wears, in two variants.
  *
- * A window: traffic lights, a title bar reading `yeaboi — <mode>`, and inside it
- * the wordmark in the surface's own accent, the title, and a row of facts. Then
- * the page. Then a footer with the duck and the credit.
+ * `document` — a terminal window (traffic lights, `yeaboi — <mode>`) over the
+ * wordmark, title and a row of labelled facts, then the page, then a footer
+ * with the duck and the credit. Exports and anything else that is a file.
  *
- * This began life inside `export/Shell.tsx`, dressing static reports only. The
- * boards, the gate and the deck each had their own header, and they drifted the
- * way five copies of anything drift — different wordmark sizes, some with a
- * footer and some without, one with no accent at all. It lives here now, and
- * they all compose it.
+ * `app` — one screen for the live boards: a fixed, framed viewport holding a
+ * floating chrome panel (compact masthead + toolbar) above the board. No
+ * window, no footer, and the window itself never scrolls.
  *
- * The header carries **facts, not decoration**. Every entry is an eyebrow with
- * a label — SPRINT, SOURCE, ENGINEER — because a page read six months later is
- * exactly the document where "what is this number" is the first question.
- *
- * ## Two variants
- *
- * `document` is the original: a centred column that grows with its content and
- * scrolls the window. Exports and any other page that is fundamentally a file.
- *
- * `app` is for the live boards. The masthead and the credit sit in the normal
- * document flow and **scroll away**; between them is a region that is exactly
- * one viewport tall, holding the sticky app bar and the board itself. So the
- * page opens on its identity, one flick of the wheel puts the board full-screen
- * with only the toolbar still pinned, and the chrome is still there when you
- * scroll back for it. See `.appRegion` for why that needs no measurement.
- *
- * It was a `100dvh` grid first, with the masthead and credit locked to the top
- * and bottom edges. Nothing was wrong with the mechanics and everything was
- * wrong with the result: a board is the one surface where a visitor is going to
- * be looking at the same page for forty minutes, and spending a permanent fifth
- * of the viewport on a wordmark they read once is a bad trade.
- *
- * ## Density
- *
- * The full masthead is around 260px — a hero on a desktop, and two thirds of a
- * phone. So `app` surfaces default to `density="auto"`, which drops to a
- * compact rendition below a large viewport: same window, same title, wordmark
- * in the two-row face instead of the six-row one, facts suppressed (a board's
- * facts already live in the toolbar subtitle).
- *
- * "Exactly like the export" holds wherever the viewport can pay for it. Compact
- * is the same masthead with the hero dropped — not a different header.
+ * Density picks the masthead's size: `hero` is the full ~260px header,
+ * `compact` drops the six-row wordmark and the facts, `auto` reads the
+ * viewport. `app` is always compact — its screen cannot spend 260px.
  */
 
-import type { ReactNode } from 'react';
+import { Children, Fragment, isValidElement, useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
+import { useFillsDisplay } from '../hooks/useFillsDisplay';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
 import { Credit } from './Credit';
+import { PopoverGroup } from './Popover';
+import { useDockDrag } from './useDockDrag';
+import { useDockLift } from './useDockLift';
 import styles from './PageShell.module.css';
 
 /**
@@ -65,13 +38,12 @@ const HERO_VIEWPORT = '(min-width: 1100px) and (min-height: 800px)';
 
 export interface PageShellProps {
   chrome: PageChrome;
-  /** `document` grows and scrolls the window; `app` is a 100dvh grid. */
+  /** `document` grows and scrolls the window; `app` is one fixed screen. */
   variant?: 'document' | 'app';
   /**
    * `hero` is the full masthead, `compact` drops the six-row wordmark and the
-   * facts. `auto` picks per viewport and is the default for `app`; documents
-   * default to `hero`, because a file is read at whatever size it is read at
-   * and has no fixed height to protect.
+   * facts, `auto` picks per viewport. `app` defaults to `compact`, `document`
+   * to `hero`.
    */
   density?: 'hero' | 'compact' | 'auto';
   /**
@@ -84,6 +56,14 @@ export interface PageShellProps {
   themeSwitcher?: ReactNode;
   /** The app bar, on surfaces that have one. Sits between masthead and content. */
   bar?: ReactNode;
+  /**
+   * The tool cluster, docked bottom-right over the board. `app` only.
+   *
+   * Popovers inside it are mutually exclusive and should be given
+   * `placement="above"` — a panel opening downward from the bottom edge is
+   * off-screen with no way to scroll to it.
+   */
+  dock?: ReactNode;
   /** The scrolling region. */
   children: ReactNode;
   className?: string | undefined;
@@ -99,12 +79,20 @@ export interface PageShellProps {
   data?: Record<string, string | undefined>;
 }
 
+/** A dock's controls, whether handed over as a fragment or as a list. */
+function dockItems(dock: ReactNode): ReactNode[] {
+  const element = isValidElement(dock) ? (dock as { type: unknown; props: { children?: ReactNode } }) : null;
+  if (element && element.type === Fragment) return Children.toArray(element.props.children);
+  return Children.toArray(dock);
+}
+
 export function PageShell({
   chrome,
   variant = 'document',
-  density = variant === 'app' ? 'auto' : 'hero',
+  density = variant === 'app' ? 'compact' : 'hero',
   themeSwitcher,
   bar,
+  dock,
   children,
   className,
   data,
@@ -112,21 +100,39 @@ export function PageShell({
   // Subscribed unconditionally — hooks cannot be conditional — but only
   // consulted when density is 'auto'. The listener is one matchMedia per page.
   const roomy = useMediaQuery(HERO_VIEWPORT);
+  // The controls, one by one: the dock splits across a corner, so it has to
+  // know where each of them falls rather than laying out one row.
+  const tools = dockItems(dock);
+  const drag = useDockDrag();
+  const dockEl = useRef<HTMLElement | null>(null);
+  const holdDock = useCallback(
+    (el: HTMLElement | null) => {
+      dockEl.current = el;
+      drag.ref(el);
+    },
+    [drag],
+  );
+  const readDock = useCallback(() => dockEl.current, []);
+  const tilt = useDockLift(readDock, drag.dragging);
+  // The dock's drawer, once it exists. Every dock popover renders into it, so
+  // opening one grows the dock itself rather than floating a panel over it.
+  const [drawer, setDrawer] = useState<HTMLDivElement | null>(null);
   const hero = density === 'auto' ? roomy : density === 'hero';
 
   const facts = chrome.facts ?? [];
   const badges = chrome.badges ?? [];
   const nav = chrome.nav ?? [];
   const app = variant === 'app';
+  /* The rounded screen is only right when nothing of the browser is on screen —
+     see useFillsDisplay for why this is measured instead of asked via
+     `display-mode`. Read here rather than in CSS so the curve is a class the
+     shell either has or does not, which is inspectable in one place. */
+  const curved = useFillsDisplay();
 
   const body = (
     <>
-      {/* Sticky only on an app surface, and only because the masthead above it
-          now leaves: the toolbar carries invite, theme, music and the timer,
-          and a board whose controls scrolled off the top would trade one
-          annoyance for a worse one. A document's contents nav does its own
-          sticking, below. */}
-      {app && bar ? <div className={styles['barSticky']}>{bar}</div> : bar}
+      {/* An app surface's bar rides in the floating chrome below, not here. */}
+      {app ? null : bar}
 
       {nav.length ? (
         <nav className={styles['toc']} aria-label="Contents">
@@ -142,65 +148,99 @@ export function PageShell({
     </>
   );
 
-  const footer = (
-    <footer className={cx(styles['footer'], app && styles['footerSlim'])}>
-      {/* The mascot, at rest. On an export a duck that reacted to something
-          would be lying: nothing in a file is live. On a board the reactive
-          duck already lives in the toolbar, and a second animated one in the
-          footer would compete with it. */}
-      <Duck size={app ? 24 : 40} />
+  // Documents only: a board spends every row of its screen on the board.
+  const footer = app ? null : (
+    <footer className={styles['footer']}>
+      <Duck size={40} />
       <Credit>{chrome.footer}</Credit>
     </footer>
   );
 
-  return (
-    <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
-      <TerminalFrame title={chrome.frame} className={styles['masthead']}>
-        <div className={styles['head']}>
-          <div className={styles['headMain']}>
-            <Wordmark
-              text={chrome.wordmark}
-              variant={hero ? 'shadow' : 'block'}
-              className={cx(styles['wordmark'], !hero && styles['wordmarkCompact'])}
-            />
-            <h1 className={cx(styles['title'], !hero && styles['titleCompact'])}>{chrome.title}</h1>
-            {hero && chrome.subtitle ? <p className={styles['subtitle']}>{chrome.subtitle}</p> : null}
-            {hero && (facts.length || badges.length) ? (
-              <div className={styles['facts']}>
-                {facts.map(([label, value]) => (
-                  <Eyebrow key={label} value={value}>
-                    {label}
-                  </Eyebrow>
-                ))}
-                {badges.map((badge) => (
-                  <Eyebrow key={badge} accent>
-                    {badge}
-                  </Eyebrow>
-                ))}
-              </div>
-            ) : null}
+  const head = (
+    <div className={cx(styles['head'], app && styles['headApp'])}>
+      <div className={cx(styles['headMain'], app && styles['headMainApp'])}>
+        <Wordmark
+          text={chrome.wordmark}
+          variant={hero ? 'shadow' : 'block'}
+          className={cx(styles['wordmark'], !hero && styles['wordmarkCompact'])}
+        />
+        <h1 className={cx(styles['title'], !hero && styles['titleCompact'])}>{chrome.title}</h1>
+        {hero && chrome.subtitle ? <p className={styles['subtitle']}>{chrome.subtitle}</p> : null}
+        {hero && (facts.length || badges.length) ? (
+          <div className={styles['facts']}>
+            {facts.map(([label, value]) => (
+              <Eyebrow key={label} value={value}>
+                {label}
+              </Eyebrow>
+            ))}
+            {badges.map((badge) => (
+              <Eyebrow key={badge} accent>
+                {badge}
+              </Eyebrow>
+            ))}
           </div>
-          {themeSwitcher ? <div className={styles['themes']}>{themeSwitcher}</div> : null}
-        </div>
-      </TerminalFrame>
+        ) : null}
+      </div>
+      {themeSwitcher ? <div className={styles['themes']}>{themeSwitcher}</div> : null}
+    </div>
+  );
 
-      {/* The credit joins the region on an app surface rather than trailing it.
-          That is what makes the arithmetic come out: the document is then taller
-          than the viewport by exactly the masthead, so scrolling to the end puts
-          the bar at the top and the credit on the bottom edge with nothing
-          hidden. Left outside, the last few pixels of scroll would slide the
-          board's column headings under the sticky bar. */}
+  return (
+    <div
+      className={cx(styles['page'], app && styles['shellApp'], app && curved && styles['shellCurved'], className)}
+      {...data}
+    >
+      {/* Divs, not <header>: a second unlabelled `banner` landmark fails axe. */}
       {app ? (
-        <div className={styles['appRegion']}>
-          {body}
-          {footer}
+        <div className={styles['chromeApp']}>
+          <div className={cx(styles['masthead'], styles['mastheadApp'])}>{head}</div>
+          {bar}
         </div>
+      ) : (
+        <TerminalFrame title={chrome.frame} className={styles['masthead']}>
+          {head}
+        </TerminalFrame>
+      )}
+
+      {app ? (
+        <div className={styles['appRegion']}>{body}</div>
       ) : (
         <>
           {body}
           {footer}
         </>
       )}
+
+      {app && dock ? (
+        <PopoverGroup panelHost={drawer}>
+          <div
+            ref={holdDock}
+            className={cx(
+              styles['dockApp'],
+              drag.placed && styles['dockPlaced'],
+              drag.dragging && styles['dockDragging'],
+            )}
+            style={
+              {
+                '--dock-x': `${drag.x}px`,
+                '--dock-lift': `${-tilt.lift}px`,
+                '--dock-vis': drag.placed ? 'visible' : 'hidden',
+              } as never
+            }
+            onPointerDown={drag.onPointerDown}
+          >
+            <div ref={setDrawer} className={styles['dockDrawer']} />
+            <div className={styles['dockRow']} role="toolbar" aria-label="Board tools">
+              <span className={styles['dockGrip']} aria-hidden="true" />
+              {tools.map((tool, index) => (
+                <span key={index} className={styles['dockItem']}>
+                  {tool}
+                </span>
+              ))}
+            </div>
+          </div>
+        </PopoverGroup>
+      ) : null}
     </div>
   );
 }

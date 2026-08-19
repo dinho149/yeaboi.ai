@@ -261,6 +261,8 @@ export interface PokerVote {
 /** The AI's read on the current ticket. `pending` is what guards double-clicks. */
 export interface AiPerspective {
   pending: boolean;
+  /** False when the engine fell back — then `note` is only the reason why. */
+  from_llm: boolean;
   note: string;
   suggested: number | null;
   confidence: string;
@@ -344,6 +346,8 @@ export interface PokerState {
   broadcast: BroadcastSlice;
   /** Host froze voting for everyone. */
   locked: boolean;
+  /** The host is recording the session, whether or not a floor is open. */
+  room_mic: boolean;
   /** Last tracker-write error. Rendered to the host only. */
   notice: string;
 }

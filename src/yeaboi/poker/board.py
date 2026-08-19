@@ -110,7 +110,7 @@ _DUEL_TURN_MAX = 600
 
 def _ai_idle() -> dict:
     """The AI-perspective state between rounds — one definition for every reset site."""
-    return {"pending": False, "note": "", "suggested": None, "confidence": "", "evidence": ()}
+    return {"pending": False, "note": "", "suggested": None, "confidence": "", "evidence": (), "from_llm": False}
 
 
 def _now_iso() -> str:
@@ -198,6 +198,10 @@ class PokerBoard:
         # duel section below for the dict shape. The pids inside NEVER go on
         # the wire — state_snapshot ships a names-only projection.
         self._duel: dict | None = None
+        # The host's mic, which records the session rather than one duel. Board
+        # state, not duel state: it is armed before there is a duel to record,
+        # and every participant is shown that it is on.
+        self._room_mic = False
         self._notice = ""  # last tracker-write error, shown to the admin
         self._revision = 0
         self._lock = threading.Lock()
@@ -369,6 +373,10 @@ class PokerBoard:
         summary: str | None = None,
         description: str | None = None,
         story_points: float | None = None,
+        state: str | None = None,
+        assignee: str | None = None,
+        issue_type: str | None = None,
+        acceptance: str | None = None,
     ) -> bool:
         """Mirror a successful tracker edit onto the live board.
 
@@ -391,6 +399,16 @@ class PokerBoard:
                     ticket["story_points"] = float(story_points)
                 except (TypeError, ValueError):
                     pass
+            if state is not None:
+                ticket["state"] = state.strip()[:_MAX_SUMMARY]
+            if assignee is not None:
+                ticket["assignee"] = assignee.strip()[:_MAX_SUMMARY]
+            if issue_type is not None:
+                ticket["type"] = issue_type.strip()[:_MAX_SUMMARY]
+            if acceptance is not None:
+                text = acceptance.strip()[:_MAX_TEXT]
+                ticket["acceptance"] = text
+                ticket["acceptance_text"] = text
             ticket["rev"] = int(ticket.get("rev", 0)) + 1  # content changed — invalidate peek caches
             self._revision += 1
         logger.info("poker board: ticket edited — key=%s", ticket_key)
@@ -537,6 +555,20 @@ class PokerBoard:
         logger.info("poker board: duel recording %s=%s", source, bool(flag))
         return True
 
+    def set_room_mic(self, flag: bool) -> None:
+        """Turn the host's session recording on or off.
+
+        Unlike :meth:`set_duel_recording` this is not tied to a live duel — the
+        host arms it whenever, and the light every participant sees comes from
+        here as well as from the duel's own flags.
+        """
+        with self._lock:
+            if self._room_mic == bool(flag):
+                return
+            self._room_mic = bool(flag)
+            self._revision += 1
+        logger.info("poker board: room mic %s", "on" if flag else "off")
+
     def duel_pid_role(self, pid: str) -> str:
         """Return "low"/"high" if ``pid`` is a duelist, else "". Upload auth check.
 
@@ -581,6 +613,7 @@ class PokerBoard:
         *,
         confidence: str = "",
         evidence: tuple[str, ...] = (),
+        from_llm: bool = False,
     ) -> None:
         """Land the AI's take (worker thread) — every client sees it next poll.
 
@@ -589,6 +622,10 @@ class PokerBoard:
         (calibration stats, delivered ticket keys, …). Both come from the
         engine already validated, but the board re-checks — it is the trust
         boundary for everything that goes on the wire.
+
+        ``from_llm`` is false when the engine fell back, and the board says so
+        rather than leaving the reader to guess: a deterministic note is the
+        median restated, which the decision row already shows.
         """
         if confidence not in _AI_CONFIDENCE_LEVELS:
             confidence = ""
@@ -601,6 +638,7 @@ class PokerBoard:
                 "suggested": suggested,
                 "confidence": confidence,
                 "evidence": clean_evidence,
+                "from_llm": bool(from_llm),
             }
             self._revision += 1
         logger.info(
@@ -881,6 +919,7 @@ class PokerBoard:
                 "timer": self._timer_locked(),
                 "broadcast": {"theme": self._broadcast["theme"], "music": self._broadcast["music"]},
                 "locked": self._locked,
+                "room_mic": self._room_mic,
                 "notice": self._notice,
             }
 

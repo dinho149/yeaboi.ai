@@ -22,6 +22,7 @@
  * the guard is a blunt substring search on purpose.
  */
 @import './palette.css';
+@import './fonts.css';
 
 :root {
   /* ── Space ────────────────────────────────────────────────────────
@@ -34,9 +35,12 @@
   --s6: 32px;
 
   /* ── Radius ─────────────────────────────────────────────────────── */
-  --r-s: 6px;
-  --r-m: 10px;
-  --r-l: 16px;
+  /* Controls, containers, the screen. The category sits at 4-8 for a container
+     (Zed 2/4/6, Geist 4/6, Primer 6/8/12, Raycast 4/6/8); past about 8 on a
+     working surface it reads consumer rather than tool. */
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-l: 12px;
   --r-pill: 999px;
 
   /* ── Type ───────────────────────────────────────────────────────── */
@@ -46,6 +50,8 @@
   --fs-m: 15px;
   --fs-l: 17px;
   --fs-xl: 21px;
+  --fs-2xl: 27px;
+  --fs-display: 36px;
 
   /*
    * Mono is the structure; sans is only what a human typed.
@@ -82,19 +88,45 @@
   --track-label: 0.14em;
   --track-eyebrow: 0.16em;
 
-  /* ── Elevation ──────────────────────────────────────────────────── */
-  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
-  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+  /* ── Elevation ────────────────────────────────────────────────────
+     A raised surface catches light along its top edge; only the two things
+     that genuinely float get a blur. Read off Geist, shadcn, Zed and Supabase,
+     which ship no drop shadow at all, and Radix/Primer, which use a 1px edge —
+     a 40px blur reads as a card on a document rather than a panel in a tool. */
+  --edge: inset 0 1px 0 rgb(226 236 248 / 7%);
+  /* Resting lift, for something sitting on the board rather than over it. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 22%), 0 4px 10px rgb(0 0 0 / 18%);
+  /* Picked up: a card under the cursor, a dock being carried. */
+  --shadow-hover: 0 2px 4px rgb(0 0 0 / 25%), 0 10px 22px rgb(0 0 0 / 28%);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 45%);
+
 
   /* ── Derived surfaces ───────────────────────────────────────────────
      color-mix keeps the five theme blocks to the handful of decisions a
      theme actually is; everything shaded off them is computed here once. */
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
   --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  /* A surface on a dark ground is read from its lit edge, not from its fill —
+     the separator every dark product UI in the reference set uses is white at
+     5–14%, never a darker grey. Raised surfaces take `--hairline` plus
+     `--edge`; anything that has to hold its own against a panel takes the
+     strong one. */
+  --hairline: color-mix(in srgb, var(--text) 7%, transparent);
+  --hairline-strong: color-mix(in srgb, var(--text) 13%, transparent);
+
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
   /* The hairline one step up, for a divider that has to survive on --panel.
      Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
+  /* The border a live board draws around the whole viewport. Much brighter than
+     `--line-strong`, which is for furniture inside the screen. */
+  --screen-frame: color-mix(in srgb, var(--text) 30%, transparent);
+  --screen-frame-w: 1px;
+  /* Its own radius rather than `--r-l`, which is furniture size: at 12px a 1px
+     line reads as a mitre rather than a curve. */
+  --screen-radius: 20px;
+  /* What shows outside that border, in the corners the radius leaves. */
+  --screen-void: #000;
   --focus: var(--accent2);
 
   /* ── Jira-style status lozenges ─────────────────────────────────────
@@ -160,7 +192,9 @@
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
   --dur-base: 200ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  /* The standard curve, which Geist, shadcn and Sentry all converge on. Ours
+     was (0.2, 0, 0.2, 1) — nearly this, different for no recorded reason. */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ── Touch targets ──────────────────────────────────────────────────
      WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the

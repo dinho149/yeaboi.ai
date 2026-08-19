@@ -56,7 +56,7 @@ export const LEGACY_THEME_KEYS = ['retro_theme', 'poker_theme'] as const;
  * every entry here matches, which fails the build if a palette changes.
  */
 export const THEME_PREVIEW: Record<Theme, { bg: string; accent: string }> = {
-  midnight: { bg: '#0b0c0e', accent: '#6e8cdc' },
+  midnight: { bg: '#0e1013', accent: '#6e8cdc' },
   light: { bg: '#f6f8fa', accent: '#0969da' },
   solarized: { bg: '#002b36', accent: '#2ca9a0' },
   synthwave: { bg: '#1a1033', accent: '#ff5edb' },

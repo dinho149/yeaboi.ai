@@ -101,6 +101,7 @@ class TestServerRouting:
             "timer",
             "broadcast",
             "locked",
+            "room_mic",
             "notice",
         } == set(data)
         assert data["ticket_count"] == 3
@@ -311,6 +312,7 @@ class TestAdminGate:
             ("/api/admin/goto", {"index": 1}),
             ("/api/admin/finalize", {"points": 5}),
             ("/api/admin/ticket/edit", {"key": "T-0", "points": 5}),
+            ("/api/admin/ticket/options", {"key": "T-0"}),
             ("/api/admin/ai", {}),
             ("/api/admin/duel/open", {"seconds": 60}),
             ("/api/admin/duel/next", {}),
@@ -415,7 +417,15 @@ class TestTicketEdit:
             {"key": "T-1", "summary": "New title", "description": "New body", "points": 3},
         )
         assert resp["ok"]
-        assert calls == {"summary": "New title", "description": "New body", "story_points": 3.0}
+        assert calls == {
+            "summary": "New title",
+            "description": "New body",
+            "story_points": 3.0,
+            "state": None,
+            "assignee": None,
+            "issue_type": None,
+            "acceptance": None,
+        }
         t = b.tickets_snapshot()[1]
         assert t["summary"] == "New title"
         assert t["description_text"] == "New body"
@@ -441,12 +451,84 @@ class TestTicketEdit:
         assert exc.value.code == 400
 
 
+class TestTicketOptions:
+    def test_answers_what_the_tracker_accepts(self, running_server, monkeypatch):
+        srv, _ = running_server
+        seen = {}
+
+        def _options(source, ticket):
+            seen["source"] = source
+            seen["key"] = ticket["key"]
+            return {"states": ["To Do", "Done"]}
+
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", _options)
+        resp = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})
+        assert resp == {"ok": True, "options": {"states": ["To Do", "Done"]}}
+        assert seen["key"] == "T-1"
+
+    def test_the_board_fills_what_the_tracker_did_not(self, running_server, monkeypatch):
+        """A demo board and an unreachable tracker have the same vocabulary:
+        the values this batch of tickets already uses."""
+        srv, b = running_server
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", lambda *a, **k: {})
+        rows = b.tickets_snapshot()
+        b.apply_ticket_edit(rows[0]["key"], state="In Progress", issue_type="Bug", assignee="Ada")
+        b.apply_ticket_edit(rows[1]["key"], state="Done", issue_type="Story", assignee="Grace")
+        options = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})["options"]
+        # Every distinct value on the board, not only the two just set — the
+        # fixture's remaining tickets are still "To Do".
+        assert options["states"] == ["Done", "In Progress", "To Do"]
+        assert options["types"] == ["Bug", "Story"]
+        assert options["assignees"] == ["Ada", "Grace"]
+
+    def test_a_tracker_answer_is_not_overwritten(self, running_server, monkeypatch):
+        srv, _ = running_server
+        monkeypatch.setattr("yeaboi.poker.tickets.ticket_options", lambda *a, **k: {"states": ["Backlog"]})
+        options = _admin_post(srv, "/api/admin/ticket/options", {"key": "T-1"})["options"]
+        assert options["states"] == ["Backlog"]
+
+    def test_unknown_ticket(self, running_server):
+        srv, _ = running_server
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _admin_post(srv, "/api/admin/ticket/options", {"key": "NOPE"})
+        assert exc.value.code == 400
+
+
 class TestAiEndpoint:
     def test_requires_reveal(self, running_server):
         srv, _ = running_server
         with pytest.raises(urllib.error.HTTPError) as exc:
             _admin_post(srv, "/api/admin/ai", {})
         assert exc.value.code == 400
+
+    def test_a_fallback_lands_only_its_reason(self, running_server, monkeypatch):
+        """A fallback note restates the median, which the decision row already
+        shows — so the board carries why there is no perspective, and nothing
+        that would render as one."""
+        srv, b = running_server
+
+        def _fallback(ticket, votes, **kwargs):
+            return {
+                "note": "Votes span 3-8; the median lands on 5.",
+                "suggested_points": 5.0,
+                "confidence": "",
+                "evidence": [],
+                "llm_mode": "fallback",
+                "warnings": ["AI is rate limited right now — try again shortly."],
+            }
+
+        monkeypatch.setattr("yeaboi.poker.engine.get_poker_perspective", _fallback)
+        _post(srv, "/api/vote", {"pid": "p1", "value": "5"})
+        _admin_post(srv, "/api/admin/reveal", {})
+        _admin_post(srv, "/api/admin/ai", {})
+        for _ in range(50):
+            ai = b.state_snapshot()["ai"]
+            if ai["note"]:
+                break
+            time.sleep(0.05)
+        assert ai["from_llm"] is False
+        assert ai["note"] == "AI is rate limited right now — try again shortly."
+        assert ai["suggested"] is None
 
     def test_spawns_worker_and_note_lands(self, running_server, monkeypatch):
         srv, b = running_server
@@ -480,6 +562,7 @@ class TestAiEndpoint:
             "suggested": 5.0,
             "confidence": "high",
             "evidence": ["5-pt stories avg 4.2 days"],
+            "from_llm": True,
         }
         # The worker scopes the cross-mode history gather to this session's project.
         assert seen["project_name"] == b.project_name

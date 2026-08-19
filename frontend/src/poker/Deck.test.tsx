@@ -15,7 +15,7 @@ import { Deck } from './Deck';
 
 function renderDeck(props: Partial<Parameters<typeof Deck>[0]> = {}) {
   const onVote = vi.fn();
-  const view = render(<Deck mine="" pending={false} disabled={false} reason="" onVote={onVote} {...props} />);
+  const view = render(<Deck mine="" pending={false} disabled={false} reason="" locked={false} waiting={0} onVote={onVote} {...props} />);
   return { ...view, onVote };
 }
 
@@ -65,7 +65,20 @@ describe('Deck', () => {
 
   it('tells you what you voted, and how to take it back', () => {
     renderDeck({ mine: '8' });
-    expect(screen.getByRole('status').textContent).toBe('Your vote: 8 — tap it again to withdraw');
+    expect(screen.getByRole('status').textContent).toContain('Your vote: 8 — tap it again to withdraw');
+  });
+
+  // Moved here from the table, with the line itself: who the round is waiting
+  // for is the same fact as "voting is open", so it is said once, on the line
+  // that says it.
+  it('counts who the room is still waiting on', () => {
+    renderDeck({ waiting: 2 });
+    expect(screen.getByRole('status').textContent).toContain('2 still to vote');
+  });
+
+  it('says so when everyone is in — the cue the host is waiting for', () => {
+    renderDeck({ waiting: 0 });
+    expect(screen.getByRole('status').textContent).toContain('everyone is in');
   });
 
   it('marks an unacknowledged tap without moving anything', () => {
@@ -75,7 +88,7 @@ describe('Deck', () => {
     const waiting = screen.getByRole('button', { name: 'Withdraw your vote of 3' });
     expect(waiting.className).toContain('pcardWait');
 
-    rerender(<Deck mine="3" pending={false} disabled={false} reason="" onVote={vi.fn()} />);
+    rerender(<Deck mine="3" pending={false} disabled={false} reason="" locked={false} waiting={0} onVote={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Withdraw your vote of 3' }).className).not.toContain('pcardWait');
   });
 });

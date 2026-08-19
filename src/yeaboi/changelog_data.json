@@ -2,19 +2,56 @@
   "schema_version": 1,
   "entries": [
     {
-      "version": "3.21.0",
+      "version": "3.22.0",
       "date": "2026-08-19",
-      "summary": "yeaboi now supports Claude subscription authentication using long-lived OAuth tokens instead of just API keys. The settings page gains a new auth-mode row where you can choose between API key and subscription token, and a seamless in-app setup flow — `claude setup-token` runs interactively on a managed pty while you stay in the TUI, letting you authorize in a browser and paste the code without leaving the app. Tokens are monitored for staleness via a free probe at launch, and if one expires during use, the duck alerts you with a Ctrl+R shortcut to refresh. The implementation includes new guardrails for OAuth beta compatibility, token extraction from CLI output, and a new provider card in the setup wizard.",
+      "summary": "The planning-poker board is redesigned with a new shared design kit that all browser-facing surfaces now build on. An elevation ladder, radius and motion scales, and a vendored icon set replace per-board glyph strings. The shared board kit (frontend/src/shared/board/) unifies the rail, roster, notch, dock and other components across retro and poker into one Button and one Dropdown that replace five previous variants. The poker board itself now has one entrance instead of three, an announced turn, a dancing duck that faces the page and sleeps during locks, and glyphs drawn on a grid that survives 16px windows. A light-theme contrast audit now runs and enforces contrast minimums. All built outputs are committed; no Node runtime is needed for pip install yeaboi.",
       "highlights": [
         {
-          "text": "Choose between API key and subscription token in settings — new auth-mode row with derived provider list and credentials UI",
+          "text": "Planning poker board redesigned with new entrance, announced turns, and a grid-based glyph set that renders at any window size",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Shared board kit unifies retro and poker surfaces with one Button, one Dropdown, and consistent rail/roster/notch/dock components",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Design basis established: elevation ladder, radius and motion scales, and vendored icon set replace board-local glyph strings",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Light theme contrast audit now active and enforced for all browser surfaces",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Duck character gains real animation: faces the page, dances to the music, sleeps during locks, and bounces with physics",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.21.0",
+      "date": "2026-08-19",
+      "summary": "yeaboi now supports Claude subscription authentication using long-lived OAuth tokens instead of just API keys. The settings page gains a new auth-mode row where you can choose between API key and subscription token, and a seamless in-app setup flow \u2014 `claude setup-token` runs interactively on a managed pty while you stay in the TUI, letting you authorize in a browser and paste the code without leaving the app. Tokens are monitored for staleness via a free probe at launch, and if one expires during use, the duck alerts you with a Ctrl+R shortcut to refresh. The implementation includes new guardrails for OAuth beta compatibility, token extraction from CLI output, and a new provider card in the setup wizard.",
+      "highlights": [
+        {
+          "text": "Choose between API key and subscription token in settings \u2014 new auth-mode row with derived provider list and credentials UI",
           "areas": [
             "settings",
             "general"
           ]
         },
         {
-          "text": "Sign in with `claude setup-token` without leaving the app — runs the CLI on a managed pty, opens a browser, and stays in the TUI throughout",
+          "text": "Sign in with `claude setup-token` without leaving the app \u2014 runs the CLI on a managed pty, opens a browser, and stays in the TUI throughout",
           "areas": [
             "settings"
           ]
@@ -37,7 +74,7 @@
     {
       "version": "3.20.0",
       "date": "2026-08-17",
-      "summary": "Ship mode now surfaces a live, shareable web board — teammates can watch the story→PR pipeline run in real time over a browser, including the five-phase checklist, live agent activity, the diff, validation results, and cost estimates. The board is read-only for this release; guests watch from any device via a Cloudflare tunnel while you drive approval/rejection from the TUI. The board reuses the existing retro/poker live-board infrastructure and security model. Additionally, ship mode fixes a critical plan-finding bug where plans saved in the interactive planning chat were invisible (\"no stories found\") and adds cloud-friendly Cloudflare tunnel option for remote team collaboration.",
+      "summary": "Ship mode now surfaces a live, shareable web board \u2014 teammates can watch the story\u2192PR pipeline run in real time over a browser, including the five-phase checklist, live agent activity, the diff, validation results, and cost estimates. The board is read-only for this release; guests watch from any device via a Cloudflare tunnel while you drive approval/rejection from the TUI. The board reuses the existing retro/poker live-board infrastructure and security model. Additionally, ship mode fixes a critical plan-finding bug where plans saved in the interactive planning chat were invisible (\"no stories found\") and adds cloud-friendly Cloudflare tunnel option for remote team collaboration.",
       "highlights": [
         {
           "text": "Live ship board shows the five-phase checklist, agent activity, diff, validation results, and cost in real-time over the browser",
@@ -46,7 +83,7 @@
           ]
         },
         {
-          "text": "Share the board with teammates over a Cloudflare tunnel — read-only guests watch the run while you drive from the TUI",
+          "text": "Share the board with teammates over a Cloudflare tunnel \u2014 read-only guests watch the run while you drive from the TUI",
           "areas": [
             "planning",
             "general"
@@ -69,10 +106,10 @@
     {
       "version": "3.19.0",
       "date": "2026-08-17",
-      "summary": "yeaboi now runs on a clock. Ceremonies let you schedule any of six catalogued modes — standup, report, and four agentwatch digests — to fire at a specific time on weekdays and deliver results to Slack, email, or terminal while yeaboi is closed. The OS installs the job (launchd on macOS, cron elsewhere); yeaboi's scheduler catches its fire, runs the engine, records the outcome and cost in a ledger, and applies three guards that block stale fires, cap spending, or respect pauses. You declare a ceremony once, and it runs unattended every week. The ceremony CLI lives under `yeaboi ceremonies` (add/list/remove/pause/resume/run/history/modes), with a dedicated TUI page for viewing schedules, pausing runs, and seeing OS/store drift.",
+      "summary": "yeaboi now runs on a clock. Ceremonies let you schedule any of six catalogued modes \u2014 standup, report, and four agentwatch digests \u2014 to fire at a specific time on weekdays and deliver results to Slack, email, or terminal while yeaboi is closed. The OS installs the job (launchd on macOS, cron elsewhere); yeaboi's scheduler catches its fire, runs the engine, records the outcome and cost in a ledger, and applies three guards that block stale fires, cap spending, or respect pauses. You declare a ceremony once, and it runs unattended every week. The ceremony CLI lives under `yeaboi ceremonies` (add/list/remove/pause/resume/run/history/modes), with a dedicated TUI page for viewing schedules, pausing runs, and seeing OS/store drift.",
       "highlights": [
         {
-          "text": "Schedule any mode to run at a time on weekdays with `yeaboi ceremonies add` — standup, report, and agentwatch digests deliver to Slack, email, or terminal",
+          "text": "Schedule any mode to run at a time on weekdays with `yeaboi ceremonies add` \u2014 standup, report, and agentwatch digests deliver to Slack, email, or terminal",
           "areas": [
             "standup",
             "reporting",

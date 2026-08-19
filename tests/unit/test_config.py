@@ -672,7 +672,9 @@ class TestStandupConfig:
 
         monkeypatch.setenv("LLM_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
-        assert is_llm_configured() == (True, "ANTHROPIC_API_KEY not set")
+        # Only the boolean is meaningful here: the message is what to say when
+        # it is False, and is carried alongside rather than conditionally built.
+        assert is_llm_configured()[0] is True
 
     def test_is_llm_configured_missing_key(self, monkeypatch):
         from yeaboi.config import is_llm_configured
@@ -1088,3 +1090,26 @@ class TestGetAnthropicSubscriptionToken:
         monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "  Subscription ")
         monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "  sk-ant-oat01-abc  ")
         assert get_anthropic_subscription_token() == "sk-ant-oat01-abc"
+
+    def test_a_subscription_counts_as_configured(self, monkeypatch):
+        """The gate every mode asks before offering an AI feature — poker's AI
+        perspective refused a signed-in subscription until it did."""
+        from yeaboi.config import is_llm_configured
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc")
+        ok, _why = is_llm_configured()
+        assert ok is True
+
+    def test_neither_credential_is_not_configured(self, monkeypatch):
+        from yeaboi.config import is_llm_configured
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_MODE", "subscription")
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        ok, why = is_llm_configured()
+        assert ok is False
+        assert "subscription" in why

@@ -386,7 +386,15 @@ class TestUpdateTicket:
         monkeypatch.setattr("yeaboi.tools.jira.jira_update_issue_fields", _update, raising=False)
         ok, _ = tickets.update_ticket("jira", {"key": "PROJ-1"}, description="plain text", story_points=8)
         assert ok is True
-        assert seen == {"key": "PROJ-1", "summary": None, "description": "plain text", "story_points": 8}
+        assert seen == {
+            "key": "PROJ-1",
+            "summary": None,
+            "description": "plain text",
+            "story_points": 8,
+            "issue_type": None,
+            "assignee": None,
+            "acceptance": None,
+        }
 
     def test_azdo_converts_description_to_html(self, monkeypatch):
         seen = {}
@@ -426,6 +434,43 @@ class TestUpdateTicket:
         ok, err = tickets.update_ticket("jira", {"key": "PROJ-1"}, story_points=5)
         assert ok is False
         assert "network down" in err
+
+
+class TestTicketOptions:
+    def test_demo_has_nothing_to_ask(self):
+        assert tickets.ticket_options("demo", {"key": "DEMO-1"}) == {}
+
+    def test_jira_passes_the_key_through(self, monkeypatch):
+        seen = {}
+
+        def _options(key):
+            seen["key"] = key
+            return {"states": ["To Do", "Done"]}
+
+        monkeypatch.setattr("yeaboi.tools.jira.jira_ticket_options", _options, raising=False)
+        assert tickets.ticket_options("jira", {"key": "PROJ-1"}) == {"states": ["To Do", "Done"]}
+        assert seen["key"] == "PROJ-1"
+
+    def test_azdo_passes_the_numeric_id(self, monkeypatch):
+        seen = {}
+
+        def _options(work_item_id):
+            seen["id"] = work_item_id
+            return {"assignees": ["Ada"]}
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_work_item_options", _options, raising=False)
+        assert tickets.ticket_options("azdevops", {"key": "101"}) == {"assignees": ["Ada"]}
+        assert seen["id"] == 101
+
+    def test_unknown_source_asks_nothing(self):
+        assert tickets.ticket_options("weird", {"key": "X-1"}) == {}
+
+    def test_error_degrades_to_empty(self, monkeypatch):
+        def _boom(key):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr("yeaboi.tools.jira.jira_ticket_options", _boom, raising=False)
+        assert tickets.ticket_options("jira", {"key": "PROJ-1"}) == {}
 
 
 class TestDemoTickets:

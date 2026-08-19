@@ -1,0 +1,38 @@
+/*
+ * The two faces, actually shipped.
+ *
+ * `--font-sans` and `--font-mono` have always named Geist and JetBrains Mono,
+ * but nothing ever loaded them — every page fell through to the system stack,
+ * so no one had seen a board in its own typeface. They cannot be fetched from a
+ * content delivery network (the tunnel CSP forbids it, and exports open over
+ * `file://`), so they are subsetted here and inlined by Vite as data URIs.
+ *
+ * Subset to Latin-1 plus the punctuation, arrows and marks the boards render;
+ * regenerate with `make web-fonts` after changing that set. Three faces, ~51 KB
+ * total: the sans at 400 and 600, the mono at 400. Intermediate weights are
+ * synthesised, which is cheaper than a fourth file on every export.
+ */
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/geist-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/geist-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/mono-400.woff2') format('woff2');
+}

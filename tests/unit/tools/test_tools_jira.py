@@ -1283,3 +1283,110 @@ class TestJiraUpdateIssueFields:
         assert retry_fields == {"customfield_10999": 5.0}
         # The discovered id is cached for subsequent updates.
         assert jira_mod._story_points_field_cache == "customfield_10999"
+
+
+class TestJiraTransitionIssue:
+    """A status is a workflow move, so the helper matches a transition, not a field."""
+
+    def _client(self, monkeypatch, transitions):
+        mock_client = MagicMock()
+        mock_client.issue.return_value = MagicMock()
+        mock_client.transitions.return_value = transitions
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        return mock_client
+
+    def test_matches_the_target_status(self, monkeypatch):
+        from yeaboi.tools.jira import jira_transition_issue
+
+        client = self._client(monkeypatch, [{"id": "31", "name": "Start", "to": {"name": "In Progress"}}])
+        assert jira_transition_issue("PROJ-1", "in progress") == (True, "")
+        assert client.transition_issue.call_args.args[1] == "31"
+
+    def test_matches_the_transition_name(self, monkeypatch):
+        from yeaboi.tools.jira import jira_transition_issue
+
+        client = self._client(monkeypatch, [{"id": "41", "name": "Done", "to": {"name": "Closed"}}])
+        assert jira_transition_issue("PROJ-1", "Done") == (True, "")
+        assert client.transition_issue.call_args.args[1] == "41"
+
+    def test_unreachable_status_is_a_readable_refusal(self, monkeypatch):
+        from yeaboi.tools.jira import jira_transition_issue
+
+        self._client(monkeypatch, [{"id": "31", "name": "Start", "to": {"name": "In Progress"}}])
+        ok, err = jira_transition_issue("PROJ-1", "Released")
+        assert ok is False
+        assert "cannot move" in err
+
+    def test_unconfigured_returns_error_tuple(self, monkeypatch):
+        from yeaboi.tools.jira import jira_transition_issue
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: None)
+        ok, err = jira_transition_issue("PROJ-1", "Done")
+        assert ok is False
+        assert "not configured" in err
+
+
+class TestJiraTicketOptions:
+    """The editor's pickers: what this instance will actually accept."""
+
+    def _client(self, monkeypatch):
+        mock_client = MagicMock()
+        issue = MagicMock()
+        issue.fields.status.name = "To Do"
+        issue.fields.project.key = "PROJ"
+        mock_client.issue.return_value = issue
+        mock_client.transitions.return_value = [
+            {"id": "31", "name": "Start", "to": {"name": "In Progress"}},
+            {"id": "41", "name": "Finish", "to": {"name": "Done"}},
+        ]
+        # `name` is MagicMock's own constructor argument, so a type has to be
+        # given its name after it exists.
+        story, subtask = MagicMock(subtask=False), MagicMock(subtask=True)
+        story.name, subtask.name = "Story", "Sub-task"
+        mock_client.project.return_value = MagicMock(issueTypes=[story, subtask])
+        mock_client.search_assignable_users_for_issues.return_value = [MagicMock(displayName="Ada Lovelace")]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        return mock_client
+
+    def test_reads_states_types_and_assignees(self, monkeypatch):
+        from yeaboi.tools.jira import jira_ticket_options
+
+        self._client(monkeypatch)
+        options = jira_ticket_options("PROJ-1")
+        # The current status leads: it is not one of its own transitions, and
+        # a picker that omits it would show the ticket as something it is not.
+        assert options["states"] == ["To Do", "In Progress", "Done"]
+        assert options["types"] == ["Story"]
+        assert options["assignees"] == ["Ada Lovelace"]
+
+    def test_one_failed_lookup_does_not_empty_the_others(self, monkeypatch):
+        from yeaboi.tools.jira import jira_ticket_options
+
+        client = self._client(monkeypatch)
+        client.project.side_effect = RuntimeError("no permission")
+        options = jira_ticket_options("PROJ-1")
+        assert "types" not in options
+        assert options["states"] and options["assignees"]
+
+    def test_unreadable_issue_answers_nothing(self, monkeypatch):
+        from yeaboi.tools.jira import jira_ticket_options
+
+        client = self._client(monkeypatch)
+        client.issue.side_effect = RuntimeError("gone")
+        assert jira_ticket_options("PROJ-1") == {}
+
+    def test_unconfigured_answers_nothing(self, monkeypatch):
+        from yeaboi.tools.jira import jira_ticket_options
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: None)
+        assert jira_ticket_options("PROJ-1") == {}
+
+    def test_falls_back_to_a_project_wide_user_search(self, monkeypatch):
+        from yeaboi.tools.jira import jira_ticket_options
+
+        client = self._client(monkeypatch)
+        # Server instances reject the Cloud-shaped call; the project search is
+        # the last attempt and its answer is the one that counts.
+        client.search_assignable_users_for_issues.side_effect = TypeError("unexpected keyword 'query'")
+        client.search_assignable_users_for_projects.return_value = [MagicMock(displayName="Grace")]
+        assert jira_ticket_options("PROJ-1")["assignees"] == ["Grace"]

@@ -72,7 +72,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       <span aria-hidden="true" className={styles['iconGlyph']}>
         {icon}
       </span>
-      {children}
+      {children ? <span className={styles['iconLabel']}>{children}</span> : null}
     </button>
   );
 });

@@ -16,12 +16,14 @@
  * dropped at the top of the document.
  */
 
+import { createPortal } from 'react-dom';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -35,17 +37,27 @@ interface PopoverGroupValue {
   openId: string | null;
   toggle(id: string): void;
   close(): void;
+  /** When set, panels render *into* this element instead of over the trigger. */
+  panelHost: HTMLElement | null;
 }
 
 const PopoverGroupContext = createContext<PopoverGroupValue | null>(null);
+
+/** How long a docked panel stays rendered after closing, so it can collapse. */
+const CLOSE_MS = 220;
 
 /**
  * Wraps a toolbar so its popovers are mutually exclusive.
  *
  * Also owns the two global dismissals — a pointer-down outside any panel, and
  * Escape — because both are properties of the *group*, not of any one popover.
+ *
+ * `panelHost` turns the group inside out: instead of each panel floating over
+ * its trigger, every panel renders into that one element. The dock uses it so
+ * that opening a tool grows the dock itself, which is something no absolutely
+ * positioned panel can do — an out-of-flow box cannot size its container.
  */
-export function PopoverGroup({ children }: { children: ReactNode }) {
+export function PopoverGroup({ children, panelHost = null }: { children: ReactNode; panelHost?: HTMLElement | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -56,7 +68,12 @@ export function PopoverGroup({ children }: { children: ReactNode }) {
     if (openId === null) return;
     const onPointerDown = (event: PointerEvent): void => {
       const root = rootRef.current;
-      if (root && event.target instanceof Node && !root.contains(event.target)) close();
+      if (!root || !(event.target instanceof Node)) return;
+      if (root.contains(event.target)) return;
+      // A Dropdown inside a panel portals its menu to the body — outside this
+      // root — so picking a station would otherwise close the panel it is in.
+      if ((event.target as Element).closest?.('[data-dropdown-menu]')) return;
+      close();
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close();
@@ -72,7 +89,14 @@ export function PopoverGroup({ children }: { children: ReactNode }) {
     };
   }, [openId, close]);
 
-  const value = useMemo(() => ({ openId, toggle, close }), [openId, toggle, close]);
+  // The host's own open state, written straight onto it: it is the element the
+  // *collapse* animates on, and it has to flip the moment the panel closes —
+  // before the panel itself goes, which is what there is left to collapse.
+  useLayoutEffect(() => {
+    if (panelHost) panelHost.dataset['open'] = openId ? 'true' : 'false';
+  }, [panelHost, openId]);
+
+  const value = useMemo(() => ({ openId, toggle, close, panelHost }), [openId, toggle, close, panelHost]);
 
   return (
     <PopoverGroupContext.Provider value={value}>
@@ -101,7 +125,7 @@ export interface PopoverProps {
    */
   placement?: 'below' | 'above';
   /** Extra classes for the trigger button. */
-  triggerClassName?: string;
+  triggerClassName?: string | undefined;
   className?: string | undefined;
 }
 
@@ -117,25 +141,96 @@ export function Popover({
   const group = useContext(PopoverGroupContext);
   const id = useId();
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // What the panel actually resolved to once measured against the viewport.
+  const [fit, setFit] = useState<{ above: boolean; left: boolean } | null>(null);
   // Standalone fallback so a Popover still works outside a group — used in
   // tests and wherever exactly one popover exists.
   const [soloOpen, setSoloOpen] = useState(false);
+  /** Docked only: kept in the layout for one beat so the host can collapse. */
+  const [closing, setClosing] = useState(false);
 
   const open = group ? group.openId === id : soloOpen;
+  const host = group?.panelHost ?? null;
   const wasOpen = useRef(open);
 
-  useEffect(() => {
+  /*
+   * Flip against whichever edge it would otherwise run off.
+   *
+   * Measured on open rather than assumed from the prop: the same control moves
+   * — the dock travels three walls — so a placement that is right at the
+   * bottom-right is wrong once it is at the top-left. The prop stays as the
+   * preference; this only overrides it when the preferred side does not fit.
+   */
+  useLayoutEffect(() => {
+    // A docked panel is in flow inside its host, so there is no edge to flip
+    // against and nothing to measure.
+    if (!open || host) {
+      setFit(null);
+      return;
+    }
+    const panel = panelRef.current;
+    const button = buttonRef.current;
+    if (!panel || !button) return;
+    const anchor = button.getBoundingClientRect();
+    const { width, height } = panel.getBoundingClientRect();
+    const room = { above: anchor.top, below: window.innerHeight - anchor.bottom };
+    const wantAbove = placement === 'above';
+    const above = wantAbove ? room.above >= height || room.above >= room.below : room.below < height && room.above > room.below;
+    const wantLeft = align === 'left';
+    const left = wantLeft
+      ? anchor.left + width <= window.innerWidth || anchor.right - width < 0
+      : anchor.right - width < 0;
+    setFit({ above, left });
+  }, [open, placement, align, host]);
+
+  // Layout, not effect: an ordinary effect runs after paint, so the browser
+  // would show one frame with the panel already gone — the box snapping shut
+  // and then reappearing to animate down.
+  useLayoutEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = open;
+    if (!was || open) return;
     // Returning focus to the trigger on close is the half of the interaction
     // people notice only when it is missing: without it, dismissing a panel
     // with Escape drops keyboard focus back to the document body.
-    if (wasOpen.current && !open) buttonRef.current?.focus();
-    wasOpen.current = open;
-  }, [open]);
+    buttonRef.current?.focus();
+    // A docked panel is what gives its host a height, so removing it on the
+    // same frame leaves nothing to animate — it stays for the collapse. Not
+    // when another panel in the group just opened, though: the host is not
+    // collapsing, and holding this one shows the old contents under the new.
+    if (!host || group?.openId) return;
+    setClosing(true);
+    const timer = setTimeout(() => setClosing(false), CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [open, host, group?.openId]);
 
   const onToggle = (): void => {
     if (group) group.toggle(id);
     else setSoloOpen((v) => !v);
   };
+
+  const panel = (
+    /* Kept in the DOM and hidden, rather than unmounted: `aria-controls`
+       pointing at a non-existent id is meaningless to a screen reader, and
+       `hidden` already removes it from the accessibility tree. */
+    <div
+      ref={panelRef}
+      id={id}
+      role="group"
+      aria-label={label}
+      hidden={!open && !closing}
+      className={cx(
+        styles['popover'],
+        host && styles['popoverDocked'],
+        !host && (fit ? fit.left : align === 'left') && styles['popoverLeft'],
+        !host && (fit ? fit.above : placement === 'above') && styles['popoverAbove'],
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
 
   return (
     <div className={styles['popoverAnchor']}>
@@ -150,23 +245,7 @@ export function Popover({
       >
         {trigger}
       </button>
-      {/* Kept in the DOM and hidden, rather than unmounted: `aria-controls`
-          pointing at a non-existent id is meaningless to a screen reader, and
-          `hidden` already removes it from the accessibility tree. */}
-      <div
-        id={id}
-        role="group"
-        aria-label={label}
-        hidden={!open}
-        className={cx(
-          styles['popover'],
-          align === 'left' && styles['popoverLeft'],
-          placement === 'above' && styles['popoverAbove'],
-          className,
-        )}
-      >
-        {children}
-      </div>
+      {host ? createPortal(panel, host) : panel}
     </div>
   );
 }

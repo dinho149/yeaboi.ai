@@ -19,9 +19,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
-  background: var(--card);
+  background: var(--panel-2);
   color: var(--muted);
-  border: 1px solid var(--line);
 }
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
@@ -219,6 +218,15 @@
    `font-family` must resolve to a monospace with full block-drawing coverage
    (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
    rather than a face keeps that true if the stack changes. */
+/* The block face is drawn, not typeset — sized off the same font-size so it
+   still scales with the type scale. Four pixel rows, two rows of type. */
+svg.wordmark {
+  display: block;
+  width: auto;
+  height: 2em;
+  overflow: visible;
+}
+
 .wordmark {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
@@ -307,7 +315,7 @@
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, var(--shadow-2);
+  box-shadow: var(--edge), var(--shadow-2);
   overflow: hidden;
 }
 .frameBar {
@@ -368,3 +376,246 @@
 .lozengeProgress { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
 .lozengeDone { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
 .lozengeBlocked { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
+
+/* ── Icon ────────────────────────────────────────────────────────
+   Sits on the text baseline rather than the line box, so a glyph beside a
+   label lines up with it instead of riding high. */
+.icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
+}
+
+/*
+ * The hand-drawn set moves.
+ *
+ * Each glyph answers the control it sits on: the lock's shackle lifts, the
+ * timer's hand sweeps, the theme's half turns over. Small, and only on the way
+ * in — an icon that keeps moving is a distraction, and these sit in a bar that
+ * is always on screen.
+ *
+ * `transform-box: view-box` puts the transform in the glyph's own 16 units, so
+ * a translate of 1 is one drawn pixel and an origin of 50% is the middle of the
+ * icon rather than of whatever the part's own outline happens to be.
+ *
+ * Reduced motion flattens all of it — nothing here carries meaning that the
+ * icon does not already carry standing still.
+ */
+.icon[data-icon] :where([data-part]) {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: transform var(--dur-base) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* The shackle rises off the body and drops back. */
+:where(button, a):hover .icon[data-icon^='lock'] [data-part='shackle'] {
+  transform: translateY(-1px);
+}
+
+/* The heads swing apart, the way they would if you struck them. */
+:where(button, a):hover .icon[data-icon='music'] [data-part='low'] {
+  transform: translateY(0.75px);
+}
+:where(button, a):hover .icon[data-icon='music'] [data-part='high'] {
+  transform: translateY(-0.75px);
+}
+
+/* A quarter turn of the hand, about the case's centre rather than its own. */
+:where(button, a):hover .icon[data-icon='timer'] [data-part='hand'] {
+  transform-origin: 8px 9.5px;
+  transform: rotate(90deg);
+}
+
+/* The lit half turns over — the gesture the button performs. */
+:where(button, a):hover .icon[data-icon='contrast'] [data-part='fill'] {
+  transform: rotate(180deg);
+  transition-duration: 320ms;
+}
+
+/* The flap dips, as if something were being put in. */
+:where(button, a):hover .icon[data-icon='mail'] [data-part='flap'] {
+  transform: translateY(1px);
+}
+
+/* A chevron leans the way it points. */
+:where(button, a):hover:not(:disabled) .icon[data-icon='chevron-left'] [data-part='v'] {
+  transform: translateX(-1px);
+}
+:where(button, a):hover:not(:disabled) .icon[data-icon='chevron-right'] [data-part='v'] {
+  transform: translateX(1px);
+}
+:where(button, a):hover:not(:disabled) .icon[data-icon='chevron-up'] [data-part='v'] {
+  transform: translateY(-1px);
+}
+
+/* The one at the back steps up beside the one at the front. */
+:where(button, a):hover .icon[data-icon='users'] [data-part='back'] {
+  transform: translateX(-1px);
+}
+
+/* The small sparks flare and the star turns a little under them. */
+:where(button, a):hover .icon[data-icon='sparkles'] [data-part='spark'] {
+  transform: scale(1.35);
+  transform-origin: 12.5px 3.5px;
+}
+:where(button, a):hover .icon[data-icon='sparkles'] [data-part='spark']:last-of-type {
+  transform-origin: 12.5px 11.5px;
+}
+:where(button, a):hover .icon[data-icon='sparkles'] [data-part='star'] {
+  transform: rotate(-12deg);
+  transform-origin: 6.5px 7px;
+}
+
+/* The blades scissor — the two halves of one gesture, opposite ways. */
+:where(button, a):hover .icon[data-icon='swords'] [data-part='a'] {
+  transform: rotate(-7deg);
+}
+:where(button, a):hover .icon[data-icon='swords'] [data-part='b'] {
+  transform: rotate(7deg);
+}
+
+/* Picked up off its stand. */
+:where(button, a):hover .icon[data-icon='mic'] :where([data-part='capsule'], [data-part='arc']) {
+  transform: translateY(-0.75px);
+}
+
+/* The nib runs along its rule. */
+:where(button, a):hover .icon[data-icon='pen-line'] [data-part='nib'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+/* And the arrow leaves the frame. */
+:where(button, a):hover .icon[data-icon='external-link'] [data-part='out'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+:where(button, a):hover:not(:disabled) .icon[data-icon='chevron-down'] [data-part='v'] {
+  transform: translateY(1px);
+}
+
+:where(button, a):hover .icon[data-icon='pencil'] [data-part='nib'] {
+  transform: translate(0.75px, -0.75px);
+}
+
+/* Nudged the way it is about to go. */
+:where(button, a):hover .icon[data-icon='play'] [data-part='tri'] {
+  transform: translateX(0.75px);
+}
+
+/* The horn lifts, the way one is raised to speak through. */
+:where(button, a):hover .icon[data-icon='megaphone'] [data-part='horn'] {
+  transform: rotate(-6deg);
+  transform-origin: 4.5px 8px;
+}
+
+/* The middle bar draws back, so the stack is not three identical lines. */
+:where(button, a):hover .icon[data-icon='menu'] [data-part='bar']:nth-of-type(2) {
+  transform: scaleX(0.7);
+  transform-origin: 2.5px 8.5px;
+}
+
+:where(button, a):hover .icon[data-icon='x'] [data-part='s'] {
+  transform: rotate(90deg);
+}
+
+/* ── Dropdown ────────────────────────────────────────────────────
+   Closed, it is the value and nothing else: the underline is the whole
+   affordance, square-ended so it reads as a rule under text rather than a
+   field. */
+.dd {
+  position: relative;
+  display: inline-block;
+}
+
+.ddTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 0 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 0 0 var(--hairline-strong);
+  transition:
+    box-shadow var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.ddTrigger:hover,
+.ddTrigger:focus-visible,
+.ddTriggerOpen {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+
+.ddValue {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ddEmpty {
+  color: var(--dim);
+}
+
+.ddCaret {
+  color: var(--dim);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.ddTriggerOpen .ddCaret {
+  transform: rotate(180deg);
+}
+
+.ddMenu {
+  /* Fixed and portalled: see the note in Dropdown.tsx — an in-flow menu is
+     clipped by the dock drawer, which has to clip to animate its own size. */
+  position: fixed;
+  z-index: var(--z-modal);
+  max-height: 240px;
+  margin: 0;
+  padding: var(--s1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  animation: ddOpen var(--dur-fast) var(--ease) both;
+}
+
+@keyframes ddOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.ddOpt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s2);
+  border-radius: var(--r-s);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ddOptActive {
+  background: var(--panel-2);
+}
+
+.ddNone {
+  padding: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}

@@ -35,6 +35,17 @@ export interface TicketEdit {
   summary?: string;
   description?: string;
   points?: number;
+  state?: string;
+  assignee?: string;
+  type?: string;
+  acceptance?: string;
+}
+
+/** The values the tracker itself accepts. A missing list means "ask the board". */
+export interface TrackerOptions {
+  types?: string[];
+  states?: string[];
+  assignees?: string[];
 }
 
 /**
@@ -52,6 +63,8 @@ export interface PokerActions {
   goto(index: number): Promise<string>;
   finalize(points: number): Promise<string>;
   editTicket(key: string, edit: TicketEdit): Promise<string>;
+  /** The editor's pickers. One tracker round-trip, made when the editor opens. */
+  trackerOptions(key: string): Promise<TrackerOptions>;
   askAi(): Promise<string>;
   openDuel(turnSeconds: number): Promise<string>;
   nextTurn(): Promise<string>;
@@ -89,6 +102,14 @@ export function createPokerActions(session: Session, store: BoardStore<PokerStat
     goto: (index) => mutate('/api/admin/goto', { index }),
     finalize: (points) => mutate('/api/admin/finalize', { points }),
     editTicket: (key, edit) => mutate('/api/admin/ticket/edit', { key, ...edit }),
+
+    async trackerOptions(key) {
+      // Not through `mutate`: this reads the tracker and returns no board
+      // state, so there is nothing to feed the store and no refusal to show.
+      const result = await postJSON<{ options?: TrackerOptions }>(session, '/api/admin/ticket/options', { key });
+      return (result.ok && result.data.options) || {};
+    },
+
     askAi: () => mutate('/api/admin/ai'),
     // `seconds`, not `turn_seconds`. The board *field* is `turn_seconds` and the
     // request key is not, which is exactly the sort of mismatch that costs

@@ -1,15 +1,13 @@
 /**
  * The little bar visualiser beside the music button.
  *
- * It is **synthetic**, not a frequency analysis — two summed sines per bar, the
- * same trick the original board script used. Worth being explicit about,
- * because the honest-looking alternative does not work: routing the audio
- * through an `AnalyserNode` requires a CORS-permissive stream, and the public
- * radio stations these pages use do not send the header. You get an analyser
- * full of silence, or a tainted node that refuses to read at all.
+ * Driven by a real `AnalyserNode` when `useMusic` has one — the stations do
+ * send `Access-Control-Allow-Origin: *`, so the samples are readable. That
+ * makes it honest: a station playing silence draws flat, which is the whole
+ * point of having it. Two summed sines per bar remain as the fallback for the
+ * window before the graph exists, or a browser without one.
  *
- * So it is decoration that says "sound is happening", which is exactly what the
- * toolbar needs it to say. `aria-hidden`, accordingly.
+ * `aria-hidden`: it says the same thing the play button already says.
  *
  * The rAF loop stops when `playing` goes false and on unmount — an animation
  * frame loop left running against a detached canvas is a genuine battery drain
@@ -26,12 +24,14 @@ const SPEED = 0.18;
 
 export interface VisualizerProps {
   playing: boolean;
+  /** Live signal. Falls back to the synthetic bars when absent. */
+  analyser?: AnalyserNode | null;
   width?: number;
   height?: number;
   className?: string | undefined;
 }
 
-export function Visualizer({ playing, width = 34, height = 22, className }: VisualizerProps) {
+export function Visualizer({ playing, analyser, width = 34, height = 22, className }: VisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -44,8 +44,27 @@ export function Visualizer({ playing, width = 34, height = 22, className }: Visu
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const barWidth = canvas.width / BARS;
+    const bins = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
     let phase = 0;
     let raf = 0;
+
+    /** 0..1 per bar: the real spectrum, or the synthesised stand-in. */
+    const levels = (): number[] => {
+      if (analyser && bins) {
+        analyser.getByteFrequencyData(bins);
+        // The top of the range is mostly empty on a 128kbps stream, so the bars
+        // read the lower half of the spectrum and spread it across the width.
+        const usable = Math.floor(bins.length / 2);
+        const per = Math.max(1, Math.floor(usable / BARS));
+        return Array.from({ length: BARS }, (_, i) => {
+          let sum = 0;
+          for (let k = 0; k < per; k += 1) sum += bins[i * per + k] ?? 0;
+          return sum / per / 255;
+        });
+      }
+      phase += SPEED;
+      return Array.from({ length: BARS }, (_, i) => (Math.sin(phase + i * 0.7) + Math.sin(phase * 1.7 + i) + 2) / 4);
+    };
 
     const frame = (): void => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -53,12 +72,10 @@ export function Visualizer({ playing, width = 34, height = 22, className }: Visu
       // new theme mid-song, and a cached colour would keep the old palette.
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
       ctx.fillStyle = accent || '#5ac88a';
-      phase += SPEED;
-      for (let i = 0; i < BARS; i += 1) {
-        const v = (Math.sin(phase + i * 0.7) + Math.sin(phase * 1.7 + i) + 2) / 4;
-        const h = Math.max(2, v * canvas.height);
+      levels().forEach((v, i) => {
+        const h = Math.max(1, v * canvas.height);
         ctx.fillRect(i * barWidth, canvas.height - h, barWidth - 1, h);
-      }
+      });
       raf = requestAnimationFrame(frame);
     };
 
@@ -74,7 +91,7 @@ export function Visualizer({ playing, width = 34, height = 22, className }: Visu
       cancelAnimationFrame(raf);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [playing]);
+  }, [playing, analyser]);
 
   return (
     <canvas
