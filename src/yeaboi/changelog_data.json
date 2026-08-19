@@ -2,6 +2,441 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.21.0",
+      "date": "2026-08-19",
+      "summary": "yeaboi now supports Claude subscription authentication using long-lived OAuth tokens instead of just API keys. The settings page gains a new auth-mode row where you can choose between API key and subscription token, and a seamless in-app setup flow — `claude setup-token` runs interactively on a managed pty while you stay in the TUI, letting you authorize in a browser and paste the code without leaving the app. Tokens are monitored for staleness via a free probe at launch, and if one expires during use, the duck alerts you with a Ctrl+R shortcut to refresh. The implementation includes new guardrails for OAuth beta compatibility, token extraction from CLI output, and a new provider card in the setup wizard.",
+      "highlights": [
+        {
+          "text": "Choose between API key and subscription token in settings — new auth-mode row with derived provider list and credentials UI",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Sign in with `claude setup-token` without leaving the app — runs the CLI on a managed pty, opens a browser, and stays in the TUI throughout",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Subscription tokens are validated at launch via a free probe and monitored for staleness, with Ctrl+R to refresh when needed",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Full OAuth 2025-04-20 beta support with Bearer token auth instead of API key headers",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.20.0",
+      "date": "2026-08-17",
+      "summary": "Ship mode now surfaces a live, shareable web board — teammates can watch the story→PR pipeline run in real time over a browser, including the five-phase checklist, live agent activity, the diff, validation results, and cost estimates. The board is read-only for this release; guests watch from any device via a Cloudflare tunnel while you drive approval/rejection from the TUI. The board reuses the existing retro/poker live-board infrastructure and security model. Additionally, ship mode fixes a critical plan-finding bug where plans saved in the interactive planning chat were invisible (\"no stories found\") and adds cloud-friendly Cloudflare tunnel option for remote team collaboration.",
+      "highlights": [
+        {
+          "text": "Live ship board shows the five-phase checklist, agent activity, diff, validation results, and cost in real-time over the browser",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Share the board with teammates over a Cloudflare tunnel — read-only guests watch the run while you drive from the TUI",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Ship mode now finds plans saved in both the interactive planning chat and the project store, fixing the \"no stories found\" bug on chat-built plans",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Live agent output streams over the TUI and the web board via stream-json format with hardened envelope parsing",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.19.0",
+      "date": "2026-08-17",
+      "summary": "yeaboi now runs on a clock. Ceremonies let you schedule any of six catalogued modes — standup, report, and four agentwatch digests — to fire at a specific time on weekdays and deliver results to Slack, email, or terminal while yeaboi is closed. The OS installs the job (launchd on macOS, cron elsewhere); yeaboi's scheduler catches its fire, runs the engine, records the outcome and cost in a ledger, and applies three guards that block stale fires, cap spending, or respect pauses. You declare a ceremony once, and it runs unattended every week. The ceremony CLI lives under `yeaboi ceremonies` (add/list/remove/pause/resume/run/history/modes), with a dedicated TUI page for viewing schedules, pausing runs, and seeing OS/store drift.",
+      "highlights": [
+        {
+          "text": "Schedule any mode to run at a time on weekdays with `yeaboi ceremonies add` — standup, report, and agentwatch digests deliver to Slack, email, or terminal",
+          "areas": [
+            "standup",
+            "reporting",
+            "usage"
+          ]
+        },
+        {
+          "text": "OS-installed jobs (launchd/cron) fire ceremonies while yeaboi is closed, with each run recorded in a ledger showing outcome, duration, cost, and delivery status",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "Three guards protect unattended runs: staleness rejects fires too late for their slot, spending caps prevent budget overruns, and pause status gates fires",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "New TUI page shows your ceremony schedule, lets you run or pause them, and displays any drift between the store and the OS",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Delivery was unified onto a mode-neutral Dispatch type, reducing code duplication and making new delivery channels easier to add",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.18.2",
+      "date": "2026-08-17",
+      "summary": "The standup now shows an activity timeline swimlane board with landmarks and thread connections, while Azure DevOps PR reviews are captured and properly deduplicated. Four bugs in the Azure DevOps integration are fixed: reviewer votes were not fetched, comments incorrectly collapsed to one row per PR, activity caps silently dropped events, and the capability manifest claimed the opposite of reality. The standup timeline redesign replaces mute tick marks with labeled landmarks (merged PRs, ticket state changes) and commit bursts, using a compressed axis where events claim footprints and overlapping activity merges into bursts. Threads now connect lanes that touched the same pull request, and evidence caps widened from 8 to 30 rows per category to support busier days.",
+      "highlights": [
+        {
+          "text": "Standup timeline visualizes activity as labeled landmarks and commit bursts on a compressed axis with thread connections between PRs",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Azure DevOps PR reviewer votes are now captured and appear in standup evidence",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Azure DevOps PR comments no longer incorrectly collapse to a single row per PR",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Evidence caps per category widened from 8 to 30 to support busier days without silent truncation",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Activity timeline geometry invariants tested across zoom levels, themes, and single vs. multi-day boards",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.18.1",
+      "date": "2026-08-17",
+      "summary": "Ship mode hardening and safety improvements prevent agent capability creep, tighten consent checks, and show you the exact changes before approval. The agent's Bash tool is now completely denied (not just git/gh commands), closing permission-bypass risks from other shell features. Consent is checked against the git toplevel where worktree setup actually lands, so approval names the directory that is actually touched. The approval gate now renders a scrollable patch pane showing your complete diff alongside validation results, with measured button positioning that never leaves buttons off-screen on minimum terminals. Gates answer only their own run by capturing the run id immediately, preventing concurrent runs from presenting stale diffs to the wrong user. Run IDs now carry a random suffix preventing same-second collisions, and removal operations report correctly whether they found an entry.",
+      "highlights": [
+        {
+          "text": "Agent permissions hardened: Bash tool is completely denied, not just git/gh commands, closing permission bypasses",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Consent checks the git toplevel, so approval dialog names the exact directory that is touched",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Approval gate shows the full diff in a scrollable patch pane with validation results and the worktree path",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "The approval buttons always stay on screen, however long the diff or failure log; supporting detail yields space first",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Gates answer only their own run via immediate run-id callback; concurrent runs no longer see stale diffs",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.18.0",
+      "date": "2026-08-17",
+      "summary": "Wave 6 of the Go migration brings the documentation quality scoring engine behind the yeaboi-core sidecar. The analysis module now scores documentation clarity, AI usage patterns, and content quality in the background Go service with Python fallback, running ~100x faster than the Python implementation. Two new deterministic RPC methods enable the analysis pipeline to classify content markers and score documentation across your team's work without blocking the standup or analysis runs. Parity tests enforce byte-level equivalence across Python and Go implementations, and contract definitions lock the RPC interface across versions. This completes the deterministic scoring seam that began with Wave 5 (code health and practices).",
+      "highlights": [
+        {
+          "text": "Doc quality scoring now runs in the Go sidecar with two new RPC methods: score_docs and classify_doc_markers",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "~100x faster documentation scoring: Go implementation replaces Python read workers, cache writes batch at the seam",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Byte-level parity enforcement ensures Python and Go doc-quality implementations stay perfectly synchronized",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Silent Python fallback preserves compatibility when the sidecar is unavailable or encounters errors",
+          "areas": [
+            "analysis",
+            "general"
+          ]
+        },
+        {
+          "text": "Completes the deterministic scoring seam: doc quality joins code health and practices in the Go backend",
+          "areas": [
+            "analysis"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.17.0",
+      "date": "2026-08-17",
+      "summary": "The Ship mode closes yeaboi's feedback loop: a user story from your saved sprint plan is handed to a supervised Claude Code headless agent in an isolated git worktree, its diff is validated deterministically, a human approves it at a gate, and only then is the branch pushed and a PR opened. Features include a global budget fuse with quota tracking and fail-closed safety, a worktree coordinator that handles repo setup and cleanup, a mechanical driver that strips agent permissions (no git push, no command execution), and a pipeline with precondition validation and 3-attempt reviewer gates.",
+      "highlights": [
+        {
+          "text": "Ship mode: deliver user stories directly from sprint plan via supervised coding agent in isolated worktree",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Budget fuse: user-global quota (1 concurrent / 2 per hour / 12 per day) with fail-closed safety and circuit breaker on quota errors",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Deterministic gate: validation runs in its own process, precondition checks for empty diffs, and reviewer can request rework with feedback",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Mechanical safety: agent cannot run git or shell commands; only yeaboi commits and pushes after approval",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Full surfaces: TUI beta card with picker/progress/gate/result screens, CLI commands (run/status/history), MCP tools, and plugin skill",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.16.0",
+      "date": "2026-08-16",
+      "summary": "Planning mode's prior-art intake flow now batches all candidate repos into a single multi-select carousel instead of asking about each one individually. Select multiple repos at once with Space, navigate with arrow keys, and use X to permanently dismiss a candidate. Rejections no longer blacklist repos globally \u2014 unchecking just skips them for this project, while X explicitly bans them forever. The new batch grammar works everywhere: TUI carousel, CLI flags, headless APIs, and REPL forms all use the same syntax (numbers, ranges, all, none, or !N bans). Resume now correctly replays the batch prompt instead of stale hints.",
+      "highlights": [
+        {
+          "text": "Batch multi-select carousel for prior-art intake: select all relevant repos at once instead of one-by-one confirmation",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Kinder rejection semantics: unchecked repos are skipped for this project only; explicit X bans them permanently",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Unified batch grammar works on all surfaces: TUI, CLI, headless, and REPL use consistent 1/3, all, none, !N syntax",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Fixed resume flow to replay the batch prompt correctly instead of stale hints",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.15.0",
+      "date": "2026-08-16",
+      "summary": "Deterministic signals now carry a tamper-evident, auditable decision chain that tracks the evidence behind every verdict. Provenance adds a new run_provenance_audit engine and command-line tools to verify chain integrity and trace any signal to the data that produced it. Standup surfaces conflicts as explicit cards when sources disagree (board says Done but a PR is open), and every standup decision (practice signals, confidence verdicts, LLM-adjudication drops) chains its evidence. Performance mode's 1:1 preps, completions, and reviews record their source ticket keys so every assessment is traceable. Payloads carry severity as a word, resolution strategies default to manual review, and failed chain writes become report warnings instead of blocking runs. New provenance audit|trace CLI commands and MCP tools bring full parity to headless and agent-driven workflows.",
+      "highlights": [
+        {
+          "text": "Tamper-evident decision chain: hash-chained append-only log verifies that every decision is unedited and can be traced to its source",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Conflict detection surfaces disagreements as cards: board says Done but a PR is open, confidence is adjusting due to conflicting signals",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Every standup decision now chains its evidence: practice signals and their verdicts, confidence adjustments and their reasons, LLM-adjudication drops",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Performance 1:1s and reviews record source ticket keys so every assessment is tied to its source data",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "New `yeaboi provenance audit|trace` CLI commands and MCP tools expose full chain verification to headless and agent workflows",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.14.0",
+      "date": "2026-08-16",
+      "summary": "Planning mode gained five major capabilities: sprint targeting for small projects (reuse existing sprints and assign stories without creating new ones), team-style acceptance criteria with learned and customizable formats, architecture options with opt-in validation spikes (2\u20133 options with confidence scoring), and PRD export for full product requirements documents. Tracker sync fixes kill the Sprint -1 bug and add full pagination, closed-sprint safety, and ISO-8601 datetime handling. The story writer and all renderers now follow learned team acceptance-criteria styles, and custom Definition-of-Done lists are normalized and honored in every sync path.",
+      "highlights": [
+        {
+          "text": "Small projects can now target existing sprints, assigning stories without creating new ones",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Team-style acceptance criteria: learned formats (GWT, free text) drive story writer and every exporter with custom DoD support",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Architecture options phase proposes 2\u20133 validated alternatives with pros/cons and honest confidence scoring",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Opt-in validation spike: user confirms recommendations; spike story auto-pinned to Sprint 1 (large) or first spike task (small) with deterministic sizing",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "PRD export: full Product Requirements Document with MVP scope, team's AC style, architecture, phased sprints, and risks \u2014 one LLM call with deterministic fallback",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Tracker sync overhaul: Sprint -1 bug fixed, boards fully paginated, closed sprints never targeted, ISO-8601 datetimes with non-overlapping inclusive ends",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.13.0",
+      "date": "2026-08-16",
+      "summary": "The Agent Advisor joins the Agents family as the fourth agentwatch mode, turning the cost meter into a cost advisor that answers \"how much of what my agents cost was avoidable, and why\". The mode audits waste in your local agent transcripts \u2014 re-reads, subset reads, write read-backs, and stale reads \u2014 priced at your actual blended cache-aware rate, and surfaces structural markers of cache volatility in CLAUDE.md prefixes (UUIDs, timestamps, JWTs) that cause premature cache evictions. Full surface parity brings the advisor to the TUI as a new Advisor card and page, CLI `yeaboi agents advisor`, MCP tools for RPC-driven analysis, and a plugin skill for AI-assistant integration. Privacy is preserved: transcripts and prefix files are read locally; only counts, totals and file paths reach the artifact and database.",
+      "highlights": [
+        {
+          "text": "New Agent Advisor mode audits recoverable spend in local Claude Code transcripts with honest pricing at your blended cache rate",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Waste detection catches re-reads, subset re-reads, write read-backs, and stale reads with deterministic mechanism fixtures",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Cache health scoring detects volatile content in CLAUDE.md prefixes (UUIDs, timestamps, JWTs) that cause premature evictions",
+          "areas": [
+            "usage"
+          ]
+        },
+        {
+          "text": "Full surface parity: TUI Advisor card and page, CLI subcommand, MCP tools, and Claude Code plugin skill",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        },
+        {
+          "text": "Privacy preserved: transcripts and prefix files read locally; only counts, totals and paths reach artifacts and storage",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "3.12.1",
+      "date": "2026-08-15",
+      "summary": "Faster, more reliable release pipeline with internal improvements to the fleet feedback loop and verification gate. The ship gate now runs 2.5\u00d7 faster (full test suite in 120s instead of 289s) by parallelizing unit tests, and it verifies the correct tree by fetching before rebase. The fleet gained a feedback system that records every rejection reason for calibration, hygiene lenses to surface high-impact sweeps, and self-tightening rules that make the fleet quieter without human intervention. No user-facing feature changes.",
+      "highlights": [
+        {
+          "text": "Ship gate now runs 2.5\u00d7 faster with parallelized unit tests (120s instead of 289s), correctly verifying the merge target tree",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Fleet feedback loop records rejection reasons for calibration and surfaces high-impact opportunities via hygiene lenses",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Hygiene lenses provide objective criteria for fleet self-improvement without requiring human oversight",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.12.0",
       "date": "2026-08-14",
       "summary": "The agent standup digest now reports what it actually measured instead of what it happened to find. When it runs somewhere with no access to your local agent history, it can be told to skip collecting sessions entirely rather than scanning and counting itself, and it says plainly that sessions were not collected. A digest with no sessions no longer prints a $0.00 total, which read as \u201cthe agents were free today\u201d when it meant \u201cthat is not what this run measured\u201d \u2014 the terminal, the shared file and the chat post now all lead with the same honest headline. Session highlights describe what an agent did rather than simply listing the most expensive session.",
@@ -48,7 +483,7 @@
     {
       "version": "3.11.0",
       "date": "2026-08-12",
-      "summary": "When starting a greenfield project in Planning mode, yeaboi now offers your team's own repositories as prior art — ranked by relevance to the project requirements and presented with a concrete pitch of what each repo does. This leverages the team inventory that Team Analysis already fetches, so no new API calls are needed. Accepted prior-art repositories feed into plan generation and appear in the summary and exports. Rejections are remembered globally with the user's reason, so irrelevant repos are never re-offered. The step sits between the PTO sub-loop and the intake summary, and degrades gracefully to deterministic fallback facts if the LLM fails.",
+      "summary": "When starting a greenfield project in Planning mode, yeaboi now offers your team's own repositories as prior art \u2014 ranked by relevance to the project requirements and presented with a concrete pitch of what each repo does. This leverages the team inventory that Team Analysis already fetches, so no new API calls are needed. Accepted prior-art repositories feed into plan generation and appear in the summary and exports. Rejections are remembered globally with the user's reason, so irrelevant repos are never re-offered. The step sits between the PTO sub-loop and the intake summary, and degrades gracefully to deterministic fallback facts if the LLM fails.",
       "highlights": [
         {
           "text": "Greenfield planning now ranks your team's existing repositories and offers the relevant ones as prior art with concrete pitches",
@@ -63,7 +498,7 @@
           ]
         },
         {
-          "text": "Rejections are remembered globally with user reasons — irrelevant repos are never re-offered across sessions",
+          "text": "Rejections are remembered globally with user reasons \u2014 irrelevant repos are never re-offered across sessions",
           "areas": [
             "planning"
           ]
@@ -80,7 +515,7 @@
     {
       "version": "3.10.0",
       "date": "2026-08-12",
-      "summary": "GitHub configuration now gets its own dedicated picker flow in Daily Standup's Configure screen, replacing the combined GitHub/Azure DevOps interface. When you pick GitHub organizations, a second screen lists every repository in those organizations with a repo-exclude interface — all repos are pre-checked by default, and you only untick the ones to exclude. This opt-out model means newly created repos are scanned automatically without reconfiguration. The owner picker now correctly pre-selects all discovered organizations when GitHub is added to a standup previously configured for Azure DevOps only. Beyond the UI, the configuration now includes a new `github_excluded_repositories` field (schema v29), threaded through the store, engine, collector, MCP tools, and CLI. Setup and token documentation has been clarified: the GITHUB_TOKEN requires both the 'repo' scope and SSO authorization if your organization mandates it — both requirements are now documented in the setup wizard, Settings, and .env.example.",
+      "summary": "GitHub configuration now gets its own dedicated picker flow in Daily Standup's Configure screen, replacing the combined GitHub/Azure DevOps interface. When you pick GitHub organizations, a second screen lists every repository in those organizations with a repo-exclude interface \u2014 all repos are pre-checked by default, and you only untick the ones to exclude. This opt-out model means newly created repos are scanned automatically without reconfiguration. The owner picker now correctly pre-selects all discovered organizations when GitHub is added to a standup previously configured for Azure DevOps only. Beyond the UI, the configuration now includes a new `github_excluded_repositories` field (schema v29), threaded through the store, engine, collector, MCP tools, and CLI. Setup and token documentation has been clarified: the GITHUB_TOKEN requires both the 'repo' scope and SSO authorization if your organization mandates it \u2014 both requirements are now documented in the setup wizard, Settings, and .env.example.",
       "highlights": [
         {
           "text": "GitHub organizations now have their own picker and dedicated repo-exclude screen instead of sharing space with Azure DevOps",
@@ -90,13 +525,13 @@
           ]
         },
         {
-          "text": "Repo-exclude interface lists all discovered repos pre-checked — untick only what you want to exclude, new repos are scanned automatically",
+          "text": "Repo-exclude interface lists all discovered repos pre-checked \u2014 untick only what you want to exclude, new repos are scanned automatically",
           "areas": [
             "standup"
           ]
         },
         {
-          "text": "Fixed owner picker pre-selection when adding GitHub to a standup previously configured for Azure DevOps only — now correctly pre-ticks all discovered GitHub orgs",
+          "text": "Fixed owner picker pre-selection when adding GitHub to a standup previously configured for Azure DevOps only \u2014 now correctly pre-ticks all discovered GitHub orgs",
           "areas": [
             "standup",
             "settings"
@@ -121,7 +556,7 @@
     {
       "version": "3.9.0",
       "date": "2026-08-12",
-      "summary": "Cloudflare share tunnels now auto-expire with a configurable timeout to prevent accidentally leaving boards or shares internet-reachable indefinitely. By default, every retro board, planning poker session, and anonymized or editable share closes automatically 60 minutes after it opens. The timeout is adjustable via the new TUNNEL_TIMEOUT_MINUTES environment variable (any positive integer for minutes, or 0 to disable auto-expiry entirely), and surfaced on the TUI's Settings > System page for point-and-click configuration. Enforcement happens inside the CloudflareTunnel class itself with a background timer that fires only if the tunnel stays open — manual stop() cancels the timer. When a tunnel expires, retro and poker boards fall back to their existing \"Retry Link\" failure state, while output shares collapse to \"Back only\" with the expiry message.",
+      "summary": "Cloudflare share tunnels now auto-expire with a configurable timeout to prevent accidentally leaving boards or shares internet-reachable indefinitely. By default, every retro board, planning poker session, and anonymized or editable share closes automatically 60 minutes after it opens. The timeout is adjustable via the new TUNNEL_TIMEOUT_MINUTES environment variable (any positive integer for minutes, or 0 to disable auto-expiry entirely), and surfaced on the TUI's Settings > System page for point-and-click configuration. Enforcement happens inside the CloudflareTunnel class itself with a background timer that fires only if the tunnel stays open \u2014 manual stop() cancels the timer. When a tunnel expires, retro and poker boards fall back to their existing \"Retry Link\" failure state, while output shares collapse to \"Back only\" with the expiry message.",
       "highlights": [
         {
           "text": "Share tunnels auto-expire 60 minutes after opening by default, preventing accidentally left-open boards",

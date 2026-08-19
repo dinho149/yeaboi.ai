@@ -535,6 +535,31 @@ def build_standup_markdown(report: StandupReport) -> str:
         # A single sentence is a paragraph; several are a scannable list.
         lines += sentences if len(sentences) == 1 else [f"- {s}" for s in sentences]
 
+    # Cross-source disagreements before the member sections: a board/code
+    # mismatch is team-level state, and both claims render with their links so
+    # the reader can settle it without hunting.
+    conflict_cards = getattr(report, "conflicts", ()) or ()
+    if conflict_cards:
+        lines += ["", "## Conflicts", ""]
+        for card in conflict_cards:
+            # Everything here embeds tracker/PR text an outsider can author
+            # (a PR title travels inside card.detail), and this Markdown lands
+            # on Notion/Confluence/Slack where `[x](url)` becomes a live link.
+            # _md_label neutralises the bracket syntax on every raw string —
+            # only _md_link may mint a link, behind its scheme allowlist.
+            lines.append(f"- **{_md_label(card.title)}**")
+            lines.append(f"  {_md_label(card.detail)}")
+            claim_bits = " vs ".join(
+                f"{_md_link(label, url)} ({_md_label(source)}: {_md_label(value)})"
+                if url
+                else f"{_md_label(label)} ({_md_label(source)}: {_md_label(value)})"
+                for source, value, label, url in card.claims
+            )
+            if claim_bits:
+                lines.append(f"  - {claim_bits}")
+            if card.recommended_action:
+                lines.append(f"  - _{_md_label(card.recommended_action)}_")
+
     # Zero-activity members compress to one shared line after the sections: a
     # full section per quiet member said "No activity detected" three ways each.
     quiet = [m for m in report.member_updates if _is_quiet(m)]
@@ -935,6 +960,8 @@ def standup_export_args(
     nav: list[tuple[str, str]] = [("overview", "Overview")]
     if report.team_summary:
         nav.append(("summary", "Team Summary"))
+    if getattr(report, "conflicts", ()):
+        nav.append(("conflicts", "Conflicts"))
     nav.append(("updates", "Updates"))
     if images:
         nav.append(("screenshots", "Screenshots"))
@@ -981,6 +1008,13 @@ def standup_export_args(
             "quietMembers": [m.name for m in quiet],
             "activityCounts": [[source, count] for source, count in report.activity_counts],
             "activityWindow": report.activity_window,
+            # Machine-readable bounds for the timeline axis. Always present;
+            # both empty on a report stored before the timeline existed, and
+            # the page then derives the axis from the event times instead.
+            "window": {
+                "start": getattr(report, "activity_window_start", ""),
+                "end": getattr(report, "activity_window_end", ""),
+            },
             "coverage": [[category, status] for category, status in report.category_coverage],
             "skipped": [[source, reason] for source, reason in report.skipped_sources],
             # Overview rollup. `count` is MEMBERS, so "2" beside untracked-work
@@ -990,6 +1024,24 @@ def standup_export_args(
             "practices": [
                 {"rule": rule, "count": count, "title": _practice_title(rule)}
                 for rule, count in getattr(report, "practice_rollup", ()) or ()
+            ],
+            # Cross-source disagreements, one card each: both claims travel
+            # with their source and evidence url, severity as a word (the
+            # bundle maps it to a tone — no colour crosses the wire).
+            "conflicts": [
+                {
+                    "fingerprint": card.fingerprint,
+                    "title": card.title,
+                    "detail": card.detail,
+                    "severity": card.severity,
+                    "action": card.recommended_action,
+                    "claims": [
+                        {"source": source, "value": value, "label": label, "url": url}
+                        for source, value, label, url in card.claims
+                    ],
+                    "members": list(card.members),
+                }
+                for card in getattr(report, "conflicts", ()) or ()
             ],
             "images": images,
             "trend": trend(

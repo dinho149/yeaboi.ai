@@ -85,6 +85,10 @@ class TaskLabel(StrEnum):
     CODE = "Code"
     DOCUMENTATION = "Documentation"
     INFRASTRUCTURE = "Infrastructure"
+    # Research/validation work (e.g. the architecture-validation spike). Only
+    # ever set by the deterministic injectors in nodes.py — the task-decomposer
+    # LLM is never asked to emit it. See docs: "Scrum Standards" — DoD Spike
+    SPIKE = "Spike"
     TESTING = "Testing"
 
 
@@ -127,11 +131,87 @@ TOTAL_QUESTIONS = 30
 
 @dataclass(frozen=True)
 class AcceptanceCriterion:
-    """A single Given/When/Then acceptance criterion."""
+    """A single acceptance criterion — Given/When/Then, or the team's own style.
 
-    given: str
-    when: str
-    then: str
+    Two shapes share this class: a Gherkin triple (given/when/then set, text
+    empty) and a free-text criterion (text set, triple empty) for teams whose
+    tickets don't use Given/When/Then. All fields are defaulted so old saved
+    sessions (no ``text`` key) deserialize unchanged.
+    See docs: "Scrum Standards" — Acceptance Criteria
+    """
+
+    given: str = ""
+    when: str = ""
+    then: str = ""
+    # Free-text criterion ("Search results return within 200ms"). When set,
+    # renderers show it verbatim; when empty, the GWT triple renders.
+    text: str = ""
+
+    @property
+    def flat_text(self) -> str:
+        """The criterion as one sentence, whichever shape it carries."""
+        return self.text or f"Given {self.given}, when {self.when}, then {self.then}"
+
+
+# Acceptance-criteria styles a plan can be generated in. "gwt" is the
+# Given/When/Then default; "bullets" writes each criterion as a single clear,
+# testable statement — for teams whose real tickets don't use Gherkin.
+AC_STYLE_GWT = "gwt"
+AC_STYLE_BULLETS = "bullets"
+AC_STYLES: tuple[str, ...] = (AC_STYLE_GWT, AC_STYLE_BULLETS)
+
+
+def resolve_ac_style(graph_state: dict | None = None, team_profile: object | None = None) -> str:
+    """Resolve which acceptance-criteria style this plan should use.
+
+    Precedence: the session's persisted choice (state["ac_format"], written by
+    story_writer so exports of a saved plan match how it was generated) >
+    the YEABOI_AC_FORMAT env override > the learned team profile
+    (WritingPatterns.uses_given_when_then / evidence of writing data) >
+    Given/When/Then.
+    """
+    if graph_state:
+        persisted = graph_state.get("ac_format")
+        if persisted in AC_STYLES:
+            return persisted
+
+    from yeaboi.config import get_ac_format  # lazy: config must not import state
+
+    override = get_ac_format()
+    if override in AC_STYLES:
+        return override
+
+    patterns = getattr(team_profile, "writing_patterns", None)
+    if patterns is not None:
+        if getattr(patterns, "uses_given_when_then", False):
+            return AC_STYLE_GWT
+        # The team has analysed writing data and it did NOT show GWT — follow
+        # their real style instead of forcing the template on them.
+        if getattr(patterns, "median_ac_count", 0) > 0 or getattr(patterns, "common_personas", ()):
+            return AC_STYLE_BULLETS
+
+    return AC_STYLE_GWT
+
+
+def map_template_headings(sections: tuple[str, ...] | list[str] | None) -> dict[str, str]:
+    """Map a team's learned description-section headings onto our canonical blocks.
+
+    Team analysis records the section headings the team's real tickets use
+    (e.g. "What is this about?", "Done looks like"). Exports keep their fixed
+    structure but adopt the team's own heading names where one clearly maps:
+    "summary" (the story sentence), "acceptance_criteria", and "dod". Unmatched
+    headings are ignored — we have no content to put under them.
+    """
+    mapping: dict[str, str] = {}
+    for heading in sections or ():
+        low = str(heading).lower()
+        if "acceptance" in low or low.rstrip(":?") in ("ac", "acs"):
+            mapping.setdefault("acceptance_criteria", str(heading))
+        elif "done" in low or "dod" in low:
+            mapping.setdefault("dod", str(heading))
+        elif any(word in low for word in ("summary", "about", "background", "description", "context", "what")):
+            mapping.setdefault("summary", str(heading))
+    return mapping
 
 
 @dataclass(frozen=True)
@@ -334,6 +414,18 @@ def annotations_from(value: object) -> tuple[Annotation, ...]:
 # serializable via asdict() — so it round-trips cleanly through the session
 # store. Every field has a default so old serialized reports still deserialize
 # (see CLAUDE.md "Frozen dataclass backward compatibility").
+# How many evidence rows one member's category carries in a report.
+#
+# It lives here, on the neutral module both readers already import, because two
+# places have to agree on it and they cannot import each other: the engine's
+# `_member_evidence` applies it, and `gap_taxonomy`'s truncation rule uses it to
+# decide whether a category is *at* its cap — i.e. whether activity was provably
+# cut. When those two drifted (the cap moved to 30, the rule kept assuming 8) the
+# rule fired on any member whose commits merely nested under a PR, and
+# `gap_issues` files that as a public GitHub issue.
+MEMBER_EVIDENCE_CAP = 30
+
+
 @dataclass(frozen=True)
 class ActivityEvidence:
     """One attributable activity item kept as structured evidence.
@@ -398,6 +490,31 @@ class PracticeSignal:
 
 
 @dataclass(frozen=True)
+class ConflictCard:
+    """Two sources disagree about one property of one work item.
+
+    Produced by standup/conflicts.py from the aggregate's grouped activity.
+    Like a PracticeSignal, a conflict is an observation with evidence, not a
+    verdict: the card names both claims and says what would settle them,
+    instead of anyone's confidence being silently lowered because the sources
+    disagree. Severity is a word (provenance.conflicts.Severity), never a
+    colour — payload rules apply all the way down.
+    """
+
+    fingerprint: str = ""  # stable id, e.g. "YEA-12:status:status_conflict"
+    title: str = ""  # "YEA-12 — the board says Done, a pull request is still open"
+    detail: str = ""  # the observation, spelled out
+    severity: str = "medium"  # low | medium | high | critical
+    entity_id: str = ""  # the work item both sources are talking about
+    property_name: str = ""  # what they disagree on, e.g. "status"
+    # One claim per source: (source, value, label, url) — label/url are the
+    # click-through evidence, same shape discipline as MemberUpdate.links.
+    claims: tuple[tuple[str, str, str, str], ...] = ()
+    recommended_action: str = ""  # what would settle it
+    members: tuple[str, ...] = ()  # whose activity surfaced the disagreement
+
+
+@dataclass(frozen=True)
 class MemberUpdate:
     """One team member's standup update for a given day."""
 
@@ -451,6 +568,11 @@ class StandupReport:
     member_updates: tuple[MemberUpdate, ...] = ()
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
     activity_window: str = ""  # human-readable look-back window, e.g. "Fri 2026-07-17 00:00 → now"
+    # Machine-readable window bounds (tz-aware ISO-8601) — the web timeline's
+    # axis. Defaulted so a report stored before the timeline existed still
+    # deserializes; the page derives the axis from event times when empty.
+    activity_window_start: str = ""
+    activity_window_end: str = ""
     skipped_sources: tuple[tuple[str, str], ...] = ()  # (source, reason) for sources NOT scanned — visible, not silent
     # The subset of skipped_sources the user actually ASKED for and did not get.
     # Diagnostic surfaces (the TUI panel, the HTML details) list every skip; the
@@ -466,6 +588,9 @@ class StandupReport:
     annotations: tuple[Annotation, ...] = ()
     # (rule, member count) for the overview rollup — same shape as activity_counts
     practice_rollup: tuple[tuple[str, int], ...] = ()
+    # Cross-source disagreements (standup/conflicts.py) — defaulted so a
+    # report stored before conflict cards existed still deserializes.
+    conflicts: tuple[ConflictCard, ...] = ()
 
 
 # See docs: "Session Management" — Daily Standup transcript-review artifacts
@@ -1050,6 +1175,64 @@ class PromptQualityRating:
 
 # See docs: "Scrum Standards" — project analysis
 @dataclass(frozen=True)
+class ArchitectureOption:
+    """One candidate architecture for a new project, with its trade-offs.
+
+    Produced by the project_analyzer alongside the rest of the analysis so the
+    user sees WHAT was considered, not just what was picked. All fields
+    defaulted — old saved sessions have no architecture data at all.
+    See docs: "Scrum Standards" — DoD Spike (trade-offs & alternatives)
+    """
+
+    name: str = ""  # short label, e.g. "Modular monolith"
+    summary: str = ""
+    pros: tuple[str, ...] = ()
+    cons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ArchitectureDecision:
+    """The analyzer's architecture recommendation: options, pick, confidence.
+
+    ``pinned_by_constraint`` is True when the decision was already made before
+    planning (Q13 constraint, existing repo, team docs, prior art) — a pinned
+    decision gets exactly one option and never triggers a validation spike.
+    """
+
+    options: tuple[ArchitectureOption, ...] = ()  # 1-3 candidates
+    chosen: str = ""  # name of the recommended option
+    confidence: str = ""  # "high" | "medium" | "low"
+    rationale: str = ""  # why this pick; what evidence would change it
+    pinned_by_constraint: bool = False
+
+
+def architecture_from_dict(raw: object) -> ArchitectureDecision | None:
+    """Rebuild an ArchitectureDecision from its asdict() form (or return None).
+
+    Shared by sessions.py and persistence.py so a resumed session's analysis
+    carries a real dataclass, not the raw nested dict.
+    """
+    if not isinstance(raw, dict):
+        return raw if isinstance(raw, ArchitectureDecision) else None
+    return ArchitectureDecision(
+        options=tuple(
+            ArchitectureOption(
+                name=o.get("name", ""),
+                summary=o.get("summary", ""),
+                pros=tuple(o.get("pros", ())),
+                cons=tuple(o.get("cons", ())),
+            )
+            for o in raw.get("options", ())
+            if isinstance(o, dict)
+        ),
+        chosen=raw.get("chosen", ""),
+        confidence=raw.get("confidence", ""),
+        rationale=raw.get("rationale", ""),
+        pinned_by_constraint=bool(raw.get("pinned_by_constraint", False)),
+    )
+
+
+@dataclass(frozen=True)
 class ProjectAnalysis:
     """Structured synthesis of all 30 intake answers.
 
@@ -1093,6 +1276,11 @@ class ProjectAnalysis:
     # compute_prompt_quality() in nodes.py from QuestionnaireState tracking sets.
     # None until the project_analyzer node runs. Displayed on the analysis review screen.
     prompt_quality: PromptQualityRating | None = None
+    # Architecture options + recommendation (greenfield projects with an open
+    # choice get 2-3 candidates; a pinned decision gets exactly one). None when
+    # the analyzer produced no architecture data (fallback path, old sessions).
+    # See docs: "Scrum Standards" — DoD Spike
+    architecture: ArchitectureDecision | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1264,6 +1452,118 @@ class AgentSecurityReport:
 
 
 @dataclass(frozen=True)
+class WasteLineItem:
+    """One recoverable-spend mechanism sized by the advisor's transcript audit."""
+
+    mechanism: str = ""  # identical-repeat | subset-containment | write-readback | stale-reread | line-number-overhead
+    label: str = ""
+    calls: int = 0
+    content_bytes: int = 0  # UTF-8 bytes of Read tool_result content
+    est_tokens: int = 0  # ≈ content_bytes / 4
+    est_usd: float = 0.0  # est_tokens priced at the window's blended input rate
+    share_of_read_bytes: float = 0.0
+    # True = summed into the recoverable headline; False = sized but reported
+    # as context only (e.g. stale re-reads need staleness-aware handling).
+    recoverable: bool = True
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class VolatileFileSignal:
+    """Volatile-shaped content counts for one prompt-prefix file (CLAUDE.md…)."""
+
+    location: str = ""  # file path (never file content)
+    counts: tuple[tuple[str, str], ...] = ()  # (label, count as str)
+    total: int = 0
+
+
+@dataclass(frozen=True)
+class AgentAdvisorReport:
+    """Recoverable agent spend + prompt-cache health, audited from local sessions."""
+
+    period_start: str = ""
+    period_end: str = ""
+    session_count: int = 0
+    files_audited: int = 0
+    total_cost_usd: float = 0.0  # the window's estimated spend (context for the headline)
+    read_calls: int = 0
+    read_bytes: int = 0
+    tool_bytes_total: int = 0
+    recoverable_usd: float = 0.0  # sum of the recoverable line items
+    recoverable_share: float = 0.0  # of total_cost_usd
+    effective_input_rate_per_mtok: float = 0.0  # blended $/Mtok used to price waste
+    unknown_rate_share: float = 0.0  # share of input tokens priced at the fallback tier
+    pricing_as_of: str = ""
+    line_items: tuple[WasteLineItem, ...] = ()
+    residency_median: int = 0  # assistant turns a Read stays in context
+    residency_p90: int = 0
+    gaps_over_5m: int = 0  # cache-death windows (inter-message gaps past the TTL)
+    gaps_over_1h: int = 0
+    sessions_with_gap: int = 0
+    volatile_signals: tuple[VolatileFileSignal, ...] = ()
+    alignment_score: int = 100  # 0-100; lower = more volatile content in prefix files
+    insights: tuple[str, ...] = ()
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+# Provenance audit artifacts (provenance/engine.py). The chain itself lives in
+# yeaboi.provenance; these are the render-ready views of it — deterministic,
+# no LLM anywhere in the pipeline, because a trust report that needs a model
+# to read the tamper log would undermine the thing it reports on.
+@dataclass(frozen=True)
+class ProvenanceDecisionRow:
+    """One decision record, summarised for display. Counts and keys only —
+    the row never carries more than the chain already stores."""
+
+    entity_id: str = ""
+    entity_type: str = ""  # practice-signal | blocker-signal | confidence | conflict | …
+    record_kind: str = "decision"  # decision | invalidation
+    agent_id: str = ""  # the rule, model, or person behind it
+    role: str = ""  # generator | suppressor | invalidator | …
+    timestamp: str = ""
+    detail: str = ""
+    inputs: tuple[str, ...] = ()  # the evidence keys the decision rests on
+    sequence_id: int = 0
+
+
+@dataclass(frozen=True)
+class ProvenanceAuditReport:
+    """The chain's health plus what it recorded in the window.
+
+    ``chain_valid`` covers the WHOLE chain, not the window: a tamper verdict
+    scoped to recent rows would miss exactly the edits it exists to catch.
+    """
+
+    generated_at: str = ""
+    window_days: int = 30
+    chain_valid: bool = True
+    total_records: int = 0
+    window_records: int = 0
+    records_by_type: tuple[tuple[str, int], ...] = ()  # (entity_type, count), whole chain
+    recent: tuple[ProvenanceDecisionRow, ...] = ()  # newest first, capped
+    # (sequence_id, entity_id, reason) per verification failure — reason is
+    # "checksum_mismatch" (edited row), "chain_break" (deleted/renumbered),
+    # or "truncated_tail" (newest rows removed; the walk fell short of the
+    # head anchor).
+    breaks: tuple[tuple[int, str, str], ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProvenanceTrace:
+    """The "why" trail behind one entity: its records plus the latest record
+    behind each of its inputs, breadth-first."""
+
+    entity_id: str = ""
+    found: bool = False
+    records: tuple[ProvenanceDecisionRow, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PriorArtRef:
     """An existing team repository accepted as reference material for a plan.
 
@@ -1344,6 +1644,176 @@ def prior_art_from_dicts(rows) -> tuple[PriorArtRef, ...]:
             )
         )
     return tuple(out)
+
+
+# ---------------------------------------------------------------------------
+# Ship artifacts (the supervised story → PR pipeline)
+# ---------------------------------------------------------------------------
+
+
+# Run lifecycle. `awaiting_approval` is the pause the human gate owns; the
+# resolve and resume transitions are independent CAS updates in ship/store.py.
+SHIP_STATUSES = (
+    "planned",
+    "running",
+    "awaiting_approval",
+    "approved",
+    "rejected",
+    "failed",
+    "cancelled",
+)
+
+
+@dataclass(frozen=True)
+class ShipPhase:
+    """One pipeline phase's outcome, for the progress screen and the record."""
+
+    name: str = ""  # setup | implement | validate | gate | finalize
+    status: str = ""  # completed | failed | skipped
+    detail: str = ""
+    duration_s: float = 0.0
+
+
+@dataclass(frozen=True)
+class ShipValidation:
+    """What the deterministic validation step ran and what it said.
+
+    ``configured`` False means no command was available — a visible state the
+    approval screen must show, never a silent pass.
+    """
+
+    configured: bool = False
+    command: str = ""
+    passed: bool = False
+    exit_code: int = -1
+    output_tail: str = ""
+
+
+@dataclass(frozen=True)
+class ShipRun:
+    """One supervised story → PR run, end to end.
+
+    Frozen like every artifact: the store persists status transitions, and the
+    engine returns a fresh copy per phase. The gate fields mirror archon's
+    protocol — ``gate_resolution`` is independent of ``status`` so resolve and
+    resume cannot race each other.
+    """
+
+    run_id: str = ""
+    story_id: str = ""
+    session_id: str = ""  # the *planning* session the story came from
+    agent_session_id: str = ""  # the coding agent's own session (transcript key)
+    repo: str = ""
+    branch: str = ""
+    worktree: str = ""
+    base_sha: str = ""
+    status: str = "planned"  # one of SHIP_STATUSES
+    phases: tuple[ShipPhase, ...] = ()
+    validation: ShipValidation = ShipValidation()
+    diff_stat: str = ""  # `git diff --stat` summary shown at the gate
+    diff_text: str = ""  # the capped patch itself — the gate approves a diff, not a file count
+    cost_usd: float = 0.0
+    transcript_findings: tuple[tuple[str, str, str], ...] = ()  # (kind, severity, label)
+    transcript_path: str = ""
+    pr_url: str = ""
+    gate_resolution: str = ""  # "" (open) | approved | rejected
+    gate_comment: str = ""  # the approver's words; lands in the PR body
+    rejection_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+    warnings: tuple[str, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Ceremony artifacts (the team's recurring runs — see ceremonies/)
+# ---------------------------------------------------------------------------
+
+
+# What one fired run did. Two of the four are *not* failures: a run the guards
+# declined is a decision, and recording it as such is the difference between
+# "nothing happened" and "something stopped it".
+CEREMONY_OUTCOMES = (
+    "ok",
+    "failed",
+    "skipped_stale",  # fired far enough after its slot that the output would mislead
+    "skipped_over_cap",  # this month's spend on this ceremony is already at the cap
+    "skipped_paused",  # a job fired for a ceremony the store says is paused
+)
+
+
+@dataclass(frozen=True)
+class Ceremony:
+    """One recurring run of one mode, declared once and fired by the OS.
+
+    ``name`` is the key every surface addresses, and it also becomes part of a
+    launchd label, a plist filename and a crontab marker — so it is whitelisted
+    (``ceremonies.store.valid_name``) rather than trusted.
+
+    ``args`` is ordered key/value *strings*; the catalog coerces them to the
+    engine's real types. A dict would be the obvious choice and is the wrong
+    one: this artifact is frozen, persisted as JSON and compared field-by-field
+    in tests, and a tuple of pairs round-trips through all three unchanged.
+    """
+
+    session_id: str = ""
+    name: str = ""
+    mode: str = ""  # a ceremonies.catalog key
+    args: tuple[tuple[str, str], ...] = ()
+    weekdays: str = "1-5"  # the scheduler's spec form: "1-5", "1,3,5"
+    at: str = "09:00"  # local time the ceremony is FOR (and when the job fires)
+    channels: tuple[str, ...] = ("terminal",)
+    enabled: bool = True
+    stale_after_min: int = 120  # 0 disables the staleness guard
+    monthly_cap_usd: float = 0.0  # 0 = uncapped
+    last_fired_at: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class CeremonyRun:
+    """One fired run, recorded whatever happened to it.
+
+    A scheduled run that fails at 06:00 with nobody watching is how this whole
+    feature dies quietly, so ``error`` is a column rather than a log line: the
+    fact of a failure is useless without the reason for it.
+    """
+
+    ceremony: str = ""
+    session_id: str = ""
+    fired_at: str = ""
+    outcome: str = ""  # one of CEREMONY_OUTCOMES
+    scheduled: bool = False  # fired by the OS job, not by a human
+    duration_s: float = 0.0
+    cost_usd: float = 0.0
+    delivery: tuple[tuple[str, bool], ...] = ()  # (channel, delivered)
+    detail: str = ""  # the headline the run produced, for the history screen
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class Dispatch:
+    """What a finished ceremony has to say, in a form every channel can send.
+
+    Delivery used to be typed on ``StandupReport``, which is why nothing else
+    could be delivered — the agent standup ended up re-implementing the Slack
+    POST rather than duck-typing another mode's report. This is the mode-neutral
+    payload that replaced it: ``summary`` is the one-liner a desktop
+    notification can hold, ``body`` is the plaintext Slack/email/terminal
+    version.
+
+    ``subject`` exists because an email subject line is not a notification
+    title, even when they carry the same two facts. People build inbox filters
+    and threading on subject lines, so a mode that has been mailing one shape
+    for releases does not get to change it because a desktop banner reads better
+    shorter. Empty means "use the title", which is right for every mode with no
+    opinion.
+    """
+
+    title: str = ""
+    summary: str = ""
+    body: str = ""
+    subject: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -1469,18 +1939,23 @@ class QuestionnaireState:
     # Transient prior-art sub-loop, modelled on the PTO sub-loop above. After
     # the questionnaire and before the confirmation summary, a greenfield
     # project is offered the team's own repositories as reference material and
-    # the user accepts or rejects each in turn.
-    # Stages: "" (not started), "ask", "reason", "done".
+    # the user picks the relevant ones in one batched answer.
+    # Stages: "" (not started), "ask", "empty", "done". ("reason" was the old
+    # per-repo rejection-reason stage — read-tolerated from sessions serialized
+    # by older builds; the handler converts it back to "ask".)
     # See docs: "Project Intake Questionnaire" — prior art
     _prior_art_stage: str = ""
-    # Transient: the shortlist being walked, each a RepoCandidate as a dict.
+    # Transient: the shortlist on offer, each a RepoCandidate as a dict.
     _prior_art_candidates: list[dict] = field(default_factory=list)
-    # Transient: which candidate is currently on screen.
+    # Transient: kept for serialization compatibility with the old one-at-a-time
+    # loop; no longer advanced (the whole shortlist shows at once).
     _prior_art_index: int = 0
     # Transient: accepted candidates, promoted to ScrumState.prior_art on confirm.
     _prior_art_accepted: list[dict] = field(default_factory=list)
-    # Transient: rejections as {"key", "name", "reason"}, written to the global
-    # feedback ledger when the sub-loop ends.
+    # Transient: banned candidates ("never suggest again") as {"key", "name",
+    # "reason"}, written to the global feedback ledger when the sub-loop ends.
+    # Reason is always "" now — the free-text "why?" stage is gone; a candidate
+    # merely left unticked lands in neither list and is never written down.
     _prior_art_rejected: list[dict] = field(default_factory=list)
     # Transient: why the shortlist was empty, so the card can say which of
     # "no profile" / "profile too old" / "nothing matched" happened. Going
@@ -1495,6 +1970,11 @@ class QuestionnaireState:
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.
     _active_sprint_number: int | None = None
+    # Transient: the board's open sprint targets offered in small-project Q27
+    # ("add to an existing sprint or create a new one?"). Maps the real board
+    # sprint/iteration NAME to its external id (Jira sprint id / AzDO iteration
+    # path). Consumed at confirmation to fill target_sprint_* on ScrumState.
+    _sprint_target_options: dict[str, str] = field(default_factory=dict)
     # Transient: active sprint start date from Jira (ISO string, e.g. "2026-03-02").
     # Used with _active_sprint_number to compute exact start dates for future sprints.
     _active_sprint_start_date: str | None = None
@@ -1604,6 +2084,11 @@ class ScrumState(_RequiredState, total=False):
     # field, not a driver attribute, because the end-to-end chat path
     # (stop_after_intake=False) still auto-accepts reviews while it is set.
     _chat_fast_forward: bool
+    # Which prior-art candidate the chat's carousel is previewing (0-based).
+    # Presentation-only and driver-owned: the card renderer reads it, no graph
+    # node ever does, and the driver pops it when the batch submits or a size
+    # switch resets the sub-loop. Serializes harmlessly mid-browse.
+    _prior_art_preview: int
 
     # Project analysis — structured synthesis of intake answers.
     # Set once by project_analyzer node; no reducer needed (single value).
@@ -1618,6 +2103,16 @@ class ScrumState(_RequiredState, total=False):
     # Custom DoD items from team analysis — overrides DOD_ITEMS when set.
     # Empty tuple means use the default 7 items.
     custom_dod_items: tuple[str, ...]
+
+    # Acceptance-criteria style the plan was generated in ("gwt" | "bullets").
+    # Written by story_writer after resolve_ac_style() so every later consumer
+    # (exports, editor, re-runs) matches how the stories were actually written.
+    # "" = not yet resolved. See docs: "Scrum Standards" — Acceptance Criteria
+    ac_format: str
+    # The team's learned ticket description section headings (from the analysis
+    # profile's naming conventions). Exports map them onto our canonical blocks
+    # via map_template_headings(). Empty = use the default headings.
+    ticket_template_sections: list[str]
 
     # Selected team members from analysis profile (names from contributor_stats).
     # When set, velocity is calculated from these specific members' per_sprint values.
@@ -1645,6 +2140,20 @@ class ScrumState(_RequiredState, total=False):
     # See docs: "Scrum Standards" — sprint planning
     starting_sprint_number: int
 
+    # Small-project sprint targeting — "add to an existing sprint" support.
+    # sprint_target_mode is "" (create sprints, the default), "existing"
+    # (assign the plan's stories to an existing tracker sprint; the syncs then
+    # never create a sprint), or "backlog" (create the stories and assign them
+    # to nothing — the syncs skip sprints entirely and unassigned items sit in
+    # the tracker's backlog). target_sprint_name is the real board sprint /
+    # iteration name ("PSOT Sprint 104"); target_sprint_external_id is the Jira
+    # sprint id or AzDO iteration path, "" when only the name is known (the
+    # sync resolves it by name among active/future sprints at execution time).
+    # See docs: "Scrum Standards" — sprint planning
+    sprint_target_mode: str
+    target_sprint_name: str
+    target_sprint_external_id: str
+
     # Capacity override — set by sprint_planner when total story points exceed
     # what fits in the user's target sprint range (Q10).
     # See docs: "Guardrails" — human-in-the-loop pattern
@@ -1670,6 +2179,19 @@ class ScrumState(_RequiredState, total=False):
     # instead of using enforce_target. 0 = not set (default).
     # See docs: "Guardrails" — human-in-the-loop pattern
     _capacity_team_override: int
+
+    # Architecture-validation spike opt-in/out. "" = undecided, "include" /
+    # "skip" = the user's (or the confidence auto-rule's) answer. Asked only
+    # when the architecture decision is genuinely open (2+ options, not
+    # pinned); see _maybe_prompt_spike_choice in nodes.py.
+    # See docs: "Guardrails" — human-in-the-loop pattern
+    spike_choice: str
+
+    # Transient sentinel: set (with {chosen, confidence, options}) when a node
+    # needs the driver to ask the spike question — same ask-the-user pattern as
+    # capacity_override_target, but a dict instead of a sign-encoded int.
+    # Cleared (empty dict) once answered.
+    _spike_prompt: dict
 
     # Small-project scope advisory. Set True by project_analyzer when the intake
     # ran in "small_project" mode but the analyzer judged the project bigger than

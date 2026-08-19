@@ -1,0 +1,500 @@
+/*
+ * Activity timeline — swimlanes of DOM marks on CSS tracks.
+ *
+ * Positions are percentages of the compressed scale (see timelineScale.ts), so
+ * the page never scrolls horizontally. Tooltips are pure CSS (hover /
+ * focus-visible); alignment is decided from the mark's position class, no
+ * measurement JS. Tokens only — a literal colour here fails the guards.
+ *
+ * Two geometry contracts hold this together:
+ *  - `--tl-rail` is the rail width for *both* the axis grid and the lane grid,
+ *    and the left inset of the thread overlay. One declaration, three readers.
+ *  - `--tl-track-h` / `--tl-band-h` are mirrored by TRACK_H_REM / BAND_H_REM in
+ *    timelineScale.ts, which is how the overlay knows where a lane's track
+ *    centre sits. `timelineScale.test.ts` fails when the two drift, because a
+ *    drift shears every thread off its dots with nothing else going wrong.
+ *
+ * Every class is `tl`-prefixed: vitest runs CSS modules non-scoped, so a bare
+ * `.legend` here silently matched the Legend primitive on the same page.
+ */
+
+.timeline {
+  --tl-rail: 12.5rem;
+  --tl-track-h: 2.2rem;
+  --tl-band-h: 1.4rem;
+  /* Two rows: notch durations above, clock ticks below. They sit at the same
+   * positions — a notch's label is a hair from the tick at its edge — so one
+   * row makes both unreadable. */
+  --tl-axis-h: 2.2rem;
+  /* A caption's width, as a share of the track — the same unit as
+   * CAPTION_MIN_PCT in timelineScale.ts, which is what keeps captions from
+   * colliding at any viewport width. Must stay <= that value. */
+  --tl-cap-w: 12%;
+
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+
+.tlHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+/* ---- legend / filter -------------------------------------------------- */
+
+.tlLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.tlLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid color-mix(in srgb, currentcolor 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 10%, var(--panel));
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  color: inherit;
+  cursor: pointer;
+}
+
+.tlLegendItem span {
+  color: var(--text);
+}
+
+.tlLegendItem[aria-pressed='true'] {
+  border-color: currentcolor;
+  outline: 1px solid currentcolor;
+}
+
+/* One dim rule serves legend keys and marks alike. */
+.tlDimmed {
+  opacity: 0.3;
+}
+
+/*
+ * The axis compresses idle time, which is a lie on a time chart unless the
+ * page says so. This line is rendered whenever a stretch was compressed.
+ */
+.tlNote {
+  margin: var(--s2) 0 var(--s1);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+
+/* ---- axis -------------------------------------------------------------- */
+
+.tlAxis {
+  display: grid;
+  grid-template-columns: var(--tl-rail) minmax(0, 1fr);
+  margin-top: var(--s2);
+}
+
+.tlAxisTrack {
+  position: relative;
+  height: var(--tl-axis-h);
+}
+
+.tlTick {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The first tick of a new day earns the text colour; the clock ticks stay quiet. */
+.tlTickDay {
+  color: var(--text);
+}
+
+/* ---- lanes ------------------------------------------------------------- */
+
+/*
+ * row-gap MUST stay 0: the thread overlay computes each lane's centre as a
+ * fraction of this grid's height, so a gap would shear every curve. Lane
+ * separation comes from the hairlines on .tlTrack instead.
+ */
+.tlLanes {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tl-rail) minmax(0, 1fr);
+  row-gap: 0;
+}
+
+.tlRail {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  height: calc(var(--tl-track-h) + var(--tl-band-h));
+  padding-right: var(--s3);
+}
+
+.tlWho {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+.tlWord {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A blocked member's lane should be the one the eye lands on. */
+.tlFlag {
+  flex: none;
+  color: var(--danger);
+  font-size: var(--fs-2xs);
+}
+
+.tlSpan {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tlTally {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tlTallyItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tlUndated {
+  color: var(--dim);
+}
+
+.tlLane {
+  position: relative;
+  display: block;
+  height: calc(var(--tl-track-h) + var(--tl-band-h));
+}
+
+/*
+ * `display: block` is load-bearing on both of these. They are spans, and being
+ * spans they are inline by default — an inline box ignores width and height, so
+ * a mark's `left: 42%` would resolve against a text-width containing block and
+ * every mark on the board would stack at the left edge. (It works by accident
+ * when a span happens to be a grid item, because grid blockifies its children.)
+ */
+.tlTrack {
+  position: relative;
+  display: block;
+  height: var(--tl-track-h);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/*
+ * A member with evidence but no *datable* evidence — a day of carried WIP.
+ * They keep a lane so the overview still names them; the track reads as empty
+ * on purpose, and their rail says "no times recorded".
+ */
+.tlTrackEmpty {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text) 5%, transparent) 0 1px,
+    transparent 1px 6px
+  );
+}
+
+/* Where the captions live — below the track, inside the same lane row. */
+.tlBand {
+  position: relative;
+  display: block;
+  height: var(--tl-band-h);
+}
+
+/* The lane's own thread: first mark to last, so a sparse day still reads as one line. */
+.tlSpine {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+}
+
+/* A compressed stretch, marked through the axis and every lane. */
+.tlGap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text) 8%, transparent) 0 1px,
+    transparent 1px 4px
+  );
+  border-left: 1px dashed var(--line-soft);
+  border-right: 1px dashed var(--line-soft);
+}
+
+/* The upper axis row — how long the notch beneath it stood for. */
+.tlGapLabel {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* ---- marks ------------------------------------------------------------- */
+
+.tlSlot {
+  /* The slot exists so the filter can dim a whole mark (disc + badge). */
+  display: contents;
+}
+
+.tlSlot.tlDimmed .tlDot,
+.tlSlot.tlDimmed .tlMinor {
+  opacity: 0.25;
+}
+
+/* A landmark: a PR, a review, a ticket move, a doc. Carries the glyph. */
+.tlDot {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  border: 1px solid currentcolor;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentcolor 16%, var(--panel));
+  text-decoration: none;
+}
+
+/*
+ * A minor event — a commit, a comment. A thin stroke at its true position
+ * rather than another disc, so density reads without the day turning into a
+ * row of identical circles. The anchor keeps a real hit area around it.
+ */
+.tlMinor {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  transform: translate(-50%, -50%);
+  text-decoration: none;
+}
+
+.tlMinor::after {
+  content: '';
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: currentcolor;
+}
+
+.tlDot:hover,
+.tlDot:focus-visible,
+.tlMinor:hover,
+.tlMinor:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.tlBadge {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.65rem;
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* ---- captions ---------------------------------------------------------- */
+
+/*
+ * What makes the board readable in a screenshot, a print or a Slack paste,
+ * where a tooltip does not exist. Positioned from the scale, never measured:
+ * the component drops any caption that lands too close to the last one kept.
+ */
+.tlCap {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  /* The percentage is the collision guarantee; the ch ceiling only stops a
+   * caption sprawling on a very wide board. */
+  max-width: min(var(--tl-cap-w), 22ch);
+  transform: translateX(-50%);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tlCapCount {
+  color: var(--dim);
+}
+
+/* ---- threads ----------------------------------------------------------- */
+
+/*
+ * Curves joining the lanes that touched the same pull request or ticket.
+ * aria-hidden: the relationship is stated in words in each mark's label, so
+ * the drawing is never the only carrier. Inset from the left by exactly the
+ * rail width, which is why the rail is a fixed track and not minmax().
+ */
+/*
+ * The width and height are explicit on purpose. An <svg> is a replaced element:
+ * with `width: auto` and both `left` and `right` set it keeps its intrinsic
+ * 300x150 rather than stretching, so the curves get drawn into a box that has
+ * nothing to do with the lanes — visible only as stray marks near the top left.
+ */
+.tlThreads {
+  position: absolute;
+  top: 0;
+  left: var(--tl-rail);
+  z-index: 0;
+  width: calc(100% - var(--tl-rail));
+  height: 100%;
+  pointer-events: none;
+}
+
+.tlThread {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 38%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+/* ---- tooltip ---------------------------------------------------------- */
+
+.tlTip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 22rem;
+  padding: var(--s2) var(--s3);
+  transform: translateX(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-2xs);
+  color: var(--text);
+  text-align: left;
+}
+
+.tlDot:hover .tlTip,
+.tlDot:focus-visible .tlTip,
+.tlMinor:hover .tlTip,
+.tlMinor:focus-visible .tlTip {
+  display: flex;
+}
+
+/* Near the edges the tooltip hangs off the mark instead of centring. */
+.tlTipLeft .tlTip {
+  left: 0;
+  transform: none;
+}
+
+.tlTipRight .tlTip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.tlTipTitle {
+  font-size: var(--fs-xs);
+}
+
+.tlTipMeta {
+  color: var(--muted);
+}
+
+.tlTipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.tlTipRow i {
+  display: inline-flex;
+  flex: none;
+}
+
+.tlTipRowText {
+  overflow: hidden;
+  max-width: 14rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tlTipRowTime {
+  margin-left: auto;
+  padding-left: var(--s2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+/* ---- small screens ---------------------------------------------------- */
+
+@media (max-width: 699px) {
+  .timeline {
+    --tl-rail: 6.5rem;
+  }
+
+  /* The avatar carries the identity; the name rides the mark labels. */
+  .tlWord,
+  .tlTally {
+    display: none;
+  }
+
+  /* Only the first captions survive the narrower track. */
+  .tlCapLow {
+    display: none;
+  }
+
+  .tlDot {
+    width: 18px;
+    height: 18px;
+  }
+}

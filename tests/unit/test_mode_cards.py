@@ -66,10 +66,13 @@ class TestPerformanceCardRegistration:
         assert _performance_card()["available"] is True
 
     def test_no_other_card_carries_a_badge(self):
+        # Performance and Ship are the two beta modes on the Humans menu;
+        # test_beta_surfaces.py keeps their three markers (badge, notice, tip)
+        # in agreement.
         badged = [
             card["key"]
             for card in (*_MODE_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS)
-            if card.get("badge") and card.get("key") != "performance"
+            if card.get("badge") and card.get("key") not in ("performance", "ship")
         ]
         assert badged == []
 

@@ -35,6 +35,7 @@ from yeaboi.azdevops_sync import (
     _map_priority_to_azdo,
     is_azdevops_board_configured,
     sync_all_to_azdevops,
+    sync_iterations_to_azdevops,
     sync_stories_to_azdevops,
     sync_tasks_to_azdevops,
 )
@@ -383,6 +384,146 @@ class TestSyncAllToAzdevops:
 
 
 # ---------------------------------------------------------------------------
+# Tests: sync_iterations_to_azdevops — numbering, past-iteration guard, reuse
+# ---------------------------------------------------------------------------
+
+
+def _iter_meta(name, time_frame, path=""):
+    return {
+        "name": name,
+        "path": path or f"MyProject\\{name}",
+        "time_frame": time_frame,
+        "start_date": "",
+        "finish_date": "",
+    }
+
+
+@patch("yeaboi.azdevops_sync.get_azure_devops_project", return_value="MyProject")
+@patch("yeaboi.azdevops_sync.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+@patch("yeaboi.azdevops_sync.get_azure_devops_token", return_value="token")
+class TestSyncIterationsToAzdevops:
+    def _state(self, **overrides):
+        base = _make_graph_state(
+            azdevops_story_keys={"story-1": "101"},
+            sprint_length_weeks=2,
+            sprint_start_date="2026-03-16",
+        )
+        base.update(overrides)
+        return base
+
+    def test_minus_one_sentinel_continues_sequence(self, *_):
+        meta = [_iter_meta("Sprint 5", "past"), _iter_meta("Sprint 6", "current")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 7") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    result, _ = sync_iterations_to_azdevops(self._state(starting_sprint_number=-1))
+
+        assert not result.errors
+        assert mock_iter.call_args.args[3] == "Sprint 7"
+
+    def test_past_iteration_never_reused(self, *_):
+        """A configured start landing on a past iteration's name renumbers past the max."""
+        meta = [_iter_meta("Sprint 5", "past"), _iter_meta("Sprint 6", "past")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 7") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    result, _ = sync_iterations_to_azdevops(self._state(starting_sprint_number=5))
+
+        assert mock_iter.call_args.args[3] == "Sprint 7"
+        assert result.iterations_updated == {}
+
+    def test_dates_do_not_overlap(self, *_):
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=[]):
+            with patch("yeaboi.azdevops_sync._create_iteration_node", return_value="MyProject\\Sprint 1") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration"):
+                    sync_iterations_to_azdevops(self._state())
+
+        kwargs = mock_iter.call_args.kwargs
+        assert kwargs["start_date"] == "2026-03-16"
+        assert kwargs["finish_date"] == "2026-03-29"  # start + 2 weeks − 1 day
+
+    def test_existing_target_adds_items_never_creates(self, *_):
+        """sprint_target_mode='existing' assigns items to the target iteration, no creation."""
+        meta = [_iter_meta("Sprint 6", "current")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="Sprint 6",
+            target_sprint_external_id="",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, new_state = sync_iterations_to_azdevops(state)
+
+        assert not result.errors
+        assert not mock_iter.called
+        assert result.iterations_updated == {"sprint-1": "MyProject\\Sprint 6"}
+        assert new_state["azdevops_iteration_keys"]["sprint-1"] == "MyProject\\Sprint 6"
+        mock_add.assert_called_once()
+
+    def test_existing_target_past_iteration_errors_loudly(self, *_):
+        meta = [_iter_meta("Sprint 5", "past")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="Sprint 5",
+            target_sprint_external_id="",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert result.errors and "not found among current/future" in result.errors[0]
+        assert not mock_iter.called
+        assert not mock_add.called
+
+    def test_existing_target_past_path_external_id_errors_loudly(self, *_):
+        """A past iteration's path must not slip past the current/future filter."""
+        meta = [_iter_meta("Sprint 5", "past")]
+        state = self._state(
+            sprint_target_mode="existing",
+            target_sprint_name="",
+            target_sprint_external_id="MyProject\\Sprint 5",
+        )
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert result.errors and "not found among current/future" in result.errors[0]
+        assert not mock_iter.called
+        assert not mock_add.called
+
+    def test_backlog_target_creates_and_assigns_nothing(self, *_):
+        """sprint_target_mode='backlog' — stories only; no iteration, no assignment."""
+        state = self._state(sprint_target_mode="backlog")
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta") as mock_meta:
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, _ = sync_iterations_to_azdevops(state)
+
+        assert not result.errors
+        assert not mock_meta.called  # short-circuits before any tracker call
+        assert not mock_iter.called
+        assert not mock_add.called
+        assert result.iterations_created == {}
+        assert result.iterations_updated == {}
+
+    def test_current_same_named_iteration_reused_not_created(self, *_):
+        meta = [_iter_meta("Sprint 6", "current")]
+        with patch("yeaboi.tools.azure_devops.fetch_team_iterations_meta", return_value=meta):
+            with patch("yeaboi.azdevops_sync._create_iteration_node") as mock_iter:
+                with patch("yeaboi.tools.azure_devops.add_work_items_to_iteration") as mock_add:
+                    result, new_state = sync_iterations_to_azdevops(self._state(starting_sprint_number=6))
+
+        assert not mock_iter.called
+        assert result.iterations_created == {}
+        assert result.iterations_updated == {"sprint-1": "MyProject\\Sprint 6"}
+        assert new_state["azdevops_iteration_keys"]["sprint-1"] == "MyProject\\Sprint 6"
+        mock_add.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Tests: AzDevOpsSyncResult
 # ---------------------------------------------------------------------------
 
@@ -396,3 +537,53 @@ class TestAzDevOpsSyncResult:
         assert result.iterations_created == {}
         assert result.errors == []
         assert result.skipped == 0
+
+
+class TestTeamStyleDescriptionsHtml:
+    """AzDO mirror: team AC style, DoD list, and section headings."""
+
+    def test_free_text_acs_render_as_list(self):
+        story = _make_story()
+        story = story.__class__(
+            **{**story.__dict__, "acceptance_criteria": (AcceptanceCriterion(text="Login works end to end."),)}
+        )
+        desc = _format_story_description_html(story, _make_feature())
+        assert "<li>Login works end to end.</li>" in desc
+        assert "<strong>Given</strong>" not in desc
+
+    def test_custom_dod_list_renders_with_its_own_labels(self):
+        story = _make_story()
+        custom = ("Tests green", "Deployed", "Announced")
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True)})
+        desc = _format_story_description_html(story, None, dod_items=custom)
+        assert "Tests green" in desc
+        assert "<s>Deployed</s>" in desc
+
+    def test_default_length_flags_with_custom_dod_keep_the_section(self):
+        # The real pipeline shape: stories carry flags sized to the default
+        # 7-item list; a shorter custom DoD list must not drop the whole
+        # block — positions carry over, extra flags are ignored.
+        story = _make_story()
+        story = story.__class__(**{**story.__dict__, "dod_applicable": (True, False, True, True, True, True, True)})
+        desc = _format_story_description_html(story, None, dod_items=("Tests green", "Deployed", "Announced"))
+        assert "&#9745; Tests green" in desc
+        assert "<s>Deployed</s>" in desc
+        assert "&#9745; Announced" in desc
+
+    def test_mixed_ac_list_numbers_gwt_triples_consecutively(self):
+        story = _make_story()
+        acs = (
+            AcceptanceCriterion(text="Free text first."),
+            AcceptanceCriterion(given="g", when="w", then="t"),
+        )
+        story = story.__class__(**{**story.__dict__, "acceptance_criteria": acs})
+        desc = _format_story_description_html(story, None)
+        assert "<strong>AC1</strong>" in desc  # the counter skips the free-text criterion
+        assert "AC2" not in desc
+
+    def test_team_headings_adopted(self):
+        story = _make_story()
+        headings = {"acceptance_criteria": "ACs", "dod": "Done looks like"}
+        desc = _format_story_description_html(story, None, headings=headings)
+        assert "<h3>ACs</h3>" in desc
+        assert "<h3>Done looks like</h3>" in desc

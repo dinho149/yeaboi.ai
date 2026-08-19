@@ -166,6 +166,40 @@ def _items() -> list[dict]:
             url="https://github.com/corp/web/commit/feedc0df",
             repository="web",
         ),
+        # Ada's own review of PR #91, sharing that PR's bare URL — the AzDO
+        # shape, where every comment on a pull request carries the PR's own
+        # link. Evidence dedupes URL-first, so without the `review|` namespace
+        # this row and the PR row above collapse into one and the review
+        # vanishes. Mirrored in evidence.go; nothing else in this corpus makes
+        # a review and a PR share a URL, so nothing else covers it.
+        _item(
+            source="azure_devops",
+            author="Ada Lovelace",
+            kind="review",
+            key="review:91:ada",
+            title="approved PR #91: Fix login redirect",
+            status="approved",
+            timestamp="2026-08-05T11:30:00+00:00",
+            url="https://github.com/corp/web/pull/91",
+            repository="web",
+        ),
+        # Twelve commits in one category, to carry the evidence cap past the old
+        # value of 8. Below the cap the raise from 8 to 30 is unobservable on
+        # both sides at once, which is the only way parity can be green about a
+        # constant that differs.
+        *[
+            _item(
+                source="github",
+                author="Ada Lovelace",
+                kind="commit",
+                key=f"cap{n:04x}",
+                title=f"Incremental change {n}",
+                timestamp=f"2026-08-05T07:{n:02d}:00+00:00",
+                url=f"https://github.com/corp/web/commit/cap{n:04x}",
+                repository="web",
+            )
+            for n in range(12)
+        ],
         # A PR that was evidence yesterday and is still open (blocker rule 2).
         _item(
             source="github",
@@ -467,6 +501,17 @@ class TestAggregateParity:
             if any(child["key"] in ("feedc0de", "feedc0df") for child in row.get("children", []))
         ]
         assert merge_rows, "expected the merge commits folded under PR #91"
+        # The two evidence behaviours mirrored in evidence.go. Both are invisible
+        # unless the corpus provokes them: a green parity run over a corpus that
+        # never makes a review share a PR's URL, and never fills a category past
+        # eight rows, says nothing at all about either.
+        code_rows = ada["code"]["evidence"]
+        assert len(code_rows) > 8, "the cap raise from 8 to 30 is only observable above 8 rows"
+        review_row = next((row for row in code_rows if row["kind"] == "review"), None)
+        assert review_row is not None, "the review sharing PR #91's URL must survive the URL dedupe"
+        assert any(row["kind"] == "pr" and row["url"] == review_row["url"] for row in code_rows), (
+            "…and the PR it shares that URL with must still be there beside it"
+        )
 
     def test_without_excuses_matches_and_signals_return(self, core):
         inputs = base_inputs(feedback_excused=[])

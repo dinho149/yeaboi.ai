@@ -20,7 +20,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 the routine table, `cowork/models.md` the tier table, `cowork/workstreams/` the label list,
 `cowork/definition-of-done.md` the Linear/Slack/Notion target ids — and `scripts/cowork_setup.py` has
 already parsed all four. Read its output; do not read those tables yourself, and do not assemble a
-request body or diff two routines in your head. Twenty-two routines × six fields is exactly the work
+request body or diff two routines in your head. Twenty-eight routines × six fields is exactly the work
 that goes right most of the time, and "most of the time" here is a sweep silently running last
 month's prompt.
 
@@ -115,8 +115,8 @@ a routine file, or when someone new joins.
      - `repo_url` — the script resolves this from `gh` on its own; if it still appears here, `gh` is
        not authenticated.
 
-     A body carrying an empty string for any of these is one the API will happily accept. Twenty-two
-     routines then register pointing at no repository, and it looks like it worked until the first
+     A body carrying an empty string for any of these is one the API will happily accept.
+     Twenty-eight routines then register pointing at no repository, and it looks like it worked until the first
      Monday.
    - **Keep the `trigger_name` of every routine you created** and got an id back for. Step 5 needs
      them, and they are the only evidence that exists.

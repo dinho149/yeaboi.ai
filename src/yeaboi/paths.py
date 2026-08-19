@@ -111,6 +111,23 @@ ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable c
 AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / standup / security reports
 
 # ---------------------------------------------------------------------------
+# Ship (supervised coding-agent runs)
+# ---------------------------------------------------------------------------
+
+# Everything the ship mode owns on disk lives under ROOT_DIR on purpose: the
+# fs sandbox already allows this tree read-write, so budget checks, worktree
+# registries and the agent's checkout itself need no extra path consent — only
+# the *target repository* does (its .git gains a worktree entry).
+SHIP_DIR = ROOT_DIR / "ship"
+SHIP_WORKTREES_DIR = SHIP_DIR / "worktrees"  # the agent's checkouts: <repo-slug>/<run-id>/
+SHIP_WORKTREE_REGISTRY = SHIP_DIR / "worktrees.json"
+# The user-global launch budget: one ledger per human, shared by every run,
+# so N concurrent yeaboi instances cannot multiply the spend.
+SHIP_BUDGET_FILE = SHIP_DIR / "ai-budget.json"
+SHIP_BUDGET_LOCK = SHIP_DIR / "ai-budget.lock"
+SHIP_BUDGET_RECEIPTS = SHIP_DIR / "ai-budget-receipts.jsonl"
+
+# ---------------------------------------------------------------------------
 # Logs
 # ---------------------------------------------------------------------------
 
@@ -126,6 +143,8 @@ ANALYSIS_LOGS_DIR = LOGS_DIR / "analysis"
 PLANNING_LOGS_DIR = LOGS_DIR / "planning"
 MCP_LOGS_DIR = LOGS_DIR / "mcp"
 AGENTWATCH_LOGS_DIR = LOGS_DIR / "agentwatch"
+SHIP_LOGS_DIR = LOGS_DIR / "ship"
+CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -325,8 +344,8 @@ def get_anonymize_export_dir(project_key: str) -> Path:
 def get_agentwatch_export_dir(kind_key: str) -> Path:
     """Return the agentwatch export directory for a report kind, creating it if needed.
 
-    ``kind_key`` is the report kind ("usage", "standup", "security"), so the
-    three agent modes' exports stay separated the way per-project modes are.
+    ``kind_key`` is the report kind ("usage", "advisor", "standup", "security"),
+    so the agent modes' exports stay separated the way per-project modes are.
     """
     d = AGENTWATCH_EXPORTS_DIR / _safe_key(kind_key, "report")
     d.mkdir(parents=True, exist_ok=True)
@@ -445,6 +464,37 @@ def get_agentwatch_log_dir() -> Path:
     """Return the agentwatch (Agents family) logs directory, creating it if needed."""
     AGENTWATCH_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return AGENTWATCH_LOGS_DIR
+
+
+def get_ceremonies_log_dir() -> Path:
+    """Return the Ceremonies (scheduled runs) logs directory, creating it if needed.
+
+    Its own directory rather than the fired mode's: a scheduled run's log is the
+    only trace of a fire nobody watched, and burying it in the standup's log
+    beside the runs a human started is how "did it fire at all?" becomes
+    unanswerable.
+    """
+    CEREMONIES_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return CEREMONIES_LOGS_DIR
+
+
+def get_ship_log_dir() -> Path:
+    """Return the Ship (supervised coding-agent) logs directory, creating it if needed."""
+    SHIP_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return SHIP_LOGS_DIR
+
+
+def get_ship_dir() -> Path:
+    """Return the ship data directory (budget ledger, worktree registry), creating it if needed.
+
+    Hardened like the sessions DB dir: the budget ledger decides whether an
+    agent launch is allowed, so it must not be writable by another local user.
+    """
+    from yeaboi.config import restrict_permissions
+
+    SHIP_DIR.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(SHIP_DIR, mode=0o700)
+    return SHIP_DIR
 
 
 def get_bin_dir() -> Path:

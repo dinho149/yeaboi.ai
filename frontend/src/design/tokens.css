@@ -236,6 +236,7 @@
 [data-mode="standup"]     { --accent: #d17cc0; }  /* lifted from #c864b4 */
 [data-mode="planning"]    { --accent: #7d98e0; }  /* lifted from #6e8cdc */
 [data-mode="performance"] { --accent: #e07e6c; }  /* lifted from #dc6e5a */
+[data-mode="ship"]        { --accent: #eb8c3c; }  /* TUI SHIP_THEME rgb(235,140,60) */
 
 /*
  * The same eight hues, rendered for a light surface.
@@ -259,6 +260,7 @@
 [data-theme="light"][data-mode="standup"]     { --accent: #b941a1; }
 [data-theme="light"][data-mode="planning"]    { --accent: #456bd2; }
 [data-theme="light"][data-mode="performance"] { --accent: #c9432b; }
+[data-theme="light"][data-mode="ship"]        { --accent: #b0570f; }
 
 /* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
    never appears on a mouse click — the reason the boards had no focus styling

@@ -70,28 +70,76 @@ DONE = "robot_face"
 APPROVE = "white_check_mark"
 REJECT = "x"
 
-APPROVAL_LABEL = "claude-implement"
-PROMOTE_LABEL = "release:promote"
-# Applied only by `cron/release-promote-ask.md`, at creation time, as the
-# maintainer. `publish.yml` requires it too — this is the same fact checked on
-# both sides of the hand-off.
-PROMOTION_LABEL = "release:promotion"
+# What each verb did, in the past tense a human reads. Spelled out because
+# deriving it was wrong the moment a verb was not a regular English one:
+# `campaign` + "d" is "campaignd". Keys are exactly the verbs `_command` answers
+# to, minus the two `_audit` returns ``None`` for.
+AUDIT_VERB = {"approve": "approved", "campaign": "approved as a campaign"}
 
-# A promotion ask is the only thread reply in this channel that is not a proposal,
-# and it is told apart by the same leading-`#<number>` contract the digest uses,
-# plus a fixed second field: `cron/release-promote-ask.md` writes
-# `#231 — promote 3.6.1 — <link>` and nothing else may.
+# Why a fleet item ended without shipping. A closed vocabulary, because the whole
+# point is to count these: `scripts/cowork_metrics.py` reads the markers below out
+# of issue comments, and a free-text reason is one nobody can aggregate. The fleet
+# already knew every one of these facts and wrote none of them down — a ❌ was a
+# bare `gh issue close`, and the human's reason stayed in Slack.
 #
-# This text is still DATA. The digest quotes issue titles verbatim, and on a
-# public repo anyone can file an issue titled to look like a promotion ask — so
-# at worst a crafted title routes an allowlisted ✅ to `--add-label
-# release:promote` on the wrong issue. `publish.yml` refuses any issue that does
-# not ALSO carry `release:promotion`, which only the ask routine applies and
-# which needs repo write. The regex picks a label; the workflow decides whether
-# it means anything.
+# `slack-veto` is the only one this script emits; the rest are written by the
+# sweeps and the digest, and live here because this is the module the reader
+# imports. `cowork/sweep-procedure.md` and `cron/digest.md` spell the same set,
+# and `tests/unit/test_cowork_relay.py` asserts the docs and this tuple agree —
+# the doc is the source, because it is what a model actually reads.
+REJECTION_REASONS = (
+    "slack-veto",  # a human reacted ❌ in the channel
+    "aged-out",  # digest.md step 4 closed a proposal that had already lapsed for 30 days
+    "no-longer-reproduces",  # the evidence stopped being true before anyone built it
+)
+
+# Why a question stopped being asked without anybody answering it. The third
+# family, and the one the first two were quietly absorbing.
+#
+# `cron/digest.md` step 4 used to *close* a proposal at fourteen days. But both
+# dedupe passes — `sweep-procedure.md` step 4 and `cowork-scout.md` step 5 —
+# read a closed issue as `A closing is a rejection and a rejection is durable.
+# Do not re-file rejected ideas.` They read **state**, not comments; the
+# `aged-out` marker that was supposed to tell the two apart is written into a
+# comment, and `scripts/cowork_metrics.py` is the only reader of those and runs
+# on a human's terminal. So a find nobody had time to look at was suppressed
+# permanently, by a timer, and the one record of the difference sat where no
+# routine could see it.
+#
+# A lapse removes `cowork:proposal` and leaves the issue **open**. The slot
+# reopens with no arithmetic changing — `open_proposals` filters by label — and
+# because nothing closed, no dedupe pass reads a rejection nobody made.
+LAPSE_REASONS = ("unanswered",)  # digest.md step 4 — fourteen days with no human verb
+
+# Why a queued item went back to being a question. These mirror the auto-lane
+# conditions in `cowork/house-rules.md` rather than inventing a second taxonomy:
+# the axes a find fails on are exactly the conditions it had to clear.
+BOUNCE_REASONS = (
+    "no-repro",  # a `bug` with no regression test that fails before and passes after
+    "user-facing-wording",  # behaviour may change, copy may not
+    "outside-owns",  # the paths fall outside the charter
+    "public-api",  # an API, schema or state-field change
+    "needs-judgement",  # arguing with yourself about it means it proposes
+)
+
+APPROVAL_LABEL = "claude-implement"
+
+# There is deliberately NO release verb in this relay. Releasing became merging
+# the batch PR (`scripts/batch_assemble.py` + `scripts/beta_signoff.py`), and no
+# routine may merge — so a ✅ cannot ship anything, only approve work *starting*.
+# The old `promote` lane (`release:promote` on the weekly ask issue) went with
+# the issue machinery it labelled; its two subtlest hazards — a ✅ on a stale
+# reply, two ✅s racing — existed only because releasing was a reaction.
+#
+# The regex survives as a TOMBSTONE. A promote-shaped reply can still sit in the
+# relay's read window — last week's ask at cutover, or a crafted title quoted by
+# the digest — and with the special verb gone it would otherwise fall through to
+# the ordinary lane, where a ✅ applies `claude-implement` to the old release ask
+# and launches an implement run against "Promote 3.7.0?". Matching it and
+# routing to `ask` is what keeps that unreachable.
 PROMOTE_RE = re.compile(r"^#(\d+)\s+—\s+promote\s+\d+\.\d+\.\d+\b")
 
-# The integration shortlist is the second thread reply that is not a proposal, and
+# The integration shortlist is the one thread reply that is not a proposal, and
 # it is told apart the same way: the leading-`#<number>` contract plus a fixed
 # second field. `cron/integrations-campaign.md` files the issues,
 # `cron/digest.md` renders `#241 — integration candidate: gitlab — <link>`.
@@ -104,9 +152,9 @@ PROMOTE_RE = re.compile(r"^#(\d+)\s+—\s+promote\s+\d+\.\d+\.\d+\b")
 # stops at the paths rule, and either way spends the approval with nothing to show
 # and no second chance until next Monday.
 #
-# Same defence as the promotion pair: the text is DATA — anyone can file an issue
-# titled to match — so the regex only *routes*, and `is_campaign_candidate`
-# confirms against the `integration:candidate` label, which needs repo write.
+# The text is DATA — anyone can file an issue titled to match — so the regex
+# only *routes*, and `is_campaign_candidate` confirms against the
+# `integration:candidate` label, which needs repo write.
 CANDIDATE_RE = re.compile(r"^#(\d+)\s+—\s+integration candidate\b")
 
 # The disclosure post from `cron/security-sweep.md`. It is the one actionable
@@ -143,7 +191,7 @@ CHANNEL_LEVEL = "_channel_level"
 # none by construction — filing one is the whole thing the carve-out forbids.
 # `cron/security-sweep.md` reads this label on its own next run and drains it.
 #
-# Same defence as the promotion and candidate pairs, and it matters more here
+# Same defence as the candidate pair, and it matters more here
 # because the Slack connector posts as the allowlisted human, so authorship
 # cannot tell a real disclosure post from a crafted one. The text is DATA: this
 # regex only *routes*, and the routine must confirm the ticket carries
@@ -209,48 +257,27 @@ def _by_name(reply: dict[str, Any]) -> dict[str, list[str]]:
     return out
 
 
-def is_promotion(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
-    """Whether ``issue`` carries the `release:promotion` label the ask routine applies.
-
-    Read from GitHub rather than inferred from the reply text, because the text is
-    attacker-influenceable and the label is not: `cron/release-promote-ask.md`
-    applies it at creation time, and applying a label needs repo write.
-
-    **Tristate, and the third state is the point.** True and False are answers;
-    ``None`` means the question could not be asked — an unreachable API, a rate
-    limit, a malformed response. Collapsing ``None`` into False looks like failing
-    closed and is not: the fallback verb is ``approve``, which applies
-    `claude-implement`, and `claude.yml`'s implement job fires on *any* issue
-    receiving that label. A single `gh` blip would therefore turn the maintainer's
-    ✅ on the release ask into an unattended `deep`-tier agent building
-    "Promote 3.7.0?" as though it were a feature request — the release not
-    happening, nobody told, and something else happening instead.
-
-    ``None`` routes to `ask` in `build_plan`, the verb that already exists for "do
-    not guess". Same reasoning as `merge_gate_armed` in `scripts/cowork_setup.py`:
-    an unanswerable question is not a no.
-
-    **A CLOSED promotion ask is also ``None``**, and it is the reason this reads
-    state at all. `cron/release-promote-ask.md` supersedes an unanswered ask by
-    closing it and opening a fresh one, which dedups GitHub — but the Slack half
-    does not: last week's thread reply is still in this relay's read window, still
-    unmarked, and still actionable. `publish.yml`'s guard fires on the `labeled`
-    event and never looks at issue state, so a ✅ on the stale reply would promote
-    against a manifest nobody read. The ask routine's own "never leave two open"
-    rule cannot defend that, because the artifact lives in Slack. Refusing here is
-    where it has to be refused, and `ask` rather than `reject` because the human
-    probably does want to promote — just on this week's issue.
-    """
-    return _has_open_label(issue, PROMOTION_LABEL, runner)
-
-
 def _has_open_label(issue: int, label: str, runner: Callable[[list[str]], str | None] | None) -> bool | None:
     """Whether ``issue`` is open and carries ``label``. Tristate, like its callers.
 
-    The shared body behind `is_promotion` and `is_campaign_candidate`: both ask the
-    same question of a different label, and both need ``None`` to mean "could not
-    ask" rather than "no". See `is_promotion` for why that distinction is the whole
-    point rather than defensive coding.
+    **Tristate, and the third state is the point.** True and False are answers;
+    ``None`` means the question could not be asked — an unreachable API, a rate
+    limit, a malformed response. Collapsing ``None`` into False looks like
+    failing closed and is not: the fallback verb is ``approve``, which applies
+    `claude-implement`, and `claude.yml`'s implement job fires on *any* issue
+    receiving that label. A single `gh` blip would therefore turn a maintainer's
+    ✅ on a special issue into an unattended `deep`-tier agent building it as
+    though it were a feature request. ``None`` routes to `ask` in `build_plan`,
+    the verb that already exists for "do not guess" — same reasoning as
+    `merge_gate_armed` in `scripts/cowork_setup.py`: an unanswerable question is
+    not a no.
+
+    **A CLOSED issue is also ``None``**, and it is the reason this reads state
+    at all. Monday's routines supersede an unanswered ask by closing it and
+    filing a fresh one, which dedups GitHub — but the Slack half does not: last
+    week's thread reply is still in the relay's read window, still unmarked, and
+    still actionable. A late ✅ on a superseded item must route to `ask` rather
+    than fire the special verb against a shortlist nobody re-read.
     """
     run = runner or _gh_labels
     payload = run(["gh", "issue", "view", str(issue), "--json", "labels,state"])
@@ -278,8 +305,9 @@ def is_approved(issue: int, *, runner: Callable[[list[str]], str | None] | None 
     verb rather than routing to `ask`. Applying a label that is already present is
     a harmless no-op; refusing to act would strand the ordinary first approval
     behind a `gh` call the routine sessions' egress proxy is known to refuse. The
-    asymmetry with `is_promotion` is deliberate — there, guessing wrong starts an
-    implementation run against a release ask, and here it does nothing at all.
+    asymmetry with `is_campaign_candidate` is deliberate — there, guessing wrong
+    starts an implementation run against a week-long plan, and here it does
+    nothing at all.
     """
     return _has_open_label(issue, APPROVAL_LABEL, runner)
 
@@ -287,13 +315,11 @@ def is_approved(issue: int, *, runner: Callable[[list[str]], str | None] | None 
 def is_campaign_candidate(issue: int, *, runner: Callable[[list[str]], str | None] | None = None) -> bool | None:
     """Whether ``issue`` carries the `integration:candidate` label the campaign applies.
 
-    Tristate for the same reason `is_promotion` is, and with the same fallback:
-    ``None`` routes to `ask`. The failure it refuses is the mirror image of the
-    promotion one — there, an unanswerable question would turn a release ask into
-    an implementation run; here, it would turn "build GitLab" into
-    `claude-implement` on an issue that is a week-long plan, which is the exact
-    outcome the separate label exists to prevent. Guessing in either direction
-    spends a human's ✅ on something they did not ask for.
+    Tristate, and ``None`` routes to `ask`: an unanswerable question here would
+    otherwise turn "build GitLab" into `claude-implement` on an issue that is a
+    week-long plan, which is the exact outcome the separate label exists to
+    prevent. Guessing in either direction spends a human's ✅ on something they
+    did not ask for.
 
     **A CLOSED candidate is also ``None``.** Monday supersedes an unanswered
     shortlist by closing it and filing a fresh one, which dedups GitHub but not
@@ -377,13 +403,44 @@ def _command(verb: str, issue: int) -> list[str]:
             "--body",
             "re-approved via Slack ✅ — already labelled, so re-firing the implement job.\n\n<!-- implement-retry -->",
         ]
-    if verb == "promote":
-        return ["gh", "issue", "edit", str(issue), "--add-label", PROMOTE_LABEL]
     if verb == "campaign":
         return ["gh", "issue", "edit", str(issue), "--add-label", APPROVED_LABEL]
     if verb == "reject":
         return ["gh", "issue", "close", str(issue)]
     raise RelayError(f"no command for verb {verb!r}")
+
+
+def _audit(verb: str, issue: int, who: str, ts: str) -> list[str] | None:
+    """The comment that records a Slack decision on the GitHub item it moved.
+
+    This used to be the routine's job — `slack-relay.md` told it to leave
+    ``approved via Slack ✅ by <who> — <permalink>`` and trusted it to do so once.
+    #172 carries two identical ones, because "leave a comment" is a sentence and
+    not an argv. Emitting it here makes it diffable and makes it exactly once, the
+    same reason `_command` emits argv instead of a format string.
+
+    The trailing marker is the part that is actually load-bearing. A ❌ was a bare
+    ``gh issue close``: the fact survived in GitHub and the *reason* stayed in
+    Slack, so nothing could ever count why the fleet's proposals died. Now a
+    rejection says so in a form `scripts/cowork_metrics.py` can read.
+
+    ``None`` for the two verbs that need no comment: ``refire`` is already a
+    comment, and ``ask`` has no command to audit. Callers treat that as "nothing
+    to post" rather than as a failure.
+    """
+    if verb in ("refire", "ask"):
+        return None
+    if verb == "reject":
+        body = (
+            f"closed via Slack ❌ by {who} — message `{ts}` in the channel.\n\n"
+            f"<!-- rejected: reason=slack-veto by={who} ts={ts} -->"
+        )
+    else:
+        body = (
+            f"{AUDIT_VERB[verb]} via Slack ✅ by {who} — message `{ts}` in the channel.\n\n"
+            f"<!-- relayed: verb={verb} by={who} ts={ts} -->"
+        )
+    return ["gh", "issue", "comment", str(issue), "--body", body]
 
 
 def _disclosure_action(reply: dict[str, Any], text: str, allowlist: dict[str, str]) -> dict[str, Any] | None:
@@ -427,7 +484,6 @@ def build_plan(
     replies: list[dict[str, Any]],
     allowlist: dict[str, str],
     *,
-    promotion_check: Callable[[int], bool] | None = None,
     candidate_check: Callable[[int], bool] | None = None,
     approved_check: Callable[[int], bool] | None = None,
 ) -> dict[str, Any]:
@@ -454,7 +510,6 @@ def build_plan(
 
     # Injection seam: the real check calls `gh`, and every other decision here is
     # pure. Tests pass a stub; nothing else should.
-    is_promotion_issue = promotion_check or is_promotion
     is_candidate_issue = candidate_check or is_campaign_candidate
     is_approved_issue = approved_check or is_approved
 
@@ -523,29 +578,35 @@ def build_plan(
         issue = int(match.group(1))
         if approvers and rejecters:
             # The routine's rule: never guess between two verbs from a human.
-            plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": None, "command": None})
+            plan.append(
+                {"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": None, "command": None, "audit": None}
+            )
             continue
 
-        # ❌ on a promotion ask is still `reject`, i.e. `gh issue close` — "not
-        # this week". Next Monday's run opens a fresh ask against the same batch.
-        #
         # The text shape is a hint, never the decision. The digest quotes issue
         # titles verbatim and `feature-candidate` titles come from the in-app
-        # feedback form, so a user can write one that matches `PROMOTE_RE` — and
-        # the damage would not be a stray label but a *lost approval*: the ✅ the
-        # maintainer meant as "build this" would apply `release:promote` and never
-        # `claude-implement`, and nothing would say so. `is_promotion` confirms
-        # against the `release:promotion` label, which only the ask routine
-        # applies, so a matching title on an ordinary proposal stays an approval.
+        # feedback form, so a user can write one that matches `CANDIDATE_RE` —
+        # and the damage would not be a stray label but a *lost approval*: the ✅
+        # the maintainer meant as "build this" would apply `integration:approved`
+        # and never `claude-implement`, and nothing would say so.
+        # `is_campaign_candidate` confirms against the `integration:candidate`
+        # label, which only the campaign routine applies, so a matching title on
+        # an ordinary proposal stays an approval.
         #
-        # ❌ on an integration candidate is `reject` too: closing it is exactly
+        # ❌ on an integration candidate is `reject`: closing it is exactly
         # "not this provider", and Monday's run reads closed candidates as the
         # standing record of what it must not re-propose.
         who = allowlist[(approvers or rejecters)[0]]
-        special: tuple[str, Callable[[int], bool | None]] | None = None
         if PROMOTE_RE.match(text):
-            special = ("promote", is_promotion_issue)
-        elif CANDIDATE_RE.match(text):
+            # The tombstone lane: there is no promote verb any more, and the
+            # ordinary lane would spend this ✅ on `claude-implement` against a
+            # release ask. Nothing safe can be guessed here; a human answers.
+            plan.append(
+                {"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None, "audit": None}
+            )
+            continue
+        special: tuple[str, Callable[[int], bool | None]] | None = None
+        if CANDIDATE_RE.match(text):
             special = ("campaign", is_candidate_issue)
 
         if not approvers:
@@ -563,14 +624,25 @@ def build_plan(
             confirmed = confirm(issue)
             if confirmed is None:
                 # Could not tell, or the issue is closed — neither is "not a
-                # promotion" and neither is "not a candidate". `approve` applies
-                # `claude-implement`, which starts an implementation run against
-                # the release ask, or against a week-long campaign plan. Ask a
+                # candidate". `approve` applies `claude-implement`, which starts
+                # an implementation run against a week-long campaign plan. Ask a
                 # human; that is the verb.
-                plan.append({"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None})
+                plan.append(
+                    {"ts": reply.get("ts"), "issue": issue, "verb": "ask", "who": who, "command": None, "audit": None}
+                )
                 continue
             verb = label_verb if confirmed else "approve"
-        plan.append({"ts": reply.get("ts"), "issue": issue, "verb": verb, "who": who, "command": _command(verb, issue)})
+        ts = str(reply.get("ts") or "")
+        plan.append(
+            {
+                "ts": reply.get("ts"),
+                "issue": issue,
+                "verb": verb,
+                "who": who,
+                "command": _command(verb, issue),
+                "audit": _audit(verb, issue, who, ts),
+            }
+        )
 
     plan.sort(key=lambda item: str(item["ts"]))
     counts = {

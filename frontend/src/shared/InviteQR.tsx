@@ -36,10 +36,18 @@ export interface InviteQRProps {
    * component only renders what arrived.
    */
   inviteUrl?: string | undefined;
+  /**
+   * The board's bare address, without the code in its fragment.
+   *
+   * Only the ship board sends it: retro and poker deliberately offer the one
+   * link that carries the code, because a second URL beside it is the same
+   * invite said twice.
+   */
+  shareUrl?: string | undefined;
   className?: string | undefined;
 }
 
-export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProps) {
+export function InviteQR({ qrSrc, joinCode, inviteUrl, shareUrl, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
 
   return (
@@ -68,6 +76,7 @@ export function InviteQR({ qrSrc, joinCode, inviteUrl, className }: InviteQRProp
           The code stays below it, separately copyable, for the host who wants
           to read it out while the link goes in a channel. */}
       {inviteUrl ? <CopyField label="Invite link" value={inviteUrl} /> : null}
+      {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>
   );

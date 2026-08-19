@@ -150,6 +150,47 @@ def _render_tui_analysis(
     parts.append(Text(""))
     parts.extend(_section("Tech Stack", analysis.tech_stack))
     parts.append(Text(""))
+
+    # Architecture options + recommendation — the pick, its confidence badge,
+    # and every candidate with pros/cons so the decision is reviewable.
+    arch = getattr(analysis, "architecture", None)
+    if arch is not None and arch.options:
+        parts.append(Text("Architecture", style="bold rgb(140,140,160)"))
+        conf_colour = {"high": "rgb(80,200,80)", "medium": "rgb(200,180,60)", "low": "rgb(200,60,60)"}.get(
+            arch.confidence, "rgb(160,160,160)"
+        )
+        header = Text()
+        header.append("  Recommended: ", style="rgb(140,140,140)")
+        header.append(arch.chosen, style="bold white")
+        header.append("  ")
+        header.append(f"{arch.confidence} confidence", style=f"bold {conf_colour}")
+        parts.append(header)
+        if arch.rationale:
+            rationale = Text()
+            rationale.append("  ", style="dim")
+            rationale.append(arch.rationale, style="rgb(160,160,160)")
+            parts.append(rationale)
+        for opt in arch.options:
+            row = Text()
+            row.append("  ✓ " if opt.name == arch.chosen else "  – ", style="dim")
+            row.append(opt.name, style="bold rgb(160,160,160)" if opt.name == arch.chosen else "rgb(160,160,160)")
+            if opt.summary:
+                row.append(f" — {opt.summary}", style="rgb(140,140,140)")
+            parts.append(row)
+            for prefix, items in (("pros", opt.pros), ("cons", opt.cons)):
+                if items:
+                    detail = Text()
+                    detail.append(f"      {prefix}: ", style="dim")
+                    detail.append("; ".join(items), style="rgb(120,120,120)")
+                    parts.append(detail)
+        note = Text()
+        if arch.pinned_by_constraint:
+            note.append("  (decision pinned — no validation spike needed)", style="dim")
+        else:
+            note.append("  (choice is open — Edit to pick a different option)", style="dim")
+        parts.append(note)
+        parts.append(Text(""))
+
     parts.extend(_section("Integrations", analysis.integrations))
     parts.append(Text(""))
     parts.extend(_section("Constraints", analysis.constraints))
@@ -344,18 +385,25 @@ def _render_tui_stories(
                     _ac_num = Text()
                     _ac_num.append(f"  AC {_ac_idx}", style="bold rgb(100,130,100)")
                     body_parts.append(_ac_num)
-                ac_text = Text()
-                ac_text.append(f"  {'Given':<{_ac_w}}", style="bold rgb(100,130,100)")
-                ac_text.append(ac.given, style="rgb(140,140,140)")
-                body_parts.append(ac_text)
-                when_text = Text()
-                when_text.append(f"  {'When':<{_ac_w}}", style="bold rgb(100,130,100)")
-                when_text.append(ac.when, style="rgb(140,140,140)")
-                body_parts.append(when_text)
-                then_text = Text()
-                then_text.append(f"  {'Then':<{_ac_w}}", style="bold rgb(100,130,100)")
-                then_text.append(ac.then, style="rgb(140,140,140)")
-                body_parts.append(then_text)
+                if ac.text:
+                    # Free-text criterion (team style) — one dim line, no GWT labels.
+                    ac_text = Text()
+                    ac_text.append("  - ", style="bold rgb(100,130,100)")
+                    ac_text.append(ac.text, style="rgb(140,140,140)")
+                    body_parts.append(ac_text)
+                else:
+                    ac_text = Text()
+                    ac_text.append(f"  {'Given':<{_ac_w}}", style="bold rgb(100,130,100)")
+                    ac_text.append(ac.given, style="rgb(140,140,140)")
+                    body_parts.append(ac_text)
+                    when_text = Text()
+                    when_text.append(f"  {'When':<{_ac_w}}", style="bold rgb(100,130,100)")
+                    when_text.append(ac.when, style="rgb(140,140,140)")
+                    body_parts.append(when_text)
+                    then_text = Text()
+                    then_text.append(f"  {'Then':<{_ac_w}}", style="bold rgb(100,130,100)")
+                    then_text.append(ac.then, style="rgb(140,140,140)")
+                    body_parts.append(then_text)
                 if _ac_idx < _ac_count:
                     body_parts.append(Text(""))
 

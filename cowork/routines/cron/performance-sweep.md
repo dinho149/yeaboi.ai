@@ -6,6 +6,15 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = performance`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering`
+
 ## Focus
 
 - **Sample-size honesty** — enumerate every metric that feeds a 1:1 or a review, and confirm each has

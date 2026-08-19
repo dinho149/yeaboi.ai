@@ -17,10 +17,10 @@ import { useState } from 'react';
 
 import { Chip, Lozenge } from '../../design/primitives';
 import type { LozengeCategory } from '../../design/primitives';
-import type { Tone } from '../../design/tone';
 import { cx } from '../../runtime/cx';
 import { safeUrl } from '../../runtime/url';
 import type { EvidenceItem } from '../boot';
+import { kindMeta } from './KindIcon';
 import styles from './reports.module.css';
 
 /** How an evidence list dresses its rows. */
@@ -28,25 +28,6 @@ export type EvidenceVariant = 'default' | 'feed';
 
 /** Rows always visible; the rest fold behind the "+ N more" toggle. */
 export const VISIBLE_ROWS = 3;
-
-/** `kind` is engine-produced, not validated — an unknown one degrades to muted. */
-const KIND_META: Record<string, { label: string; tone: Tone }> = {
-  commit: { label: 'commit', tone: 'accent2' },
-  pr: { label: 'PR', tone: 'accent' },
-  review: { label: 'review', tone: 'info' },
-  comment: { label: 'comment', tone: 'low' },
-  issue: { label: 'ticket', tone: 'accent' },
-  update: { label: 'ticket', tone: 'accent' },
-  work_item: { label: 'ticket', tone: 'accent' },
-  ticket: { label: 'ticket', tone: 'accent' },
-  wip: { label: 'in progress', tone: 'warn' },
-  page: { label: 'doc', tone: 'info' },
-  'page-created': { label: 'doc', tone: 'info' },
-};
-
-function kindMeta(kind: string): { label: string; tone: Tone } {
-  return KIND_META[kind] ?? { label: kind || 'ref', tone: 'low' };
-}
 
 /**
  * Board statuses keyword-matched into Jira's status categories, because

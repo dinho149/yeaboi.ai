@@ -90,6 +90,8 @@ CAPABILITIES: dict[str, dict] = {
             "--export-only",
             "--mode",
             "--prior-art",
+            "--ac-format",
+            "--architecture-spike",
         },
         "skill": "plan-sprint",
     },
@@ -258,10 +260,28 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice"},
         "skill": Exempt("TUI utility page"),
     },
+    # Ceremonies are the clock other modes run on, not a mode of their own: the
+    # engine fires a catalogued mode and delivers its output.
+    "ceremonies": {
+        "engines": {("yeaboi.ceremonies.engine", "run_ceremony")},
+        # Read-only on this surface, for the same reason the standup's own
+        # schedule has never been settable here: declaring one installs a
+        # launchd/crontab job on the user's machine that outlives the session,
+        # survives reboots and spends money unattended.
+        "mcp_tools": {"ceremonies_list", "ceremonies_history"},
+        # Not a mode card: the menu draws every card with no scrolling, and an
+        # eleventh pushes the version/changelog/feedback row off screen at the
+        # enforced 84x40 minimum (measured) — trading three affordances every
+        # user has for one menu entry. Reached by `s` from the welcome screen,
+        # beside the changelog and feedback keycaps it belongs with.
+        "tui_mode": Exempt("a welcome-screen keycap (s), not a card — an 11th card breaks the 84x40 layout"),
+        "cli": {"ceremonies"},
+        "skill": "ceremonies",
+    },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
-    # All three modes ship at full parity: no Exempt entries, because each
-    # mode's engine/MCP/CLI/skill surfaces landed in the same phase commit that
+    # Every mode ships at full parity: no Exempt entries, because each mode's
+    # engine/MCP/CLI/skill surfaces landed in the same phase commit that
     # created its card.
     "agent-usage": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_usage")},
@@ -271,6 +291,17 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-usage",
         "cli": {"agents"},
         "skill": "agents-usage",
+    },
+    "agent-advisor": {
+        # advisor.py, not engine.py: the mirrored engine surface is served by
+        # the Go sidecar, and the advisor pipeline is deliberately Python-only
+        # (see advisor.py's module docstring) — a separate module keeps the
+        # dual-maintenance boundary visible.
+        "engines": {("yeaboi.agentwatch.advisor", "run_agent_advisor")},
+        "mcp_tools": {"agents_advisor_run", "agents_advisor_history"},
+        "tui_mode": "agent-advisor",
+        "cli": {"agents"},
+        "skill": "agents-advisor",
     },
     "agent-standup": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
@@ -286,11 +317,42 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"agents"},
         "skill": "agents-security",
     },
+    "provenance": {
+        "engines": {
+            ("yeaboi.provenance.engine", "run_provenance_audit"),
+            ("yeaboi.provenance.engine", "trace_entity"),
+        },
+        "mcp_tools": {"provenance_audit", "provenance_trace"},
+        "tui_mode": Exempt(
+            "the chain records itself during standup/performance runs and its cards render inside "
+            "those modes (the standup Conflicts card); the verify/trace surface is CLI/MCP-first — "
+            "a dedicated TUI card is a tracked gap"
+        ),
+        "cli": {"provenance"},
+        "skill": "provenance",
+    },
+    "ship": {
+        # The supervised story → PR pipeline. run_ship is the one entry point;
+        # the MCP surface is read-only by design — launching holds a live
+        # subprocess for many minutes behind the server's engine lock, and the
+        # approval gate is a human decision made at a terminal (the
+        # output-sharing precedent).
+        "engines": {("yeaboi.ship.engine", "run_ship")},
+        "mcp_tools": {"ship_history", "ship_status"},
+        "tui_mode": "ship",
+        "cli": {"ship"},
+        "skill": "ship",
+    },
 }
 
 # Engine modules discovered by convention: every src/yeaboi/*/engine.py, plus
-# the planning pipeline which (for LangGraph reasons) lives in agent/headless.py.
-EXTRA_ENGINE_MODULES = {"yeaboi.agent.headless": SRC / "agent" / "headless.py"}
+# the planning pipeline which (for LangGraph reasons) lives in agent/headless.py
+# and the advisor pipeline which lives outside agentwatch/engine.py to stay off
+# the Go-mirrored surface.
+EXTRA_ENGINE_MODULES = {
+    "yeaboi.agent.headless": SRC / "agent" / "headless.py",
+    "yeaboi.agentwatch.advisor": SRC / "agentwatch" / "advisor.py",
+}
 
 # ---------------------------------------------------------------------------
 # Param parity: MCP tool ↔ engine signature.
@@ -309,12 +371,20 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "team_analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
     "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents_advisor_run": ("yeaboi.agentwatch.advisor", "run_agent_advisor"),
     "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
+    "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
+    "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
-HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "dry_run"}
+# ``on_run_id`` joins them for the same reason as ``on_progress``: it hands a
+# caller-side callback the id of the run being started, which only a surface
+# that owns the process can use. ``on_agent_line`` is the same shape — it
+# streams the coding agent's live output to a caller that owns the process (the
+# ship board), and is meaningless on a CLI flag or an MCP wire.
+HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "on_run_id", "on_agent_line", "dry_run"}
 
 # Per-tool engine params deliberately not exposed on the MCP tool. Every entry
 # needs a reason; a stale entry (param gone from the engine) fails the tests.
@@ -365,6 +435,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
     "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
+    "ship run": ("yeaboi.ship.engine", "run_ship"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -377,6 +448,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "perf prep": {"session": "session_id"},
     "perf complete": {"session": "session_id"},
     "perf review": {"session": "session_id", "months": "period_months"},
+    "ship run": {"session": "session_id", "check": "check_command"},
     "analyze": {
         "project": "project_key",
         "sprints": "sprint_count",
@@ -411,6 +483,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
     "agents security": {"format", "strict"},
+    "ship run": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -438,6 +511,10 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "components": "assembled from per-component --delivery/--code/--docs sub-source flags",
         "analysis_scope": "assembled from the four provider-specific scope flags",
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+    },
+    "ship run": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+        "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
 }
 

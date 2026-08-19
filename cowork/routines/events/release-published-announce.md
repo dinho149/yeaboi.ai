@@ -9,9 +9,10 @@ about what mattered
 {"source": "github", "events": ["release"], "filter": {"actions": ["published"]}}
 ```
 
-`publish.yml` cuts the tag and the GitHub Release when a human **promotes** the accumulated
-pre-releases — a ✅ on `cron/release-promote-ask.md`'s weekly question, not a merge. This routine
-tells people about it. Everything runs through `cowork-scribe`.
+`publish.yml` cuts the tag and the GitHub Release when a human's merge lands on `main` — their
+own PR, or the release batch PR they assembled and hand-tested
+([release-signoff.md](../../release-signoff.md)). This routine tells people about it. Everything
+runs through `cowork-scribe`.
 
 Two consequences of that channel split, both of which change what this routine is looking at. The
 release body now *is* a batch manifest — `scripts/release_channel.py --manifest --release-notes`, one

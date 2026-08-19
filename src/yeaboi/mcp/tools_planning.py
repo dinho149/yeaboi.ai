@@ -126,13 +126,21 @@ def _plan_generate(
     sprint_length_weeks: int,
     project_context: str,
     prior_art: list[str] | None,
+    ac_format: str,
+    architecture_spike: str,
     on_progress,
 ) -> dict:
     from yeaboi.agent.headless import run_planning_pipeline
     from yeaboi.json_exporter import export_plan_json
 
     questionnaire = _build_questionnaire(description, answers, team_size, sprint_length_weeks, project_context)
-    state = run_planning_pipeline(questionnaire, on_progress=on_progress, prior_art=prior_art)
+    state = run_planning_pipeline(
+        questionnaire,
+        on_progress=on_progress,
+        prior_art=prior_art,
+        ac_format=ac_format,
+        architecture_spike=architecture_spike or "auto",
+    )
     plan = json.loads(export_plan_json(state))
     plan["session_id"] = state.get("_session_id", "")
     return plan
@@ -148,34 +156,88 @@ def _plan_export(session_id: str, format: str) -> dict:
         from yeaboi.repl._io import _export_plan_markdown
 
         path = _export_plan_markdown(state)
+    elif format == "prd":
+        from yeaboi.prd_exporter import build_prd_markdown, export_prd_markdown
+
+        result = build_prd_markdown(state)
+        path = export_prd_markdown(state, result=result)
+        logger.info("PRD exported via MCP: session=%s path=%s llm_mode=%s", resolved, path, result.llm_mode)
+        return {
+            "session_id": resolved,
+            "format": format,
+            "path": str(path),
+            "llm_mode": result.llm_mode,
+            "warnings": list(result.warnings),
+        }
     else:
-        raise ValueError(f"Unsupported format {format!r} — use 'markdown' or 'html'.")
+        raise ValueError(f"Unsupported format {format!r} — use 'markdown', 'html' or 'prd'.")
     logger.info("Plan exported via MCP: session=%s format=%s path=%s", resolved, format, path)
     return {"session_id": resolved, "format": format, "path": str(path)}
 
 
-def _plan_publish(session_id: str, destination: str) -> dict:
+def _plan_publish(session_id: str, destination: str, content: str = "plan") -> dict:
     if destination not in ("notion", "confluence"):
         raise ValueError(f"Unsupported destination {destination!r} — use 'notion' or 'confluence'.")
+    if content not in ("plan", "prd"):
+        raise ValueError(f"Unsupported content {content!r} — use 'plan' or 'prd'.")
     resolved, state = _load_state(session_id)
     from yeaboi.export_targets import publish_markdown
-    from yeaboi.repl._io import build_plan_markdown
 
     name = getattr(state.get("project_analysis"), "project_name", "")
-    title = f"Sprint Plan — {name}" if name else "Sprint Plan"
-    result = publish_markdown(destination, title=title, markdown=build_plan_markdown(state))
+    warnings: list[str] = []
+    if content == "prd":
+        from yeaboi.prd_exporter import build_prd_markdown
+
+        built = build_prd_markdown(state)
+        title = f"PRD — {name}" if name else "PRD"
+        markdown = built.markdown
+        warnings = list(built.warnings)
+    else:
+        from yeaboi.repl._io import build_plan_markdown
+
+        title = f"Sprint Plan — {name}" if name else "Sprint Plan"
+        markdown = build_plan_markdown(state)
+    result = publish_markdown(destination, title=title, markdown=markdown)
     if not result.ok:
         # publish_markdown never raises — surface its failure message as the
         # tool error so the agent gets the setup hint instead of a silent no-op.
         raise ValueError(result.message)
-    logger.info("Plan published via MCP: session=%s dest=%s url=%s", resolved, destination, result.url)
-    return {"session_id": resolved, "destination": destination, "url": result.url, "message": result.message}
+    logger.info(
+        "Plan published via MCP: session=%s dest=%s content=%s url=%s", resolved, destination, content, result.url
+    )
+    return {
+        "session_id": resolved,
+        "destination": destination,
+        "content": content,
+        "url": result.url,
+        "message": result.message,
+        "warnings": warnings,
+    }
 
 
-def _plan_sync(session_id: str, destination: str, on_progress=None) -> dict:
+def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_progress=None) -> dict:
     if destination not in ("jira", "azdevops"):
         raise ValueError(f"Unsupported destination {destination!r} — use 'jira' or 'azdevops'.")
     resolved, state = _load_state(session_id)
+    if target_sprint.strip():
+        # Route the whole plan into an existing sprint/iteration instead of
+        # creating any: digits = a Jira sprint id, anything else = the sprint /
+        # iteration name (resolved among active/future targets at sync time).
+        # The keyword "backlog" creates the stories and assigns them nowhere.
+        value = target_sprint.strip()
+        state = dict(state)
+        if value.lower() == "backlog":
+            state["sprint_target_mode"] = "backlog"
+            state["target_sprint_name"] = ""
+            state["target_sprint_external_id"] = ""
+        elif value.isdigit():
+            state["sprint_target_mode"] = "existing"
+            state["target_sprint_external_id"] = value
+            state["target_sprint_name"] = ""
+        else:
+            state["sprint_target_mode"] = "existing"
+            state["target_sprint_name"] = value
+            state["target_sprint_external_id"] = ""
     if destination == "jira":
         from yeaboi.jira_sync import sync_all_to_jira as sync_all
     else:
@@ -197,6 +259,7 @@ def _plan_sync(session_id: str, destination: str, on_progress=None) -> dict:
         "stories_created": dict(result.stories_created),
         "tasks_created": dict(result.tasks_created),
         "sprints_created": dict(result.sprints_created if destination == "jira" else result.iterations_created),
+        "sprints_updated": dict(result.sprints_updated if destination == "jira" else result.iterations_updated),
         "skipped_existing": result.skipped,
         "warnings": list(result.errors),
     }
@@ -264,6 +327,8 @@ def register(app) -> None:
         sprint_length_weeks: int = 0,
         project_context: str = "",
         prior_art: list[str] | None = None,
+        ac_format: str = "",
+        architecture_spike: str = "auto",
     ) -> dict:
         """Generate a full sprint plan (analysis, epics, stories, tasks, sprints) from a project
         description. Gather the intake_questions smart_essentials from the user first and pass
@@ -271,7 +336,12 @@ def register(app) -> None:
         (tech stack, constraints, goals). Takes a few minutes — several LLM calls. The plan is
         saved as a session (see data.session_id) for plan_get/plan_export and the other modes.
         `prior_art` takes repository keys from plan_prior_art that the user confirmed are
-        relevant — pass only what they approved; the plan builds on them."""
+        relevant — pass only what they approved; the plan builds on them.
+        `ac_format`: acceptance-criteria style — 'gwt' (Given/When/Then) or 'bullets'
+        (clear testable statements); empty follows the learned team profile.
+        `architecture_spike`: when the analyzer's architecture decision is open (2+ options),
+        whether to add a validation spike — 'include' / 'skip', or 'auto' (default: add it
+        unless the analyzer's confidence is high)."""
 
         def report(node_name: str, step: int) -> None:
             # Called from the engine's worker thread — bridge the async
@@ -290,6 +360,8 @@ def register(app) -> None:
             sprint_length_weeks,
             project_context,
             prior_art,
+            ac_format,
+            architecture_spike,
             report,
         )
 
@@ -328,25 +400,39 @@ def register(app) -> None:
         return await run_readonly(_plan_get, session_id)
 
     @app.tool()
-    async def plan_export(session_id: str = "", format: str = "markdown") -> dict:
-        """Export a saved plan to a file (format: 'markdown' or 'html') and return its path.
+    async def plan_export(ctx: Context, session_id: str = "", format: str = "markdown") -> dict:
+        """Export a saved plan to a file and return its path. format: 'markdown', 'html' or
+        'prd' — 'prd' generates a full Product Requirements Document (one LLM call for the
+        prose sections; deterministic skeleton when no LLM is available, see llm_mode).
         Blank session_id = most recent session."""
+        if format == "prd":
+            # run_readonly reports llm_mode "n/a" and never injects the sampling
+            # model — the PRD's prose call must go through run_engine.
+            return await run_engine(ctx, _plan_export, session_id, format)
         return await run_readonly(_plan_export, session_id, format)
 
     @app.tool()
-    async def plan_publish(session_id: str = "", destination: str = "notion") -> dict:
+    async def plan_publish(
+        ctx: Context, session_id: str = "", destination: str = "notion", content: str = "plan"
+    ) -> dict:
         """Publish a saved plan as a page in the user's configured Notion or Confluence
-        (destination: 'notion' or 'confluence') and return the page URL. This creates a page
-        in an external workspace — confirm with the user before calling. Blank session_id =
-        most recent session."""
-        return await run_readonly(_plan_publish, session_id, destination)
+        (destination: 'notion' or 'confluence') and return the page URL. content: 'plan'
+        (the sprint plan) or 'prd' (a full Product Requirements Document — one LLM call).
+        This creates a page in an external workspace — confirm with the user before calling.
+        Blank session_id = most recent session."""
+        if content == "prd":
+            return await run_engine(ctx, _plan_publish, session_id, destination, content)
+        return await run_readonly(_plan_publish, session_id, destination, content)
 
     @app.tool()
-    async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira") -> dict:
+    async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira", target_sprint: str = "") -> dict:
         """Push a saved plan into the user's issue tracker (destination: 'jira' or 'azdevops'):
         creates the epic, stories, tasks and sprints/iterations as REAL tickets on the
         configured board — always confirm with the user before calling. Idempotent: items
         created by an earlier sync are skipped, so a partial run can be safely retried.
+        target_sprint: "backlog" creates the stories without assigning them to any
+            sprint; otherwise add the plan's stories to this EXISTING active/future sprint instead
+        of creating sprints — a Jira sprint id (digits) or the sprint/iteration name.
         Blank session_id = most recent session."""
 
         def report(current: int, total: int, label: str) -> None:
@@ -357,4 +443,4 @@ def register(app) -> None:
             except Exception:
                 logger.debug("sync progress report failed (continuing)", exc_info=True)
 
-        return await run_engine(ctx, _plan_sync, session_id, destination, report, needs_llm=False)
+        return await run_engine(ctx, _plan_sync, session_id, destination, target_sprint, report, needs_llm=False)

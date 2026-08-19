@@ -1,8 +1,9 @@
-// Port of src/yeaboi/analysis/aggregate.py (classify_markers + score_code) —
-// keep in lockstep. The RPC entrypoints behind analysis.classify_markers and
-// analysis.score_code (contracts/v1): params arrive as ordered JSON, results
-// go back as *pysem.Obj in the reference implementation's dict-literal key
-// order (contractual — they feed json.dumps downstream). Pure compute: no DB,
+// Port of src/yeaboi/analysis/aggregate.py (classify_markers + score_code +
+// score_docs) — keep in lockstep. The RPC entrypoints behind
+// analysis.classify_markers, analysis.score_code and analysis.score_docs
+// (contracts/v1): params arrive as ordered JSON, results go back as
+// *pysem.Obj in the reference implementation's dict-literal key order
+// (contractual — they feed json.dumps downstream). Pure compute: no DB,
 // no clock, no logging, and never any input content in an error.
 
 package analysis
@@ -162,6 +163,24 @@ func RunScoreCode(params *pysem.Obj) (*pysem.Obj, error) {
 	result.Set("practices", MemberPractices(items, selectedUsers))
 	result.Set("health", health)
 	result.Set("activity_counts", counts)
+	return result, nil
+}
+
+// RunScoreDocs mirrors aggregate.py::score_docs: page assets (cached ones pass
+// through, fresh bodies are scored), the aggregated signal, the summary blob,
+// findings, the action plan, and the deterministic coaching insights.
+func RunScoreDocs(params *pysem.Obj) (*pysem.Obj, error) {
+	pages, err := itemList(params, "pages")
+	if err != nil {
+		return nil, err
+	}
+	scored := ScoreDocs(pages)
+	result := pysem.EmptyObj()
+	// The protocol envelope, not part of the pure function (see above).
+	result.Set("contract_version", int64(1))
+	for _, key := range scored.Keys() {
+		result.Set(key, scored.Get(key))
+	}
 	return result, nil
 }
 

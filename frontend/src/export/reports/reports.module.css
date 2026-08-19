@@ -265,37 +265,6 @@
   font-size: var(--fs-s);
 }
 
-/* Per-member bars, scaled against the busiest member. The name column is a
-   fixed share so the bars all start at the same x and can be compared. */
-.activity {
-  margin: var(--s4) 0;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel);
-}
-.activity > * + * {
-  margin-top: var(--s2);
-}
-.activityRow {
-  display: grid;
-  grid-template-columns: minmax(0, 8rem) 1fr auto;
-  align-items: center;
-  gap: var(--s3);
-}
-.activityName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-}
-.activityTotal {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-xs);
-  color: var(--dim);
-}
-
 .member {
   margin-bottom: var(--s3);
   padding: var(--s4);
@@ -631,6 +600,51 @@ a.issueKey:hover {
   align-items: center;
   gap: var(--s2);
   margin: var(--s3) 0 0;
+}
+
+/* Cross-source conflict cards. Louder than a practice nudge — two systems
+   disagree about a fact — but the severity word always rides beside the chip
+   colour, so the card survives greyscale. */
+.conflictList {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.conflict {
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.conflictTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+}
+.conflictDetail {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.conflictClaims {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+}
+.conflictClaim {
+  color: var(--muted);
+}
+.conflictAction {
+  margin: var(--s2) 0 0;
+  color: var(--dim);
+  font-size: var(--fs-xs);
+  font-style: italic;
 }
 
 /* The two answers, on a correctable share only. Quieter than the signal they

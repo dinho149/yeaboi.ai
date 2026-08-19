@@ -35,7 +35,8 @@ _INSTRUCTIONS = (
     "(intake_questions → plan_generate → plan_export), run daily standups, "
     "produce stakeholder delivery reports, and prep engineer 1:1s and reviews. "
     "For the agents working alongside them: agents_usage costs a window of agent "
-    "work, agents_standup_run digests what they did, and agents_security_scan "
+    "work, agents_advisor_run finds the recoverable share of it, "
+    "agents_standup_run digests what they did, and agents_security_scan "
     "audits the setup — all computed locally from this machine's agent session "
     "logs. "
     "Results come in an envelope {ok, llm_mode, warnings, data}; llm_mode "
@@ -59,12 +60,15 @@ def create_app():
         tools_agentwatch,
         tools_anonymize,
         tools_artifacts,
+        tools_ceremonies,
         tools_performance,
         tools_planning,
         tools_poker,
+        tools_provenance,
         tools_reporting,
         tools_retro,
         tools_sessions,
+        tools_ship,
         tools_standup,
         tools_team,
     )
@@ -82,6 +86,9 @@ def create_app():
         tools_team,
         tools_anonymize,
         tools_agentwatch,
+        tools_provenance,
+        tools_ship,
+        tools_ceremonies,
     )
     for module in modules:
         module.register(app)

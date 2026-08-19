@@ -87,6 +87,25 @@ class TestCaching:
         assert user_msg._cache is not None
         assert artifact_msg._cache is None
 
+    def test_invalidate_one_artifact_leaves_the_others_cached(self):
+        # The carousel invalidates only the prior-art card per keypress —
+        # dropping every card's cache would re-render five panels per arrow.
+        t = ChatTranscript()
+        t.add_artifact("analysis")
+        t.add_artifact("prior_art")
+        t.lines(80, {}, _console(), theme=PLANNING_THEME)
+        t.invalidate_artifact("prior_art")
+        analysis_msg, prior_art_msg = t.messages
+        assert analysis_msg._cache is not None
+        assert prior_art_msg._cache is None
+
+    def test_invalidate_a_kind_that_matches_nothing_is_a_no_op(self):
+        t = ChatTranscript()
+        t.add_artifact("analysis")
+        t.lines(80, {}, _console(), theme=PLANNING_THEME)
+        t.invalidate_artifact("prior_art")
+        assert t.messages[0]._cache is not None
+
 
 class TestArtifacts:
     def test_unavailable_artifact_shows_placeholder(self):

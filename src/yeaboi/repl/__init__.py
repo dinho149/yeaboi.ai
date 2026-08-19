@@ -1323,6 +1323,17 @@ def run_repl(
 
             export_path = export_plan_html(graph_state)
             console.print(f"[success]Plan exported to {export_path}[/success]")
+        elif output_format == "prd":
+            from yeaboi.prd_exporter import build_prd_markdown, export_prd_markdown
+
+            prd_result = build_prd_markdown(graph_state)
+            export_path = export_prd_markdown(graph_state, result=prd_result)
+            # Fallback runs must be honest on the terminal — a placeholder
+            # Executive Summary silently shipped to stakeholders is worse
+            # than a visible warning.
+            for prd_warning in prd_result.warnings:
+                console.print(f"[warning]{prd_warning}[/warning]")
+            console.print(f"[success]PRD exported to {export_path}[/success]")
         else:
             export_path = _export_plan_markdown(graph_state)
             console.print(f"[success]Plan exported to {export_path}[/success]")

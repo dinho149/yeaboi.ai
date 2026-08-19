@@ -473,6 +473,27 @@ def build_plan_markdown(graph_state: dict) -> str:
         lines.append(f"\n**Target state:** {analysis.target_state}")
         lines.append("")
 
+        # Architecture options + recommendation (feeds file export AND the
+        # Notion/Confluence publish through publish_markdown).
+        arch = getattr(analysis, "architecture", None)
+        if arch is not None and arch.options:
+            lines.append("# Architecture")
+            lines.append("")
+            lines.append(f"**Recommended:** {arch.chosen} (confidence: {arch.confidence})")
+            if arch.rationale:
+                lines.append(f"\n{arch.rationale}")
+            lines.append("")
+            for opt in arch.options:
+                marker = "✓ " if opt.name == arch.chosen else ""
+                lines.append(f"- **{marker}{opt.name}** — {opt.summary}")
+                if opt.pros:
+                    lines.append(f"  - Pros: {'; '.join(opt.pros)}")
+                if opt.cons:
+                    lines.append(f"  - Cons: {'; '.join(opt.cons)}")
+            if arch.pinned_by_constraint:
+                lines.append("\n*(decision pinned by an existing constraint)*")
+            lines.append("")
+
     # Features
     features = graph_state.get("features", [])
     if features:
@@ -491,9 +512,12 @@ def build_plan_markdown(graph_state: dict) -> str:
     if stories:
         lines.append("# User Stories")
         lines.append("")
-        from yeaboi.agent.state import resolve_dod_items
+        from yeaboi.agent.state import map_template_headings, resolve_dod_items
 
         dod_items = resolve_dod_items(graph_state)
+        headings = map_template_headings(tuple(graph_state.get("ticket_template_sections") or ()))
+        ac_heading = headings.get("acceptance_criteria", "Acceptance Criteria")
+        dod_heading = headings.get("dod", "Definition of Done")
         for story in stories:
             lines.append(f"## {story.id}: {story.title or story.text}")
             lines.append(f"\n*{story.text}*\n")
@@ -508,17 +532,20 @@ def build_plan_markdown(graph_state: dict) -> str:
                 lines.append(f"\n> **Points rationale:** {story.points_rationale}{conf_tag}")
             if story.acceptance_criteria:
                 lines.append("")
-                lines.append("**Acceptance Criteria:**")
+                lines.append(f"**{ac_heading}:**")
                 for i, ac in enumerate(story.acceptance_criteria):
                     lines.append(f"\n**AC {i + 1}:**")
-                    lines.append(f"- **Given** {ac.given}")
-                    lines.append(f"  **When** {ac.when}")
-                    lines.append(f"  **Then** {ac.then}")
+                    if ac.text:
+                        lines.append(f"- {ac.text}")
+                    else:
+                        lines.append(f"- **Given** {ac.given}")
+                        lines.append(f"  **When** {ac.when}")
+                        lines.append(f"  **Then** {ac.then}")
 
             dod_flags = story.dod_applicable
             if len(dod_flags) == len(dod_items):
                 lines.append("")
-                lines.append("**Definition of Done:**")
+                lines.append(f"**{dod_heading}:**")
                 for item, applicable in zip(dod_items, dod_flags):
                     mark = "x" if applicable else " "
                     lines.append(f"- [{mark}] {item}")

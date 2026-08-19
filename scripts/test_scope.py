@@ -129,6 +129,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_analysis_*.py",
             "tests/unit/test_team_*.py",
             "tests/unit/test_doc_quality.py",
+            "tests/unit/test_doc_scoring.py",
             "tests/unit/test_code_health.py",
             "tests/unit/test_coverage.py",
             "tests/unit/test_practices.py",
@@ -161,9 +162,13 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/agent/",
             "src/yeaboi/prompts/",
             "src/yeaboi/ui/session/",
+            # The plan's back half: a story from the sprint plan driven through
+            # a supervised coding agent to a PR.
+            "src/yeaboi/ship/",
             "src/yeaboi/questionnaire_io.py",
             "src/yeaboi/transcript.py",
             "src/yeaboi/json_exporter.py",
+            "src/yeaboi/prd_exporter.py",
             "src/yeaboi/ollama_control.py",
             "src/yeaboi/mcp/tools_planning.py",
             "src/yeaboi/mcp/tools_sessions.py",
@@ -186,9 +191,13 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_questionnaire_io.py",
             "tests/unit/test_transcript*.py",
             "tests/unit/test_json_exporter.py",
+            "tests/unit/test_prd_exporter.py",
             "tests/unit/test_ollama_control.py",
             "tests/unit/test_duck_*.py",
             "tests/unit/test_session_handoff.py",
+            # test_ship_gate.py (the /ship command guard) also matches this
+            # glob; it lives in ALWAYS, and a double claim is harmless.
+            "tests/unit/test_ship_*.py",
         ),
     ),
     Area(
@@ -197,6 +206,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/tools/",
             "src/yeaboi/jira_sync.py",
             "src/yeaboi/azdevops_sync.py",
+            "src/yeaboi/sync_naming.py",
             "src/yeaboi/export_targets.py",
             "src/yeaboi/ticket_text.py",
             "src/yeaboi/markdown_convert.py",
@@ -205,6 +215,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/tools/*.py",
             "tests/unit/test_jira_*.py",
             "tests/unit/test_azdevops_*.py",
+            "tests/unit/test_sync_naming.py",
             "tests/unit/test_azure_devops.py",
             "tests/unit/test_export_targets.py",
             "tests/unit/test_ticket_text.py",
@@ -230,6 +241,8 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/output_guardrails.py",
             "src/yeaboi/fs_policy.py",
             "src/yeaboi/redaction.py",
+            "src/yeaboi/claude_auth.py",
+            "src/yeaboi/auth_state.py",
             "src/yeaboi/web/security.py",
             "src/yeaboi/sharing/access.py",
             "src/yeaboi/sharing/gate.py",
@@ -238,6 +251,8 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/guardrails/*.py",
             "tests/unit/test_fs_policy.py",
             "tests/unit/test_redaction.py",
+            "tests/unit/test_claude_auth.py",
+            "tests/unit/test_auth_state.py",
             "tests/unit/test_web_security.py",
             "tests/unit/test_export_xss.py",
             "tests/unit/test_consent.py",
@@ -271,6 +286,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_music*.py",
             "tests/unit/test_tips*.py",
             "tests/unit/test_mode_cards.py",
+            "tests/unit/test_mode_select_callsites.py",
             "tests/unit/test_version_row.py",
             "tests/unit/test_formatters.py",
             "tests/unit/test_usage_*.py",
@@ -318,11 +334,16 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/changelog.py",
             "src/yeaboi/changelog_data.json",
             "src/yeaboi/mcp/",
-            "src/yeaboi/gocore/",
+            # Cross-mode shared infrastructure, like config/paths above: the
+            # tamper-evident decision chain every mode records into.
+            "src/yeaboi/provenance/",
+            # And the clock any mode can run on. It owns the OS-job installer the
+            # standup schedule was promoted out of, so a change here reaches a
+            # mode it does not otherwise touch.
+            "src/yeaboi/ceremonies/",
+            "src/yeaboi/standup/scheduler.py",
             "claude-plugin/",
             "packaging/",
-            "go/",
-            "contracts/",
         ),
         tests=(
             "tests/unit/test_cli_*.py",
@@ -331,7 +352,48 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_update_*.py",
             "tests/unit/test_changelog*.py",
             "tests/unit/test_mcp_*.py",
+            "tests/unit/test_provenance_*.py",
+            "tests/unit/test_ceremonies_*.py",
+            # The schedule wizard drives the promoted installer through the shim,
+            # so it is the test that catches a broken promotion.
+            "tests/unit/test_standup_schedule_wizard.py",
+            # The standup wiring consumes the chain; a provenance change must
+            # prove it did not break its first consumer.
+            "tests/unit/test_standup_provenance_log.py",
+        ),
+    ),
+    # The seventeenth workstream: the Go rewrite program. The seam moved here
+    # from platform (cowork/workstreams/go-migration.md). `cowork/migration/`
+    # itself is INERT prose — a checkbox flip rides its wave PR's `go/` change,
+    # and the parity job's own triggers (JOBS below) already fire on `go/`.
+    Area(
+        "go-migration",
+        src=(
+            "src/yeaboi/gocore/",
+            "go/",
+            "contracts/",
+            "scripts/migration_progress.py",
+        ),
+        tests=(
             "tests/unit/test_gocore_*.py",
+            "tests/unit/test_migration_*.py",
+        ),
+    ),
+    # The fleet workstream, the only one whose subject is the fleet
+    # rather than the product. `cowork/` itself is deliberately absent: it is
+    # `INERT` below, and safe to be so precisely because these tests are in
+    # `ALWAYS` and run whatever changed.
+    Area(
+        "fleet",
+        src=(
+            "scripts/cowork_*.py",
+            "scripts/hygiene_lens.py",
+            "scripts/tui_fuzz.py",
+            ".github/hygiene/",
+        ),
+        tests=(
+            "tests/unit/test_cowork_*.py",
+            "tests/unit/test_hygiene_lens.py",
         ),
     ),
 )
@@ -348,6 +410,12 @@ AREAS: tuple[Area, ...] = (
 ALWAYS: tuple[str, ...] = (
     "tests/unit/test_surface_parity.py",
     "tests/unit/test_tips.py",
+    # Guards the migration bar against the file it renders from:
+    # `cowork/migration/program.md` is INERT (prose), so a checkbox flip or a
+    # table reword is exactly the change that would otherwise run no test at
+    # all — and a §3 table that stops parsing renders a bar stuck at the pilot
+    # baseline with nothing failing anywhere.
+    "tests/unit/test_migration_progress.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
     # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and
@@ -382,8 +450,16 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
     "tests/unit/test_cowork_*.py",
+    # The hygiene lenses read the charters, the policy file and the whole tree;
+    # nothing about a changed module implies them, and a lens that has quietly
+    # stopped finding anything looks exactly like a clean repo.
+    "tests/unit/test_hygiene_lens.py",
     "tests/unit/test_wt_script.py",
     "tests/unit/test_wt_issue_script.py",
+    # The ship gate reads the Makefile, the slash commands and this file. Nothing
+    # about a changed module implies it, and its whole subject is the machinery
+    # that decides what a scoped run covers — so it has to run on every one.
+    "tests/unit/test_ship_gate.py",
     "tests/unit/test_record_demo.py",
     # version / release lockstep
     "tests/unit/test_gocore_packaging.py",

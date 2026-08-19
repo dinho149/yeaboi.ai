@@ -671,6 +671,59 @@ def azdevops_fetch_active_iteration(project: str = "") -> str:
         return f"Error: {e}"
 
 
+def fetch_team_iterations_meta(
+    org_url: str | None = None,
+    token: str | None = None,
+    project: str = "",
+) -> list[dict]:
+    """Return the team's iterations with time frames, as plain dicts.
+
+    Each item: {name, path, time_frame ("past"|"current"|"future"), start_date,
+    finish_date} (dates "YYYY-MM-DD" or ""). The time frame is derived from the
+    iteration's dates against now (attributes.time_frame is unreliable across
+    API versions); undated iterations count as "future" so they are never
+    treated as closed. Plain helper (not a @tool) shared by the batch sync and
+    the planning intake. Raises on connection/config errors — callers degrade.
+    """
+    from datetime import datetime as _dt
+
+    from azure.devops.v7_1.work.models import TeamContext
+
+    project = project or get_azure_devops_project() or ""
+    _, work_client = _make_azdo_clients(org_url, token)
+    team = get_azure_devops_team() or f"{project} Team"
+    team_context = TeamContext(project=project, team=team)
+    now = _dt.now(UTC)
+
+    items: list[dict] = []
+    for it in work_client.get_team_iterations(team_context) or []:
+        attrs = getattr(it, "attributes", None)
+        # SDK datetimes may come back naive; comparing one against the aware
+        # `now` raises TypeError, which callers degrade on — coerce first.
+        start = _aware(getattr(attrs, "start_date", None))
+        finish = _aware(getattr(attrs, "finish_date", None))
+        if start and finish:
+            if finish < now:
+                time_frame = "past"
+            elif start <= now <= finish:
+                time_frame = "current"
+            else:
+                time_frame = "future"
+        else:
+            time_frame = "future"
+        items.append(
+            {
+                "name": it.name or "",
+                "path": getattr(it, "path", "") or "",
+                "time_frame": time_frame,
+                "start_date": start.strftime("%Y-%m-%d") if start else "",
+                "finish_date": finish.strftime("%Y-%m-%d") if finish else "",
+            }
+        )
+    logger.debug("fetch_team_iterations_meta: project=%s → %d iteration(s)", project, len(items))
+    return items
+
+
 # ---------------------------------------------------------------------------
 # Write tools — create work items (require user confirmation)
 # ---------------------------------------------------------------------------
@@ -1254,9 +1307,12 @@ def _azdo_wip_items(
 # a large org can't stall the standup (2 calls per repo).
 _MAX_ACTIVITY_REPOS = 10
 _MAX_REPO_COMMITS = 100
-_MAX_REPO_PRS = 100
+# Project-wide PR listing bound. Eligibility keeps *all* active PRs regardless
+# of age, so a listing capped below the org's open-PR count silently hides
+# review activity on the older ones before any other cap applies.
+_MAX_REPO_PRS = 200
 _MAX_CHANGED_FILE_LOOKUPS = 25
-_MAX_REVIEW_THREAD_LOOKUPS = 25
+_MAX_REVIEW_THREAD_LOOKUPS = 100
 _AZDO_REQUEST_TIMEOUT_SECONDS = 5
 
 
@@ -1485,7 +1541,13 @@ def _activity_pull_requests(git_client, project: str, repositories: list[str] | 
         try:
 
             def _list_repo_prs():
-                return list(git_client.get_pull_requests(repo.id, criteria, project=selected_project, top=25) or [])
+                # Same reasoning as _MAX_REPO_PRS on the project-wide path: a
+                # listing capped below the repo's open-PR count silently hides
+                # review activity on the older ones, and this is the branch a
+                # standup takes whenever the user picked specific repositories.
+                return list(
+                    git_client.get_pull_requests(repo.id, criteria, project=selected_project, top=_MAX_REPO_PRS) or []
+                )
 
             prs = (
                 metadata_cache.memoize(
@@ -2112,14 +2174,110 @@ def azdevops_recent_prs(
         return []
 
 
+# AzDO's own vote vocabulary — reviewer votes arrive as signed ints. Standup
+# evidence status is user-facing, so these render as words (the analysis path
+# keeps raw str(vote) for its classifier tables).
+_AZDO_VOTE_LABELS = {
+    10: "approved",
+    5: "approved with suggestions",
+    -5: "waiting for author",
+    -10: "rejected",
+}
+
+
+def _azdo_prop_value(prop):
+    """Unwrap one AzDO thread-property value.
+
+    The wire shape varies by SDK/serialization: {"$type", "$value"} dicts,
+    objects carrying .value, or plain scalars. Unparseable input degrades to
+    None — a vote we cannot read is a vote we do not report, never a crash.
+    """
+    if isinstance(prop, dict):
+        return prop.get("$value", prop.get("value"))
+    return getattr(prop, "value", prop)
+
+
+def _azdo_identity_fields(identity) -> tuple[str, str, str]:
+    """(display_name, unique_name, id) from an IdentityRef object or raw dict."""
+    if isinstance(identity, dict):
+        return (
+            str(identity.get("displayName") or identity.get("display_name") or ""),
+            str(identity.get("uniqueName") or identity.get("unique_name") or ""),
+            str(identity.get("id") or ""),
+        )
+    return (
+        str(getattr(identity, "display_name", "") or ""),
+        str(getattr(identity, "unique_name", "") or ""),
+        str(getattr(identity, "id", "") or ""),
+    )
+
+
+def _azdo_is_vote_thread(thread) -> bool:
+    """True for a VoteUpdate system thread, whatever its vote turned out to be.
+
+    Deliberately separate from :func:`_azdo_thread_vote`, which returns None for
+    several *different* reasons — not a vote thread, an unreadable vote, or a
+    vote of 0 (how AzDO records a vote being reset). Only the first means the
+    thread's comments are a member's own words; the rest are AzDO's "Vic voted
+    10" bookkeeping, which the comment filter would otherwise let through on any
+    serialisation that omits ``comment_type``.
+    """
+    props = getattr(thread, "properties", None)
+    if not isinstance(props, dict):
+        return False
+    by_key = {str(key).lower(): value for key, value in props.items()}
+    return str(_azdo_prop_value(by_key.get("codereviewthreadtype")) or "").lower() == "voteupdate"
+
+
+def _azdo_thread_vote(thread):
+    """Vote event carried by a VoteUpdate system thread, or None.
+
+    AzDO records every vote change as a system thread whose properties carry
+    CodeReviewThreadType == "VoteUpdate" and the vote int, and whose system
+    comment has a real published_date — the event timestamp that plain
+    ``pr.reviewers[].vote`` snapshots lack. Returns
+    ``(display, email, voter_id, vote, published)``.
+    """
+    props = getattr(thread, "properties", None)
+    if not isinstance(props, dict):
+        return None
+    by_key = {str(key).lower(): value for key, value in props.items()}
+    thread_type = str(_azdo_prop_value(by_key.get("codereviewthreadtype")) or "")
+    if thread_type.lower() != "voteupdate":
+        return None
+    try:
+        vote = int(str(_azdo_prop_value(by_key.get("codereviewvoteresult")) or "").strip() or 0)
+    except (TypeError, ValueError):
+        return None
+    if vote == 0:
+        return None
+    comments = list(getattr(thread, "comments", ()) or ())
+    published = _aware(getattr(comments[0], "published_date", None)) if comments else None
+    if published is None:
+        return None
+    # The voter: CodeReviewVotedByIdentity indexes thread.identities; the
+    # system comment's author is the fallback (it is the voter's identity too).
+    voter = None
+    identities = getattr(thread, "identities", None)
+    ident_key = _azdo_prop_value(by_key.get("codereviewvotedbyidentity"))
+    if ident_key is not None and isinstance(identities, dict):
+        voter = identities.get(str(ident_key))
+    if voter is None and comments:
+        voter = getattr(comments[0], "author", None)
+    display, email, voter_id = _azdo_identity_fields(voter)
+    return display, email, voter_id, vote, published
+
+
 def azdevops_recent_reviews(
     project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
 ) -> list[dict]:
-    """Return timestamped Azure Repos PR review comments for selected repositories.
+    """Return timestamped Azure Repos PR review comments and votes for selected repositories.
 
-    Azure reviewer votes do not expose a reliable event timestamp through this
-    API, so approvals are reported only when represented by a timestamped
-    thread/comment. This avoids assigning old approvals to today's standup.
+    Votes are reported only when they can be dated: from a VoteUpdate system
+    thread (a real event timestamp) or from the PR completing inside the
+    window (votes are frozen at completion, and a closed date passes through
+    the window exactly once). A stale vote on an old active PR with no dated
+    event is deliberately never emitted — it would repeat in every standup.
     """
     project = project or get_azure_devops_project() or ""
     if not project and not repositories:
@@ -2134,15 +2292,35 @@ def azdevops_recent_reviews(
         rows = _activity_pull_requests(git_client, project, repositories, criteria, metadata_cache)
         # Old completed PRs cannot acquire new review comments. Keep recently
         # created/closed PRs plus active PRs, then bound the expensive thread
-        # lookups across the whole project rather than 25 per repository.
-        eligible_rows = []
+        # lookups across the whole project rather than per repository.
+        #
+        # Ordering when the cap bites: **active before completed**, then newest
+        # first within each. Only an active PR can gain a *new* thread, so a
+        # three-week-old PR still under review is worth more than a PR created
+        # this morning that nobody has touched — and AzDO's GitPullRequest
+        # carries no updated-date, so creation is the only date signal there is.
+        # Sorting on date alone put the population this fetcher exists to
+        # capture at the bottom of the list.
+        eligible = []
         for selected_project, repo, pr in rows:
             created = _aware(getattr(pr, "creation_date", None))
             closed = _aware(getattr(pr, "closed_date", None))
             status = str(getattr(pr, "status", "") or "").lower()
             if status == "active" or (created and created >= cutoff) or (closed and closed >= cutoff):
-                eligible_rows.append((selected_project, repo, pr))
-        eligible_rows = eligible_rows[:_MAX_REVIEW_THREAD_LOOKUPS]
+                freshness = max((stamp for stamp in (created, closed) if stamp), default=cutoff)
+                eligible.append((status == "active", freshness, selected_project, repo, pr, closed))
+        eligible.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        eligible_rows = [(sp, repo, pr) for _, _, sp, repo, pr, _ in eligible[:_MAX_REVIEW_THREAD_LOOKUPS]]
+        if len(eligible) > _MAX_REVIEW_THREAD_LOOKUPS:
+            # Say it out loud: the next report of "my reviews are missing" is
+            # diagnosed from this line or not at all.
+            logger.warning(
+                "azdevops_recent_reviews: %d eligible PR(s) exceed the %d thread-lookup cap — "
+                "review activity on the %d oldest completed PR(s) is not fetched",
+                len(eligible),
+                _MAX_REVIEW_THREAD_LOOKUPS,
+                len(eligible) - _MAX_REVIEW_THREAD_LOOKUPS,
+            )
 
         def _reviews_for_pr(index_row) -> list[dict]:
             index, (selected_project, repo, pr) = index_row
@@ -2165,19 +2343,62 @@ def azdevops_recent_reviews(
             except Exception as exc:
                 logger.warning("azdevops_recent_reviews: PR %s threads failed: %s", pr_id, exc)
                 return []
+            repo_web = _activity_repo_web_url(repo, selected_project)
+            pr_url = f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else ""
             for thread in threads:
+                # A distinct URL per thread: engine evidence dedupes URL-first,
+                # so comments sharing the PR's bare URL would collapse into one
+                # row (or into the PR row itself). AzDO ignores unknown query
+                # params, so at worst the link opens the PR overview.
+                thread_id = getattr(thread, "id", "")
+                thread_url = f"{pr_url}?discussionId={thread_id}" if pr_url and thread_id else pr_url
+                vote = _azdo_thread_vote(thread)
+                if vote is not None:
+                    display, email, voter_id, value, published = vote
+                    if published >= cutoff:
+                        label = _AZDO_VOTE_LABELS.get(value, str(value))
+                        out.append(
+                            {
+                                "author": display,
+                                "author_email": email,
+                                "kind": "review",
+                                "title": f"{label} PR !{pr_id}: {getattr(pr, 'title', '') or ''} ({repo.name})",
+                                "body": "",
+                                "status": label,
+                                "timestamp": str(published)[:19],
+                                "key": f"review:{pr_id}:{voter_id or email}",
+                                "pr_id": pr_id,
+                                "url": thread_url,
+                                "repository": f"{selected_project}/{repo.name}",
+                                "changed_files": changed_files,
+                            }
+                        )
+                if _azdo_is_vote_thread(thread):
+                    # A VoteUpdate thread's own comment is AzDO's "Vic voted 10"
+                    # notice. It is normally dropped as comment_type "system",
+                    # but that attribute is absent on some SDK/serialisation
+                    # shapes — which the widened filter below now *keeps* — and
+                    # it would land as a "reviewed PR !x" row of bookkeeping.
+                    #
+                    # Keyed on the thread *type*, not on `vote is not None`:
+                    # that returns None for a vote of 0 too, which is how a vote
+                    # being reset is recorded, and such a thread would fall
+                    # through to the comment loop carrying the same noise.
+                    continue
                 for comment in getattr(thread, "comments", ()) or ():
                     published = _aware(getattr(comment, "published_date", None))
                     if published is None or published < cutoff:
                         continue
                     # "system" comments are vote/status noise generated by AzDO
-                    # itself (or service hooks) — never a member's review work.
+                    # itself (or service hooks) and "codeChange" comments are
+                    # its pushed-N-commits notices — never a member's review
+                    # work. Anything else ("text", absent on old SDK objects,
+                    # or an unknown type from an odd payload) is kept.
                     ctype = str(getattr(comment, "comment_type", "") or "").lower()
-                    if ctype and ctype != "text":
+                    if ctype in {"system", "codechange"}:
                         continue
                     author = getattr(comment, "author", None)
                     comment_id = getattr(comment, "id", "")
-                    repo_web = _activity_repo_web_url(repo, selected_project)
                     out.append(
                         {
                             "author": getattr(author, "display_name", "") or "",
@@ -2188,7 +2409,8 @@ def azdevops_recent_reviews(
                             "status": "commented",
                             "timestamp": str(published)[:19],
                             "key": f"review-comment-{comment_id}",
-                            "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                            "pr_id": pr_id,
+                            "url": thread_url,
                             "repository": f"{selected_project}/{repo.name}",
                             "changed_files": changed_files,
                         }
@@ -2200,6 +2422,52 @@ def azdevops_recent_reviews(
             thread_name_prefix="standup-azdo-reviews",
         ) as pool:
             items.extend(item for batch in pool.map(_reviews_for_pr, enumerate(eligible_rows)) for item in batch)
+        # Completion snapshot: a PR closed inside the window carries its final
+        # reviewer votes, datable to the closed date — and needs no thread
+        # lookup, so it covers every eligible PR, including those past the
+        # thread-lookup cap. A thread-derived vote (real event time) wins over
+        # the snapshot's closed-date approximation for the same (PR, reviewer).
+        vote_keys = {item["key"] for item in items if str(item.get("key", "")).startswith("review:")}
+        # Reuse the changed files the thread pass already paid for. Without it
+        # the same approval on the same PR carries files when it arrives via a
+        # thread and none when it arrives via the snapshot, and
+        # `categories.is_documentation_activity` reads exactly that — so a
+        # docs-only PR's approval would land under Documentation or under Code
+        # depending on which path produced it.
+        changed_by_pr = {
+            item["pr_id"]: item["changed_files"] for item in items if item.get("pr_id") and item.get("changed_files")
+        }
+        for _, _, selected_project, repo, pr, closed in eligible:
+            if closed is None or closed < cutoff:
+                continue
+            pr_id = getattr(pr, "pull_request_id", "")
+            repo_web = _activity_repo_web_url(repo, selected_project)
+            for reviewer in getattr(pr, "reviewers", ()) or ():
+                vote = int(getattr(reviewer, "vote", 0) or 0)
+                if vote == 0:
+                    continue
+                display, email, reviewer_id = _azdo_identity_fields(reviewer)
+                key = f"review:{pr_id}:{reviewer_id or email}"
+                if key in vote_keys:
+                    continue
+                vote_keys.add(key)
+                label = _AZDO_VOTE_LABELS.get(vote, str(vote))
+                items.append(
+                    {
+                        "author": display,
+                        "author_email": email,
+                        "kind": "review",
+                        "title": f"{label} PR !{pr_id}: {getattr(pr, 'title', '') or ''} ({repo.name})",
+                        "body": "",
+                        "status": label,
+                        "timestamp": str(closed)[:19],
+                        "key": key,
+                        "pr_id": pr_id,
+                        "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                        "repository": f"{selected_project}/{repo.name}",
+                        "changed_files": changed_by_pr.get(pr_id, []),
+                    }
+                )
         logger.info("azdevops_recent_reviews: %d review event(s)", len(items))
         return items
     except ValueError as exc:

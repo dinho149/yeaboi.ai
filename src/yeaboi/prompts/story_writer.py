@@ -46,14 +46,14 @@ _ALLOWED_DISCIPLINES = ("frontend", "backend", "fullstack", "infrastructure", "d
 # ---------------------------------------------------------------------------
 
 
-def _ac_count_rule(team_calibration: str) -> str:
-    """Build the AC count rule, using team's median if available."""
-    import re
+def _ac_count_rule(median: int = 0) -> str:
+    """Build the AC count rule from the team's median AC count (0 = no data).
 
-    # Extract "Median acceptance criteria per story: N" from calibration text
-    m = re.search(r"[Mm]edian acceptance criteria per story:\s*(\d+)", team_calibration)
-    if m:
-        median = int(m.group(1))
+    Takes the number directly (the node reads it off the loaded team profile)
+    instead of regex-grepping it back out of the calibration markdown — the
+    prompt must never depend on the exact wording of another prompt block.
+    """
+    if median >= 1:
         if median <= 1:
             return (
                 "7. Each story should have exactly 1 acceptance criterion "
@@ -79,19 +79,18 @@ def _ac_count_rule(team_calibration: str) -> str:
     )
 
 
-def _ac_format_rule(team_calibration: str) -> str:
-    """Build the AC format rule, respecting team's actual style."""
-    # Check if team uses Given/When/Then
-    if "Given/When/Then" in team_calibration or "uses_given_when_then" in team_calibration:
-        return "8. Acceptance criteria must use Given/When/Then format (matching team style).\n"
-    if "Writing patterns" in team_calibration:
-        # Team has data but doesn't use GWT — use a flexible format
+def _ac_format_rule(ac_style: str = "gwt") -> str:
+    """Build the AC format rule for the resolved style ("gwt" | "bullets").
+
+    The style is resolved once by the node (resolve_ac_style: session choice >
+    env override > learned team profile > GWT) — this function only phrases it.
+    """
+    if ac_style == "bullets":
         return (
-            "8. Write acceptance criteria as clear, testable statements. "
-            "Use bullet points with specific expected outcomes. "
-            "Do NOT use Given/When/Then format unless the team's analysis shows they use it.\n"
+            "8. Write each acceptance criterion as a single clear, testable "
+            "statement with a specific expected outcome (matching the team's "
+            "style). Do NOT use Given/When/Then phrasing.\n"
         )
-    # Default: Given/When/Then
     return "8. Acceptance criteria must use Given/When/Then format.\n"
 
 
@@ -102,14 +101,28 @@ def _ac_format_rule(team_calibration: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_json_schema(dod_items: tuple[str, ...] | None = None) -> str:
-    """Build the JSON schema string with dynamic DoD items."""
+def _build_json_schema(dod_items: tuple[str, ...] | None = None, ac_style: str = "gwt") -> str:
+    """Build the JSON schema string with dynamic DoD items and AC shape.
+
+    The acceptance_criteria element MUST match the requested style: asking for
+    bullet-style criteria while demanding given/when/then keys forces the LLM
+    to disobey one of the two — the schema and rule 8 always agree now.
+    """
     from yeaboi.agent.state import DOD_ITEMS
 
     items = dod_items or DOD_ITEMS
     n = len(items)
     bools = ", ".join(["true"] * n)
     mapping = "\n".join(f"  [{i}] {item}" for i, item in enumerate(items))
+
+    if ac_style == "bullets":
+        ac_schema = '"string — one clear, testable criterion with a specific expected outcome"'
+    else:
+        ac_schema = """{
+        "given": "string — precondition or initial context",
+        "when": "string — action or trigger",
+        "then": "string — expected outcome"
+      }"""
 
     return f"""\
 [
@@ -121,11 +134,7 @@ def _build_json_schema(dod_items: tuple[str, ...] | None = None) -> str:
     "goal": "string — what the user wants to do (verb phrase, no 'to' prefix)",
     "benefit": "string — why this matters to the user (no 'so that' prefix)",
     "acceptance_criteria": [
-      {{
-        "given": "string — precondition or initial context",
-        "when": "string — action or trigger",
-        "then": "string — expected outcome"
-      }}
+      {ac_schema}
     ],
     "story_points": "integer — Fibonacci value: 1, 2, 3, 5, or 8",
     "points_rationale": "string — why this size, confidence vs team data, similar stories",
@@ -154,6 +163,8 @@ def get_story_writer_prompt(
     out_of_scope: str = "",
     team_calibration: str = "",
     dod_items: tuple[str, ...] | None = None,
+    ac_style: str = "gwt",
+    ac_median_count: int = 0,
     is_low_code: bool = False,
     carry_over_items: tuple[str, ...] = (),
     review_feedback: str | None = None,
@@ -184,6 +195,9 @@ def get_story_writer_prompt(
         constraints: Pre-formatted bullet list of constraints.
         features_block: Pre-formatted text block of features (from _format_features_for_prompt).
         out_of_scope: Pre-formatted bullet list of out-of-scope items.
+        ac_style: Resolved acceptance-criteria style ("gwt" | "bullets") —
+            shapes both rule 8 and the embedded JSON schema.
+        ac_median_count: The team's median AC count per story (0 = no data).
         review_feedback: User feedback from a previous review (reject/edit).
         review_mode: "reject" or "edit" — controls how feedback is framed.
         previous_output: Previous output text for edit mode reference.
@@ -209,7 +223,7 @@ def get_story_writer_prompt(
             f"TOTAL across all features — one meaty story is fine when the scope fits. "
             f"Do NOT pad to reach the maximum. "
             f"Return a JSON array matching this exact schema:\n\n"
-            f"```json\n{_build_json_schema(dod_items)}\n```\n\n"
+            f"```json\n{_build_json_schema(dod_items, ac_style)}\n```\n\n"
         )
         count_rule = (
             f"1. HARD LIMIT: at most {max_total_stories} stories in total, across all "
@@ -224,7 +238,7 @@ def get_story_writer_prompt(
             f"(range {_team_min}-{_team_max}, matching the team's historical average). "
             f"Consolidate related work into fewer, meatier stories rather than creating many thin ones. "
             f"Return a JSON array matching this exact schema:\n\n"
-            f"```json\n{_build_json_schema(dod_items)}\n```\n\n"
+            f"```json\n{_build_json_schema(dod_items, ac_style)}\n```\n\n"
         )
         count_rule = (
             f"1. Aim for ~{_team_avg} stories per feature (team avg is {_team_avg}). "
@@ -234,7 +248,7 @@ def get_story_writer_prompt(
         task_instruction = (
             f"Decompose each feature into {MIN_STORIES_PER_FEATURE}-{MAX_STORIES_PER_FEATURE} user stories. "
             f"Return a JSON array matching this exact schema:\n\n"
-            f"```json\n{_build_json_schema(dod_items)}\n```\n\n"
+            f"```json\n{_build_json_schema(dod_items, ac_style)}\n```\n\n"
         )
         count_rule = f"1. Produce {MIN_STORIES_PER_FEATURE}-{MAX_STORIES_PER_FEATURE} stories per feature.\n"
     id_rule = "2. Use sequential IDs per feature: US-F1-001, US-F1-002, US-F2-001, etc.\n"
@@ -294,8 +308,8 @@ def get_story_writer_prompt(
         f"4. Story points must be Fibonacci: {', '.join(str(v) for v in _ALLOWED_STORY_POINTS)}.\n"
         f"5. No story may exceed {MAX_STORY_POINTS} points — split larger stories.\n"
         f"6. Priority must be one of: {', '.join(_ALLOWED_PRIORITIES)}.\n"
-        f"{_ac_count_rule(team_calibration)}"
-        f"{_ac_format_rule(team_calibration)}"
+        f"{_ac_count_rule(ac_median_count)}"
+        f"{_ac_format_rule(ac_style)}"
         "9. Stories within a feature should not overlap — each covers a distinct slice.\n"
         "10. Give each story a short title (3-7 words) summarising the core deliverable.\n"
         "11. Inherit priority from the parent feature unless there's a reason to differ.\n"

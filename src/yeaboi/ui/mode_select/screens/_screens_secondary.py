@@ -19,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.beta import BETA_LABEL, BETA_RGB
+from yeaboi.config import VALID_LOG_LEVELS
 from yeaboi.ui.mode_select.screens._analysis_sections import (
     _TA_CARDS,
     _measure_render_height,
@@ -5893,7 +5894,9 @@ _SETTINGS_TABS: list[str] = ["Credentials", "System"]
 # lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     "Credentials": ["provider", "jira", "azure", "github", "notion"],
-    "System": ["storage", "standup", "voice", "bedrock", "advanced"],
+    # AWS credentials used to live here; they moved beside the provider that uses
+    # them, so Bedrock has no section of its own any more.
+    "System": ["storage", "standup", "voice", "advanced"],
 }
 
 # Sections whose box spans the full grid width instead of taking a column slot.
@@ -5915,6 +5918,103 @@ _TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content col
 # pairs whose values (URLs, model names) are longer than Usage's counters.
 _SETTINGS_MIN_BOX_W = 38
 _SETTINGS_MAX_COLS = 2
+
+
+# Settings rows that pick from a fixed set rather than taking typed text. Enter
+# steps to the next option and saves it — see _choice_row for the drawing and
+# _s_begin_edit for the keystroke. Anything not listed here still opens the
+# in-place text editor, which is right for URLs, keys and free-form values.
+#
+# The values are what lands in .env, so the booleans stay "true"/"false" — that is
+# what is_tips_enabled/is_duck_enabled read, and writing "off" would silently turn
+# the feature ON (anything that is not the literal "false" counts as enabled).
+#
+# Session Prune Days is deliberately NOT here: it is an arbitrary integer, and a
+# list of presets would take away every value that is not on the list.
+#
+# The provider list and each provider's credential var are DERIVED from the setup
+# wizard's cards rather than retyped, so the two screens can never disagree about
+# which providers exist or what a provider's key is called. Imported lazily inside
+# the helper below for the same reason the rest of this module defers
+# provider_select imports: it keeps the screens package free of an import cycle.
+def _provider_tables() -> tuple[tuple[str, ...], dict[str, str], dict[str, str]]:
+    """``(provider values in wizard order, provider -> env var, provider -> name)``."""
+    from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS
+
+    order = tuple(c["provider_val"] for c in _PROVIDER_CARDS)
+    envs = {c["provider_val"]: c["env_var"] for c in _PROVIDER_CARDS}
+    # The card's own spelling, so the row reads "OpenAI Key" rather than the
+    # "Openai Key" that title-casing the provider value would give.
+    names = {c["provider_val"]: c["name"] for c in _PROVIDER_CARDS}
+    return order, envs, names
+
+
+LLM_PROVIDERS, PROVIDER_KEY_ENVS, PROVIDER_NAMES = _provider_tables()
+
+# How the Anthropic credential is obtained. "api_key" is the pasted console key;
+# "subscription" mints a Claude Code OAuth token via `claude setup-token` and sends
+# it as a bearer instead (see yeaboi.claude_auth and agent/llm.py).
+ANTHROPIC_AUTH_MODES: tuple[str, ...] = ("api_key", "subscription")
+
+# The env var a subscription token is stored under — the name Claude Code itself
+# uses, so a token minted here is the one it would read.
+ANTHROPIC_OAUTH_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
+
+# Rows whose Enter runs something instead of opening an editor or cycling a list.
+# The subscription row hands the terminal to `claude setup-token` and writes back
+# whatever token it prints (see _s_begin_edit).
+SETTINGS_ACTION_ENVS: frozenset[str] = frozenset({ANTHROPIC_OAUTH_ENV})
+SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
+    "TIPS_ENABLED": ("true", "false"),
+    "DUCK_ENABLED": ("true", "false"),
+    "LANGSMITH_TRACING": ("true", "false"),
+    "LOG_LEVEL": VALID_LOG_LEVELS,
+    "LLM_PROVIDER": LLM_PROVIDERS,
+    "ANTHROPIC_AUTH_MODE": ANTHROPIC_AUTH_MODES,
+}
+
+# How a stored choice is spelled on the row, where the two differ. Nobody wants to
+# read "true / false" for a switch that has always been drawn as on/off.
+SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
+    "TIPS_ENABLED": {"true": "on", "false": "off"},
+    "DUCK_ENABLED": {"true": "on", "false": "off"},
+    "LANGSMITH_TRACING": {"true": "enabled", "false": "disabled"},
+    "ANTHROPIC_AUTH_MODE": {"api_key": "api key", "subscription": "subscription"},
+}
+
+# What an unset var behaves as. These are NOT all the first option — tracing is off
+# by default while tips and the duck are on, and WARNING sits third in the level
+# list — so neither the row nor the cycle can assume index 0.
+SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
+    "TIPS_ENABLED": "true",
+    "DUCK_ENABLED": "true",
+    "LANGSMITH_TRACING": "false",
+    "LOG_LEVEL": "WARNING",
+    # Matches agent/llm.py's own default when LLM_PROVIDER is unset.
+    "LLM_PROVIDER": "anthropic",
+    "ANTHROPIC_AUTH_MODE": "api_key",
+}
+
+
+def settings_choice_value(env: str, stored: str) -> str:
+    """The option a stored value behaves as, in the casing the option list uses.
+
+    One resolution for both halves of a choice row: the builder lights this option
+    and the settings loop steps on from it. Splitting them is how "unset" ended up
+    lighting WARNING while Enter jumped to INFO.
+    """
+    folded = {opt.lower(): opt for opt in SETTINGS_CHOICES[env]}
+    return folded.get((stored or "").strip().lower(), SETTINGS_CHOICE_DEFAULTS[env])
+
+
+# The column width at which a _WIDE_SETTINGS_SECTIONS box stops needing the whole
+# row. Those sections are wide only because their token-help sub-lines don't fit a
+# half-width column on an 80-column terminal; give a column this much and they do
+# (the longest creation URL line is ~70 columns, and the scope sentence wraps).
+# Below it they still span, so nothing changes on a normal-sized terminal — but on
+# a wide one the Credentials tab was one column of full-width boxes with most of
+# the screen empty beside it, because only its provider box was ever "narrow".
+_SETTINGS_WIDE_COL_W = 76
 # The focused value is marked by a full-width bar behind the row rather than a
 # leading glyph: a marker needs a gutter on EVERY row to avoid text jumping when
 # focus lands, and that gutter reads as a stray indent inside an already-indented
@@ -5927,6 +6027,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # one-row box being blown up to match a column of six-row ones.
 _SETTINGS_MAX_STRETCH = 5  # per-box leveling allowance — grew with the Advanced box (Tunnel Timeout row)
 
+_TAB_NOT_READY = "rgb(74,74,90)"  # visibly present, clearly behind the ready ones
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
 
@@ -6006,7 +6107,16 @@ def settings_focus_move(
 
 
 def _settings_tab_bar(
-    labels: list[str], active: int, theme, width: int, *, pos: float | None = None
+    labels: list[str],
+    active: int,
+    theme,
+    width: int,
+    *,
+    pos: float | None = None,
+    taper: bool = True,
+    spread: int | bool = False,
+    muted: tuple[bool, ...] = (),
+    align_right: bool = False,
 ) -> tuple[list, list]:
     """Render the underline-style tab bar: a row of labels over one continuous
     horizontal rule. Under the active tab the rule is accent-bright, tapering in
@@ -6018,23 +6128,61 @@ def _settings_tab_bar(
     Returns ``(lines, spans)`` where ``spans[i]`` is the 0-based ``(start, end)``
     column range (within the content) of label *i* — used to hit-test tab clicks.
     """
-    labels_line = Text(" " * _TAB_INDENT, justify="left")
+    # ``spread`` shares the page's width out between the tabs instead of packing
+    # them at the left. A bar that stops a third of the way across reads as a
+    # list that ran out, not as the full set of what there is.
+    # An int spreads to THAT width rather than the page's, so a bar under a
+    # two-column band can stop where the other column starts and leave it free.
+    gap = _TAB_GAP
+    if spread and len(labels) > 1:
+        _to = spread if isinstance(spread, int) and spread is not True else width - 6
+        # A left-aligned bar keeps a margin at each end; a right-parked one is
+        # pushed against the edge afterwards, so it fills ``_to`` exactly and has
+        # no left margin to subtract — subtracting one anyway left the strip
+        # short of the width it was asked to spread over.
+        _margins = 0 if align_right else _TAB_INDENT * 2
+        room = max(0, _to - _margins - sum(len(x) for x in labels))
+        gap = max(_TAB_GAP, room // (len(labels) - 1))
+    # ``align_right`` parks the whole strip against the right edge instead of the
+    # left margin, for a page whose content leads at the left and wants its
+    # stage list out of the way of the first word on every line.
+    indent = _TAB_INDENT
+    if align_right:
+        natural = sum(len(x) for x in labels) + gap * max(0, len(labels) - 1)
+        # Held off the edge by the same margin the left-aligned bar keeps: run it
+        # to the last content column and the final tab sits against the frame
+        # with nothing either side of it.
+        indent = max(_TAB_INDENT, (width - 6) - _TAB_INDENT - natural)
+    labels_line = Text(" " * indent, justify="left")
     spans: list = []
-    col = _TAB_INDENT
+    col = indent
     for i, label in enumerate(labels):
         if i > 0:
-            labels_line.append(" " * _TAB_GAP)
-            col += _TAB_GAP
+            labels_line.append(" " * gap)
+            col += gap
         start = col
-        labels_line.append(label, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
+        if i == active:
+            _style = f"bold {theme.accent_bright}"
+        elif i < len(muted) and muted[i]:
+            # A concrete colour, not `dim`: Rich's dim attribute against this
+            # page's near-black background renders as very nearly nothing, so a
+            # tab with no content behind it yet did not read as "not ready" — it
+            # read as gone, and the strip looked like it had lost three of four.
+            _style = _TAB_NOT_READY
+        else:
+            _style = theme.muted
+        labels_line.append(label, style=_style)
         col += len(label)
         spans.append((start, col))  # [start, end)
 
     # The rule spans the tab strip plus a 2-char margin each side, so the dimmer
     # "shoulder" chars beside the active tab stay visible even when the first or
     # last tab is selected — but it still stops well short of the full width.
-    rule_start = max(0, (spans[0][0] if spans else _TAB_INDENT) - 2)
-    rule_end = (spans[-1][1] if spans else _TAB_INDENT) + 2
+    rule_start = max(0, (spans[0][0] if spans else indent) - 2)
+    # Clamped: the two-column shoulder past the last tab has nowhere to go when
+    # the strip is already against the right edge, and a rule one char too wide
+    # wraps to the next line as a stray stub.
+    rule_end = min((width - 6), (spans[-1][1] if spans else indent) + 2)
     if pos is not None and spans:
         # Animated: slide the bright underline between adjacent tab spans by the
         # fractional position (the loop eases `pos` toward the active tab index).
@@ -6053,11 +6201,14 @@ def _settings_tab_bar(
     underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
     for c in range(rule_start, rule_end):
         if a_start <= c < a_end:
-            if c == a_start or c == a_end - 1:
-                style = theme.accent  # taper: the last char on either end steps down
+            # ``taper`` off = one flat colour end to end. A bar that changes shade
+            # along its own length reads as two marks while it is sliding, which
+            # is exactly when it most needs to read as one object moving.
+            if taper and (c == a_start or c == a_end - 1):
+                style = theme.accent  # the last char on either end steps down
             else:
                 style = f"bold {theme.accent_bright}"  # full brightness across the middle
-        elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
+        elif taper and (a_start - 2 <= c < a_start or a_end <= c < a_end + 2):
             style = theme.dim  # slightly dimmer just to either side
         else:
             style = theme.sep  # the neutral continuous rule
@@ -6132,8 +6283,17 @@ def _build_settings_screen(
     # panel chrome (border + 2 pad, both sides) + the indent + the scrollbar gutter.
     grid_w = max(24, width - 6 - len(_grid_indent) - 1)
     _tab_name = _SETTINGS_TABS[max(0, min(active_tab, len(_SETTINGS_TABS) - 1))]
-    _n_narrow = sum(1 for _s in _SETTINGS_TAB_SECTIONS[_tab_name] if _s not in _WIDE_SETTINGS_SECTIONS)
-    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_narrow or 1))
+    _tab_sections = _SETTINGS_TAB_SECTIONS[_tab_name]
+    _n_narrow = sum(1 for _s in _tab_sections if _s not in _WIDE_SETTINGS_SECTIONS)
+    # Would a column still be wide enough for a token-help section? If so the wide
+    # sections join the grid instead of spanning it, and the box count that drives
+    # the column choice is every section rather than just the narrow ones. This is
+    # what stops the Credentials tab rendering as a single stack of full-width
+    # boxes on a large terminal: only "provider" is narrow, so _n_narrow was 1 and
+    # the grid collapsed to one column no matter how much room there was.
+    _wide_fits_col = (grid_w - 4) // 2 >= _SETTINGS_WIDE_COL_W
+    _n_boxes = len(_tab_sections) if _wide_fits_col else (_n_narrow or 1)
+    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_boxes))
     # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only; two
     # columns of slack keep the table clear of the render width.
     col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
@@ -6148,12 +6308,47 @@ def _build_settings_screen(
     _cur_w = col_w - 4  # inner text width available to the open section
 
     def _heading(text: str, *, wide: bool = False) -> None:
-        """Open a new section box — its heading is drawn as the box title."""
+        """Open a new section box — its heading is drawn as the box title.
+
+        ``wide`` is a request, not a guarantee: once a column is roomy enough for
+        the token help (``_wide_fits_col``) the section takes a column like any
+        other, and only the narrow terminal still gets a full-width row.
+        """
         nonlocal _cur, _cur_fields, _cur_w
+        wide = wide and not _wide_fits_col
         _cur, _cur_fields = [], []
         _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
         sections.append((text, _cur, wide))
         box_fields.append(_cur_fields)
+
+    def _choice_row(label: str, env: str) -> None:
+        """A settings row that picks from a fixed set instead of taking free text.
+
+        Every option is on the row with the live one lit, so the choice is visible
+        without entering anything — and Enter steps to the next rather than opening
+        the editor (see SETTINGS_CHOICES and _s_begin_edit). Typing "classic", or
+        "false", into a text box to flip a switch was the wrong gesture for it.
+
+        The live option comes from settings_choice_value, the same resolver the
+        cycle uses; SETTINGS_CHOICE_LABELS decides how each one reads.
+        """
+        choices = SETTINGS_CHOICES[env]
+        _labels = SETTINGS_CHOICE_LABELS.get(env, {})
+        _live = settings_choice_value(env, config_data.get(env, ""))
+        _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
+        r = _EditableRow("", **_kw)
+        _focused = len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
+        r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
+        for _i, _opt in enumerate(choices):
+            if _i:
+                r.append("  ", style=theme.muted)
+            r.append(_labels.get(_opt, _opt), style=f"bold {theme.good}" if _opt == _live else theme.dim)
+        if _focused:
+            r.append(" " * max(0, _cur_w - r.cell_len))
+            r.style = f"on {_SETTINGS_FOCUS_BG}"
+        r.env, r.label, r.masked = env, label, False
+        _cur_fields.append((env, label, False))
+        _cur.append(r)
 
     def _row(
         label: str, value: str, value_style: str = "", masked: bool = False, env: str = "", wrap: bool = False
@@ -6220,6 +6415,19 @@ def _build_settings_screen(
     # show it in full here too.
     from yeaboi.ui.provider_select._constants import TOKEN_HELP
 
+    def _action_help(env_var: str) -> None:
+        """One dim sub-line under an action row saying what Enter will do.
+
+        The row shows a masked token like any credential, so without this nothing
+        distinguishes it from a field you are meant to type into.
+        """
+        if env_var != ANTHROPIC_OAUTH_ENV:
+            return
+        hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        hint.append("\u21b3 enter: ", style=theme.muted)
+        hint.append("sign in with your Claude subscription", style=theme.dim)
+        _cur.append(hint)
+
     def _token_help(env_var: str) -> None:
         entry = TOKEN_HELP.get(env_var)
         if not entry:
@@ -6228,28 +6436,68 @@ def _build_settings_screen(
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         _cur.append(link)
+        # The scope sentence wraps rather than ellipsizing: it is the one line here
+        # long enough to overrun a column, and losing its tail costs the reader the
+        # permissions they came for. Wrapping HERE keeps one body line per rendered
+        # row, which the box heights and click regions depend on. The URL above it
+        # stays no_wrap — a split link is not a link.
+        _scope_lines = _wrap_value(str(entry["scope"]), _cur_w, 4 + len("scope: "), indent=6)
         scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
-        scope.append(entry["scope"], style=theme.dim)
+        scope.append(_scope_lines[0], style=theme.dim)
         _cur.append(scope)
+        for _more in _scope_lines[1:]:
+            _c = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
+            _c.append(_more, style=theme.dim)
+            _cur.append(_c)
 
     # ── Section builders (one per tab) — only the active one is rendered ──
     def _sec_provider() -> None:
+        """Provider, model, and the credentials of THAT provider only.
+
+        Every provider's key used to be listed at once, which asked the reader to
+        know which of five rows their setup actually used. The provider is a pick
+        now, and the rows under it follow it — so what is on screen is what the app
+        will authenticate with. A key belonging to a provider you are not on stays
+        on disk untouched; switching back brings its row back.
+        """
         _heading("LLM Provider")
-        _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"), env="LLM_PROVIDER")
+        _choice_row("Provider", "LLM_PROVIDER")
         _row("Model", config_data.get("LLM_MODEL", "(default)"), env="LLM_MODEL")
-        _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True, env="ANTHROPIC_API_KEY")
-        _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True, env="OPENAI_API_KEY")
-        _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True, env="GOOGLE_API_KEY")
-        # Ollama is keyless — its server URL/context rows only appear when the user
-        # runs local mode (or has customised the vars), keeping the page uncluttered.
-        if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
+        live_provider = settings_choice_value("LLM_PROVIDER", config_data.get("LLM_PROVIDER", ""))
+
+        if live_provider == "anthropic":
+            # Two ways to authenticate, so the mode is a pick and the row beneath it
+            # is whichever credential that mode actually uses.
+            _choice_row("Auth", "ANTHROPIC_AUTH_MODE")
+            if settings_choice_value("ANTHROPIC_AUTH_MODE", config_data.get("ANTHROPIC_AUTH_MODE", "")) == "api_key":
+                _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True, env="ANTHROPIC_API_KEY")
+            else:
+                _row(
+                    "Subscription",
+                    config_data.get(ANTHROPIC_OAUTH_ENV, ""),
+                    masked=True,
+                    env=ANTHROPIC_OAUTH_ENV,
+                )
+                _action_help(ANTHROPIC_OAUTH_ENV)
+        elif live_provider == "bedrock":
+            # AWS is credentialed by region + profile rather than a key, and it lives
+            # here beside the provider that uses it rather than on another tab.
+            _row("AWS Region", config_data.get("AWS_REGION", ""), env="AWS_REGION")
+            _row("AWS Profile", config_data.get("AWS_PROFILE", ""), env="AWS_PROFILE")
+        elif live_provider == "ollama":
+            # Ollama is keyless — it needs a server URL and a context size instead.
             _row(
                 "Ollama URL",
                 config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)",
                 env="OLLAMA_BASE_URL",
             )
             _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)", env="OLLAMA_NUM_CTX")
+        else:
+            _key_env = PROVIDER_KEY_ENVS.get(live_provider, "")
+            if _key_env:
+                _label = PROVIDER_NAMES.get(live_provider, live_provider.title())
+                _row(f"{_label} Key", config_data.get(_key_env, ""), masked=True, env=_key_env)
 
     def _sec_jira() -> None:
         _heading("Jira", wide=True)
@@ -6371,30 +6619,25 @@ def _build_settings_screen(
         )
         _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
-    def _sec_bedrock() -> None:
-        _heading("AWS Bedrock")
-        _row("Region", config_data.get("AWS_REGION", ""), env="AWS_REGION")
-        _row("Profile", config_data.get("AWS_PROFILE", ""), env="AWS_PROFILE")
-
     def _sec_advanced() -> None:
+        """Everything here with a closed set of answers is a pick, not a text field.
+
+        Each row reads its live option through settings_choice_value, because the
+        defaults are asymmetric — Tips and the Duck are on unless the literal
+        "false", LangSmith is off unless the literal "true", and WARNING sits third
+        in the level list. Nothing here may assume the first option is the default.
+        """
         _heading("Advanced")
-        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"), env="LOG_LEVEL")
+        _choice_row("Log Level", "LOG_LEVEL")
+        # An arbitrary integer, so it stays typed — presets would rule out every
+        # number that is not one of them.
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
         # Auto-expiry for retro/poker/output-share Cloudflare tunnels, in minutes.
         # 0 disables it — the tunnel then runs until the board/share is closed.
         _row("Tunnel Timeout (min)", config_data.get("TUNNEL_TIMEOUT_MINUTES", "60"), env="TUNNEL_TIMEOUT_MINUTES")
-        # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
-        _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
-        _row(
-            "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
-        )
-        # Duck bubble default on; only the literal "false" mutes it (matches is_duck_enabled).
-        _duck_on = config_data.get("DUCK_ENABLED", "").strip().lower() != "false"
-        _row(
-            "Duck", "on" if _duck_on else "off", value_style=theme.good if _duck_on else theme.muted, env="DUCK_ENABLED"
-        )
-        langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
-        _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
+        _choice_row("Tips", "TIPS_ENABLED")
+        _choice_row("Duck", "DUCK_ENABLED")
+        _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
     _builders = {
@@ -6406,7 +6649,6 @@ def _build_settings_screen(
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,
-        "bedrock": _sec_bedrock,
         "advanced": _sec_advanced,
     }
     active_tab = max(0, min(active_tab, len(_SETTINGS_TABS) - 1))
@@ -6562,7 +6804,11 @@ def _build_settings_screen(
         for (_x0, _x1, _env, _label, _masked) in _line_meta.get(_idx, [])
     ]
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    # No always_show: a dim full-height track beside content that fits reads as
+    # "there is more below" when there is not. The column is reserved only when
+    # something can actually scroll — which on a wide terminal, where the boxes
+    # deal into two columns and everything fits, is nothing.
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))

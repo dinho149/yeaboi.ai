@@ -165,14 +165,14 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       </ul>
 
       <h3 id="prior-art">Prior Art (greenfield only)</h3>
-      <p>A greenfield project is rarely built from nothing — the team usually already owns the auth service, the deployment pattern, the design system. When Q2 is answered <strong>greenfield</strong>, the agent inserts one more step between the PTO questions and the intake summary: it ranks the team's own repositories against everything gathered so far and asks about each shortlisted one, with a concrete pitch rather than a bare name.</p>
+      <p>A greenfield project is rarely built from nothing — the team usually already owns the auth service, the deployment pattern, the design system. When Q2 is answered <strong>greenfield</strong>, the agent inserts one more step between the PTO questions and the intake summary: it ranks the team's own repositories against everything gathered so far and offers the whole shortlist at once, each with a concrete pitch rather than a bare name — browse the list and tick the relevant ones in a single answer.</p>
       <ul>
         <li><strong>The repositories come from Team Analysis</strong>, which walks GitHub and Azure DevOps each run and now persists that inventory. Planning reads it offline; a profile captured before this existed says so rather than going quiet.</li>
         <li><strong>Ranking is deterministic</strong> — stack overlap, keyword overlap against Q1/Q3/Q4, recency — and only the top five are enriched with live API calls, so an estate of hundreds costs five reads rather than hundreds.</li>
         <li><strong>The model may only subtract.</strong> It writes the pitch bullets and may drop a candidate it judges irrelevant; it is never given a shape in which to nominate a repository that did not rank.</li>
         <li><strong>Accepted repositories</strong> feed plan generation and appear in the intake summary and every export.</li>
-        <li><strong>Rejections are remembered globally, with the reason</strong>, and that repository is never offered again on any project. The memory is suppress-only: it can remove a candidate, never add one.</li>
-        <li>Candidates are asked about one at a time, and answering is what brings up the next. "Skip the rest" ends the step without recording a verdict on what is left.</li>
+        <li><strong>Leaving a repository unticked is a pass for this project only</strong> — nothing is recorded, and it may be offered again next time. Banning one (the <strong>X</strong> key in the TUI, or a <code>!N</code> token in a typed answer) is the explicit, permanent verdict: that repository is never offered again on any project. The memory is suppress-only: it can remove a candidate, never add one.</li>
+        <li>All candidates appear in one batch, in the TUI as a browsable multi-select (the detail card follows the highlighted row) and on text surfaces as a numbered list answered with the same grammar everywhere: the relevant numbers (<code>1 3</code>), <code>all</code>, or <code>none</code>, with <code>!N</code> to ban.</li>
       </ul>
 
       <h3 id="adaptive-behavior">Adaptive Behavior</h3>
@@ -549,6 +549,7 @@ And   no duplicate account should be created</code></pre>
       <ul>
         <li><a href="/docs/agents/index.html">Overview</a></li>
         <li><a href="/docs/agents/usage.html">Agent Usage</a></li>
+        <li><a href="/docs/agents/advisor.html">Agent Advisor</a></li>
         <li><a href="/docs/agents/standup.html">Agent Standup</a></li>
         <li><a href="/docs/agents/security.html">Agent Security</a></li>
       </ul>

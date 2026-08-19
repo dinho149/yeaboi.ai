@@ -18,6 +18,12 @@ Procedure:
 
 1. Read `cowork/house-rules.md` and the charter you were given (`cowork/workstreams/<name>.md`).
    Read the `.claude/skills/*/SKILL.md` files the charter names. Read `CLAUDE.md`.
+
+   **Then read your workstream's section of `cowork/calibration.md`.** It records what this
+   workstream keeps getting wrong, each row with the issue numbers behind it and a rule to apply
+   instead. Those rules bind you the same way the charter does — the file exists because the fleet
+   kept re-filing things a human had already rejected, and it can only ever narrow what you return.
+   A workstream with no heading there has nothing recorded, which is the normal state.
 2. Survey **only the paths the charter declares**. Something valuable outside them is still a find —
    record it with the owning workstream's name so it can be routed, and do not investigate further.
 
@@ -30,6 +36,14 @@ Procedure:
    provider to. Those are not a sweep's to touch either: treat them exactly as `Reads`.
 3. Prefer evidence over impression. A find is worth reporting when you can point at a file, a
    command's output, or a specific contradiction. "Could be cleaner" is not a find.
+
+   **If your caller handed you lens output, that is evidence and you should use it.** A lens
+   (`cowork/hygiene-lenses.md`) is a mechanical detector already scoped to your charter's paths;
+   its finds arrive pre-confirmed against the whole repository. Return **one** find per lens
+   listing up to the instances it reported — never one find per instance — and put the lens name
+   and its `evidence` line in `evidence`. Its `lane` is a *ceiling*, not a grant: classify it in
+   step 4 like anything else, and if you would have to argue for the change, it is `propose`. A
+   lens that returned nothing is a normal, good result and is not a find.
 4. Classify each find `auto` or `propose` against the allowlist in `house-rules.md`. The allowlist is
    closed: if the find does not clearly sit in one of its seven categories **and** clear every
    condition, it is `propose`. When you are arguing with yourself, it is `propose`.
@@ -47,8 +61,17 @@ Procedure:
    "workstream:<name>" --state all --limit 60`; read each row's **state and labels**, because both
    decide the answer.
    - restates an issue **closed** unapproved → **drop it.** A closing is a rejection.
-   - restates an **open** issue and you classified the find `propose` → **drop it.** The question
-     is already asked.
+   - restates an **open** issue carrying **neither** `cowork:proposal` nor `cowork:queued` →
+     **return it**, with `restates` set to that issue's number, whatever lane you put the find in,
+     **and set `lapsed` to whether `uv run python scripts/cowork_setup.py --lapsed <name>` lists
+     that number.** It is a *lapsed* question only if it does — `cron/digest.md` step 4 strips the
+     label at fourteen days and leaves the issue open, so nobody rejected it and nobody is being
+     asked. Every issue a human opened and tagged `workstream:<name>` has the same *shape* and is
+     not lapsed at all, and the caller re-labels on this field: reporting `lapsed: true` for one of
+     those puts a stranger's issue into the unattended build lane. Unreadable → `false`. Re-labelling
+     it is the caller's call, not yours; saying which it is, is yours.
+   - restates an **open** issue carrying `cowork:proposal` and you classified the find `propose` →
+     **drop it.** The question is already asked.
    - restates an **open** issue and you classified the find `auto` → **return it**, with `restates`
      set to that issue's number. What to do about it is the caller's call, not yours: an open issue
      is a question waiting on a human, and the whole premise of the auto lane is that this find is

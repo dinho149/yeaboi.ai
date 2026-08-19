@@ -6,6 +6,17 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = artifacts-sharing`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering` — `static-through-assets` and `headers-through-security` are declared by **web-ux** and
+  apply everywhere, and the share servers are the code most likely to grow a second spelling of a
+  CSP. A violation found here is yours to fix.
+
 ## Focus
 
 - **The CSP pair** — confirm the test that diffs `ARTIFACT_CSP` against `EDIT_CSP` still asserts the

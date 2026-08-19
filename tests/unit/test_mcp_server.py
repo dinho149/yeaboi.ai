@@ -23,6 +23,8 @@ from yeaboi.mcp.server import create_app  # noqa: E402
 
 EXPECTED_TOOLS = {
     "artifact_edit_apply",
+    "ceremonies_list",
+    "ceremonies_history",
     "artifact_edit_history",
     "artifact_fields",
     "plan_generate",
@@ -65,10 +67,16 @@ EXPECTED_TOOLS = {
     "anonymize_text",
     "agents_usage",
     "agents_usage_history",
+    "agents_advisor_run",
+    "agents_advisor_history",
     "agents_standup_run",
     "agents_standup_history",
     "agents_security_scan",
     "agents_security_history",
+    "provenance_audit",
+    "provenance_trace",
+    "ship_history",
+    "ship_status",
 }
 
 
@@ -235,6 +243,20 @@ class TestPlanningTools:
         from pathlib import Path
 
         assert Path(payload["data"]["path"]).exists()
+
+    def test_plan_export_prd(self, seeded_session, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)  # exporter writes relative to CWD
+        payload = call_tool("plan_export", {"format": "prd"})
+        assert payload["ok"] is True
+        from pathlib import Path
+
+        path = Path(payload["data"]["path"])
+        assert path.exists()
+        assert path.read_text().startswith("# PRD — ")
+        # No LLM in the test env — the envelope must report the honest mode
+        # and the section warnings must surface, never a silent skeleton.
+        assert payload["data"]["llm_mode"] == "fallback"
+        assert payload["warnings"]
 
     def test_plan_export_bad_format(self, seeded_session):
         payload = call_tool("plan_export", {"format": "pdf"})
@@ -693,6 +715,7 @@ class TestPlanSync:
                 stories_created={"s1": "PROJ-2"},
                 tasks_created={},
                 sprints_created={"sp1": "17"},
+                sprints_updated={"sp2": "18"},
                 errors=["Sprint 2 board missing"],
                 skipped=1,
             )
@@ -703,6 +726,7 @@ class TestPlanSync:
         assert payload["ok"] is True
         assert payload["data"]["epic"] == "PROJ-1"
         assert payload["data"]["stories_created"] == {"s1": "PROJ-2"}
+        assert payload["data"]["sprints_updated"] == {"sp2": "18"}
         assert payload["data"]["skipped_existing"] == 1
         assert payload["warnings"] == ["Sprint 2 board missing"]
         assert captured["stories_in_state"] > 0
@@ -718,6 +742,45 @@ class TestPlanSync:
         payload = call_tool("plan_sync", {"destination": "linear"})
         assert payload["ok"] is False
         assert "jira" in payload["error"]["message"]
+
+    def test_sync_target_sprint_routes_to_existing(self, seeded_session, monkeypatch):
+        """target_sprint switches the loaded state into existing-sprint mode."""
+        from types import SimpleNamespace
+
+        captured: dict = {}
+
+        def fake_sync(state, on_progress=None):
+            captured["mode"] = state.get("sprint_target_mode")
+            captured["name"] = state.get("target_sprint_name")
+            captured["ext"] = state.get("target_sprint_external_id")
+            result = SimpleNamespace(
+                epic_key="PROJ-1",
+                stories_created={},
+                tasks_created={},
+                sprints_created={},
+                sprints_updated={"sp1": "42"},
+                errors=[],
+                skipped=0,
+            )
+            return result, dict(state)
+
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "PSOT Sprint 104"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "PSOT Sprint 104", "ext": ""}
+        assert payload["data"]["sprints_updated"] == {"sp1": "42"}
+
+        # Digits-only resolves as a Jira sprint id, not a name.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "42"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "existing", "name": "", "ext": "42"}
+
+        # The "backlog" keyword creates stories without assigning them anywhere.
+        monkeypatch.setattr("yeaboi.jira_sync.sync_all_to_jira", fake_sync)
+        payload = call_tool("plan_sync", {"destination": "jira", "target_sprint": "backlog"})
+        assert payload["ok"] is True
+        assert captured == {"mode": "backlog", "name": "", "ext": ""}
 
     def test_sync_no_sessions_errors(self, tmp_db):
         payload = call_tool("plan_sync", {"destination": "jira"})
@@ -927,6 +990,27 @@ class TestPlanPublish:
         payload = call_tool("plan_publish", {"destination": "sharepoint"})
         assert payload["ok"] is False
         assert "Unsupported destination" in payload["error"]["message"]
+
+    def test_publish_prd_content(self, seeded_session, monkeypatch):
+        from yeaboi.export_targets import PublishResult
+
+        captured: dict = {}
+
+        def fake_publish(destination, *, title, markdown):
+            captured.update(title=title, markdown=markdown)
+            return PublishResult(ok=True, message="Published", url="https://notion.so/prd")
+
+        monkeypatch.setattr("yeaboi.export_targets.publish_markdown", fake_publish)
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "prd"})
+        assert payload["ok"] is True
+        assert captured["title"].startswith("PRD")
+        assert captured["markdown"].startswith("# PRD — ")
+        assert payload["data"]["content"] == "prd"
+
+    def test_publish_bad_content(self, seeded_session):
+        payload = call_tool("plan_publish", {"destination": "notion", "content": "roadmap"})
+        assert payload["ok"] is False
+        assert "Unsupported content" in payload["error"]["message"]
 
 
 class TestPerfNotes:
@@ -1171,3 +1255,81 @@ class TestServerEntry:
         import yeaboi.mcp.server  # noqa: F401
 
         assert hasattr(yeaboi.mcp.server, "main")
+
+
+class TestProvenanceTools:
+    def test_audit_on_an_empty_chain(self, tmp_db):
+        out = call_tool("provenance_audit")
+        assert out["ok"] is True
+        assert out["data"]["chain_valid"] is True
+        assert out["data"]["total_records"] == 0
+
+    def test_audit_rejects_a_bad_window(self, tmp_db):
+        out = call_tool("provenance_audit", {"window_days": 0})
+        assert out["ok"] is False
+        assert "window_days" in out["error"]["message"]
+
+    def test_trace_round_trips_a_recorded_decision(self, tmp_db):
+        from yeaboi.provenance import DecisionRecord, ProvenanceChain
+
+        with ProvenanceChain(tmp_db) as chain:
+            chain.append(DecisionRecord(entity_id="e1", entity_type="conflict", agent_id="conflicts.status"))
+        out = call_tool("provenance_trace", {"entity_id": "e1"})
+        assert out["ok"] is True
+        assert out["data"]["found"] is True
+        assert out["data"]["records"][0]["entity_id"] == "e1"
+
+    def test_trace_requires_an_entity_id(self, tmp_db):
+        out = call_tool("provenance_trace", {"entity_id": "  "})
+        assert out["ok"] is False
+        assert "entity_id" in out["error"]["message"]
+
+
+class TestShipTools:
+    def test_history_is_empty_before_the_first_run(self, tmp_db):
+        out = call_tool("ship_history")
+        assert out["ok"] is True
+        assert out["data"]["runs"] == []
+
+    def test_history_rejects_a_bad_limit(self, tmp_db):
+        out = call_tool("ship_history", {"limit": 0})
+        assert out["ok"] is False
+        assert "limit" in out["error"]["message"]
+
+    def test_history_round_trips_a_recorded_run(self, tmp_db):
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore(tmp_db) as store:
+            store.record_run(ShipRun(run_id="run-1", story_id="US-001", status="approved", pr_url="https://x/pr/1"))
+        out = call_tool("ship_history")
+        assert out["ok"] is True
+        assert out["data"]["runs"][0]["story_id"] == "US-001"
+        assert out["data"]["runs"][0]["pr_url"] == "https://x/pr/1"
+
+    def test_status_reports_latest_run_and_budget(self, tmp_db):
+        out = call_tool("ship_status")
+        assert out["ok"] is True
+        assert out["data"]["latest"] is None
+        assert "max_per_hour" in out["data"]["budget"]
+
+    def test_the_stored_patch_stays_out_of_the_listing(self, tmp_db):
+        # diff_text is capped per run, not per response; a hundred runs of it
+        # is megabytes of patch nobody asked for. The stat and worktree stay.
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.ship.store import ShipStore
+
+        with ShipStore(tmp_db) as store:
+            store.record_run(
+                ShipRun(
+                    run_id="run-1",
+                    story_id="US-001",
+                    status="approved",
+                    diff_stat="1 file changed",
+                    diff_text="@@ -1 +1 @@\n+enormous\n",
+                )
+            )
+        row = call_tool("ship_history")["data"]["runs"][0]
+        assert "diff_text" not in row
+        assert row["diff_stat"] == "1 file changed"
+        assert "diff_text" not in call_tool("ship_status")["data"]["latest"]

@@ -85,6 +85,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     FeatureTip(
+        "planning",
+        "\U0001f4c4 Tip: Export a publishable PRD of your plan — to file, Notion or Confluence",
+        mode_key="project-planning",
+        is_new=True,
+    ),
+    FeatureTip(
         "standup",
         "☀️ Tip: Paste or drop a standup transcript in Review — Standup learns what it missed",
         mode_key="daily-standup",
@@ -146,6 +152,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "\U0001f576️ Tip: press Anonymize on any result screen to mask names before sharing",
     ),
     FeatureTip(
+        "ceremonies",
+        "\U0001f5d3️ Tip: press s to schedule a mode — it runs while yeaboi is closed and posts to your channels",
+        is_new=True,
+    ),
+    FeatureTip(
         "output-sharing",
         "🌐 Tip: Share Online publishes any generated output behind a temporary access code",
         is_new=True,
@@ -164,6 +175,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_beta=True,
     ),
     FeatureTip(
+        "agent-advisor",
+        "\U0001f916 Tip: Agents → Advisor estimates how much of your agent spend is recoverable — and why",
+        mode_key="agent-advisor",
+        is_beta=True,
+    ),
+    FeatureTip(
         "agent-standup",
         "\U0001f916 Tip: Agents → Standup digests what your AI agents did yesterday — sessions, commits, PRs",
         mode_key="agent-standup",
@@ -173,6 +190,17 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "agent-security",
         "\U0001f916 Tip: Agents → Security audits agent permissions, MCP servers and secrets exposure",
         mode_key="agent-security",
+        is_beta=True,
+    ),
+    FeatureTip(
+        "provenance",
+        "\U0001f512 Tip: `yeaboi provenance audit` verifies the tamper-evident log behind every signal",
+        is_new=True,
+    ),
+    FeatureTip(
+        "ship",
+        "\U0001f6a2 Tip: Ship hands a story from your plan to a coding agent — your approval gates the PR",
+        mode_key="ship",
         is_beta=True,
     ),
 )

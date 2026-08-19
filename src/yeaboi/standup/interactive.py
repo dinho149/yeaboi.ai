@@ -97,9 +97,17 @@ def run_interactive_standup(
         _hold()
         return 1
 
-    from yeaboi.standup.render import format_standup_plaintext
+    # Rich rather than plaintext, and this is the one path where the difference
+    # is real: the scheduled standup opens a Terminal window through the
+    # osascript wrapper, so it is the only unattended run with a screen to be
+    # pretty on. The terminal *channel* used to render this and now sends the
+    # same plaintext as Slack, which is right for a channel that usually has no
+    # terminal behind it and wrong for the one window a user is looking at.
+    from rich.console import Console
 
-    print(format_standup_plaintext(report))
+    from yeaboi.standup.render import format_standup_rich
+
+    Console().print(format_standup_rich(report))
     if report.warnings:
         print("\n⚠ Notices:")
         for w in report.warnings:

@@ -108,6 +108,26 @@ REVIEW_GRACE = timedelta(minutes=20)
 # The workflow whose success gates the reviewers (`.github/workflows/ci.yml`).
 CI_WORKFLOW_NAME = "CI"
 
+# A migration wave merges only behind a green byte-parity gate, but the two jobs
+# that prove it — ci.yml's `Go core` and `Python ↔ Go parity` — are deliberately
+# not required ruleset contexts, so a skipped run merges free. On a wave PR,
+# this gate refuses success until both check runs exist on the head SHA and
+# concluded `success`. On both lanes: a human hand-opening a wave PR should not
+# merge past a skipped gate either, and the `feedback-override` label stays the
+# escape hatch. See cowork/house-rules.md, **The migration lane**.
+#
+# "A wave PR" is the label AND the campaign's mandated branch prefix, not the
+# label alone. The checks this hold demands are *path*-triggered (test_scope's
+# `go` selector), while fleet convention labels every PR of a workstream — so a
+# labelled PR that never touches the Go seam (a renderer bugfix, a program-doc
+# edit) would have both checks skipped and sit red forever, on a lane forbidden
+# from applying the override. The branch prefix is what separates "a wave"
+# from "this workstream's maintenance", and go-migration-campaign.md names it
+# as load-bearing.
+PARITY_GATED_LABEL = "workstream:go-migration"
+PARITY_BRANCH_PREFIX = "cowork/migration-w"
+PARITY_CHECK_NAMES = ("Go core", "Python ↔ Go parity")
+
 # GitHub truncates a status description past 140 characters.
 DESCRIPTION_LIMIT = 140
 
@@ -388,6 +408,11 @@ class Snapshot:
     ci: CIState
     threads_truncated: bool = False
     head_ref: str = ""
+    # (name, conclusion) per check run on the head SHA, fetched only when
+    # `PARITY_GATED_LABEL` is among the labels. None means the read failed or
+    # was never made — different from (), which means "asked, none ran", and
+    # `parity_items` fails closed on both.
+    check_runs: tuple[tuple[str, str | None], ...] | None = None
     # Who applied `feedback-override`, when it is present. Empty when nobody did,
     # or when the timeline could not be read — those are different, and
     # ``classify`` treats them differently.
@@ -398,7 +423,7 @@ class Snapshot:
 class OpenItem:
     """One thing standing between this PR and a merge."""
 
-    kind: str  # "producer" | "thread" | "changes-requested" | "truncated"
+    kind: str  # "producer" | "thread" | "changes-requested" | "truncated" | "override" | "parity"
     key: str
     detail: str
 
@@ -932,6 +957,79 @@ def describe(items: Sequence[OpenItem]) -> str:
     return head[:DESCRIPTION_LIMIT]
 
 
+def parity_gated(snapshot: Snapshot) -> bool:
+    """Whether this PR is a migration wave — the label AND the campaign's branch
+    prefix, per the constants' comment. Prefix plus a digit, so
+    `cowork/migration-w18b` (the one wave the program allows to split) still
+    gates while `cowork/migration-workflow-fix` does not — holding a PR behind
+    checks its diff never schedules is the asymmetric mistake, on a lane
+    forbidden from applying the override.
+
+    Deliberately blind to the base ref. Waves are based on
+    `chore/go-migration`, the migration's integration branch, and the hold is
+    the same there as it would be against `main` — the branch prefix is what
+    arms it, the base only decides where a green wave lands."""
+    if PARITY_GATED_LABEL not in snapshot.labels:
+        return False
+    return bool(re.match(rf"{re.escape(PARITY_BRANCH_PREFIX)}\d", snapshot.head_ref))
+
+
+def parity_items(snapshot: Snapshot) -> tuple[list[OpenItem], str | None]:
+    """What the parity gate holds open on a migration wave PR, and what it is
+    still waiting on.
+
+    Pure over the snapshot, like everything `classify` reads. Returns
+    ``(blocking, waiting)``: blocking items for a check that is absent, skipped
+    or red — and for a read that failed, because a gate that could not look must
+    never be mistaken for a gate that found nothing — and a waiting reason while
+    a check is still running, so "not yet" stays distinct from "never".
+    """
+    sha = snapshot.head_sha[:7] or "the head commit"
+    if snapshot.check_runs is None:
+        return (
+            [
+                OpenItem(
+                    "parity",
+                    "check-runs",
+                    f"could not read the check runs on {sha} — a migration wave merges only "
+                    "behind a parity gate this script can see",
+                )
+            ],
+            None,
+        )
+    concluded = dict(snapshot.check_runs)
+    blocking: list[OpenItem] = []
+    waiting: str | None = None
+    for name in PARITY_CHECK_NAMES:
+        if name not in concluded:
+            # The parity job cannot even start until the `go` job finishes, so
+            # while CI itself is still running an absent check run is latency,
+            # not a fault — the same "not yet" vs "never" line the producers
+            # draw. CI concluded with the check still absent is the fault.
+            if snapshot.ci.conclusion is None:
+                waiting = f"CI is still running on {sha} — waiting for `{name}`"
+                continue
+            blocking.append(
+                OpenItem(
+                    "parity",
+                    name,
+                    f"`{name}` never ran on {sha} — a migration wave merges only behind its parity gate",
+                )
+            )
+        elif concluded[name] is None:
+            waiting = f"`{name}` is still running on {sha}"
+        elif concluded[name] != "success":
+            blocking.append(
+                OpenItem(
+                    "parity",
+                    name,
+                    f"`{name}` concluded {concluded[name]} on {sha} — a migration wave merges only "
+                    "behind a green parity gate",
+                )
+            )
+    return blocking, waiting
+
+
 def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     """The whole decision. Everything above feeds this; nothing below re-decides it."""
     if OVERRIDE_LABEL in snapshot.labels:
@@ -977,6 +1075,17 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     producer_items, waiting = open_producers(snapshot, now)
     items.extend(producer_items)
 
+    # The migration lane's parity hold. `kind == "parity"` is deliberately not
+    # `"producer"`: the local lane's human filter and the blocking cap's carve
+    # both key on that, so a skipped gate blocks on BOTH lanes and never gets
+    # capped away — a human hand-merging a wave PR past a skipped parity job is
+    # the same hole the label exists to close. In-progress is a waiting reason,
+    # so "not yet" stays `pending` rather than red.
+    parity_waiting: str | None = None
+    if parity_gated(snapshot):
+        parity_blocking, parity_waiting = parity_items(snapshot)
+        items.extend(parity_blocking)
+
     # --- the local lane ------------------------------------------------------
     # A branch a person is sitting at the keyboard for. The review still runs and
     # its findings are still written and listed here; what it never does is hold
@@ -1004,6 +1113,13 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
         human = [item for item in items if item.kind != "producer"]
         if human:
             return Verdict("failure", describe(human), tuple(human))
+        # A labelled wave PR is the one local case this gate may hold: the
+        # migration label is an opt-in ("this PR merges behind its parity
+        # gate"), a human can remove it, and letting the branch ride as
+        # advisory while the gate is still running would print "nothing to
+        # wait for" over the one check the lane exists to wait for.
+        if parity_waiting is not None:
+            return Verdict("pending", parity_waiting[:DESCRIPTION_LIMIT])
         if not items:
             return Verdict("success", "no open review feedback")
         noun = "finding" if len(items) == 1 else "findings"
@@ -1055,6 +1171,10 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
     if rounds > BLOCKING_ROUNDS and critical == 0:
         human = [item for item in items if item.kind != "producer" or item.key != review.key]
         if not human:
+            # The cap clears review findings, never the parity gate: a capped
+            # review with the gate still running stays pending, not green.
+            if parity_waiting is not None:
+                return Verdict("pending", parity_waiting[:DESCRIPTION_LIMIT])
             capped = [item for item in items if item.kind == "producer" and item.key == review.key]
             if capped:
                 noun = "finding" if len(capped) == 1 else "findings"
@@ -1070,6 +1190,8 @@ def classify(snapshot: Snapshot, now: datetime) -> Verdict:
         return Verdict("failure", describe(items), tuple(items))
     if waiting is not None:
         return Verdict("pending", waiting[:DESCRIPTION_LIMIT])
+    if parity_waiting is not None:
+        return Verdict("pending", parity_waiting[:DESCRIPTION_LIMIT])
     return Verdict("success", "no open review feedback")
 
 
@@ -1291,6 +1413,12 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
         # Only asked when the label is actually present — one paginated call for a
         # question that is almost always moot.
         override_actor=(fetch_override_actor(slug, number) if OVERRIDE_LABEL in labels else ""),
+        # Same economy: one extra read, made only for a migration wave PR. The
+        # label check here is the cheap half of `parity_gated` — the branch
+        # half needs the Snapshot this call is still building, so `classify`
+        # re-asks with both; an extra fetch on a labelled non-wave PR is waste,
+        # never a wrong verdict.
+        check_runs=(fetch_check_runs(slug, head_sha) if PARITY_GATED_LABEL in labels else None),
     )
 
 
@@ -1371,6 +1499,28 @@ def fetch_override_actor(slug: str, number: int) -> str:
         # applied" after any remove/re-add.
         actor = ((item.get("actor") or {}).get("login")) or ""
     return actor
+
+
+def fetch_check_runs(slug: str, head_sha: str) -> tuple[tuple[str, str | None], ...] | None:
+    """(name, conclusion) per check run on this exact SHA, or None on a failed read.
+
+    One page of 100 is deliberate: ci.yml is ~15 jobs and the API returns the
+    latest attempt per check by default. `conclusion` is None while a run is
+    still executing, and `parity_items` reads that as "not yet" rather than
+    "never".
+    """
+    if not head_sha:
+        return None
+    payload = _read(f"repos/{slug}/commits/{head_sha}/check-runs?per_page=100")
+    if not isinstance(payload, dict) or not isinstance(payload.get("check_runs"), list):
+        return None
+    runs = payload["check_runs"]
+    # A page that provably is not the whole answer is "unreadable", not "these
+    # are all the runs" — a truncated list would report the parity checks as
+    # never-ran, which is the wrong reason for the right outcome.
+    if isinstance(payload.get("total_count"), int) and payload["total_count"] > len(runs):
+        return None
+    return tuple((run.get("name") or "", run.get("conclusion")) for run in runs if isinstance(run, dict))
 
 
 def fetch_ci(slug: str, head_sha: str) -> CIState:
@@ -1564,6 +1714,18 @@ def sticky_body(snapshot: Snapshot, verdict: Verdict) -> str:
         "",
     ]
     lines += [f"- {item.detail}" for item in verdict.items]
+    if any(item.kind == "parity" for item in verdict.items):
+        # The marker instructions below cannot clear these — `open_producers`
+        # never owned them — so a comment that only gave the marker advice
+        # would be telling the reader to do the one thing that cannot work.
+        lines += [
+            "",
+            "**The parity items above are not review findings, and no reply clears them.** They "
+            "clear on their own once ci.yml's `Go core` and `Python ↔ Go parity` checks run green "
+            "on this head commit — re-run CI, or push the commit that makes the gate pass. A wave "
+            "PR whose diff no longer schedules those jobs is a wave whose gate is gone, and that "
+            "is the fault to fix. See cowork/house-rules.md, **The migration lane**.",
+        ]
     # The advice has to match the PR. On an unattended PR an `<!-- addressed: -->`
     # reply from the PR's own author is discarded, and on the cowork lane that
     # author *is* the maintainer — so a human who reads this comment, disagrees

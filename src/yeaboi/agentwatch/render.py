@@ -11,7 +11,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 
 _ACCENT = "rgb(70,190,230)"  # AGENT_USAGE_THEME.accent
 _MUTED = "rgb(120,120,140)"
@@ -100,6 +100,105 @@ def format_usage_rich(report: AgentUsageReport) -> RenderableType:
             continue
         parts.append(Text(title, style=f"bold {_ACCENT}"))
         parts.extend(Text(f"  • {item}") for item in items)
+
+    for warning in report.warnings:
+        parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
+
+    return Group(*parts)
+
+
+_ADVISOR_ACCENT = "rgb(240,180,70)"  # AGENT_ADVISOR_THEME.accent
+
+
+def format_advisor_rich(report: AgentAdvisorReport) -> RenderableType:
+    """The agent advisor report as terminal output."""
+    parts: list[RenderableType] = []
+
+    header = Text()
+    header.append("Agent Advisor  ", style=f"bold {_ADVISOR_ACCENT}")
+    header.append(f"{report.period_start} → {report.period_end}", style=_MUTED)
+    parts.append(header)
+
+    headline = Text()
+    headline.append(f"~${report.recoverable_usd:,.2f} recoverable", style="bold white")
+    headline.append(
+        f" of ${report.total_cost_usd:,.2f} estimated spend"
+        + (f" ({report.recoverable_share:.0%})" if report.total_cost_usd > 0 else "")
+        + f" — {report.files_audited} transcript(s) audited",
+        style=_MUTED,
+    )
+    parts.append(headline)
+    if report.unknown_rate_share > 0:
+        parts.append(
+            Text(
+                f"⚠ {report.unknown_rate_share:.0%} of input tokens priced at a fallback tier (unknown model rates)",
+                style="rgb(220,180,60)",
+            )
+        )
+    parts.append(
+        Text(
+            f"estimates: tokens ≈ bytes/4, priced at ~${report.effective_input_rate_per_mtok:,.2f}/Mtok input "
+            f"(rates as of {report.pricing_as_of})",
+            style=_MUTED,
+        )
+    )
+
+    items = [i for i in report.line_items if i.content_bytes]
+    if items:
+        table = Table(
+            title="Waste by mechanism",
+            title_style=f"bold {_ADVISOR_ACCENT}",
+            header_style=_MUTED,
+            border_style="rgb(50,60,80)",
+        )
+        table.add_column("mechanism")
+        table.add_column("calls", justify="right")
+        table.add_column("size", justify="right")
+        table.add_column("est. cost", justify="right")
+        table.add_column("of Read bytes", justify="right")
+        for item in items:
+            label = item.label if item.recoverable else f"{item.label} *"
+            table.add_row(
+                label,
+                str(item.calls) if item.calls else "—",
+                _tokens(item.est_tokens) + " tok",
+                f"${item.est_usd:,.2f}",
+                f"{item.share_of_read_bytes:.0%}",
+            )
+        parts.append(table)
+        if any(not i.recoverable for i in items):
+            parts.append(Text("* sized as context, not counted in the recoverable total", style=_MUTED))
+
+    health = Text()
+    health.append("Cache health  ", style=f"bold {_ADVISOR_ACCENT}")
+    health.append(
+        f"alignment {report.alignment_score}/100 · a Read stays in context ~{report.residency_median} turn(s) "
+        f"(p90 {report.residency_p90}) · {report.gaps_over_5m} cache-death gap(s) "
+        f"across {report.sessions_with_gap} session(s)",
+        style=_MUTED,
+    )
+    parts.append(health)
+
+    if report.volatile_signals:
+        table = Table(
+            title="Volatile content in prompt-prefix files",
+            title_style=f"bold {_ADVISOR_ACCENT}",
+            header_style=_MUTED,
+            border_style="rgb(50,60,80)",
+        )
+        table.add_column("file")
+        table.add_column("findings", justify="right")
+        table.add_column("kinds")
+        for signal in report.volatile_signals:
+            kinds = ", ".join(f"{label}×{count}" for label, count in signal.counts)
+            table.add_row(signal.location, str(signal.total), kinds)
+        parts.append(table)
+
+    for title, prose in (("Insights", report.insights), ("Recommendations", report.recommendations)):
+        if not prose:
+            continue
+        parts.append(Text(title, style=f"bold {_ADVISOR_ACCENT}"))
+        parts.extend(Text(f"  • {item}") for item in prose)
 
     for warning in report.warnings:
         parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))

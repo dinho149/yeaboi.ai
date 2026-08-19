@@ -150,7 +150,7 @@ class TestFindings:
 
 class TestReports:
     def test_record_and_list_each_kind(self, store):
-        for kind in ("usage", "standup", "security"):
+        for kind in ("usage", "standup", "security", "advisor"):
             row_id = store.record_report(kind, _FakeReport(), key_date="2026-08-08")
             assert row_id > 0
             rows = store.list_reports(kind)
@@ -186,6 +186,7 @@ class TestRehydration:
     @staticmethod
     def _artifacts():
         from yeaboi.agent.state import (
+            AgentAdvisorReport,
             AgentRepoActivityRow,
             AgentSecurityReport,
             AgentSessionSummary,
@@ -196,6 +197,8 @@ class TestRehydration:
             McpServerRecord,
             ModelUsageRow,
             SecurityFinding,
+            VolatileFileSignal,
+            WasteLineItem,
         )
 
         usage = AgentUsageReport(
@@ -256,7 +259,58 @@ class TestRehydration:
             recommendations=("rotate it",),
             generated_at="2026-08-08T10:00:00+00:00",
         )
-        return {"usage": usage, "standup": standup, "security": security}
+        advisor = AgentAdvisorReport(
+            period_start="2026-07-10",
+            period_end="2026-08-08",
+            session_count=3,
+            files_audited=4,
+            total_cost_usd=31.1,
+            read_calls=40,
+            read_bytes=100_000,
+            tool_bytes_total=250_000,
+            recoverable_usd=2.75,
+            recoverable_share=0.0884,
+            effective_input_rate_per_mtok=5.0,
+            unknown_rate_share=0.1,
+            pricing_as_of="2026-06-24",
+            line_items=(
+                WasteLineItem(
+                    mechanism="identical-repeat",
+                    label="Identical re-reads",
+                    calls=3,
+                    content_bytes=12_000,
+                    est_tokens=3_000,
+                    est_usd=0.015,
+                    share_of_read_bytes=0.12,
+                    note="the same file read again, byte-identical",
+                ),
+                WasteLineItem(
+                    mechanism="stale-reread",
+                    label="Stale reads (edited after)",
+                    calls=1,
+                    content_bytes=4_000,
+                    est_tokens=1_000,
+                    est_usd=0.005,
+                    share_of_read_bytes=0.04,
+                    recoverable=False,
+                    note="context, not savings",
+                ),
+            ),
+            residency_median=6,
+            residency_p90=20,
+            gaps_over_5m=2,
+            gaps_over_1h=1,
+            sessions_with_gap=1,
+            volatile_signals=(
+                VolatileFileSignal(location="/home/dev/webapp/CLAUDE.md", counts=(("uuid", "2"),), total=2),
+            ),
+            alignment_score=80,
+            insights=("re-reads dominate",),
+            recommendations=("read once",),
+            warnings=("no key",),
+            generated_at="2026-08-08T10:00:00+00:00",
+        )
+        return {"usage": usage, "standup": standup, "security": security, "advisor": advisor}
 
     def test_round_trip_each_kind(self, store):
         from yeaboi.agentwatch.store import report_from_payload

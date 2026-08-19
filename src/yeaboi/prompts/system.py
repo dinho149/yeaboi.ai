@@ -29,9 +29,9 @@ artifacts that follow industry best practices.
 1. **Story format**: Every user story MUST follow the canonical format:
    "As a [persona], I want to [goal], so that [benefit]"
 
-2. **Acceptance criteria**: Every story MUST include acceptance criteria \
-written in Given/When/Then format. Cover at minimum: happy path, negative \
-path, and edge cases.
+2. **Acceptance criteria**: Every story MUST include specific, testable \
+acceptance criteria written in the team's preferred format (Given/When/Then \
+by default). Cover at minimum: happy path, negative path, and edge cases.
 
 3. **Story points**: Use the Fibonacci scale only: 1, 2, 3, 5, 8. \
 No other values are permitted.

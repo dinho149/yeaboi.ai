@@ -31,7 +31,9 @@ Procedure:
    your inputs do not name a campaign, `Extends` is not available to you at all and those files are
    `Reads`. `src/yeaboi/ui/mode_select/__init__.py` is not on the grant under any conditions.
    See `cowork/house-rules.md`, **The campaign lane**, and `cowork/integration-campaign.md`.
-3. Branch off `main`: `cowork/<workstream>-<short-slug>`.
+3. Branch off freshly fetched `origin/main` (`git fetch origin && git switch -c … origin/main`), not
+   the local `main` ref, which in a worktree is routinely several commits behind:
+   `cowork/<workstream>-<short-slug>`.
 4. **A `type:bug` item starts with the failing test.** Write the regression test first, run it
    against unfixed code and capture the failure, then fix and capture the pass. Both runs go in the
    PR body verbatim. This is the auto lane's admission ticket for a bug (`house-rules.md`), not a
@@ -40,10 +42,18 @@ Procedure:
 5. Implement. Follow the repo's conventions rather than your own: the three observability pillars,
    frozen-dataclass defaults, parse → fallback → format, prompts in `prompts/`, TUI shared
    primitives, `# See docs: <section>` comments on first use of a LangGraph/LangChain concept.
-6. **Gate** — `make test` and `make lint` must both pass. `make test-fast` is not enough. If the
-   change touches `frontend/`, run `make web` and commit `src/yeaboi/web/static/` in the same commit.
-   If it adds a capability, add its `CAPABILITIES` row and its `FeatureTip`.
-7. Commit with a lowercase imperative message and the `Co-Authored-By` trailer from `CLAUDE.md`.
+6. **Gate** — `make ship-gate` must pass. `make test-fast` is not enough, and neither is `make test`
+   on its own: the gate also runs `format-check` (a required CI check with no other local twin),
+   `security`, and `preflight`, which runs the optional CI jobs this diff needs — front-end bundles,
+   docs site, Go sidecar, parity unskipped, golden evaluators, the wheel's contents, actionlint. Those
+   were previously discovered only after the PR was open. If the change touches `frontend/`, run
+   `make web` and commit `src/yeaboi/web/static/` in the same commit. If it adds a capability, add its
+   `CAPABILITIES` row and its `FeatureTip`.
+7. `git fetch origin && git rebase origin/main` before pushing — the gate above proves a tree, and
+   if `main` moved while you were building it is not the tree that will land. Resolve conflicts with
+   the playbook in `.claude/commands/sync-main.md`; for every generated file in this repo, "take the
+   other side" is the wrong answer. Commit with a lowercase imperative message and the
+   `Co-Authored-By` trailer from `CLAUDE.md`.
    Push, then `gh pr create` against `main` with a Summary, a Test plan, a `Closes YEA-NN` line
    using the ticket identifier from your inputs (the magic word is what makes the Linear GitHub
    integration attach the PR and move the ticket to Done on merge — a bare Linear URL does

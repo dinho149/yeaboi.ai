@@ -110,6 +110,27 @@ def _analysis_payload(graph_state: dict) -> dict | None:
     analysis = graph_state.get("project_analysis")
     if not analysis:
         return None
+    fields = [
+        {"label": label, "items": list(items)}
+        for label, attr in _ANALYSIS_FIELDS
+        if (items := getattr(analysis, attr, ()) or ())
+    ]
+    # Architecture rides the generic fields renderer as text lines — no
+    # template change needed, and words-not-markup like every payload here.
+    arch = getattr(analysis, "architecture", None)
+    if arch is not None and arch.options:
+        items = [f"Recommended: {arch.chosen} (confidence: {arch.confidence})"]
+        if arch.rationale:
+            items.append(arch.rationale)
+        for opt in arch.options:
+            marker = "✓ " if opt.name == arch.chosen else ""
+            line = f"{marker}{opt.name} — {opt.summary}" if opt.summary else f"{marker}{opt.name}"
+            if opt.pros:
+                line += f" | pros: {'; '.join(opt.pros)}"
+            if opt.cons:
+                line += f" | cons: {'; '.join(opt.cons)}"
+            items.append(line)
+        fields.insert(0, {"label": "Architecture", "items": items})
     return {
         "name": analysis.project_name,
         "description": analysis.project_description,
@@ -117,11 +138,7 @@ def _analysis_payload(graph_state: dict) -> dict | None:
         "projectType": analysis.project_type,
         "sprintWeeks": analysis.sprint_length_weeks,
         "targetSprints": analysis.target_sprints,
-        "fields": [
-            {"label": label, "items": list(items)}
-            for label, attr in _ANALYSIS_FIELDS
-            if (items := getattr(analysis, attr, ()) or ())
-        ],
+        "fields": fields,
     }
 
 
@@ -135,7 +152,9 @@ def _story_payload(story, dod_items: list[str]) -> dict:
         "discipline": _enum(story.discipline),
         "points": _points(story.story_points),
         "acceptanceCriteria": [
-            {"given": ac.given, "when": ac.when, "then": ac.then} for ac in story.acceptance_criteria
+            # "text" carries a free-text criterion (team style); empty for GWT.
+            {"given": ac.given, "when": ac.when, "then": ac.then, "text": ac.text}
+            for ac in story.acceptance_criteria
         ],
         # Paired with its flag rather than sent as two lists: the old renderer
         # zipped them and length-checked first, and a mismatch silently dropped

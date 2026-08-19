@@ -17,6 +17,7 @@ import dataclasses
 import json
 import logging
 import math
+import os
 import re
 from collections.abc import Callable
 
@@ -32,6 +33,8 @@ from yeaboi.agent.state import (
     PHASE_QUESTION_RANGES,
     TOTAL_QUESTIONS,
     AcceptanceCriterion,
+    ArchitectureDecision,
+    ArchitectureOption,
     Discipline,
     Feature,
     Priority,
@@ -118,7 +121,22 @@ def _is_llm_auth_or_billing_error(exc: Exception) -> bool:
     LLM feature silently degrades and the app appears broken.
 
     Covers Anthropic, OpenAI, and Google provider error classes.
+
+    Every mode's engine routes its LLM failures through here, which makes this the
+    one place that learns a subscription token has stopped working — so a positive
+    answer also records that (in memory only; see :mod:`yeaboi.auth_state`). The
+    alternative was the same three lines in eleven engines.
     """
+    if not _auth_or_billing_error(exc):
+        return False
+    from yeaboi.auth_state import note_auth_failure
+
+    note_auth_failure(exc)
+    return True
+
+
+def _auth_or_billing_error(exc: Exception) -> bool:
+    """The pure classification behind :func:`_is_llm_auth_or_billing_error`."""
     # Anthropic: AuthenticationError, PermissionDeniedError, BadRequestError (billing)
     try:
         import anthropic
@@ -1441,6 +1459,197 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
             return None, None, f"Azure DevOps connection failed: {exc}"
 
     return None, None, "No tracker configured"
+
+
+def _fetch_sprint_targets(preferred: str = "") -> tuple[list[dict], str]:
+    """Fetch the board's open (active + future) sprints/iterations as targets.
+
+    # See docs: "Scrum Standards" — sprint planning
+    #
+    # Small-project mode offers "add this work to an existing sprint" and needs
+    # the real board sprints to offer as targets — the active one first (small
+    # work often lands mid-sprint), then upcoming future sprints. Uses the same
+    # paginated, scrum-filtered lookup as the sync modules so intake and sync
+    # can never disagree about what exists.
+
+    Returns:
+        ([{name, external_id, state, start_date, number|None}], status_message).
+        Empty list on failure, with the reason in status_message — same
+        contract as _fetch_active_sprint_number.
+    """
+    use_jira = (preferred == "jira" and _is_jira_configured()) or (not preferred and _is_jira_configured())
+
+    if use_jira:
+        try:
+            from yeaboi.tools.jira import _make_jira_client, fetch_board_sprints, find_scrum_board_id
+
+            jira = _make_jira_client()
+            if jira is None:
+                return [], "Jira not configured"
+            from yeaboi.config import get_jira_project_key
+
+            key = get_jira_project_key() or ""
+            if not key:
+                return [], "JIRA_PROJECT_KEY not set"
+            board_id = find_scrum_board_id(jira, key)
+            if board_id is None:
+                return [], f"No Jira board found for project {key}"
+            targets = []
+            for item in fetch_board_sprints(jira, board_id, states=("active", "future")):
+                num_match = re.search(r"(\d+)\s*$", item["name"])
+                targets.append(
+                    {
+                        "name": item["name"],
+                        "external_id": str(item["id"] or ""),
+                        "state": item["state"],
+                        "start_date": item["start_date"],
+                        "number": int(num_match.group(1)) if num_match else None,
+                    }
+                )
+            return targets, f"{len(targets)} open sprint(s) on the board"
+        except Exception as exc:
+            logger.debug("Failed to fetch Jira sprint targets", exc_info=True)
+            return [], f"Jira connection failed: {exc}"
+
+    if _is_azdevops_configured():
+        try:
+            from yeaboi.tools.azure_devops import fetch_team_iterations_meta
+
+            targets = []
+            for it in fetch_team_iterations_meta():
+                if it["time_frame"] == "past":
+                    continue
+                num_match = re.search(r"(\d+)\s*$", it["name"])
+                targets.append(
+                    {
+                        "name": it["name"],
+                        "external_id": it["path"],
+                        "state": "active" if it["time_frame"] == "current" else "future",
+                        "start_date": it["start_date"],
+                        "number": int(num_match.group(1)) if num_match else None,
+                    }
+                )
+            # Active first, then future — same ordering the Jira path gets
+            # from its states tuple.
+            targets.sort(key=lambda t: (t["state"] != "active", t["start_date"] or "9999"))
+            return targets, f"{len(targets)} open iteration(s) for the team"
+        except Exception as exc:
+            logger.debug("Failed to fetch AzDO iteration targets", exc_info=True)
+            return [], f"Azure DevOps connection failed: {exc}"
+
+    return [], "No tracker configured"
+
+
+# Cap on how many existing sprints the small-mode Q27 menu offers — beyond
+# the active sprint and the next few, "add to a sprint two months out" is
+# backlog management, not small-project planning.
+_MAX_SPRINT_TARGET_CHOICES = 4
+
+_SPRINT_TARGET_CREATE_CHOICE = "Create a new sprint"
+
+_SPRINT_TARGET_BACKLOG_CHOICE = "Backlog (no sprint)"
+
+
+def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> str | None:
+    """Park the small-mode Q27 choices: existing sprint, create new, or backlog.
+
+    # See docs: "Scrum Standards" — sprint planning
+    #
+    # Fetches the board's active + future sprints and offers them by their real
+    # names ("Add to PSOT Sprint 104 (active)"), plus "Create a new sprint" and
+    # "Backlog (no sprint)". Mirrors the smart-mode Q27 dynamic-choice pattern:
+    # sentinel answer + _follow_up_choices, resolved on the next pass.
+
+    Returns:
+        The prompt text to show, or None when no targets could be fetched —
+        the caller then falls back to _setup_small_sprint_fallback_question,
+        which keeps the create/backlog halves of the decision askable.
+    """
+    targets, status = _fetch_sprint_targets(questionnaire._preferred_tracker)
+    if not targets:
+        logger.warning("Small-mode Q27: sprint target fetch failed: %s", status)
+        return None
+
+    active = next((t for t in targets if t["state"] == "active"), None)
+    if active is not None and active["number"] is not None:
+        # Feed the start-date offset machinery the same transients smart mode sets.
+        questionnaire._active_sprint_number = active["number"]
+        questionnaire._active_sprint_start_date = active["start_date"] or None
+
+    offered = targets[:_MAX_SPRINT_TARGET_CHOICES]
+    questionnaire._sprint_target_options = {t["name"]: t["external_id"] for t in offered}
+    choices = [f"Add to {t['name']}{' (active)' if t['state'] == 'active' else ''}" for t in offered]
+    choices.append(_SPRINT_TARGET_CREATE_CHOICE)
+    choices.append(_SPRINT_TARGET_BACKLOG_CHOICE)
+    questionnaire._follow_up_choices[27] = tuple(choices)
+    if active is not None and active["number"] is not None:
+        questionnaire.answers[27] = f"_active:{active['number']}"
+    else:
+        questionnaire.answers[27] = "_targets"
+
+    pref = questionnaire._preferred_tracker
+    label = "Jira" if (pref == "jira" or (not pref and _is_jira_configured())) else "Azure DevOps"
+    logger.info("Small-mode Q27: offering %d sprint target(s) from %s", len(offered), label)
+    active_line = f"Detected active sprint in {label}: **{active['name']}**.\n\n" if active else ""
+    return f"{active_line}Add this work to an existing sprint, create a new one, or leave it in the backlog?"
+
+
+def _setup_small_sprint_fallback_question(
+    questionnaire: QuestionnaireState, last_num: int | None, source_line: str
+) -> str:
+    """Small-mode Q27 when the board's sprint list cannot be fetched.
+
+    The small-project question is a landing decision — existing sprint, new
+    sprint, or backlog. Without a target list the first option is gone, but
+    the other two remain askable; the generic numbered menu used to swallow
+    them (a bare "Sprint 25" choice with no create/backlog language).
+    last_num is the best-known latest sprint number (live active sprint or
+    team analysis), used to name the create choice; None means no number is
+    known anywhere and the sync will number from the board at sync time.
+    """
+    if last_num is not None:
+        questionnaire._active_sprint_number = last_num
+        questionnaire.answers[27] = f"_active:{last_num}"
+        choices = (f"Create Sprint {last_num + 1} (next)", _SPRINT_TARGET_BACKLOG_CHOICE)
+    else:
+        questionnaire.answers[27] = "_targets"
+        choices = (_SPRINT_TARGET_CREATE_CHOICE, _SPRINT_TARGET_BACKLOG_CHOICE)
+    questionnaire._follow_up_choices[27] = choices
+    logger.info("Small-mode Q27 fallback: create/backlog choices (last_num=%s)", last_num)
+    return f"{source_line}Create a new sprint for this work, or leave it in the backlog?"
+
+
+def _resolve_small_sprint_target_answer(questionnaire: QuestionnaireState) -> None:
+    """Normalize the small-mode Q27 answer after the user picked a choice.
+
+    "Add to <name> (active)" → "Add to <name>" (the real board name, kept for
+    the confirmation write). "Create a new sprint" → "Sprint <max+1>" so the
+    plan's Sprint artifact carries the number the sync will actually use.
+    """
+    answer = questionnaire.answers.get(27, "")
+    if answer.startswith("Add to "):
+        target_name = answer.removeprefix("Add to ").strip()
+        target_name = target_name.removesuffix("(active)").strip()
+        questionnaire.answers[27] = f"Add to {target_name}"
+        questionnaire._follow_up_choices.pop(27, None)
+        return
+    if "backlog" in answer.lower():
+        questionnaire.answers[27] = _SPRINT_TARGET_BACKLOG_CHOICE
+        questionnaire._follow_up_choices.pop(27, None)
+        return
+    if _SPRINT_TARGET_CREATE_CHOICE.lower() in answer.lower():
+        numbers = [
+            int(m.group(1))
+            for name in questionnaire._sprint_target_options
+            if (m := re.search(r"(\d+)\s*$", name)) is not None
+        ]
+        if questionnaire._active_sprint_number is not None:
+            numbers.append(questionnaire._active_sprint_number)
+        if numbers:
+            questionnaire.answers[27] = f"Sprint {max(numbers) + 1}"
+        else:
+            questionnaire.answers[27] = "Fresh start (today)"
+        questionnaire._follow_up_choices.pop(27, None)
 
 
 # ---------------------------------------------------------------------------
@@ -3755,9 +3964,13 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
 # ---------------------------------------------------------------------------
 # See docs: "Project Intake Questionnaire" — prior art
 
-_PRIOR_ART_ACCEPT = "Yes, relevant"
-_PRIOR_ART_REJECT = "Not relevant"
-_PRIOR_ART_SKIP = "Skip the rest"
+# The one grammar every surface answers in — the chat widget submits it, and
+# REPL / form / headless / typed-chat users type it against the numbered list
+# the prompt shows. Documented in _prior_art_prompt and _PRIOR_ART_GRAMMAR_HINT.
+_PRIOR_ART_GRAMMAR_HINT = (
+    'Reply with the numbers that are relevant (e.g. "1 3"), "all", or "none". '
+    'Prefix ! to never suggest a repo again (e.g. "1 !2").'
+)
 
 
 def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
@@ -3770,7 +3983,7 @@ def _prior_art_applies(questionnaire: QuestionnaireState) -> bool:
 def _start_prior_art(questionnaire: QuestionnaireState) -> str | None:
     """Run the scan and open the sub-loop. None means "nothing to ask".
 
-    Returns the first candidate's prompt when there is a shortlist. When there
+    Returns the one batch prompt when there is a shortlist. When there
     is not, the stage is closed out and the reason recorded so the card can say
     which of "no profile" / "profile too old" / "nothing matched" happened —
     going quiet would leave the user unable to tell a gap from a verdict.
@@ -3829,65 +4042,78 @@ def _accepted_prior_art(questionnaire: QuestionnaireState) -> tuple:
     return tuple(refs)
 
 
-def _prior_art_current(questionnaire: QuestionnaireState) -> dict | None:
-    """The candidate currently on screen, or None when the list is exhausted."""
-    index = questionnaire._prior_art_index
-    candidates = questionnaire._prior_art_candidates
-    return candidates[index] if 0 <= index < len(candidates) else None
-
-
 def _prior_art_prompt(questionnaire: QuestionnaireState) -> str:
-    """The question for the current candidate, pitch and all."""
-    candidate = _prior_art_current(questionnaire)
-    if candidate is None:
+    """The one batch question listing every shortlisted repository.
+
+    All candidates appear numbered with condensed pitches, because this same
+    markdown is the whole interface on the text surfaces (REPL, form intake,
+    typed chat) — the answer grammar it documents is what
+    _parse_prior_art_answer accepts, so nothing depends on the chat widget.
+    """
+    candidates = questionnaire._prior_art_candidates
+    if not candidates:
         return ""
-    total = len(questionnaire._prior_art_candidates)
-    position = questionnaire._prior_art_index + 1
+    plural = "repository" if len(candidates) == 1 else "repositories"
     lines = [
-        f"**Prior art {position} of {total}** — you already have **{candidate.get('name', '')}**.",
+        f"**Prior art** — you already have {len(candidates)} {plural} that might be relevant.",
         "",
     ]
-    for bullet in candidate.get("pitch") or ():
-        lines.append(f"- {bullet}")
-    stack = candidate.get("stack") or candidate.get("languages") or ()
-    if stack:
-        lines.append("")
-        lines.append(f"_{', '.join(stack)}_")
-    lines += [
-        "",
-        "Is it relevant to this project?",
-        "",
-        f"[1] {_PRIOR_ART_ACCEPT}",
-        f"[2] {_PRIOR_ART_REJECT}",
-        f"[3] {_PRIOR_ART_SKIP}",
-    ]
-    # Say that answering is what reaches the rest. The candidates are asked
-    # about one at a time on every surface, so "1 of 3" on its own reads as a
-    # pager offering no way to reach 2 and 3.
-    remaining = total - position
-    if remaining:
-        lines += ["", f"_Answering brings up the next — {remaining} more after this._"]
+    for position, candidate in enumerate(candidates, start=1):
+        stack = candidate.get("stack") or candidate.get("languages") or ()
+        title = f"**{position}. {candidate.get('name', '')}**"
+        if stack:
+            title += f" _({', '.join(stack)})_"
+        lines.append(title)
+        for bullet in (candidate.get("pitch") or ())[:2]:
+            lines.append(f"   - {bullet}")
+    lines += ["", _PRIOR_ART_GRAMMAR_HINT]
     return "\n".join(lines)
 
 
-def _prior_art_advance(questionnaire: QuestionnaireState) -> dict:
-    """Move to the next candidate, or finish the sub-loop.
+def _parse_prior_art_answer(text: str, count: int) -> tuple[set[int], set[int]] | None:
+    """Parse a batch verdict into 0-based (relevant, banned) index sets.
 
-    Finishing writes the rejections to the global ledger and hands back to the
-    funnel, which shows the summary the accepted references now appear in.
+    Grammar (case-insensitive, tokens split on commas/whitespace):
+      - ``N``            → relevant (1-based against the prompt's numbering)
+      - ``!N``           → banned — never suggest again (permanent ledger write)
+      - ``all``          → every candidate relevant
+      - ``none``/``skip``/empty → nothing relevant, nothing banned
+    A ban wins over a select of the same index. Any out-of-range digit or
+    unrecognised token returns None so the caller can re-prompt — silently
+    dropping half an answer would record a verdict the user never gave.
     """
-    questionnaire._prior_art_index += 1
-    questionnaire._prior_art_stage = "ask"
-    if _prior_art_current(questionnaire) is not None:
-        return {
-            "questionnaire": questionnaire,
-            "messages": [AIMessage(content=_prior_art_prompt(questionnaire))],
-        }
-    return _finish_prior_art(questionnaire)
+    words = [w for w in re.split(r"[,\s]+", text.strip().lower()) if w]
+    relevant: set[int] = set()
+    banned: set[int] = set()
+    for word in words:
+        if word in ("none", "skip"):
+            # An explicit "nothing" — inert beside other tokens rather than an
+            # error, so "none" typed after second thoughts still parses.
+            continue
+        if word == "all":
+            relevant.update(range(count))
+            continue
+        is_ban = word.startswith("!")
+        digits = word[1:] if is_ban else word
+        # isdecimal, not isdigit: isdigit accepts superscripts ("²") that
+        # int() then refuses, turning a typo into a raised turn error.
+        if not digits.isdecimal():
+            return None
+        index = int(digits) - 1
+        if not 0 <= index < count:
+            return None
+        (banned if is_ban else relevant).add(index)
+    return relevant - banned, banned
 
 
 def _finish_prior_art(questionnaire: QuestionnaireState) -> dict:
-    """Close the sub-loop: persist rejections, then show the summary."""
+    """Close the sub-loop: persist verdicts, then show the summary.
+
+    Only explicit verdicts reach the permanent ledger: accepted → up, banned
+    (``!N``) → down. A candidate the user simply did not tick is passed over
+    for this project only and appears in neither list — writing it down would
+    make one quick Enter silently blacklist the whole shortlist forever.
+    """
     from yeaboi.agent import prior_art_feedback
 
     questionnaire._prior_art_stage = "done"
@@ -3907,7 +4133,7 @@ def _finish_prior_art(questionnaire: QuestionnaireState) -> dict:
             project=str(questionnaire.answers.get(1, ""))[:120],
         )
     logger.info(
-        "prior_art: %d accepted, %d rejected",
+        "prior_art: %d accepted, %d banned",
         len(questionnaire._prior_art_accepted),
         len(questionnaire._prior_art_rejected),
     )
@@ -4405,8 +4631,25 @@ def project_intake(state: ScrumState) -> dict:
             qs.current_question = q_nums[0]
 
             # Q27 with tracker: use the active sprint/iteration number (fetched concurrently above)
-            # to populate dynamic choices for the sprint selection menu
-            if q_nums[0] == 27 and active_num is not None:
+            # to populate dynamic choices for the sprint selection menu.
+            # Small mode asks a different Q27 — "add to an existing sprint, or
+            # create a new one?" — with the board's real sprint names as targets.
+            small_q27 = q_nums[0] == 27 and _is_small_project_mode(qs.intake_mode) and _is_tracker_configured()
+            if small_q27 and (small_prompt := _setup_small_sprint_target_question(qs)) is not None:
+                prompt_text = small_prompt
+            elif small_q27:
+                # Target list unavailable — the landing decision (new sprint
+                # vs backlog) is still real, so ask it instead of silently
+                # defaulting like the generic path would.
+                if active_num is not None:
+                    qs._active_sprint_start_date = active_start
+                source = (
+                    f"Detected active sprint in {_tracker_label}: **Sprint {active_num}**.\n\n"
+                    if active_num is not None
+                    else ""
+                )
+                prompt_text = _setup_small_sprint_fallback_question(qs, active_num, source)
+            elif not small_q27 and q_nums[0] == 27 and active_num is not None:
                 qs._active_sprint_number = active_num
                 qs._active_sprint_start_date = active_start
                 qs.answers[27] = f"_active:{active_num}"
@@ -4419,8 +4662,8 @@ def project_intake(state: ScrumState) -> dict:
                     f"Detected active sprint in {_tracker_label}: **Sprint {active_num}**.\n\n"
                     f"Which sprint are you planning for?"
                 )
-            elif q_nums[0] == 27 and _is_tracker_configured() and active_num is None:
-                # Couldn't fetch sprint — tell the user why, then fall back
+            elif q_nums[0] == 27 and _is_tracker_configured():
+                # Couldn't fetch sprint/targets — tell the user why, then fall back
                 logger.warning("Tracker sprint fetch failed: %s", jira_status)
                 _derive_q27_from_locale(qs)
                 gaps = _find_essential_gaps(qs, essential_set)
@@ -4728,14 +4971,20 @@ def project_intake(state: ScrumState) -> dict:
 
         # Q27 sprint selection: resolve the selected sprint.
         # The resolved choice text is "Sprint 105 (next)" — extract the sprint number.
+        # Small mode resolves its "Add to <name>" / "Create a new sprint" choices
+        # FIRST: "Add to PSOT Sprint 104" must keep its add-to intent, so the
+        # generic Sprint-N rewrite below must never see it.
         # Bank holidays are now a separate question (Q28).
         if current_q == 27 and _is_tracker_configured():
+            if _is_small_project_mode(questionnaire.intake_mode):
+                _resolve_small_sprint_target_answer(questionnaire)
             q27_answer = questionnaire.answers.get(27, "")
-            sprint_num_match = re.search(r"Sprint\s+(\d+)", q27_answer)
-            if sprint_num_match:
-                questionnaire.answers[27] = f"Sprint {sprint_num_match.group(1)}"
+            if not q27_answer.startswith("Add to "):
+                sprint_num_match = re.search(r"Sprint\s+(\d+)", q27_answer)
+                if sprint_num_match:
+                    questionnaire.answers[27] = f"Sprint {sprint_num_match.group(1)}"
             questionnaire._follow_up_choices.pop(27, None)
-            # Prepare bank holiday detection choices for Q28
+            # Prepare bank holiday detection choices for Q28 (no-op in small mode)
             _prepare_bank_holiday_choices(questionnaire)
 
         # Q28 bank holiday: parse the user's answer (same logic as standard mode)
@@ -4777,15 +5026,23 @@ def project_intake(state: ScrumState) -> dict:
         questionnaire._pending_merged_questions = q_nums
         questionnaire.current_question = q_nums[0]
 
-        # Q27 with tracker: populate dynamic choices for the sprint selection menu
-        if q_nums[0] == 27 and _is_tracker_configured():
+        # Q27 with tracker: populate dynamic choices for the sprint selection menu.
+        # Small mode asks its own Q27 (existing sprint vs new) with board names.
+        if (
+            q_nums[0] == 27
+            and _is_small_project_mode(questionnaire.intake_mode)
+            and _is_tracker_configured()
+            and (small_prompt := _setup_small_sprint_target_question(questionnaire)) is not None
+        ):
+            prompt_text = small_prompt
+        elif q_nums[0] == 27 and _is_tracker_configured():
             _pref_trk = questionnaire._preferred_tracker
             _use_jira = _pref_trk == "jira" or (not _pref_trk and _is_jira_configured())
             _trk_label = "Jira" if _use_jira else "Azure DevOps"
             logger.info("Q27: fetching active sprint from %s (preferred=%s)", _trk_label, _pref_trk)
             active_num, active_start, jira_status = _fetch_active_sprint_number(_pref_trk)
             logger.info("Q27: active_num=%s, active_start=%s, status=%s", active_num, active_start, jira_status)
-            if active_num is not None:
+            if active_num is not None and not _is_small_project_mode(questionnaire.intake_mode):
                 questionnaire._active_sprint_number = active_num
                 questionnaire._active_sprint_start_date = active_start
                 questionnaire.answers[27] = f"_active:{active_num}"
@@ -4797,6 +5054,15 @@ def project_intake(state: ScrumState) -> dict:
                 prompt_text = (
                     f"Detected active sprint in {_trk_label}: **Sprint {active_num}**.\n\n"
                     f"Which sprint are you planning for?"
+                )
+            elif active_num is not None:
+                # Small mode with a live active number but no target list —
+                # the landing decision (new sprint vs backlog) is still real.
+                questionnaire._active_sprint_start_date = active_start
+                prompt_text = _setup_small_sprint_fallback_question(
+                    questionnaire,
+                    active_num,
+                    f"Detected active sprint in {_trk_label}: **Sprint {active_num}**.\n\n",
                 )
             else:
                 # Couldn't fetch active sprint from live tracker
@@ -4818,23 +5084,34 @@ def project_intake(state: ScrumState) -> dict:
                                 _num_m = _s27re.search(r"(\d+)", _last_name)
                                 if _num_m:
                                     _last_num = int(_num_m.group(1))
-                                    questionnaire._active_sprint_number = _last_num
-                                    questionnaire.answers[27] = f"_active:{_last_num}"
-                                    questionnaire._follow_up_choices[27] = (
-                                        f"Sprint {_last_num + 1} (next)",
-                                        f"Sprint {_last_num + 2}",
-                                        f"Sprint {_last_num + 3}",
-                                    )
-                                    prompt_text = (
+                                    _src_line = (
                                         f"Last analysed sprint: **Sprint {_last_num}** "
                                         f"(from team analysis — live tracker unavailable).\n\n"
-                                        f"Which sprint are you planning for?"
                                     )
+                                    if _is_small_project_mode(questionnaire.intake_mode):
+                                        # Small mode's landing decision: create
+                                        # a new sprint, or leave it in the backlog.
+                                        prompt_text = _setup_small_sprint_fallback_question(
+                                            questionnaire, _last_num, _src_line
+                                        )
+                                    else:
+                                        questionnaire._active_sprint_number = _last_num
+                                        questionnaire.answers[27] = f"_active:{_last_num}"
+                                        questionnaire._follow_up_choices[27] = (
+                                            f"Sprint {_last_num + 1} (next)",
+                                            f"Sprint {_last_num + 2}",
+                                            f"Sprint {_last_num + 3}",
+                                        )
+                                        prompt_text = f"{_src_line}Which sprint are you planning for?"
                                     _used_analysis = True
                                     logger.info("Q27 fallback: using analysis sprint %d", _last_num)
                     except Exception:
                         pass
-                if not _used_analysis:
+                if not _used_analysis and _is_small_project_mode(questionnaire.intake_mode):
+                    # No live board and no analysis number — the small-mode
+                    # landing decision (new sprint vs backlog) is still real.
+                    prompt_text = _setup_small_sprint_fallback_question(questionnaire, None, "")
+                elif not _used_analysis:
                     _derive_q27_from_locale(questionnaire)
                     gaps = _find_essential_gaps(questionnaire, essential_set)
                     if not gaps:
@@ -5052,57 +5329,46 @@ def project_intake(state: ScrumState) -> dict:
             return _show_summary_or_pto(questionnaire)
 
         if questionnaire._prior_art_stage in ("ask", "reason"):
-            user_text = last_msg.content.strip()
-            candidate = _prior_art_current(questionnaire)
-            if candidate is None:
+            candidates = questionnaire._prior_art_candidates
+            if not candidates:
                 # Defensive: the list emptied underneath us (a resumed session
                 # drops the transients). Close out rather than loop.
                 return _finish_prior_art(questionnaire)
 
             if questionnaire._prior_art_stage == "reason":
-                # Empty is a legitimate answer — "no" without a "why" is still
-                # a rejection, and demanding a reason would train people to
-                # accept things to get past the prompt.
-                questionnaire._prior_art_rejected.append(
-                    {
-                        "key": candidate.get("key", ""),
-                        "name": candidate.get("name", ""),
-                        "reason": "" if user_text.lower() in ("skip", "-") else user_text,
-                    }
-                )
-                return _prior_art_advance(questionnaire)
-
-            choice = user_text.lower()
-            if choice in ("1", "y", "yes", _PRIOR_ART_ACCEPT.lower()):
-                questionnaire._prior_art_accepted.append(candidate)
-                return _prior_art_advance(questionnaire)
-            if choice in ("2", "n", "no", _PRIOR_ART_REJECT.lower()):
-                questionnaire._prior_art_stage = "reason"
+                # Legacy tolerance: "reason" was the per-repo "why isn't it
+                # relevant?" free-text stage, which only a session serialized
+                # by an older build can still be in. The user's text answers a
+                # question this build no longer asks, so re-ask the whole
+                # batch rather than guess what the words meant.
+                questionnaire._prior_art_stage = "ask"
                 return {
                     "questionnaire": questionnaire,
-                    "messages": [
-                        AIMessage(
-                            content=(
-                                f"Why isn't **{candidate.get('name', '')}** relevant? "
-                                "I'll stop suggesting it. (Enter to skip)"
-                            )
-                        )
-                    ],
+                    "messages": [AIMessage(content=_prior_art_prompt(questionnaire))],
                 }
-            if choice in ("3", "skip", "skip the rest", _PRIOR_ART_SKIP.lower()):
-                # Bailing out is not a rejection — nothing is written to the
-                # ledger for the candidates never seen.
-                return _finish_prior_art(questionnaire)
-            return {
-                "questionnaire": questionnaire,
-                "messages": [
-                    AIMessage(
-                        content=(
-                            f"Please choose [1] {_PRIOR_ART_ACCEPT}, [2] {_PRIOR_ART_REJECT} or [3] {_PRIOR_ART_SKIP}:"
-                        )
-                    )
-                ],
-            }
+
+            parsed = _parse_prior_art_answer(last_msg.content, len(candidates))
+            if parsed is None:
+                return {
+                    "questionnaire": questionnaire,
+                    "messages": [AIMessage(content=_PRIOR_ART_GRAMMAR_HINT)],
+                }
+            relevant, banned = parsed
+            # The submission is the whole verdict: both lists are re-derived
+            # from it, so a half-answered legacy loop carried in by a resumed
+            # session cannot double-write its earlier per-repo answers.
+            questionnaire._prior_art_accepted = [candidates[i] for i in sorted(relevant)]
+            questionnaire._prior_art_rejected = [
+                {"key": candidates[i].get("key", ""), "name": candidates[i].get("name", ""), "reason": ""}
+                for i in sorted(banned)
+            ]
+            logger.info(
+                "prior_art: batch verdict — %d relevant, %d banned, %d passed over",
+                len(relevant),
+                len(banned),
+                len(candidates) - len(relevant) - len(banned),
+            )
+            return _finish_prior_art(questionnaire)
 
         # ── Velocity choice menu handler ─────────────────────────────
         # "1" or "accept" → accept computed/overridden velocity
@@ -5198,6 +5464,28 @@ def project_intake(state: ScrumState) -> dict:
         sprint_num_match = re.search(r"Sprint\s+(\d+)", q27_answer)
         if sprint_num_match:
             starting_sprint = int(sprint_num_match.group(1))
+
+        # Small-mode "Add to <existing sprint>" — carry the target so the syncs
+        # assign stories to that sprint instead of creating one. The trailing
+        # digits (already captured above) also name the Sprint artifact after
+        # the real board sprint.
+        sprint_target_mode = ""
+        target_sprint_name = ""
+        target_sprint_external_id = ""
+        if q27_answer.startswith("Add to "):
+            sprint_target_mode = "existing"
+            target_sprint_name = q27_answer.removeprefix("Add to ").strip()
+            target_sprint_external_id = questionnaire._sprint_target_options.get(target_sprint_name, "")
+            logger.info(
+                "Sprint targeting: existing sprint %r (external_id=%r)",
+                target_sprint_name,
+                target_sprint_external_id or "resolve-by-name",
+            )
+        elif q27_answer == _SPRINT_TARGET_BACKLOG_CHOICE:
+            # Small-mode "Backlog (no sprint)": stories are created but never
+            # assigned — the syncs skip sprint creation/assignment entirely.
+            sprint_target_mode = "backlog"
+            logger.info("Sprint targeting: backlog — no sprint will be created or assigned")
 
         if _is_small_project_mode(questionnaire.intake_mode):
             # Small-project mode: no capacity planning. Net velocity equals gross,
@@ -5298,6 +5586,9 @@ def project_intake(state: ScrumState) -> dict:
             "velocity_source": velocity_source,
             "sprint_start_date": sprint_start,
             "starting_sprint_number": starting_sprint,
+            "sprint_target_mode": sprint_target_mode,
+            "target_sprint_name": target_sprint_name,
+            "target_sprint_external_id": target_sprint_external_id,
             "planned_leave_entries": list(questionnaire._planned_leave_entries),
             # Promote the accepted references off the transient questionnaire
             # onto durable state — the analyzer, the summary and the exports
@@ -5805,6 +6096,63 @@ def _build_answers_block(questionnaire: QuestionnaireState) -> str:
     return "\n".join(lines)
 
 
+def _parse_architecture(raw: object) -> ArchitectureDecision | None:
+    """Parse the analyzer's architecture block with deterministic guardrails.
+
+    # See docs: "Scrum Standards" — DoD Spike
+    #
+    # Clamps to at most 3 options, drops nameless ones, normalizes confidence
+    # to high/medium/low, and coerces `chosen` to a real option name. Returns
+    # None (no architecture section, no spike downstream) for anything that
+    # isn't a dict with at least one named option — including the deterministic
+    # fallback path, which never fabricates options.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def to_str_tuple(val: object) -> tuple[str, ...]:
+        if isinstance(val, list):
+            return tuple(str(item) for item in val if item)
+        if isinstance(val, str) and val.strip():
+            return (val,)
+        return ()
+
+    options: list[ArchitectureOption] = []
+    raw_options = raw.get("options")
+    if isinstance(raw_options, list):
+        for item in raw_options[:3]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            options.append(
+                ArchitectureOption(
+                    name=name,
+                    summary=str(item.get("summary", "")).strip(),
+                    pros=to_str_tuple(item.get("pros")),
+                    cons=to_str_tuple(item.get("cons")),
+                )
+            )
+    if not options:
+        return None
+
+    confidence = str(raw.get("confidence", "")).strip().lower()
+    if confidence not in ("high", "medium", "low"):
+        confidence = "medium"
+    chosen = str(raw.get("chosen", "")).strip()
+    if chosen not in {o.name for o in options}:
+        chosen = options[0].name
+
+    return ArchitectureDecision(
+        options=tuple(options),
+        chosen=chosen,
+        confidence=confidence,
+        rationale=str(raw.get("rationale", "")).strip(),
+        pinned_by_constraint=bool(raw.get("pinned_by_constraint", False)) or len(options) == 1,
+    )
+
+
 def _parse_analysis_response(
     raw: str,
     questionnaire: QuestionnaireState,
@@ -5885,6 +6233,7 @@ def _parse_analysis_response(
             is_low_code=bool(parsed.get("is_low_code", False)),
             low_code_reason=str(parsed.get("low_code_reason", "")),
             scrum_md_contributions=to_str_tuple(parsed.get("scrum_md_contributions")),
+            architecture=_parse_architecture(parsed.get("architecture")),
         )
 
     except Exception:
@@ -5956,6 +6305,39 @@ def _build_fallback_analysis(
     )
 
 
+def _format_architecture_section(architecture: ArchitectureDecision | None) -> str:
+    """Render the analysis review's Architecture block ("" when absent).
+
+    Shows WHAT was considered — every option with pros/cons — beside the
+    recommendation and its confidence, so the pick is a reviewable decision
+    rather than a silent default.
+    """
+    if architecture is None or not architecture.options:
+        return ""
+    lines = [
+        "## Architecture",
+        f"  **Recommended:** {architecture.chosen} · confidence: **{architecture.confidence}**",
+    ]
+    if architecture.rationale:
+        lines.append(f"  {architecture.rationale}")
+    for opt in architecture.options:
+        marker = "✓ " if opt.name == architecture.chosen else ""
+        summary = f" — {opt.summary}" if opt.summary else ""
+        lines.append(f"  - {marker}**{opt.name}**{summary}")
+        if opt.pros:
+            lines.append(f"      pros: {'; '.join(opt.pros)}")
+        if opt.cons:
+            lines.append(f"      cons: {'; '.join(opt.cons)}")
+    if architecture.pinned_by_constraint:
+        lines.append("  _(decision already pinned — no validation spike needed)_")
+    else:
+        lines.append(
+            "  _(the choice is open — you'll be asked whether to add a validation spike; "
+            "to pick a different option, choose Edit and say so)_"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _format_analysis(
     analysis: ProjectAnalysis,
     *,
@@ -6002,6 +6384,7 @@ def _format_analysis(
         f"## End Users\n{_bullet_list(analysis.end_users)}\n",
         f"## Target State\n{analysis.target_state or '_(not specified)_'}\n",
         f"## Tech Stack\n{_bullet_list(analysis.tech_stack)}\n",
+        _format_architecture_section(analysis.architecture),
         f"## Integrations\n{_bullet_list(analysis.integrations)}\n",
         f"## Constraints\n{_bullet_list(analysis.constraints)}\n",
         f"## Sprint Planning\n"
@@ -6360,6 +6743,14 @@ def project_analyzer(state: ScrumState) -> dict:
         # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=images)
         analysis = _parse_analysis_response(response.content, questionnaire, team_size, velocity)
+        if analysis.architecture is not None:
+            logger.info(
+                "project_analyzer: architecture options=%d chosen=%s confidence=%s pinned=%s",
+                len(analysis.architecture.options),
+                analysis.architecture.chosen,
+                analysis.architecture.confidence,
+                analysis.architecture.pinned_by_constraint,
+            )
     except Exception as exc:
         if _should_reraise_llm_error(exc):
             raise
@@ -6401,10 +6792,14 @@ def project_analyzer(state: ScrumState) -> dict:
     honest_target = analysis.target_sprints
     if small_mode:
         oversized = not analysis.skip_features or analysis.target_sprints > 2 or len(analysis.goals) > 3
+        # Targeting one existing sprint (or the backlog) means one Sprint
+        # artifact — the stories are being added to a sprint that already
+        # exists / left unscheduled, not spread over new ones.
+        targeting_existing = state.get("sprint_target_mode") in ("existing", "backlog")
         analysis = dataclasses.replace(
             analysis,
             skip_features=True,
-            target_sprints=min(max(analysis.target_sprints or 1, 1), 2),
+            target_sprints=1 if targeting_existing else min(max(analysis.target_sprints or 1, 1), 2),
         )
 
     # Format the analysis for display — include capacity data so the user
@@ -7282,7 +7677,7 @@ def _infer_discipline(story: UserStory) -> Discipline:
     # Combine all textual fields into a single lowercase string for matching
     parts = [story.persona, story.goal, story.benefit]
     for ac in story.acceptance_criteria:
-        parts.extend([ac.given, ac.when, ac.then])
+        parts.extend([ac.given, ac.when, ac.then, ac.text])
     text = " ".join(parts).lower()
 
     words = set(text.split())
@@ -7314,32 +7709,52 @@ def _infer_discipline(story: UserStory) -> Discipline:
 # what it can and collects warnings for the user. No LLM call needed — all rules
 # are deterministic.
 
-_GENERIC_ACS = (
-    AcceptanceCriterion(
-        given="the feature is available",
-        when="the user performs the happy-path workflow",
-        then="the expected outcome is achieved",
-    ),
-    AcceptanceCriterion(
-        given="invalid input is provided",
-        when="the user attempts the action",
-        then="an appropriate error message is shown",
-    ),
-    AcceptanceCriterion(
-        given="an edge case scenario occurs",
-        when="the user encounters unusual conditions",
-        then="the system handles it gracefully",
-    ),
-)
+
+def _generic_acs(ac_style: str = "gwt") -> tuple[AcceptanceCriterion, ...]:
+    """Generic coverage-padding criteria, in the plan's resolved AC style.
+
+    Padding must match how the team's real criteria are written — a bullets
+    plan with Gherkin padding would read as two formats in one ticket.
+    """
+    if ac_style == "bullets":
+        return (
+            AcceptanceCriterion(text="Happy path: the main workflow completes with the expected outcome."),
+            AcceptanceCriterion(text="Error path: invalid input produces a clear, appropriate error message."),
+            AcceptanceCriterion(text="Edge cases: unusual conditions are handled gracefully."),
+        )
+    return (
+        AcceptanceCriterion(
+            given="the feature is available",
+            when="the user performs the happy-path workflow",
+            then="the expected outcome is achieved",
+        ),
+        AcceptanceCriterion(
+            given="invalid input is provided",
+            when="the user attempts the action",
+            then="an appropriate error message is shown",
+        ),
+        AcceptanceCriterion(
+            given="an edge case scenario occurs",
+            when="the user encounters unusual conditions",
+            then="the system handles it gracefully",
+        ),
+    )
 
 
-def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tuple[list[UserStory], list[str]]:
+def _validate_stories(
+    stories: list[UserStory],
+    features: list[Feature],
+    ac_style: str = "gwt",
+    min_acs: int = 3,
+) -> tuple[list[UserStory], list[str]]:
     """Validate stories against the Story Checklist and auto-fix where possible.
 
     # See docs: "Scrum Standards" — Story Checklist
     #
     # Checks:
-    # 1. AC count >= 3 — pads with generic ACs if fewer.
+    # 1. AC count >= min_acs — pads with style-matched generic ACs if fewer.
+    #    min_acs honours a learned team median below 3 (a 1-AC team must not
+    #    be force-padded to 3), and never exceeds 3.
     # 2. Non-empty persona, goal, benefit — sets defaults if empty.
     # 3. Per-feature story count in [MIN_STORIES_PER_FEATURE, MAX_STORIES_PER_FEATURE] — warns if out of range.
     #
@@ -7348,10 +7763,13 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
     Args:
         stories: The parsed stories to validate.
         features: The feature list for per-feature count validation.
+        ac_style: The resolved AC style — padding matches it.
+        min_acs: Minimum AC count per story (clamped to 1..3).
 
     Returns:
         A tuple of (validated_stories, warnings).
     """
+    min_acs = max(1, min(3, min_acs))
     warnings: list[str] = []
     validated: list[UserStory] = []
 
@@ -7386,11 +7804,11 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
             needs_rebuild = True
             warnings.append(f"Story {story.id} had empty benefit — set default.")
 
-        # Check AC count >= 3
-        if len(new_acs) < 3:
+        # Check AC count >= min_acs
+        if len(new_acs) < min_acs:
             added = 0
-            for generic_ac in _GENERIC_ACS:
-                if len(new_acs) >= 3:
+            for generic_ac in _generic_acs(ac_style):
+                if len(new_acs) >= min_acs:
                     break
                 # Only add generic ACs that aren't already present
                 if generic_ac not in new_acs:
@@ -7400,7 +7818,7 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
                 needs_rebuild = True
                 warnings.append(
                     f"Story {story.id} had only {len(story.acceptance_criteria)} AC(s) "
-                    f"— added {added} generic AC(s) to reach 3."
+                    f"— added {added} generic AC(s) to reach {min_acs}."
                 )
 
         if needs_rebuild:
@@ -7439,7 +7857,9 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
     return validated, warnings
 
 
-def _parse_stories_response(raw: str, features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
+def _parse_stories_response(
+    raw: str, features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt", dod_count: int = 0
+) -> list[UserStory]:
     """Parse the LLM's JSON response into a list of UserStory dataclasses.
 
     # See docs: "Scrum Standards" — story format, acceptance criteria
@@ -7468,7 +7888,7 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
 
         parsed = json.loads(text)
         if not isinstance(parsed, list):
-            return _build_fallback_stories(features, analysis)
+            return _build_fallback_stories(features, analysis, ac_style)
 
         # Build a set of valid feature IDs for validation
         valid_feature_ids = {e.id for e in features}
@@ -7512,7 +7932,9 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
             raw_discipline = str(item.get("discipline", "")).lower().strip()
             discipline = Discipline(raw_discipline) if raw_discipline in valid_disciplines else None
 
-            # Parse nested acceptance criteria
+            # Parse nested acceptance criteria — accept every shape regardless
+            # of the requested style (the LLM may disobey): a GWT triple dict,
+            # a free-text dict ({"text": …}), or a bare string.
             raw_acs = item.get("acceptance_criteria", [])
             acs: list[AcceptanceCriterion] = []
             if isinstance(raw_acs, list):
@@ -7521,29 +7943,45 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
                         given = str(ac_item.get("given", "")).strip()
                         when = str(ac_item.get("when", "")).strip()
                         then = str(ac_item.get("then", "")).strip()
+                        text_ac = str(ac_item.get("text", "")).strip()
                         if given and when and then:
                             acs.append(AcceptanceCriterion(given=given, when=when, then=then))
+                        elif text_ac:
+                            acs.append(AcceptanceCriterion(text=text_ac))
+                    elif isinstance(ac_item, str) and ac_item.strip():
+                        acs.append(AcceptanceCriterion(text=ac_item.strip()))
 
             # Fallback: if no valid ACs parsed, add a generic happy-path AC
+            # in the plan's resolved style.
             if not acs:
                 persona = str(item.get("persona", "user"))
                 goal = str(item.get("goal", "perform the action"))
-                acs.append(
-                    AcceptanceCriterion(
-                        given=f"the {persona} is authenticated",
-                        when=f"they {goal}",
-                        then="the operation completes successfully",
+                if ac_style == "bullets":
+                    acs.append(AcceptanceCriterion(text=f"The {persona} can {goal} successfully."))
+                else:
+                    acs.append(
+                        AcceptanceCriterion(
+                            given=f"the {persona} is authenticated",
+                            when=f"they {goal}",
+                            then="the operation completes successfully",
+                        )
                     )
-                )
 
-            # Parse Definition of Done applicability flags.
-            # LLM returns a 7-element boolean array matching DOD_ITEMS order.
-            # Fall back to all-True (fully applicable) if the field is missing or malformed.
+            # Parse Definition of Done applicability flags. The LLM is asked
+            # for a boolean array matching the plan's RESOLVED DoD list (a
+            # custom list may not be 7 items), so flags are normalised to that
+            # length — truncated if long, padded with True (fully applicable)
+            # if short or missing. The renderers zip flags against the same
+            # resolved list, so length agreement here is what keeps the DoD
+            # section on every synced ticket.
+            n_dod = dod_count or len(DOD_ITEMS)
             raw_dod = item.get("dod_applicable")
-            if isinstance(raw_dod, list) and len(raw_dod) == len(DOD_ITEMS):
-                dod_applicable: tuple[bool, ...] = tuple(bool(f) for f in raw_dod)
+            if isinstance(raw_dod, list) and raw_dod:
+                flags = [bool(f) for f in raw_dod[:n_dod]]
+                flags += [True] * (n_dod - len(flags))
+                dod_applicable: tuple[bool, ...] = tuple(flags)
             else:
-                dod_applicable = (True,) * len(DOD_ITEMS)
+                dod_applicable = (True,) * n_dod
 
             points_rationale = str(item.get("points_rationale", ""))
             points_confidence = str(item.get("points_confidence", ""))
@@ -7571,16 +8009,18 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
             stories.append(story)
 
         if not stories:
-            return _build_fallback_stories(features, analysis)
+            return _build_fallback_stories(features, analysis, ac_style)
 
         return stories
 
     except Exception:
         logger.debug("Failed to parse stories JSON, falling back to deterministic extraction", exc_info=True)
-        return _build_fallback_stories(features, analysis)
+        return _build_fallback_stories(features, analysis, ac_style)
 
 
-def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
+def _build_fallback_stories(
+    features: list[Feature], analysis: ProjectAnalysis, ac_style: str = "gwt"
+) -> list[UserStory]:
     """Build deterministic fallback stories per feature.
 
     # See docs: "Scrum Standards" — story format
@@ -7609,7 +8049,9 @@ def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) 
                 goal=f"use the core features of {feature.title}",
                 benefit=f"I can accomplish the primary objectives of {feature.title}",
                 acceptance_criteria=(
-                    AcceptanceCriterion(
+                    AcceptanceCriterion(text=f"The {end_user} can complete the main {feature.title} workflow.")
+                    if ac_style == "bullets"
+                    else AcceptanceCriterion(
                         given=f"the {end_user} has access to {feature.title}",
                         when="they perform the main workflow",
                         then="the expected outcome is achieved",
@@ -7631,7 +8073,9 @@ def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) 
                 goal=f"set up and validate {feature.title}",
                 benefit="the feature is reliable and properly tested",
                 acceptance_criteria=(
-                    AcceptanceCriterion(
+                    AcceptanceCriterion(text=f"All tests pass and {feature.title} works as deployed.")
+                    if ac_style == "bullets"
+                    else AcceptanceCriterion(
                         given="the development environment is configured",
                         when=f"the {feature.title} feature is deployed",
                         then="all tests pass and the feature works as expected",
@@ -7697,9 +8141,12 @@ def _format_stories(
 
             sections.append("**Acceptance Criteria:**")
             for i, ac in enumerate(story.acceptance_criteria, 1):
-                sections.append(f"  {i}. **Given** {ac.given}")
-                sections.append(f"     **When** {ac.when}")
-                sections.append(f"     **Then** {ac.then}")
+                if ac.text:
+                    sections.append(f"  {i}. {ac.text}")
+                else:
+                    sections.append(f"  {i}. **Given** {ac.given}")
+                    sections.append(f"     **When** {ac.when}")
+                    sections.append(f"     **Then** {ac.then}")
             sections.append("")
 
     # Show validation warnings if any were collected
@@ -7712,6 +8159,263 @@ def _format_stories(
     sections.append("\n---\n**[Accept / Edit / Reject]** — Review the stories above.")
 
     return "\n".join(sections)
+
+
+# ── Architecture-validation spike ─────────────────────────────────────
+# See docs: "Scrum Standards" — DoD Spike
+#
+# When the analyzer produced a genuinely OPEN architecture decision (2+
+# options, not pinned by a constraint), the user is asked whether to add a
+# time-boxed validation spike to the plan. The ask follows the capacity-popup
+# pattern: the node returns early with a sentinel (_spike_prompt) + message,
+# the driver renders a choice, and the answer lands in state["spike_choice"].
+# Injection itself is deterministic Python (never an LLM instruction), so every
+# entry path — TUI, headless, MCP, roadmap — gets an identical artifact.
+
+_SPIKE_TITLE_PREFIX = "[Spike] "
+
+
+def _spike_eligible(analysis: ProjectAnalysis | None) -> bool:
+    """True when the architecture decision is open enough to be worth a spike."""
+    arch = getattr(analysis, "architecture", None)
+    return arch is not None and len(arch.options) >= 2 and not arch.pinned_by_constraint
+
+
+def _spike_choice_override() -> str:
+    """Pre-made spike choice from YEABOI_ARCHITECTURE_SPIKE (CLI --architecture-spike).
+
+    "include"/"skip" suppress the interactive question entirely; anything else
+    (including "auto" and unset) means ask/auto-rule as usual.
+    """
+    val = (os.getenv("YEABOI_ARCHITECTURE_SPIKE") or "").strip().lower()
+    return val if val in ("include", "skip") else ""
+
+
+def spike_recommended(confidence: str) -> bool:
+    """The confidence auto-rule: validate unless the AI is confident.
+
+    Used both as the recommended default in the interactive popup and as the
+    unattended answer in headless/MCP runs.
+    """
+    return confidence != "high"
+
+
+def _parse_spike_reply(state: ScrumState) -> str:
+    """Resolve a pending spike question from the user's textual reply.
+
+    The TUI popups write state["spike_choice"] directly and never reach this;
+    the REPL (and any plain-text driver) answers in words. An ambiguous reply
+    (including the REPL export-only "continue") falls back to the recommended
+    default parked in the sentinel — which is the confidence auto-rule.
+    """
+    messages = state.get("messages") or []
+    text = str(getattr(messages[-1], "content", "")).strip().lower() if messages else ""
+    if "skip" in text or text in ("2", "no", "n"):
+        return "skip"
+    # A negated include ("no spike", "don't add one") must not fall through to
+    # the substring include-match below and inject the story the user refused.
+    negated = re.search(r"\b(no|not|don'?t|dont|never|without)\b", text)
+    if negated and ("add" in text or "include" in text or "spike" in text):
+        return "skip"
+    if "add" in text or "include" in text or "spike" in text or text in ("1", "yes", "y"):
+        return "include"
+    return (state.get("_spike_prompt") or {}).get("recommended", "include")
+
+
+def _maybe_prompt_spike_choice(state: ScrumState, analysis: ProjectAnalysis | None) -> dict | None:
+    """Return the ask-the-user sentinel when the spike question is still open.
+
+    None when nothing needs asking: ineligible architecture, or the choice was
+    already made (interactively, via the architecture_spike param, the
+    YEABOI_ARCHITECTURE_SPIKE env override, or the headless auto-rule).
+    """
+    if not _spike_eligible(analysis) or state.get("spike_choice") or _spike_choice_override():
+        return None
+    arch = analysis.architecture
+    rec = "add" if spike_recommended(arch.confidence) else "skip"
+    question = (
+        f"The architecture choice is open — recommended: **{arch.chosen}** "
+        f"(confidence: **{arch.confidence}**), against {len(arch.options) - 1} alternative(s).\n\n"
+        f"Add a time-boxed **validation spike** (1-3 days) to the plan? "
+        f"Recommended: **{rec}** — "
+        + (
+            "confidence is not high, so validating before committing de-risks the build."
+            if rec == "add"
+            else "confidence is high, so you can likely commit without a spike."
+        )
+    )
+    logger.info("spike prompt: chosen=%s confidence=%s recommendation=%s", arch.chosen, arch.confidence, rec)
+    return {
+        "_spike_prompt": {
+            "chosen": arch.chosen,
+            "confidence": arch.confidence,
+            "options": [o.name for o in arch.options],
+            "recommended": "include" if rec == "add" else "skip",
+        },
+        "messages": [AIMessage(content=question)],
+    }
+
+
+def _spike_story_acs(analysis: ProjectAnalysis, ac_style: str) -> tuple[AcceptanceCriterion, ...]:
+    """The spike story's ACs, mapped from the documented Spike DoD, style-matched."""
+    arch = analysis.architecture
+    option_names = ", ".join(o.name for o in arch.options)
+    if ac_style == "bullets":
+        return (
+            AcceptanceCriterion(text=f"The spike objective and 1-3 day time-box are stated up front ({option_names})."),
+            AcceptanceCriterion(
+                text="Findings are documented with a recommendation including trade-offs and rejected alternatives."
+            ),
+            AcceptanceCriterion(text="Next steps (adopt or adjust the plan) are agreed with the team and linked."),
+        )
+    return (
+        AcceptanceCriterion(
+            given=f"the candidate architectures ({option_names})",
+            when="the spike starts",
+            then="the objective and 1-3 day time-box are stated",
+        ),
+        AcceptanceCriterion(
+            given="the spike work",
+            when="it concludes",
+            then="findings are documented with a recommendation including trade-offs and rejected alternatives",
+        ),
+        AcceptanceCriterion(
+            given="the recommendation",
+            when="it is shared with the team",
+            then="next steps (adopt or adjust the plan) are agreed and resources are linked",
+        ),
+    )
+
+
+def _inject_architecture_spike_story(
+    stories: list[UserStory],
+    features: list[Feature],
+    analysis: ProjectAnalysis,
+    ac_style: str = "gwt",
+    dod_count: int = 0,
+) -> tuple[list[UserStory], str | None]:
+    """Prepend the '[Spike] Validate architecture' story (large mode).
+
+    Deterministic post-parse injection — attaches to the first (highest-value)
+    feature, CRITICAL priority so the sprint planner schedules it first, 2
+    points (the spike DoD's 1-3 day time-box). Idempotent across Edit re-runs
+    via the title prefix. Docs/Knowledge-Sharing DoD items stay applicable
+    (the findings write-up IS the deliverable); Testing/Merge/SDLC do not.
+    """
+    if not features or any(s.title.startswith(_SPIKE_TITLE_PREFIX) for s in stories):
+        return stories, None
+    arch = analysis.architecture
+    runner_up = next((o.name for o in arch.options if o.name != arch.chosen), "the alternatives")
+    # DoD flags are positional against the plan's RESOLVED list. The curated
+    # pattern (Testing/Merge/SDLC not applicable) only means anything on the
+    # default 7-item list; a custom DoD gets all-applicable of its own length.
+    n_dod = dod_count or len(DOD_ITEMS)
+    curated = (True, True, False, False, False, True, True)
+    spike = UserStory(
+        id=f"US-{features[0].id}-SPIKE",
+        feature_id=features[0].id,
+        persona="development team",
+        goal=f"run a time-boxed spike (1-3 days) validating the recommended {arch.chosen} architecture "
+        f"against {runner_up}",
+        benefit="we commit to an architecture based on evidence rather than assumption",
+        acceptance_criteria=_spike_story_acs(analysis, ac_style),
+        story_points=StoryPointValue.TWO,
+        priority=Priority.CRITICAL,
+        title=f"{_SPIKE_TITLE_PREFIX}Validate architecture: {arch.chosen}",
+        discipline=Discipline.FULLSTACK,
+        dod_applicable=curated if n_dod == len(curated) else (True,) * n_dod,
+        points_rationale=f"Time-boxed architecture spike; confidence in the recommendation is {arch.confidence}.",
+    )
+    logger.info("story_writer: injected architecture spike story %s", spike.id)
+    note = (
+        f"Added {spike.title} — scheduled first to de-risk the open architecture decision "
+        f"(confidence: {arch.confidence})."
+    )
+    return [spike, *stories], note
+
+
+def _inject_architecture_spike_task(
+    tasks: list[Task],
+    stories: list[UserStory],
+    analysis: ProjectAnalysis,
+) -> tuple[list[Task], str | None]:
+    """Splice the spike TASK first among the first story's tasks (small mode).
+
+    Small mode caps stories at 2, so a story-level spike would crowd out real
+    work — the spike rides as the first sub-task instead. TaskLabel.SPIKE is
+    set here directly (the LLM is never asked to emit it), and test_plan stays
+    empty: the deliverable is a written recommendation, not code.
+    """
+    if not stories or any(t.title.startswith(_SPIKE_TITLE_PREFIX) for t in tasks):
+        return tasks, None
+    arch = analysis.architecture
+    first_story = stories[0]
+    trade_offs = "\n".join(
+        f"- {o.name}: {o.summary or 'candidate architecture'}" + (f" (cons: {'; '.join(o.cons)})" if o.cons else "")
+        for o in arch.options
+    )
+    spike = Task(
+        id=f"T-{first_story.id}-SPIKE",
+        story_id=first_story.id,
+        title=f"{_SPIKE_TITLE_PREFIX}Validate architecture: {arch.chosen}",
+        description=(
+            f"Time-boxed spike (1-3 days): validate the recommended {arch.chosen} architecture "
+            f"before building on it. Candidates considered:\n{trade_offs}\n"
+            "Deliverables: documented findings, a recommendation with trade-offs and rejected "
+            "alternatives, and agreed next steps (adopt or adjust the plan)."
+        ),
+        label=TaskLabel.SPIKE,
+        test_plan="",
+        ai_prompt=(
+            f"You are a tech lead evaluating architectures for {analysis.project_name} "
+            f"({', '.join(analysis.tech_stack) or 'stack TBD'}). Compare: "
+            f"{', '.join(o.name for o in arch.options)}. Produce a written recommendation "
+            "with concrete trade-offs, what evidence would change the pick, and next steps."
+        ),
+    )
+    insert_at = next((i for i, t in enumerate(tasks) if t.story_id == first_story.id), len(tasks))
+    logger.info("task_decomposer: injected architecture spike task %s at index %d", spike.id, insert_at)
+    note = f"Added {spike.title} as the first task — a 1-3 day spike to validate the open architecture decision."
+    return [*tasks[:insert_at], spike, *tasks[insert_at:]], note
+
+
+def _pin_spike_to_first_sprint(sprints: list[Sprint], stories: list[UserStory]) -> list[Sprint]:
+    """Guarantee the spike story lands in the first sprint.
+
+    The sprint-planner prompt already asks for spikes first (rule 4); this
+    enforces it deterministically after parse, moving a misplaced spike story
+    into sprints[0] via dataclasses.replace (Sprint is frozen).
+    """
+    spike_ids = {s.id for s in stories if s.title.startswith(_SPIKE_TITLE_PREFIX)}
+    if not spike_ids or not sprints:
+        return sprints
+    first = sprints[0]
+    misplaced = [sid for sid in spike_ids if sid not in first.story_ids]
+    if not misplaced:
+        return sprints
+    # capacity_points is defined as the sum of the sprint's story points
+    # (_validate_sprints), so every sprint whose story_ids change here must
+    # have it recomputed — the pin runs after validation.
+    points = {s.id: s.story_points.value for s in stories}
+    result: list[Sprint] = []
+    moved: list[str] = []
+    for i, sprint in enumerate(sprints):
+        if i == 0:
+            continue  # rebuilt last, once we know what moves
+        remaining = tuple(sid for sid in sprint.story_ids if sid not in spike_ids)
+        if len(remaining) != len(sprint.story_ids):
+            moved.extend(sid for sid in sprint.story_ids if sid in spike_ids)
+            sprint = dataclasses.replace(
+                sprint, story_ids=remaining, capacity_points=sum(points.get(sid, 0) for sid in remaining)
+            )
+        result.append(sprint)
+    if moved:
+        logger.info("sprint_planner: pinned spike story(ies) %s into %s", moved, sprints[0].name)
+        pinned_ids = (*moved, *first.story_ids)
+        first = dataclasses.replace(
+            first, story_ids=pinned_ids, capacity_points=sum(points.get(sid, 0) for sid in pinned_ids)
+        )
+    return [first, *result]
 
 
 def story_writer(state: ScrumState) -> dict:
@@ -7748,6 +8452,23 @@ def story_writer(state: ScrumState) -> dict:
     analysis: ProjectAnalysis = state["project_analysis"]
     features: list[Feature] = state["features"]
 
+    # Architecture-validation spike: when the decision is open and the user
+    # hasn't chosen yet, ask BEFORE generating stories (large mode asks here;
+    # small mode asks in task_decomposer, where its spike lives). The TUI
+    # popups answer by writing spike_choice; a plain-text driver's reply is
+    # parsed here on the re-invoke.
+    spike_updates: dict = {}
+    if not _is_small_project_mode(state.get("_intake_mode")):
+        if state.get("_spike_prompt") and not state.get("spike_choice"):
+            choice = _parse_spike_reply(state)
+            logger.info("story_writer: spike reply resolved to %s", choice)
+            state = {**state, "spike_choice": choice}
+            spike_updates = {"spike_choice": choice, "_spike_prompt": {}}
+        else:
+            spike_ask = _maybe_prompt_spike_choice(state, analysis)
+            if spike_ask is not None:
+                return spike_ask
+
     # Read review state (same pattern as feature_generator)
     review_decision = state.get("last_review_decision")
     review_feedback = state.get("last_review_feedback", "")
@@ -7773,9 +8494,29 @@ def story_writer(state: ScrumState) -> dict:
     )
 
     # Resolve DoD items — custom from analysis or default 7
-    from yeaboi.agent.state import resolve_dod_items
+    from yeaboi.agent.state import resolve_ac_style, resolve_dod_items
 
     _dod = resolve_dod_items(state)
+
+    # Resolve the acceptance-criteria style once (session choice > env override
+    # > learned team profile > GWT) and read the team's median AC count off the
+    # profile directly — the prompt rules take these as structured params, not
+    # regex-greps of the calibration markdown.
+    # See docs: "Scrum Standards" — Acceptance Criteria
+    ac_style = resolve_ac_style(state, team_profile)
+    ac_median = round(getattr(getattr(team_profile, "writing_patterns", None), "median_ac_count", 0) or 0)
+    logger.info("story_writer: ac_style=%s median_ac=%d", ac_style, ac_median)
+
+    # The team's learned ticket-template section headings (naming conventions)
+    # — persisted on state so exporters can adopt them on every surface.
+    _tpl_sections: list[str] = []
+    _examples = _load_team_examples(state.get("analysis_profile_id", ""))
+    if _examples:
+        _naming = _examples.get("naming_conventions") or {}
+        for entry in (_naming.get("template_sections") or [])[:8]:
+            heading = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+            if isinstance(heading, str) and heading.strip():
+                _tpl_sections.append(heading.strip())
 
     # Same predicate as the analyzer coercion — the two must not disagree on
     # what "small" means, or the sprint clamp and the story cap would drift.
@@ -7793,6 +8534,8 @@ def story_writer(state: ScrumState) -> dict:
         out_of_scope=_format_epic_list(analysis.out_of_scope),
         team_calibration=team_calibration_text,
         dod_items=_dod,
+        ac_style=ac_style,
+        ac_median_count=ac_median,
         is_low_code=analysis.is_low_code,
         carry_over_items=tuple(state.get("_ceremony_action_items", ()) or ()),
         review_feedback=review_feedback if review_mode else None,
@@ -7808,18 +8551,29 @@ def story_writer(state: ScrumState) -> dict:
         # Single LLM call with low temperature for deterministic JSON output.
         # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
-        stories = _parse_stories_response(response.content, features, analysis)
+        stories = _parse_stories_response(response.content, features, analysis, ac_style, dod_count=len(_dod))
     except Exception as exc:
         if _should_reraise_llm_error(exc):
             raise
         # LLM call failed entirely — use deterministic fallback.
         logger.warning("LLM call failed in story_writer, using fallback", exc_info=True)
-        stories = _build_fallback_stories(features, analysis)
+        stories = _build_fallback_stories(features, analysis, ac_style)
 
     # Validate stories against the Story Checklist — auto-fix where possible
     # and collect warnings for the user. Deterministic post-processing, no LLM.
+    # A learned team median below 3 lowers the padding floor — a 1-AC team
+    # must not have every story force-padded to 3.
     # See docs: "Scrum Standards" — Story Checklist
-    stories, warnings = _validate_stories(stories, features)
+    stories, warnings = _validate_stories(stories, features, ac_style, min_acs=ac_median if ac_median > 0 else 3)
+
+    # Inject the architecture-validation spike story when the user opted in
+    # (large mode only — small mode's spike is a task; and never when the
+    # small-mode cap below could immediately evict real work for it).
+    effective_spike = state.get("spike_choice") or _spike_choice_override()
+    if not small_mode and effective_spike == "include" and _spike_eligible(analysis):
+        stories, spike_note = _inject_architecture_spike_story(stories, features, analysis, ac_style, len(_dod))
+        if spike_note:
+            warnings.append(spike_note)
 
     # Hard cap for small projects — the prompt asks, this enforces. Keep
     # document order: the LLM lists stories by importance, so the first
@@ -7842,6 +8596,12 @@ def story_writer(state: ScrumState) -> dict:
 
     return {
         "stories": stories,
+        # Persist the resolved style + learned template headings so every later
+        # consumer (exports, editor, re-runs, MCP) matches how the stories were
+        # actually written — on all surfaces, not just the TUI.
+        "ac_format": ac_style,
+        "ticket_template_sections": _tpl_sections,
+        **spike_updates,
         "messages": [AIMessage(content=display)],
         "pending_review": "story_writer",
     }
@@ -7947,7 +8707,7 @@ def _format_stories_for_prompt(stories: list[UserStory], features: list[Feature]
             if story.acceptance_criteria:
                 lines.append("  ACs:")
                 for ac in story.acceptance_criteria:
-                    lines.append(f"    - Given {ac.given}, When {ac.when}, Then {ac.then}")
+                    lines.append(f"    - {ac.flat_text}")
             lines.append("")
 
     return "\n".join(lines)
@@ -8291,6 +9051,21 @@ def task_decomposer(state: ScrumState) -> dict:
     features: list[Feature] = state["features"]
     stories: list[UserStory] = state["stories"]
 
+    # Architecture-validation spike (small mode): the spike rides as a task
+    # here, so this is where small mode asks the opt-in question — same
+    # sentinel + driver-popup pattern as story_writer's large-mode ask.
+    spike_updates: dict = {}
+    if _is_small_project_mode(state.get("_intake_mode")):
+        if state.get("_spike_prompt") and not state.get("spike_choice"):
+            choice = _parse_spike_reply(state)
+            logger.info("task_decomposer: spike reply resolved to %s", choice)
+            state = {**state, "spike_choice": choice}
+            spike_updates = {"spike_choice": choice, "_spike_prompt": {}}
+        else:
+            spike_ask = _maybe_prompt_spike_choice(state, analysis)
+            if spike_ask is not None:
+                return spike_ask
+
     # Read review state (same pattern as feature_generator)
     review_decision = state.get("last_review_decision")
     review_feedback = state.get("last_review_feedback", "")
@@ -8361,11 +9136,24 @@ def task_decomposer(state: ScrumState) -> dict:
             is_low_code=analysis.is_low_code,
         )
 
+    # Inject the architecture-validation spike task when the user opted in
+    # (small mode only — large mode injected a spike story instead).
+    spike_note = None
+    if (
+        _is_small_project_mode(state.get("_intake_mode"))
+        and (state.get("spike_choice") or _spike_choice_override()) == "include"
+        and _spike_eligible(analysis)
+    ):
+        tasks, spike_note = _inject_architecture_spike_task(tasks, stories, analysis)
+
     # Format the tasks for display
     display = _format_tasks(tasks, stories, features, analysis.project_name)
+    if spike_note:
+        display = f"{display}\n\n_{spike_note}_"
 
     return {
         "tasks": tasks,
+        **spike_updates,
         "messages": [AIMessage(content=display)],
         "pending_review": "task_decomposer",
     }
@@ -9148,6 +9936,15 @@ def sprint_planner(state: ScrumState) -> dict:
     should_merge = (enforce_target or team_override_active) and target_sprints > 0
     if should_merge and len(sprints) > target_sprints:
         sprints = _merge_sprints_to_target(sprints, target_sprints, stories, starting_sprint_number)
+
+    # The architecture spike must open the plan — prompt rule 4 asks for it,
+    # this guarantees it (deterministic post-parse, like the capacity fixes).
+    sprints = _pin_spike_to_first_sprint(sprints, stories)
+
+    if state.get("sprint_target_mode") == "backlog" and sprints:
+        # The plan's single bucket IS the backlog, not a numbered sprint —
+        # naming it "Sprint 1" would promise a sprint the sync never creates.
+        sprints = [dataclasses.replace(sprints[0], name="Backlog"), *sprints[1:]]
 
     # Format the sprints for display
     display = _format_sprints(sprints, stories, features, analysis.project_name, velocity)

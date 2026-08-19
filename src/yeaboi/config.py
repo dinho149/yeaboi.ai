@@ -40,7 +40,7 @@ def get_config_dir() -> Path:
     first (done at the top of ``cli.main``) so a pre-rebrand ~/.scrum-agent tree
     is moved over before this mkdir creates an empty ~/.yeaboi.
     """
-    d = Path.home() / ".yeaboi"
+    d = Path.home() / ".yeaboi"  # lens-exempt: paths-through-paths-py — see the docstring above
     d.mkdir(exist_ok=True)
     # Repair perms on every call (cheap): the dir holds .env + sessions.db, both secret-bearing.
     restrict_permissions(d, mode=0o700)
@@ -133,9 +133,9 @@ def get_anthropic_subscription_token() -> str:
     """The Claude subscription token to authenticate with, or ``""`` for key auth.
 
     Both halves must agree before this returns anything: the user has to have
-    picked subscription auth *and* have a token stored. Returning the token on
-    its own presence would silently hijack a working API key for anyone who
-    happens to have the Claude Code CLI logged in.
+    picked subscription auth in Settings *and* have a token stored. Returning the
+    token on its own presence would silently hijack a working API key for anyone
+    who happens to have the Claude Code CLI logged in.
     """
     if os.getenv("ANTHROPIC_AUTH_MODE", "").strip().lower() != "subscription":
         return ""
@@ -447,6 +447,32 @@ def get_jira_token() -> str | None:
 def get_jira_project_key() -> str | None:
     """Return the default Jira project key (e.g. 'MYPROJ'), or None if not set."""
     return os.getenv("JIRA_PROJECT_KEY") or None
+
+
+# YEABOI_AC_FORMAT alias table — normalized to the canonical style names in
+# agent/state.py (AC_STYLES). Unknown values normalize to "" (no override);
+# a config getter never raises.
+_AC_FORMAT_ALIASES: dict[str, str] = {
+    "gwt": "gwt",
+    "given-when-then": "gwt",
+    "given/when/then": "gwt",
+    "gherkin": "gwt",
+    "bullets": "bullets",
+    "bullet": "bullets",
+    "freeform": "bullets",
+    "free-form": "bullets",
+    "checklist": "bullets",
+}
+
+
+def get_ac_format() -> str:
+    """Return the acceptance-criteria style override from YEABOI_AC_FORMAT.
+
+    "" when unset or unrecognized — the planner then follows the learned team
+    profile (see resolve_ac_style in agent/state.py).
+    """
+    raw = (os.getenv("YEABOI_AC_FORMAT") or "").strip().lower()
+    return _AC_FORMAT_ALIASES.get(raw, "")
 
 
 def get_confluence_base_url() -> str | None:
@@ -768,6 +794,31 @@ def get_poker_server_port() -> int:
         return int(os.getenv("POKER_PORT", "5273"))
     except ValueError:
         return 5273
+
+
+def get_ship_server_port() -> int:
+    """Return the base port for the Ship board server (default 5473).
+
+    5473 sits clear of retro's 5173..5193 and poker's 5273..5293 walk ranges so
+    a ship board can run alongside either. The server walks upward from this
+    port if it is busy (ship/server.py).
+    """
+    try:
+        return int(os.getenv("SHIP_PORT", "5473"))
+    except ValueError:
+        return 5473
+
+
+def get_ship_board_enabled() -> bool:
+    """True when a ship run should open its live, shareable web board.
+
+    Opt-in for now (``YEABOI_SHIP_BOARD=1``). The board is read-only and safe,
+    but it turns on the driver's ``stream-json`` path and, unless
+    :func:`tunnels_disabled`, brings up a Cloudflare tunnel — both are new
+    behaviour a plain terminal run should not get by surprise. Flip it on to
+    watch a run from a browser and share it with teammates.
+    """
+    return os.getenv("YEABOI_SHIP_BOARD", "").strip().lower() in ("1", "true", "yes")
 
 
 def tunnels_disabled() -> bool:

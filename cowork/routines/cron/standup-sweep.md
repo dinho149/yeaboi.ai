@@ -6,6 +6,18 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = standup`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code` — the deterministic core is excluded by policy (it has a Go twin), so this reads the
+  fetchers, the review path and the exporters, which have no twin and the most churn.
+- `assertion-free-tests`
+- `layering`
+- `duplication` — four exporters and four renderers grew alongside each other here, and this is the
+  charter where the clones the lens finds are most likely to be one function. Propose only.
+
 ## Focus
 
 - **Signal precision** — read the practice-signal detectors and the four collector traps they depend

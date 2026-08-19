@@ -465,6 +465,10 @@ def _export_snapshots() -> dict[str, dict]:
         ),
         activity_counts=(("github", 6), ("jira", 5)),
         activity_window="last 24 hours",
+        # ISO-with-T so the value never matches the _STAMP pinning regex and
+        # the fixture cannot rewrite itself.
+        activity_window_start="2026-07-12T00:00:00+00:00",
+        activity_window_end="2026-07-13T10:00:00+00:00",
         category_coverage=(("ticketing", "covered"), ("documentation", "not_configured")),
         skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),),
         warnings=("Jira was reachable for 12 of 14 days.",),
@@ -610,10 +614,54 @@ def _editable_snapshot() -> dict[str, dict]:
     return {"editable": share.snapshot("pid-1")}
 
 
+def _ship_snapshot() -> dict:
+    """A ship run at the gate: phases done, agent activity, a scrubbed diff, a verdict."""
+    import tempfile
+
+    from yeaboi.agent.state import ShipRun, ShipValidation
+    from yeaboi.ship.board import ShipBoard
+    from yeaboi.ship.store import ShipStore
+
+    with tempfile.TemporaryDirectory() as d:
+        db = Path(d) / "sessions.db"
+        run = ShipRun(
+            run_id="wire-ship",
+            status="awaiting_approval",
+            diff_stat=" 1 file changed, 2 insertions(+)",
+            diff_text="@@ -1 +1,3 @@\n def go():\n+    import time\n+    time.sleep(1)\n",
+            validation=ShipValidation(configured=True, command="make test", passed=True, exit_code=0, output_tail="OK"),
+            cost_usd=0.42,
+            transcript_findings=(("secret", "high", "possible token in agent output"),),
+            branch="ship/wire-ship",
+            warnings=("agent produced no result envelope; cost and turn counts are unavailable",),
+            updated_at="2026-08-17T00:00:00+00:00",
+        )
+        store = ShipStore(db)
+        store.record_run(run)
+        store.close()
+        board = ShipBoard("wire-ship", db_path=db, story_title="Add a rate limiter", project_name="yeaboi")
+        board.note_component(
+            {"component_id": "ship-setup", "label": "Preparing isolated worktree", "status": "completed"}
+        )
+        board.note_component({"component_id": "ship-implement", "label": "Implementing", "status": "completed"})
+        board.note_component({"component_id": "ship-gate", "label": "Awaiting human approval", "status": "running"})
+        # A text line and a tool line — the tool's input is dropped by the allowlist.
+        board.note_agent_line(
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Adding the limiter"}]}}'
+        )
+        board.note_agent_line(
+            '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"x"}}]}}'
+        )
+        board.heartbeat("pid-a", name="Ada", avatar="🦊")
+        board.revision()  # fold the stored run into the cached projection
+        return board.state_snapshot("pid-a")
+
+
 def _fixtures() -> dict[str, dict]:
     return {
         "deck": _deck_snapshot(),
         "retro": _retro_snapshot(),
+        "ship": _ship_snapshot(),
         "invite": _invite_snapshot(),
         **_boot_snapshots(),
         **_poker_snapshots(),

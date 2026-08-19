@@ -115,6 +115,17 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       <pre><code>yeaboi --standup-run --standup-interactive --standup-session &lt;id&gt;</code></pre>
       <p>No background daemon is kept alive; the operating system fires the job, so it works even with yeaboi fully quit and survives reboots.</p>
 
+      <h3 id="ceremonies">Every other mode, on a cadence</h3>
+      <p>The standup was the first thing with a schedule; it is no longer the only one. A <strong>ceremony</strong> is any schedulable mode declared to run on a cadence — the delivery report on Monday morning, the agent cost digest weekly — and it uses the same OS-native machinery, the same delivery channels, and no daemon:</p>
+      <pre><code>yeaboi ceremonies modes                        # what can run on a cadence, and what cannot
+yeaboi ceremonies add weekly-report --mode report --at 08:00 --weekdays 1 --channels slack
+yeaboi ceremonies list                         # what is declared, and how each last run went
+yeaboi ceremonies history                      # every fire, including the ones that were skipped
+</code></pre>
+      <p>Not every mode qualifies. The retro and poker boards need people in a room and <code>ship</code> has a human approval gate, so <code>ceremonies modes</code> lists the refusals with a reason beside each.</p>
+      <p>Three guards apply only to a <em>scheduled</em> fire, because each answers a question an unattended run raises and a deliberate one does not. A job that fires long after its slot — a sleeping laptop, since launchd coalesces missed intervals and fires once at wake — is <strong>skipped</strong> rather than posted, because a five-hour-old standup misleads. A ceremony past its <code>--monthly-cap</code> is skipped rather than billed. And a paused ceremony whose job somehow fired is skipped and recorded as drift. Every fire writes a ledger row with its outcome, its cost and, when something stopped it, the reason — so "did it post this morning, and if not why not" always has an answer.</p>
+      <p>Press <strong>s</strong> on the welcome screen to see the schedule and its outcomes, run one on the spot, or pause one.</p>
+
       <h2 id="delivery-configuration">Delivery configuration</h2>
       <p>Non-secret settings (time, channels) live per-session in SQLite. Secrets/creds go in <code>~/.yeaboi/.env</code> (see <code>.env.example</code>):</p>
       <ul>
@@ -163,6 +174,7 @@ yeaboi --standup-run --standup-session latest --standup-output terminal</code></
       <ul>
         <li><a href="/docs/agents/index.html">Overview</a></li>
         <li><a href="/docs/agents/usage.html">Agent Usage</a></li>
+        <li><a href="/docs/agents/advisor.html">Agent Advisor</a></li>
         <li><a href="/docs/agents/standup.html">Agent Standup</a></li>
         <li><a href="/docs/agents/security.html">Agent Security</a></li>
       </ul>

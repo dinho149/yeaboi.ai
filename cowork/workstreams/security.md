@@ -1,8 +1,9 @@
 # security
 
 **Owns** — `src/yeaboi/input_guardrails.py`, `output_guardrails.py`, `fs_policy.py`, `redaction.py`,
+`claude_auth.py`, `auth_state.py`,
 `web/security.py`, `sharing/access.py`, `sharing/gate.py`, `tests/unit/guardrails/`,
-`tests/unit/test_{fs_policy,redaction,web_security,export_xss,consent}.py`,
+`tests/unit/test_{fs_policy,redaction,web_security,export_xss,consent,claude_auth,auth_state}.py`,
 `.github/workflows/codeql.yml`, `.github/workflows/codeql-triage.yml`, `.github/codeql/`,
 `SECURITY.md`
 

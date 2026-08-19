@@ -36,6 +36,24 @@ def _usage_history(limit: int):
         return {"reports": store.list_reports("usage", limit=limit)}
 
 
+def _advisor_run(window_days: int):
+    if window_days < 1 or window_days > 365:
+        raise ValueError("window_days must be between 1 and 365.")
+    from yeaboi.agentwatch.advisor import run_agent_advisor
+
+    return run_agent_advisor(window_days=window_days)
+
+
+def _advisor_history(limit: int):
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+    from yeaboi.agentwatch.store import AgentWatchStore
+    from yeaboi.paths import get_db_path
+
+    with AgentWatchStore(get_db_path()) as store:
+        return {"reports": store.list_reports("advisor", limit=limit)}
+
+
 def _standup_run(
     days: int,
     tracker_sources: list | None,
@@ -130,6 +148,29 @@ def register(app) -> None:
         The Agents modes are in beta — costs are estimates from local session logs and public
         rate tables, not the provider's bill."""
         return _with_beta(await run_readonly(_usage_history, limit))
+
+    @app.tool()
+    async def agents_advisor_run(ctx: Context, window_days: int = 30) -> dict:
+        """BETA — Audit the user's agent sessions for recoverable spend and prompt-cache
+        health: how much of the window's cost came from mechanical Read waste (identical
+        re-reads, subset re-reads, write read-backs, line-number scaffolding), plus
+        context-residency stats, cache-death gaps, and volatile-shaped content in
+        prompt-prefix files (CLAUDE.md). Computed locally from agent session logs;
+        every dollar figure is an estimate (tokens ≈ bytes/4 at the window's blended
+        input rate) and every count is a floor.
+
+        The Agents modes are in beta — present recoverable figures as estimates of
+        opportunity, never as promised savings."""
+        return _with_beta(await run_engine(ctx, _advisor_run, window_days))
+
+    @app.tool()
+    async def agents_advisor_history(limit: int = 20) -> dict:
+        """BETA — List previously generated agent advisor reports (newest first), so
+        recoverable spend can be compared across runs without recomputing.
+
+        The Agents modes are in beta — recoverable figures are estimates of
+        opportunity, never promised savings."""
+        return _with_beta(await run_readonly(_advisor_history, limit))
 
     @app.tool()
     async def agents_standup_run(

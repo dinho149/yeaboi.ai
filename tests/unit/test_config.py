@@ -1019,6 +1019,36 @@ class TestLastCategory:
         assert not (tmp_path / ".env").exists()
 
 
+class TestGetAcFormat:
+    """YEABOI_AC_FORMAT alias normalization — never raises, unknown → ''."""
+
+    def test_unset_is_empty(self, monkeypatch):
+        monkeypatch.delenv("YEABOI_AC_FORMAT", raising=False)
+        from yeaboi.config import get_ac_format
+
+        assert get_ac_format() == ""
+
+    def test_gwt_aliases(self, monkeypatch):
+        from yeaboi.config import get_ac_format
+
+        for raw in ("gwt", "Given-When-Then", "given/when/then", "GHERKIN"):
+            monkeypatch.setenv("YEABOI_AC_FORMAT", raw)
+            assert get_ac_format() == "gwt", raw
+
+    def test_bullets_aliases(self, monkeypatch):
+        from yeaboi.config import get_ac_format
+
+        for raw in ("bullets", "bullet", "freeform", "free-form", "Checklist"):
+            monkeypatch.setenv("YEABOI_AC_FORMAT", raw)
+            assert get_ac_format() == "bullets", raw
+
+    def test_unknown_value_is_empty(self, monkeypatch):
+        monkeypatch.setenv("YEABOI_AC_FORMAT", "haiku")
+        from yeaboi.config import get_ac_format
+
+        assert get_ac_format() == ""
+
+
 class TestGetAnthropicSubscriptionToken:
     """Both halves must agree before subscription auth engages.
 

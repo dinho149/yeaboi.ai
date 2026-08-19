@@ -113,9 +113,11 @@ function Body({ report }: { report: ExportReport }) {
           quietMembers={report.quietMembers}
           activityCounts={report.activityCounts}
           activityWindow={report.activityWindow}
+          window={report.window}
           coverage={report.coverage}
           skipped={report.skipped}
           practices={report.practices}
+          conflicts={report.conflicts}
           images={report.images}
           trend={report.trend}
           warnings={report.warnings}

@@ -54,13 +54,10 @@ CONFIRM_EDIT = "Edit an answer…"
 CONFIRM_OVERRIDE_VELOCITY = "Override the velocity…"
 CONFIRM_FREETEXT = "Tell me what's off…"
 
-# Prior-art sub-loop labels. Same rule as the CONFIRM_* set above: the raw
-# label must never reach the graph — the driver maps a pick to the node's
-# literal ("1"/"2"/"3"), because _parse_edit_intent reads a bare digit as
-# "edit QN" and the node's handler does not know these strings.
-PRIOR_ART_YES = "Yes, relevant"
-PRIOR_ART_NO = "Not relevant…"
-PRIOR_ART_SKIP = "Skip the rest"
+# Prior-art empty-state label. Same rule as the CONFIRM_* set above: the raw
+# label must never reach the graph — the driver maps it to the node's literal.
+# The "ask" stage has no labels at all any more: its rows are the candidate
+# names themselves, and the driver submits the node's index grammar directly.
 PRIOR_ART_CONTINUE = "Continue"
 
 
@@ -132,6 +129,7 @@ class QuestionView:
     choices: list[tuple[str, bool]] | None = None  # (label, pre_selected)
     multi_select: bool = False
     auto_submit: bool = False  # bare digit picks + submits (command menus only)
+    prior_art: bool = False  # the prior-art carousel menu (ban key + index-grammar submit)
     suggestion: str | None = None  # free-text prefill (chip suggestions become prefill)
     progress: str = ""  # "Question 2 of 6" over the planned set (chat shows it for every mode)
     phase_label: str = ""
@@ -165,18 +163,22 @@ def derive_question_view(graph_state: dict) -> QuestionView:
     # Guard mirrors _append_reply's card condition exactly — the choices must
     # appear iff the card+prompt did, and never during the PTO sub-loop,
     # velocity number entry, or an edit re-ask.
-    # Prior-art sub-loop: a per-candidate verdict, offered exactly where the
-    # node is waiting for one. Checked BEFORE the confirmation gate because
-    # both run with awaiting_confirmation set and cur_q past the last question
-    # — without this the Accept/Edit menu would render over the prior-art card.
+    # Prior-art sub-loop: one multi-select row per candidate, offered exactly
+    # where the node is waiting for the batch verdict. Checked BEFORE the
+    # confirmation gate because both run with awaiting_confirmation set and
+    # cur_q past the last question — without this the Accept/Edit menu would
+    # render over the prior-art card. Pre-checks come from _prior_art_accepted:
+    # empty on a fresh run, populated when a legacy mid-loop session resumes,
+    # which makes earlier per-repo verdicts visible and re-editable.
     if qs.awaiting_confirmation and getattr(qs, "_prior_art_stage", "") == "ask":
+        accepted_keys = {c.get("key", "") for c in getattr(qs, "_prior_art_accepted", [])}
         view.choices = [
-            (PRIOR_ART_YES, True),
-            (PRIOR_ART_NO, False),
-            (PRIOR_ART_SKIP, False),
+            (str(c.get("name", "")), bool(c.get("key", "")) and c.get("key", "") in accepted_keys)
+            for c in getattr(qs, "_prior_art_candidates", [])
         ]
-        view.multi_select = False
-        view.auto_submit = True
+        view.multi_select = True
+        view.auto_submit = False
+        view.prior_art = True
         return view
     # Nothing was found, and the card says why. There is no verdict to give,
     # so the only affordance is an acknowledgement — but it still has to be a

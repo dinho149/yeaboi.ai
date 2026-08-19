@@ -2,7 +2,8 @@
 
 **Owns** — `src/yeaboi/tools/` (jira, azure_devops, github, confluence, notion, calendar_tools,
 local_git, codebase, risk, llm_tools), `src/yeaboi/jira_sync.py`, `azdevops_sync.py`,
-`export_targets.py`, `ticket_text.py`, `markdown_convert.py` (Markdown → Notion blocks / Confluence
+`sync_naming.py` (board-aware sprint numbering shared by both syncs), `export_targets.py`,
+`ticket_text.py`, `markdown_convert.py` (Markdown → Notion blocks / Confluence
 XHTML), `tests/contract/` and its cassettes
 
 **Reads** — the consumer side of every integration, to find and never to edit. Some of these files

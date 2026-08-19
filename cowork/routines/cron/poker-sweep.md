@@ -6,6 +6,18 @@
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = poker`.
 
+## Lenses
+
+Run these before the scout and hand it the output — see
+[hygiene-lenses.md](../../hygiene-lenses.md).
+
+- `dead-code`
+- `assertion-free-tests`
+- `layering`
+- `duplication` — the poker and retro board servers were written from one another. Propose only, and
+  a clone that crosses into **retro** is not yours: the lens only reads your own paths, so what it
+  shows you is inside this charter by construction.
+
 ## Focus
 
 - **Write-back idempotence** — re-running a point sync must not double-write or clobber a manually

@@ -1439,6 +1439,60 @@ def _bounded_keys(sequence: list[str], deadline_seconds: float = 5.0):
     return _key
 
 
+class TestSpikePopup:
+    """Architecture-spike opt-in/out — recommended option first, Esc takes it."""
+
+    def _spike_state(self, recommended: str, **extra) -> dict:
+        return {
+            "messages": [AIMessage(content="Spike question")],
+            "_spike_prompt": {"recommended": recommended, "chosen": "Modular monolith", "confidence": "medium"},
+            **extra,
+        }
+
+    def _popup(self, state: dict, monkeypatch, choice):
+        """Run _spike_popup with the choice screen faked; return its kwargs."""
+        captured: dict = {}
+
+        def fake_choice_screen(live, console, key, **kw):
+            captured.update(kw)
+            return choice
+
+        monkeypatch.setattr("yeaboi.ui.session.phases._phases._pipeline_choice_screen", fake_choice_screen)
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._spike_popup()
+        return driver, captured
+
+    def test_recommended_include_lists_first_and_esc_takes_it(self, monkeypatch):
+        # choice=None is the Esc path — it must resolve to the recommendation.
+        driver, captured = self._popup(self._spike_state("include"), monkeypatch, choice=None)
+        assert captured["options"][0].startswith("Add a validation spike")
+        assert "(recommended" in captured["options"][0]
+        assert driver.state["spike_choice"] == "include"
+        assert driver.state["_spike_prompt"] == {}
+
+    def test_recommended_skip_lists_first_and_esc_takes_it(self, monkeypatch):
+        driver, captured = self._popup(self._spike_state("skip"), monkeypatch, choice=None)
+        assert captured["options"][0].startswith("Skip — commit to Modular monolith")
+        assert "(recommended" in captured["options"][0]
+        assert driver.state["spike_choice"] == "skip"
+
+    def test_second_option_overrides_the_recommendation(self, monkeypatch):
+        driver, _ = self._popup(self._spike_state("skip"), monkeypatch, choice=1)
+        assert driver.state["spike_choice"] == "include"
+
+    def test_fast_mode_takes_recommendation_without_asking(self, monkeypatch):
+        def _boom(*a, **kw):  # the choice screen must never open in fast mode
+            raise AssertionError("choice screen opened in fast mode")
+
+        monkeypatch.setattr("yeaboi.ui.session.phases._phases._pipeline_choice_screen", _boom)
+        state = self._spike_state("skip", _chat_fast_forward=True)
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._spike_popup()
+        assert driver.state["spike_choice"] == "skip"
+        assert driver.state["_spike_prompt"] == {}
+        assert any("fast mode" in m.text for m in driver.transcript.messages)
+
+
 class TestEntertainDuck:
     """The working-wait entertainer: clock-derived quip slots, gags on a
     schedule, real EVENT bubbles always win."""
@@ -1751,6 +1805,151 @@ class TestScrollingWithAMenuUp:
         driver._input_loop()
         assert driver.choices.highlight == 1
         assert driver.follow is True  # still pinned to the newest line
+
+
+class TestPriorArtCarousel:
+    """The prior-art batch menu: browse with all four arrows (the card above
+    follows the highlight), Space picks, X bans permanently, and the
+    submission is the node's index grammar — never the labels."""
+
+    def _qs(self):
+        qs = QuestionnaireState(current_question=TOTAL_QUESTIONS + 1)
+        qs.awaiting_confirmation = True
+        qs._prior_art_stage = "ask"
+        qs._prior_art_candidates = [
+            {"key": "github:acme/a", "name": "a, b", "pitch": ["oidc login"], "stack": ["Py"]},
+            {"key": "github:acme/c", "name": "acme/c", "pitch": ["card payments"], "stack": ["Go"]},
+        ]
+        return qs
+
+    def _carousel_driver(self, keys, *, checked=(False, False)):
+        driver = _driver(FakeGraph([]), keys, {"messages": [], "questionnaire": self._qs()})
+        driver.transcript.add_artifact("prior_art")
+        driver.choices = ChoiceRows(
+            options=[("a, b", checked[0]), ("acme/c", checked[1])],
+            multi=True,
+            carousel=True,
+        )
+        return driver
+
+    def test_left_right_move_the_highlight_and_the_preview(self):
+        driver = self._carousel_driver(_keys(["right", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.choices.highlight == 1
+        assert driver.state["_prior_art_preview"] == 1
+        # The stale cache was invalidated and the card re-rendered for the
+        # new preview — its cached lines now show the second repo's pitch.
+        card = next(m for m in driver.transcript.messages if m.role == "artifact")
+        cached = " ".join(line.plain for line in card._cache[1])
+        assert "card payments" in cached
+        assert "oidc login" not in cached
+
+    def test_up_down_also_sync_the_preview(self):
+        driver = self._carousel_driver(_keys(["down", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.state["_prior_art_preview"] == 1
+
+    def test_left_right_fall_through_on_ordinary_menus(self):
+        driver = _driver(FakeGraph([]), _keys(["left", "esc", "esc"]))
+        driver.choices = ChoiceRows(options=[("Accept", False), ("Edit", False)], auto_submit=True)
+        driver._input_loop()
+        assert driver.choices.highlight == 0
+
+    def test_x_bans_and_unchecks_the_highlighted_row(self):
+        driver = self._carousel_driver(_keys(["x", "esc", "esc"]), checked=(True, False))
+        driver._input_loop()
+        assert driver.choices.banned == {0}
+        assert driver.choices.options[0][1] is False
+
+    def test_x_again_lifts_the_ban(self):
+        driver = self._carousel_driver(_keys(["x", "x", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.choices.banned == set()
+
+    def test_space_on_a_banned_row_unbans_and_picks(self):
+        driver = self._carousel_driver(_keys([" ", "esc", "esc"]))
+        driver.choices.banned = {0}
+        driver._input_loop()
+        assert driver.choices.banned == set()
+        assert driver.choices.options[0][1] is True
+
+    def test_enter_submits_the_index_grammar_not_the_labels(self):
+        # The first repo is literally named "a, b" — the generic label join
+        # would shatter it on the comma and the node would re-parse noise.
+        driver = self._carousel_driver(_keys(["enter"]), checked=(True, False))
+        driver.choices.banned = {1}
+        assert driver._input_loop() == "1 !2"
+
+    def test_an_empty_selection_submits_none(self):
+        driver = self._carousel_driver(_keys(["enter"]))
+        assert driver._input_loop() == "none"
+
+    def test_a_banned_row_is_never_also_picked(self):
+        # Ban wins over a leftover check: the checked flag survives in the
+        # options list, but the grammar must not claim the repo both ways.
+        driver = self._carousel_driver(_keys(["enter"]), checked=(True, True))
+        driver.choices.banned = {0}
+        assert driver._input_loop() == "2 !1"
+
+    def test_a_rejected_answer_surfaces_the_grammar_hint_as_prose(self):
+        # The node re-prompts with the grammar on a parse failure; swallowing
+        # it behind the static card+prompt would make a rejected "yes" read
+        # as a no-op.
+        from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+        state = {
+            "messages": [HumanMessage(content="yes"), AIMessage(content=_PRIOR_ART_GRAMMAR_HINT)],
+            "_chat_greeting_done": True,
+            "questionnaire": self._qs(),
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._append_reply(streamed="")
+        bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
+        assert "Reply with the numbers" in bubble.text
+
+    def test_rebuild_after_a_rejected_answer_cards_the_prompt_not_the_hint(self):
+        # A rejected typed answer leaves the transcript ending
+        # [AI(batch prompt), Human("auth"), AI(grammar hint)]. The card must
+        # replace the batch prompt — carding the newest reply outright would
+        # attach it to the one-line hint and replay the markdown wall raw.
+        from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
+
+        batch_prompt = "**Prior art** — you already have 2 repositories that might be relevant."
+        state = {
+            "messages": [
+                HumanMessage(content="desc"),
+                AIMessage(content=batch_prompt),
+                HumanMessage(content="auth"),
+                AIMessage(content=_PRIOR_ART_GRAMMAR_HINT),
+            ],
+            "_chat_greeting_done": True,
+            "questionnaire": self._qs(),
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._rebuild_transcript()
+        roles = [(m.role, m.artifact_kind) for m in driver.transcript.messages]
+        assert ("artifact", "prior_art") in roles
+        texts = [m.text for m in driver.transcript.messages]
+        assert not any("already have 2 repositories" in t for t in texts)
+        # The hint replays as prose, mirroring the live turn.
+        assert any("Reply with the numbers" in t for t in texts)
+
+    def test_rebuild_readds_the_card_mid_batch(self):
+        state = {
+            "messages": [
+                HumanMessage(content="desc"),
+                AIMessage(content="**Prior art** — you already have 2 repositories that might be relevant."),
+            ],
+            "_chat_greeting_done": True,
+            "questionnaire": self._qs(),
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._rebuild_transcript()
+        roles = [(m.role, m.artifact_kind) for m in driver.transcript.messages]
+        assert ("artifact", "prior_art") in roles
+        # The node's markdown wall must not replay next to the card.
+        texts = [m.text for m in driver.transcript.messages]
+        assert not any("already have 2 repositories" in t for t in texts)
 
 
 def _shown_notices(driver: _ChatDriver) -> list[str]:
