@@ -332,18 +332,20 @@ def _build_category_screen(
         Text(""),
         Text(""),
     )
+    # The page's one question rides the outer frame's border — structural,
+    # never a floating line of copy. It stays on the TOP border here: the chrome
+    # that carries a note on the bottom one is not in this tree.
     panel = build_page_panel(
         content,
         height=height,
         padding=(1, 2, 0, 2),
+        title=Text(f" {_HEADING} ", style=_HEADING_STYLE),
+        title_align="center",
     )
     panel._no_back_hint = True  # the landing screen's Esc is quit, not "go back"
     # The screen already features both mascots — a third duck in the chrome
     # corner is a crowd, so opt out (same stamp the too-small guard uses).
     panel._no_companion_duck = True
-    # The question goes ON the bottom border, in the chrome's own frame shape —
-    # floating a row above it, it read as one more thing on the page.
-    panel._footer_note = _HEADING
     # And no music bar: this screen is one question with two answers, and the
     # player is furniture for the pages you settle into.
     panel._no_music = True
