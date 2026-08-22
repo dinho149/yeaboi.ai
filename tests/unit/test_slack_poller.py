@@ -101,6 +101,11 @@ def _react(emoji=None, users=None):
     return {"1723800000.000100": [{"name": emoji or "pause_button", "users": users or [ACTOR]}]}
 
 
+def _human_reply(text="Ada was on leave, that ticket is not hers", ts="1723800003.0001") -> dict:
+    """Somebody typing in the thread. No ``bot_id``, so the grammar reads it."""
+    return {"ts": ts, "user": ACTOR, "text": text}
+
+
 def _signal_reply(reactions=None) -> dict:
     """One of *our* signal replies as Slack returns it, reactions included.
 
@@ -512,12 +517,13 @@ class TestSpeaking:
         assert api.acks and api.said
         assert "recorded" in api.said[0][1]
 
-    def test_an_act_a_later_phase_will_build_stays_silent(self, db):
-        # Every ordinary sentence in the thread refuses here. A bot that
+    def test_a_refusal_that_asked_for_silence_gets_it(self, db):
+        # A prose reply under a post with nothing correctable behind it refuses
+        # here, and that is true of *every* sentence in that thread. A bot that
         # answered all of them is one nobody leaves switched on.
         _anchor(db)
         api = FakeApi(reactions=_react())
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(False, "not handled yet"))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(False, "nothing correctable"))
         assert api.said == []
 
     def test_an_unauthorised_actor_is_never_answered(self, db):
@@ -538,5 +544,46 @@ class TestSpeaking:
             db, kind=KIND_SIGNAL, ts="1723800001.0002", root_ts="1723800000.000100", member="Ada", rule="wip-sprawl"
         )
         api = FakeApi(thread={"1723800000.000100": [_signal_reply()]})
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "noted", speak=True))
+        assert api.said == [("1723800000.000100", "noted")]
+
+
+class TestCorrectionsReachApply:
+    """The whole of what a typed sentence carries by the time it is applied."""
+
+    def _seen(self, db, text):
+        seen: list = []
+        _anchor(db, artifact_kind="standup")
+        run_poll(
+            db_path=db,
+            now=NOW,
+            api=FakeApi(thread={"1723800000.000100": [_human_reply(text)]}),
+            apply_event=lambda e: (seen.append(e), ApplyResult(True, "noted", speak=True))[1],
+        )
+        return seen
+
+    def test_the_text_and_the_reply_it_came_from_both_arrive(self, db):
+        # `reply_ts` is the deterministic edit id, so a correction with no reply
+        # behind it has no idempotency key at all.
+        (event,) = self._seen(db, "Ada was on leave, that ticket is not hers")
+        assert event.act == "correction"
+        assert event.payload.startswith("Ada was on leave")
+        assert event.reply_ts == "1723800003.0001"
+
+    def test_the_text_is_already_clean_when_it_arrives(self, db):
+        # `clean_reply_text` runs in the grammar, upstream of everything, so
+        # nothing that pings a workspace can reach the store even in principle.
+        (event,) = self._seen(db, "<!channel> Ada was on leave <@U0999>")
+        assert "<!" not in event.payload and "<@" not in event.payload
+
+    def test_an_acknowledgement_never_becomes_an_event_to_apply(self, db):
+        assert self._seen(db, "ok") == []
+
+    def test_a_successful_correction_answers_in_the_thread(self, db):
+        # The ✅ needs `reactions:write` and is off by default, so without this
+        # a write of somebody's own prose into a stored report lands with no
+        # signal whatsoever that it worked.
+        _anchor(db, artifact_kind="standup")
+        api = FakeApi(thread={"1723800000.000100": [_human_reply()]})
         run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "noted", speak=True))
         assert api.said == [("1723800000.000100", "noted")]

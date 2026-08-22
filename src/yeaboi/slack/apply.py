@@ -12,16 +12,27 @@ already returns ``skipped_paused`` when the store and the operating system have
 drifted, announces it, and the drift line on the ceremonies page and in
 ``ceremonies list`` makes it visible. So the strongest thing a reaction can do
 is set a boolean somebody can see and reverse.
+
+And **a reply can add prose but never change prose**. A correction becomes an
+``OP_NOTE`` — a paragraph beside the report with a name on it — through the same
+validator, the same injection sweep and the same caps a teammate on the shared
+document gets. ``set``, ``append``, ``remove``, ``field`` and ``revert`` are
+unreachable from this package, and ``tests/unit/test_slack_ops.py`` asserts that
+over the AST rather than trusting it: the failure mode of a convention is
+silence, and a future path reaching for ``OP_SET`` would look reasonable in
+review while quietly turning "add a note" into "rewrite the report".
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from yeaboi.slack.grammar import (
     ACT_CONTROL,
+    ACT_CORRECTION,
     ACT_VERDICT,
     INTENT_DOWN,
     INTENT_PAUSE,
@@ -29,7 +40,14 @@ from yeaboi.slack.grammar import (
     INTENT_SKIP,
     INTENT_UP,
 )
-from yeaboi.slack.store import OUTCOME_DEFERRED, InboundEvent
+from yeaboi.slack.store import (
+    MAX_CORRECTIONS_PER_DAY,
+    OUTCOME_APPLIED,
+    OUTCOME_DEFERRED,
+    OUTCOME_REFUSED,
+    InboundEvent,
+    SlackStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +87,136 @@ def apply_event(event: InboundEvent, *, db_path: Path | None = None) -> ApplyRes
         return _control(event, anchor, db_path=db_path)
     if event.act == ACT_VERDICT:
         return _verdict(event, anchor, db_path=db_path)
-    # Corrections arrive in phase 6. Recording the refusal with its reason beats
-    # a silent no-op nobody can explain later — but `speak` stays off, because
-    # every ordinary sentence in the thread lands here.
+    if event.act == ACT_CORRECTION:
+        return _correction(event, anchor, db_path=db_path)
+    # Recording the refusal with its reason beats a silent no-op nobody can
+    # explain later — but `speak` stays off, because an act this build does not
+    # know is not something to announce in a channel.
     return ApplyResult(False, f"{event.act!r} is not handled yet")
+
+
+def _correction(event: InboundEvent, anchor, *, db_path: Path | None) -> ApplyResult:
+    """A sentence somebody typed, as an attributed note on the run.
+
+    **A Slack reply can add prose. It can never change generated prose.** The op
+    is always ``note`` — ``set``, ``append``, ``remove``, ``field`` and
+    ``revert`` are unreachable from this package, asserted by an AST test rather
+    than left to convention — so the strongest thing free text can do is add a
+    paragraph beside the report with a name on it, through the same validator,
+    the same injection sweep and the same caps a teammate on the shared document
+    gets.
+
+    The note lands at document level and never against a member, because
+    **Slack threads are flat**: every reply carries ``thread_ts = root_ts``, so
+    typed text cannot say which of the signal replies above it is meant. A
+    reaction is per-message and can; prose cannot, and guessing is the inference
+    ``habits.py`` exists to refuse.
+    """
+    from yeaboi.artifacts.edits import OP_NOTE
+    from yeaboi.artifacts.engine import HEADLESS_KINDS, apply_artifact_edits
+
+    if anchor.artifact_kind not in HEADLESS_KINDS or not anchor.run_id:
+        # Silent on purpose: this is true of *every* prose reply under such a
+        # post, so speaking it would answer the whole conversation. The ledger
+        # row is where an operator finds out it happened.
+        return ApplyResult(False, "that post has nothing correctable behind it")
+    text = (event.payload or "").strip()
+    if not text:
+        return ApplyResult(False, "nothing to record")
+    if not event.reply_ts:
+        return ApplyResult(False, "a correction needs the reply it came from")
+
+    already, refused_before = _correction_counts(event, db_path=db_path)
+    if already >= MAX_CORRECTIONS_PER_DAY:
+        # Told once, then quiet. A cap that answers every over-limit reply is an
+        # amplifier for exactly the thread argument it exists to bound.
+        return ApplyResult(
+            False,
+            f"that post has taken its {MAX_CORRECTIONS_PER_DAY} corrections for today — the rest are in the app.",
+            speak=not refused_before,
+        )
+
+    held = _leased(anchor, db_path=db_path)
+    try:
+        outcome = apply_artifact_edits(
+            anchor.artifact_kind,
+            [
+                {
+                    "op": OP_NOTE,
+                    "path": "",
+                    "value": text,
+                    # Deterministic, so a replayed window re-applies nothing:
+                    # `EditableDocument.apply` returns the stored copy for an
+                    # edit id it has already seen. It is also the join back to
+                    # the ledger row that holds the Slack-verified identity —
+                    # `Edit.author` stays self-declared, because a field meaning
+                    # "verified" for some rows and "typed" for others is worse
+                    # than one that always means the weaker thing.
+                    "edit_id": f"slack-{event.channel}-{event.reply_ts}",
+                }
+            ],
+            session_id=anchor.session_id,
+            run_id=anchor.run_id,
+            author=_author(event),
+            db_path=db_path,
+        )
+    except ValueError as exc:
+        # "no stored standup to correct", or a kind that cannot be reached
+        # headlessly. Not the author's fault and not their problem to fix.
+        return ApplyResult(False, str(exc))
+
+    if outcome.get("refused"):
+        # The validator's own words: too long, too many line breaks, an
+        # injection pattern, or a document already at MAX_ANNOTATIONS. Every one
+        # of those is the author's prose being rejected, so every one is spoken.
+        return ApplyResult(False, str(outcome["refused"][0].get("reason", "refused")), speak=True)
+    if outcome.get("stale"):
+        return ApplyResult(False, "the report moved under that correction", speak=True)
+    if not outcome.get("applied"):
+        return ApplyResult(False, "that correction did not apply")
+    if held:
+        return ApplyResult(
+            True,
+            "recorded — someone has this report open, so it may not show on their copy until they reopen it.",
+            outcome=OUTCOME_DEFERRED,
+            speak=True,
+        )
+    # Spoken, unlike a verdict: the ✅ needs `reactions:write` and is off by
+    # default, and a write of somebody's own prose into a stored report with no
+    # signal at all that it landed is the gesture-with-no-consequence this lane
+    # keeps refusing to make.
+    return ApplyResult(True, f"noted on today's {anchor.mode or anchor.artifact_kind}.", speak=True)
+
+
+def _author(event: InboundEvent) -> str:
+    """The name that goes on the note.
+
+    A raw Slack id until the roster mapping lands, and deliberately so: the id
+    is what Slack's servers attributed, and inventing a display name from it
+    would be a guess wearing a person's name. The mapping replaces what this
+    string *reads* as, never what it means.
+    """
+    return event.member or f"@{event.slack_user}"
+
+
+def _correction_counts(event: InboundEvent, *, db_path: Path | None) -> tuple[int, int]:
+    """(corrections already applied on this anchor today, refusals already spoken).
+
+    Rolling twenty-four hours rather than a calendar day: a cap with a midnight
+    cliff hands back twenty fresh corrections at a moment nobody chose.
+    Unreadable counts as at the cap — a bound we cannot check is one we have to
+    assume, because the thing it guards against is unbounded writing.
+    """
+    since = (datetime.now(UTC) - timedelta(days=1)).isoformat(timespec="seconds")
+    try:
+        with SlackStore(db_path) as store:
+            common = {"channel": event.channel, "anchor_ts": event.anchor_ts, "act": ACT_CORRECTION, "since": since}
+            applied = store.settled_count(**common, outcomes=(OUTCOME_APPLIED, OUTCOME_DEFERRED))
+            refused = store.settled_count(**common, outcomes=(OUTCOME_REFUSED,))
+    except Exception:  # noqa: BLE001 — an uncheckable cap is a cap that holds
+        logger.warning("slack: could not count corrections on %s", event.anchor_ts, exc_info=True)
+        return MAX_CORRECTIONS_PER_DAY, 1
+    return applied, refused
 
 
 def _verdict(event: InboundEvent, anchor, *, db_path: Path | None) -> ApplyResult:

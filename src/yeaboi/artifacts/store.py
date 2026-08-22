@@ -324,15 +324,29 @@ class ArtifactEditStore:
     # durable half of a verdict — the permanent per-handle excusal rows — never
     # had a conflict to begin with.
 
-    def take_lease(self, kind: str, ref: str, *, holder: str = "", ttl_minutes: int = LEASE_TTL_MINUTES) -> None:
+    def take_lease(self, kind: str, ref: str, *, holder: str = "", ttl_minutes: int = LEASE_TTL_MINUTES) -> bool:
         """Declare that this process is rewriting ``(kind, ref)``. Never raises.
 
-        ``INSERT OR REPLACE``: re-opening a share the same process already holds
-        is a refresh, not a conflict, and a lease left behind by a crashed run
-        should be taken over rather than honoured until its TTL.
+        Returns whether this caller now holds it. A **live** lease held by
+        somebody else is left alone: the second writer proceeds anyway — the
+        lease is advisory — but it must not silently become the holder, because
+        the holder is who gets to *release*, and a momentary headless session
+        taking one over would drop a teammate's lease on the way out and
+        reinstate the very race this table exists to close.
+
+        An **expired** lease is still taken over, which is the crash case the
+        TTL was always for: the process that opened it is gone, and honouring a
+        dead holder forever would block deferral for nothing. Re-taking one this
+        caller already holds is a refresh, not a conflict.
         """
         now = datetime.now(UTC)
         try:
+            row = self._conn.execute(
+                "SELECT holder, expires_at FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref)
+            ).fetchone()
+            if row is not None and str(row["holder"]) != holder and self.lease_held(kind, ref, now=now):
+                logger.info("The %s lease on %s is held by %s — proceeding without it", kind, ref, row["holder"][:8])
+                return False
             self._conn.execute(
                 "INSERT OR REPLACE INTO artifact_leases (kind, ref, holder, opened_at, expires_at) VALUES (?,?,?,?,?)",
                 (
@@ -347,11 +361,23 @@ class ArtifactEditStore:
             # A lease that cannot be taken costs a deferral nobody needed; it
             # must never cost the share the reader is trying to open.
             logger.warning("Could not take the %s lease on %s", kind, ref, exc_info=True)
+            return False
+        return True
 
-    def release_lease(self, kind: str, ref: str) -> None:
-        """Drop the lease. Never raises, and dropping a lease nobody holds is fine."""
+    def release_lease(self, kind: str, ref: str, *, holder: str | None = None) -> None:
+        """Drop the lease. Never raises, and dropping a lease nobody holds is fine.
+
+        Pass ``holder`` to release only your own — the guard that keeps one
+        writer from ending another's turn. ``None`` releases whatever is there,
+        which is what an operator-facing repair would want.
+        """
         try:
-            self._conn.execute("DELETE FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref))
+            if holder is None:
+                self._conn.execute("DELETE FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref))
+            else:
+                self._conn.execute(
+                    "DELETE FROM artifact_leases WHERE kind = ? AND ref = ? AND holder = ?", (kind, ref, holder)
+                )
         except sqlite3.Error:
             logger.warning("Could not release the %s lease on %s", kind, ref, exc_info=True)
 

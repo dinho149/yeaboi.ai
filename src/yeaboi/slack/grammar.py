@@ -69,6 +69,13 @@ VERDICT_EMOJI: dict[str, str] = {
 #: channel does not listen.
 _VERB_RE = re.compile(r"^(skip|pause|resume|ack)\.?$")
 
+#: Shorter than this, after cleaning, and a reply is an acknowledgement rather
+#: than a correction. ``ok``, ``ty``, ``lol``, ``+1`` and a bare 👍 or 🎉 are what
+#: a thread is mostly made of, and every one of them would otherwise become a
+#: permanent annotation on somebody's standup. The verbs are matched *first*, so
+#: ``ack`` and ``skip`` are untouched; this can only ever make the lane quieter.
+MIN_CORRECTION = 4
+
 _MENTION_RE = re.compile(r"<[@#!][^>]*>")
 _LINK_RE = re.compile(r"<(https?://[^|>]+)(?:\|([^>]*))?>")
 
@@ -115,8 +122,9 @@ def parse_reaction(emoji: str, *, on_signal: bool) -> tuple[str, str]:
 def parse_reply(raw: str) -> tuple[str, str, str]:
     """(act, intent, payload) for a threaded reply.
 
-    A whole-message verb is an instruction; everything else is a correction
-    carrying its own text. An empty reply is neither.
+    A whole-message verb is an instruction; everything else long enough to say
+    something is a correction carrying its own text. An empty reply — or one too
+    short to be anything but an acknowledgement — is neither.
 
     No ``on_signal`` counterpart to :func:`parse_reaction`, because there cannot
     be one: Slack threads do not nest, so a reply always arrives against the
@@ -138,4 +146,6 @@ def parse_reply(raw: str) -> tuple[str, str, str]:
             # ("", "", "") would leave the writer with a bot that ignored them.
             return ACT_VERDICT, INTENT_UP, ""
         return ACT_CONTROL, verb, ""
+    if len(text) < MIN_CORRECTION:
+        return "", "", ""
     return ACT_CORRECTION, INTENT_NOTE, text

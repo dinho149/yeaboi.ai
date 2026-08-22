@@ -117,6 +117,17 @@ OUTCOME_FAILED = "failed"
 #: a different fact from "the write said no", and only one of them is a problem.
 OUTCOME_DEFERRED = "deferred"
 
+#: How many corrections one anchor may accept in a day. A bot loop or a thread
+#: argument must not be able to walk a document to ``MAX_ANNOTATIONS``, and the
+#: bound belongs on the *anchor* rather than on the channel: one noisy standup
+#: thread should not spend the whole day's budget for every other ceremony.
+#:
+#: Corrections only, deliberately. A cap that refused a *pause* because twenty
+#: notes were written that day would disarm the one act whose entire purpose is
+#: stopping something — and the other two acts are already bounded, by three
+#: emoji and by one signal reply each.
+MAX_CORRECTIONS_PER_DAY = 20
+
 POLL_OK = "ok"
 POLL_FAILED = "failed"
 POLL_NO_TOKEN = "skipped_no_token"  # noqa: S105 — an outcome label, not a credential
@@ -335,6 +346,26 @@ class SlackStore:
         )
         self._conn.commit()
         logger.info("slack event %s → %s%s", event_key, outcome, f" ({reason})" if reason else "")
+
+    def settled_count(self, *, channel: str, anchor_ts: str, act: str, since: str, outcomes: tuple[str, ...]) -> int:
+        """How many events of one act on one anchor settled a given way since ``since``.
+
+        One ``COUNT(*)`` over columns the ledger already carries, so the cap
+        costs no schema. The claim is written before the act runs and carries
+        ``outcome = ''``, so counting only settled rows excludes the event
+        currently being decided — which is what makes "the twenty-first is
+        refused" mean what it says.
+        """
+        if not outcomes:
+            return 0
+        slots = ", ".join("?" for _ in outcomes)
+        row = self._conn.execute(
+            f"""SELECT COUNT(*) AS n FROM slack_inbound
+                WHERE channel = ? AND anchor_ts = ? AND act = ?
+                  AND outcome IN ({slots}) AND claimed_at >= ?""",  # noqa: S608 — placeholders, not values
+            (channel, anchor_ts, act, *outcomes, since),
+        ).fetchone()
+        return int(row["n"]) if row else 0
 
     def unsettled(self, *, limit: int = 50) -> list[dict]:
         """Events claimed but never settled — what a crash mid-apply leaves."""

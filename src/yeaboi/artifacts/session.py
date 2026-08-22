@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from yeaboi.artifacts.edits import Edit
 from yeaboi.artifacts.registry import spec_for
@@ -58,6 +59,11 @@ class EditableSession:
         self.ref = artifact_ref(kind, run_id=run_id, session_id=session_id, engineer=engineer)
         self._base_hash = base_hash(artifact)
         self.share = editable_share(artifact, kind=kind, ref=self.ref, history=history)
+        # Who the lease belongs to. Minted per session rather than taken from
+        # the share, because a document's ``share_id`` is empty on every
+        # headless path — and a holder that is the same empty string for
+        # everybody makes "is this still mine?" unanswerable.
+        self._holder = uuid4().hex
         self._leased = False
         self._replay()
         self._take_lease()
@@ -72,9 +78,16 @@ class EditableSession:
     # refuses.
 
     def _take_lease(self) -> None:
+        """Take the lease if it is free, and remember whether we got it.
+
+        Not getting it is not a failure and does not stop anything: the lease is
+        advisory, and committing was never gated on it. What it changes is
+        :meth:`close`, which must not drop a lease belonging to somebody still
+        editing — the case that arrives with a headless correction opening a
+        momentary session on a run a teammate has open in the TUI.
+        """
         with ArtifactEditStore(self.db_path) as store:
-            store.take_lease(self.kind, self.ref, holder=self.share.document.share_id)
-        self._leased = True
+            self._leased = store.take_lease(self.kind, self.ref, holder=self._holder)
 
     def close(self) -> None:
         """Release the lease. Idempotent, and safe to call after ``commit()``.
@@ -87,7 +100,7 @@ class EditableSession:
             return
         self._leased = False
         with ArtifactEditStore(self.db_path) as store:
-            store.release_lease(self.kind, self.ref)
+            store.release_lease(self.kind, self.ref, holder=self._holder)
 
     def __enter__(self) -> EditableSession:
         return self

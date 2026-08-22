@@ -115,6 +115,21 @@ class TestReplies:
     def test_an_empty_reply_is_nothing(self, raw):
         assert parse_reply(raw) == ("", "", "")
 
+    @pytest.mark.parametrize("raw", ["ok", "ty", "lol", "+1", "👍", "🎉", "<@U0123456> ok"])
+    def test_an_acknowledgement_is_not_a_correction(self, raw):
+        # A thread is mostly made of these, and every one of them would
+        # otherwise become a permanent annotation on somebody's standup.
+        assert parse_reply(raw) == ("", "", "")
+
+    @pytest.mark.parametrize("verb", ["ack", "skip", "pause"])
+    def test_the_floor_is_checked_after_the_verbs_not_before(self, verb):
+        # `ack` is three characters. Matching verbs first is what keeps the
+        # shortest instruction in the vocabulary from being read as noise.
+        assert parse_reply(verb)[0] in (ACT_CONTROL, ACT_VERDICT)
+
+    def test_the_shortest_thing_that_still_says_something_is_a_correction(self):
+        assert parse_reply("wrong") == (ACT_CORRECTION, INTENT_NOTE, "wrong")
+
     def test_a_forged_identifier_is_just_prose(self):
         # The relay needs a channel/thread split because a crafted "#231 — ..."
         # can impersonate a digest item. Anchoring removes the whole class:
