@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       # UNIT_PATHS is the scope job's selection. A command-line make variable
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       # `make test-slow`, not `make test`. This job ran `make test`, which is
@@ -174,14 +174,14 @@ jobs:
     if: needs.scope.outputs.go == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
       - run: make go-lint
       - run: make go-test
       - run: make go-build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: yeaboi-core
           path: bin/yeaboi-core
@@ -191,7 +191,7 @@ jobs:
       # things a user's install depends on — binary_path() resolves inside the
       # wheel and the binary answers core.hello. publish-core.yml builds with
       # the same hook, so a hook regression fails PRs here, not the release.
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Wheel smoke (yeaboi-core)
         run: |
           uv python install 3.12
@@ -221,10 +221,10 @@ jobs:
     if: needs.scope.outputs.parity == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: yeaboi-core
           path: bin
@@ -241,7 +241,7 @@ jobs:
     if: needs.scope.outputs.eval == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make eval
@@ -252,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make lint
@@ -289,7 +289,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make format-check
@@ -328,7 +328,7 @@ jobs:
     if: needs.scope.outputs.site == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make site-check
@@ -344,7 +344,7 @@ jobs:
     if: needs.scope.outputs.package == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       # The assertion lives in scripts/check_wheel_bundles.py so `make package-check`
       # runs the identical check locally — inline here, the only way to fail it was
@@ -363,7 +363,7 @@ jobs:
         with:
           # Full history so gitleaks can scan all commits on a PR, not just the tip.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - name: SAST + dependency audit
