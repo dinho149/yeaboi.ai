@@ -278,12 +278,28 @@ def run_ceremony(
             if channels:
                 _report("delivering")
 
-                def _anchor(_channel: str, ref, _mode=mode, _run_id=artifact_run_id) -> None:
+                def _anchor(_channel: str, ref, _mode=mode, _run_id=artifact_run_id, _artifact=artifact) -> None:
                     """Record where this post landed, so it can be answered."""
                     from yeaboi.slack.store import record_post
+                    from yeaboi.slack.threads import post_signal_anchors
 
                     record_post(
                         ref,
+                        session_id=session_id,
+                        ceremony=name,
+                        mode=_mode.key,
+                        artifact_kind=_mode.artifact_kind,
+                        run_id=_run_id,
+                        db_path=db_path,
+                    )
+                    # And one reply per answerable item, each with its own
+                    # anchor. Which items those are is `slack/threads.py`'s
+                    # question, not this module's: a ceremony engine that knew
+                    # what a practice signal looked like would have to learn a
+                    # second artifact's shape for every mode that grew one.
+                    post_signal_anchors(
+                        ref,
+                        _artifact,
                         session_id=session_id,
                         ceremony=name,
                         mode=_mode.key,

@@ -14,7 +14,7 @@ import pytest
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.artifacts.edits import Edit
 from yeaboi.artifacts.session import EditableSession
-from yeaboi.artifacts.store import ArtifactEditStore
+from yeaboi.artifacts.store import ArtifactEditStore, artifact_ref
 from yeaboi.standup.store import StandupStore
 
 
@@ -242,3 +242,80 @@ class TestUnappliedEditsAreShown:
         rows = reopened.share.snapshot("")["edits"]
         assert [(r["id"], r["applied"]) for r in rows] == [("e1", False)]
         assert rows[0]["reason"]
+
+
+class TestTheLease:
+    """One writer per document, extended to a writer the TUI cannot see.
+
+    The TUI already obeys this rule by hand — the live standup share is
+    deliberately not practice-votable, because a verdict written straight to the
+    run beneath an open share is resurrected by the next commit. A lease is that
+    same rule, held where a *second process* can read it.
+    """
+
+    def _ref(self, run_id):
+        return artifact_ref("standup", run_id=run_id)
+
+    def test_opening_a_share_takes_the_lease(self, db):
+        path, run_id = db
+        EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        with ArtifactEditStore(path) as store:
+            assert store.lease_held("standup", self._ref(run_id))
+
+    def test_committing_releases_it(self, db):
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.commit()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_closing_without_committing_releases_it(self, db):
+        # The case a commit-only release would leak on, and by far the common
+        # one: a share opened, read, and closed with Esc.
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.close()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_it_is_a_context_manager(self, db):
+        path, run_id = db
+        with EditableSession(report(), kind="standup", db_path=path, run_id=run_id):
+            pass
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_closing_twice_is_not_an_error(self, db):
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.commit()
+        session.close()
+        session.close()
+
+    def test_a_kind_with_no_history_table_still_releases(self, db, tmp_path):
+        # `commit` returns 0 early for these; the lease must not ride on the
+        # path that happens to have a committer behind it.
+        path, _ = db
+        session = EditableSession(_profile(), kind="analysis", db_path=path)
+        session.commit()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("analysis", session.ref)
+
+    def test_a_lease_the_store_cannot_write_is_swallowed(self, db):
+        # A lease exists to defer somebody else's *cosmetic* write. Losing it is
+        # nowhere near worth losing this reader's ability to correct the report
+        # in front of them, so every lease call swallows and carries on.
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store._conn.close()  # every statement from here raises
+            store.take_lease("standup", self._ref(run_id))  # must not raise
+            store.release_lease("standup", self._ref(run_id))  # must not raise
+            # And an unreadable lease reads as free, never as held: deferring
+            # on a store error would weaken a vote for a reason nobody sees.
+            assert store.lease_held("standup", self._ref(run_id)) is False
+
+
+def _profile():
+    from yeaboi.team_profile import TeamProfile
+
+    return TeamProfile(team_id="t1", source="jira", project_key="YB")

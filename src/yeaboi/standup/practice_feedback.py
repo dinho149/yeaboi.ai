@@ -197,6 +197,7 @@ def apply_verdict(
     verdict: str,
     note: str = "",
     run_id: int | None = None,
+    rewrite_report: bool = True,
 ) -> bool:
     """Record one verdict and, on a thumbs-down, rewrite the stored report.
 
@@ -205,8 +206,19 @@ def apply_verdict(
     signal that is not in the report — a stale screen or a run that was voted on
     twice — rather than writing a row about a change it could not identify.
 
+    A verdict has two halves and only one of them can ever be contended. The
+    **permanent** half — one ``standup_practice_feedback`` row per handle, which
+    is what ``Ledger.is_excused`` and therefore every future run reads — has no
+    other writer. The **cosmetic** half is the in-place removal from today's
+    stored report, and that row has exactly one: an editable share, which
+    replays base + its own log and would resurrect the signal when it commits.
+
     Args:
         run_id: the history row to correct; the session's latest run when None.
+        rewrite_report: False keeps the permanent half and skips the removal,
+            for a caller that found the report leased by an open share. The
+            excusal is already permanent, so the signal drops out of the next
+            run rather than immediately — a deferral, not a lost vote.
     """
     if verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
@@ -266,7 +278,14 @@ def apply_verdict(
     )
 
     if verdict == VERDICT_DOWN:
-        store.update_run_report(run_id, _without_signal(report, member, rule))
+        if rewrite_report:
+            store.update_run_report(run_id, _without_signal(report, member, rule))
+        else:
+            logger.info(
+                "standup: run id=%s is being corrected elsewhere — %s stays in today's report, gone from the next",
+                run_id,
+                log_safe(rule),
+            )
     return True
 
 

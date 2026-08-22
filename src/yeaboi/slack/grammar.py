@@ -112,11 +112,16 @@ def parse_reaction(emoji: str, *, on_signal: bool) -> tuple[str, str]:
     return (ACT_CONTROL, intent) if intent else ("", "")
 
 
-def parse_reply(raw: str, *, on_signal: bool) -> tuple[str, str, str]:
+def parse_reply(raw: str) -> tuple[str, str, str]:
     """(act, intent, payload) for a threaded reply.
 
     A whole-message verb is an instruction; everything else is a correction
     carrying its own text. An empty reply is neither.
+
+    No ``on_signal`` counterpart to :func:`parse_reaction`, because there cannot
+    be one: Slack threads do not nest, so a reply always arrives against the
+    post at the root and never against one of the signal replies hanging under
+    it. A reaction is per-message and can tell them apart; typed text cannot.
     """
     text = clean_reply_text(raw)
     if not text:
@@ -125,7 +130,12 @@ def parse_reply(raw: str, *, on_signal: bool) -> tuple[str, str, str]:
     if match:
         verb = match.group(1)
         if verb == "ack":
-            # Only meaningful where there is something to agree with.
-            return (ACT_VERDICT, INTENT_UP, "") if on_signal else ("", "", "")
+            # Always classified as a verdict, even though a *typed* one can
+            # never reach a signal: **Slack threads are flat**, so every reply
+            # carries `thread_ts = root_ts` and arrives against the post. Saying
+            # so here and letting `apply` refuse it on a post anchor is what
+            # turns `ack` into a line that teaches the gesture; returning
+            # ("", "", "") would leave the writer with a bot that ignored them.
+            return ACT_VERDICT, INTENT_UP, ""
         return ACT_CONTROL, verb, ""
     return ACT_CORRECTION, INTENT_NOTE, text

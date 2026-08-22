@@ -32,7 +32,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from yeaboi.artifacts.edits import Edit
@@ -80,6 +80,30 @@ CREATE INDEX IF NOT EXISTS idx_artifact_edits_ref
 -- by seq then id) but a duplicate seq makes the history lie about the order.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_edits_seq
     ON artifact_edits(artifact_kind, artifact_ref, seq);"""
+
+#: Deliberately **not** part of ``_ARTIFACT_EDITS_SCHEMA``: that string is
+#: replayed by ``sessions.py``'s v21 migration, and a migration should keep doing
+#: what it did when it was written. This one is additive and created on store
+#: open only — the ceremonies/ship precedent, no ``CURRENT_SCHEMA_VERSION`` bump
+#: and so no lockstep raise of the Go sidecar's ceiling.
+_ARTIFACT_LEASES_SCHEMA = """\
+CREATE TABLE IF NOT EXISTS artifact_leases (
+    kind       TEXT NOT NULL,
+    ref        TEXT NOT NULL,
+    holder     TEXT NOT NULL DEFAULT '',
+    opened_at  TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (kind, ref)
+);"""
+
+LEASE_TTL_MINUTES = 60
+"""How long an unreleased lease keeps deferring in-place rewrites.
+
+Generous on purpose. The lease is released by ``EditableSession.close()`` and by
+``commit()``, so the TTL only ever covers a crash between the two — and holding
+one too long costs nothing durable, because a deferred verdict still writes
+every feedback row and only skips the cosmetic removal from today's report.
+"""
 
 
 def artifact_ref(kind: str, *, session_id: str = "", run_id: int = 0, engineer: str = "") -> str:
@@ -176,6 +200,7 @@ class ArtifactEditStore:
         self._conn.isolation_level = None  # autocommit
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_ARTIFACT_EDITS_SCHEMA)
+        self._conn.executescript(_ARTIFACT_LEASES_SCHEMA)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -284,6 +309,77 @@ class ArtifactEditStore:
             (kind, ref),
         ).fetchone()
         return int(row["top"]) + 1
+
+    # ── Leases ────────────────────────────────────────────────────────────
+    #
+    # One writer per document. The TUI already states this rule and obeys it by
+    # hand: the live standup share is deliberately not practice-votable
+    # (`ui/mode_select/__init__.py`, "One writer per document"), because a
+    # verdict written straight to the run beneath an open editable share would
+    # be resurrected by the next commit — the share replays base + its own log,
+    # and its base was read before the verdict landed.
+    #
+    # A lease generalises that hand-obeyed rule to a writer the TUI cannot see:
+    # Slack. It is advisory and it defers rather than refuses, because the
+    # durable half of a verdict — the permanent per-handle excusal rows — never
+    # had a conflict to begin with.
+
+    def take_lease(self, kind: str, ref: str, *, holder: str = "", ttl_minutes: int = LEASE_TTL_MINUTES) -> None:
+        """Declare that this process is rewriting ``(kind, ref)``. Never raises.
+
+        ``INSERT OR REPLACE``: re-opening a share the same process already holds
+        is a refresh, not a conflict, and a lease left behind by a crashed run
+        should be taken over rather than honoured until its TTL.
+        """
+        now = datetime.now(UTC)
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO artifact_leases (kind, ref, holder, opened_at, expires_at) VALUES (?,?,?,?,?)",
+                (
+                    kind,
+                    ref,
+                    holder,
+                    now.isoformat(),
+                    (now + timedelta(minutes=max(1, ttl_minutes))).isoformat(),
+                ),
+            )
+        except sqlite3.Error:
+            # A lease that cannot be taken costs a deferral nobody needed; it
+            # must never cost the share the reader is trying to open.
+            logger.warning("Could not take the %s lease on %s", kind, ref, exc_info=True)
+
+    def release_lease(self, kind: str, ref: str) -> None:
+        """Drop the lease. Never raises, and dropping a lease nobody holds is fine."""
+        try:
+            self._conn.execute("DELETE FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref))
+        except sqlite3.Error:
+            logger.warning("Could not release the %s lease on %s", kind, ref, exc_info=True)
+
+    def lease_held(self, kind: str, ref: str, *, now: datetime | None = None) -> bool:
+        """True while somebody is editing this artifact.
+
+        Expiry is checked here rather than by a sweeper: the only reader is the
+        Slack poll, which runs every few minutes anyway, so a background job
+        whose whole purpose is deleting rows nobody would have believed is
+        machinery with no reader.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT expires_at FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref)
+            ).fetchone()
+        except sqlite3.Error:
+            logger.warning("Could not read the %s lease on %s", kind, ref, exc_info=True)
+            return False
+        if row is None:
+            return False
+        try:
+            deadline = datetime.fromisoformat(str(row["expires_at"]))
+        except ValueError:
+            # Unparseable reads as expired, matching SlackAnchor.expired: a row
+            # nobody can date must not block a write forever.
+            logger.warning("Lease on %s/%s has an unparseable expires_at", kind, ref)
+            return False
+        return (now or datetime.now(UTC)) < deadline
 
     # ── Reading ───────────────────────────────────────────────────────────
 

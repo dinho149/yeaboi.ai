@@ -110,6 +110,12 @@ OUTCOME_UNAUTHORIZED = "unauthorized"
 OUTCOME_STALE = "stale"  # the anchor has expired
 OUTCOME_REFUSED = "refused"  # the write path itself said no
 OUTCOME_FAILED = "failed"
+#: Applied, but only the half of it nobody else was writing. Today that is a
+#: thumbs-down on a report somebody has open in an editable share: the permanent
+#: excusal lands, and the removal from *that* report waits for the next run.
+#: A word of its own because "we did what you asked, later than you expected" is
+#: a different fact from "the write said no", and only one of them is a problem.
+OUTCOME_DEFERRED = "deferred"
 
 POLL_OK = "ok"
 POLL_FAILED = "failed"

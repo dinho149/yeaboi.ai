@@ -58,7 +58,42 @@ class EditableSession:
         self.ref = artifact_ref(kind, run_id=run_id, session_id=session_id, engineer=engineer)
         self._base_hash = base_hash(artifact)
         self.share = editable_share(artifact, kind=kind, ref=self.ref, history=history)
+        self._leased = False
         self._replay()
+        self._take_lease()
+
+    # ── The lease ─────────────────────────────────────────────────────────
+    #
+    # Held for exactly as long as this session might commit, and read by anyone
+    # who would otherwise rewrite the same stored artifact underneath it — today
+    # that is a practice verdict arriving from Slack, the first writer this
+    # module has ever had that is not on the other end of a keyboard. See the
+    # Leases section of `artifacts/store.py` for why it defers rather than
+    # refuses.
+
+    def _take_lease(self) -> None:
+        with ArtifactEditStore(self.db_path) as store:
+            store.take_lease(self.kind, self.ref, holder=self.share.document.share_id)
+        self._leased = True
+
+    def close(self) -> None:
+        """Release the lease. Idempotent, and safe to call after ``commit()``.
+
+        Separate from ``commit()`` because a share is very often opened and then
+        closed with nothing recorded — Esc, Back, or a reader who only looked —
+        and a lease dropped only on commit would leak on every one of those.
+        """
+        if not self._leased:
+            return
+        self._leased = False
+        with ArtifactEditStore(self.db_path) as store:
+            store.release_lease(self.kind, self.ref)
+
+    def __enter__(self) -> EditableSession:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
     def _replay(self) -> None:
         """Rebuild the document from every correction already on record.
@@ -124,13 +159,18 @@ class EditableSession:
         """
         spec = spec_for(self.kind)
         if spec is None:
+            self.close()
             return 0
         committer = _COMMITTERS.get(self.kind)
         if committer is None:
             logger.info("No history table for %s — corrections live in the edit log only", self.kind)
+            self.close()
             return 0
         row_id = committer(self.db_path, self.share.document.current(), self.run_id, self.session_id)
         logger.info("Committed corrected %s as row %d (from %d)", self.kind, row_id, self.run_id)
+        # The commit is the last thing this session can do to the stored
+        # artifact, so nothing after it needs deferring on our account.
+        self.close()
         return row_id
 
 

@@ -30,6 +30,7 @@ from pathlib import Path
 
 from yeaboi.slack import allowlist as allow
 from yeaboi.slack import grammar
+from yeaboi.slack.apply import ApplyResult
 from yeaboi.slack.store import (
     OUTCOME_APPLIED,
     OUTCOME_FAILED,
@@ -129,11 +130,15 @@ def collect_events(
     channel full of other traffic costs nothing and can say nothing.
     """
     oldest = _window_start(now).isoformat(timespec="seconds")
-    anchors = [a for a in store.anchors_since(oldest)]
+    anchors = store.anchors_since(oldest)
+    # Posts are the unit of reading: a signal anchor is reached through the
+    # thread of the post it hangs under, so iterating it separately would spend
+    # one `reactions.get` per signal — thirteen calls where two will do.
+    posts = [a for a in anchors if not a.is_signal]
     events: list[InboundEvent] = []
     error = ""
 
-    for anchor in anchors:
+    for anchor in posts:
         resp = api.reactions_get(anchor.channel, anchor.ts, token=token)
         if not resp.ok:
             if api.is_fatal_auth_error(resp):
@@ -142,29 +147,8 @@ def collect_events(
             logger.warning("slack: could not read reactions on %s (%s)", anchor.ts, resp.error)
             error = error or resp.error
             continue
-        for reaction in (resp.data.get("message") or {}).get("reactions") or []:
-            emoji = grammar.normalise_emoji(str(reaction.get("name", "")))
-            act, intent = grammar.parse_reaction(emoji, on_signal=anchor.is_signal)
-            for actor in reaction.get("users") or []:
-                events.append(
-                    InboundEvent(
-                        event_key=reaction_key(anchor.channel, anchor.ts, actor, emoji),
-                        channel=anchor.channel,
-                        anchor_ts=anchor.ts,
-                        act=act,
-                        intent=intent,
-                        slack_user=actor,
-                        anchor=anchor,
-                    )
-                )
+        events.extend(_reaction_events((resp.data.get("message") or {}).get("reactions"), anchor))
 
-        # Replies hang under the POST, and each one may be answering either the
-        # post or a signal reply — Slack flattens a thread, so the parent of a
-        # reply is always the root. A reply is matched to a signal only when it
-        # explicitly quotes one, which nothing does yet; for now every reply
-        # answers the post it hangs under.
-        if anchor.is_signal:
-            continue
         thread, err = api.paginate(
             lambda cursor, a=anchor: api.replies(a.channel, a.ts, cursor=cursor, token=token), "messages"
         )
@@ -172,11 +156,26 @@ def collect_events(
             logger.warning("slack: could not read the thread on %s (%s)", anchor.ts, err)
             error = error or err
             continue
+
+        # Our own signal replies, by ts. Reading their reactions out of the
+        # thread we already fetched is what makes a votable standup cost no
+        # extra API calls at all.
+        signals = {s.ts: s for s in store.thread(anchor.channel, anchor.ts)}
         for message in thread:
             reply_ts = str(message.get("ts", ""))
-            if reply_ts == anchor.ts or not is_human_message(message):
+            if reply_ts == anchor.ts:
                 continue
-            act, intent, payload = grammar.parse_reply(str(message.get("text", "")), on_signal=False)
+            signal = signals.get(reply_ts)
+            if signal is not None:
+                events.extend(_signal_events(message, signal, api, token=token))
+                continue
+            if not is_human_message(message):
+                continue
+            # Slack threads are flat — every reply carries `thread_ts =
+            # root_ts` — so typed text always arrives against the post, never
+            # against one of the signal replies above it. A reaction is
+            # per-message and can tell them apart; text cannot.
+            act, intent, payload = grammar.parse_reply(str(message.get("text", "")))
             events.append(
                 InboundEvent(
                     event_key=reply_key(anchor.channel, reply_ts),
@@ -193,6 +192,47 @@ def collect_events(
 
     _ = (allowed, bot_id)  # authorisation happens per event, in run_poll
     return events, len(anchors), error
+
+
+def _reaction_events(reactions, anchor) -> list[InboundEvent]:
+    """Every reaction on one of our messages, as events."""
+    events: list[InboundEvent] = []
+    for reaction in reactions or []:
+        emoji = grammar.normalise_emoji(str(reaction.get("name", "")))
+        act, intent = grammar.parse_reaction(emoji, on_signal=anchor.is_signal)
+        for actor in reaction.get("users") or []:
+            events.append(
+                InboundEvent(
+                    event_key=reaction_key(anchor.channel, anchor.ts, actor, emoji),
+                    channel=anchor.channel,
+                    anchor_ts=anchor.ts,
+                    act=act,
+                    intent=intent,
+                    slack_user=actor,
+                    anchor=anchor,
+                )
+            )
+    return events
+
+
+def _signal_events(message: dict, signal, api, *, token: str) -> list[InboundEvent]:
+    """Verdicts on one signal reply, escalating only when the list is short.
+
+    ``conversations.replies`` returns each message's reactions inline but
+    truncates ``users`` at ~25, and a truncated list is indistinguishable from a
+    short one — so a vote would go missing with nothing to notice. It also
+    returns ``count``, which makes truncation *detectable*: ask
+    ``reactions.get`` for the full list exactly when the two disagree, and never
+    otherwise.
+    """
+    reactions = message.get("reactions") or []
+    if any(int(r.get("count", 0) or 0) > len(r.get("users") or []) for r in reactions):
+        resp = api.reactions_get(signal.channel, signal.ts, token=token)
+        if resp.ok:
+            reactions = (resp.data.get("message") or {}).get("reactions") or []
+        else:
+            logger.warning("slack: could not read the full reactions on signal %s (%s)", signal.ts, resp.error)
+    return _reaction_events(reactions, signal)
 
 
 def run_poll(
@@ -290,13 +330,18 @@ def run_poll(
 
                 new = applied = 0
                 for event in events:
-                    settled = _handle(store, event, allowed=allowed, bot_id=bot_id, apply_event=apply_event, now=moment)
-                    if settled is None:
+                    result = _handle(store, event, allowed=allowed, bot_id=bot_id, apply_event=apply_event, now=moment)
+                    if result is None:
                         continue
                     new += 1
-                    if settled == OUTCOME_APPLIED:
+                    if result.applied:
                         applied += 1
                         _ack(api, event, channel=event.channel, token=token)
+                    # A deferral earns both a ✅ and a line, because "recorded,
+                    # but later than you expected" is not something a tick can
+                    # say on its own.
+                    if result.speak and result.detail:
+                        _say(api, event, result.detail, channel=event.channel, token=token)
 
                 # Read the gap BEFORE this poll's own row lands, and prune after
                 # — otherwise the comparison is against ourselves.
@@ -321,8 +366,14 @@ def run_poll(
         handle.close()
 
 
-def _handle(store, event, *, allowed, bot_id, apply_event, now) -> str | None:
-    """Claim and settle one event. None when a previous poll already had it."""
+def _handle(store, event, *, allowed, bot_id, apply_event, now) -> ApplyResult | None:
+    """Claim and settle one event. None when a previous poll already had it.
+
+    The returned ``outcome`` is always the settled word, so the caller never
+    re-derives it — and ``speak``/``applied`` are what it uses to decide the ✅
+    and the thread line, which are two different questions: a deferral earns
+    both, an unauthorised reaction earns neither.
+    """
     anchor = event.anchor
     # Authorisation first, and silently: the channel is not the place to
     # announce who is unauthorised, and a bot that answers unknown users is one
@@ -342,18 +393,19 @@ def _handle(store, event, *, allowed, bot_id, apply_event, now) -> str | None:
 
     if outcome:
         store.settle(event.event_key, outcome=outcome, reason=reason, now=now)
-        return outcome
+        return ApplyResult(False, reason, outcome=outcome)
 
     try:
-        ok, detail = apply_event(event)
+        result = apply_event(event)
     except Exception as exc:  # noqa: BLE001 — one bad event must not stop the rest
         logger.error("slack: applying %s raised", event.event_key, exc_info=True)
-        store.settle(event.event_key, outcome=OUTCOME_FAILED, reason=f"{type(exc).__name__}: {exc}", now=now)
-        return OUTCOME_FAILED
+        reason = f"{type(exc).__name__}: {exc}"
+        store.settle(event.event_key, outcome=OUTCOME_FAILED, reason=reason, now=now)
+        return ApplyResult(False, reason, outcome=OUTCOME_FAILED)
 
-    settled = OUTCOME_APPLIED if ok else OUTCOME_REFUSED
-    store.settle(event.event_key, outcome=settled, reason=detail, now=now)
-    return settled
+    settled = result.outcome or (OUTCOME_APPLIED if result.applied else OUTCOME_REFUSED)
+    store.settle(event.event_key, outcome=settled, reason=result.detail, now=now)
+    return replace(result, outcome=settled)
 
 
 def _ack(api, event, *, channel: str, token: str) -> None:
@@ -373,6 +425,22 @@ def _ack(api, event, *, channel: str, token: str) -> None:
     resp = api.add_reaction(channel, ts, emoji, token=token)
     if not resp.ok:
         logger.info("slack: could not tick %s (%s)", ts, resp.error)
+
+
+def _say(api, event, text: str, *, channel: str, token: str) -> None:
+    """Answer in the thread, for the few outcomes a ✅ cannot express.
+
+    Always on, unlike :func:`_ack`, because it needs no scope the bot does not
+    already hold — ``chat:write`` is what posted the dispatch in the first
+    place. Restraint is in *what* speaks, not in whether it can: the caller
+    sends only the results that asked to be spoken, so an unauthorised actor,
+    an out-of-grammar reaction and an act a later phase will build all stay
+    silent.
+    """
+    root = event.anchor.root_ts if event.anchor is not None else ""
+    resp = api.post_message(channel, text, thread_ts=root or event.anchor_ts, token=token)
+    if not resp.ok:
+        logger.info("slack: could not answer in the thread on %s (%s)", event.anchor_ts, resp.error)
 
 
 def _gap_notice(store, now: datetime) -> str:

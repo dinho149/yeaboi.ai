@@ -196,49 +196,53 @@ def apply_artifact_edits(
     # keeps this call's corrections on top of earlier ones rather than instead
     # of them — and anchoring to `base_id` is what stops them being applied
     # twice, since the row this commits becomes the newest one.
-    session = EditableSession(
+    #
+    # ``with``, because the session now holds a lease for as long as it might
+    # rewrite the stored artifact, and a headless call that raised part-way
+    # would otherwise leave one behind for its whole TTL.
+    with EditableSession(
         artifact, kind=kind, db_path=_db(db_path), run_id=base_id, session_id=session_id, engineer=engineer
-    )
-    ref = session.ref
+    ) as session:
+        ref = session.ref
 
-    applied: list[Edit] = []
-    refused: list[dict] = []
-    stale: list[dict] = []
-    for index, raw in enumerate(edits):
-        candidate = Edit(
-            # A real random id, not a counter. `revision` advances only for
-            # *accepted* edits while `index` advances for every one, so a single
-            # refused edit desynchronised the two and a later call re-minted an
-            # id already in the replayed log. `apply` then took it for a retry,
-            # returned the earlier edit, and this counted it as applied — the
-            # caller was told the correction landed and it had been discarded.
-            edit_id=str(raw.get("edit_id", "") or f"mcp-{uuid4()}"),
-            op=str(raw.get("op", "")),
-            path=str(raw.get("path", "")),
-            value=str(raw.get("value", "")),
-            base=str(raw.get("base", "")),
-            label=str(raw.get("label", "")),
-            target=str(raw.get("target", "")),
-            author=author or str(raw.get("author", "")),
-        )
-        try:
-            stored = session.share.document.apply(candidate)
-        except ConflictError as exc:
-            # Retryable and reported as such: the artifact moved under this
-            # correction, which is a different thing from it never having been
-            # acceptable.
-            stale.append({"index": index, "id": candidate.edit_id, "reason": "conflict", "detail": str(exc)})
-            continue
-        except (EditError, ValueError) as exc:
-            refused.append({"index": index, "reason": str(exc)})
-            continue
-        applied.append(stored)
+        applied: list[Edit] = []
+        refused: list[dict] = []
+        stale: list[dict] = []
+        for index, raw in enumerate(edits):
+            candidate = Edit(
+                # A real random id, not a counter. `revision` advances only for
+                # *accepted* edits while `index` advances for every one, so a single
+                # refused edit desynchronised the two and a later call re-minted an
+                # id already in the replayed log. `apply` then took it for a retry,
+                # returned the earlier edit, and this counted it as applied — the
+                # caller was told the correction landed and it had been discarded.
+                edit_id=str(raw.get("edit_id", "") or f"mcp-{uuid4()}"),
+                op=str(raw.get("op", "")),
+                path=str(raw.get("path", "")),
+                value=str(raw.get("value", "")),
+                base=str(raw.get("base", "")),
+                label=str(raw.get("label", "")),
+                target=str(raw.get("target", "")),
+                author=author or str(raw.get("author", "")),
+            )
+            try:
+                stored = session.share.document.apply(candidate)
+            except ConflictError as exc:
+                # Retryable and reported as such: the artifact moved under this
+                # correction, which is a different thing from it never having been
+                # acceptable.
+                stale.append({"index": index, "id": candidate.edit_id, "reason": "conflict", "detail": str(exc)})
+                continue
+            except (EditError, ValueError) as exc:
+                refused.append({"index": index, "reason": str(exc)})
+                continue
+            applied.append(stored)
 
-    committed = 0
-    if applied and not dry_run:
-        for edit in applied:
-            session.persist(session.share, edit, "")
-        committed = session.commit()
+        committed = 0
+        if applied and not dry_run:
+            for edit in applied:
+                session.persist(session.share, edit, "")
+            committed = session.commit()
 
     logger.info(
         "artifact edits: kind=%s ref=%s applied=%d refused=%d stale=%d dry_run=%s",
