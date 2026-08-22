@@ -1478,9 +1478,14 @@ def _collect_settings_data() -> dict:
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
+        # Slack — a provider now rather than a delivery detail. The webhook
+        # posts; the bot token is what lets a reaction or a reply be read back.
+        "SLACK_WEBHOOK_URL",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+        "SLACK_ALLOWED_MEMBER_IDS",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
-        "SLACK_WEBHOOK_URL",
         "STANDUP_SMTP_HOST",
         "STANDUP_SMTP_USER",
         "STANDUP_SMTP_PASSWORD",

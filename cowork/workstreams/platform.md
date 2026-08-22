@@ -5,7 +5,9 @@
 `provenance/` (the cross-mode tamper-evident decision chain),
 `ceremonies/` (the clock any mode can run on — it owns the OS-job installer and the
 delivery channels the standup was promoted out of, so `standup/scheduler.py` and
-`standup/delivery.py` are shims over it and yours too), the MCP
+`standup/delivery.py` are shims over it and yours too),
+`slack/` (the inbound half of that clock — what a team said back to a delivered post;
+`tools/slack.py` is the Web API client and is **integrations'**), the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
 `scripts/pr_feedback.py` and `tests/unit/test_surface_parity.py`

@@ -47,6 +47,7 @@ A `W` cell means writing back into the *source of record* — sprint creation, p
 | **GitHub** | R | R | R + W | R | — | · | — | · |
 | **Confluence** | R + W | R | R | R | R | · | — | · |
 | **Notion** | R + W | R | R | R | R | · | — | · |
+| **Slack** | — | — | R + W | — | — | · | — | · |
 | **Local git** | — | — | R | — | — | · | — | · |
 | **Local filesystem** | R | — | — | — | R | · | — | · |
 | **`holidays` package** | R | — | — | — | — | · | — | · |
@@ -121,6 +122,34 @@ Credential `NOTION_TOKEN` / `NOTION_ROOT_PAGE_ID` / `NOTION_EXPORT_PARENT_PAGE_I
 `_verify_notion` (`GET /v1/users/me`). Same five readers as Confluence, and the same separate
 publish destination via `export_targets.publish_to_notion`.
 
+### Slack — `tools/slack.py`, `slack/`
+
+Credential `SLACK_BOT_TOKEN` / `SLACK_CHANNEL_ID` / `SLACK_ALLOWED_MEMBER_IDS` (the webhook
+`SLACK_WEBHOOK_URL` stays, and stays sufficient for delivery) · verified by `yeaboi slack check`
+(`auth.test` for identity and scopes, then a `conversations.history limit=1` for readability) ·
+scope is one channel by id, never workspace-wide.
+
+**The only provider on this map that became a source by growing a second credential.** For its whole
+life Slack was a destination and could not have been anything else: an incoming webhook answers a
+POST with the literal body `ok` and no message id, so yeaboi could never identify its own message and
+a reaction on it was unreadable *by construction*. A bot token buys `chat.postMessage`, which returns
+`{channel, ts}` — and that ts is the anchor everything inbound resolves through.
+
+- standup — `R`: a 👍/👎 on a threaded signal reply writes `standup_practice_feedback` through
+  `practice_feedback.apply_verdict`, and a typed reply becomes an `OP_NOTE` on the run through
+  `artifacts/engine.py::apply_artifact_edits`. `W`: both of those write back into the stored run,
+  which is the source of record for that day.
+- ceremonies — ⏸/▶️/🚫 on the post calls `set_enabled` / `set_skip_next`. Not a matrix column;
+  ceremonies is the clock, not a mode.
+- shared — `slack/identity.py` binds a Slack member id to a roster name, used only to choose the
+  author string on a correction. It never gates an act.
+
+Two things about it are unlike every other provider here and are deliberate. **It exposes no
+`@tool`** — an LLM-callable `slack_post_message` would let prompt-injected text in a Jira title
+reach a team channel — and `slack poll` is likewise never an MCP tool. And **the wizard has no
+Slack phase**: `slack check` covers verification, and a `_verify_slack` with no phase behind it
+would be dead code with a green checkmark.
+
 ### Local git, local filesystem, `holidays`
 
 No credential and no network. `local_git_recent_commits` (standup only), `tools/codebase.py` under
@@ -137,6 +166,7 @@ A deliberate absence, with the reason. Do not re-propose these.
 | GitHub / AzDO Repos / Confluence / Notion → performance | Performance reads the tracker only (`performance/activity.py`). A review window is assessed on delivered, attributable work items; the code and doc signals reporting gathers are per *sprint*, not per person, so they have nowhere to sit in the per-member narrative. |
 | Local git → anything but standup | It answers "what did this machine do today", which is a standup question and nobody else's. |
 | Confluence / Notion → poker | Estimation reads tickets, not prose. |
+| Slack → anything but standup | Slack is read back through an *anchor* — a row saying which run a delivered post was about — and only the standup emits a run id and a correctable artifact today (`ceremonies/catalog.py`'s `artifact_kind` / `emits_run_id`). A reporting post can still be paused or skipped from Slack, because that addresses the **ceremony**; nothing in it can be answered, because there is no stored artifact to answer against. This is a catalog row away, not a rewrite. |
 
 ## Open gaps
 

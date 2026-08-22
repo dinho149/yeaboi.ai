@@ -60,6 +60,17 @@ def is_placeholder(member: str) -> bool:
     return member.strip().upper() in _PLACEHOLDERS
 
 
+def is_member_id(value: str) -> bool:
+    """True for a well-formed, non-placeholder Slack member id.
+
+    Public because the id shape is one fact with two readers — who may act
+    (here) and who somebody *is* (``identity.link``) — and a second copy of this
+    regex is a second answer to the same question.
+    """
+    candidate = value.strip().lstrip("@").upper()
+    return bool(_MEMBER_RE.match(candidate)) and not is_placeholder(candidate)
+
+
 def parse(raw: str) -> tuple[str, ...]:
     """Parse a comma/space-separated member list. Raises on anything malformed.
 

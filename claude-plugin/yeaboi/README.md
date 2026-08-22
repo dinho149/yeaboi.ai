@@ -6,17 +6,21 @@ coding agents working alongside it. Without leaving your coding agent.
 
 ## What you get
 
-- **MCP server** (started automatically via `uvx`): 25 tools — `plan_generate`,
-  `plan_get`/`plan_export`/`plan_publish`/`plan_sync`, `intake_questions`,
-  `sessions_list`/`session_get`/`session_delete`, `usage_get`,
-  `standup_run`/`standup_history`/`standup_members`/`standup_repositories`/`standup_config_get`/`standup_config_set`,
-  `report_delivery`, `perf_roster`,
-  `perf_one_on_one_prep`/`perf_one_on_one_complete`/`perf_six_month_review`/
-  `perf_note_add`, `retro_history`/`retro_export`, `team_analyze`,
-  `team_profile_get`, `team_compare_plan_to_actuals`.
+- **MCP server** (started automatically via `uvx`): 57 tools over the engines —
+  planning (`plan_generate`, `intake_questions`, `plan_get`/`plan_export`/
+  `plan_publish`/`plan_sync`, `plan_prior_art`), sessions, standups (including
+  `standup_review` and `standup_practice_feedback`), delivery reports, retros,
+  poker, performance, team analysis, roadmap intake, anonymisation, provenance,
+  artifact edits, `ship`, ceremonies, the **Agents family** (`agents_usage`,
+  `agents_advisor_run`, `agents_standup_run`, `agents_security_scan` and their
+  histories), and the two-way **Slack** lane (`slack_inbound_history`,
+  `slack_identities_list`). Run `/mcp` in Claude Code for the live list.
 - **Skills**: `/yeaboi:plan-sprint` (guided conversational intake → full sprint
   plan), `/yeaboi:standup`, `/yeaboi:delivery-report`, `/yeaboi:performance`,
-  `/yeaboi:team-analysis`.
+  `/yeaboi:team-analysis`, `/yeaboi:ceremonies`, `/yeaboi:provenance`,
+  `/yeaboi:ship`, `/yeaboi:slack-inbound`, and the Agents family
+  (`/yeaboi:agents-usage`, `/yeaboi:agents-advisor`, `/yeaboi:agents-standup`,
+  `/yeaboi:agents-security`).
 
 ## Requirements
 

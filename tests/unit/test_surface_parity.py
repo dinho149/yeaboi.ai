@@ -282,6 +282,26 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"ceremonies"},
         "skill": "ceremonies",
     },
+    # The inbound half of that clock: a team reacting or replying in Slack, read
+    # back on a schedule and applied to the run the post was about.
+    "slack-inbound": {
+        "engines": {
+            ("yeaboi.slack.engine", "apply_inbound_events"),
+            ("yeaboi.slack.engine", "inbound_history"),
+            ("yeaboi.slack.engine", "link_slack_member"),
+        },
+        # Read-only on MCP for a sharper reason than ceremonies': the allowlist
+        # that authorises an event lives in the poller, so this engine INHERITS
+        # authorisation rather than checking it. An apply tool would let any MCP
+        # client fabricate an event and drive a verdict or a pause with no Slack
+        # in the loop at all. `link_slack_member` is absent for a different
+        # reason — it is safe, but it decides whose name goes on somebody else's
+        # report, which is the one binding Slack did not attest.
+        "mcp_tools": {"slack_inbound_history", "slack_identities_list"},
+        "tui_mode": Exempt("a Slack column and a link hint on the Ceremonies page — no 11th card (84x40)"),
+        "cli": {"slack"},
+        "skill": "slack-inbound",
+    },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
     # Every mode ships at full parity: no Exempt entries, because each mode's

@@ -5893,7 +5893,7 @@ _SETTINGS_TABS: list[str] = ["Credentials", "System"]
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
-    "Credentials": ["provider", "jira", "azure", "github", "notion"],
+    "Credentials": ["provider", "jira", "azure", "github", "notion", "slack"],
     # AWS credentials used to live here; they moved beside the provider that uses
     # them, so Bedrock has no section of its own any more.
     "System": ["storage", "standup", "voice", "advanced"],
@@ -5903,7 +5903,7 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
 # These carry token-help sub-lines (a creation URL + a scope sentence) that a
 # half-width column would ellipsize away — same reasoning as the Usage dashboard's
 # ``wide`` sections (see _build_usage_screen).
-_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion"}
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion", "slack"}
 
 # Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
 # The header above it is fixed height: top border + top pad + blank + title (2
@@ -6547,6 +6547,37 @@ def _build_settings_screen(
         _token_help("NOTION_TOKEN")
         _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""), env="NOTION_ROOT_PAGE_ID")
 
+    def _sec_slack() -> None:
+        # A provider now, not a delivery channel. The webhook alone is write-only
+        # *by construction* — it answers a POST with the literal body `ok` and no
+        # message id, so nothing yeaboi posts through it can ever be identified,
+        # let alone answered. The three rows below it are what buys the other
+        # direction, and the page says which state it is in rather than leaving
+        # that to be inferred from which fields are filled.
+        _heading("Slack", wide=True)
+        _row("Webhook URL", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True, env="SLACK_WEBHOOK_URL")
+        _row("Bot Token", config_data.get("SLACK_BOT_TOKEN", ""), masked=True, env="SLACK_BOT_TOKEN")
+        _token_help("SLACK_BOT_TOKEN")
+        _row("Channel ID", config_data.get("SLACK_CHANNEL_ID", ""), env="SLACK_CHANNEL_ID")
+        # The allowlist is the whole authorisation model, and its failure mode is
+        # silence: unset means nobody may act and the poll never even calls
+        # Slack. That reads as "not configured yet" on a page that says nothing,
+        # so the page says it.
+        _allowed = config_data.get("SLACK_ALLOWED_MEMBER_IDS", "")
+        _row(
+            "Who may act",
+            _allowed or "nobody — set member ids to read Slack back",
+            value_style="" if _allowed else theme.dim,
+            env="SLACK_ALLOWED_MEMBER_IDS",
+        )
+        _two_way = bool(config_data.get("SLACK_BOT_TOKEN", "")) and bool(config_data.get("SLACK_CHANNEL_ID", ""))
+        _row(
+            "Reads back",
+            "yes — reactions and thread replies" if _two_way else "no — a webhook cannot be answered",
+            value_style=theme.good if _two_way else theme.dim,
+            wrap=True,
+        )
+
     def _sec_storage() -> None:
         # One YEABOI_HOME override relocates the whole data tree (exports, logs,
         # sessions DB…). Clicking it opens the data-dir editor (with the move offer).
@@ -6563,10 +6594,11 @@ def _build_settings_screen(
         )
 
     def _sec_standup() -> None:
-        # Secrets (Slack webhook, SMTP password) are masked like every other credential.
+        # Slack moved to its own Credentials section: it stopped being a delivery
+        # detail of the standup the moment it could answer back, and its four
+        # two-way rows have nothing to do with this mode.
         _heading("Daily Standup")
         _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""), env="STANDUP_GITHUB_REPO")
-        _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True, env="SLACK_WEBHOOK_URL")
         _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""), env="STANDUP_SMTP_HOST")
         _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""), env="STANDUP_SMTP_USER")
         _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True, env="STANDUP_SMTP_PASSWORD")
@@ -6646,6 +6678,7 @@ def _build_settings_screen(
         "azure": _sec_azure,
         "github": _sec_github,
         "notion": _sec_notion,
+        "slack": _sec_slack,
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,

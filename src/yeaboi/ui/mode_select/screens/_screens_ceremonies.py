@@ -70,6 +70,117 @@ def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
     return cell
 
 
+def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
+    if run is None:
+        return _cell("never run", theme.dim)
+    glyph, tone = outcome_mark(run.outcome)
+    # The table names a tone; the palette decides what it looks like.
+    style = getattr(theme, tone, theme.dim)
+    cell = Text(no_wrap=True, overflow="ellipsis")
+    cell.append(f"{glyph} ", style=style)
+    # The verdict leads and the timestamp follows, because this column
+    # ellipsizes at the minimum terminal width and "stale" is the half worth
+    # keeping. A successful run needs no word — the tick already said it.
+    if run.outcome != "ok":
+        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
+    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
+    return cell
+
+
+def slack_line(ceremonies: list[Ceremony], *, two_way: bool, linked: int, interval_min: int) -> tuple[str, bool]:
+    """(one line about answering these posts, is it a warning) — ('', False) for nothing.
+
+    This began as a per-row column and is a line because of what it measures.
+    Two-way is a **machine-wide** fact — one bot token, one channel, one reader
+    — so the column said the same word on every row, and at the enforced 84
+    columns it cost the ceremony name and the cadence their last characters. A
+    fact identical on every row is a page fact.
+
+    **The page says nothing until the user has asked for two-way.** The webhook
+    is a supported configuration, not a broken one: a team can run yeaboi
+    forever on it and never want a reaction read back. A permanent line telling
+    them what they are missing is the nag this codebase has already ruled
+    against once, and discoverability is the feature tip's job, not this page's.
+
+    What it does say is the state that is invisible with no other symptom: a
+    token and channel configured, so posts *can* be answered, and **no reader
+    installed** — every reaction landing in a channel nothing ever reads.
+
+    One rendered row at 84 columns, deliberately: a continuation line loses this
+    page's indent, and a wrapped status reads as a broken one.
+    """
+    posting = sum(1 for c in ceremonies if "slack" in c.channels)
+    if not posting or not two_way:
+        return "", False
+    if not interval_min:
+        return "Nothing is reading Slack back — run: yeaboi slack watch --install", True
+    tail = f"{linked} linked." if linked else "[l] to link one."
+    return f"Reactions on {posting} of these are read back every {interval_min} min. {tail}", False
+
+
+def _cell(text: str, style: str) -> Text:
+    """One table cell. ``no_wrap`` is what makes ``overflow`` mean anything —
+    without it a long name wraps to a second row and the table stops lining up."""
+    return Text(text, style=style, no_wrap=True, overflow="ellipsis")
+
+
+def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
+    if run is None:
+        return _cell("never run", theme.dim)
+    glyph, tone = outcome_mark(run.outcome)
+    # The table names a tone; the palette decides what it looks like.
+    style = getattr(theme, tone, theme.dim)
+    cell = Text(no_wrap=True, overflow="ellipsis")
+    cell.append(f"{glyph} ", style=style)
+    # The verdict leads and the timestamp follows, because this column
+    # ellipsizes at the minimum terminal width and "stale" is the half worth
+    # keeping. A successful run needs no word — the tick already said it.
+    if run.outcome != "ok":
+        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
+    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
+    return cell
+
+
+def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
+    if run is None:
+        return _cell("never run", theme.dim)
+    glyph, tone = outcome_mark(run.outcome)
+    # The table names a tone; the palette decides what it looks like.
+    style = getattr(theme, tone, theme.dim)
+    cell = Text(no_wrap=True, overflow="ellipsis")
+    cell.append(f"{glyph} ", style=style)
+    # The verdict leads and the timestamp follows, because this column
+    # ellipsizes at the minimum terminal width and "stale" is the half worth
+    # keeping. A successful run needs no word — the tick already said it.
+    if run.outcome != "ok":
+        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
+    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
+    return cell
+
+
+def _cell(text: str, style: str) -> Text:
+    """One table cell. ``no_wrap`` is what makes ``overflow`` mean anything —
+    without it a long name wraps to a second row and the table stops lining up."""
+    return Text(text, style=style, no_wrap=True, overflow="ellipsis")
+
+
+def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
+    if run is None:
+        return _cell("never run", theme.dim)
+    glyph, tone = outcome_mark(run.outcome)
+    # The table names a tone; the palette decides what it looks like.
+    style = getattr(theme, tone, theme.dim)
+    cell = Text(no_wrap=True, overflow="ellipsis")
+    cell.append(f"{glyph} ", style=style)
+    # The verdict leads and the timestamp follows, because this column
+    # ellipsizes at the minimum terminal width and "stale" is the half worth
+    # keeping. A successful run needs no word — the tick already said it.
+    if run.outcome != "ok":
+        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
+    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
+    return cell
+
+
 def _spend_cell(ceremony: Ceremony, spent: float, theme) -> Text:
     if not ceremony.monthly_cap_usd:
         return _cell(f"${spent:.2f}" if spent else "—", theme.muted)
@@ -157,8 +268,17 @@ def _build_ceremonies_screen(
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
     message: str = "",
+    two_way: bool = False,
+    linked: int = 0,
+    interval_min: int = 0,
 ) -> Panel:
-    """Build the Ceremonies page: the declared schedule and its outcomes."""
+    """Build the Ceremonies page: the declared schedule and its outcomes.
+
+    ``two_way``, ``linked`` and ``interval_min`` are passed in rather than read
+    here: this builder is called on every frame of a 60 FPS loop, and reading
+    the environment, the identity table and the installed job per frame is the
+    never-do-per-frame rule.
+    """
     theme = CEREMONIES_THEME
     title = ceremonies_title(shimmer_tick)
     sub = build_reveal_subtitle("What runs while yeaboi is closed", sub_reveal, pad=PAD + "  ")
@@ -170,6 +290,15 @@ def _build_ceremonies_screen(
     for line in drift or []:
         body.append(Text(""))
         body.append(Text(f"{PAD}! {line}", style=theme.warn))
+
+    # Sits with drift and reads like it: something invisible that nothing else
+    # in the app would ever say. Amber when Slack is write-only — the delivery
+    # works and only the answering does not, so red would read as "your standup
+    # is not posting".
+    slack, urgent = slack_line(ceremonies, two_way=two_way, linked=linked, interval_min=interval_min)
+    if slack:
+        body.append(Text(""))
+        body.append(Text(f"{PAD}{'! ' if urgent else ''}{slack}", style=theme.warn if urgent else theme.dim))
 
     if message:
         body.append(Text(""))

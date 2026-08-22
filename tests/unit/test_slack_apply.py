@@ -366,6 +366,35 @@ class TestCorrection:
         apply_event(_correction_event(run_id), db_path=db)
         assert _annotations(db, run_id)[0]["author"] == "@U0123456789"
 
+    def test_a_linked_id_is_promoted_to_the_roster_name(self, voted, monkeypatch):
+        db, run_id = voted
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        from yeaboi.slack import identity
+
+        identity.link("s1", "U0123456789", "Ada Lovelace", db_path=db)
+        apply_event(_correction_event(run_id), db_path=db)
+        assert _annotations(db, run_id)[0]["author"] == "Ada Lovelace"
+
+    def test_the_binding_is_read_from_the_anchors_session_not_the_events(self, voted, monkeypatch):
+        # Which session a Slack post belongs to is a fact the anchor carries.
+        # Reading it off anything else would let a link made in one session
+        # rename a correction on another's report.
+        db, run_id = voted
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        from yeaboi.slack import identity
+
+        identity.link("s2", "U0123456789", "Ada Lovelace", db_path=db)
+        apply_event(_correction_event(run_id), db_path=db)
+        assert _annotations(db, run_id)[0]["author"] == "@U0123456789"
+
+    def test_an_unreadable_identity_table_still_lands_the_note(self, voted, monkeypatch):
+        # The mapping is a nicety; the correction is the product. A lookup that
+        # cannot answer must cost the note its name, never its existence.
+        db, run_id = voted
+        monkeypatch.setattr("yeaboi.slack.identity.resolve", lambda *_a, **_kw: "")
+        assert apply_event(_correction_event(run_id), db_path=db).applied
+        assert _annotations(db, run_id)[0]["author"] == "@U0123456789"
+
     def test_the_edit_id_is_derived_from_the_reply_so_a_replay_writes_nothing(self, voted):
         db, run_id = voted
         apply_event(_correction_event(run_id), db_path=db)

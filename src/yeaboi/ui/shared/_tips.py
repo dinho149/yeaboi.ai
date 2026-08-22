@@ -157,6 +157,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     FeatureTip(
+        "slack-inbound",
+        "\U0001f4ac Tip: react \u23f8 \U0001f44d \U0001f44e or reply in a Slack thread — yeaboi reads it back",
+        is_new=True,
+    ),
+    FeatureTip(
         "output-sharing",
         "🌐 Tip: Share Online publishes any generated output behind a temporary access code",
         is_new=True,

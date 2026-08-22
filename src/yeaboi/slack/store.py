@@ -82,6 +82,14 @@ CREATE TABLE IF NOT EXISTS slack_inbound (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_inbound_claimed ON slack_inbound (claimed_at);
 
+CREATE TABLE IF NOT EXISTS slack_identities (
+    session_id TEXT NOT NULL,
+    slack_user TEXT NOT NULL,
+    member     TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (session_id, slack_user)
+);
+
 CREATE TABLE IF NOT EXISTS slack_polls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     polled_at       TEXT NOT NULL DEFAULT '',
@@ -377,6 +385,50 @@ class SlackStore:
     def history(self, *, limit: int = 20) -> list[dict]:
         """The most recent inbound events, newest first."""
         rows = self._conn.execute("SELECT * FROM slack_inbound ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── identities ────────────────────────────────────────────────────────
+    #
+    # The one thing in this package that a human curates, and the only table
+    # ``prune`` deliberately does not touch: the other three are telemetry with
+    # a shelf life, this is configuration somebody typed.
+
+    def link_identity(self, session_id: str, slack_user: str, member: str, *, now: datetime | None = None) -> None:
+        """Bind one Slack id to one roster name. Re-linking replaces."""
+        self._conn.execute(
+            """INSERT INTO slack_identities (session_id, slack_user, member, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(session_id, slack_user) DO UPDATE SET
+                   member = excluded.member, created_at = excluded.created_at""",
+            (session_id, slack_user.upper(), member, _stamp(now or _now())),
+        )
+        self._conn.commit()
+        logger.info("slack identity: %s → %s in session %s", slack_user.upper(), member, session_id)
+
+    def unlink_identity(self, session_id: str, slack_user: str) -> bool:
+        """Drop one binding. False when there was nothing to drop."""
+        cur = self._conn.execute(
+            "DELETE FROM slack_identities WHERE session_id = ? AND slack_user = ?",
+            (session_id, slack_user.upper()),
+        )
+        self._conn.commit()
+        return bool(cur.rowcount)
+
+    def identity(self, session_id: str, slack_user: str) -> str:
+        """The roster name bound to a Slack id, or '' when there is none."""
+        row = self._conn.execute(
+            "SELECT member FROM slack_identities WHERE session_id = ? AND slack_user = ?",
+            (session_id, slack_user.upper()),
+        ).fetchone()
+        return str(row["member"]) if row else ""
+
+    def identities(self, session_id: str) -> list[dict]:
+        """Every binding in one session, in the order they were made."""
+        rows = self._conn.execute(
+            """SELECT slack_user, member, created_at FROM slack_identities
+               WHERE session_id = ? ORDER BY created_at, slack_user""",
+            (session_id,),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def record_poll(self, poll: dict) -> None:

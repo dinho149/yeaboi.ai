@@ -157,7 +157,7 @@ def _correction(event: InboundEvent, anchor, *, db_path: Path | None) -> ApplyRe
             ],
             session_id=anchor.session_id,
             run_id=anchor.run_id,
-            author=_author(event),
+            author=_author(event, anchor, db_path=db_path),
             db_path=db_path,
         )
     except ValueError as exc:
@@ -188,15 +188,24 @@ def _correction(event: InboundEvent, anchor, *, db_path: Path | None) -> ApplyRe
     return ApplyResult(True, f"noted on today's {anchor.mode or anchor.artifact_kind}.", speak=True)
 
 
-def _author(event: InboundEvent) -> str:
+def _author(event: InboundEvent, anchor, *, db_path: Path | None = None) -> str:
     """The name that goes on the note.
 
-    A raw Slack id until the roster mapping lands, and deliberately so: the id
-    is what Slack's servers attributed, and inventing a display name from it
-    would be a guess wearing a person's name. The mapping replaces what this
-    string *reads* as, never what it means.
+    Three readings, weakest last: a name the poller already resolved, then the
+    session's ``slack_identities`` binding, then the raw ``@U…``. The fallback
+    is not a degraded mode — it is the honest one. The id is what Slack's
+    servers attributed; a display name inferred from it would be a guess wearing
+    a person's name, and this string ends up on a teammate's report.
+
+    Only the binding a human wrote is ever promoted to a roster name, which is
+    why ``identity.link`` validates against the roster on write and this reads
+    with no validation at all.
     """
-    return event.member or f"@{event.slack_user}"
+    from yeaboi.slack import identity
+
+    return (
+        event.member or identity.resolve(anchor.session_id, event.slack_user, db_path=db_path) or f"@{event.slack_user}"
+    )
 
 
 def _correction_counts(event: InboundEvent, *, db_path: Path | None) -> tuple[int, int]:

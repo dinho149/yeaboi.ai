@@ -924,7 +924,12 @@ def build_parser() -> argparse.ArgumentParser:
     slack_poll.add_argument(
         "--scheduled",
         action="store_true",
-        help="Arm the guards an unattended fire needs (the overlap lock and the gap notice)",
+        # Accepted and inert, deliberately. `ceremonies run` needs this flag
+        # because an unattended fire raises questions a human at a terminal has
+        # already answered; a poll raises none of them, so its overlap lock and
+        # gap notice are unconditional. The installed job's argv carries it, so
+        # removing it would break every job already on disk at upgrade.
+        help="Accepted for symmetry with `ceremonies run`; a poll's guards are always armed",
     )
     slack_poll.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
@@ -949,6 +954,21 @@ def build_parser() -> argparse.ArgumentParser:
     slack_hist.add_argument("--limit", type=int, default=20, help="Rows to show (default 20)")
     slack_hist.add_argument("--pending", action="store_true", help="Only events claimed but never settled")
     slack_hist.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_members = slack_sub.add_parser("members", help="List the workspace's people and their member ids")
+    slack_members.add_argument("--match", default="", metavar="TEXT", help="Only those whose name or handle matches")
+    slack_members.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_link = slack_sub.add_parser("link", help="Say which team member a Slack user is (for attributing replies)")
+    slack_link.add_argument("slack_user", nargs="?", default="", metavar="U0123456789", help="Slack member id")
+    slack_link.add_argument("member", nargs="?", default="", help="Their name on this session's roster")
+    slack_link.add_argument("--session", default="", metavar="ID", help="Session to link in (default: latest)")
+    slack_link.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_unlink = slack_sub.add_parser("unlink", help="Forget which team member a Slack user is")
+    slack_unlink.add_argument("slack_user", metavar="U0123456789", help="Slack member id")
+    slack_unlink.add_argument("--session", default="", metavar="ID", help="Session to unlink in (default: latest)")
+    slack_unlink.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     agents_p = subparsers.add_parser(
         "agents",
@@ -2002,7 +2022,6 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
 def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
     """`yeaboi slack …` — the inbound half of the Slack channel."""
     import json
-    from dataclasses import asdict
 
     from yeaboi import config
     from yeaboi.slack import allowlist as allow
@@ -2077,19 +2096,98 @@ def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
                 )
         return 0
 
-    # poll
-    from yeaboi.slack.poller import run_poll
+    if command == "members":
+        from yeaboi.tools import slack as slack_api
+        from yeaboi.tools.slack import SlackResponse
 
-    result = run_poll()
+        ready, why = config.slack_two_way_ready()
+        if not ready:
+            console.print(f"[yellow]{why}[/yellow]")
+            return 1
+        # `paginate` hands its callback the cursor positionally; `users_list`
+        # takes it by keyword, so the lambda is the adapter between them.
+        people, error = slack_api.paginate(lambda cursor: slack_api.users_list(cursor=cursor), "members")
+        if error:
+            console.print(f"[yellow]{slack_api.error_message(SlackResponse(ok=False, error=error))}[/yellow]")
+            return 1
+        needle = args.match.strip().lower()
+        rows = []
+        for person in people:
+            # `users.list` returns bots, apps and the workspace's own Slackbot
+            # alongside people. Every one of them would be a member id you can
+            # never usefully link or allow, so none of them are offered.
+            if person.get("deleted") or person.get("is_bot") or person.get("id") == "USLACKBOT":
+                continue
+            profile = person.get("profile") or {}
+            label = profile.get("real_name") or person.get("real_name") or person.get("name") or ""
+            handle = person.get("name") or ""
+            if needle and needle not in f"{label} {handle}".lower():
+                continue
+            rows.append({"id": person.get("id", ""), "name": label, "handle": handle})
+        if to_json:
+            print(json.dumps({"members": rows}, indent=2))
+        elif not rows:
+            console.print("Nobody matched." if needle else "The workspace returned no people.")
+        else:
+            for row in rows:
+                console.print(f"  {row['id']:<12} {row['name']}  [dim]@{row['handle']}[/dim]")
+            console.print('\nUse an id in SLACK_ALLOWED_MEMBER_IDS, or `yeaboi slack link <id> "<name>"`.')
+        return 0
+
+    if command in ("link", "unlink"):
+        from yeaboi.mcp.tools_sessions import resolve_session_id
+        from yeaboi.slack.engine import link_slack_member
+        from yeaboi.slack.identity import IdentityError
+
+        try:
+            session_id = resolve_session_id(args.session)
+        except Exception:  # noqa: BLE001 — no saved session is a normal empty state
+            session_id = ""
+        try:
+            result = link_slack_member(
+                session_id,
+                args.slack_user,
+                getattr(args, "member", ""),
+                unlink=command == "unlink",
+            )
+        except IdentityError as exc:
+            # Named rather than silently dropped, for the allowlist's reason: a
+            # link that did not happen leaves somebody believing their
+            # corrections carry their name when they carry an id.
+            if to_json:
+                print(json.dumps({"error": str(exc)}, indent=2))
+            else:
+                console.print(f"[yellow]{exc}[/yellow]")
+            return 1
+        if to_json:
+            print(json.dumps(result, indent=2))
+        elif "identities" in result:
+            rows = result["identities"]
+            if not rows:
+                console.print(
+                    "Nothing linked — replies from Slack are attributed to the raw member id, which still works."
+                )
+            for row in rows:
+                console.print(f"  {row.get('slack_user', ''):<12} {row.get('member', '')}")
+        elif command == "unlink":
+            console.print("Unlinked." if result.get("unlinked") else "Nothing was linked to that id.")
+        else:
+            console.print(f"Linked {result['linked']}.")
+        return 0
+
+    # poll
+    from yeaboi.slack.engine import apply_inbound_events
+
+    result = apply_inbound_events()
     if to_json:
-        print(json.dumps(asdict(result), indent=2))
+        print(json.dumps(result, indent=2))
     else:
-        console.print(f"{result.outcome}: {result.detail or '-'}")
-        if result.events_applied:
-            console.print(f"  applied {result.events_applied} of {result.events_seen} seen")
+        console.print(f"{result['outcome']}: {result['detail'] or '-'}")
+        if result["events_applied"]:
+            console.print(f"  applied {result['events_applied']} of {result['events_seen']} seen")
     # A declined poll is not a failed one — the same rule the ceremonies runner
     # follows, so a cron job that could not act does not page anybody.
-    return 1 if result.outcome == "failed" else 0
+    return 1 if result["outcome"] == "failed" else 0
 
 
 def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
