@@ -117,6 +117,10 @@ _TOKEN_PATTERNS: tuple[str, ...] = (
     # (https://svc:AKCp8…@nexus.corp/simple). Also covers Jira, SMTP and webhook
     # URLs pasted anywhere else.
     r"(?<=://)[^/\s:@]+:[^/\s@]{4,}(?=@)",
+    # A live Cloudflare quick-tunnel hostname: not a credential, but the whole
+    # address of an internet-reachable board. Redacted centrally so every call
+    # site is covered, including cloudflared's echoed stderr.
+    r"https?://[a-z0-9][a-z0-9-]*\.trycloudflare\.com",
 )
 
 # Compiled-regex cache: (env value snapshot) -> compiled alternation.

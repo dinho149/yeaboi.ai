@@ -126,3 +126,31 @@ class TestLimiter:
             lim.record_failure("1.2.3.4")
         assert lim.blocked("1.2.3.4") is True
         assert lim.blocked("5.6.7.8") is False
+
+
+class TestMalformedContentLengthDropsTheConnection:
+    def test_bad_length_is_400_and_the_connection_dies(self, running_server):
+        """The undeclared body stays queued on the socket, so a keep-alive reuse
+        would parse mid-body — the 400 must take the connection with it."""
+        import http.client
+
+        srv = running_server[0]
+        conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+        try:
+            conn.putrequest("POST", "/api/join")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", "not-a-number")
+            conn.endheaders()
+            conn.send(b"{}")
+            response = conn.getresponse()
+            assert response.status == 400
+            response.read()
+            with pytest.raises((http.client.HTTPException, OSError)):
+                conn.putrequest("POST", "/api/join")
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("Content-Length", "2")
+                conn.endheaders()
+                conn.send(b"{}")
+                conn.getresponse()
+        finally:
+            conn.close()

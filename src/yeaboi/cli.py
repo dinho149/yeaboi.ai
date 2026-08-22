@@ -435,6 +435,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--setup-access",
+        action="store_true",
+        default=False,
+        help="Set up the Cloudflare Access verified-users tier for shared boards, then exit. "
+        "Runs the cloudflared sign-in, tunnel and DNS steps for you and stores the result; "
+        "the Access application itself is still created in the Cloudflare dashboard. "
+        "The same thing Settings offers inside the app — this is the non-TUI path.",
+    )
+
+    parser.add_argument(
         "--install-voice",
         action="store_true",
         default=False,
@@ -1385,6 +1395,188 @@ def _run_transcript_reminder(args: argparse.Namespace) -> int:
         logging.getLogger(__name__).error("Transcript reminder failed: %s", e, exc_info=True)
         print(f"Error: transcript reminder failed: {e}", file=sys.stderr)
         return 1
+
+
+def _setup_access() -> int:
+    """Headless twin of Settings → Share Mode → the Cloudflare Access wizard.
+
+    Same engine, plain prints — the shape ``--install-voice`` established. Both
+    entry points are human-initiated and one of them opens a browser, which is
+    also why neither gets an MCP tool: an agent should not be able to obtain
+    account-level Cloudflare authority on someone's behalf.
+
+    Every fact is stored the moment it is known rather than at the end. These
+    steps have side effects on a real Cloudflare account, and a tunnel created
+    and then abandoned to a Ctrl-C is an orphan this command cannot see it made.
+    """
+    from yeaboi.sharing import access_setup
+
+    def _ask(prompt: str, *, default: str = "") -> str:
+        suffix = f" [{default}]" if default else ""
+        try:
+            answer = input(f"{prompt}{suffix}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            raise SystemExit(1) from None
+        return answer or default
+
+    state = access_setup.read_state()
+    if not state.binary:
+        print("Could not obtain cloudflared. Check the network and try again.")
+        return 1
+
+    print("Cloudflare Access setup")
+    print("  cloudflared:", state.binary)
+    print("  signed in:  ", "yes" if state.logged_in else "no")
+    print("  PyJWT:      ", "installed" if state.jwt_installed else "missing")
+    if state.missing_keys:
+        print("  still to set:", ", ".join(state.missing_keys))
+    print()
+
+    # 1. Sign in.
+    if not state.logged_in:
+        print("Requires: a Cloudflare account, and a domain added to it.")
+        print(f"  No domain on Cloudflare yet? Add one first: {access_setup.ADD_SITE_URL}")
+        print("  (press Add a site — the free plan is enough — and update the")
+        print("  nameservers at your registrar as the dashboard instructs).")
+        print()
+        print("Opening your browser to sign in to Cloudflare.")
+        print("  Sign in, pick the domain you want boards served under from the")
+        print("  zone list, and press Authorize — then come back here.")
+        print("This writes ~/.cloudflared/cert.pem — an account-level credential.")
+        outcome = access_setup.login(on_line=lambda phrase: print(f"  {phrase}"))
+        print(f"  {outcome.message}")
+        if not outcome.ok:
+            return 1
+
+    # A stored fact is a done step: re-runs resume at the first missing thing,
+    # and changing a stored value is the Settings ▸ Sharing rows' (or .env's) job.
+    missing = set(state.missing_keys)
+
+    # 2. The tunnel is decided, not asked: the only one, or the one named
+    # "yeaboi", created when none exists. A picker appears only on genuine
+    # ambiguity. Settings ▸ Sharing edits the choice afterwards.
+    if not missing & {"CLOUDFLARE_TUNNEL_ID", "CLOUDFLARE_TUNNEL_CREDENTIALS", "CLOUDFLARE_ACCESS_HOSTNAME"}:
+        from yeaboi.config import access_hostname
+
+        hostname = access_hostname()
+        print(f"Tunnel and hostname already set — boards serve at https://{hostname}.")
+    elif not missing & {"CLOUDFLARE_TUNNEL_ID", "CLOUDFLARE_TUNNEL_CREDENTIALS"}:
+        # Only the hostname is missing. The stored tunnel is kept — re-resolving
+        # could pick a different one and silently overwrite the stored id.
+        from yeaboi.config import access_tunnel_id
+
+        tunnel_id = access_tunnel_id()
+        print(f"Using your stored tunnel ({tunnel_id}).")
+        domain = _ask("Your domain on Cloudflare (e.g. acme.com)")
+        hostname = access_setup.boards_hostname(domain)
+        if not access_setup.valid_hostname(hostname):
+            print("  That is not a domain name.")
+            return 1
+        print(f"Boards will be served at https://{hostname} (change via CLOUDFLARE_ACCESS_HOSTNAME).")
+        outcome = access_setup.route_dns(tunnel_id, hostname, on_line=lambda phrase: print(f"  {phrase}"))
+        print(f"  {outcome.message}")
+        if not outcome.ok:
+            if outcome.code != "DNS_EXISTS":
+                return 1
+            if _ask("Record exists — use this hostname anyway? (y/N)", default="n").lower() not in ("y", "yes"):
+                return 1
+        access_setup.save(CLOUDFLARE_ACCESS_HOSTNAME=hostname.strip().lower())
+    else:
+        tunnels, listed = access_setup.list_tunnels()
+        if not listed.ok:
+            print(f"  {listed.message}")
+            return 1
+        picked = access_setup.resolve_tunnel(tunnels)
+        if picked is not None:
+            print(f"Using your existing tunnel '{picked.name}' ({picked.id}).")
+        elif tunnels:
+            print("Several tunnels and none named 'yeaboi' — which should serve your boards?")
+            for i, tunnel in enumerate(tunnels, 1):
+                print(f"  {i}. {tunnel.name}  ({tunnel.id})")
+            choice = _ask("Number", default="1")
+            if not (choice.isdigit() and 1 <= int(choice) <= len(tunnels)):
+                print("  That is not one of the numbers.")
+                return 1
+            picked = tunnels[int(choice) - 1]
+        else:
+            print(f"Creating a tunnel named '{access_setup.DEFAULT_TUNNEL_NAME}'…")
+            picked, outcome = access_setup.create_tunnel(
+                access_setup.DEFAULT_TUNNEL_NAME, on_line=lambda phrase: print(f"  {phrase}")
+            )
+            print(f"  {outcome.message}")
+            if picked is None:
+                return 1
+        credentials = picked.credentials or access_setup.default_credentials(picked.id)
+
+        access_setup.save(CLOUDFLARE_TUNNEL_ID=picked.id, CLOUDFLARE_TUNNEL_CREDENTIALS=credentials)
+
+        # 3. Hostname + DNS route. Only the domain is asked; boards.<domain> is the
+        # default nobody has to type, editable later via CLOUDFLARE_ACCESS_HOSTNAME.
+        domain = _ask("Your domain on Cloudflare (e.g. acme.com)")
+        hostname = access_setup.boards_hostname(domain)
+        if not access_setup.valid_hostname(hostname):
+            print("  That is not a domain name.")
+            return 1
+        print(f"Boards will be served at https://{hostname} (change via CLOUDFLARE_ACCESS_HOSTNAME).")
+        outcome = access_setup.route_dns(picked.id, hostname, on_line=lambda phrase: print(f"  {phrase}"))
+        print(f"  {outcome.message}")
+        if not outcome.ok:
+            if outcome.code != "DNS_EXISTS":
+                return 1
+            # Never overwritten silently: the record may point at this tunnel (a
+            # re-run) or at something else. Ask rather than assume.
+            if _ask("Record exists — use this hostname anyway? (y/N)", default="n").lower() not in ("y", "yes"):
+                return 1
+        access_setup.save(CLOUDFLARE_ACCESS_HOSTNAME=hostname.strip().lower())
+
+    # 4. The one manual step.
+    if not missing & {"CLOUDFLARE_ACCESS_TEAM", "CLOUDFLARE_ACCESS_AUD"}:
+        print("Access application already configured — verifying.")
+        team = aud = ""
+    else:
+        print()
+        print("Now create the Access application in the Cloudflare dashboard:")
+        print(f"  {access_setup.ACCESS_APP_ADD_URL}")
+        print("  (Access controls → Applications → Add self-hosted, if the link does not land there)")
+        print(f"  1. Name it anything; set the application domain to {hostname}.")
+        print("  2. Policy: Action = Allow; under Include pick Emails and list your teammates'")
+        print("     addresses — or 'Emails ending in' @your-company.com for everyone. Save it.")
+        print("  3. Save the application, open its Overview tab, and copy the Audience (AUD) tag.")
+        print()
+        # The sign-in redirect carries the team name and the AUD once the
+        # application exists — read them rather than ask, and offer the AUD as
+        # a default to confirm against the Overview tab.
+        team, aud_hint = access_setup.discover_app(hostname)
+        if team:
+            print(f"  Team name detected from {hostname}: {team}")
+        if aud_hint:
+            print("  An AUD tag was detected too — confirm it matches the application's Overview tab.")
+        aud = _ask("The application's AUD tag", default=aud_hint)
+        if not team:
+            team = _ask("Your Zero Trust team name")
+        access_setup.save(CLOUDFLARE_ACCESS_TEAM=team, CLOUDFLARE_ACCESS_AUD=aud)
+
+    # 5. PyJWT, then prove the whole thing works.
+    if not access_setup.jwt_installed():
+        print("Installing PyJWT…")
+        outcome = access_setup.install_jwt(on_line=lambda phrase: print(f"  {phrase}"))
+        print(f"  {outcome.message}")
+        if not outcome.ok:
+            return 1
+
+    # The switch is written only once the tier is proven — see the wizard twin.
+    verdict = access_setup.verify(assume_mode=True)
+    if verdict.ok:
+        from yeaboi.config import SHARE_MODE_ACCESS
+
+        access_setup.save(YEABOI_SHARE_MODE=SHARE_MODE_ACCESS)
+    print()
+    print(f"  {verdict.message}")
+    if verdict.ok:
+        print("Shared boards will now require a verified Cloudflare Access sign-in.")
+        print("Change any of this later in Settings ▸ Sharing (host powers via CLOUDFLARE_ACCESS_ADMIN_EMAILS).")
+    return 0 if verdict.ok else 1
 
 
 def _install_voice() -> int:
@@ -3099,6 +3291,16 @@ def main(argv: list[str] | None = None) -> None:
     if args.list_audio_devices:
         _list_audio_devices()
         return
+
+    # ── --setup-access: configure the verified-users tier and exit ───────────
+    # Logging first, for the same reason --install-voice does it: cloudflared's
+    # raw child output goes to the log at DEBUG, and on this surface the log is
+    # the only diagnostic when a Cloudflare step refuses.
+    if args.setup_access:
+        from yeaboi.logging_setup import configure_logging
+
+        configure_logging()
+        raise SystemExit(_setup_access())
 
     # ── --install-voice: set dictation up headlessly and exit ────────────────
     # Logging is configured first, unlike the exits above it: this is the CI and

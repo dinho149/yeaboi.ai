@@ -32,6 +32,13 @@ DOCUMENT_HEADERS: tuple[tuple[str, str], ...] = (
     ("Referrer-Policy", "no-referrer"),
     ("X-Content-Type-Options", "nosniff"),
     ("X-Frame-Options", "DENY"),
+    # Deny every device and sensor except the one feature a served page uses:
+    # the poker duel records each duelist's turn *in their own browser*
+    # (useDuelMic.ts → getUserMedia → POST /api/duel/audio), so `microphone`
+    # allows the document's own origin and nothing else. `(self)` still bars an
+    # injected cross-origin iframe from asking, and the empty lists mean no
+    # page can quietly request a camera or a location.
+    ("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()"),
 )
 
 # Shared CSP base. `default-src 'none'` means every fetch type is denied unless

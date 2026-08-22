@@ -11,6 +11,8 @@ See README: "Testing — Contract Tests" for background on VCR.py replay.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import webbrowser
 from pathlib import Path
 
@@ -224,6 +226,58 @@ def _no_real_package_install(monkeypatch):
         raise RealPackageInstallBlocked(f"test tried to spawn a real installer: {argv}")
 
     monkeypatch.setattr("yeaboi.voice_install._popen", _blocked)
+
+
+class RealTunnelSpawnBlocked(BaseException):
+    """A test reached a real ``cloudflared``. ``BaseException`` for the same
+    reason as the two guards around it: the tunnel code's whole contract is to
+    degrade gracefully, so a plain ``Exception`` would be swallowed by one of
+    its broad handlers and reported as "the tunnel did not come up" rather than
+    as the missing monkeypatch it is.
+    """
+
+
+@pytest.fixture(autouse=True)
+def _no_real_tunnel_spawn(monkeypatch):
+    """No test may spawn the real, network-reaching cloudflared.
+
+    Blocks the two spawn seams (``retro.tunnel._popen`` and
+    ``sharing.access_tunnel._run``) rather than ``subprocess.Popen``/``run``,
+    so the shared modules stay untouched for every other test.
+
+    Only a *real* cloudflared is refused — the app-managed pinned copy, or one
+    found on ``PATH``. The tunnel tests drive fake shell scripts that are also
+    named ``cloudflared`` (in ``tmp_path``), and those are exactly what a unit
+    test should be running, so they pass straight through.
+    """
+    real_popen = subprocess.Popen
+    real_run = subprocess.run
+
+    def _real_binaries() -> set[Path]:
+        found: set[Path] = set()
+        for candidate in (shutil.which("cloudflared"), os.getenv("CLOUDFLARED_PATH")):
+            if candidate:
+                found.add(Path(candidate).resolve())
+        managed = Path.home() / ".yeaboi" / "bin" / "cloudflared"
+        if managed.exists():
+            found.add(managed.resolve())
+        return found
+
+    def _guard(delegate):
+        def _spawn(argv, *args, **kwargs):
+            try:
+                target = Path(str(argv[0])).resolve()
+            except (OSError, IndexError, TypeError):
+                return delegate(argv, *args, **kwargs)
+            if target in _real_binaries():
+                raise RealTunnelSpawnBlocked(f"test tried to spawn the real cloudflared: {argv}")
+            return delegate(argv, *args, **kwargs)
+
+        return _spawn
+
+    monkeypatch.setattr("yeaboi.retro.tunnel._popen", _guard(real_popen))
+    monkeypatch.setattr("yeaboi.sharing.access_tunnel._run", _guard(real_run))
+    monkeypatch.setattr("yeaboi.sharing.access_setup._popen", _guard(real_popen))
 
 
 class RealGitHubWriteBlocked(BaseException):

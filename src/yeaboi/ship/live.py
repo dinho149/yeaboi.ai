@@ -77,9 +77,20 @@ class ShipBoardSession:
             if self._tunnel_factory is not None:
                 url = self._tunnel_factory(self.server.port)
             else:
-                from yeaboi.sharing.tunnel import CloudflareTunnel  # noqa: PLC0415
+                from yeaboi.sharing.tunnel import open_tunnel  # noqa: PLC0415
 
-                self._tunnel = CloudflareTunnel(self.server.port)
+                # One call decides the tier, exactly as the retro, poker and
+                # share surfaces do. Going through CloudflareTunnel directly
+                # published a public trycloudflare.com URL even with
+                # YEABOI_SHARE_MODE=access, which is the one thing the tier
+                # promises cannot happen.
+                transport = open_tunnel(self.server.port, surface="ship")
+                if transport.tunnel is None:
+                    logger.warning("ship board: secure link unavailable — %s", transport.error)
+                    return
+                # Armed before start(), so verification is on before the door is.
+                self.server.set_access_gate(transport.gate)
+                self._tunnel = transport.tunnel
                 url = self._tunnel.start()
             if url:
                 self.server.set_public_url(url)

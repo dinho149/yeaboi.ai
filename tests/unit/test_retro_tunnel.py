@@ -118,10 +118,79 @@ class TestEnsureCloudflared:
         monkeypatch.setattr(tunnel.shutil, "which", lambda name: None)
         cached = tmp_path / "cloudflared"
         cached.write_text("x")
+        # A cached copy is trusted only alongside the digest recorded when it was
+        # installed — that is what makes "still the verified binary" checkable.
+        tunnel._record_installed_digest(cached)
         monkeypatch.setattr(tunnel, "_cached_binary_path", lambda: cached)
-        # _download_cloudflared must NOT be called when the cache exists.
+        # _download_cloudflared must NOT be called when the cache is intact.
         monkeypatch.setattr(tunnel, "_download_cloudflared", lambda *a, **k: pytest.fail("should not download"))
         assert tunnel.ensure_cloudflared() == cached
+
+    def test_tampered_cached_copy_is_reinstalled(self, tmp_path, monkeypatch):
+        """The cache is re-verified per launch, not trusted because it exists.
+
+        The pinned map covers the downloaded asset (a .tgz on macOS), so the
+        re-check is against the digest recorded at install time. Overwriting the
+        binary afterwards must not go unnoticed.
+        """
+        monkeypatch.delenv("CLOUDFLARED_PATH", raising=False)
+        monkeypatch.setattr(tunnel.shutil, "which", lambda name: None)
+        cached = tmp_path / "cloudflared"
+        cached.write_text("the real one")
+        tunnel._record_installed_digest(cached)
+        cached.write_text("swapped out from under us")
+        monkeypatch.setattr(tunnel, "_cached_binary_path", lambda: cached)
+
+        calls = []
+        monkeypatch.setattr(tunnel, "_download_cloudflared", lambda dest, **k: calls.append(dest) or dest)
+        assert tunnel.ensure_cloudflared() == cached
+        assert calls == [cached], "a tampered cache must be re-downloaded, not executed"
+
+    def test_cached_copy_without_a_recorded_digest_is_reinstalled(self, tmp_path, monkeypatch):
+        """No sidecar means the copy predates the check or was planted; refuse it."""
+        monkeypatch.delenv("CLOUDFLARED_PATH", raising=False)
+        monkeypatch.setattr(tunnel.shutil, "which", lambda name: None)
+        cached = tmp_path / "cloudflared"
+        cached.write_text("unknown provenance")
+        monkeypatch.setattr(tunnel, "_cached_binary_path", lambda: cached)
+
+        calls = []
+        monkeypatch.setattr(tunnel, "_download_cloudflared", lambda dest, **k: calls.append(dest) or dest)
+        assert tunnel.ensure_cloudflared() == cached
+        assert calls == [cached]
+
+
+class TestStrictBinaryMode:
+    """YEABOI_CLOUDFLARED_STRICT accepts only the pinned, managed build."""
+
+    def test_strict_refuses_the_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("YEABOI_CLOUDFLARED_STRICT", "1")
+        fake = tmp_path / "cf"
+        fake.write_text("x")
+        monkeypatch.setenv("CLOUDFLARED_PATH", str(fake))
+        monkeypatch.setattr(tunnel.shutil, "which", lambda name: None)
+        managed = tmp_path / "cloudflared"
+        managed.write_text("pinned")
+        tunnel._record_installed_digest(managed)
+        monkeypatch.setattr(tunnel, "_cached_binary_path", lambda: managed)
+        assert tunnel.ensure_cloudflared() == managed
+
+    def test_strict_refuses_a_binary_on_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("YEABOI_CLOUDFLARED_STRICT", "1")
+        monkeypatch.delenv("CLOUDFLARED_PATH", raising=False)
+        monkeypatch.setattr(tunnel.shutil, "which", lambda name: "/usr/local/bin/cloudflared")
+        managed = tmp_path / "cloudflared"
+        managed.write_text("pinned")
+        tunnel._record_installed_digest(managed)
+        monkeypatch.setattr(tunnel, "_cached_binary_path", lambda: managed)
+        assert tunnel.ensure_cloudflared() == managed
+
+    def test_without_strict_the_override_still_wins(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("YEABOI_CLOUDFLARED_STRICT", raising=False)
+        fake = tmp_path / "cf"
+        fake.write_text("x")
+        monkeypatch.setenv("CLOUDFLARED_PATH", str(fake))
+        assert tunnel.ensure_cloudflared() == fake
 
     def test_download_failure_returns_none(self, tmp_path, monkeypatch):
         monkeypatch.delenv("CLOUDFLARED_PATH", raising=False)
@@ -375,3 +444,20 @@ class TestDnsLiveGate:
         monkeypatch.setattr(urllib.request, "urlopen", _raise)
         # A DoH outage must not raise — just returns False after the deadline.
         assert t._wait_dns_live("x.trycloudflare.com", deadline=time.monotonic()) is False
+
+
+class TestMakeExecutable:
+    """The comment promised owner-only; the code used to only add owner-exec."""
+
+    def test_group_and_other_bits_are_dropped(self, tmp_path):
+        import stat
+
+        from yeaboi.retro import tunnel
+
+        binary = tmp_path / "cloudflared"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o777)
+        tunnel._make_executable(binary)
+        mode = stat.S_IMODE(binary.stat().st_mode)
+        assert mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
+        assert mode & stat.S_IXUSR

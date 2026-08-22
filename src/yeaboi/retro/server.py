@@ -11,7 +11,8 @@ Design (see plan "Retro Mode"):
     its own thread. The shared :class:`~yeaboi.retro.board.RetroBoard` is the
     single source of truth and is itself lock-guarded.
   * Access is gated by a per-session random token (``secrets.token_urlsafe``)
-    checked with ``secrets.compare_digest`` (constant-time). ``GET /`` serves the
+    checked with ``access.secret_equal`` (constant-time, and total over
+    non-ASCII input). ``GET /`` serves the
     harmless board page; every ``/api/*`` call requires the token.
   * The server binds **loopback only**. Teammates reach it exclusively through a
     Cloudflare quick tunnel (:mod:`yeaboi.retro.tunnel`), which the TUI starts
@@ -36,7 +37,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -48,8 +48,17 @@ from yeaboi.redaction import log_safe
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.page import build_board_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
+from yeaboi.sharing.access import (
+    client_key,
+    invite_payload,
+    invite_url,
+    make_join_code,
+    make_token,
+    participant_url,
+    secret_equal,
+)
 from yeaboi.sharing.events import ChangeWatcher, EventHub
+from yeaboi.sharing.identity import effective_pid, enforce_identity, gate_of, identity_required, verified_user
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import BOARD_CSP, send_document
 
@@ -113,12 +122,49 @@ class _RetroHandler(BaseHTTPRequestHandler):
     def _query(self, key: str) -> str:
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
 
+    @property
+    def _client_key(self) -> str:
+        """Per-visitor key for the join limiter and the long-poll stream cap.
+
+        Trusts cloudflared's forwarded address only while a tunnel is live —
+        see :func:`yeaboi.sharing.access.client_key` for why ``client_address``
+        alone collapses every remote participant into one bucket.
+        """
+        return client_key(self, trust_forwarded=bool(getattr(self.server, "public_url", "")))
+
     def _authed(self) -> bool:
-        return secrets.compare_digest(self._query("token"), self._token)
+        """True when this request may be served at all.
+
+        One seam for both tiers, and deliberately *this* seam: every gated route
+        already calls it, so the Access tier's fail-closed rule reaches all of
+        them without a new check at the top of ``do_GET``/``do_POST`` that a
+        future route could forget to inherit.
+
+        In the Access tier a tunnel-borne request must present a token this
+        process verified locally against Cloudflare's signing keys — the board
+        token is not consulted at all, so a leaked link is not a way in. The
+        host's own loopback requests stay token-gated exactly as before, because
+        cloudflared connects from ``127.0.0.1`` and requiring a JWT on every
+        request would lock the host out of their own board.
+        """
+        if identity_required(self):
+            return verified_user(self) is not None
+        return secret_equal(self._query("token"), self._token)
 
     def _admin_authed(self, admin: str) -> bool:
-        """True iff ``admin`` matches the host's admin secret (constant-time)."""
-        return bool(admin) and secrets.compare_digest(admin, self._admin_token)
+        """True iff this request carries host powers.
+
+        In the Access tier the body's ``admin`` string is ignored outright and
+        the answer comes from the verified email's membership of
+        ``CLOUDFLARE_ACCESS_ADMIN_EMAILS``. That removes a static bearer secret
+        that otherwise rides in the host link's query string — where it reaches
+        Cloudflare's edge access log — and it is what makes the microphone gate
+        accountable to a named person rather than to whoever holds a URL.
+        """
+        gate = gate_of(self)
+        if gate is not None and identity_required(self):
+            return gate.is_admin(verified_user(self))
+        return bool(admin) and secret_equal(admin, self._admin_token)
 
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
         # The board used to send a Cache-Control and nothing else, while the
@@ -237,7 +283,7 @@ class _RetroHandler(BaseHTTPRequestHandler):
         serve_state(
             self,
             self.server.event_hub,  # type: ignore[attr-defined]
-            lambda: self._board.state_snapshot(self._query("pid")),
+            lambda: self._board.state_snapshot(effective_pid(self, self._query("pid"))),
             wait_seconds=parse_wait(self._query("wait")),
         )
 
@@ -291,7 +337,16 @@ class _RetroHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib signature
         path = urlparse(self.path).path
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            # A non-numeric Content-Length is a client error; answer 400 rather
+            # than let the cast raise out of do_POST. The body bytes are still
+            # queued on the socket, so drop the connection with the answer — a
+            # keep-alive reuse would parse mid-body (the share server does the same).
+            self.close_connection = True
+            self._send_json(400, {"error": "bad length"})
+            return
         if length > _MAX_BODY:
             self._send_json(413, {"error": "too large"})
             return
@@ -304,15 +359,27 @@ class _RetroHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "bad json"})
             return
 
-        # /api/join is the ONLY unauthenticated POST: it exchanges the short join
-        # code for the strong token (the code-entry gate). Everything else needs it.
+        # /api/join is the only POST that does not require the board token: it
+        # exchanges the short join code for it (the code-entry gate). Everything
+        # else needs it. In the Access tier it is not unauthenticated either —
+        # see the identity check below.
         if path == "/api/join":
-            ip = self.client_address[0]
+            # In the Access tier the code gate sits *behind* identity: only a
+            # verified visitor may even attempt a code. Without this, /api/join
+            # would be the one tunnel-borne route not locally verified — the
+            # token it hands back is useless over the tunnel (every other route
+            # wants a JWT), but "every tunnel-borne request is verified" should
+            # be true without an asterisk, and an unverified stranger should not
+            # be able to spend another visitor's rate-limit budget.
+            if identity_required(self) and verified_user(self) is None:
+                self._send_json(403, {"error": "forbidden"})
+                return
+            ip = self._client_key
             if self._join_limiter.blocked(ip):
                 self._send_json(429, {"error": "too many attempts"})
                 return
             code = str(payload.get("code", "")).strip().upper()
-            if code and secrets.compare_digest(code, self._join_code):
+            if code and secret_equal(code, self._join_code):
                 self._join_limiter.record_success(ip)
                 self._send_json(200, {"ok": True, "token": self._token})
             else:
@@ -339,6 +406,14 @@ class _RetroHandler(BaseHTTPRequestHandler):
 
         pid = str(payload.get("pid", ""))
         admin = str(payload.get("admin", ""))
+        # In the Access tier identity is the server's to decide. `pid` is what
+        # `board.py` keys card ownership on, and a browser-minted one means any
+        # token holder can post {"pid": "someone-else"} and edit their cards;
+        # here it is replaced by the verified subject before the board sees it.
+        # Both come back unchanged in the quick tier, where there is nobody to
+        # verify — so `verified_name` is empty and each route below keeps its
+        # existing fallback to what the client sent.
+        pid, verified_name = enforce_identity(self, pid, "")
 
         def _state() -> dict:
             return self._board.state_snapshot(pid)
@@ -392,7 +467,7 @@ class _RetroHandler(BaseHTTPRequestHandler):
             card = self._board.add_card(
                 grid=str(payload.get("grid", "")),
                 text=str(payload.get("text", "")),
-                author=str(payload.get("author", "")),
+                author=verified_name or str(payload.get("author", "")),
                 pid=pid,
             )
             if card is None:
@@ -437,7 +512,7 @@ class _RetroHandler(BaseHTTPRequestHandler):
             # The ~1 s tick: record presence/typing AND return the live state in one round-trip.
             self._board.heartbeat(
                 pid,
-                name=str(payload.get("name", "")),
+                name=verified_name or str(payload.get("name", "")),
                 avatar=str(payload.get("avatar", "")),
                 typing_grid=str(payload.get("typing_grid", "")),
             )
@@ -497,6 +572,8 @@ class RetroServer:
         # the truth for a board opened outside a session.
         self.history_list: Callable[[], list[dict]] | None = None
         self.history_report: Callable[[int], dict | None] | None = None
+        # None unless the Cloudflare Access tier is on; see set_access_gate.
+        self.access_gate: object | None = None
         # Live-update plumbing. Built here rather than in start() so stop() is
         # safe on a server that was never started.
         self.event_hub = EventHub()
@@ -540,6 +617,22 @@ class RetroServer:
         self.share_state = state
         if self._httpd is not None:
             self._httpd.share_state = state  # type: ignore[attr-defined]
+
+    def set_access_gate(self, gate: object | None) -> None:
+        """Arm Cloudflare Access verification for tunnel-borne requests.
+
+        ``None`` (the default) is the quick tier: the join code is the boundary
+        and there is no identity to check. A gate makes every request arriving on
+        the published hostname present a token this process verifies locally —
+        see :mod:`yeaboi.sharing.identity`.
+
+        Two writes, for the same reason as :meth:`set_public_url`: the handler
+        reaches shared state through the ``ThreadingHTTPServer`` instance, never
+        through ``self``.
+        """
+        self.access_gate = gate
+        if self._httpd is not None:
+            self._httpd.access_gate = gate  # type: ignore[attr-defined]
 
     @property
     def url(self) -> str:
@@ -611,6 +704,8 @@ class RetroServer:
         # sets them on it, and the handler only ever sees the HTTP server.
         httpd.history_list = self.history_list  # type: ignore[attr-defined]
         httpd.history_report = self.history_report  # type: ignore[attr-defined]
+        # None unless the Access tier is on; see set_access_gate.
+        httpd.access_gate = self.access_gate  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="retro-http", daemon=True)
         self._thread.start()

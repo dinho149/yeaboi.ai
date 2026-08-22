@@ -52,6 +52,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
+from yeaboi.sharing.access import client_key
 from yeaboi.sharing.events import state_etag
 from yeaboi.web.security import send_document, send_headers
 
@@ -61,6 +62,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from yeaboi.sharing.events import EventHub
 
 logger = logging.getLogger(__name__)
+
+# How long a client refused a hold slot waits before getting its 304. Short
+# enough that it is invisible next to the 25 s a granted hold would have taken,
+# long enough that a capped-out board cannot spin. See serve_state.
+REFUSED_HOLD_SLEEP = 1.5
 
 # Ceiling on how long one request may be parked. Well under Cloudflare's ~100 s
 # origin-response limit and under the default timeout of every HTTP client
@@ -115,11 +121,13 @@ def serve_state(
         send_state(handler, snapshot, etag, if_none_match)
         return
 
-    sub = hub.subscribe(handler.client_address[0])
+    sub = hub.subscribe(client_key(handler, trust_forwarded=bool(getattr(handler.server, "public_url", ""))))
     if sub is None:
-        # Over a cap: answer 304 now rather than hold a slot. The client just
-        # re-polls, which still works — only without the instant wake-up.
-        logger.debug("live: hold refused (cap reached) — answering 304")
+        # Over a cap: answer 304 rather than hold a slot. The sleep throttles
+        # the refused client server-side, so the origin is protected whatever
+        # the client does with a fast 304.
+        logger.debug("live: hold refused (cap reached) — throttling, then answering 304")
+        time.sleep(REFUSED_HOLD_SLEEP)
         send_state(handler, snapshot, etag, if_none_match)
         return
 

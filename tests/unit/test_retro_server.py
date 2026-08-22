@@ -615,3 +615,83 @@ class TestSecurityHeaders:
         srv, _ = running_server
         headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
         assert headers["Content-Security-Policy"] is None
+
+
+class TestHostileCredentialsDoNotCrashTheHandler:
+    """Malformed input must produce a refusal, not a traceback over the TUI.
+
+    `secrets.compare_digest` raises TypeError on a non-ASCII str, and every
+    credential here comes off the wire. Unguarded, the exception escaped
+    do_GET/do_POST into socketserver.handle_error, which printed a traceback to
+    stderr — on top of the live Rich display — and dropped the connection. On
+    the join path it was worse: those attempts never reached the lockout
+    counter, so they were free.
+    """
+
+    def test_non_ascii_token_is_refused(self, running_server):
+        srv, _ = running_server
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/api/state?token=caf%C3%A9", timeout=5)
+            raise AssertionError("expected a refusal")
+        except urllib.error.HTTPError as e:
+            assert e.code == 403
+
+    def test_non_ascii_join_code_is_refused_and_counted(self, running_server):
+        srv, _ = running_server
+
+        def _attempt(code):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{srv.port}/api/join",
+                data=json.dumps({"code": code}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(req, timeout=5)
+                return 200
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        # Refused rather than crashing...
+        assert _attempt("café") == 403
+        # ...and counted, so a non-ASCII code is not a free guess.
+        for _ in range(JoinLimiter._MAX_FAILS - 1):
+            _attempt("café")
+        assert _attempt(srv.join_code) == 429
+
+    def test_the_server_still_serves_after_hostile_input(self, running_server):
+        srv, _ = running_server
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/api/state?token=caf%C3%A9", timeout=5)
+        except urllib.error.HTTPError:
+            pass
+        # A crashed handler used to take the connection with it.
+        assert _get(f"http://127.0.0.1:{srv.port}/").status == 200
+
+    def test_malformed_content_length_is_refused(self, running_server):
+        """A non-numeric Content-Length raised ValueError the same way."""
+        import http.client
+
+        srv, _ = running_server
+        conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+        try:
+            conn.putrequest("POST", "/api/join")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", "not-a-number")
+            conn.endheaders()
+            conn.send(b"{}")
+            response = conn.getresponse()
+            assert response.status == 400
+            response.read()
+            # The undeclared body is still queued on the socket; a keep-alive
+            # reuse would parse mid-body, so the server must have dropped the
+            # connection with the answer — a second request on it cannot succeed.
+            with pytest.raises((http.client.HTTPException, OSError)):
+                conn.putrequest("POST", "/api/join")
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("Content-Length", "2")
+                conn.endheaders()
+                conn.send(b"{}")
+                conn.getresponse()
+        finally:
+            conn.close()

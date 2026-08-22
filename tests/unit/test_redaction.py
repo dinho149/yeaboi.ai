@@ -171,3 +171,21 @@ class TestUrlCredentials:
 
         once = redact("https://u:pa55word@host/x")
         assert redact(once) == once
+
+
+class TestTunnelHostname:
+    """A live tunnel URL is the whole address of an internet-reachable board."""
+
+    def test_quick_tunnel_url_is_redacted(self):
+        assert "trycloudflare.com" not in redact("board is live at https://calm-river-1234.trycloudflare.com/")
+
+    def test_cloudflared_banner_line_is_redacted(self):
+        # The tunnel's drain thread echoes cloudflared's stderr at DEBUG, and the
+        # banner carries the URL — so LOG_LEVEL=DEBUG used to write a live share
+        # address into ~/.yeaboi/logs/.
+        line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |"
+        assert "trycloudflare" not in redact(line)
+
+    def test_ordinary_prose_is_untouched(self):
+        text = "the tunnel uses trycloudflare for hostnames"
+        assert redact(text) == text

@@ -92,6 +92,15 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
         def set_public_url(self, url):
             self.public_url = url
 
+        def set_access_gate(self, gate):
+            # Armed before the tunnel starts, so verification is on before the
+            # door is. In the quick tier there is no identity to verify and the
+            # gate is None — recorded rather than ignored, because "the quick
+            # tier accidentally armed a gate" and "the Access tier forgot to"
+            # are the two ways this call can be wrong.
+            self.access_gate = gate
+            events.append("gate-none" if gate is None else "gate-set")
+
         def start(self):
             events.append("server-start")
 
@@ -112,14 +121,27 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
     class FakeConsole:
         size = (100, 34)
 
-    class FakeLive:
-        def update(self, _panel):
-            pass
+    last_panel: list = []
 
+    class FakeLive:
+        def update(self, panel):
+            last_panel[:] = [panel]
+
+    # Drive off what is actually on screen, not off timing. The action row is
+    # "Back" alone until the worker publishes, so a key sent during setup lands
+    # on Back and `sel` never reaches Stop Sharing — after which every further
+    # Enter re-fires Copy Invite and the loop never exits. That race predates
+    # the Access tier; it stayed hidden because the worker usually won it.
     keys = iter(("right", "enter"))
+    deadline = time.monotonic() + 10.0
 
     def read_key(timeout=None):
-        time.sleep(0.01)
+        if time.monotonic() > deadline:
+            raise AssertionError(f"share screen never became live; events={events}")
+        rendered = _text(last_panel[0]) if last_panel else ""
+        if "Stop Sharing" not in rendered:
+            time.sleep(0.005)
+            return ""  # no-op: re-render and look again
         return next(keys, "enter")
 
     monkeypatch.setattr("yeaboi.ui.shared._output_share.OutputShareServer", FakeServer)
@@ -136,7 +158,7 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
         theme=STANDUP_THEME,
         title_fn=standup_title,
     )
-    assert events[:2] == ["server-start", "tunnel-start"]
+    assert events[:3] == ["server-start", "gate-none", "tunnel-start"]
     assert "tunnel-stop" in events
     assert "server-stop" in events
 
@@ -159,6 +181,9 @@ def test_auto_expiry_collapses_the_screen_to_back_only(monkeypatch):
 
         def set_public_url(self, url):
             self.public_url = url
+
+        def set_access_gate(self, gate):
+            self.access_gate = gate
 
         def start(self):
             events.append("server-start")
@@ -198,10 +223,21 @@ def test_auto_expiry_collapses_the_screen_to_back_only(monkeypatch):
         def update(self, panel):
             panels.append(panel)
 
+    # A wall-clock deadline, not a retry count: if the worker dies before it
+    # ever arms the expiry timer, `expired` is never set and this reader would
+    # otherwise return "" forever, hanging the whole unit lane on one test with
+    # no failure name. That is exactly how this file's breakage stayed invisible
+    # — a dead worker looked like a slow one. Bail out and let the assertions
+    # below report what actually went wrong.
+    deadline = time.monotonic() + 10.0
+
     def read_key(timeout=None):
         if expired.is_set():
             return "enter"  # the only action left once expired is Back
-        expired.wait(2)
+        if time.monotonic() > deadline:
+            expired.set()
+            return "enter"
+        expired.wait(0.05)
         return ""  # no-op — just let the loop re-render with the new state
 
     monkeypatch.setattr("yeaboi.ui.shared._output_share.OutputShareServer", FakeServer)
@@ -255,6 +291,9 @@ def test_copy_invite_puts_one_self_contained_link_on_the_clipboard(monkeypatch):
             # is built from that rather than from the request's own Host.
             self.public_url = url
 
+        def set_access_gate(self, gate):
+            self.access_gate = gate
+
         def start(self):
             pass
 
@@ -276,16 +315,26 @@ def test_copy_invite_puts_one_self_contained_link_on_the_clipboard(monkeypatch):
     class FakeConsole:
         size = (100, 34)
 
+    last_panel: list = []
+
     class FakeLive:
-        def update(self, _panel):
-            pass
+        def update(self, panel):
+            last_panel[:] = [panel]
 
     # Copy Invite is the first action once sharing is live, so a bare Enter
-    # presses it; the second leaves.
+    # presses it; the second leaves. Wait for the live action row to appear
+    # rather than assuming the worker wins the race — see the same guard in
+    # test_runner_stops_server_and_tunnel.
     keys = iter(("enter", "right", "enter"))
+    deadline = time.monotonic() + 10.0
 
     def read_key(timeout=None):
-        time.sleep(0.01)
+        if time.monotonic() > deadline:
+            raise AssertionError("share screen never became live")
+        rendered = _text(last_panel[0]) if last_panel else ""
+        if "Stop Sharing" not in rendered:
+            time.sleep(0.005)
+            return ""
         return next(keys, "enter")
 
     monkeypatch.setattr("yeaboi.ui.shared._output_share.OutputShareServer", FakeServer)

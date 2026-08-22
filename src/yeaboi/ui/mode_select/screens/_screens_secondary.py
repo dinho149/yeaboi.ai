@@ -3292,8 +3292,10 @@ def _build_standup_schedule_step_screen(
     height: int = 24,
     message: str = "",
     step_names: list[str] | None = None,
+    theme=None,
+    title_fn=None,
 ) -> Panel:
-    """Build one step of a standup option-list wizard: radio or checkbox.
+    """Build one step of an option-list wizard: radio or checkbox.
 
     ``checked is None`` renders a single-select (radio) step — the cursor row IS
     the selection, Enter confirms it. A ``set`` renders a multi-select step where
@@ -3301,18 +3303,24 @@ def _build_standup_schedule_step_screen(
     description renders dimmed after the label.
 
     ``step_names`` labels the progress dots, defaulting to the schedule wizard's
-    five steps. It is a parameter rather than a constant so other standup
-    wizards (the transcript source picker) reuse this whole screen — the
-    scrolling, the back-navigation and their render tests — instead of growing a
-    near-copy.
+    five steps. It is a parameter rather than a constant so other wizards reuse
+    this whole screen — the scrolling, the back-navigation and their render
+    tests — instead of growing a near-copy.
+
+    ``theme``/``title_fn`` default to standup's, for the same reason: a wizard
+    reached from Settings is not standup, and should not wear its masthead.
     """
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
-    theme = STANDUP_THEME
+    theme = theme or STANDUP_THEME
+    _title = title_fn or standup_title
     multi = checked is not None
     rows: list[Text] = []
     if message:
-        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+        # Split on newlines so a numbered checklist keeps the viewport's
+        # row-accounting honest (one Text per rendered line).
+        rows.extend(Text(_PAD + ln, style=theme.warn) for ln in message.split("\n"))
+        rows.append(Text(""))
     if multi:
         rows.append(Text(_PAD + f"{len(checked)} of {len(options)} selected", style=theme.muted))
         rows.append(Text(""))
@@ -3348,7 +3356,7 @@ def _build_standup_schedule_step_screen(
         viewport = Group(*visible)
     content = Group(
         Text(""),
-        standup_title(),
+        _title(),
         Text(""),
         Text(_PAD + heading, style="bold white"),
         build_progress_dots(step_names or _SCHEDULE_STEP_NAMES, step_index, theme=theme),
@@ -5607,6 +5615,9 @@ def _build_standup_input_screen(
     title=None,
     box_rows: int = 1,
     show_image_hint: bool = False,
+    message: str = "",
+    step_names: list[str] | None = None,
+    step_index: int = 0,
 ) -> Panel:
     """Build a themed single-line input screen for the Daily Standup flows.
 
@@ -5622,6 +5633,11 @@ def _build_standup_input_screen(
     Alt+Enter; the cursor row always stays visible) for longer free-text
     answers like standup updates — Enter confirms.
 
+    ``message`` renders a short context paragraph above the prompt, and
+    ``step_names``/``step_index`` swap the dim step label for the same progress
+    dots the option-list step screen shows — so a wizard whose text step lands
+    first (an earlier step was skipped) still says where the user is and why.
+
     # See docs: "Daily Standup" — TUI page
     # See docs: "TUI system" — voice input overlay
     """
@@ -5631,8 +5647,24 @@ def _build_standup_input_screen(
 
     theme = theme or STANDUP_THEME
     title = title if title is not None else standup_title()
-    sub = Text(_PAD + (step or "Configure standup"), style="dim", justify="left")
+    if step_names:
+        sub = Group(
+            Text(_PAD + (step or ""), style="bold white"),
+            build_progress_dots(step_names, step_index, theme=theme),
+        )
+    else:
+        sub = Text(_PAD + (step or "Configure standup"), style="dim", justify="left")
     box_style = border_style or theme.accent
+
+    # Context rows, wrapped by hand: the pad computation below counts rows, so a
+    # paragraph left to Rich's wrapping would be counted as one and overflow.
+    context_rows: list[Text] = []
+    if message:
+        import textwrap
+
+        for ln in textwrap.wrap(message, max(40, min(width - len(_PAD) - 6, 100))):
+            context_rows.append(Text(_PAD + "  " + ln, style=theme.desc))
+        context_rows.append(Text(""))
 
     # Prompt label + a bordered input field showing the current value and a cursor.
     label = Text(_PAD + "  ", justify="left")
@@ -5715,12 +5747,12 @@ def _build_standup_input_screen(
         hint_line = Text(_PAD + "  " + hints, style=theme.dim, justify="left")
 
     # Vertically pad the middle so the field sits in the upper-third like the dashboard.
-    body: list = [label, Text(""), *box_lines, Text(""), hint_line]
+    body: list = [*context_rows, label, Text(""), *box_lines, Text(""), hint_line]
     pad_rows = max(0, calc_viewport(height, header_h=6, action_h=1) - len(body))
     body.extend(Text("") for _ in range(pad_rows))
 
     content = Group(Text(""), title, Text(""), sub, Text(""), *body)
-    return build_page_panel(content, theme=STANDUP_THEME, height=height)
+    return build_page_panel(content, theme=theme, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -5888,7 +5920,7 @@ class _EditableRow(Text):
 
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = ["Credentials", "System"]
+_SETTINGS_TABS: list[str] = ["Credentials", "Sharing", "System"]
 
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
@@ -5896,6 +5928,10 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     "Credentials": ["provider", "jira", "azure", "github", "notion", "slack"],
     # AWS credentials used to live here; they moved beside the provider that uses
     # them, so Bedrock has no section of its own any more.
+    # Sharing is its own tab, not a System section: who can open a shared
+    # board is the first thing a host looks for, and a tab name is visible the
+    # instant Settings opens.
+    "Sharing": ["sharing"],
     "System": ["storage", "standup", "voice", "advanced"],
 }
 
@@ -6034,11 +6070,14 @@ _TAB_GAP = 3  # spaces between tab labels
 
 def settings_tab_action(active_tab: int) -> str:
     """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
-    level) or 'setup' (Credentials → wizard). The data directory is no longer a tab
-    action — it's the Storage box's row, opened like any other value."""
+    level), 'sharing' (Sharing → the Cloudflare Access wizard) or 'setup'
+    (Credentials → wizard). The data directory is no longer a tab action — it's
+    the Storage box's row, opened like any other value."""
     label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
     if label == "System":
         return "loglevel"
+    if label == "Sharing":
+        return "sharing"
     return "setup"
 
 
@@ -6664,13 +6703,53 @@ def _build_settings_screen(
         # An arbitrary integer, so it stays typed — presets would rule out every
         # number that is not one of them.
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
-        # Auto-expiry for retro/poker/output-share Cloudflare tunnels, in minutes.
-        # 0 disables it — the tunnel then runs until the board/share is closed.
-        _row("Tunnel Timeout (min)", config_data.get("TUNNEL_TIMEOUT_MINUTES", "60"), env="TUNNEL_TIMEOUT_MINUTES")
         _choice_row("Tips", "TIPS_ENABLED")
         _choice_row("Duck", "DUCK_ENABLED")
         _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
+
+    def _sec_sharing() -> None:
+        """How shared boards reach the people you send them to.
+
+        Its own section rather than three rows in Advanced: the tier decides who
+        can open a board, and the five keys under it are meaningless anywhere
+        else on the page.
+        """
+        _heading("Sharing")
+        # Auto-expiry for retro/poker/output-share Cloudflare tunnels, in minutes.
+        # 0 disables it — the tunnel then runs until the board/share is closed.
+        _row("Tunnel Timeout (min)", config_data.get("TUNNEL_TIMEOUT_MINUTES", "60"), env="TUNNEL_TIMEOUT_MINUTES")
+        # Which share tier the live boards and Share Online use. "quick" (the
+        # default) is the zero-setup public tunnel behind a join code; "access"
+        # serves the host's own hostname behind Cloudflare Access. Not a
+        # _choice_row: Enter opens the setup wizard rather than cycling, because
+        # turning the tier on is five steps against Cloudflare, not a value.
+        # The other five keys appear only once it is on — they mean nothing on
+        # the default path.
+        _share_access = config_data.get("YEABOI_SHARE_MODE", "").strip().lower() == "access"
+        _row(
+            "Share Mode",
+            "access (verified users)" if _share_access else "quick (code-gated)",
+            value_style=theme.good if _share_access else theme.muted,
+            env="YEABOI_SHARE_MODE",
+        )
+        if _share_access:
+            _row("  Tunnel ID", config_data.get("CLOUDFLARE_TUNNEL_ID", ""), env="CLOUDFLARE_TUNNEL_ID")
+            _row(
+                "  Tunnel Credentials",
+                config_data.get("CLOUDFLARE_TUNNEL_CREDENTIALS", ""),
+                env="CLOUDFLARE_TUNNEL_CREDENTIALS",
+            )
+            _row(
+                "  Access Hostname", config_data.get("CLOUDFLARE_ACCESS_HOSTNAME", ""), env="CLOUDFLARE_ACCESS_HOSTNAME"
+            )
+            _row("  Access Team", config_data.get("CLOUDFLARE_ACCESS_TEAM", ""), env="CLOUDFLARE_ACCESS_TEAM")
+            _row("  Access AUD", config_data.get("CLOUDFLARE_ACCESS_AUD", ""), env="CLOUDFLARE_ACCESS_AUD")
+            _row(
+                "  Access Admins",
+                config_data.get("CLOUDFLARE_ACCESS_ADMIN_EMAILS", ""),
+                env="CLOUDFLARE_ACCESS_ADMIN_EMAILS",
+            )
 
     _builders = {
         "provider": _sec_provider,
@@ -6682,6 +6761,7 @@ def _build_settings_screen(
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,
+        "sharing": _sec_sharing,
         "advanced": _sec_advanced,
     }
     active_tab = max(0, min(active_tab, len(_SETTINGS_TABS) - 1))
@@ -6865,7 +6945,9 @@ def _build_settings_screen(
         viewport_renderable = Group(*padded_lines)
 
     # Context hint replaces the old button row: the tab bar is the navigation now.
-    _enter_label = {"loglevel": "cycle log level"}.get(settings_tab_action(active_tab), "configure")
+    _enter_label = {"loglevel": "cycle log level", "sharing": "set up sharing"}.get(
+        settings_tab_action(active_tab), "configure"
+    )
     hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
     if editing is not None:
         # In-place edit mode: keys go to the field being edited.

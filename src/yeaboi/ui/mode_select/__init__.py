@@ -186,6 +186,7 @@ def _run_output_share_flow(
     """
     from yeaboi.ui.shared._output_share import run_output_share
 
+    _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
     return run_output_share(
         console,
         live,
@@ -1475,6 +1476,16 @@ def _collect_settings_data() -> dict:
         "LOG_LEVEL",
         "SESSION_PRUNE_DAYS",
         "TUNNEL_TIMEOUT_MINUTES",
+        # The share tier and its Cloudflare Access configuration. None of these
+        # is a secret — the tunnel's actual credential stays in a file on disk
+        # that yeaboi only ever references by path.
+        "YEABOI_SHARE_MODE",
+        "CLOUDFLARE_TUNNEL_ID",
+        "CLOUDFLARE_TUNNEL_CREDENTIALS",
+        "CLOUDFLARE_ACCESS_HOSTNAME",
+        "CLOUDFLARE_ACCESS_TEAM",
+        "CLOUDFLARE_ACCESS_AUD",
+        "CLOUDFLARE_ACCESS_ADMIN_EMAILS",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
@@ -1958,6 +1969,533 @@ def _test_microphone(console: Console, live, read_key, frame_time, supports_time
     finally:
         recorder.stop()
         music.resume_after_voice()
+
+
+_ACCESS_STEPS = ["Sign in", "Hostname", "Access app", "Verify"]
+
+
+def _run_access_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> str | None:
+    """Guided setup for the Cloudflare Access tier. Returns a status line, or None if cancelled.
+
+    Structure is the analysis wizard's (`_WIZARD_STEPS`): a step table walked by
+    an integer index, one entry per screen so "back" is only ever ``index -= 1``,
+    with an applicability predicate that is transparent in both directions —
+    backing over a step that was skipped forwards skips it backwards too.
+
+    It departs from the standup wizard on one point, deliberately: **each fact is
+    saved the moment it is known, not at the end.** These steps have side effects
+    on a real Cloudflare account. Creating a tunnel and then losing its id to an
+    Esc would leave an orphan this wizard cannot see it made.
+
+    The screens are the existing option-list step screen and the themed line
+    editor. Nothing here draws a new widget — a settings flow that grew its own
+    screen family would also grow its own scrolling and back-navigation bugs.
+    """
+    import threading as _threading
+
+    from yeaboi.config import SHARE_MODE_ACCESS
+    from yeaboi.sharing import access_setup
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+
+    # read_state() may download ~38 MB and re-hashes the cached binary, so it
+    # runs on a worker like every other slow step, and its answer is cached:
+    # _applicable() is consulted on every loop iteration.
+    state = _run_on_worker(
+        access_setup.read_state,
+        lambda elapsed: live.update(
+            _build_standup_schedule_step_screen(
+                [("checking your setup…", "")],
+                0,
+                step_index=0,
+                heading="Cloudflare Access",
+                width=console.size[0],
+                height=max(10, console.size[1] - 1),
+                step_names=_ACCESS_STEPS,
+                theme=SETTINGS_THEME,
+                title_fn=settings_title,
+            )
+        ),
+        frame_time,
+    )
+    if not state.binary:
+        return "Could not obtain cloudflared — check the network and try again."
+
+    picked: dict[str, str] = {}
+    logger.info("access setup wizard: opened (logged_in=%s, jwt=%s)", state.logged_in, state.jwt_installed)
+
+    def _work(heading: str, step_index: int, label: str, fn, *, detail=None):
+        """Run one blocking cloudflared step on a worker while the page animates.
+
+        The house rule, uniform with the voice install and the Ollama pull: the
+        loop that draws is never the loop that waits, worker→UI state is a plain
+        dict (single-key writes are atomic under the GIL), Esc sets an Event the
+        child polls, and the frame time is floored here rather than trusted to
+        the key reader.
+        """
+        prog = {"phrase": label}
+        out: dict = {}
+        cancel = _threading.Event()
+
+        def _target() -> None:
+            try:
+                out["value"] = fn(lambda phrase: prog.__setitem__("phrase", phrase), cancel)
+            except Exception as exc:  # noqa: BLE001 — a traceback here prints through the Live
+                logger.error("access setup wizard: %s failed: %s", label, exc, exc_info=True)
+                out["value"] = access_setup.Outcome(False, "That step failed — see the log.", "CRASH")
+
+        thread = duck_working_thread(_target, name="access-setup")
+        thread.start()
+        while thread.is_alive():
+            frame_started = time.monotonic()
+            w, h = console.size
+            live.update(
+                _build_standup_schedule_step_screen(
+                    [(prog["phrase"], (detail and detail()) or "Esc cancels")],
+                    0,
+                    step_index=step_index,
+                    heading=heading,
+                    width=w,
+                    height=max(10, h - 1),
+                    step_names=_ACCESS_STEPS,
+                    theme=SETTINGS_THEME,
+                    title_fn=settings_title,
+                )
+            )
+            key = read_key(timeout=frame_time) if supports_timeout else None
+            if key in ("esc", "q"):
+                cancel.set()
+            spent = time.monotonic() - frame_started
+            if spent < frame_time:
+                time.sleep(frame_time - spent)
+        thread.join()
+        return out.get("value")
+
+    def _ask(prompt: str, step_index: int, *, default: str = "", validate=None, message: str = "") -> str | None:
+        """One text step, re-prompting until ``validate`` accepts. None on Esc.
+
+        Every prompt carries the step strip and a context paragraph: when an
+        earlier step is skipped (already signed in), a text field can be the
+        first thing the wizard shows, and a bare input box explains nothing.
+        """
+        notice = ""
+        while True:
+            value = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=f"{prompt} — {notice}" if notice else prompt,
+                step=_ACCESS_STEPS[step_index],
+                default=default,
+                theme=SETTINGS_THEME,
+                title=settings_title(),
+                message=message,
+                step_names=_ACCESS_STEPS,
+                step_index=step_index,
+            )
+            if value is None:
+                return None
+            if validate is None or validate(value):
+                return value.strip()
+            notice = "That does not look right — try again."
+
+    def _choice(options, step_index: int, heading: str, *, message: str = "") -> int | str:
+        return _run_schedule_choice_step(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            options=options,
+            initial=0,
+            step_index=step_index,
+            heading=heading,
+            step_names=_ACCESS_STEPS,
+            message=message,
+            theme=SETTINGS_THEME,
+            title_fn=settings_title,
+        )
+
+    # ── the steps ────────────────────────────────────────────────────────────────────
+
+    def _step_login(_direction: int) -> str:
+        # Say what the browser will ask for before opening it. cloudflared's
+        # page is a bare zone picker with no explanation, and it needs a domain
+        # already on Cloudflare — a prerequisite worth stating as a requirement
+        # line here, with a way to go add one, rather than discovering it in a
+        # tab with no obvious next action.
+        while True:
+            chosen = _choice(
+                [
+                    ("Open Cloudflare and sign in", "you will pick which of your domains to use"),
+                    ("I don't have a domain on Cloudflare yet", "see how to add one — the free plan is enough"),
+                    ("Back", "leave setup"),
+                ],
+                0,
+                "Sign in to Cloudflare",
+                message=(
+                    "Requires: a Cloudflare account, and a domain added to it. "
+                    "A browser tab will open — sign in, pick the domain you want boards "
+                    "served under from the zone list, and press Authorize, then come back here."
+                ),
+            )
+            if chosen == 1:
+                try:
+                    import webbrowser  # noqa: PLC0415 - matches the repo's other URL call sites
+
+                    webbrowser.open(access_setup.ADD_SITE_URL)
+                except Exception as e:  # noqa: BLE001 - a browser that will not open must not fail the screen
+                    logger.warning("access setup wizard: could not open the add-site page: %s", e)
+                _choice(
+                    [("Back", "return to the sign-in step")],
+                    0,
+                    "Add a domain to Cloudflare",
+                    message=(
+                        f"At {access_setup.ADD_SITE_URL} (opened in your browser): press Add a site, "
+                        "enter your domain — the free plan is enough — then update the nameservers "
+                        "at your registrar as the dashboard instructs. Once the domain shows "
+                        "Active, come back here and sign in."
+                    ),
+                )
+                continue
+            if chosen != 0:
+                return "back"
+            break
+        # The URL is shown as a persistent detail line so it survives every
+        # narrated status change — a browser that did not open leaves this as
+        # the only way through.
+        seen: dict[str, str] = {"url": ""}
+        outcome = _work(
+            "Sign in to Cloudflare",
+            0,
+            "waiting for you to authorize in the browser…",
+            lambda on_line, cancel: access_setup.login(
+                on_line=on_line, on_url=lambda u: seen.__setitem__("url", u), cancel=cancel
+            ),
+            detail=lambda: f"open this if your browser did not: {seen['url']}" if seen["url"] else "Esc cancels",
+        )
+        if outcome is None or not outcome.ok:
+            if outcome is not None and outcome.code == "CANCELLED":
+                return "back"
+            if outcome is not None:
+                # NO_CERT and friends carry their remedy — show it rather than
+                # silently ending setup on a screen the user never saw.
+                _choice([("Back", "")], 0, "Sign-in did not finish", message=outcome.message)
+                return "back"
+            return "stop"
+        return "next"
+
+    def _route(host: str) -> str:
+        """Point DNS at the picked tunnel and store the hostname. "next" or "back"."""
+        outcome = _work(
+            "Hostname",
+            1,
+            "pointing DNS at the tunnel…",
+            lambda on_line, cancel: access_setup.route_dns(picked["id"], host, on_line=on_line, cancel=cancel),
+        )
+        if outcome is not None and not outcome.ok:
+            if outcome.code != "DNS_EXISTS":
+                _choice([("Back", outcome.message)], 1, "Hostname")
+                return "back"
+            # The record may already point at this very tunnel (a re-run), or at
+            # something else entirely. We refuse to overwrite either way, so the
+            # only honest move is to say so and let the host decide.
+            if (
+                _choice(
+                    [
+                        ("Use it anyway", "the record already points at this tunnel"),
+                        ("Pick another hostname", "it points somewhere else"),
+                    ],
+                    1,
+                    "That hostname already has a DNS record",
+                    message=outcome.message,
+                )
+                != 0
+            ):
+                return "back"
+        picked["hostname"] = host.strip().lower()
+        access_setup.save(CLOUDFLARE_ACCESS_HOSTNAME=picked["hostname"])
+        return "next"
+
+    def _step_hostname(_direction: int) -> str:
+        """The one real question — everything after it is decided, not asked.
+
+        The tunnel is `resolve_tunnel`'s pick (the only one, or the one named
+        "yeaboi"), created when none exists; DNS is routed at it. The two
+        screens that can still interrupt are safety rules, not questions: the
+        picker when several tunnels exist and none is ours, and the
+        DNS-collision choice, because a record is never overwritten silently.
+        """
+        from yeaboi.config import access_hostname
+
+        saved = access_hostname()
+        domain = _ask(
+            "Your domain on Cloudflare (e.g. acme.com)",
+            1,
+            default=saved if saved.startswith(f"{access_setup.BOARDS_SUBDOMAIN}.") else "",
+            validate=lambda v: access_setup.valid_hostname(access_setup.boards_hostname(v)),
+            message=(
+                "Boards will be served at boards.<your domain> — you own acme.com, they "
+                "appear at https://boards.acme.com. Type just the domain; the boards. part "
+                "is added for you, and the full hostname can be changed any time in "
+                "Settings ▸ Sharing. yeaboi points it at a tunnel in your Cloudflare "
+                "account (yours, or one it creates named 'yeaboi') and puts a verified "
+                "sign-in in front."
+            ),
+        )
+        if domain is None:
+            return "back"
+        host = access_setup.boards_hostname(domain)
+        from yeaboi.config import access_credentials_file, access_tunnel_id
+
+        if access_tunnel_id() and access_credentials_file():
+            # The tunnel facts are already stored — this step is only running for
+            # the hostname. Re-resolving could pick a *different* tunnel and
+            # silently overwrite the stored id, so the stored one is kept;
+            # changing tunnels is the Settings ▸ Sharing rows' job.
+            picked["id"] = access_tunnel_id()
+            return _route(host)
+        found = _work(
+            "Hostname", 1, "finding your tunnel…", lambda on_line, cancel: access_setup.list_tunnels(cancel=cancel)
+        )
+        tunnels, listed = found if isinstance(found, tuple) else ((), access_setup.Outcome(False, "Cancelled."))
+        if not listed.ok:
+            _choice([("Back", listed.message)], 1, "Hostname")
+            return "back"
+        info = access_setup.resolve_tunnel(tunnels)
+        if info is None and tunnels:
+            chosen = _choice([(t.name, t.id) for t in tunnels], 1, "Which tunnel should serve your boards?")
+            if chosen == "back":
+                return "back"
+            info = tunnels[chosen]
+        if info is None:
+            created = _work(
+                "Hostname",
+                1,
+                f"creating tunnel '{access_setup.DEFAULT_TUNNEL_NAME}'…",
+                lambda on_line, cancel: access_setup.create_tunnel(
+                    access_setup.DEFAULT_TUNNEL_NAME, on_line=on_line, cancel=cancel
+                ),
+            )
+            # _work returns an Outcome (not a pair) if the step raised, so this
+            # cannot unpack blindly — doing so would throw through the Live,
+            # which is the failure _work's handler exists to prevent.
+            if isinstance(created, tuple):
+                info, outcome = created
+            else:
+                info, outcome = None, created
+            if info is None:
+                _choice([("Back", outcome.message if outcome else "Could not create the tunnel")], 1, "Hostname")
+                return "back"
+        credentials = info.credentials or access_setup.default_credentials(info.id)
+        picked["id"] = info.id
+        access_setup.save(CLOUDFLARE_TUNNEL_ID=info.id, CLOUDFLARE_TUNNEL_CREDENTIALS=credentials)
+        return _route(host)
+
+    def _step_app(_direction: int) -> str:
+        """The one step yeaboi does not do for you, and why.
+
+        Creating the Access application needs a zone-scoped Cloudflare API token
+        that can also create tunnels and DNS records — a credential far more
+        dangerous than anything this tier mints, and one yeaboi would then have
+        to store. So this screen explains, waits, and takes the two values only
+        the dashboard can mint. Admin emails are not asked — blank means no
+        remote visitor gets host powers, and Settings ▸ Sharing grants them
+        any time later.
+        """
+        from yeaboi.config import access_hostname
+
+        host = picked.get("hostname") or access_hostname() or "your hostname"
+        while True:
+            chosen = _choice(
+                [
+                    ("Open the create-application form", "lands straight on Add self-hosted application"),
+                    ("I've created it — continue", "paste its team name and AUD tag next"),
+                    ("Back", "return to the previous step"),
+                ],
+                2,
+                "Create the Access application in the Cloudflare dashboard",
+                message=(
+                    f"On the form that opens (Access controls → Applications → self-hosted):\n"
+                    f"1. Name it anything, e.g. yeaboi boards; set the application domain to {host}.\n"
+                    "2. In the policy: Action = Allow; under Include pick Emails and list your\n"
+                    "   teammates' addresses — or pick 'Emails ending in' with @your-company.com\n"
+                    "   to allow everyone at the company. Name the policy anything; save it.\n"
+                    "3. Save the application, open its Overview tab, copy the Audience (AUD)\n"
+                    "   tag, and come back here."
+                ),
+            )
+            if chosen == 0:
+                try:
+                    import webbrowser  # noqa: PLC0415 - matches the repo's other URL call sites
+
+                    webbrowser.open(access_setup.ACCESS_APP_ADD_URL)
+                except Exception as e:  # noqa: BLE001 - a browser that will not open must not fail the screen
+                    logger.warning("access setup wizard: could not open the Zero Trust dashboard: %s", e)
+                continue
+            if chosen != 1:
+                return "back"
+            break
+        # The team name and AUD are not asked when they can be read: the
+        # application just created makes the hostname's sign-in redirect carry both.
+        found = _work(
+            "Access app",
+            2,
+            f"reading your team name from {host}'s sign-in page…",
+            lambda on_line, cancel: access_setup.discover_app(host),
+        )
+        team, aud_hint = found if isinstance(found, tuple) else ("", "")
+        if not team:
+            asked = _ask(
+                "Your Zero Trust team name",
+                2,
+                message=(
+                    "It could not be read from the hostname yet. It is the <team> part of "
+                    "https://<team>.cloudflareaccess.com — shown in the Zero Trust dashboard "
+                    "under Settings, and in the URL while you are there."
+                ),
+            )
+            if asked is None:
+                return "back"
+            team = asked
+        aud = _ask(
+            "The application's AUD tag",
+            2,
+            default=aud_hint,
+            message=(
+                (
+                    f"Team '{team}' and the tag below were detected from {host}'s sign-in "
+                    "page. Check the tag matches the Audience (AUD) tag on the application's "
+                    "Overview tab, then press Enter to accept it."
+                )
+                if aud_hint
+                else (
+                    (f"Team '{team}' detected from the sign-in redirect. " if team else "")
+                    + "On the application you just created: its Overview page shows an "
+                    "Application Audience (AUD) tag — a long string of letters and numbers. "
+                    "Copy it and paste it here."
+                )
+            ),
+        )
+        if aud is None:
+            return "back"
+        access_setup.save(CLOUDFLARE_ACCESS_TEAM=team, CLOUDFLARE_ACCESS_AUD=aud)
+        return "next"
+
+    def _step_verify(_direction: int) -> str:
+        # PyJWT never needs input, so it is a phase of Verify, not a step dot.
+        if not access_setup.jwt_installed():
+            outcome = _work(
+                "Verify",
+                3,
+                "installing the verifier (PyJWT)…",
+                lambda on_line, cancel: access_setup.install_jwt(on_line=on_line, cancel=cancel),
+            )
+            if outcome is None or not outcome.ok:
+                _choice([("Back", outcome.message if outcome else "Install cancelled")], 3, "Verify")
+                return "back"
+        # Every other fact is stored the moment it is known. This one is the
+        # switch: writing it before the tier is proven leaves every share
+        # surface refusing to publish until the host finds Settings again.
+        verdict = _work(
+            "Verify", 3, "checking Cloudflare…", lambda on_line, cancel: access_setup.verify(assume_mode=True)
+        )
+        if verdict is None:
+            return "back"
+        if verdict.ok:
+            access_setup.save(YEABOI_SHARE_MODE=SHARE_MODE_ACCESS)
+        closing = (
+            f"{verdict.message} Change any of this later in Settings ▸ Sharing." if verdict.ok else verdict.message
+        )
+        _choice(
+            [("Done", closing)],
+            3,
+            "Verified" if verdict.ok else "Not ready yet",
+            message=closing,
+        )
+        picked["result"] = closing
+        return "done" if verdict.ok else "back"
+
+    runners = (_step_login, _step_hostname, _step_app, _step_verify)
+
+    def _applicable(index: int) -> bool:
+        """Skipped steps are transparent in both directions — see the analysis wizard.
+
+        A step whose facts were already stored (this or any earlier run) is
+        skipped too, so re-entering the wizard resumes at the first missing
+        thing — and a fully configured host goes straight to Verify. Judged
+        against the state read at entry, so a step completed *during* this run
+        stays reachable with Esc. Changing a stored value is the Settings ▸
+        Sharing rows' job, which every skip-path screen names.
+        """
+        missing = set(state.missing_keys)
+        if index == 0:
+            return not (state.logged_in or access_setup.find_cert())
+        if index == 1:
+            return bool(
+                missing & {"CLOUDFLARE_TUNNEL_ID", "CLOUDFLARE_TUNNEL_CREDENTIALS", "CLOUDFLARE_ACCESS_HOSTNAME"}
+            )
+        if index == 2:
+            return bool(missing & {"CLOUDFLARE_ACCESS_TEAM", "CLOUDFLARE_ACCESS_AUD"})
+        return True
+
+    index, direction = 0, 1
+    while 0 <= index < len(runners):
+        if not _applicable(index):
+            index += direction
+            continue
+        outcome = runners[index](direction)
+        logger.info("access setup wizard: step=%s outcome=%s", _ACCESS_STEPS[index], outcome)
+        if outcome == "stop":
+            return "Cloudflare Access setup stopped."
+        if outcome == "done":
+            return picked.get("result", "Cloudflare Access is set up.")
+        direction = 1 if outcome == "next" else -1
+        index += direction
+    return None
+
+
+def _maybe_offer_share_tier(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """One-time, right before the first share: which tier should links use?
+
+    The moment a host first thinks about who can open a link is the moment the
+    verified-users tier is worth one screen — buried in Settings it goes
+    unfound. Any resolution (either choice, or Esc) persists the prompted flag,
+    so the zero-setup default path pays this screen exactly once, ever.
+    """
+    from yeaboi.config import share_tier_prompted, tunnels_disabled
+
+    if tunnels_disabled() or share_tier_prompted():
+        return
+    from yeaboi.sharing import access_setup
+    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+
+    logger.info("share tier prompt: first share, asking")
+    chosen = _run_schedule_choice_step(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        options=[
+            ("Anyone with the link + a join code", "zero setup — the default"),
+            ("Only verified users", "needs a domain on Cloudflare (~3 min setup)"),
+        ],
+        initial=0,
+        step_index=0,
+        heading="Who should be able to open your shared boards?",
+        step_names=["Sharing"],
+        message="Asked once, before your first share. Change it any time in Settings ▸ Sharing.",
+        theme=SETTINGS_THEME,
+        title_fn=settings_title,
+    )
+    access_setup.save(YEABOI_SHARE_TIER_PROMPTED="1")
+    logger.info("share tier prompt: answered %s", chosen)
+    if chosen == 1:
+        result = _run_access_setup(console, live, read_key, frame_time, supports_timeout)
+        logger.info("share tier prompt: setup result=%s", result)
 
 
 def _pick_voice_device(console: Console, live, read_key, frame_time, supports_timeout) -> str | None:
@@ -3175,6 +3713,9 @@ def _standup_read_line(
     attachments: list[str] | None = None,
     scope_id: str = "",
     initial: str = "",
+    message: str = "",
+    step_names: list[str] | None = None,
+    step_index: int = 0,
 ) -> str | None:
     """Collect a single line of input inside the Live display (themed, read_key-driven).
 
@@ -3227,6 +3768,9 @@ def _standup_read_line(
                 title=title,
                 box_rows=box_rows,
                 show_image_hint=attachments is not None,
+                message=message,
+                step_names=step_names,
+                step_index=step_index,
             )
         )
 
@@ -3244,6 +3788,9 @@ def _standup_read_line(
             height=max(10, h - 1),
             border_style=border,
             status=line,
+            message=message,
+            step_names=step_names,
+            step_index=step_index,
             theme=theme,
             title=title,
             box_rows=box_rows,
@@ -4549,12 +5096,15 @@ def _run_schedule_choice_step(
     heading: str,
     step_names: list[str] | None = None,
     message: str = "",
+    theme=None,
+    title_fn=None,
 ) -> int | str:
-    """One single-select (radio) step of a standup option-list wizard.
+    """One single-select (radio) step of an option-list wizard.
 
     The cursor row IS the selection: Enter returns its index, Esc returns
     ``"back"`` so the wizard can step backwards (analysis-wizard convention).
-    ``step_names``/``message`` let a non-schedule wizard reuse this loop.
+    ``step_names``/``message``/``theme``/``title_fn`` let a non-standup wizard
+    reuse this loop without wearing standup's masthead.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
 
@@ -4571,6 +5121,8 @@ def _run_schedule_choice_step(
                 height=max(10, h - 1),
                 message=message,
                 step_names=step_names,
+                theme=theme,
+                title_fn=title_fn,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -10792,7 +11344,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     def _start_remote() -> None:
         def _worker() -> None:
             try:
-                from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
 
                 remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
                 binary = ensure_cloudflared()
@@ -10820,7 +11372,21 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     remote["expired"] = True
                     logger.info("retro: secure link expired (session=%s)", session_id)
 
-                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
+                # One call decides the tier. In the quick tier this is the same
+                # CloudflareTunnel as before; in the Access tier it is a named
+                # tunnel plus the identity gate the server verifies against, and
+                # a refusal here NEVER falls back to a public quick tunnel — a
+                # host who configured Access and silently got a trycloudflare.com
+                # URL is worse off than one who got no share at all.
+                transport = open_tunnel(server.port, surface="retro", binary=binary, on_expire=_on_expired)
+                if transport.tunnel is None:
+                    logger.warning("retro: secure link unavailable — %s", transport.error)
+                    remote["status"] = f"Secure link unavailable — {transport.error}"
+                    remote["failed"] = True
+                    return
+                # Armed before start(), so verification is on before the door is.
+                server.set_access_gate(transport.gate)
+                tunnel = transport.tunnel
                 # Published BEFORE start(), which blocks for up to the 45 s
                 # handshake budget (URL + edge registration + a possible
                 # --region retry) plus the ~30 s DNS-propagation gate. The
@@ -10834,9 +11400,18 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 if not public:
                     tunnel.stop()
                     remote["tunnel"] = None
-                    logger.warning("retro: secure link failed — tunnel did not start within timeout")
+                    # The Access tier's failures are host *setup* errors — a
+                    # credentials file that is not there, a tunnel id Cloudflare
+                    # does not know — so name the one that happened rather than
+                    # sending the host to their router.
+                    detail = getattr(tunnel, "last_error", "")
+                    logger.warning("retro: secure link failed — %s", detail or "tunnel did not start within timeout")
                     server.set_share_state("failed")
-                    remote["status"] = "Secure link failed — tunnel did not start (see logs)."
+                    remote["status"] = (
+                        f"Secure link failed — {detail}."
+                        if detail
+                        else "Secure link failed — tunnel did not start (see logs)."
+                    )
                     remote["failed"] = True
                     return
                 logger.info("retro: secure link ready (port=%s)", server.port)
@@ -10881,6 +11456,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
+    _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
     _start_remote()
 
     # Anonymize state: None = live board; an AnonymizedOutput = mask card text/authors.
@@ -11683,7 +12259,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     def _start_remote() -> None:
         def _worker() -> None:
             try:
-                from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
 
                 remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
                 binary = ensure_cloudflared()
@@ -11707,7 +12283,21 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     remote["expired"] = True
                     logger.info("poker: secure link expired (session=%s)", session_id)
 
-                tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
+                # One call decides the tier. In the quick tier this is the same
+                # CloudflareTunnel as before; in the Access tier it is a named
+                # tunnel plus the identity gate the server verifies against, and
+                # a refusal here NEVER falls back to a public quick tunnel — a
+                # host who configured Access and silently got a trycloudflare.com
+                # URL is worse off than one who got no share at all.
+                transport = open_tunnel(server.port, surface="poker", binary=binary, on_expire=_on_expired)
+                if transport.tunnel is None:
+                    logger.warning("poker: secure link unavailable — %s", transport.error)
+                    remote["status"] = f"Secure link unavailable — {transport.error}"
+                    remote["failed"] = True
+                    return
+                # Armed before start(), so verification is on before the door is.
+                server.set_access_gate(transport.gate)
+                tunnel = transport.tunnel
                 # Published BEFORE start() so the page's finally can stop it —
                 # see the retro loop for the orphaned-cloudflared note.
                 remote["tunnel"] = tunnel
@@ -11715,8 +12305,17 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 if not public:
                     tunnel.stop()
                     remote["tunnel"] = None
-                    logger.warning("poker: secure link failed — tunnel did not start within timeout")
-                    remote["status"] = "Secure link failed — tunnel did not start (see logs)."
+                    # The Access tier's failures are host *setup* errors — a
+                    # credentials file that is not there, a tunnel id Cloudflare
+                    # does not know — so it names the one that happened rather
+                    # than sending the host to their router.
+                    detail = getattr(tunnel, "last_error", "")
+                    logger.warning("poker: secure link failed — %s", detail or "tunnel did not start within timeout")
+                    remote["status"] = (
+                        f"Secure link failed — {detail}."
+                        if detail
+                        else "Secure link failed — tunnel did not start (see logs)."
+                    )
                     remote["failed"] = True
                     return
                 logger.info("poker: secure link ready (port=%s)", server.port)
@@ -11752,11 +12351,20 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
     # Start it now — the board is open and the join code is already valid.
+    _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
     _start_remote()
 
     def _actions() -> list[str]:
         # Same leading pair as the retro board and the Share Online screen.
         base = ["Copy Invite", "Copy Host Link", "Export", "Close"]
+        # The duel records on *this* machine. Opening the floor is an admin
+        # route, but the admin secret rides in the host link's query string —
+        # which reaches Cloudflare's edge log — and it is static for the life of
+        # this screen. So the mic answers to a local control as well: nothing a
+        # remote request can send turns it on by itself. Label carries the state
+        # because a microphone's status must never be something you have to go
+        # looking for.
+        base.insert(2, f"Duel Mic: {'ON' if server.duel_mic_armed else 'off'}")
         # Appended, not inserted — a worker thread flips `failed` between a frame
         # being drawn and a keypress being handled (see the retro loop).
         if remote["failed"]:
@@ -11830,7 +12438,19 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 label = acts[sel] if sel < len(acts) else "Close"
                 if label == "Close":
                     break
-                if label == "Copy Invite":
+                if label.startswith("Duel Mic:"):
+                    armed = not server.duel_mic_armed
+                    server.set_duel_mic_armed(armed)
+                    logger.info(
+                        "poker: duel mic %s by the host (session=%s)", "armed" if armed else "disarmed", session_id
+                    )
+                    message = (
+                        "Duel mic armed — a duel may now record on this machine."
+                        if armed
+                        else "Duel mic disarmed — a duel cannot open this machine's microphone."
+                    )
+                    scroll = 0
+                elif label == "Copy Invite":
                     from yeaboi.clipboard import copy_markdown_status
                     from yeaboi.sharing.access import invite_url
 
@@ -13820,6 +14440,47 @@ def select_mode(
                     _settings_save_data_dir), not on a screen of its own.
                     """
                     nonlocal _s_edit, _settings_data
+                    if env == "YEABOI_SHARE_MODE":
+                        # Turning this on is five steps against Cloudflare, not a
+                        # word to type — so Enter opens the wizard, the way
+                        # VOICE_DEVICE opens a picker. Turning it *off* stays a
+                        # one-key answer: a host who wants their boards back on
+                        # the zero-setup tier should not walk a setup flow to
+                        # say so.
+                        from yeaboi.config import SHARE_MODE_ACCESS, SHARE_MODE_QUICK, apply_config_value
+                        from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+
+                        _pick = _run_schedule_choice_step(
+                            console,
+                            live,
+                            read_key,
+                            _FRAME_TIME,
+                            _supports_timeout,
+                            options=[
+                                ("Set up verified users…", "Cloudflare Access — only people you name get in"),
+                                ("Quick tunnels", "the default: a random URL and a join code"),
+                            ],
+                            initial=0 if _settings_data.get(env, "") == SHARE_MODE_ACCESS else 1,
+                            step_index=0,
+                            heading="How should shared boards be protected?",
+                            step_names=["Choose"],
+                            theme=SETTINGS_THEME,
+                            title_fn=settings_title,
+                        )
+                        if _pick == "back":
+                            return
+                        if _pick == 1:
+                            apply_config_value(env, SHARE_MODE_QUICK)
+                            _settings_data = _collect_settings_data()
+                            _settings_data["_message"] = "Shared boards use quick tunnels."
+                            logger.info("Settings: YEABOI_SHARE_MODE set to quick")
+                            return
+                        _result = _run_access_setup(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _settings_data = _collect_settings_data()
+                        if _result:
+                            _settings_data["_message"] = _result
+                            _settings_voice().say(_result)
+                        return
                     if env == "VOICE_DEVICE":
                         # A device list is a choice, not free text — you cannot type a
                         # name you have not seen. Returns before set_text_entry(True),
@@ -14086,6 +14747,12 @@ def select_mode(
                             apply_level(_new_level)
                             _settings_data = _collect_settings_data()
                             logger.info("Settings: log level cycled to %s", _new_level)
+                        elif _act == "sharing":
+                            logger.info("Settings: launching Cloudflare Access setup from the Sharing tab")
+                            _result = _run_access_setup(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                            _settings_data = _collect_settings_data()
+                            if _result:
+                                _settings_data["_message"] = _result
                         else:
                             # Every other tab → the setup wizard configures it.
                             logger.info("Settings: launching setup wizard (%s)", _SETTINGS_TABS[_s_tab])

@@ -160,6 +160,11 @@ SCRUM_DOCS_DIR = ROOT_DIR / "scrum-docs"
 ENV_FILE = DEFAULT_ROOT_DIR / ".env"
 REPL_HISTORY = ROOT_DIR / "repl-history"
 BIN_DIR = ROOT_DIR / "bin"  # app-managed helper binaries (e.g. cloudflared for retro tunnels)
+# Short-lived files that belong to a *running* process and mean nothing once it
+# exits: today, the ingress file the Access tier generates for cloudflared. Kept
+# out of the config tree deliberately — a config file the user did not write and
+# must not edit is a trap, and this one names a port that changes every launch.
+RUN_DIR = ROOT_DIR / "run"
 ATTACHMENTS_DIR = ROOT_DIR / "attachments"  # screenshots pasted into TUI textboxes (Ctrl+V)
 # Managed drop folder for standup meeting transcripts. Flat, not per-session:
 # a transcript is attributed to a standup by DATE, not by directory. Living
@@ -511,9 +516,33 @@ def get_ship_dir() -> Path:
 
 
 def get_bin_dir() -> Path:
-    """Return the app-managed helper-binary directory, creating it if needed."""
+    """Return the app-managed helper-binary directory, creating it if needed.
+
+    ``0700`` like the run dir, and for the same threat: this holds the
+    ``cloudflared`` binary and its recorded digest, and another local user able
+    to rewrite either would run their code the next time a board is shared.
+    """
+    from yeaboi.config import restrict_permissions
+
     BIN_DIR.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(BIN_DIR, mode=0o700)
     return BIN_DIR
+
+
+def get_run_dir() -> Path:
+    """Return the per-run scratch directory, creating it if needed.
+
+    ``0700`` like the ship dir, and for a sharper reason: the file written here
+    is cloudflared's ingress, which names the loopback port a live board is
+    served on and the path to the tunnel's credentials. Another local user being
+    able to *rewrite* it would let them retarget the tunnel at a service of
+    their choosing on the next launch.
+    """
+    from yeaboi.config import restrict_permissions
+
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(RUN_DIR, mode=0o700)
+    return RUN_DIR
 
 
 def get_attachments_dir(scope_id: str) -> Path:

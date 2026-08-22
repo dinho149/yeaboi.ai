@@ -73,7 +73,7 @@ class TestPolicyBuilder:
 
 
 class TestDocumentHeaders:
-    def test_carries_the_five_protective_headers(self):
+    def test_carries_the_six_protective_headers(self):
         names = {name for name, _ in DOCUMENT_HEADERS}
         assert names == {
             "Cache-Control",
@@ -81,7 +81,23 @@ class TestDocumentHeaders:
             "Referrer-Policy",
             "X-Content-Type-Options",
             "X-Frame-Options",
+            "Permissions-Policy",
         }
+
+    def test_devices_are_denied_except_the_duel_mic(self):
+        """One feature is real, the rest are denied outright.
+
+        The poker duel records each duelist's turn in their own browser
+        (getUserMedia + POST /api/duel/audio), so `microphone` must allow the
+        document's own origin — `microphone=()` would reject every duelist's
+        recording with NotAllowedError and the duel would transcribe silence.
+        Everything else stays an empty allowlist so an injected script cannot
+        quietly ask.
+        """
+        policy_value = dict(DOCUMENT_HEADERS)["Permissions-Policy"]
+        assert "microphone=(self)" in policy_value
+        for feature in ("camera", "geolocation", "payment", "usb"):
+            assert f"{feature}=()" in policy_value
 
     def test_nothing_is_cacheable(self):
         # A share URL dies with the TUI screen. A cached artifact outliving the
