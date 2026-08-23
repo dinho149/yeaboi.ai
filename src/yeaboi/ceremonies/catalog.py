@@ -64,6 +64,15 @@ class CeremonyMode:
     est_cost_usd: float = 0.0  # rough per-run LLM spend, for the authoring screen
     default_weekdays: str = "1-5"
     default_at: str = "09:00"
+    # What this mode's run can be answered *about*, for the two-way Slack lane.
+    # ``artifact_kind`` names the editable artifact a correction would append to
+    # (``artifacts.spec_for``'s vocabulary); ``emits_run_id`` says the engine
+    # takes an ``on_run_id`` callback, so a ceremony can learn the history row
+    # it just wrote rather than guessing at "the latest one" afterwards. A mode
+    # with neither still schedules and delivers — its posts simply carry no run
+    # to answer, which is the honest answer for the agent-usage reports.
+    artifact_kind: str = ""
+    emits_run_id: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +98,8 @@ CATALOG: tuple[CeremonyMode, ...] = (
         fixed_flags=(("deliver", False),),
         est_cost_usd=0.15,
         default_at="09:00",
+        artifact_kind="standup",
+        emits_run_id=True,
     ),
     CeremonyMode(
         key="report",

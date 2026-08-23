@@ -213,3 +213,32 @@ class TestLedger:
         store.record_run(self._run(cost_usd=8.00, fired_at="2026-07-02T09:00:00+00:00"))
         store.record_run(self._run(ceremony="weekly-report", cost_usd=7.00))
         assert store.month_spend("s1", "morning-standup", "2026-08") == pytest.approx(0.40)
+
+
+class TestSkipNext:
+    def test_set_and_clear_round_trip(self, store):
+        store.save(_ceremony())
+        assert store.set_skip_next("s1", "morning-standup", "2026-08-18").skip_next == "2026-08-18"
+        assert store.set_skip_next("s1", "morning-standup", "").skip_next == ""
+
+    def test_an_unknown_ceremony_is_none_not_an_error(self, store):
+        assert store.set_skip_next("s1", "nope", "2026-08-18") is None
+
+    def test_a_junk_date_is_refused_at_the_write(self, store):
+        # It would not crash a screen, but it would silently never match a slot
+        # — a skip that reads as set and never takes effect.
+        store.save(_ceremony())
+        with pytest.raises(ValueError, match="skip_next"):
+            store.set_skip_next("s1", "morning-standup", "next tuesday")
+
+    def test_it_survives_the_json_round_trip(self, store):
+        store.save(_ceremony(skip_next="2026-08-18"))
+        assert store.get("s1", "morning-standup").skip_next == "2026-08-18"
+
+    def test_a_row_written_before_the_field_existed_still_loads(self):
+        # The downgrade case the JSON-blob hydrator promises: an older row
+        # should lose a field it does not know, never fail to load.
+        from yeaboi.ceremonies.store import _dict_to_ceremony
+
+        legacy = {"session_id": "s1", "name": "morning-standup", "mode": "standup"}
+        assert _dict_to_ceremony(legacy).skip_next == ""

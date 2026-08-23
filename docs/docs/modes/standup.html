@@ -129,12 +129,30 @@ yeaboi ceremonies history                      # every fire, including the ones 
       <h2 id="delivery-configuration">Delivery configuration</h2>
       <p>Non-secret settings (time, channels) live per-session in SQLite. Secrets/creds go in <code>~/.yeaboi/.env</code> (see <code>.env.example</code>):</p>
       <ul>
-        <li><strong>Slack</strong> — <code>SLACK_WEBHOOK_URL</code> (an <a href="https://api.slack.com/messaging/webhooks">incoming webhook</a>)</li>
+        <li><strong>Slack</strong> — <code>SLACK_WEBHOOK_URL</code> (an <a href="https://api.slack.com/messaging/webhooks">incoming webhook</a>). Optionally <code>SLACK_BOT_TOKEN</code> + <code>SLACK_CHANNEL_ID</code> instead, which is what lets the channel <a href="#slack-answers-back">answer back</a>.</li>
         <li><strong>Email</strong> — <code>STANDUP_SMTP_HOST/PORT/USER/PASSWORD</code>, <code>STANDUP_SMTP_SENDER</code>, <code>STANDUP_EMAIL_RECIPIENTS</code></li>
         <li><strong>GitHub activity</strong> — <code>GITHUB_TOKEN</code> only; the organisations to cover are picked in <em>Configure &rarr; code sources</em> (each covers every active repo inside it). <code>STANDUP_GITHUB_REPO</code> remains as a legacy single-repo pin.</li>
         <li><strong>Desktop / Terminal</strong> — no configuration required</li>
       </ul>
       <p>Everything uses the Python standard library (Slack via <code>urllib</code>, email via <code>smtplib</code>, desktop via <code>osascript</code>/<code>notify-send</code>) — no new dependencies.</p>
+
+      <h2 id="slack-answers-back">Slack can answer back</h2>
+      <p>With a webhook, Slack is write-only &mdash; and structurally so. An incoming webhook answers a POST with the literal body <code>ok</code> and no message id, so yeaboi can never identify its own message and a reaction on it is unreadable <em>by construction</em>. Two-way is not a flag on the webhook; it is a different credential.</p>
+      <p>Set <code>SLACK_BOT_TOKEN</code> and <code>SLACK_CHANNEL_ID</code> and the standup posts through <code>chat.postMessage</code> instead, which returns the message id. yeaboi records that id as an <strong>anchor</strong> &mdash; a row saying which run that post was about &mdash; and posts one threaded reply per practice signal, each anchored to the member and rule it names. Then <code>yeaboi slack watch --install</code> installs a small job that reads the channel back every few minutes. There is no daemon, no open port and no public endpoint.</p>
+      <table>
+        <thead><tr><th>Where</th><th>What you do</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>On the post</td><td>&#9208; &#9654;&#65039; &#128683;</td><td>Pause, resume, or skip the ceremony's next occurrence</td></tr>
+          <tr><td>On a signal reply</td><td>&#128077; &#128078;</td><td>Answer that practice signal &mdash; a &#128078; stops the detector firing for that member and rule</td></tr>
+          <tr><td>In the thread</td><td><code>pause</code> / <code>resume</code> / <code>skip</code>, alone</td><td>The same acts, typed</td></tr>
+          <tr><td>In the thread</td><td>anything else</td><td>An attributed note on that run, through the same validator a teammate's browser edit goes through</td></tr>
+        </tbody>
+      </table>
+      <p>A thumb <em>on the post</em> does nothing and says so: it cannot say which member's signal it means, and guessing is exactly the inference the habit detector exists to refuse.</p>
+      <p>Who may act is <code>SLACK_ALLOWED_MEMBER_IDS</code> &mdash; a small hand-curated list of member ids, attributed by Slack's own servers. It fails closed in three directions: empty means nobody (and the reader then never calls Slack at all), <strong>one malformed entry voids the whole list</strong> because a half-filled allowlist is the more dangerous state, and the bot's own id is never authorised. An unlisted person is ignored silently &mdash; the channel is not the place to announce who is unauthorised.</p>
+      <p>What an allowlisted reply <em>can</em> reach: one attributed, injection-swept annotation on today's run; a pause, resume or skip in that session's store; a thumbs verdict on an anchored signal. What it <em>cannot</em>: change any generated field &mdash; a reply may <em>add</em> prose, never <em>change</em> prose &mdash; reach another session or another member and rule, delete anything, add or remove an operating-system job, or spend money. A pause from Slack writes a database flag and never touches launchd or crontab; the drift shows on the Ceremonies page.</p>
+      <p>Run <code>yeaboi slack check</code> before trusting any of it, <code>yeaboi slack history</code> to see what was asked for and what became of it, and <code>yeaboi slack link</code> to say which team member a Slack user is (used only to put a name rather than an id on a correction &mdash; everything works without it).</p>
+      <p>The bot needs <code>chat:write</code>, <code>channels:history</code> (or <code>groups:history</code>), <code>reactions:read</code> and <code>users:read</code>, and it must be invited to the channel &mdash; <code>not_in_channel</code> is the most common real failure, and its fix is <code>/invite</code>. The webhook keeps working with no token set, so two-way is opt-in rather than a migration.</p>
 
       <h2 id="exports">Exports</h2>
       <p>Every standup — generated in the TUI, run headlessly, or fired on a schedule — is auto-saved as Markdown and self-contained HTML under <code>~/.yeaboi/exports/standup/&lt;project&gt;/</code> (dated <code>standup-YYYY-MM-DD.md</code> / <code>.html</code>), so the output is a shareable document rather than something you reconstruct from logs. The <strong>Export</strong> button on the page re-writes the latest report on demand, just like the Analysis and Planning pages.</p>

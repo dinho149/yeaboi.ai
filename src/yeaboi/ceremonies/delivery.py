@@ -26,9 +26,10 @@ import subprocess
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from email.message import EmailMessage
 
-from yeaboi.agent.state import Dispatch
+from yeaboi.agent.state import Dispatch, MessageRef
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,11 @@ class NotificationDelivery(ABC):
     """Base class for a single delivery channel."""
 
     name: str = ""
+
+    #: Where the last successful send landed, when the channel has a durable
+    #: address for it. Only Slack-with-a-bot-token sets this; a webhook, an
+    #: SMTP message and a desktop banner have nothing to point back at.
+    receipt: MessageRef | None = None
 
     @abstractmethod
     def send(self, dispatch: Dispatch) -> bool:
@@ -119,20 +125,38 @@ class DesktopDelivery(NotificationDelivery):
 
 
 class SlackDelivery(NotificationDelivery):
-    """Post to a Slack incoming webhook."""
+    """Post to Slack — as a bot when two-way is configured, else to the webhook.
+
+    The two transports are not interchangeable and the fallback is one-way on
+    purpose. ``chat.postMessage`` returns the ``(channel, ts)`` that makes a
+    message answerable, which is the only reason the token path exists; but it
+    also changes the **visible sender** — a webhook posts as its configured app,
+    a bot posts as the bot user and must first be invited to the channel. So
+    the token path is taken only when a token *and* a channel are both set
+    (:func:`config.slack_two_way_ready`), and a failed ``chat.postMessage``
+    falls back to the webhook rather than failing the delivery. That message is
+    simply not answerable; the standup still lands.
+    """
 
     name = CHANNEL_SLACK
 
-    def __init__(self, webhook_url: str):
+    def __init__(self, webhook_url: str, *, bot_token: str = "", channel: str = ""):
         self.webhook_url = webhook_url
+        self.bot_token = bot_token
+        self.channel = channel
+        self.receipt: MessageRef | None = None
 
     def send(self, dispatch: Dispatch) -> bool:
+        self.receipt = None
+        text = dispatch.body or dispatch.summary
+        if self.bot_token and self.channel and self._send_as_bot(text, dispatch.title):
+            return True
         if not self.webhook_url:
             logger.warning("delivery[slack] skipped — no SLACK_WEBHOOK_URL configured")
             return False
         import json
 
-        payload = json.dumps({"text": dispatch.body or dispatch.summary}).encode("utf-8")
+        payload = json.dumps({"text": text}).encode("utf-8")
         # self.webhook_url is the user's own configured https Slack webhook.
         req = urllib.request.Request(self.webhook_url, data=payload, headers={"Content-Type": "application/json"})  # noqa: S310
         logger.info("delivery[slack]: POSTing %s", dispatch.title or "dispatch")
@@ -145,6 +169,23 @@ class SlackDelivery(NotificationDelivery):
         except (urllib.error.URLError, OSError) as e:
             logger.error("delivery[slack] failed: %s", e)
             return False
+
+    def _send_as_bot(self, text: str, title: str) -> bool:
+        """Post via chat.postMessage and keep the receipt. False falls back."""
+        from yeaboi.tools import slack as slack_api
+
+        logger.info("delivery[slack]: posting %s as a bot", title or "dispatch")
+        resp = slack_api.post_message(self.channel, text, token=self.bot_token)
+        if not resp.ok:
+            # Not an error for the *delivery* — the webhook is about to try.
+            logger.warning("delivery[slack]: bot post failed (%s), falling back to the webhook", resp.error)
+            return False
+        self.receipt = MessageRef(
+            kind=CHANNEL_SLACK,
+            channel=str(resp.data.get("channel", self.channel)),
+            ts=str(resp.data.get("ts", "")),
+        )
+        return True
 
 
 class EmailDelivery(NotificationDelivery):
@@ -199,7 +240,11 @@ def get_delivery(channel: str) -> NotificationDelivery | None:
     if channel == CHANNEL_DESKTOP:
         return DesktopDelivery()
     if channel == CHANNEL_SLACK:
-        return SlackDelivery(webhook_url=_safe(config, "get_slack_webhook_url"))
+        return SlackDelivery(
+            webhook_url=_safe(config, "get_slack_webhook_url"),
+            bot_token=_safe(config, "get_slack_bot_token"),
+            channel=_safe(config, "get_slack_channel_id"),
+        )
     if channel == CHANNEL_EMAIL:
         return EmailDelivery(
             host=_safe(config, "get_smtp_host"),
@@ -213,8 +258,24 @@ def get_delivery(channel: str) -> NotificationDelivery | None:
     return None
 
 
-def deliver(dispatch: Dispatch, channels: list[str]) -> dict[str, bool]:
-    """Send ``dispatch`` to each channel; return {channel: success}. Never raises."""
+def deliver(
+    dispatch: Dispatch,
+    channels: list[str],
+    *,
+    on_receipt: Callable[[str, MessageRef], None] | None = None,
+) -> dict[str, bool]:
+    """Send ``dispatch`` to each channel; return {channel: success}. Never raises.
+
+    ``on_receipt`` fires once per channel that came back with a durable address
+    — today only Slack posting as a bot. It is a keyword-only callback rather
+    than a widened return type because ``dict[str, bool]`` is load-bearing in
+    three places outside this module: the standup store JSON-encodes it into a
+    ``delivery_status`` column that history and exports read, agentwatch
+    returns it straight out through an MCP tool's schema, and
+    ``CeremonyRun.delivery`` is typed on it. Widening would cost a store
+    migration, a tool-schema change and a state-field change to give three
+    channels a field that is permanently empty.
+    """
     logger.info("deliver: channels=%s", channels)
     results: dict[str, bool] = {}
     for channel in channels:
@@ -227,6 +288,13 @@ def deliver(dispatch: Dispatch, channels: list[str]) -> dict[str, bool]:
         except Exception as e:  # defensive — a channel should never crash the run
             logger.error("deliver: channel %s raised: %s", channel, e)
             results[channel] = False
+            continue
+        ref = getattr(handler, "receipt", None)
+        if results[channel] and ref is not None and on_receipt is not None:
+            try:
+                on_receipt(channel, ref)
+            except Exception:  # noqa: BLE001 — recording must not fail a delivery
+                logger.warning("deliver: on_receipt for %s raised", channel, exc_info=True)
     logger.info("deliver complete: %s", results)
     return results
 

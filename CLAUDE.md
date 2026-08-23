@@ -213,8 +213,10 @@ src/yeaboi/
   agentwatch/                        — the Agents family: usage/standup/security engines over local agent-session telemetry
   provenance/                        — tamper-evident decision chain + conflicts vocabulary (recorded by standup/performance)
   ship/                              — supervised story → PR pipeline: budget fuse, worktree isolation, agent driver, approval gate
+  ceremonies/                        — the clock any mode runs on: OS-job installer, guards, delivery channels
+  slack/                             — the inbound half of that clock: anchors, a closed grammar, the poller, the ledger
   pricing.py                         — the per-model LLM rate table (cache-aware); every cost estimate goes through it
-  mcp/                               — stdio MCP server (yeaboi-mcp; 53 tools over the engines)
+  mcp/                               — stdio MCP server (yeaboi-mcp; 57 tools over the engines)
   repl/                              — legacy REPL for CLI-flag-driven flows
   ui/                                — full-screen TUI (mode_select, provider_select, session, shared)
   input_guardrails.py / output_guardrails.py / formatters.py / *_exporter.py / *_sync.py

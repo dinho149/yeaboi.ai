@@ -1478,9 +1478,14 @@ def _collect_settings_data() -> dict:
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
+        # Slack — a provider now rather than a delivery detail. The webhook
+        # posts; the bot token is what lets a reaction or a reply be read back.
+        "SLACK_WEBHOOK_URL",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+        "SLACK_ALLOWED_MEMBER_IDS",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
-        "SLACK_WEBHOOK_URL",
         "STANDUP_SMTP_HOST",
         "STANDUP_SMTP_USER",
         "STANDUP_SMTP_PASSWORD",
@@ -5567,25 +5572,34 @@ def _run_mode_hub(
             # A correctable share when the mode offers one; otherwise exactly
             # the read-only publish this has always been.
             editing = get_editable_session(run) if get_editable_session is not None else None
-            recorded = _run_output_share_flow(
-                console,
-                live,
-                read_key,
-                frame_time,
-                supports_timeout,
-                document=document,
-                theme=share_theme,
-                title_fn=title_fn,
-                editable=editing.share if editing is not None else None,
-                on_edit=editing.persist if editing is not None else None,
-            )
-            if recorded and editing is not None:
-                # Appended, so the generated original is still there and every
-                # trend chart picks the corrected row up on its own.
-                editing.commit()
-                _reload(f"Saved {recorded} " + ("correction" if recorded == 1 else "corrections") + ".")
+            # The session holds a lease while it is open, so a writer that
+            # cannot see this screen — a practice verdict arriving from Slack —
+            # defers its rewrite instead of being resurrected by the commit
+            # below. `finally`, because this flow also ends on Esc, on Back and
+            # on an exception, and only `commit` releases on its own.
+            try:
+                recorded = _run_output_share_flow(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    document=document,
+                    theme=share_theme,
+                    title_fn=title_fn,
+                    editable=editing.share if editing is not None else None,
+                    on_edit=editing.persist if editing is not None else None,
+                )
+                if recorded and editing is not None:
+                    # Appended, so the generated original is still there and every
+                    # trend chart picks the corrected row up on its own.
+                    editing.commit()
+                    _reload(f"Saved {recorded} " + ("correction" if recorded == 1 else "corrections") + ".")
+                    return False, None
                 return False, None
-            return False, None
+            finally:
+                if editing is not None:
+                    editing.close()
         if act == "Delete":
             delete_run(run)
             _reload("Run deleted.")
@@ -6749,24 +6763,32 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     editing = (
                         _standup_editable_session(report, share_run_id or 0, share_history) if anon is None else None
                     )
-                    recorded = _run_output_share_flow(
-                        console,
-                        live,
-                        read_key,
-                        frame_time,
-                        supports_timeout,
-                        document=standup_document(report, anon=anon, history=share_history),
-                        theme=STANDUP_THEME,
-                        title_fn=standup_title,
-                        editable=editing.share if editing is not None else None,
-                        on_edit=editing.persist if editing is not None else None,
-                    )
-                    if recorded and editing is not None:
-                        # Appended, so the generated original is still there and
-                        # every trend chart picks the corrected row up on its own.
-                        editing.commit()
-                        noun = "correction" if recorded == 1 else "corrections"
-                        data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
+                    # The lease this session holds is what extends the "one
+                    # writer" rule above to a writer this screen cannot see: a
+                    # verdict arriving from Slack while the share is open
+                    # defers its rewrite rather than losing it to the commit.
+                    try:
+                        recorded = _run_output_share_flow(
+                            console,
+                            live,
+                            read_key,
+                            frame_time,
+                            supports_timeout,
+                            document=standup_document(report, anon=anon, history=share_history),
+                            theme=STANDUP_THEME,
+                            title_fn=standup_title,
+                            editable=editing.share if editing is not None else None,
+                            on_edit=editing.persist if editing is not None else None,
+                        )
+                        if recorded and editing is not None:
+                            # Appended, so the generated original is still there and
+                            # every trend chart picks the corrected row up on its own.
+                            editing.commit()
+                            noun = "correction" if recorded == 1 else "corrections"
+                            data = _collect_standup_data(message=f"Saved {recorded} {noun}.")
+                    finally:
+                        if editing is not None:
+                            editing.close()
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)

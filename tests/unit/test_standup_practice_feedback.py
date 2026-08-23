@@ -234,3 +234,68 @@ class TestVotable:
         # so offering a thumbs-down on them would half-work in silence.
         old = PracticeSignal(rule="untracked-work", title="Untracked work")
         assert practice_feedback.votable([old, _signal()]) == (_signal(),)
+
+
+class TestDeferredRewrite:
+    """``rewrite_report=False``: keep the permanent half, skip the cosmetic one.
+
+    The two halves of a verdict have different numbers of writers. The per-handle
+    excusal rows have exactly one; the in-place removal from today's stored
+    report shares that row with an open editable share, which replays base + its
+    own log and would resurrect the signal on commit.
+    """
+
+    def test_the_excusal_lands_and_the_stored_report_does_not_move(self, store):
+        run_id = store.record_run(_report(_signal()))
+        before = store.get_run_by_id(run_id)
+
+        assert practice_feedback.apply_verdict(
+            store,
+            session_id="s1",
+            member="Ada",
+            rule="untracked-work",
+            verdict="down",
+            run_id=run_id,
+            rewrite_report=False,
+        )
+
+        assert store.get_run_by_id(run_id) == before, "today's report must be untouched"
+        assert ("untracked-work", "url:https://x/pull/42") in practice_feedback.load(store, "s1").excused
+
+    def test_the_signal_is_gone_from_the_next_run(self, store):
+        # Which is the whole reason a deferral is not a lost vote: the excusal
+        # is permanent, so tomorrow's report never builds the signal at all.
+        run_id = store.record_run(_report(_signal()))
+        practice_feedback.apply_verdict(
+            store,
+            session_id="s1",
+            member="Ada",
+            rule="untracked-work",
+            verdict="down",
+            run_id=run_id,
+            rewrite_report=False,
+        )
+        assert practice_feedback.load(store, "s1").is_excused("untracked-work", "url:https://x/pull/42")
+
+    def test_a_thumbs_up_is_unaffected_by_the_flag(self, store):
+        # It never rewrote the report in the first place.
+        run_id = store.record_run(_report(_signal()))
+        before = store.get_run_by_id(run_id)
+        for flag in (True, False):
+            assert practice_feedback.apply_verdict(
+                store,
+                session_id="s1",
+                member="Ada",
+                rule="untracked-work",
+                verdict="up",
+                run_id=run_id,
+                rewrite_report=flag,
+            )
+        assert store.get_run_by_id(run_id) == before
+
+    def test_the_default_still_rewrites(self, store):
+        run_id = store.record_run(_report(_signal()))
+        practice_feedback.apply_verdict(
+            store, session_id="s1", member="Ada", rule="untracked-work", verdict="down", run_id=run_id
+        )
+        assert store.get_run_by_id(run_id).member_updates[0].practices == ()

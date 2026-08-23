@@ -14,7 +14,7 @@ import pytest
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.artifacts.edits import Edit
 from yeaboi.artifacts.session import EditableSession
-from yeaboi.artifacts.store import ArtifactEditStore
+from yeaboi.artifacts.store import ArtifactEditStore, artifact_ref
 from yeaboi.standup.store import StandupStore
 
 
@@ -242,3 +242,145 @@ class TestUnappliedEditsAreShown:
         rows = reopened.share.snapshot("")["edits"]
         assert [(r["id"], r["applied"]) for r in rows] == [("e1", False)]
         assert rows[0]["reason"]
+
+
+class TestTheLease:
+    """One writer per document, extended to a writer the TUI cannot see.
+
+    The TUI already obeys this rule by hand — the live standup share is
+    deliberately not practice-votable, because a verdict written straight to the
+    run beneath an open share is resurrected by the next commit. A lease is that
+    same rule, held where a *second process* can read it.
+    """
+
+    def _ref(self, run_id):
+        return artifact_ref("standup", run_id=run_id)
+
+    def test_opening_a_share_takes_the_lease(self, db):
+        path, run_id = db
+        EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        with ArtifactEditStore(path) as store:
+            assert store.lease_held("standup", self._ref(run_id))
+
+    def test_committing_releases_it(self, db):
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.commit()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_closing_without_committing_releases_it(self, db):
+        # The case a commit-only release would leak on, and by far the common
+        # one: a share opened, read, and closed with Esc.
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.close()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_it_is_a_context_manager(self, db):
+        path, run_id = db
+        with EditableSession(report(), kind="standup", db_path=path, run_id=run_id):
+            pass
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_closing_twice_is_not_an_error(self, db):
+        path, run_id = db
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        session.commit()
+        session.close()
+        session.close()
+
+    def test_a_kind_with_no_history_table_still_releases(self, db, tmp_path):
+        # `commit` returns 0 early for these; the lease must not ride on the
+        # path that happens to have a committer behind it.
+        path, _ = db
+        session = EditableSession(_profile(), kind="analysis", db_path=path)
+        session.commit()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("analysis", session.ref)
+
+    def test_a_lease_the_store_cannot_write_is_swallowed(self, db):
+        # A lease exists to defer somebody else's *cosmetic* write. Losing it is
+        # nowhere near worth losing this reader's ability to correct the report
+        # in front of them, so every lease call swallows and carries on.
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store._conn.close()  # every statement from here raises
+            store.take_lease("standup", self._ref(run_id))  # must not raise
+            store.release_lease("standup", self._ref(run_id))  # must not raise
+            # And an unreadable lease reads as free, never as held: deferring
+            # on a store error would weaken a vote for a reason nobody sees.
+            assert store.lease_held("standup", self._ref(run_id)) is False
+
+
+class TestOneHolderAtATime:
+    """Whose turn it is — the half of the lease that only matters off-screen.
+
+    A headless correction opens a momentary ``EditableSession`` of its own. When
+    it did so on a run a teammate had open in the TUI, ``INSERT OR REPLACE``
+    made it the holder and its ``close()`` then dropped the teammate's lease on
+    the way out — reinstating the exact race the table exists to close, in the
+    gap between two events of one Slack poll.
+    """
+
+    def _ref(self, run_id):
+        return artifact_ref("standup", run_id=run_id)
+
+    def test_a_live_lease_is_left_with_the_holder_who_took_it(self, db):
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            assert store.take_lease("standup", self._ref(run_id), holder="first") is True
+            assert store.take_lease("standup", self._ref(run_id), holder="second") is False
+
+    def test_taking_one_you_already_hold_is_a_refresh(self, db):
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store.take_lease("standup", self._ref(run_id), holder="mine")
+            assert store.take_lease("standup", self._ref(run_id), holder="mine") is True
+
+    def test_an_expired_lease_is_still_taken_over(self, db):
+        # The crash case the TTL was always for: the process that opened it is
+        # gone, and honouring a dead holder forever blocks deferral for nothing.
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store.take_lease("standup", self._ref(run_id), holder="crashed", ttl_minutes=1)
+            store._conn.execute(
+                "UPDATE artifact_leases SET expires_at = ? WHERE kind = ?", ("2000-01-01T00:00:00+00:00", "standup")
+            )
+            assert store.take_lease("standup", self._ref(run_id), holder="new") is True
+
+    def test_a_second_session_does_not_end_the_first_ones_turn(self, db):
+        path, run_id = db
+        held = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        with EditableSession(report(), kind="standup", db_path=path, run_id=run_id):
+            pass
+        with ArtifactEditStore(path) as store:
+            assert store.lease_held("standup", self._ref(run_id))
+        held.close()
+        with ArtifactEditStore(path) as store:
+            assert not store.lease_held("standup", self._ref(run_id))
+
+    def test_a_second_session_can_still_commit(self, db):
+        # The lease is advisory and always was. Gating the write-back on it
+        # would mean a stale lease from a crash silently swallowed a reader's
+        # corrections for an hour.
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store.take_lease("standup", self._ref(run_id), holder="somebody-else")
+        session = EditableSession(report(), kind="standup", db_path=path, run_id=run_id)
+        assert session.commit() > 0
+
+    def test_an_operator_release_takes_whatever_is_there(self, db):
+        path, run_id = db
+        with ArtifactEditStore(path) as store:
+            store.take_lease("standup", self._ref(run_id), holder="whoever")
+            store.release_lease("standup", self._ref(run_id))
+            assert not store.lease_held("standup", self._ref(run_id))
+
+
+def _profile():
+    from yeaboi.team_profile import TeamProfile
+
+    return TeamProfile(team_id="t1", source="jira", project_key="YB")

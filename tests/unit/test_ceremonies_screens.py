@@ -138,3 +138,68 @@ class TestChrome:
         # A button reading "Pause" on something already paused is a bug report.
         out = _render(ceremonies=[_ceremony(enabled=False)], actions=["Run now", "Resume", "Back"])
         assert "Resume" in out
+
+
+class TestTheSlackLine:
+    """Whether these posts can be answered — a page fact, not a column.
+
+    It was a per-row column first. Two-way is machine-wide (one bot token, one
+    channel, one reader), so the column said the same word on every row, and at
+    the enforced 84 columns it cost the ceremony name and the cadence their last
+    characters. What it names is still worth naming: every state below is
+    invisible with no other symptom.
+    """
+
+    def _line(self, **kw) -> str:
+        out = _render(ceremonies=[_ceremony(), _ceremony(name="weekly-report", channels=("slack", "email"))], **kw)
+        return next((ln for ln in out.splitlines() if "Slack" in ln or "Reactions" in ln), "")
+
+    def test_a_page_with_no_slack_ceremony_says_nothing_about_slack(self):
+        out = _render(ceremonies=[_ceremony(channels=("terminal",))], two_way=True, interval_min=10)
+        assert "Reactions on" not in out
+        assert "cannot be answered" not in out
+
+    def test_a_webhook_only_setup_says_nothing_at_all(self):
+        # The webhook is a supported configuration, not a broken one, and a team
+        # can run yeaboi forever on it. A permanent line telling them what they
+        # are missing is the nag this codebase has already ruled against once —
+        # discoverability belongs to the feature tip, not to this page.
+        out = _render(ceremonies=[_ceremony()], two_way=False)
+        assert "Slack" not in out.replace("slack", "")  # the "Lands in" cell is lowercase
+        assert "Reactions on" not in out
+
+    def test_a_token_with_no_reader_installed_is_its_own_warning(self):
+        # The same silence one step further along, and a different fix.
+        line = self._line(two_way=True, interval_min=0)
+        assert "Nothing is reading Slack back" in line
+        assert "watch --install" in line
+
+    def test_a_working_setup_reports_the_cadence_and_is_not_a_warning(self):
+        line = self._line(two_way=True, interval_min=10, linked=3)
+        assert "read back every 10 min" in line
+        assert "3 linked" in line
+        assert "!" not in line
+
+    def test_an_unlinked_working_setup_offers_the_link_key(self):
+        assert "[l] to link one" in self._line(two_way=True, interval_min=10, linked=0)
+
+    def test_every_state_fits_one_rendered_row(self):
+        # A continuation line loses this page's indent, so a wrapped status
+        # reads as a broken one.
+        from yeaboi.ui.mode_select.screens._screens_ceremonies import slack_line
+
+        rows = [_ceremony(), _ceremony(name="weekly-report", channels=("slack", "email"))]
+        for kw in (
+            {"two_way": True, "linked": 0, "interval_min": 0},
+            {"two_way": True, "linked": 0, "interval_min": 10},
+            {"two_way": True, "linked": 12, "interval_min": 10},
+        ):
+            text, urgent = slack_line(rows, **kw)
+            # PAD + an optional "! " + the text, inside the panel's borders.
+            assert len(text) + (2 if urgent else 0) + 6 <= _W - 4, f"{kw} wraps: {text!r}"
+
+    def test_the_row_still_shows_its_name_and_cadence_in_full(self):
+        # What the column cost, and the reason it is a line.
+        out = _render(ceremonies=[_ceremony()], two_way=True, interval_min=10)
+        assert "morning-standup" in out
+        assert "Mon–Fri at 09:00" in out

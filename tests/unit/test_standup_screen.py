@@ -1484,7 +1484,11 @@ class TestLiveShareIsEditable:
             mode_select,
             "_standup_editable_session",
             lambda report, run_id, history: type(
-                "Session", (), {"share": "SHARE", "persist": "PERSIST", "commit": lambda self: None}
+                "Session",
+                (),
+                # `close` releases the lease the real session holds while the
+                # share is open, and the screen calls it in a `finally`.
+                {"share": "SHARE", "persist": "PERSIST", "commit": lambda self: None, "close": lambda self: None},
             )(),
         )
         monkeypatch.setattr(

@@ -77,6 +77,10 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
     "NOTION_TOKEN",
     "STANDUP_SMTP_PASSWORD",
     "SLACK_WEBHOOK_URL",
+    # Deliberately NOT joined by SLACK_CHANNEL_ID or SLACK_ALLOWED_MEMBER_IDS:
+    # neither is a secret, and redacting member ids would gut exactly the log
+    # lines that answer "whose reaction was that".
+    "SLACK_BOT_TOKEN",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SESSION_TOKEN",

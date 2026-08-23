@@ -33,7 +33,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import Ceremony, CeremonyRun, Dispatch
 from yeaboi.ceremonies import catalog
-from yeaboi.ceremonies.scheduler import parse_time, weekday_list
+from yeaboi.ceremonies.scheduler import occurrence_for
 from yeaboi.ceremonies.store import CeremonyStore
 from yeaboi.logging_setup import mode_log
 
@@ -89,55 +89,23 @@ def _spend_probe() -> Callable[[], float]:
 
 
 def _minutes_late(ceremony: Ceremony, now: datetime) -> float:
-    """How far past its declared slot this fire is, in minutes (negative = early).
-
-    Local time throughout, because that is what launchd and cron fire in.
-
-    Measured against the most recent *scheduled* occurrence of the slot, not
-    against today's clock time. The case this exists for is a laptop asleep
-    across the slot, and that sleep does not politely end before midnight: a
-    09:00 Monday job that launchd coalesces and fires at 07:00 Tuesday is 22
-    hours late, but comparing it to Tuesday's own 09:00 makes it look two hours
-    *early* and waves a day-old standup straight through. Weekdays are part of
-    the answer too — a Monday-only report woken on Wednesday is measured from
-    Monday.
-    """
-    try:
-        hour, minute = parse_time(ceremony.at)
-    except ValueError:
-        logger.warning("ceremony %s has an unparseable time %r", ceremony.name, ceremony.at)
-        return 0.0
-    try:
-        days = {d for d in weekday_list(ceremony.weekdays) if 1 <= d <= 7}
-    except ValueError:
-        logger.warning("ceremony %s has an unparseable weekday spec %r", ceremony.name, ceremony.weekdays)
-        days = set()
-
-    todays = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    # A fire that just beats its own slot is early, never stale — reading it as
-    # late for the previous occurrence is the one way this guard could suppress
-    # a run that is perfectly on time. The window is minutes wide on purpose: a
-    # scheduler firing *hours* early is not an early fire, it is a late one for
-    # the occurrence before, which is precisely the wake-up case above.
-    if todays - _EARLY_GRACE <= now < todays and (not days or now.isoweekday() in days):
-        return (now - todays).total_seconds() / 60.0
-
-    # Walk back to the latest occurrence at or before now. A week covers every
-    # spec, since weekdays repeat every seven days.
-    for back in range(8):
-        candidate = todays - timedelta(days=back)
-        if candidate > now:
-            continue
-        if days and candidate.isoweekday() not in days:
-            continue
-        return (now - candidate).total_seconds() / 60.0
-    return 0.0
+    """How far past its declared slot this fire is, in minutes (negative = early)."""
+    slot = occurrence_for(ceremony, now)
+    return 0.0 if slot is None else (now - slot).total_seconds() / 60.0
 
 
 def _guard(ceremony: Ceremony, now: datetime, store: CeremonyStore) -> tuple[str, str]:
     """(outcome, reason) when a scheduled fire should be declined, else ("", "")."""
     if not ceremony.enabled:
         return "skipped_paused", "the ceremony is paused but its job still fired"
+
+    # Distinct from skipped_paused on purpose: "somebody asked for tomorrow off"
+    # and "the store and the OS have drifted" are different facts, and the whole
+    # thesis of this ledger is that the reason is a column.
+    if ceremony.skip_next:
+        slot = occurrence_for(ceremony, now)
+        if slot is not None and slot.date().isoformat() == ceremony.skip_next:
+            return "skipped_once", f"someone asked to skip the {ceremony.skip_next} run"
 
     late = _minutes_late(ceremony, now)
     if ceremony.stale_after_min and late > ceremony.stale_after_min:
@@ -160,6 +128,26 @@ def _guard(ceremony: Ceremony, now: datetime, store: CeremonyStore) -> tuple[str
                 f"${spent:.2f} already spent this month against a ${ceremony.monthly_cap_usd:.2f} cap",
             )
     return "", ""
+
+
+def _clear_spent_skip(ceremony: Ceremony, now: datetime, store: CeremonyStore) -> None:
+    """Drop ``skip_next`` once its slot has arrived, whichever way the fire went.
+
+    Self-clearing rather than something a surface has to remember to reset: a
+    one-shot skip that outlives its occurrence is a ceremony that silently
+    stopped, and the person who asked for one day off would have no reason to
+    go looking. Cleared on the *skipping* fire and on any later one, so a
+    coalesced wake-up that never reaches the skipped slot cannot strand it.
+    """
+    if not ceremony.skip_next:
+        return
+    slot = occurrence_for(ceremony, now)
+    if slot is None or slot.date().isoformat() < ceremony.skip_next:
+        return
+    try:
+        store.set_skip_next(ceremony.session_id, ceremony.name, "")
+    except Exception:  # noqa: BLE001 — bookkeeping must not turn a fire into a failure
+        logger.warning("ceremony %s: could not clear skip_next", ceremony.name, exc_info=True)
 
 
 def _notify_skip(ceremony: Ceremony, reason: str) -> None:
@@ -220,6 +208,7 @@ def run_ceremony(
 
         if scheduled:
             outcome, reason = _guard(ceremony, moment, store)
+            _clear_spent_skip(ceremony, moment, store)
             if outcome:
                 logger.warning("ceremony %s declined: %s", name, reason)
                 _notify_skip(ceremony, reason)
@@ -260,12 +249,22 @@ def run_ceremony(
         spent = _spend_probe()
         error = ""
         dispatch: Dispatch | None = None
+        # The history row this run writes, when its engine can say. Collected
+        # rather than looked up afterwards: "the latest run" is whichever one a
+        # concurrent session touched last, and a post anchored to the wrong run
+        # sends a verdict to the wrong report.
+        artifact_run_id = 0
         try:
             _report(f"running {mode.label}")
             kwargs = catalog.engine_kwargs(mode, ceremony.args, session_id=ceremony.session_id)
             if dry_run:
                 kwargs["dry_run"] = True
+            if mode.emits_run_id:
+                collected: list[int] = []
+                kwargs["on_run_id"] = collected.append
             artifact = catalog.engine_callable(mode)(**kwargs)
+            if mode.emits_run_id and collected:
+                artifact_run_id = collected[0]
             dispatch = catalog.renderer_callable(mode)(artifact)
         except Exception as exc:  # noqa: BLE001 — every failure becomes a row
             error = f"{type(exc).__name__}: {exc}"
@@ -278,7 +277,38 @@ def run_ceremony(
             channels = [c for c in ceremony.channels if not (suppress_terminal and c == CHANNEL_TERMINAL)]
             if channels:
                 _report("delivering")
-                delivery_results = tuple(deliver(dispatch, channels).items())
+
+                def _anchor(_channel: str, ref, _mode=mode, _run_id=artifact_run_id, _artifact=artifact) -> None:
+                    """Record where this post landed, so it can be answered."""
+                    from yeaboi.slack.store import record_post
+                    from yeaboi.slack.threads import post_signal_anchors
+
+                    record_post(
+                        ref,
+                        session_id=session_id,
+                        ceremony=name,
+                        mode=_mode.key,
+                        artifact_kind=_mode.artifact_kind,
+                        run_id=_run_id,
+                        db_path=db_path,
+                    )
+                    # And one reply per answerable item, each with its own
+                    # anchor. Which items those are is `slack/threads.py`'s
+                    # question, not this module's: a ceremony engine that knew
+                    # what a practice signal looked like would have to learn a
+                    # second artifact's shape for every mode that grew one.
+                    post_signal_anchors(
+                        ref,
+                        _artifact,
+                        session_id=session_id,
+                        ceremony=name,
+                        mode=_mode.key,
+                        artifact_kind=_mode.artifact_kind,
+                        run_id=_run_id,
+                        db_path=db_path,
+                    )
+
+                delivery_results = tuple(deliver(dispatch, channels, on_receipt=_anchor).items())
             else:
                 logger.info("ceremony %s: nothing to deliver to on this screen", name)
 

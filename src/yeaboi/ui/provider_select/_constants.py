@@ -35,6 +35,10 @@ TOKEN_HELP: dict[str, dict[str, str]] = {
         "url": "https://notion.so/my-integrations",
         "scope": "Capabilities: Read + Insert + Update content — then share your pages with the integration",
     },
+    "SLACK_BOT_TOKEN": {
+        "url": "https://api.slack.com/apps",
+        "scope": "Bot: chat:write · channels:history · reactions:read · users:read — then /invite it to the channel",
+    },
     "CONFLUENCE_API_TOKEN": {
         "url": "https://id.atlassian.com/manage-profile/security/api-tokens",
         "scope": "Account needs view + create/update pages (and attachments) in the target space",

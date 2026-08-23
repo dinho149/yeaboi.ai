@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 ACTIONS = ("Run now", "Pause", "Back")
 
+#: What `l` prints. A command rather than a form, for the reason the page
+#: already gives for `n`: this decides whose name goes on a teammate's report,
+#: and the surface that writes that should be the one you can read it back from.
+LINK_HINT = 'Find ids with `yeaboi slack members`, then: yeaboi slack link U0123456789 "Their Name"'
+
 
 def _session() -> str:
     """The session the page is scoped to, or '' when there is none yet."""
@@ -44,6 +49,36 @@ def _session() -> str:
     except Exception:  # noqa: BLE001 — no saved sessions is a normal empty state
         logger.info("ceremonies page: no session to scope to")
         return ""
+
+
+def _slack(session_id: str) -> tuple[bool, int, int]:
+    """(two-way configured, Slack users linked here, minutes between polls).
+
+    Read on entry and after each action rather than per frame — the loop
+    repaints at 60 FPS, and an environment read plus a SQLite query plus a plist
+    read on every one of those is the never-do-per-frame rule.
+
+    The interval comes off the **installed job**, not a config key: the job is
+    the storage for it, so a plist and a stored number can never disagree about
+    how often this actually happens.
+    """
+    from yeaboi import config
+
+    ready, _why = config.slack_two_way_ready()
+    if not ready:
+        return False, 0, 0
+    linked, interval = 0, 0
+    try:
+        from yeaboi.slack import identity
+
+        linked = len(identity.listing(session_id))
+    except Exception:  # noqa: BLE001 — an unreadable mapping must not take the page down
+        logger.warning("ceremonies page: could not read the Slack identities", exc_info=True)
+    try:
+        interval = int(scheduler.slack_poll_status().get("interval_min", 0) or 0)
+    except Exception:  # noqa: BLE001 — an unreadable job reads as "not installed"
+        logger.warning("ceremonies page: could not read the Slack poll job", exc_info=True)
+    return True, linked, interval
 
 
 def _load(session_id: str) -> tuple[list[Ceremony], dict, dict, list[str]]:
@@ -129,6 +164,7 @@ def run_ceremonies_page(
     """
     session_id = _session()
     ceremonies, last, spend, drift = _load(session_id)
+    two_way, linked, interval = _slack(session_id)
     logger.info("Ceremonies page opened: %d declared in session %s", len(ceremonies), session_id or "(none)")
     selected = action_sel = scroll = 0
     scroll_meta: dict = {}
@@ -158,6 +194,9 @@ def run_ceremonies_page(
                 shimmer_tick=time.monotonic() - start,
                 sub_reveal=(time.monotonic() - start) * 6.0,
                 message=message,
+                two_way=two_way,
+                linked=linked,
+                interval_min=interval,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -202,6 +241,9 @@ def run_ceremonies_page(
                 message = f"{ceremony.name} {'resumed' if enable else 'paused'}. {detail}"
             ceremonies, last, spend, drift = _load(session_id)
             selected = min(selected, max(0, len(ceremonies) - 1))
+        elif key == "l":
+            two_way, linked, interval = _slack(session_id)
+            message = LINK_HINT if two_way else "Slack is write-only here — set SLACK_BOT_TOKEN to read replies back."
         elif key == "n":
             message = (
                 f"Add one from the terminal: yeaboi ceremonies add <name> --mode {catalog.CATALOG[0].key} --at 09:00"

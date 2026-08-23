@@ -77,6 +77,8 @@ EXPECTED_TOOLS = {
     "provenance_trace",
     "ship_history",
     "ship_status",
+    "slack_inbound_history",
+    "slack_identities_list",
 }
 
 
@@ -1333,3 +1335,68 @@ class TestShipTools:
         assert "diff_text" not in row
         assert row["diff_stat"] == "1 file changed"
         assert "diff_text" not in call_tool("ship_status")["data"]["latest"]
+
+
+class TestSlackTools:
+    """Read-only, and the absences are the design.
+
+    Applying an event is off this surface because authorisation lives in the
+    poller, against a member id Slack's own servers attributed — an apply tool
+    would be a door where the *caller* asserts identity, in a lane whose whole
+    premise is that identity is looked up and never parsed. Linking is off it
+    for a different reason: it is safe, but it decides whose name goes on
+    somebody else's report.
+    """
+
+    def test_history_is_empty_before_anything_has_been_asked_for(self, tmp_db):
+        out = call_tool("slack_inbound_history")
+        assert out["ok"] is True
+        assert out["data"]["events"] == []
+
+    def test_history_rejects_a_bad_limit(self, tmp_db):
+        out = call_tool("slack_inbound_history", {"limit": 0})
+        assert out["ok"] is False
+        assert "limit" in out["error"]["message"]
+
+    def test_history_carries_the_refusals_and_their_reasons(self, tmp_db):
+        # The point of the ledger: "you are not on the list", "I could not tell
+        # what you meant" and "the write said no" are different problems, and
+        # only some of them are anyone's to fix.
+        from yeaboi.slack.store import InboundEvent, SlackStore
+
+        with SlackStore(tmp_db) as store:
+            store.claim(InboundEvent(event_key="k1", channel="C123", act="control", slack_user="U1"))
+            store.settle("k1", outcome="unauthorized", reason="not on the allowlist")
+        row = call_tool("slack_inbound_history")["data"]["events"][0]
+        assert (row["outcome"], row["reason"]) == ("unauthorized", "not on the allowlist")
+
+    def test_history_says_whether_the_reader_is_even_running(self, tmp_db):
+        from yeaboi.slack.store import SlackStore
+
+        with SlackStore(tmp_db) as store:
+            store.record_poll({"outcome": "skipped_no_token", "detail": "no SLACK_BOT_TOKEN"})
+        assert call_tool("slack_inbound_history")["data"]["recent_polls"][0]["outcome"] == "skipped_no_token"
+
+    def test_identities_are_empty_and_that_is_a_working_configuration(self, tmp_db, monkeypatch):
+        monkeypatch.setattr("yeaboi.mcp.tools_sessions.resolve_session_id", lambda sid="": sid or "s1")
+        out = call_tool("slack_identities_list")
+        assert out["ok"] is True
+        assert out["data"]["identities"] == []
+
+    def test_identities_round_trip(self, tmp_db, monkeypatch):
+        monkeypatch.setattr("yeaboi.mcp.tools_sessions.resolve_session_id", lambda sid="": sid or "s1")
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace"])
+        from yeaboi.slack import identity
+
+        identity.link("s1", "U0123456789", "Ada Lovelace", db_path=tmp_db)
+        rows = call_tool("slack_identities_list")["data"]["identities"]
+        assert [(r["slack_user"], r["member"]) for r in rows] == [("U0123456789", "Ada Lovelace")]
+
+    def test_nothing_on_this_surface_applies_or_links(self):
+        # Two-way set equality against EXPECTED_TOOLS already fails on an added
+        # tool; this names *which* additions would be the wrong ones, so the
+        # reason survives the next person who reads the diff.
+        assert not {t for t in EXPECTED_TOOLS if t.startswith("slack_")} - {
+            "slack_inbound_history",
+            "slack_identities_list",
+        }

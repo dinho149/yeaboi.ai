@@ -745,9 +745,10 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
-        # LLM Provider is the only column box; the token-help sections go full width.
+        # LLM Provider is the only column box; the token-help sections go full
+        # width — Jira, Azure, GitHub, Notion and Slack.
         assert panel._box_cols == [[0]]
-        assert panel._box_tail == [1, 2, 3, 4]
+        assert panel._box_tail == [1, 2, 3, 4, 5]
 
     def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -1343,7 +1344,11 @@ class TestSettingsScrollbar:
         return meta["max_offset"], bars
 
     def test_no_track_when_everything_fits(self):
-        max_offset, bars = self._geometry_and_bars(185, 40)
+        # The width has to clear the tallest tab, and Credentials grew a section
+        # each time a provider arrived (Slack was the fifth wide one). Widening
+        # is the fix that keeps this test's own thesis — a *wide* terminal fits —
+        # rather than a taller one, which is a different claim.
+        max_offset, bars = self._geometry_and_bars(240, 40)
         assert max_offset == 0, "this width is supposed to fit — pick another for the test"
         assert bars == 0
 

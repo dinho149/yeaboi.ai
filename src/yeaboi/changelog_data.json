@@ -2,6 +2,45 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.24.0",
+      "date": "2026-08-23",
+      "summary": "Slack integration is now two-way: reactions and replies on ceremony posts control ceremonies, vote on practice signals, and correct artifacts. With both SLACK_BOT_TOKEN and SLACK_CHANNEL_ID configured, ceremony delivery posts via chat.postMessage and records an anchor row, while a background polling job reads the channel every N minutes and applies what it finds. Four acts exist: emoji reactions on the post control pause/resume/skip, vote reactions on signal replies apply verdicts, short text replies (pause/resume/skip/ack) call the same store functions, and any other threaded reply becomes an attributed correction. All four acts are free, reversible database writes with no LLM anywhere in the inbound path, and the allowlist is empty by default (making the poll a no-op). The Slack column moved from the Ceremonies page to a page-level fact line, showing post status, channel, and token/reader configuration. A one-shot ceremony skip flag and artifact leases for concurrent edits round out the delivery improvements.",
+      "highlights": [
+        {
+          "text": "Reactions and replies on Slack posts now control ceremonies: ⏸ ▶️ 🚫 on the post pause/resume/skip; 👍/👎 on signal replies cast verdicts",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Short text replies (pause/resume/skip/ack) execute store calls; any other reply becomes an attributed correction",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Background polling job reads the channel every N minutes and applies reactions/replies as database writes, with no LLM in the path",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "SLACK_ALLOWED_MEMBER_IDS allowlist gates who can react; empty list disables the poll entirely",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "One-shot ceremony skip via Ceremony.skip_next ISO date flag; artifact leases prevent concurrent edits during votes",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.23.0",
       "date": "2026-08-19",
       "summary": "The poker and retro live boards have been redesigned on a shared component kit with a unified design system. The new design introduces an elevation ladder, radius and motion scales, and vendored icon set that powers both boards. Retro cards are now draggable with GPU-accelerated transforms, reactions are displayed as a glass tray, and the facilitator controls moved to a right rail with real history of past retros and AI-powered action-item suggestions. Poker gained a dynamic duel experience with proper turn announcement, an improved table layout, and the duck mascot that responds to game events. Both boards now survive small windows down to 16px and share a unified toolbar and room roster.",

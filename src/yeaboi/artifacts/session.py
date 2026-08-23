@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from yeaboi.artifacts.edits import Edit
 from yeaboi.artifacts.registry import spec_for
@@ -58,7 +59,54 @@ class EditableSession:
         self.ref = artifact_ref(kind, run_id=run_id, session_id=session_id, engineer=engineer)
         self._base_hash = base_hash(artifact)
         self.share = editable_share(artifact, kind=kind, ref=self.ref, history=history)
+        # Who the lease belongs to. Minted per session rather than taken from
+        # the share, because a document's ``share_id`` is empty on every
+        # headless path — and a holder that is the same empty string for
+        # everybody makes "is this still mine?" unanswerable.
+        self._holder = uuid4().hex
+        self._leased = False
         self._replay()
+        self._take_lease()
+
+    # ── The lease ─────────────────────────────────────────────────────────
+    #
+    # Held for exactly as long as this session might commit, and read by anyone
+    # who would otherwise rewrite the same stored artifact underneath it — today
+    # that is a practice verdict arriving from Slack, the first writer this
+    # module has ever had that is not on the other end of a keyboard. See the
+    # Leases section of `artifacts/store.py` for why it defers rather than
+    # refuses.
+
+    def _take_lease(self) -> None:
+        """Take the lease if it is free, and remember whether we got it.
+
+        Not getting it is not a failure and does not stop anything: the lease is
+        advisory, and committing was never gated on it. What it changes is
+        :meth:`close`, which must not drop a lease belonging to somebody still
+        editing — the case that arrives with a headless correction opening a
+        momentary session on a run a teammate has open in the TUI.
+        """
+        with ArtifactEditStore(self.db_path) as store:
+            self._leased = store.take_lease(self.kind, self.ref, holder=self._holder)
+
+    def close(self) -> None:
+        """Release the lease. Idempotent, and safe to call after ``commit()``.
+
+        Separate from ``commit()`` because a share is very often opened and then
+        closed with nothing recorded — Esc, Back, or a reader who only looked —
+        and a lease dropped only on commit would leak on every one of those.
+        """
+        if not self._leased:
+            return
+        self._leased = False
+        with ArtifactEditStore(self.db_path) as store:
+            store.release_lease(self.kind, self.ref, holder=self._holder)
+
+    def __enter__(self) -> EditableSession:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
     def _replay(self) -> None:
         """Rebuild the document from every correction already on record.
@@ -124,13 +172,18 @@ class EditableSession:
         """
         spec = spec_for(self.kind)
         if spec is None:
+            self.close()
             return 0
         committer = _COMMITTERS.get(self.kind)
         if committer is None:
             logger.info("No history table for %s — corrections live in the edit log only", self.kind)
+            self.close()
             return 0
         row_id = committer(self.db_path, self.share.document.current(), self.run_id, self.session_id)
         logger.info("Committed corrected %s as row %d (from %d)", self.kind, row_id, self.run_id)
+        # The commit is the last thing this session can do to the stored
+        # artifact, so nothing after it needs deferring on our account.
+        self.close()
         return row_id
 
 

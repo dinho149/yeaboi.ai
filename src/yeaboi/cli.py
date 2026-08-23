@@ -879,6 +879,21 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--session", default="", metavar="ID")
         sub.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    cer_skip = ceremonies_sub.add_parser(
+        "skip",
+        help="Skip the next occurrence only — the schedule and the job stay exactly as they are",
+    )
+    cer_skip.add_argument("name")
+    cer_skip.add_argument(
+        "--on",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="Skip this date's run instead of the next one; '' clears a pending skip",
+    )
+    cer_skip.add_argument("--clear", action="store_true", help="Cancel a pending skip")
+    cer_skip.add_argument("--session", default="", metavar="ID")
+    cer_skip.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     cer_run = ceremonies_sub.add_parser("run", help="Run one now (this is what the scheduled job invokes)")
     cer_run.add_argument("name")
     cer_run.add_argument("--session", default="", metavar="ID")
@@ -898,6 +913,62 @@ def build_parser() -> argparse.ArgumentParser:
 
     cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
     cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_p = subparsers.add_parser(
+        "slack",
+        help="Two-way Slack — read reactions and replies on what yeaboi posted",
+    )
+    slack_sub = slack_p.add_subparsers(dest="slack_command", required=True)
+
+    slack_poll = slack_sub.add_parser("poll", help="Read Slack once and apply what is new (the scheduled job)")
+    slack_poll.add_argument(
+        "--scheduled",
+        action="store_true",
+        # Accepted and inert, deliberately. `ceremonies run` needs this flag
+        # because an unattended fire raises questions a human at a terminal has
+        # already answered; a poll raises none of them, so its overlap lock and
+        # gap notice are unconditional. The installed job's argv carries it, so
+        # removing it would break every job already on disk at upgrade.
+        help="Accepted for symmetry with `ceremonies run`; a poll's guards are always armed",
+    )
+    slack_poll.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_watch = slack_sub.add_parser("watch", help="Install, remove or inspect the recurring poll")
+    watch_group = slack_watch.add_mutually_exclusive_group(required=True)
+    watch_group.add_argument("--install", action="store_true", help="Install the recurring poll")
+    watch_group.add_argument("--remove", action="store_true", help="Tear the poll down (nothing else)")
+    watch_group.add_argument("--status", action="store_true", help="Report what is installed")
+    slack_watch.add_argument(
+        "--every",
+        type=int,
+        default=10,
+        metavar="MIN",
+        help="Minutes between polls; must divide 60 (default 10)",
+    )
+    slack_watch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_check = slack_sub.add_parser("check", help="Is two-way configured, and can it see the channel?")
+    slack_check.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_hist = slack_sub.add_parser("history", help="What Slack asked for, and what happened to it")
+    slack_hist.add_argument("--limit", type=int, default=20, help="Rows to show (default 20)")
+    slack_hist.add_argument("--pending", action="store_true", help="Only events claimed but never settled")
+    slack_hist.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_members = slack_sub.add_parser("members", help="List the workspace's people and their member ids")
+    slack_members.add_argument("--match", default="", metavar="TEXT", help="Only those whose name or handle matches")
+    slack_members.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_link = slack_sub.add_parser("link", help="Say which team member a Slack user is (for attributing replies)")
+    slack_link.add_argument("slack_user", nargs="?", default="", metavar="U0123456789", help="Slack member id")
+    slack_link.add_argument("member", nargs="?", default="", help="Their name on this session's roster")
+    slack_link.add_argument("--session", default="", metavar="ID", help="Session to link in (default: latest)")
+    slack_link.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    slack_unlink = slack_sub.add_parser("unlink", help="Forget which team member a Slack user is")
+    slack_unlink.add_argument("slack_user", metavar="U0123456789", help="Slack member id")
+    slack_unlink.add_argument("--session", default="", metavar="ID", help="Session to unlink in (default: latest)")
+    slack_unlink.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     agents_p = subparsers.add_parser(
         "agents",
@@ -1492,6 +1563,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "provenance": _cmd_provenance,
         "ship": _cmd_ship,
         "ceremonies": _cmd_ceremonies,
+        "slack": _cmd_slack,
     }
     try:
         return handlers[args.command](args, console)
@@ -1947,6 +2019,188 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     return 0 if trace.found else 1
 
 
+def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi slack …` — the inbound half of the Slack channel."""
+    import json
+
+    from yeaboi import config
+    from yeaboi.slack import allowlist as allow
+
+    to_json = getattr(args, "format", "text") == "json"
+    command = args.slack_command
+
+    if command == "check":
+        ready, why = config.slack_two_way_ready()
+        report: dict = {
+            "configured": ready,
+            "reason": why,
+            "allowlist": allow.describe(),
+            "ack_reaction": config.get_slack_ack_reaction() or "off",
+        }
+        if ready:
+            from yeaboi.tools import slack as slack_api
+
+            identity = slack_api.auth_test()
+            report["identity"] = (
+                {"team": identity.data.get("team", ""), "bot": identity.data.get("user", "")}
+                if identity.ok
+                else slack_api.error_message(identity)
+            )
+            report["reachable"] = identity.ok
+            if identity.ok:
+                # auth.test passes for a bot nobody ever invited, so identity
+                # alone cannot say "on". Read the channel the poll will read.
+                probe = slack_api.history(config.get_slack_channel_id(), limit=1)
+                report["readable"] = probe.ok
+                if not probe.ok:
+                    report["channel"] = slack_api.error_message(probe)
+        if to_json:
+            print(json.dumps(report, indent=2))
+        else:
+            console.print(f"Two-way: {'[green]on[/green]' if ready else f'[yellow]off[/yellow] — {why}'}")
+            console.print(f"Allowlist: {report['allowlist']}")
+            console.print(f"Ack reaction: {report['ack_reaction']}")
+            if "identity" in report:
+                console.print(f"Slack says: {report['identity']}")
+            if "channel" in report:
+                console.print(f"[yellow]Channel: {report['channel']}[/yellow]")
+            elif report.get("readable"):
+                console.print("Channel: readable")
+        return 0 if ready and report.get("reachable", True) and report.get("readable", True) else 1
+
+    if command == "watch":
+        from yeaboi.ceremonies import scheduler
+
+        if args.status:
+            status = scheduler.slack_poll_status()
+            if to_json:
+                print(json.dumps(status, indent=2))
+            elif status.get("installed"):
+                console.print(f"Polling every {status.get('interval_min', 0)} min ({status.get('platform', '?')})")
+            else:
+                console.print("The Slack poll is not installed.")
+            return 0
+        message = scheduler.remove_slack_poll() if args.remove else scheduler.install_slack_poll(minutes=args.every)
+        if to_json:
+            print(json.dumps({"message": message}, indent=2))
+        else:
+            console.print(message)
+        # An install this refuses (no token, an interval cron cannot express) is
+        # a request that could not be honoured, not a crash.
+        return 1 if message.startswith(("Not installing", "Failed")) or "not a usable interval" in message else 0
+
+    if command == "history":
+        from yeaboi.slack.store import SlackStore
+
+        with SlackStore() as store:
+            rows = store.unsettled(limit=args.limit) if args.pending else store.history(limit=args.limit)
+        if to_json:
+            print(json.dumps({"events": rows}, indent=2))
+        elif not rows:
+            console.print("Nothing from Slack yet." if not args.pending else "Nothing left unfinished.")
+        else:
+            for row in rows:
+                outcome = row.get("outcome") or "in flight"
+                console.print(
+                    f"  {row.get('claimed_at', '')[:16]}  {outcome:<13} {row.get('intent', '') or '-':<8} "
+                    f"{row.get('slack_user', '')}  {row.get('reason', '')}"
+                )
+        return 0
+
+    if command == "members":
+        from yeaboi.tools import slack as slack_api
+        from yeaboi.tools.slack import SlackResponse
+
+        ready, why = config.slack_two_way_ready()
+        if not ready:
+            console.print(f"[yellow]{why}[/yellow]")
+            return 1
+        # `paginate` hands its callback the cursor positionally; `users_list`
+        # takes it by keyword, so the lambda is the adapter between them.
+        people, error = slack_api.paginate(lambda cursor: slack_api.users_list(cursor=cursor), "members")
+        if error:
+            console.print(f"[yellow]{slack_api.error_message(SlackResponse(ok=False, error=error))}[/yellow]")
+            return 1
+        needle = args.match.strip().lower()
+        rows = []
+        for person in people:
+            # `users.list` returns bots, apps and the workspace's own Slackbot
+            # alongside people. Every one of them would be a member id you can
+            # never usefully link or allow, so none of them are offered.
+            if person.get("deleted") or person.get("is_bot") or person.get("id") == "USLACKBOT":
+                continue
+            profile = person.get("profile") or {}
+            label = profile.get("real_name") or person.get("real_name") or person.get("name") or ""
+            handle = person.get("name") or ""
+            if needle and needle not in f"{label} {handle}".lower():
+                continue
+            rows.append({"id": person.get("id", ""), "name": label, "handle": handle})
+        if to_json:
+            print(json.dumps({"members": rows}, indent=2))
+        elif not rows:
+            console.print("Nobody matched." if needle else "The workspace returned no people.")
+        else:
+            for row in rows:
+                console.print(f"  {row['id']:<12} {row['name']}  [dim]@{row['handle']}[/dim]")
+            console.print('\nUse an id in SLACK_ALLOWED_MEMBER_IDS, or `yeaboi slack link <id> "<name>"`.')
+        return 0
+
+    if command in ("link", "unlink"):
+        from yeaboi.mcp.tools_sessions import resolve_session_id
+        from yeaboi.slack.engine import link_slack_member
+        from yeaboi.slack.identity import IdentityError
+
+        try:
+            session_id = resolve_session_id(args.session)
+        except Exception:  # noqa: BLE001 — no saved session is a normal empty state
+            session_id = ""
+        try:
+            result = link_slack_member(
+                session_id,
+                args.slack_user,
+                getattr(args, "member", ""),
+                unlink=command == "unlink",
+            )
+        except IdentityError as exc:
+            # Named rather than silently dropped, for the allowlist's reason: a
+            # link that did not happen leaves somebody believing their
+            # corrections carry their name when they carry an id.
+            if to_json:
+                print(json.dumps({"error": str(exc)}, indent=2))
+            else:
+                console.print(f"[yellow]{exc}[/yellow]")
+            return 1
+        if to_json:
+            print(json.dumps(result, indent=2))
+        elif "identities" in result:
+            rows = result["identities"]
+            if not rows:
+                console.print(
+                    "Nothing linked — replies from Slack are attributed to the raw member id, which still works."
+                )
+            for row in rows:
+                console.print(f"  {row.get('slack_user', ''):<12} {row.get('member', '')}")
+        elif command == "unlink":
+            console.print("Unlinked." if result.get("unlinked") else "Nothing was linked to that id.")
+        else:
+            console.print(f"Linked {result['linked']}.")
+        return 0
+
+    # poll
+    from yeaboi.slack.engine import apply_inbound_events
+
+    result = apply_inbound_events()
+    if to_json:
+        print(json.dumps(result, indent=2))
+    else:
+        console.print(f"{result['outcome']}: {result['detail'] or '-'}")
+        if result["events_applied"]:
+            console.print(f"  applied {result['events_applied']} of {result['events_seen']} seen")
+    # A declined poll is not a failed one — the same rule the ceremonies runner
+    # follows, so a cron job that could not act does not page anybody.
+    return 1 if result["outcome"] == "failed" else 0
+
+
 def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
     """Declare, inspect and fire recurring runs.
 
@@ -2099,6 +2353,35 @@ def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
                 print(json.dumps({"ceremony": asdict(ceremony), "scheduler": message}, indent=2))
             else:
                 console.print(f"[green]✓[/green] {ceremony.name} {command}d. {message}")
+            return 0
+
+        if command == "skip":
+            from yeaboi.ceremonies.scheduler import next_occurrence
+
+            existing = store.get(session_id, args.name)
+            if existing is None:
+                print(f"Error: no ceremony named {args.name!r}", file=sys.stderr)
+                return 1
+            # Resolved to a date here rather than stored as a flag: launchd
+            # coalesces a missed slot into a fire the next morning, and a flag
+            # would be spent on the occurrence the user already saw.
+            occurrence = "" if args.clear else (args.on or next_occurrence(existing))
+            if not occurrence and not args.clear:
+                print(f"Error: could not work out {args.name!r}'s next run — pass --on YYYY-MM-DD", file=sys.stderr)
+                return 1
+            try:
+                ceremony = store.set_skip_next(session_id, args.name, occurrence)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
+            # The job is deliberately left installed: a one-day intent must not
+            # churn a plist, and a crash mid-reinstall would kill the ceremony.
+            if to_json:
+                print(json.dumps({"ceremony": asdict(ceremony), "skipping": occurrence}, indent=2))
+            elif occurrence:
+                console.print(f"[green]✓[/green] {ceremony.name} will skip its {occurrence} run, then carry on.")
+            else:
+                console.print(f"[green]✓[/green] {ceremony.name} is no longer skipping a run.")
             return 0
 
     # run — outside the store context: the engine opens its own connection.

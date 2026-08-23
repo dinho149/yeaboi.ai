@@ -1738,6 +1738,7 @@ CEREMONY_OUTCOMES = (
     "skipped_stale",  # fired far enough after its slot that the output would mislead
     "skipped_over_cap",  # this month's spend on this ceremony is already at the cap
     "skipped_paused",  # a job fired for a ceremony the store says is paused
+    "skipped_once",  # somebody asked for this one occurrence off
 )
 
 
@@ -1765,6 +1766,12 @@ class Ceremony:
     enabled: bool = True
     stale_after_min: int = 120  # 0 disables the staleness guard
     monthly_cap_usd: float = 0.0  # 0 = uncapped
+    # One occurrence off, as the ISO date of the slot being skipped — never a
+    # bool. launchd coalesces missed calendar intervals, so a flag can be
+    # consumed by a fire arriving the following morning *for yesterday's slot*,
+    # burning the skip on the occurrence the user already saw. A date says
+    # which one they meant, and the guard clears it once that slot has passed.
+    skip_next: str = ""
     last_fired_at: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -1814,6 +1821,27 @@ class Dispatch:
     summary: str = ""
     body: str = ""
     subject: str = ""
+
+
+@dataclass(frozen=True)
+class MessageRef:
+    """Where a delivered message landed, so a later read can find it again.
+
+    An incoming webhook answers a POST with the literal body ``ok`` and no
+    message id, which is the whole reason the two-way lane needs a bot token:
+    ``chat.postMessage`` replies with ``(channel, ts)``, and that pair is the
+    only handle Slack ever gives you on a message you posted. Without it, a
+    reaction can never be attributed back to the run that caused it.
+
+    ``kind`` rather than a Slack-only shape because email could grow a
+    Message-ID and be answered the same way; nothing else has a durable address
+    today, and those channels simply return no ref.
+    """
+
+    kind: str = "slack"
+    channel: str = ""  # Slack channel id
+    ts: str = ""  # Slack message ts — the identity
+    permalink: str = ""
 
 
 # ---------------------------------------------------------------------------
