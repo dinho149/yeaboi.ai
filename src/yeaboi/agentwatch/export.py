@@ -260,6 +260,11 @@ _BUILDERS = {
 }
 
 
+def build_markdown(artifact, *, kind: str) -> str:
+    """The Markdown one kind's artifact renders as — what Export writes, Copy copies."""
+    return _BUILDERS[kind](artifact)
+
+
 def export_artifact(artifact, *, kind: str) -> dict[str, Path]:
     """Write ``artifact`` under ~/.yeaboi/exports/agentwatch/<kind>/; return paths.
 

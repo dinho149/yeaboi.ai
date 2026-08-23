@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import pytest
 
 from yeaboi.agent.state import AgentUsageReport
+from yeaboi.agentwatch import setup as agents_setup
 from yeaboi.agentwatch.store import AgentWatchStore
 from yeaboi.ui.mode_select import _agents
 
@@ -56,20 +57,13 @@ class _Console:
     size = (100, 40)
 
 
-def _run_page(read_key, run_engine, screens):
-    _agents._run_threaded_engine_page(
-        _Console(),
-        _Live(),
-        read_key,
-        0.0,
-        True,
-        label="test-page",
-        run_engine=run_engine,
-        build_screen=screens,
-        make_failure_artifact=lambda exc: _FakeArtifact(name="failure"),
-        export_kind="usage",
-        build_markdown=lambda artifact: "md",
-    )
+def _run_page(read_key, run_engine, screens, monkeypatch):
+    """Drive the shared loop with the usage mode's table row, faked end to end."""
+    mode = agents_setup.require("agent-usage")
+    monkeypatch.setattr(_agents, "_screen_builder", lambda _mode: screens)
+    monkeypatch.setattr(agents_setup, "run", lambda _mode, on_progress: run_engine(on_progress))
+    monkeypatch.setattr(agents_setup, "failure_artifact", lambda _mode, exc: _FakeArtifact(name="failure"))
+    _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True)
 
 
 def _seed_stale(db_path):
@@ -93,7 +87,7 @@ def stale_db(empty_db):
 
 
 class TestDrain:
-    def test_a_backlog_folds_into_one_frame(self, empty_db):
+    def test_a_backlog_folds_into_one_frame(self, empty_db, monkeypatch):
         from yeaboi.analysis.progress import send_component_progress
 
         emitted = threading.Event()
@@ -120,7 +114,7 @@ class TestDrain:
             release.set()
             return "esc"
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         artifact, kwargs = screens.last
         assert artifact is None
         # 500 queued events → one latest-per-phase entry, current already at the tail.
@@ -129,7 +123,7 @@ class TestDrain:
 
 
 class TestInstantOpen:
-    def test_stale_report_shows_before_the_refresh_lands(self, stale_db):
+    def test_stale_report_shows_before_the_refresh_lands(self, stale_db, monkeypatch):
         release = threading.Event()
 
         def run_engine(on_progress):
@@ -152,7 +146,7 @@ class TestInstantOpen:
                 return "esc"
             return _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         first_artifact, first_kwargs = screens.calls[0]
         # Frame one is the finished screen with the saved report + refresh banner —
         # never the loading screen.
@@ -165,7 +159,7 @@ class TestInstantOpen:
         assert last_kwargs["refreshing"] is False
         assert last_kwargs["as_of"] == ""
 
-    def test_failed_refresh_keeps_the_stale_report(self, stale_db):
+    def test_failed_refresh_keeps_the_stale_report(self, stale_db, monkeypatch):
         def run_engine(on_progress):
             raise RuntimeError("boom")
 
@@ -182,14 +176,14 @@ class TestInstantOpen:
                 return "esc"
             return _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         artifact, kwargs = screens.last
         assert isinstance(artifact, AgentUsageReport), "the stale report must survive a failed refresh"
         assert artifact.total_cost_usd == 9.99
         assert "Refresh failed" in kwargs["notice"]
         assert kwargs["refreshing"] is False
 
-    def test_rerun_while_refreshing_is_a_notice_not_a_second_worker(self, stale_db):
+    def test_rerun_while_refreshing_is_a_notice_not_a_second_worker(self, stale_db, monkeypatch):
         release = threading.Event()
         runs = []
 
@@ -214,14 +208,14 @@ class TestInstantOpen:
                 return "esc"
             return _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         assert len(runs) == 1
         _artifact, kwargs = screens.last
         assert kwargs["notice"] == "Already refreshing…"
 
 
 class TestFirstRun:
-    def test_no_history_shows_the_loading_screen(self, empty_db):
+    def test_no_history_shows_the_loading_screen(self, empty_db, monkeypatch):
         release = threading.Event()
 
         def run_engine(on_progress):
@@ -240,13 +234,13 @@ class TestFirstRun:
             artifact, _kwargs = screens.last
             return "esc" if artifact is not None else _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         first_artifact, first_kwargs = screens.calls[0]
         assert first_artifact is None
         assert first_kwargs["progress"] == []
         assert getattr(screens.last[0], "name", "") == "fresh"
 
-    def test_engine_crash_with_no_history_shows_the_failure_artifact(self, empty_db):
+    def test_engine_crash_with_no_history_shows_the_failure_artifact(self, empty_db, monkeypatch):
         def run_engine(on_progress):
             raise RuntimeError("boom")
 
@@ -261,7 +255,7 @@ class TestFirstRun:
             artifact, _kwargs = screens.last
             return "esc" if artifact is not None else _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         assert getattr(screens.last[0], "name", "") == "failure"
 
 
@@ -289,7 +283,7 @@ class TestHistoryErrors:
             artifact, _kwargs = screens.last
             return "esc" if artifact is not None else _tick()
 
-        _run_page(read_key, run_engine, screens)
+        _run_page(read_key, run_engine, screens, monkeypatch)
         first_artifact, first_kwargs = screens.calls[0]
         assert first_artifact is None, "a broken history store must cold-start, not crash the page"
         assert "progress" in first_kwargs

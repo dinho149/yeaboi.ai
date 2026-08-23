@@ -25,30 +25,12 @@ import time
 from rich.console import Console
 
 from yeaboi.agent.state import Ceremony
-from yeaboi.ceremonies import catalog, scheduler
-from yeaboi.ceremonies.store import CeremonyStore
+from yeaboi.ceremonies import setup
+from yeaboi.ceremonies.setup import ACTIONS, LINK_HINT
 from yeaboi.ui.mode_select.screens._screens_ceremonies import _build_ceremonies_screen
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
-
-ACTIONS = ("Run now", "Pause", "Back")
-
-#: What `l` prints. A command rather than a form, for the reason the page
-#: already gives for `n`: this decides whose name goes on a teammate's report,
-#: and the surface that writes that should be the one you can read it back from.
-LINK_HINT = 'Find ids with `yeaboi slack members`, then: yeaboi slack link U0123456789 "Their Name"'
-
-
-def _session() -> str:
-    """The session the page is scoped to, or '' when there is none yet."""
-    try:
-        from yeaboi.mcp.tools_sessions import resolve_session_id
-
-        return resolve_session_id("")
-    except Exception:  # noqa: BLE001 — no saved sessions is a normal empty state
-        logger.info("ceremonies page: no session to scope to")
-        return ""
 
 
 def _slack(session_id: str) -> tuple[bool, int, int]:
@@ -57,48 +39,14 @@ def _slack(session_id: str) -> tuple[bool, int, int]:
     Read on entry and after each action rather than per frame — the loop
     repaints at 60 FPS, and an environment read plus a SQLite query plus a plist
     read on every one of those is the never-do-per-frame rule.
-
-    The interval comes off the **installed job**, not a config key: the job is
-    the storage for it, so a plist and a stored number can never disagree about
-    how often this actually happens.
     """
-    from yeaboi import config
-
-    ready, _why = config.slack_two_way_ready()
-    if not ready:
-        return False, 0, 0
-    linked, interval = 0, 0
-    try:
-        from yeaboi.slack import identity
-
-        linked = len(identity.listing(session_id))
-    except Exception:  # noqa: BLE001 — an unreadable mapping must not take the page down
-        logger.warning("ceremonies page: could not read the Slack identities", exc_info=True)
-    try:
-        interval = int(scheduler.slack_poll_status().get("interval_min", 0) or 0)
-    except Exception:  # noqa: BLE001 — an unreadable job reads as "not installed"
-        logger.warning("ceremonies page: could not read the Slack poll job", exc_info=True)
-    return True, linked, interval
+    status = setup.slack_status(session_id)
+    return bool(status["two_way"]), int(status["linked"]), int(status["interval_min"])
 
 
 def _load(session_id: str) -> tuple[list[Ceremony], dict, dict, list[str]]:
     """(ceremonies, last runs, month spend, drift lines) — one read, one screen."""
-    if not session_id:
-        return [], {}, {}, []
-    with CeremonyStore() as store:
-        declared = store.list(session_id)
-        last = {c.name: store.last_run(session_id, c.name) for c in declared}
-        spend = {c.name: store.month_spend(session_id, c.name) for c in declared}
-
-    # The store says what is declared, the OS says what will fire, and nothing
-    # else in the app would ever mention the gap.
-    installed = set(scheduler.installed_ceremonies(session_id))
-    known = {c.name for c in declared}
-    enabled = {c.name for c in declared if c.enabled}
-    drift = [f"a job is installed for {name!r}, which is not declared here" for name in sorted(installed - known)]
-    drift += [f"{name!r} is paused but its job is still installed" for name in sorted((installed & known) - enabled)]
-    drift += [f"{name!r} is declared but has no scheduled job — re-add it" for name in sorted(enabled - installed)]
-    return declared, last, spend, drift
+    return setup.load_page(session_id)
 
 
 def _run_now(console: Console, live, session_id: str, ceremony: Ceremony, dry_run: bool = False) -> str:
@@ -138,13 +86,7 @@ def _run_now(console: Console, live, session_id: str, ceremony: Ceremony, dry_ru
         time.sleep(0.1)
     if "error" in outcome:
         return outcome["error"]
-    run = outcome.get("run")
-    if run is None:
-        return "the run produced nothing"
-    if run.outcome == "ok":
-        delivered = ", ".join(ch for ch, ok in run.delivery if ok) or "nowhere"
-        return f"{ceremony.name} ran (${run.cost_usd:.2f}) → {delivered}"
-    return f"{ceremony.name}: {run.outcome} — {run.error or run.detail}"
+    return setup.run_summary(outcome.get("run"))
 
 
 def run_ceremonies_page(
@@ -162,13 +104,13 @@ def run_ceremonies_page(
     ones the moment somebody pressed Run now, and post the result to the real
     Slack webhook.
     """
-    session_id = _session()
+    session_id = setup.current_session()
     ceremonies, last, spend, drift = _load(session_id)
     two_way, linked, interval = _slack(session_id)
     logger.info("Ceremonies page opened: %d declared in session %s", len(ceremonies), session_id or "(none)")
     selected = action_sel = scroll = 0
     scroll_meta: dict = {}
-    message = "" if session_id else "No saved session yet — plan a project first."
+    message = "" if session_id else setup.NO_SESSION_MESSAGE
     start = time.monotonic()
 
     while True:
@@ -221,7 +163,7 @@ def run_ceremonies_page(
                 logger.info("Ceremonies page closed from the buttons")
                 return
             if not ceremonies:
-                message = "Nothing scheduled — add one with `yeaboi ceremonies add`."
+                message = setup.NOTHING_SCHEDULED_MESSAGE
                 continue
             ceremony = ceremonies[selected]
             if choice == "Run now":
@@ -230,21 +172,12 @@ def run_ceremonies_page(
             else:
                 enable = choice == "Resume"
                 logger.info("Ceremonies: %s %s", "resuming" if enable else "pausing", ceremony.name)
-                with CeremonyStore() as store:
-                    store.set_enabled(session_id, ceremony.name, enable)
-                if enable:
-                    detail = scheduler.install_ceremony(session_id, ceremony.name, ceremony.at, ceremony.weekdays)
-                else:
-                    # Pause removes the JOB and keeps the declaration; a paused
-                    # ceremony that still fires is the thing users report as a bug.
-                    detail = scheduler.remove_ceremony(session_id, ceremony.name)
+                _stored, detail = setup.set_enabled(session_id, ceremony.name, enable)
                 message = f"{ceremony.name} {'resumed' if enable else 'paused'}. {detail}"
             ceremonies, last, spend, drift = _load(session_id)
             selected = min(selected, max(0, len(ceremonies) - 1))
         elif key == "l":
             two_way, linked, interval = _slack(session_id)
-            message = LINK_HINT if two_way else "Slack is write-only here — set SLACK_BOT_TOKEN to read replies back."
+            message = LINK_HINT if two_way else setup.NO_TWO_WAY_MESSAGE
         elif key == "n":
-            message = (
-                f"Add one from the terminal: yeaboi ceremonies add <name> --mode {catalog.CATALOG[0].key} --at 09:00"
-            )
+            message = f"Add one from the terminal: {setup.add_hint()}"

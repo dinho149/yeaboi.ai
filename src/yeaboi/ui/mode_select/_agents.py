@@ -20,31 +20,12 @@ import time
 
 from rich.console import Console
 
-from yeaboi.agentwatch.export import (
-    build_advisor_markdown,
-    build_security_markdown,
-    build_standup_markdown,
-    build_usage_markdown,
-)
+from yeaboi.agentwatch import setup as agents_setup
 from yeaboi.logging_setup import mode_log
 from yeaboi.ui.mode_select.screens._screens_agents import AGENT_RESULT_ACTIONS
 from yeaboi.ui.shared._beta_notice import show_beta_notice
-from yeaboi.ui.shared._components import (
-    AGENT_ADVISOR_THEME,
-    AGENT_SECURITY_THEME,
-    AGENT_STANDUP_THEME,
-    AGENT_USAGE_THEME,
-    Theme,
-)
 
 logger = logging.getLogger(__name__)
-
-_MODE_META: dict[str, tuple[str, Theme]] = {
-    "agent-usage": ("Agent Usage", AGENT_USAGE_THEME),
-    "agent-advisor": ("Agent Advisor", AGENT_ADVISOR_THEME),
-    "agent-standup": ("Agent Standup", AGENT_STANDUP_THEME),
-    "agent-security": ("Agent Security", AGENT_SECURITY_THEME),
-}
 
 
 def route_agent_mode(
@@ -57,24 +38,20 @@ def route_agent_mode(
     supports_timeout: bool,
 ) -> None:
     """Enter one Agents mode from the menu; returns when the user backs out."""
-    label, _theme = _MODE_META.get(key, (key, AGENT_USAGE_THEME))
+    mode = agents_setup.lookup(key)
+    if mode is None:
+        logger.warning("agents: no such mode %r", key)
+        return
     with mode_log("agentwatch"):
-        logger.info("%s opened", label)
+        logger.info("%s opened", mode.label)
         if not show_beta_notice(live, console, read_key, frame_time, supports_timeout, mode_key=key):
-            logger.info("%s beta notice declined — back to menu", label)
+            logger.info("%s beta notice declined — back to menu", mode.label)
             return
-        if key == "agent-usage":
-            _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout)
-        elif key == "agent-advisor":
-            _run_agent_advisor_page(console, live, read_key, frame_time, supports_timeout)
-        elif key == "agent-standup":
-            _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout)
-        elif key == "agent-security":
-            _run_agent_security_page(console, live, read_key, frame_time, supports_timeout)
-        logger.info("%s closed", label)
+        _run_agent_page(mode, console, live, read_key, frame_time, supports_timeout)
+        logger.info("%s closed", mode.label)
 
 
-def _run_result_action(action: str, artifact, *, label: str, export_kind: str, build_markdown) -> str:
+def _run_result_action(action: str, artifact, *, mode: agents_setup.AgentMode) -> str:
     """Run Export or Copy for a finished artifact; return the notice to show.
 
     Never raises: a failed write or an absent clipboard tool becomes a notice,
@@ -86,64 +63,51 @@ def _run_result_action(action: str, artifact, *, label: str, export_kind: str, b
 
     if action == "Export":
         try:
-            written = export_artifact(artifact, kind=export_kind)
+            written = export_artifact(artifact, kind=mode.kind)
         except Exception as exc:  # noqa: BLE001 — a failed export must not close the page
-            logger.warning("%s page: export failed: %s", label, exc)
+            logger.warning("%s page: export failed: %s", mode.key, exc)
             return "Couldn't write the export — see logs."
         path = next(iter(written.values()), None)
-        logger.info("%s page: exported to %s", label, path)
+        logger.info("%s page: exported to %s", mode.key, path)
         return f"Exported to {path}" if path else "Nothing to export."
 
     if action == "Copy":
         try:
-            markdown = build_markdown(artifact)
+            markdown = agents_setup.markdown(mode, artifact)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("%s page: could not build markdown to copy: %s", label, exc)
+            logger.warning("%s page: could not build markdown to copy: %s", mode.key, exc)
             return "Couldn't copy — see logs."
         ok = copy_text(markdown)
-        logger.info("%s page: copy %s", label, "succeeded" if ok else "failed")
+        logger.info("%s page: copy %s", mode.key, "succeeded" if ok else "failed")
         return "Copied the report to the clipboard." if ok else "Couldn't reach the clipboard."
 
     return ""
 
 
-def _load_latest_artifact(kind: str):
-    """The newest saved report of one kind, rehydrated, plus its created_at.
-
-    None when history is empty or the stored payload cannot be rebuilt — the
-    page then falls back to the first-run loading screen. Never raises: a
-    broken history row must not take down the page it was meant to speed up.
-    """
-    from yeaboi.agentwatch.store import AgentWatchStore, report_from_payload
-    from yeaboi.paths import get_db_path
-
-    try:
-        with AgentWatchStore(get_db_path()) as store:
-            row = store.latest_report(kind)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("agent %s page: could not read report history: %s", kind, exc)
-        return None
-    if not row:
-        return None
-    artifact = report_from_payload(kind, row.get("report"))
-    if artifact is None:
-        return None
-    return artifact, str(row.get("created_at") or "")
+#: The screen builder for each mode — the only per-mode thing the shared page
+#: loop needs that ``agentwatch.setup``'s table does not carry.
+_SCREENS: dict[str, tuple[str, str]] = {
+    "agent-usage": ("_screens_agents", "_build_agent_usage_screen"),
+    "agent-advisor": ("_screens_agents", "_build_agent_advisor_screen"),
+    "agent-standup": ("_screens_agents", "_build_agent_standup_screen"),
+    "agent-security": ("_screens_agents", "_build_agent_security_screen"),
+}
 
 
-def _run_threaded_engine_page(
+def _screen_builder(mode: agents_setup.AgentMode):
+    from importlib import import_module
+
+    module, attribute = _SCREENS[mode.key]
+    return getattr(import_module(f"yeaboi.ui.mode_select.screens.{module}"), attribute)
+
+
+def _run_agent_page(
+    mode: agents_setup.AgentMode,
     console,
     live,
     read_key,
     frame_time: float,
     supports_timeout: bool,
-    *,
-    label: str,
-    run_engine,
-    build_screen,
-    make_failure_artifact,
-    export_kind: str,
-    build_markdown,
 ) -> None:
     """Shared page loop: engine on a worker thread, instant last report, result.
 
@@ -170,10 +134,12 @@ def _run_threaded_engine_page(
     from yeaboi.analysis.progress import is_component_progress
     from yeaboi.ui.shared._music_bar import duck_working_thread
 
+    label = mode.key
+    build_screen = _screen_builder(mode)
     logger.info("%s page opened", label)
     artifact = None
     as_of = ""
-    loaded = _load_latest_artifact(export_kind)
+    loaded = agents_setup.latest_artifact(mode.kind)
     if loaded is not None:
         artifact, as_of = loaded
         logger.info("%s page: showing last saved report (from %s) while refreshing", label, as_of or "unknown time")
@@ -191,7 +157,7 @@ def _run_threaded_engine_page(
 
         def _work() -> None:
             try:
-                rq.put(("ok", run_engine(pq.put)))
+                rq.put(("ok", agents_setup.run(mode, pq.put)))
             except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
                 logger.exception("%s engine failed", label)
                 rq.put(("err", exc))
@@ -250,7 +216,7 @@ def _run_threaded_engine_page(
                 notice = "Refresh failed — showing the last saved report (see logs)."
                 logger.warning("%s page: background refresh failed; keeping the last saved report", label)
             else:
-                artifact = make_failure_artifact(payload)
+                artifact = agents_setup.failure_artifact(mode, payload)
                 refreshing = False
 
         w, h = console.size
@@ -304,122 +270,4 @@ def _run_threaded_engine_page(
             if action == "Re-run":
                 _handle_rerun()
             else:
-                notice = _run_result_action(
-                    action, artifact, label=label, export_kind=export_kind, build_markdown=build_markdown
-                )
-
-
-def _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Usage — threaded engine run + capped dashboard."""
-    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen
-
-    def _run(on_progress):
-        from yeaboi.agentwatch.engine import run_agent_usage
-
-        return run_agent_usage(on_progress=on_progress)
-
-    def _failure(exc):
-        from yeaboi.agent.state import AgentUsageReport
-
-        return AgentUsageReport(warnings=(f"Agent usage failed: {exc}",))
-
-    _run_threaded_engine_page(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        label="agent-usage",
-        run_engine=_run,
-        build_screen=_build_agent_usage_screen,
-        make_failure_artifact=_failure,
-        export_kind="usage",
-        build_markdown=build_usage_markdown,
-    )
-
-
-def _run_agent_advisor_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Advisor — threaded engine run + capped recoverable-spend report."""
-    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_advisor_screen
-
-    def _run(on_progress):
-        from yeaboi.agentwatch.advisor import run_agent_advisor
-
-        return run_agent_advisor(on_progress=on_progress)
-
-    def _failure(exc):
-        from yeaboi.agent.state import AgentAdvisorReport
-
-        return AgentAdvisorReport(warnings=(f"Agent advisor failed: {exc}",))
-
-    _run_threaded_engine_page(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        label="agent-advisor",
-        run_engine=_run,
-        build_screen=_build_agent_advisor_screen,
-        make_failure_artifact=_failure,
-        export_kind="advisor",
-        build_markdown=build_advisor_markdown,
-    )
-
-
-def _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Standup — threaded engine run + capped digest."""
-    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_standup_screen
-
-    def _run(on_progress):
-        from yeaboi.agentwatch.engine import run_agent_standup
-
-        return run_agent_standup(on_progress=on_progress)
-
-    def _failure(exc):
-        from yeaboi.agent.state import AgentStandupDigest
-
-        return AgentStandupDigest(warnings=(f"Agent standup failed: {exc}",))
-
-    _run_threaded_engine_page(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        label="agent-standup",
-        run_engine=_run,
-        build_screen=_build_agent_standup_screen,
-        make_failure_artifact=_failure,
-        export_kind="standup",
-        build_markdown=build_standup_markdown,
-    )
-
-
-def _run_agent_security_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Security — threaded engine run + capped findings report."""
-    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_security_screen
-
-    def _run(on_progress):
-        from yeaboi.agentwatch.engine import run_agent_security
-
-        return run_agent_security(on_progress=on_progress)
-
-    def _failure(exc):
-        from yeaboi.agent.state import AgentSecurityReport
-
-        return AgentSecurityReport(warnings=(f"Agent security scan failed: {exc}",))
-
-    _run_threaded_engine_page(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        label="agent-security",
-        run_engine=_run,
-        build_screen=_build_agent_security_screen,
-        make_failure_artifact=_failure,
-        export_kind="security",
-        build_markdown=build_security_markdown,
-    )
+                notice = _run_result_action(action, artifact, mode=mode)
