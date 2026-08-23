@@ -82,6 +82,30 @@ export const ACTIVITY_SOURCE_LABELS: Record<ActivitySources, string> = {
   "notion": "Notion",
 };
 
+/** What one evidence source contributed. Generated because two modes draw the same dot from the same word — standup's category coverage and performance's per-source coverage — and a hand-written copy in one of them would drift with nothing to notice. */
+export const COVERAGE_STATES = ["covered", "partial", "failed", "not_configured"] as const;
+export type CoverageStates = (typeof COVERAGE_STATES)[number];
+
+/** Every source a performance artifact can be grounded in. */
+export const EVIDENCE_SOURCES = ["tickets", "code", "documentation", "standup", "analysis", "retro", "poker", "delivery"] as const;
+export type EvidenceSources = (typeof EVIDENCE_SOURCES)[number];
+
+/** How a source is named to a reader. Generated so the Markdown, the TUI and the export cannot call one source three different things. */
+export const EVIDENCE_SOURCE_LABELS: Record<EvidenceSources, string> = {
+  "tickets": "Tickets",
+  "code": "Code",
+  "documentation": "Documentation",
+  "standup": "Standup",
+  "analysis": "Team analysis",
+  "retro": "Retro",
+  "poker": "Estimation",
+  "delivery": "Delivery",
+};
+
+/** What a measured number IS — a bare count, a percentage, points, or days. Never how to draw it. */
+export const STAT_UNITS = ["", "%", "pts", "d"] as const;
+export type StatUnits = (typeof STAT_UNITS)[number];
+
 /**
  * The two-line block font, one entry per character: `[top, bottom]`.
  *

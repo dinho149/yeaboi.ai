@@ -48,6 +48,37 @@ SOURCE_RETRO = "retro"
 SOURCE_POKER = "poker"
 SOURCE_DELIVERY = "delivery"
 
+# The two vocabularies above, as ordered tuples plus reader-facing labels. Two
+# modes now draw the same coverage dot from the same word, and a hand-written
+# copy in TypeScript is what would drift with nothing to notice — so these are
+# codegen'd into frontend/src/types/enums.ts.
+COVERAGE_STATES: tuple[str, ...] = (COVERED, PARTIAL, FAILED, NOT_CONFIGURED)
+
+EVIDENCE_SOURCES: tuple[str, ...] = (
+    SOURCE_TICKETS,
+    SOURCE_CODE,
+    SOURCE_DOCUMENTATION,
+    SOURCE_STANDUP,
+    SOURCE_ANALYSIS,
+    SOURCE_RETRO,
+    SOURCE_POKER,
+    SOURCE_DELIVERY,
+)
+
+EVIDENCE_SOURCE_LABELS: dict[str, str] = {
+    SOURCE_TICKETS: "Tickets",
+    SOURCE_CODE: "Code",
+    SOURCE_DOCUMENTATION: "Documentation",
+    SOURCE_STANDUP: "Standup",
+    SOURCE_ANALYSIS: "Team analysis",
+    SOURCE_RETRO: "Retro",
+    SOURCE_POKER: "Estimation",
+    SOURCE_DELIVERY: "Delivery",
+}
+
+# What a measured number IS, never how to draw it. "" is a bare count.
+STAT_UNITS: tuple[str, ...] = ("", "%", "pts", "d")
+
 # Caps — a six-month window must not blow the prompt (poker/context.py:41-48 style).
 _MAX_STANDUP_RUNS = 180  # runs read back; ~9 months of weekdays
 _MAX_STANDUP_LINES = 12  # self-report / progress lines quoted

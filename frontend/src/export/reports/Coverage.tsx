@@ -13,10 +13,12 @@
  */
 
 import { toneVar, type Tone } from '../../design/tone';
+import type { CoverageStates } from '../../types/enums';
 import styles from './reports.module.css';
 
-/** Coverage statuses → tones. Unknown → `low`, via `coverageTone`. */
-export const COVERAGE_TONE: Record<string, Tone> = {
+/** Coverage statuses → tones. Keyed by the generated vocabulary, so a state added
+ *  in Python fails the typecheck here rather than rendering an unexplained grey dot. */
+export const COVERAGE_TONE: Record<CoverageStates, Tone> = {
   covered: 'ok',
   partial: 'warn',
   failed: 'danger',
@@ -24,7 +26,9 @@ export const COVERAGE_TONE: Record<string, Tone> = {
 };
 
 export function coverageTone(status: string): Tone {
-  return COVERAGE_TONE[status] ?? 'low';
+  // The engine produces these words; an unrecognised one must render muted, not
+  // fail a build — so the lookup widens back to string here.
+  return (COVERAGE_TONE as Record<string, Tone>)[status] ?? 'low';
 }
 
 /** One source's contribution: what it is called, how it went, and optionally why. */
