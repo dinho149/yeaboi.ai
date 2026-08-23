@@ -8,6 +8,7 @@ from yeaboi.agent.state import (
     EvidenceGroup,
     OneOnOnePrep,
     OneOnOneRecord,
+    PerfMetric,
     SixMonthReview,
 )
 from yeaboi.performance import delivery, export, render
@@ -282,6 +283,83 @@ class TestPayload:
         report = island(export.build_completion_html(record))["report"]
         assert report["lead"] == {"title": "Summary email", "text": "We agreed on the plan."}
         assert report["sections"][0] == {"id": "subject", "title": "Subject", "items": ["1:1 recap"]}
+
+
+class TestMarkdownCarriesTheNumbersAndTheEvidence:
+    """Markdown is the copy that outlives the tool, and what Notion publishes."""
+
+    @staticmethod
+    def _review():
+        return SixMonthReview(
+            engineer="Ada",
+            strengths=("ownership",),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=28.0,
+                    denominator=31.0,
+                    source="analysis",
+                ),
+                PerfMetric(key="tests_rate", label="Changes with tests", value=62.0, unit="%", source="analysis"),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 2 of 118",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add the tenant guard"),),
+                        ),
+                        ActivityEvidence(kind="page", key="Runbook", title="Auth runbook", url="javascript:alert(1)"),
+                    ),
+                ),
+            ),
+        )
+
+    def test_a_ratio_keeps_its_denominator(self):
+        # "28" in a bullet list is not the same fact as "28 of 31", and a table
+        # is the only Markdown structure that keeps the two together.
+        md = export.build_review_markdown(self._review())
+        assert "| Metric | Value | Source |" in md
+        assert "| Stories completed | 28 of 31 | Team analysis |" in md
+        assert "| Changes with tests | 62% | Team analysis |" in md
+
+    def test_a_whole_number_carries_no_trailing_decimal(self):
+        assert "| 28 of 31 |" in export.build_review_markdown(self._review())
+        assert "28.0" not in export.build_review_markdown(self._review())
+
+    def test_evidence_rows_link_and_nest(self):
+        md = export.build_review_markdown(self._review())
+        assert "- [pr] [#91](https://github.com/acme/web/pull/91) Roll SSO out · acme/web · merged" in md
+        assert "  - 78e4201 Add the tenant guard" in md
+        assert "_capped at 2 of 118_" in md
+
+    def test_an_unsafe_url_costs_the_link_and_not_the_row(self):
+        # The key is what the reader is being shown evidence *of*; dropping the
+        # row would silently shrink the evidence behind a judgement.
+        md = export.build_review_markdown(self._review())
+        assert "javascript:" not in md
+        assert "- [page] Runbook Auth runbook" in md
+
+    def test_an_artifact_with_no_numbers_grows_no_empty_table(self):
+        md = export.build_review_markdown(SixMonthReview(engineer="Ada", strengths=("ownership",)))
+        assert "## Measured" not in md
+        assert "## Evidence" not in md
+
+    def test_the_completion_publishes_what_the_prep_gathered(self):
+        record = OneOnOneRecord(
+            engineer="Ada",
+            metrics=(PerfMetric(key="spill_rate", label="Spill rate", value=18.0, unit="%", source="analysis"),),
+        )
+        assert "| Spill rate | 18% | Team analysis |" in export.build_completion_markdown(record)
 
 
 class TestTheEmailBodyStillComesFromHere:
