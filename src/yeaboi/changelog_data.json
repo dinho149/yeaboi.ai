@@ -2,6 +2,37 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.26.0",
+      "date": "2026-08-23",
+      "summary": "Added a live credential verification check before every mode opens, with a blocking gate if your LLM API key is missing or expired. Previously, a present-but-expired key would silently walk into the fallback path and generate misleading content (action items that say 'Address: <topic>' with no explanation). Now every mode verifies the credential works before starting, distinguishing between a definite rejection and inconclusive network errors (so it won't block on a captive wifi). Usage and Settings modes are exempt because they make no LLM calls. The check is also skipped with --dry-run, which is used by the demo recorder and test suite.",
+      "highlights": [
+        {
+          "text": "Live LLM credential verification: before any mode opens, ping the API to confirm your key is valid and your subscription is active",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Blocking gate on invalid API keys: stops confusing AI-generated fallback content from appearing when credentials are missing or expired",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Smart network error handling: distinguishes between a definite credential rejection and transient network issues (captive wifi, proxy) so it won't over-block",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Per-mode exemptions: Usage (local dashboard) and Settings (credential management) don't gate on LLM availability since they don't call the API",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.25.0",
       "date": "2026-08-23",
       "summary": "Hardened the Cloudflare tunnel sharing path with an opt-in verified-users tier (YEABOI_SHARE_MODE=access). The quick-tunnel default now uses the real visitor IP for rate limiting instead of collapsing into one bucket, refused holds back off server-side, and the cloudflared binary is verified on every launch. The new access tier adds a named tunnel with verified identity: local JWT verification with RS256 keys, hostname claim registry, server-side impersonation prevention on retro/poker/share/ship surfaces, and a four-step setup wizard integrated into Settings. Cloudflared is now containerized with an allowlisted environment (no API keys, pinned logging and metrics), and tunnel hostname redaction from logs keeps host metadata private.",
