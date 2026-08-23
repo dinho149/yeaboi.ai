@@ -234,7 +234,11 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Planning intake card in _INTAKE_CARDS (Chat/Roadmap/Offline), not a mode card"),
         "cli": Exempt("interactive source picker + intake handoff; a headless roadmap path is a tracked gap"),
         "skill": Exempt("no plugin skill yet — tracked follow-up gap"),
-        "desktop": Exempt("desktop: scheduled milestone M5 — a planning intake tile, as in the TUI"),
+        # Slipped M5 deliberately, and the ledger says so rather than quietly
+        # carrying a milestone that has shipped: the intake tile needs a
+        # roadmap path that is not TUI-only, and no surface has one yet — the
+        # same gap the four rows above already track.
+        "desktop": Exempt("desktop: scheduled milestone M8 — needs the headless roadmap path the other rows track"),
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every
