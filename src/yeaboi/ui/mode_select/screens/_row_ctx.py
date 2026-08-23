@@ -73,16 +73,27 @@ class RowCtx:
     def line(self, text: str, style: str = "") -> None:
         self.add(Text(PAD + "    " + text, style=style or self.theme.value, justify="left"))
 
-    def wrapped(self, text: str, style: str, *, indent: str = "    ", preserve_newlines: bool = False) -> None:
+    def wrapped(
+        self,
+        text: str,
+        style: str,
+        *,
+        indent: str = "    ",
+        preserve_newlines: bool = False,
+        hanging: int = 0,
+    ) -> None:
         """Append word-wrapped lines; optionally honour explicit newlines.
 
         preserve_newlines keeps the author's own paragraph breaks (a multi-line
-        self-report, an email body) instead of collapsing them.
+        self-report, an email body) instead of collapsing them. ``hanging``
+        indents continuation rows by that many extra columns, so a bullet's
+        second line lines up under its text rather than under its marker.
         """
         wrap_w = max(24, self.width - len(PAD) - len(indent) - _CHROME_W)
         paragraphs = text.splitlines() if preserve_newlines else [text]
         for para in paragraphs or [""]:
-            for chunk in textwrap.wrap(para, width=wrap_w) or [""]:
+            chunks = textwrap.wrap(para, width=wrap_w, subsequent_indent=" " * hanging) or [""]
+            for chunk in chunks:
                 self.add(Text(PAD + indent + chunk, style=style, justify="left"))
 
 
