@@ -106,20 +106,12 @@ def _fs_consent_popup(console, live, read_key, frame_time, supports_timeout, req
 def _apply_consent(choice: str, req) -> bool:
     """Apply a popup choice to the sandbox. Returns True when access was granted.
 
-    "allow_once" grants for this process only; "allow_always" persists the path
-    to the YEABOI_ALLOWED_PATHS whitelist in ~/.yeaboi/.env; "deny" is a no-op.
+    The meaning of an answer belongs to the sandbox, not to this popup — the
+    desktop consent modal answers the same three ways.
     """
-    from yeaboi import config, fs_policy
+    from yeaboi import fs_policy
 
-    if choice == "allow_once":
-        fs_policy.grant_session(req.path)  # logs the grant itself
-        return True
-    if choice == "allow_always":
-        config.add_allowed_path(str(req.path))
-        logger.info("fs consent: %s permanently whitelisted", req.path)
-        return True
-    logger.info("fs consent: %s denied by user", req.path)
-    return False
+    return fs_policy.apply_consent(choice, req)
 
 
 def _preflight_path_choice(

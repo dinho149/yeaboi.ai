@@ -224,6 +224,25 @@ def set_duck_enabled(enabled: bool) -> None:
     logger.info("Duck bubble %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
+def is_pet_enabled() -> bool:
+    """Return True if the desktop duck pet should be on screen (default off).
+
+    Deliberately not a Settings-page field like :func:`is_duck_enabled`: it
+    configures a window the terminal cannot draw, so it is offered where it can
+    be seen — the desktop tray and the desktop's own ambience controls. Off by
+    default; an always-on-top duck is opt-in.
+    """
+    return os.getenv("PET_ENABLED", "false").strip().lower() == "true"
+
+
+def set_pet_enabled(enabled: bool) -> None:
+    """Persist the desktop-pet on/off preference to ~/.scrum-agent/.env."""
+    value = "true" if enabled else "false"
+    config_file = set_config_value("PET_ENABLED", value)
+    os.environ["PET_ENABLED"] = value
+    logger.info("Desktop pet %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
+
+
 def is_music_enabled() -> bool:
     """Return True if background music was left enabled (default off).
 

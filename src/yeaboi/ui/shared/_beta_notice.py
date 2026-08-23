@@ -13,6 +13,9 @@ loop. Returns True to enter the mode, False to go back to the menu.
 The acknowledgement lives in ``~/.yeaboi/.env`` (see ``config.mark_beta_notice_seen``)
 and is written only on Continue — backing out leaves the notice pending, so
 someone who bailed still gets told next time.
+
+The words are ``beta.BETA_GATE_COPY``; this module supplies only the chrome each
+gated mode wears, so the desktop's modal says exactly the same thing.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.beta import BETA_LABEL
+from yeaboi.beta import BETA_GATE_COPY, BETA_GATE_FOOTER, BETA_GATE_SUBTITLE, BETA_LABEL
 from yeaboi.config import is_beta_notice_seen, mark_beta_notice_seen
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
@@ -56,107 +59,19 @@ _ACTIONS = ["Continue", "Back"]
 
 @dataclass(frozen=True)
 class _BetaMode:
-    """Everything a beta notice needs to look like the mode it gates."""
+    """The chrome a beta notice wears — the copy itself comes from ``beta.py``."""
 
     title_fn: Callable[..., Text]
     theme: Theme
-    subtitle: str
-    headline: str
-    body: tuple[str, ...]
 
 
-# Copy rule: name what can actually go wrong and what stays local. A generic
-# "this feature is experimental" tells the user nothing they can act on, and
-# reads as liability cover rather than information.
 _BETA_MODES: dict[str, _BetaMode] = {
-    "performance": _BetaMode(
-        title_fn=performance_title,
-        theme=PERFORMANCE_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Performance is in beta.",
-        body=(
-            "1:1 preps, completions and 6-month reviews are drafted from your tracker",
-            "data — read them as a starting point, not an assessment.",
-            "",
-            "Coverage depends on how much of the work is actually on the board; sparse",
-            "boards produce thin, sometimes misleading signals.",
-            "",
-            "Nothing is sent to anyone automatically. Exports stay on this machine",
-            "under ~/.yeaboi/exports/performance.",
-        ),
-    ),
-    "ship": _BetaMode(
-        title_fn=ship_title,
-        theme=SHIP_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Ship is in beta.",
-        body=(
-            "Ship launches a real coding agent (Claude Code) against a repository you",
-            "name, on an isolated branch cut from a clean tree. It spends real API",
-            "quota — a launch budget caps runs at 2 per hour, 12 per day.",
-            "",
-            "Nothing merges by itself: the branch is pushed and the pull request is",
-            "opened only after you approve the diff at the gate.",
-            "",
-            "Review the diff like a stranger wrote it, because one did.",
-        ),
-    ),
-    "agent-usage": _BetaMode(
-        title_fn=agent_usage_title,
-        theme=AGENT_USAGE_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Agent Usage is in beta.",
-        body=(
-            "Costs are estimates: token counts come from your local agent session logs",
-            "(Claude Code), priced from a dated public rate table — not your",
-            "provider's bill. Unknown models are priced at a mid-tier guess and flagged.",
-            "",
-            "Only aggregates are stored. Session transcripts are read on this machine",
-            "and never copied, uploaded, or persisted.",
-        ),
-    ),
-    "agent-advisor": _BetaMode(
-        title_fn=agent_advisor_title,
-        theme=AGENT_ADVISOR_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Agent Advisor is in beta.",
-        body=(
-            "Recoverable-spend figures are estimates of opportunity, not promised",
-            "savings: tokens are approximated from bytes and priced at your window's",
-            "blended input rate, and every mechanism count is a floor.",
-            "",
-            "Transcripts and CLAUDE.md files are read on this machine only. The report",
-            "keeps counts, byte totals and file paths — never their content.",
-        ),
-    ),
-    "agent-standup": _BetaMode(
-        title_fn=agent_standup_title,
-        theme=AGENT_STANDUP_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Agent Standup is in beta.",
-        body=(
-            "The digest combines local agent sessions with agent-authored commits and",
-            "PRs found in your trackers. Detection is a lower bound — agents that leave",
-            "no marker are invisible, so absence of activity is not proof of idleness.",
-            "",
-            "Nothing is sent to anyone unless you deliver it. Exports stay on this",
-            "machine under ~/.yeaboi/exports/agentwatch.",
-        ),
-    ),
-    "agent-security": _BetaMode(
-        title_fn=agent_security_title,
-        theme=AGENT_SECURITY_THEME,
-        subtitle="Beta — worth thirty seconds",
-        headline="Agent Security is in beta.",
-        body=(
-            "Checks are deterministic pattern scans over your agent configs and session",
-            "logs — an indicator, not a security audit. A clean report means no known",
-            "pattern matched, not that your setup is safe.",
-            "",
-            "Findings reference file and line only; matched secrets are never stored",
-            "or displayed. Everything stays on this machine.",
-        ),
-    ),
+    "performance": _BetaMode(performance_title, PERFORMANCE_THEME),
+    "ship": _BetaMode(ship_title, SHIP_THEME),
+    "agent-usage": _BetaMode(agent_usage_title, AGENT_USAGE_THEME),
+    "agent-advisor": _BetaMode(agent_advisor_title, AGENT_ADVISOR_THEME),
+    "agent-standup": _BetaMode(agent_standup_title, AGENT_STANDUP_THEME),
+    "agent-security": _BetaMode(agent_security_title, AGENT_SECURITY_THEME),
 }
 
 
@@ -176,6 +91,7 @@ def _build_beta_notice_screen(
     entering that mode rather than as an interstitial bolted in front of it.
     """
     spec = _BETA_MODES[mode_key]
+    copy = BETA_GATE_COPY[mode_key]
     theme = spec.theme
 
     # shimmer_tick=None (not 0.0) — 0.0 is the animated path frozen at tick 0,
@@ -188,14 +104,14 @@ def _build_beta_notice_screen(
     title.overflow = "crop"
 
     lines: list = [Text(""), title, Text("")]
-    lines.append(build_reveal_subtitle(spec.subtitle, sub_reveal, pad=PAD + "  "))
+    lines.append(build_reveal_subtitle(BETA_GATE_SUBTITLE, sub_reveal, pad=PAD + "  "))
     lines.append(Text(""))
-    lines.append(Text(PAD + spec.headline, style="bold white", justify="left"))
+    lines.append(Text(PAD + copy["headline"], style="bold white", justify="left"))
     lines.append(Text(""))
-    for line in spec.body:
+    for line in copy["body"]:
         lines.append(Text(PAD + line, style=theme.desc, justify="left") if line else Text(""))
     lines.append(Text(""))
-    lines.append(Text(PAD + "You'll only see this once — the BETA tag stays on the page.", style=theme.muted))
+    lines.append(Text(PAD + BETA_GATE_FOOTER, style=theme.muted))
     lines.append(Text(""))
 
     btn_top, btn_mid, btn_bot = build_action_buttons(_ACTIONS, action_sel)

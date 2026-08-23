@@ -30,6 +30,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from yeaboi.ambience import DUCK_QUIPS
 from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_FADE_OUT, _SAY_HOLD
 
 PRIORITY_STICKY = 0  # a confirmation that must wait for an answer — never fades
@@ -38,23 +39,9 @@ PRIORITY_COACH = 2
 
 COACH_HOLD = 4.0  # coaching lines dwell a little longer than the default 2s
 
-# The reaction vocabulary — one short line per completion event, used by the
-# mode pages so the tone stays consistent app-wide. Dynamic lines (counts,
-# filenames) go through say() directly. Kept ≤ 40 chars by a unit test so a
-# quip always fits the bubble on a normal terminal.
-DUCK_QUIPS: dict[str, str] = {
-    "standup_done": "Standup's up!",
-    "report_done": "Report's ready!",
-    "roadmap_done": "Plan's plotted!",
-    "export_done": "Saved it!",
-    "link_ready": "Link's live!",
-    "sync_done": "Synced!",
-    "actions_done": "Actions drafted!",
-    "analysis_done": "Team mapped!",
-    "poker_done": "Points dealt!",
-    "artifact_done": "Done and dusted!",
-    "anonymize_done": "Scrubbed clean!",
-}
+# The quip table lives in yeaboi.ambience so the desktop speaks the same lines;
+# re-exported here because every TUI caller reaches the duck through this module.
+__all__ = ["DUCK_QUIPS", "DuckVoice", "duck_voice", "duck_muted", "set_duck_muted", "default_bubble_room"]
 
 # ─── Bubble fence ────────────────────────────────────────────────────────────
 # The bubble is drawn leftward from the duck's corner and the chrome will skip

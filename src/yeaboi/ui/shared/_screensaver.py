@@ -18,10 +18,9 @@ from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from yeaboi.ambience import IDLE_SECONDS
 from yeaboi.ui.shared._components import build_page_panel
 from yeaboi.ui.shared._mascot import SHADES_LIFT_SEQUENCE, render_full, render_head_idle, walk_cells
-
-IDLE_SECONDS = 5 * 60
 
 # build_screensaver advances the sprite at this rate; `frame` below is derived
 # from it. Named because the shades gag has to land on the same grid — a lift

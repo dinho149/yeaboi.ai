@@ -288,6 +288,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/voice.py",
             "src/yeaboi/voice_install.py",
             "src/yeaboi/music.py",
+            "src/yeaboi/ambience.py",
             "src/yeaboi/os_open.py",
             # Provider credential verification (live pings, format checks) used
             # by both the setup wizard and the pre-mode LLM gate; its own tests
@@ -310,6 +311,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_input_raw_mode.py",
             "tests/unit/test_screensaver.py",
             "tests/unit/test_music*.py",
+            "tests/unit/test_ambience.py",
             "tests/unit/test_tips*.py",
             "tests/unit/test_mode_cards.py",
             "tests/unit/test_mode_select_callsites.py",

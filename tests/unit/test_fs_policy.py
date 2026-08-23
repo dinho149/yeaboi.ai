@@ -156,6 +156,44 @@ class TestConsentQueue:
         assert len(pop_pending_denials()) == 1
 
 
+class TestApplyConsent:
+    """What an answer *means* lives here, so every consent surface agrees."""
+
+    def _request(self, tmp_path):
+        from yeaboi.fs_policy import ConsentRequest
+
+        return ConsentRequest(tmp_path / "repo", "read", "read_codebase")
+
+    def test_allow_once_grants_for_this_process_only(self, tmp_path):
+        req = self._request(tmp_path)
+        assert fs_policy.apply_consent("allow_once", req) is True
+        assert is_allowed(req.path / "file.py")
+        clear_session_grants()
+        assert not is_allowed(req.path / "file.py")
+
+    def test_allow_always_writes_the_whitelist(self, tmp_path, monkeypatch):
+        written: list[str] = []
+        monkeypatch.setattr("yeaboi.config.add_allowed_path", written.append)
+        assert fs_policy.apply_consent("allow_always", self._request(tmp_path)) is True
+        assert written == [str(tmp_path / "repo")]
+
+    def test_deny_changes_nothing(self, tmp_path):
+        req = self._request(tmp_path)
+        assert fs_policy.apply_consent("deny", req) is False
+        assert not is_allowed(req.path)
+
+    def test_an_unknown_answer_is_refused(self, tmp_path):
+        with pytest.raises(ValueError, match="unknown consent choice"):
+            fs_policy.apply_consent("maybe", self._request(tmp_path))
+
+    def test_the_tui_popup_applies_answers_through_this(self, tmp_path):
+        from yeaboi.ui.shared._consent import _apply_consent
+
+        req = self._request(tmp_path)
+        assert _apply_consent("allow_once", req) is True
+        assert is_allowed(req.path)
+
+
 class TestViolationMessage:
     def test_names_every_remedy(self, tmp_path):
         with pytest.raises(SandboxViolationError) as exc_info:

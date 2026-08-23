@@ -167,6 +167,33 @@ def resolve_and_check(path: str | Path, *, mode: Mode = "read", context: str = "
     raise SandboxViolationError(resolved, mode, context)
 
 
+#: The three answers a consent surface may give, in button order.
+CONSENT_CHOICES: tuple[str, ...] = ("allow_once", "allow_always", "deny")
+
+
+def apply_consent(choice: str, req: ConsentRequest) -> bool:
+    """Apply a consent answer to the sandbox. Returns True when access was granted.
+
+    ``allow_once`` grants for this process only; ``allow_always`` persists the
+    path to the ``YEABOI_ALLOWED_PATHS`` whitelist; ``deny`` changes nothing.
+    Lives here rather than in a surface so the TUI popup and the desktop modal
+    cannot drift on what an answer means.
+    """
+    if choice not in CONSENT_CHOICES:
+        raise ValueError(f"unknown consent choice {choice!r} — one of {', '.join(CONSENT_CHOICES)}")
+    if choice == "allow_once":
+        grant_session(req.path)  # logs the grant itself
+        return True
+    if choice == "allow_always":
+        from yeaboi.config import add_allowed_path
+
+        add_allowed_path(str(req.path))
+        logger.info("fs consent: %s permanently whitelisted", req.path)
+        return True
+    logger.info("fs consent: %s denied by user", req.path)
+    return False
+
+
 def grant_session(path: str | Path) -> None:
     """Allow `path` (and everything under it) for the rest of this process."""
     resolved = _resolve(path)
