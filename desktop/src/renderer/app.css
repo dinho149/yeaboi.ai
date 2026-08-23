@@ -819,3 +819,222 @@ body {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* ── Dashboards (standup, analysis) ──────────────────────────────────────── */
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1000px;
+}
+.dash-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.dash-sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+.dash-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.dash-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dash-actions a.button,
+.dash-actions button {
+  border-radius: 8px;
+}
+a.button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+}
+a.button.primary {
+  border-color: var(--duck);
+  background: color-mix(in srgb, var(--duck) 16%, transparent);
+}
+
+/* The card list a result earned — one tab per card, order from the backend. */
+.card-rail {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.rail-tab {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.rail-tab:hover {
+  color: var(--fg);
+}
+.rail-tab.active {
+  color: var(--fg);
+  border-color: var(--duck);
+  background: color-mix(in srgb, var(--duck) 12%, transparent);
+}
+
+.phase-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.phase-list li:last-child {
+  color: var(--fg);
+}
+
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.member-list li {
+  display: grid;
+  grid-template-columns: 12px 160px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+.member-list span:last-child {
+  color: var(--muted);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  display: inline-block;
+}
+.dot.active {
+  background: var(--duck);
+}
+
+.evidence,
+.gap-list,
+.review-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gap-list p {
+  margin: 4px 0 0;
+}
+.practices h3,
+.insight-groups h3 {
+  font-size: 0.9rem;
+  margin: 14px 0 6px;
+}
+.practice-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.practice-vote {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.insight-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.profile-row {
+  text-decoration: none;
+  color: inherit;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+}
+.field-row input[type='text'],
+.field-row select,
+.field-row textarea {
+  width: 100%;
+}
+.check-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+.day-picker {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.day {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.day.active {
+  color: var(--fg);
+  border-color: var(--duck);
+  background: color-mix(in srgb, var(--duck) 14%, transparent);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-top: 10px;
+  display: block;
+  overflow-x: auto;
+}
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table th {
+  color: var(--muted);
+  font-weight: 500;
+}

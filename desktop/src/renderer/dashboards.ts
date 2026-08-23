@@ -246,3 +246,28 @@ export interface StepPlan {
 export function planSteps(answers: Record<string, unknown>): Promise<StepPlan> {
   return apiPost<StepPlan>('/api/analysis/steps', answers);
 }
+
+/**
+ * The compact weekday form the scheduler stores: consecutive days collapse to
+ * a range ("1-5"), gaps stay separate ("1,3,5"). Mirrors weekday_spec in
+ * ceremonies/scheduler.py, which is what reads it back.
+ */
+export function weekdaySpec(days: number[]): string {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  // An empty spec would install a job that never fires.
+  if (!sorted.length) return '1-5';
+  const parts: string[] = [];
+  let start = sorted[0]!;
+  let prior = start;
+  for (const day of sorted.slice(1)) {
+    if (day === prior + 1) {
+      prior = day;
+      continue;
+    }
+    parts.push(start === prior ? `${start}` : `${start}-${prior}`);
+    start = day;
+    prior = day;
+  }
+  parts.push(start === prior ? `${start}` : `${start}-${prior}`);
+  return parts.join(',');
+}

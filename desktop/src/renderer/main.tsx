@@ -10,12 +10,19 @@ import { Wordmark } from '@design/primitives/Wordmark';
 import { type ComponentType, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getBackendState, onBackendState } from './api';
+import { Analysis } from './pages/Analysis';
+import { AnalysisResults } from './pages/AnalysisResults';
+import { AnalysisSetup } from './pages/AnalysisSetup';
 import { Chat } from './pages/Chat';
 import { Home } from './pages/Home';
 import { Planning } from './pages/Planning';
 import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
+import { Standup } from './pages/Standup';
+import { StandupReview } from './pages/StandupReview';
+import { StandupSchedule } from './pages/StandupSchedule';
+import { StandupSetup } from './pages/StandupSetup';
 import { Usage } from './pages/Usage';
 import { WhatsNew } from './pages/WhatsNew';
 import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from './routes';
@@ -26,6 +33,13 @@ const PAGES: Record<string, ComponentType> = {
   '/humans/planning': Planning,
   '/humans/planning/chat': Chat,
   '/humans/planning/sessions': Sessions,
+  '/humans/analysis': Analysis,
+  '/humans/analysis/new': AnalysisSetup,
+  '/humans/analysis/results': AnalysisResults,
+  '/humans/standup': Standup,
+  '/humans/standup/setup': StandupSetup,
+  '/humans/standup/schedule': StandupSchedule,
+  '/humans/standup/review': StandupReview,
   '/usage': Usage,
   '/settings/credentials': Settings,
   '/settings/sharing': Settings,
@@ -48,6 +62,9 @@ function useHashRoute(): string {
   }, []);
   return routeFor(path) ? path : DEFAULT_ROUTE;
 }
+
+/** A route two levels under /humans/<mode> is a sub-page, not a nav entry. */
+const SUB_PAGE = /^\/humans\/[^/]+\/.+/;
 
 type Backend = { kind: 'starting' } | { kind: 'ready' } | { kind: 'down'; reason?: string };
 
@@ -73,14 +90,15 @@ function Sidebar({ active }: { active: string }) {
   // The three /settings/* routes collapse into one nav entry (the page owns
   // its own tab bar), and Setup + Settings live in the footer like the TUI's
   // secondary row rather than among the modes.
-  // The chat and the saved-plans list hang off Planning rather than standing
-  // in the nav; Setup and Settings live in the footer like the TUI's secondary
-  // row rather than among the modes.
+  // A mode's sub-pages hang off the mode rather than standing in the nav: the
+  // chat and saved plans off Planning, the setup/schedule/review pages off
+  // Standup, the stepper and results off Analysis. Setup and Settings live in
+  // the footer like the TUI's secondary row rather than among the modes.
   const primary = APP_ROUTES.filter(
     (route) =>
       !route.path.startsWith('/settings/') &&
       route.path !== '/setup' &&
-      !route.path.startsWith('/humans/planning/'),
+      !SUB_PAGE.test(route.path),
   );
   return (
     <nav class="sidebar">

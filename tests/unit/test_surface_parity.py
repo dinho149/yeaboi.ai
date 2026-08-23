@@ -139,7 +139,12 @@ CAPABILITIES: dict[str, dict] = {
             "--standup-interactive",
         },
         "skill": "standup",
-        "desktop": Exempt("desktop: scheduled milestone M6 — hub, stepper and the 8 dashboard cards"),
+        "desktop": {
+            "/humans/standup",
+            "/humans/standup/setup",
+            "/humans/standup/schedule",
+            "/humans/standup/review",
+        },
     },
     "reporting": {
         "engines": {("yeaboi.reporting.engine", "run_delivery_report")},
@@ -215,7 +220,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "team-analysis",
         "cli": {"analyze", "--learn"},
         "skill": "team-analysis",
-        "desktop": Exempt("desktop: scheduled milestone M6 — setup stepper and the 11 result cards"),
+        "desktop": {"/humans/analysis", "/humans/analysis/new", "/humans/analysis/results"},
     },
     "roadmap": {
         # Landed on main (TUI-only) before both this parity framework and the

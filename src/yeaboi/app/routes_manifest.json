@@ -32,6 +32,41 @@
       "title": "Saved plans"
     },
     {
+      "path": "/humans/analysis",
+      "capability": "team-analysis",
+      "title": "Analysis"
+    },
+    {
+      "path": "/humans/analysis/new",
+      "capability": "team-analysis",
+      "title": "Analysis · New"
+    },
+    {
+      "path": "/humans/analysis/results",
+      "capability": "team-analysis",
+      "title": "Analysis · Results"
+    },
+    {
+      "path": "/humans/standup",
+      "capability": "standup",
+      "title": "Standup"
+    },
+    {
+      "path": "/humans/standup/setup",
+      "capability": "standup",
+      "title": "Standup · Setup"
+    },
+    {
+      "path": "/humans/standup/schedule",
+      "capability": "standup",
+      "title": "Standup · Schedule"
+    },
+    {
+      "path": "/humans/standup/review",
+      "capability": "standup",
+      "title": "Standup · Transcript review"
+    },
+    {
       "path": "/settings/credentials",
       "capability": "settings",
       "title": "Settings · Credentials"
