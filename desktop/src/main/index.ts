@@ -1,11 +1,13 @@
-// Electron main — app lifecycle, the one window (boards get their own in M7),
-// and the security posture every window shares: contextIsolation, no
-// nodeIntegration, sandbox, no navigation off the app, external links to the
-// OS browser.
+// Electron main — app lifecycle, the main window, and the security posture
+// every window shares: contextIsolation, no nodeIntegration, sandbox, no
+// navigation off the app, external links to the OS browser. Live boards get
+// their own top-level windows (boards.ts) because a board page refuses to be
+// framed and its host URL carries an admin token.
 
 import { join } from 'node:path';
 import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import { registerApiProxy } from './api-proxy';
+import { closeAllBoardWindows, registerBoardWindows } from './boards';
 import { Sidecar } from './sidecar';
 
 const sidecar = new Sidecar();
@@ -68,6 +70,7 @@ if (!gotLock) {
 
   void app.whenReady().then(() => {
     registerApiProxy(sidecar);
+    registerBoardWindows(sidecar);
     // The pull half (a window that mounted after 'ready' would otherwise wait
     // forever for a transition that already happened) and the push half.
     ipcMain.handle('backend:get-state', () => {
@@ -103,6 +106,10 @@ if (!gotLock) {
   app.on('before-quit', (event) => {
     if (cleanShutdown) return;
     event.preventDefault();
+    // The windows first: the sidecar's own shutdown closes the board servers
+    // underneath them, and a window left pointing at a dead port shows an
+    // error page on the way out.
+    closeAllBoardWindows();
     void sidecar.stop().finally(() => {
       cleanShutdown = true;
       app.quit();

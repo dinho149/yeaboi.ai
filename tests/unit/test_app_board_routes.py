@@ -288,15 +288,27 @@ class TestExport:
         assert json.loads(response.body)["error"]
 
     def test_an_unresolvable_kind_is_a_400(self, app):
-        response = request(app, "POST", "/api/export", {"destination": "copy", "kind": "poker"})
+        response = request(app, "POST", "/api/export", {"destination": "copy", "kind": "roadmap"})
         assert response.code == 400
-        assert "poker" in json.loads(response.body)["error"]
+        assert "roadmap" in json.loads(response.body)["error"]
 
     def test_a_missing_run_is_a_404(self, app, monkeypatch):
         import yeaboi.sharing.resolve as resolver
 
         monkeypatch.setattr(resolver, "load", lambda *_a, **_k: None)
         assert request(app, "POST", "/api/export", {"destination": "copy", "kind": "standup"}).code == 404
+
+
+class TestKindCapabilities:
+    def test_poker_exports_and_nothing_else(self, app):
+        """A surface reads this instead of keeping its own table, so it never
+        offers a button the backend would refuse."""
+        kinds = {row["kind"]: row for row in json.loads(request(app, "GET", "/api/artifacts/kinds").body)["kinds"]}
+        assert kinds["poker"]["export"] and not kinds["poker"]["share"]
+
+    def test_a_team_profile_shares_but_is_not_correctable(self, app):
+        kinds = {row["kind"]: row for row in json.loads(request(app, "GET", "/api/artifacts/kinds").body)["kinds"]}
+        assert kinds["analysis"]["share"] and not kinds["analysis"]["edit"]
 
 
 class TestShare:

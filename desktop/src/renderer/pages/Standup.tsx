@@ -6,6 +6,9 @@
 import { Card, Lozenge, NoticeBlock, StatGrid, StatTile } from '@design/primitives';
 import { Duck } from '@design/primitives/Duck';
 import { useEffect, useState } from 'react';
+import { maskText } from '../boards';
+import { ArtifactEditor } from '../components/ArtifactEditor';
+import { ResultActions } from '../components/ResultActions';
 import {
   type DashboardCard,
   type MemberUpdate,
@@ -33,6 +36,9 @@ export function Standup() {
   const [open, setOpen] = useState('summary');
   const [runId, setRunId] = useState(0);
   const [showRuns, setShowRuns] = useState(false);
+  const [mask, setMask] = useState<[string, string][]>([]);
+  const [anonNote, setAnonNote] = useState('');
+  const [showEditor, setShowEditor] = useState(false);
 
   useEffect(() => {
     void refresh(runId);
@@ -105,6 +111,31 @@ export function Standup() {
         </div>
       </header>
 
+      {report && (
+        <>
+          <ResultActions
+            refer={{ kind: 'standup', session_id: data.session_id, run_id: runId }}
+            mode="standup"
+            anonNote={anonNote}
+            onAnonymize={(replacements, note) => {
+              setMask(replacements);
+              setAnonNote(note);
+            }}
+          />
+          <div class="dash-actions">
+            <button type="button" onClick={() => setShowEditor(!showEditor)}>
+              {showEditor ? 'Hide corrections' : 'Corrections'}
+            </button>
+          </div>
+          {showEditor && (
+            <ArtifactEditor
+              refer={{ kind: 'standup', session_id: data.session_id, run_id: runId }}
+              onApplied={() => void refresh()}
+            />
+          )}
+        </>
+      )}
+
       {showRuns && (
         <Card title="Past runs">
           <ul class="member-list">
@@ -176,7 +207,12 @@ export function Standup() {
         ))}
       </div>
 
-      <CardBody card={data.cards.find((c) => c.key === open) ?? data.cards[0]!} data={data} onRated={() => void refresh()} />
+      <CardBody
+        card={data.cards.find((c) => c.key === open) ?? data.cards[0]!}
+        data={data}
+        mask={mask}
+        onRated={() => void refresh()}
+      />
     </div>
   );
 }
@@ -184,24 +220,33 @@ export function Standup() {
 function CardBody({
   card,
   data,
+  mask,
   onRated,
 }: {
   card: DashboardCard;
   data: StandupDashboard;
+  /** Non-empty while the page is masked — the same data, drawn differently. */
+  mask: [string, string][];
   onRated: () => void;
 }) {
   const report = data.report;
   if (card.member) {
     const member = report?.member_updates.find((m) => m.name === card.member);
     return member ? (
-      <MemberCard member={member} sessionId={data.session_id} active={data.active.includes(member.name)} onRated={onRated} />
+      <MemberCard
+        member={member}
+        sessionId={data.session_id}
+        active={data.active.includes(member.name)}
+        mask={mask}
+        onRated={onRated}
+      />
     ) : null;
   }
   switch (card.key) {
     case 'summary':
       return (
         <Card title="Team Summary">
-          <p>{report?.team_summary || 'No summary yet.'}</p>
+          <p>{maskText(report?.team_summary ?? '', mask) || 'No summary yet.'}</p>
           {report?.confidence_label && (
             <p class="dash-note">
               <Lozenge category={CONFIDENCE_TONE[report.confidence_label] ?? 'todo'} small>
@@ -215,7 +260,13 @@ function CardBody({
     case 'my_update': {
       const mine = report?.member_updates.find((m) => m.name === data.my_name);
       return mine ? (
-        <MemberCard member={mine} sessionId={data.session_id} active={data.active.includes(mine.name)} onRated={onRated} />
+        <MemberCard
+          member={mine}
+          sessionId={data.session_id}
+          active={data.active.includes(mine.name)}
+          mask={mask}
+          onRated={onRated}
+        />
       ) : (
         <Card title="My Update">
           <p>No update yet — Generate asks for it.</p>
@@ -244,7 +295,7 @@ function CardBody({
           <ul>
             {(report?.conflicts ?? []).map((conflict) => (
               <li key={conflict.entity_id}>
-                <strong>{conflict.entity_id}</strong> — {conflict.summary}
+                <strong>{conflict.entity_id}</strong> — {maskText(conflict.summary, mask)}
               </li>
             ))}
           </ul>
@@ -310,11 +361,13 @@ function MemberCard({
   member,
   sessionId,
   active,
+  mask,
   onRated,
 }: {
   member: MemberUpdate;
   sessionId: string;
   active: boolean;
+  mask: [string, string][];
   onRated: () => void;
 }) {
   const [rated, setRated] = useState<Record<string, string>>({});
@@ -327,12 +380,12 @@ function MemberCard({
 
   return (
     <Card
-      title={member.name}
+      title={maskText(member.name, mask)}
       actions={<Lozenge category={active ? 'done' : 'todo'} small>{active ? 'active' : 'quiet'}</Lozenge>}
     >
-      <p>{member.summary || 'No activity detected.'}</p>
-      {member.blockers && <NoticeBlock title="Blocked" items={[member.blockers]} />}
-      {member.self_report && <p class="dash-note">✍ {member.self_report}</p>}
+      <p>{maskText(member.summary, mask) || 'No activity detected.'}</p>
+      {member.blockers && <NoticeBlock title="Blocked" items={[maskText(member.blockers, mask)]} />}
+      {member.self_report && <p class="dash-note">✍ {maskText(member.self_report, mask)}</p>}
       {member.links?.length ? (
         <ul class="evidence">
           {member.links.map(([label, url]) => (

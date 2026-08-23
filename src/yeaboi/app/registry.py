@@ -107,6 +107,7 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/shares/{share_id}/invite", routes_share.share_invite, "output-sharing"),
     AppRoute("POST", "/api/shares/{share_id}/discard", routes_share.discard_edits, "artifact-editing"),
     AppRoute("POST", "/api/shares/{share_id}/close", routes_share.stop_share, "output-sharing"),
+    AppRoute("GET", "/api/artifacts/kinds", routes_share.artifact_kinds, "output-sharing"),
     AppRoute("GET", "/api/artifacts/{kind}/edits", routes_share.artifact_edits, "artifact-editing"),
     AppRoute("POST", "/api/anonymize", routes_share.anonymize, "anonymize"),
 )

@@ -242,13 +242,21 @@ Closing a board is what records the ceremony: `{closed, board_id, run_id}`,
 | GET | `/api/shares/{share_id}/invite` | one link carrying the access code |
 | POST | `/api/shares/{share_id}/discard` | drop corrections from the document (the log keeps them) |
 | POST | `/api/shares/{share_id}/close` | stop sharing; `{commit}` decides whether corrections are kept |
+| GET | `/api/artifacts/kinds` | what each artifact kind can do: `{kind, export, share, anonymize, edit}` |
 | GET | `/api/artifacts/{kind}/edits` | a kind's editable fields plus one artifact's recorded corrections |
 | POST | `/api/anonymize` | mask one artifact, streamed as NDJSON |
 
 All four take the same **artifact reference**: `{kind, session_id, run_id}`.
-`kind` is `standup`, `retro` or `analysis` (a team profile is addressed by its
-team id in `session_id`); the rest arrive with their result screens. **Poker has
-no share document in any surface** — a poker session exports, and that is all.
+`kind` is `standup`, `retro`, `analysis` or `poker` (a team profile is addressed
+by its team id in `session_id`); reporting, performance and roadmap arrive with
+their result screens.
+
+Not every kind can do all four, and `/api/artifacts/kinds` is what says so —
+a surface reads it rather than keeping its own table, so it never offers an
+action the backend would refuse. **Poker exports and nothing else**: it has no
+share document in any surface, because the estimates go back to the tracker
+rather than out as a page. A team profile shares read-only. Only a standup or a
+retro is correctable.
 
 `copy` is a **local** destination: the export returns `{destination, title,
 markdown}` and performs nothing. A clipboard belongs to whatever is in front of

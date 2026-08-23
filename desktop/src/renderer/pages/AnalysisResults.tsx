@@ -6,6 +6,8 @@
 
 import { Card, Lozenge, NoticeBlock, StatGrid, StatTile } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { maskText } from '../boards';
+import { ResultActions } from '../components/ResultActions';
 import { type AnalysisResult, loadAnalysisResult } from '../dashboards';
 
 /** The result's team id rides the hash query so the route path stays a literal. */
@@ -25,6 +27,8 @@ export function AnalysisResults() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [open, setOpen] = useState('');
   const [error, setError] = useState('');
+  const [mask, setMask] = useState<[string, string][]>([]);
+  const [anonNote, setAnonNote] = useState('');
 
   useEffect(() => {
     const onChange = () => setTeamId(teamIdFromHash(window.location.hash));
@@ -55,7 +59,7 @@ export function AnalysisResults() {
     <div class="dash">
       <header class="dash-head">
         <div>
-          <h1 class="page-title">{profile.team_name || profile.project_key}</h1>
+          <h1 class="page-title">{maskText(profile.team_name || profile.project_key, mask)}</h1>
           <p class="dash-sub">
             {profile.source} · {profile.sample_sprints} sprints · {profile.sample_stories} stories ·{' '}
             {profile.updated_at || profile.created_at}
@@ -65,6 +69,16 @@ export function AnalysisResults() {
           <a href="#/humans/analysis">All analyses</a>
         </div>
       </header>
+
+      <ResultActions
+        refer={{ kind: 'analysis', session_id: teamId }}
+        mode="analysis"
+        anonNote={anonNote}
+        onAnonymize={(replacements, note) => {
+          setMask(replacements);
+          setAnonNote(note);
+        }}
+      />
 
       <div class="card-rail">
         {result.cards.map((card) => (

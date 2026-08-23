@@ -31,14 +31,27 @@ def _standup(**kw) -> StandupReport:
 class TestKinds:
     def test_an_unknown_kind_is_a_caller_bug(self, db):
         with pytest.raises(ValueError, match="cannot be resolved"):
-            resolve.load("poker", session_id="s1")
+            resolve.load("roadmap", session_id="s1")
 
-    def test_poker_is_named_as_absent_rather_than_half_supported(self):
-        assert "poker" not in resolve.RESOLVABLE_KINDS
+    def test_poker_exports_and_nothing_else(self):
+        """The estimates go back to the tracker rather than out as a page, so
+        the capability table says so instead of leaving a surface to discover
+        it by being refused."""
+        poker = next(row for row in resolve.capabilities() if row["kind"] == "poker")
+        assert poker["export"] and not poker["share"]
+        assert "poker" not in resolve.SHAREABLE_KINDS
+
+    def test_a_poker_share_document_is_refused_by_name(self):
+        stub = resolve.Resolved(kind="poker", artifact=object(), title="t", project_name="p")
+        with pytest.raises(ValueError, match="exports instead"):
+            resolve.document(stub)
 
     def test_a_team_profile_is_read_only(self):
-        assert "analysis" in resolve.RESOLVABLE_KINDS
-        assert "analysis" not in resolve.EDITABLE_KINDS
+        analysis = next(row for row in resolve.capabilities() if row["kind"] == "analysis")
+        assert analysis["share"] and not analysis["edit"]
+
+    def test_every_resolvable_kind_has_a_capability_row(self):
+        assert {row["kind"] for row in resolve.capabilities()} == set(resolve.RESOLVABLE_KINDS)
 
     def test_a_missing_database_is_nothing_to_act_on(self, tmp_path, monkeypatch):
         import yeaboi.paths as paths

@@ -16,6 +16,11 @@ import { AnalysisSetup } from './pages/AnalysisSetup';
 import { Chat } from './pages/Chat';
 import { Home } from './pages/Home';
 import { Planning } from './pages/Planning';
+import { Poker } from './pages/Poker';
+import { PokerBoard } from './pages/PokerBoard';
+import { PokerSetup } from './pages/PokerSetup';
+import { Retro } from './pages/Retro';
+import { RetroBoard } from './pages/RetroBoard';
 import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
@@ -40,6 +45,11 @@ const PAGES: Record<string, ComponentType> = {
   '/humans/standup/setup': StandupSetup,
   '/humans/standup/schedule': StandupSchedule,
   '/humans/standup/review': StandupReview,
+  '/humans/retro': Retro,
+  '/humans/retro/board': RetroBoard,
+  '/humans/poker': Poker,
+  '/humans/poker/new': PokerSetup,
+  '/humans/poker/board': PokerBoard,
   '/usage': Usage,
   '/settings/credentials': Settings,
   '/settings/sharing': Settings,
@@ -65,6 +75,9 @@ function useHashRoute(): string {
 
 /** A route two levels under /humans/<mode> is a sub-page, not a nav entry. */
 const SUB_PAGE = /^\/humans\/[^/]+\/.+/;
+// The registry also carries non-route affordances — `dialog:share`,
+// `action:anonymize` — which are parity entries for buttons, not destinations.
+// The nav filter above keeps them out by requiring a leading slash.
 
 type Backend = { kind: 'starting' } | { kind: 'ready' } | { kind: 'down'; reason?: string };
 
@@ -96,6 +109,7 @@ function Sidebar({ active }: { active: string }) {
   // the footer like the TUI's secondary row rather than among the modes.
   const primary = APP_ROUTES.filter(
     (route) =>
+      route.path.startsWith('/') &&
       !route.path.startsWith('/settings/') &&
       route.path !== '/setup' &&
       !SUB_PAGE.test(route.path),

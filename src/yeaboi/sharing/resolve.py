@@ -11,11 +11,14 @@ One table, one row per kind. Adding a kind is an entry, which is the property
 that matters: the alternative is each caller growing its own three-way branch
 over the same stores.
 
-Known gaps, stated rather than discovered: reporting, the three performance
+Not every kind can do all four, and :func:`capabilities` says so rather than
+leaving a caller to discover it by being refused. **Poker exports and nothing
+else**: it has no share document in any surface, because the estimates go back
+to the tracker rather than out as a page.
+
+Known gap, stated rather than discovered: reporting, the three performance
 artifacts and roadmap have share adapters in :mod:`yeaboi.sharing.documents` but
-no row here yet — they arrive with their result screens. **Poker has no share
-document at all**, in any surface: a poker session exports, and that is the
-whole of it.
+no row here yet — they arrive with their result screens.
 """
 
 from __future__ import annotations
@@ -27,15 +30,35 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Artifact kinds this module can read back and act on.
-RESOLVABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis")
+#: Artifact kinds this module can read back. Every one of them exports.
+RESOLVABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis", "poker")
 
-#: Of those, the ones a reader may correct on a shared document. Mirrors
+#: Of those, the ones that can be published as a document at all. Poker is
+#: absent by design — see the module docstring.
+SHAREABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis")
+
+#: Of the shareable ones, those a reader may correct. Mirrors
 #: ``artifacts.engine.SHARED_KINDS`` for the kinds we can resolve — a team
 #: profile publishes read-only, because every number on it is computed from
 #: tracker data and correcting one in place would make the page disagree with
 #: the run that produced it.
 EDITABLE_KINDS: tuple[str, ...] = ("standup", "retro")
+
+
+def capabilities() -> list[dict]:
+    """What each kind can do, so no surface offers an action that will refuse."""
+    return [
+        {
+            "kind": kind,
+            "export": True,
+            "share": kind in SHAREABLE_KINDS,
+            # Masking runs over the Markdown, so anything with Markdown can be
+            # masked — which is every kind that can be exported.
+            "anonymize": True,
+            "edit": kind in EDITABLE_KINDS,
+        }
+        for kind in RESOLVABLE_KINDS
+    ]
 
 
 @dataclass(frozen=True)
@@ -111,6 +134,29 @@ def _load_retro(session_id: str, run_id: int, db_path: Path) -> Resolved | None:
     )
 
 
+def _load_poker(session_id: str, run_id: int, db_path: Path) -> Resolved | None:
+    """A poker session, for export only.
+
+    No ``get_base_run``: corrections never reach a poker session, so there is no
+    log to anchor and the newest row is simply the row.
+    """
+    from yeaboi.poker.export import _title
+    from yeaboi.poker.store import PokerStore
+
+    with PokerStore(db_path) as store:
+        report = store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
+    if report is None:
+        return None
+    return Resolved(
+        kind="poker",
+        artifact=report,
+        title=_title(report),
+        project_name=getattr(report, "project_name", "") or "",
+        run_id=run_id,
+        session_id=getattr(report, "session_id", "") or session_id,
+    )
+
+
 def _load_analysis(team_id: str, db_path: Path) -> Resolved | None:
     from yeaboi.team_profile import TeamProfileStore
 
@@ -150,6 +196,8 @@ def load(
         return _load_standup(session_id, run_id, path)
     if kind == "retro":
         return _load_retro(session_id, run_id, path)
+    if kind == "poker":
+        return _load_poker(session_id, run_id, path)
     return _load_analysis(session_id, path)
 
 
@@ -168,15 +216,24 @@ def markdown(resolved: Resolved) -> str:
         from yeaboi.retro.export import build_retro_markdown
 
         return build_retro_markdown(resolved.artifact)
+    if resolved.kind == "poker":
+        from yeaboi.poker.export import build_poker_markdown
+
+        return build_poker_markdown(resolved.artifact)
     from yeaboi.team_profile_exporter import build_team_profile_markdown
 
     return build_team_profile_markdown(resolved.artifact, examples=(resolved.extras or {}).get("examples"))
 
 
 def document(resolved: Resolved, *, anon=None):
-    """The artifact as a :class:`~yeaboi.sharing.server.ShareDocument`."""
+    """The artifact as a :class:`~yeaboi.sharing.server.ShareDocument`.
+
+    Raises for a kind that has no share adapter — see :data:`SHAREABLE_KINDS`.
+    """
     from yeaboi.sharing import documents
 
+    if resolved.kind not in SHAREABLE_KINDS:
+        raise ValueError(f"a {resolved.kind} has no share document — it exports instead")
     if resolved.kind == "standup":
         return documents.standup_document(resolved.artifact, anon=anon, history=resolved.history)
     if resolved.kind == "retro":
@@ -194,6 +251,10 @@ def export_files(resolved: Resolved) -> dict[str, Path]:
         from yeaboi.retro.export import export_retro
 
         return export_retro(resolved.artifact, project_name=resolved.project_name, history=list(resolved.history))
+    if resolved.kind == "poker":
+        from yeaboi.poker.export import export_poker
+
+        return export_poker(resolved.artifact, project_name=resolved.project_name)
     from yeaboi.team_profile_exporter import export_team_profile_html, export_team_profile_md
 
     examples = (resolved.extras or {}).get("examples")

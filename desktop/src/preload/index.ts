@@ -13,6 +13,8 @@ export interface YeaboiBridge {
   ) => Promise<{ status: number; body: unknown }>;
   getBackendState: () => Promise<unknown>;
   onBackendState: (callback: (state: unknown) => void) => void;
+  /** Open one live board in its own top-level window, by id. */
+  openBoard: (boardId: string) => Promise<unknown>;
   platform: string;
 }
 
@@ -30,6 +32,7 @@ const bridge: YeaboiBridge = {
       .finally(() => ipcRenderer.removeListener(channel, handler));
   },
   getBackendState: () => ipcRenderer.invoke('backend:get-state'),
+  openBoard: (boardId) => ipcRenderer.invoke('boards:open', boardId),
   onBackendState: (callback) => {
     ipcRenderer.on('backend:state', (_event, state: unknown) => callback(state));
   },

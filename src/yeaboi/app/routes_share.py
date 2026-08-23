@@ -273,6 +273,18 @@ def _anonymize(app, op, resolved, instruction: str) -> Iterator[dict]:
 # ---------------------------------------------------------------------------
 
 
+def artifact_kinds(app, request: Request) -> Response:
+    """``GET /api/artifacts/kinds`` — what each kind can do.
+
+    A surface reads this rather than keeping its own table, so it never offers
+    an action the backend would refuse: poker exports and nothing else, a team
+    profile shares read-only, and only a standup or a retro is correctable.
+    """
+    from yeaboi.sharing import resolve
+
+    return json_response({"kinds": resolve.capabilities()})
+
+
 def artifact_edits(app, request: Request) -> Response:
     """``GET /api/artifacts/{kind}/edits`` — what an editor panel opens with.
 
