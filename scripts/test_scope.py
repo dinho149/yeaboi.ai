@@ -356,6 +356,11 @@ AREAS: tuple[Area, ...] = (
             # Cross-mode shared infrastructure like mcp/ below — it dispatches
             # into every mode's tools without owning any of them.
             "src/yeaboi/app/",
+            # The Electron shell over that backend. No Python test imports it —
+            # the desktop job (below, in JOBS) is what actually checks it — but
+            # claiming it here keeps a desktop-only diff from forcing the full
+            # Python suite as "unrecognised path".
+            "desktop/",
             "src/yeaboi/telemetry.py",
             "src/yeaboi/feedback.py",
             "src/yeaboi/setup_wizard.py",
@@ -597,6 +602,10 @@ JOBS: tuple[Job, ...] = (
     Job("go", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
     Job("parity", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
     Job("web", ("frontend/", "src/yeaboi/web/", "scripts/gen_web_types.py")),
+    # The Electron shell's typecheck + vitest + routes-manifest staleness gate.
+    # The design/shared dirs are aliased into the renderer, so a change there
+    # can break a desktop typecheck that `web` alone would not catch.
+    Job("desktop", ("desktop/", "frontend/src/design/", "frontend/src/shared/", "src/yeaboi/app/routes_manifest.json")),
     Job("site", ("docs/", "scripts/gen_site_seo.py", "scripts/gen_og_card.py")),
     # `packaging/` covers the `yeaboi-core` wheel's `hatch_build.py` hook; there
     # is no root-level build hook or MANIFEST.in to name.

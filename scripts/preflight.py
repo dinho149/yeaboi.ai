@@ -46,6 +46,7 @@ JOB_TARGETS: dict[str, tuple[str, ...]] = {
     "go": ("go-lint", "go-test", "go-build"),
     "parity": ("parity",),
     "web": ("web-check",),
+    "desktop": ("desktop-check",),
     "site": ("site-check",),
     "package": ("package-check",),
     "eval": ("eval",),
@@ -58,6 +59,7 @@ JOB_TOOLCHAIN: dict[str, str] = {
     "go": "go",
     "parity": "go",
     "web": "npm",
+    "desktop": "npm",
 }
 
 # actionlint is not one of test_scope.py's jobs — CI runs it unconditionally and
