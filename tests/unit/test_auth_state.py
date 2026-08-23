@@ -429,14 +429,14 @@ class TestAcknowledgeSettling:
 
 
 class TestCredentialNeverReachesALogRecord:
-    """The rebuttal to CodeQL's `py/clear-text-logging-sensitive-data` on the
-    two credential-check log lines.
+    """`py/clear-text-logging-sensitive-data` on the two credential-check log lines.
 
     The provider's failure text quotes the request it failed on, so it *can*
-    carry the key — the alert names a real path. What closes it is that the
-    message is redacted where it is built (`_connection_error`) and again where
-    it is bound, by exact env value and by token shape. CodeQL does not model
-    `redaction.redact` as a barrier, so this asserts the property directly.
+    carry the key — the alert named a real path. It is closed by not logging
+    that text at all: the log line takes `provider_verification.log_category`,
+    whose every branch returns a literal, so no value derived from the
+    credential reaches a record. The message still goes to the screen, redacted,
+    where its detail is what makes the failure actionable.
     """
 
     def _records(self, caplog, monkeypatch, *, key, message):
@@ -444,22 +444,57 @@ class TestCredentialNeverReachesALogRecord:
         monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
         monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (False, message))
         with caplog.at_level(logging.DEBUG, logger="yeaboi.auth_state"):
-            auth_state.check_llm_credentials()
-        return "\n".join(r.getMessage() for r in caplog.records)
+            status = auth_state.check_llm_credentials()
+        return "\n".join(r.getMessage() for r in caplog.records), status
 
-    def test_an_inconclusive_message_quoting_the_key_is_scrubbed(self, caplog, monkeypatch):
+    def test_an_inconclusive_message_quoting_the_key_is_never_logged(self, caplog, monkeypatch):
         key = "sk-ant-api03-EXAMPLEKEYVALUE0123456789abcdefghij"
-        logged = self._records(
+        logged, _ = self._records(
             caplog, monkeypatch, key=key, message=f"Connection error: POST https://api.anthropic.com (x-api-key: {key})"
         )
 
         assert key not in logged
-        assert "credential check" in logged  # still logged the result, per the observability rule
+        assert "connection error" in logged  # the category, so the result is still diagnosable
+        assert "x-api-key" not in logged  # not merely scrubbed — the text never gets there
 
-    def test_a_key_of_an_unknown_shape_is_still_caught_by_exact_value(self, caplog, monkeypatch):
-        # Shape patterns cannot cover every provider; the env-value match is what
-        # makes the guarantee hold for a credential that looks like nothing.
+    def test_a_key_of_an_unknown_shape_never_reaches_a_record(self, caplog, monkeypatch):
+        # A literal-only category holds for a credential that looks like nothing,
+        # which no shape pattern could have matched.
         key = "totally-bespoke-credential-value-1234"
-        logged = self._records(caplog, monkeypatch, key=key, message=f"Connection error: {key} rejected")
+        logged, _ = self._records(caplog, monkeypatch, key=key, message=f"Connection error: {key} rejected")
 
         assert key not in logged
+
+    def test_the_screen_still_gets_the_detail_redacted(self, caplog, monkeypatch):
+        # The category is for logs; a user staring at a blocked mode needs the
+        # provider's actual complaint, minus the credential.
+        key = "sk-ant-api03-EXAMPLEKEYVALUE0123456789abcdefghij"
+        _, status = self._records(caplog, monkeypatch, key=key, message="Invalid API key")
+
+        assert status.ok is False
+        assert status.reason == "Invalid API key"
+
+    def test_every_category_is_a_literal_not_the_message(self):
+        # The property CodeQL needs to see: no input text is ever returned.
+        from yeaboi.provider_verification import log_category
+
+        for message in (
+            "Invalid API key",
+            "Key lacks permissions",
+            "Connection error: https://x?key=SECRETVALUE",
+            "Unexpected response: 503",
+            "Ollama is installed but not running — start it with: ollama serve",
+            "No AWS credentials found — configure IAM role",
+            "something nobody anticipated SECRETVALUE",
+        ):
+            category = log_category(message)
+            assert "SECRETVALUE" not in category
+            assert category in {
+                "invalid key",
+                "key lacks permissions",
+                "connection error",
+                "unexpected status",
+                "ollama unavailable",
+                "aws credentials",
+                "verification failed",
+            }

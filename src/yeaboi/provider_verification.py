@@ -217,6 +217,30 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
     return False, "Unknown provider"
 
 
+def log_category(message: str) -> str:
+    """A fixed-vocabulary label for a verification message, safe to log.
+
+    Every branch returns a literal, so the credential cannot reach a log line
+    even in principle — the message itself quotes the request it failed on, and
+    a value that never carries a secret is a stronger guarantee than one that
+    has been scrubbed. The message still reaches the *screen*, redacted, where
+    its detail is what makes the failure actionable.
+    """
+    if message == INVALID_KEY:
+        return "invalid key"
+    if message == KEY_LACKS_PERMISSIONS:
+        return "key lacks permissions"
+    if message.startswith("Connection error"):
+        return "connection error"
+    if message.startswith("Unexpected response"):
+        return "unexpected status"
+    if "ollama" in message.lower():
+        return "ollama unavailable"
+    if "AWS" in message:
+        return "aws credentials"
+    return "verification failed"
+
+
 def credential_verdict(provider: dict[str, Any], credential: str) -> tuple[str, str]:
     """``(verdict, message)`` where verdict is "ok", "rejected" or "inconclusive".
 

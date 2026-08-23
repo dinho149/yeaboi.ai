@@ -253,7 +253,8 @@ def check_llm_credentials() -> CredentialStatus:
             return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
 
     from yeaboi.agent.llm import resolve_model_name
-    from yeaboi.redaction import log_safe, redact
+    from yeaboi.provider_verification import log_category
+    from yeaboi.redaction import redact
 
     logger.info("credential check: pinging %s", label)
     # The model the modes will actually call, not the verifier's hardcoded
@@ -262,20 +263,19 @@ def check_llm_credentials() -> CredentialStatus:
     provider_spec = {"provider_val": provider, "models": {"default": resolve_model_name()}}
     verdict, raw_message = credential_verdict(provider_spec, credential)
 
-    # Redacted once, here, so neither a log line nor a rendered screen can carry
-    # the credential: a provider message quotes the failing request, and Google's
-    # puts the API key in the URL. The log handler redacts too, but a value that
-    # is never secret in the first place cannot leak through a handler someone
-    # adds later.
-    message = redact(raw_message)
-    logger.info("credential check: %s → %s (%s)", label, verdict, log_safe(message))
+    # Logs get a fixed-vocabulary label, never the provider's own text: that text
+    # quotes the request it failed on, and Google's puts the API key in the URL.
+    # The screen gets the message, redacted — that is where the detail is worth
+    # the handling, and where the user can act on it.
+    category = log_category(raw_message)
+    logger.info("credential check: %s → %s (%s)", label, verdict, category)
 
     if verdict == "ok":
         with _lock:
             _verified_provider = fingerprint
         return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
     if verdict == "inconclusive":
-        logger.warning("credential check inconclusive for %s (%s) — not blocking", label, log_safe(message))
+        logger.warning("credential check inconclusive for %s (%s) — not blocking", label, category)
         return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
 
-    return CredentialStatus(ok=False, configured=True, reason=message, provider_label=label)
+    return CredentialStatus(ok=False, configured=True, reason=redact(raw_message), provider_label=label)
