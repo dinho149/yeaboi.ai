@@ -403,7 +403,7 @@ def verify_provider(provider: str, credential: str, model: str = "") -> dict:
     Returns ``{ok, message}``. Network-bound (up to ~8s); the caller owns any
     threading. Raises ValueError only for an unknown provider name.
     """
-    from yeaboi.ui.provider_select._verification import _verify_api_key, _verify_model
+    from yeaboi.provider_verification import _verify_api_key, _verify_model
 
     card = _provider_card(provider)
     ok, message = _verify_api_key(card, credential)
@@ -425,7 +425,7 @@ def discover_models(provider: str, credential: str) -> dict:
     curated = list(models_cfg.get("presets", []))
     discovered: list[str] = []
     if provider != "bedrock" and credential:
-        from yeaboi.ui.provider_select._verification import fetch_available_models
+        from yeaboi.provider_verification import fetch_available_models
 
         discovered = fetch_available_models(card, credential)
     merged = list(dict.fromkeys([*discovered, *curated]))

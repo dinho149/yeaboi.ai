@@ -87,8 +87,8 @@ class TestProviderProbes:
         assert request(app, "POST", "/api/settings/provider/verify", {"credential": "k"}).code == 400
 
     def test_verify_and_models_delegate(self, app, monkeypatch):
-        monkeypatch.setattr("yeaboi.ui.provider_select._verification._verify_api_key", lambda card, key: (True, "ok"))
-        monkeypatch.setattr("yeaboi.ui.provider_select._verification.fetch_available_models", lambda card, key: ["m1"])
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda card, key: (True, "ok"))
+        monkeypatch.setattr("yeaboi.provider_verification.fetch_available_models", lambda card, key: ["m1"])
         verify = request(app, "POST", "/api/settings/provider/verify", {"provider": "anthropic", "credential": "k"})
         assert json.loads(verify.body) == {"ok": True, "message": "ok"}
         models = request(app, "POST", "/api/settings/provider/models", {"provider": "anthropic", "credential": "k"})

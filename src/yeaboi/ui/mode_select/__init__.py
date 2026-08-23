@@ -22,9 +22,11 @@ from pathlib import Path
 
 from rich.console import Console
 
+from yeaboi.analysis import setup as analysis_setup
 from yeaboi.logging_setup import attach_mode_handler, mode_log
 from yeaboi.logging_setup import detach as detach_mode_handler
 from yeaboi.paths import get_db_path as _get_db_path
+from yeaboi.standup import schedule as schedule_module
 from yeaboi.timeparse import parse_date, parse_datetime
 from yeaboi.ui.mode_select.screens._project_cards import (  # noqa: F401
     ProfileSummary,
@@ -5217,19 +5219,14 @@ def _run_schedule_multi_step(
             return "back"
 
 
-_SCHEDULE_TIME_PRESETS = ["09:00", "09:30", "10:00", "10:30", "11:00"]
-_SCHEDULE_LEAD_PRESETS = [5, 10, 15, 30]
+# The shortlists every surface offers — shared so the terminal and the desktop
+# cannot drift into different schedules. Minutes AFTER the standup for the
+# transcript reminder; 0 = no reminder, and the OS job IS the setting.
+_SCHEDULE_TIME_PRESETS = schedule_module.TIME_PRESETS
+_SCHEDULE_LEAD_PRESETS = schedule_module.LEAD_PRESETS
+_SCHEDULE_CHANNEL_DESCS = schedule_module.CHANNEL_DESCRIPTIONS
+_REMINDER_PRESETS = schedule_module.REMINDER_PRESETS
 _SCHEDULE_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-_SCHEDULE_CHANNEL_DESCS = {
-    "terminal": "print in the terminal the run opens",
-    "desktop": "macOS/Linux system notification",
-    "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
-    "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
-}
-# Minutes AFTER the standup for the transcript reminder; 0 = no reminder. The
-# offset is not a config column: the existence of the OS job IS the setting, so
-# there is nothing to migrate or keep in sync.
-_REMINDER_PRESETS = [0, 30, 60, 120]
 
 
 def _run_standup_schedule_wizard(
@@ -5244,37 +5241,21 @@ def _run_standup_schedule_wizard(
     installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import (
-        JOB_TRANSCRIPT_REMINDER,
-        install_schedule,
-        install_transcript_reminder,
-        parse_time,
-        remove_schedule,
-        transcript_reminder_offset,
-        weekday_list,
-        weekday_spec,
-    )
-    from yeaboi.standup.store import StandupStore
+    from yeaboi.standup.schedule import apply_schedule, current_schedule, nearest_reminder_preset
+    from yeaboi.standup.scheduler import parse_time, weekday_list, weekday_spec
 
-    with StandupStore(_ana_dbp) as store:
-        existing = store.load_config(session_id) or {}
-    time_val = existing.get("time", "10:00")
-    lead_val = int(existing.get("lead_minutes", 10))
-    days = set(weekday_list(existing.get("weekdays", "1-5")))
-    channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
-    enabled = bool(existing.get("enabled"))
     # The installed job is the source of truth for the reminder — nothing in the
-    # database records it, so we ask the OS. Read the OFFSET back too, not just
-    # whether one exists: a user who picked "2 hours after" and later reopens
-    # this wizard to change a delivery channel would otherwise Enter past a step
-    # showing the default and silently reinstall the job at 30 minutes.
-    remind_after = transcript_reminder_offset(session_id, time_val)
-    if remind_after and remind_after not in _REMINDER_PRESETS:
-        # The standup time can move after the reminder was installed, so the
-        # recovered offset need not land on a preset. Snap to the nearest one
-        # rather than falling through to "No reminder", which would tear the job
-        # down for a user who came here to change something else entirely.
-        remind_after = min((p for p in _REMINDER_PRESETS if p), key=lambda p: abs(p - remind_after))
+    # database records it, so ``current_schedule`` asks the OS. The standup time
+    # can move after a reminder was installed, so the recovered offset need not
+    # land on a preset: snapping keeps a user who came here to change a delivery
+    # channel from silently tearing their reminder down.
+    saved = current_schedule(session_id, db_path=_ana_dbp)
+    time_val = saved["time"]
+    lead_val = saved["lead_minutes"]
+    days = set(weekday_list(saved["weekdays"]))
+    channels = saved["delivery_channels"]
+    enabled = saved["enabled"]
+    remind_after = nearest_reminder_preset(saved["remind_after"])
     logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
     def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
@@ -5451,57 +5432,16 @@ def _run_standup_schedule_wizard(
                 index += 1
         logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
 
-    weekdays = weekday_spec(days)
-    with StandupStore(_ana_dbp) as store:
-        store.save_config(
-            session_id,
-            enabled=enabled,
-            time=time_val,
-            lead_minutes=lead_val,
-            weekdays=weekdays,
-            delivery_channels=channels,
-            timezone=existing.get("timezone", ""),
-            repo_path=existing.get("repo_path", ""),
-            my_aliases=existing.get("my_aliases", ""),
-            tracker_sources=existing.get("tracker_sources", ["jira"]),
-            team_members=existing.get("team_members", []),
-            roster_configured=existing.get("roster_configured", False),
-            code_sources=existing.get("code_sources", []),
-            github_owners=existing.get("github_owners", []),
-            github_repositories=existing.get("github_repositories", []),
-            github_excluded_repositories=existing.get("github_excluded_repositories", []),
-            azdo_projects=existing.get("azdo_projects", []),
-            azdo_repositories=existing.get("azdo_repositories", []),
-            code_scope_configured=existing.get("code_scope_configured", False),
-            documentation_sources=existing.get("documentation_sources", []),
-            documentation_scope_configured=existing.get("documentation_scope_configured", False),
-            automation_markers=existing.get("automation_markers", ""),
-            automation_handling=existing.get("automation_handling", "exclude"),
-            transcript_dir=existing.get("transcript_dir", ""),
-            transcript_review_enabled=existing.get("transcript_review_enabled", True),
-            habit_detection=existing.get("habit_detection", "on"),
-            habit_rules=existing.get("habit_rules", ""),
-            habit_ai_match=existing.get("habit_ai_match", "on"),
-        )
-    if enabled:
-        msg = install_schedule(session_id, time_val, weekdays, lead_val)
-        # A reminder is only meaningful alongside a scheduled standup; when the
-        # schedule is off, remove_schedule below tears BOTH kinds down, so a
-        # disabled standup can never leave notifications firing.
-        if remind_after:
-            msg += "  " + install_transcript_reminder(session_id, time_val, weekdays, remind_after)
-        else:
-            remove_schedule(session_id, kind=JOB_TRANSCRIPT_REMINDER)
-    else:
-        msg = remove_schedule(session_id)  # every kind
-    logger.info(
-        "standup schedule wizard: saved session=%s enabled=%s remind_after=%s -> %s",
+    return apply_schedule(
         session_id,
-        enabled,
-        remind_after,
-        msg,
+        enabled=enabled,
+        time=time_val,
+        weekdays=weekday_spec(days),
+        lead_minutes=lead_val,
+        delivery_channels=channels,
+        remind_after=remind_after,
+        db_path=_ana_dbp,
     )
-    return msg
 
 
 def _standup_identity_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
@@ -8484,12 +8424,7 @@ def _run_analysis_setup_wizard(
         return set(state["features"] or [])
 
     def _filtered_grid() -> dict[str, list[str]]:
-        fs = _feature_set()
-        return {
-            "delivery": grid["delivery"] if "delivery" in fs else [],
-            "code": grid["code"] if fs & {"ai_footprint", "code_health"} else [],
-            "docs": grid["docs"] if "documentation" in fs else [],
-        }
+        return analysis_setup.filtered_grid(grid, state["features"])
 
     def _preflight() -> dict:
         if preflight_box[0] is None:
@@ -8499,50 +8434,28 @@ def _run_analysis_setup_wizard(
         return preflight_box[0]
 
     def _depth_applicable() -> bool:
-        return bool(_feature_set() & {"delivery", "ai_footprint"})
+        return analysis_setup.depth_applies(state["features"])
 
     def _effective_depth() -> str:
-        return state["depth"] if _depth_applicable() else "quick"
+        return analysis_setup.effective_depth(state["depth"], state["features"])
+
+    def _model_offered() -> bool:
+        """Probe Ollama only where a model choice could apply — it is a network call."""
+        return _effective_depth() == "deep" and bool(_preflight().get("offer"))
 
     def _applicable(step: str) -> bool:
-        fs = _feature_set()
-        comps = state["components"] or {}
-        if step in ("features", "sources", "review"):
-            return True
-        if step in ("github_owners", "azdo_projects"):
-            host = "github" if step == "github_owners" else "azdo"
-            return bool(fs & {"ai_footprint", "code_health"}) and host in (comps.get("code") or [])
-        if step == "depth":
-            return _depth_applicable()
-        if step == "model":
-            return _effective_depth() == "deep" and bool(_preflight().get("offer"))
-        if step == "window":
-            return bool(fs & {"ai_footprint", "code_health", "documentation"})
-        if step == "members":
-            return bool(fs & {"delivery", "ai_footprint", "code_health"})
-        return False
+        # The preflight is the only answer the shared rules cannot work out for
+        # themselves, so it is probed here and passed in.
+        return analysis_setup.step_applies(
+            step,
+            features=state["features"],
+            components=state["components"],
+            depth=state["depth"],
+            model_offered=_model_offered(),
+        )
 
     def _config() -> dict:
-        comps = state["components"] or {}
-        members = state["members"] if _applicable("members") else None
-        trackers = comps.get("delivery") or roster_fallback
-        # Each host's scope is gated on its OWN applicability, so de-selecting a
-        # code host at the sources step coerces its stale picks out of the payload
-        # (the same discipline that keeps a stale Deep depth out of a docs-only run).
-        scope: dict[str, list[str]] = {}
-        for _step, _host in (("github_owners", "github"), ("azdo_projects", "azdo")):
-            if _applicable(_step) and state[_step]:
-                scope[_host] = state[_step]
-        return {
-            "features": state["features"],
-            "components": comps,
-            "analysis_scope": scope,
-            "depth": _effective_depth(),
-            "model": state["model"] if _applicable("model") else None,
-            "window_days": state["window_days"] if _applicable("window") else 120,
-            "members": members,
-            "members_map": {tracker: members for tracker in trackers} if members else None,
-        }
+        return analysis_setup.run_config(state, roster_fallback=roster_fallback, model_offered=_model_offered())
 
     def _members_step(direction: int) -> str:
         sources = (state["components"] or {}).get("delivery") or roster_fallback
@@ -8731,7 +8644,7 @@ def _run_team_analysis_results(
     delivery tracker's (profile, examples, sprint_names, team_name) is mirrored into
     ``active_box`` for the caller's downstream ticket-gen step.
     """
-    from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
+    from yeaboi.analysis.dashboard import component_presence, visible_card_order
 
     delivery_order = list(delivery.keys()) if delivery else []
     code_signal = code.get("signal") if code else None
@@ -8819,20 +8732,22 @@ def _run_team_analysis_results(
             i = actions.index("Anonymize")
             actions[i : i + 1] = ["Adjust", "Revert"]
 
-        _pa = getattr(profile, "ai_adoption", None)
-        _pd = getattr(profile, "doc_quality", None)
-        _has_code = code_signal is not None or bool(_pa and (_pa.scanned_commits + _pa.scanned_prs) > 0)
-        _has_code_health = bool(
-            (code_examples or {}).get("repository_health")
-            or (examples or {}).get("ai_adoption", {}).get("repository_health")
-            or (code is not None and "code_health" in set(analysis_features or ()))
+        # The same presence rules the screen builder uses, so this loop's
+        # selection index and the rendered card list cannot drift apart.
+        present = component_presence(
+            profile,
+            code_signal=code_signal,
+            doc_signal=doc_signal,
+            code_examples=code_examples,
+            doc_examples=doc_examples,
+            examples=examples,
+            analysis_features=analysis_features,
         )
-        _has_docs = doc_signal is not None or bool(_pd and _pd.pages_scanned > 0)
         order = visible_card_order(
             profile,
-            _has_code,
-            _has_docs,
-            has_code_health=_has_code_health,
+            present["code"],
+            present["docs"],
+            has_code_health=present["code_health"],
             analysis_features=analysis_features,
         )
 
@@ -14378,12 +14293,8 @@ def select_mode(
                         import threading
 
                         from yeaboi.analysis import run_team_analysis
-                        from yeaboi.analysis.engine import (
-                            AnalysisCancelledError,
-                            _available_doc_sources,
-                            _available_sources,
-                            _offerable_code_sources,
-                        )
+                        from yeaboi.analysis.engine import AnalysisCancelledError
+                        from yeaboi.analysis.setup import available_grid, available_trackers
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
@@ -14398,12 +14309,8 @@ def select_mode(
                             read_key,
                             _FRAME_TIME,
                             _supports_timeout,
-                            grid={
-                                "delivery": _available_sources(),
-                                "code": _offerable_code_sources(),
-                                "docs": _available_doc_sources(),
-                            },
-                            roster_fallback=_available_sources(),
+                            grid=available_grid(),
+                            roster_fallback=available_trackers(),
                             project_key="",
                             db_path=_ana_dbp,
                         )
@@ -16097,11 +16004,8 @@ def select_mode(
                     except Exception:
                         pass
 
-                    from yeaboi.analysis.engine import (
-                        AnalysisCancelledError,
-                        _available_doc_sources,
-                        _offerable_code_sources,
-                    )
+                    from yeaboi.analysis.engine import AnalysisCancelledError
+                    from yeaboi.analysis.setup import available_doc_sources, offerable_code_sources
 
                     # The wizard owns the whole setup sequence (Esc steps back one
                     # screen; backing out of the first step returns to this list).
@@ -16115,8 +16019,8 @@ def select_mode(
                         grid={
                             "delivery": _delivery_grid,
                             # Offerable, not merely configured — see the sibling call site.
-                            "code": _offerable_code_sources(),
-                            "docs": _available_doc_sources(),
+                            "code": offerable_code_sources(),
+                            "docs": available_doc_sources(),
                         },
                         roster_fallback=_delivery_grid,
                         project_key=_ta_project_key,

@@ -161,11 +161,11 @@ class TestProviderCatalog:
     def test_verify_chains_key_then_model(self, monkeypatch):
         calls: list[str] = []
         monkeypatch.setattr(
-            "yeaboi.ui.provider_select._verification._verify_api_key",
+            "yeaboi.provider_verification._verify_api_key",
             lambda card, key: (calls.append("key"), (True, "key ok"))[1],
         )
         monkeypatch.setattr(
-            "yeaboi.ui.provider_select._verification._verify_model",
+            "yeaboi.provider_verification._verify_model",
             lambda card, key, model: (calls.append("model"), (True, f"{model} ok"))[1],
         )
         result = engine.verify_provider("anthropic", "sk-ant-x", model="claude-sonnet-4-6")
@@ -174,7 +174,7 @@ class TestProviderCatalog:
 
     def test_discover_merges_discovered_first_and_dedupes(self, monkeypatch):
         monkeypatch.setattr(
-            "yeaboi.ui.provider_select._verification.fetch_available_models",
+            "yeaboi.provider_verification.fetch_available_models",
             lambda card, key: ["claude-new-1", "claude-sonnet-4-6"],
         )
         result = engine.discover_models("anthropic", "sk-ant-x")
@@ -184,7 +184,7 @@ class TestProviderCatalog:
 
     def test_bedrock_skips_live_discovery(self, monkeypatch):
         monkeypatch.setattr(
-            "yeaboi.ui.provider_select._verification.fetch_available_models",
+            "yeaboi.provider_verification.fetch_available_models",
             lambda card, key: pytest.fail("bedrock has no per-key model listing"),
         )
         result = engine.discover_models("bedrock", "us-east-1")

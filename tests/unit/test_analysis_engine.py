@@ -741,8 +741,8 @@ class TestCliRunLearn:
 class TestOfferableCodeSources:
     """The Code row's gate, which is deliberately looser than the headless one.
 
-    ``_offerable_code_sources`` answers "what can the wizard set up during this
-    run"; ``_available_code_sources`` answers "what is scannable with zero further
+    ``offerable_code_sources`` answers "what can the wizard set up during this
+    run"; ``scannable_code_sources`` answers "what is scannable with zero further
     input" and drives the headless component default. Collapsing the two would
     either hide GitHub from the picker (the bug) or make headless runs emit an
     empty code section for a user who never configured owners.
@@ -750,13 +750,13 @@ class TestOfferableCodeSources:
 
     @staticmethod
     def _gates(monkeypatch, *, gh_token="", gh_owners=(), azdo_token="", azdo_projects=()):
-        from yeaboi.analysis.engine import _available_code_sources, _offerable_code_sources
+        from yeaboi.analysis.setup import offerable_code_sources, scannable_code_sources
 
         monkeypatch.setattr("yeaboi.config.get_github_token", lambda: gh_token)
         monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: tuple(gh_owners))
         monkeypatch.setattr("yeaboi.config.get_azure_devops_token", lambda: azdo_token)
         monkeypatch.setattr("yeaboi.config.get_team_analysis_azdo_projects", lambda: tuple(azdo_projects))
-        return _offerable_code_sources(), _available_code_sources()
+        return offerable_code_sources(), scannable_code_sources()
 
     def test_bare_token_is_offerable_but_not_yet_scannable(self, monkeypatch):
         offerable, available = self._gates(monkeypatch, gh_token="ghp_x")

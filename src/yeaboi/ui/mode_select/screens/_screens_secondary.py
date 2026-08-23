@@ -424,7 +424,7 @@ def _build_team_analysis_screen(
                 toggle_line.append(f"  {lbl}  ", style="dim")
         toggle_line.append("    (Tab: switch source)", style="rgb(90,90,110)")
 
-    from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
+    from yeaboi.analysis.dashboard import component_presence, visible_card_order
 
     stats = compute_headline_stats(profile, examples) if profile is not None else {}
     ctx = _TaCtx(width, examples, sprint_names=sprint_names, stats=stats)
@@ -438,20 +438,20 @@ def _build_team_analysis_screen(
     ctx.code_blob = code_examples or {}
     ctx.doc_blob = doc_examples or {}
     ctx.analysis_features = tuple(analysis_features or ())
-    _prof_ai = getattr(profile, "ai_adoption", None)
-    _prof_doc = getattr(profile, "doc_quality", None)
-    has_code = code_signal is not None or bool(_prof_ai and (_prof_ai.scanned_commits + _prof_ai.scanned_prs) > 0)
-    has_code_health = bool(
-        (code_examples or {}).get("repository_health")
-        or (examples or {}).get("ai_adoption", {}).get("repository_health")
-        or (code_examples is not None and "code_health" in set(analysis_features or ()))
+    present = component_presence(
+        profile,
+        code_signal=code_signal,
+        doc_signal=doc_signal,
+        code_examples=code_examples,
+        doc_examples=doc_examples,
+        examples=examples,
+        analysis_features=analysis_features,
     )
-    has_docs = doc_signal is not None or bool(_prof_doc and _prof_doc.pages_scanned > 0)
     ctx.visible_order = visible_card_order(
         profile,
-        has_code,
-        has_docs,
-        has_code_health=has_code_health,
+        present["code"],
+        present["docs"],
+        has_code_health=present["code_health"],
         analysis_features=analysis_features,
     )
 
