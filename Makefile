@@ -259,6 +259,28 @@ web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev bo
 	@echo "  for poker, set YEABOI_DEV_API=http://127.0.0.1:5273 so /api proxies there."
 	cd frontend && npm run dev
 
+# --- Desktop app (desktop/ — Electron shell over `yeaboi app`) ---------------
+#
+# The renderer shares frontend/src/design via Vite aliases but is a separate
+# npm package with its own lockfile; `make test` stays pytest-only. The routes
+# manifest seam (desktop/src/renderer/routes.json → src/yeaboi/app/
+# routes_manifest.json) is the desktop half of the surface-parity registry.
+
+desktop-install: ## Install desktop dependencies (npm ci from the committed lockfile)
+	cd desktop && npm ci
+
+desktop-dev: ## Run the desktop app with HMR against the working tree (YEABOI_DESKTOP_PYTHON overrides the interpreter)
+	@test -d desktop/node_modules || $(MAKE) desktop-install
+	cd desktop && npm run dev
+
+desktop-check: ## What CI runs: typecheck + tests + the routes-manifest staleness gate
+	@test -d desktop/node_modules || $(MAKE) desktop-install
+	cd desktop && npm run typecheck && npm test && npm run check-manifest
+
+desktop-build: ## Build the desktop main/preload/renderer bundles into desktop/out
+	@test -d desktop/node_modules || $(MAKE) desktop-install
+	cd desktop && npm run build
+
 # --- Docs site (docs/ → yeaboi.ai via GitHub Pages) --------------------------
 #
 # NOT the same thing as the web-* targets above: those build the app's React

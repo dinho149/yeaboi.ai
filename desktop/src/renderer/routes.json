@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "routes": [
+    { "path": "/home", "capability": null, "title": "Home" },
+    { "path": "/whats-new", "capability": null, "title": "What's New" },
+    { "path": "/usage", "capability": "usage", "title": "Usage" }
+  ]
+}

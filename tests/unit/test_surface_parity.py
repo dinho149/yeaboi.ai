@@ -1,9 +1,9 @@
 """Surface-parity registry — every capability must ship on every surface (or be exempted).
 
-# See docs: "MCP Server" — the five delivery surfaces
+# See docs: "MCP Server" — the delivery surfaces
 
-yeaboi has five delivery surfaces: the TUI, CLI flags/subcommands, the Python
-engines, the MCP server, and the Claude Code plugin skills.
+yeaboi has six delivery surfaces: the TUI, CLI flags/subcommands, the Python
+engines, the MCP server, the Claude Code plugin skills, and the desktop app.
 Features have a habit of landing TUI-only. This file is the enforcement: a
 declarative registry of capabilities mapped to the surfaces that implement
 them, plus discovery checks that FAIL when something new appears on one
@@ -60,6 +60,12 @@ class Exempt(NamedTuple):
 #   tui_mode:  str                     — the _MODE_CARDS key
 #   cli:       set[str]                — argparse flags / subcommands
 #   skill:     str                     — claude-plugin/yeaboi/skills/<name>/
+#   desktop:   set[str]                — desktop renderer routes/actions, checked
+#                                        against src/yeaboi/app/routes_manifest.json
+#                                        (committed by the desktop renderer build).
+#                                        "desktop: scheduled milestone" Exempts are
+#                                        the rollout ledger — each milestone burns
+#                                        its own down; M12 removes the last.
 #
 # Any column may instead hold Exempt("why this surface is deliberately absent").
 # ---------------------------------------------------------------------------
@@ -94,6 +100,7 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
+        "desktop": Exempt("desktop: scheduled milestone M5 — the planning chat ships with the session event stream"),
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -101,6 +108,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
+        "desktop": Exempt("desktop: scheduled milestone M5 — the sessions page ships with the planning chat"),
     },
     "standup": {
         "engines": {
@@ -131,6 +139,7 @@ CAPABILITIES: dict[str, dict] = {
             "--standup-interactive",
         },
         "skill": "standup",
+        "desktop": Exempt("desktop: scheduled milestone M6 — hub, stepper and the 8 dashboard cards"),
     },
     "reporting": {
         "engines": {("yeaboi.reporting.engine", "run_delivery_report")},
@@ -140,6 +149,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "reporting",
         "cli": {"report"},
         "skill": "delivery-report",
+        "desktop": Exempt("desktop: scheduled milestone M8 — generate flow, themes and deck styles"),
     },
     "performance": {
         "engines": {
@@ -157,6 +167,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "performance",
         "cli": {"perf"},
         "skill": "performance",
+        "desktop": Exempt("desktop: scheduled milestone M8 — roster, 1:1 flows and the 6-month review"),
     },
     "scrum-poker": {
         # get_poker_perspective: the one LLM call (AI take on a revealed vote
@@ -167,6 +178,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "poker",
         "cli": {"poker"},  # history read-back + export; the live voting board stays TUI-hosted
         "skill": Exempt("live voting session is TUI-hosted by design; history stays readable via poker_history"),
+        "desktop": Exempt("desktop: scheduled milestone M7 — hub plus the poker board window"),
     },
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
@@ -183,6 +195,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "retro",
         "cli": {"retro"},  # history read-back + export; the live board itself stays TUI-hosted
         "skill": Exempt("live board is TUI-only by design; history stays readable via retro_history"),
+        "desktop": Exempt("desktop: scheduled milestone M7 — hub plus the retro board window"),
     },
     "team-learning": {
         "engines": Exempt("lives in tools/team_learning.py as @tool functions — covered by test_tools_registry"),
@@ -190,6 +203,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("profiles are consumed inside the planning/analysis screens, no dedicated card"),
         "cli": {"--team-profile", "--retro"},  # --learn moved to team-analysis (drives its engine now)
         "skill": Exempt("no plugin skill yet — tracked gap"),
+        "desktop": Exempt("consumed inside the planning/analysis panels, same as the TUI — no dedicated page"),
     },
     "team-analysis": {
         "engines": {
@@ -201,6 +215,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "team-analysis",
         "cli": {"analyze", "--learn"},
         "skill": "team-analysis",
+        "desktop": Exempt("desktop: scheduled milestone M6 — setup stepper and the 11 result cards"),
     },
     "roadmap": {
         # Landed on main (TUI-only) before both this parity framework and the
@@ -214,6 +229,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Planning intake card in _INTAKE_CARDS (Chat/Roadmap/Offline), not a mode card"),
         "cli": Exempt("interactive source picker + intake handoff; a headless roadmap path is a tracked gap"),
         "skill": Exempt("no plugin skill yet — tracked follow-up gap"),
+        "desktop": Exempt("desktop: scheduled milestone M5 — a planning intake tile, as in the TUI"),
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every
@@ -224,6 +240,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("an action button on every mode's result screen, not a _MODE_CARDS entry"),
         "cli": Exempt("headless callers anonymize via the anonymize_text MCP tool"),
         "skill": Exempt("post-processing action, not a guided workflow"),
+        "desktop": Exempt("desktop: scheduled milestone M7 — an action on every result screen"),
     },
     "artifact-editing": {
         # Reader-authored corrections to a generated artifact. The browser half
@@ -240,6 +257,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("editing happens on the shared browser document during a Share Online session"),
         "cli": Exempt("a JSON-patch flag would be an unusable surface; headless callers use the MCP tools"),
         "skill": Exempt("correcting one field is a single MCP call, not a multi-step guided workflow"),
+        "desktop": Exempt("desktop: scheduled milestone M7 — the slide-over editor on shared artifacts"),
     },
     "output-sharing": {
         "engines": Exempt("transport over already-generated HTML artifacts, not an artifact-generation pipeline"),
@@ -249,6 +267,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Share Online action on existing result screens, not a dedicated mode card"),
         "cli": Exempt("temporary shares intentionally remain visible and cancellable in the interactive TUI"),
         "skill": Exempt("local process and access-code ownership belongs to the human host in the TUI"),
+        "desktop": Exempt("desktop: scheduled milestone M7 — the Share dialog on every result screen"),
     },
     "usage": {
         "engines": Exempt("TUI utility page — reads the local token_usage table"),
@@ -256,6 +275,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "usage",
         "cli": Exempt("TUI utility page; headless callers read usage_get over MCP"),
         "skill": Exempt("TUI utility page"),
+        "desktop": {"/usage"},
     },
     "settings": {
         "engines": Exempt("TUI utility page — writes ~/.yeaboi/.env via config"),
@@ -263,6 +283,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "settings",
         "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice", "--setup-access"},
         "skill": Exempt("TUI utility page"),
+        "desktop": Exempt("desktop: scheduled milestone M4 — all three settings tabs plus the setup wizard"),
     },
     # Ceremonies are the clock other modes run on, not a mode of their own: the
     # engine fires a catalogued mode and delivers its output.
@@ -281,6 +302,9 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a welcome-screen keycap (s), not a card — an 11th card breaks the 84x40 layout"),
         "cli": {"ceremonies"},
         "skill": "ceremonies",
+        "desktop": Exempt(
+            "desktop: scheduled milestone M9 — a full page; the 84x40 card constraint does not exist here"
+        ),
     },
     # The inbound half of that clock: a team reacting or replying in Slack, read
     # back on a schedule and applied to the run the post was about.
@@ -301,6 +325,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Slack column and a link hint on the Ceremonies page — no 11th card (84x40)"),
         "cli": {"slack"},
         "skill": "slack-inbound",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the Slack tab on the ceremonies page"),
     },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
@@ -315,6 +340,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-usage",
         "cli": {"agents"},
         "skill": "agents-usage",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
     },
     "agent-advisor": {
         # advisor.py, not engine.py: the mirrored engine surface is served by
@@ -326,6 +352,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-advisor",
         "cli": {"agents"},
         "skill": "agents-advisor",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
     },
     "agent-standup": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
@@ -333,6 +360,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-standup",
         "cli": {"agents"},
         "skill": "agents-standup",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
     },
     "agent-security": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_security")},
@@ -340,6 +368,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-security",
         "cli": {"agents"},
         "skill": "agents-security",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
     },
     "provenance": {
         "engines": {
@@ -354,6 +383,7 @@ CAPABILITIES: dict[str, dict] = {
         ),
         "cli": {"provenance"},
         "skill": "provenance",
+        "desktop": Exempt("desktop: scheduled milestone M9 — the audit + trace explorer closes this tracked gap"),
     },
     "ship": {
         # The supervised story → PR pipeline. run_ship is the one entry point;
@@ -375,6 +405,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "ship",
         "cli": {"ship"},
         "skill": "ship",
+        "desktop": Exempt("desktop: scheduled milestone M8 — pick, live stream and the approval gate"),
     },
 }
 
@@ -624,7 +655,7 @@ def _engine_params(module: str, fn: str) -> set[str]:
 
 class TestRegistryHygiene:
     def test_every_row_has_all_surfaces(self):
-        required = {"engines", "mcp_tools", "tui_mode", "cli", "skill"}
+        required = {"engines", "mcp_tools", "tui_mode", "cli", "skill", "desktop"}
         for cap, row in CAPABILITIES.items():
             assert set(row) == required, f"capability {cap!r} must declare exactly the surfaces {sorted(required)}"
 
@@ -896,7 +927,57 @@ class TestPluginSkills:
 
 
 # ---------------------------------------------------------------------------
-# 6. Param parity — the engine's keyword surface must reach the MCP tool
+# 6. Desktop — renderer routes/actions vs the committed manifest.
+#
+# The desktop renderer's route registry (desktop/src/renderer/routes.ts +
+# actions.ts) is code-generated into src/yeaboi/app/routes_manifest.json and
+# committed, the same seam as frontend/ → web/static/ — so this Python suite
+# never needs Node. A desktop-side test asserts manifest == registries; here we
+# assert manifest == CAPABILITIES, two-way. Entries prefixed "action:" /
+# "dialog:" are non-route affordances (result-screen buttons, dialogs).
+# ---------------------------------------------------------------------------
+
+DESKTOP_MANIFEST = SRC / "app" / "routes_manifest.json"
+
+
+class TestDesktop:
+    def _manifest_entries(self) -> list[dict]:
+        import json
+
+        data = json.loads(DESKTOP_MANIFEST.read_text(encoding="utf-8"))
+        assert data.get("schema_version") == 1, "routes_manifest.json schema_version must be 1"
+        return data["routes"]
+
+    def test_manifest_entries_are_well_formed(self):
+        for entry in self._manifest_entries():
+            assert set(entry) == {"path", "capability", "title"}, f"malformed manifest entry: {entry}"
+            assert entry["path"].startswith(("/", "action:", "dialog:")), entry["path"]
+            assert entry["title"], f"manifest entry {entry['path']!r} needs a title"
+
+    def test_routes_registered(self):
+        actual = {entry["path"] for entry in self._manifest_entries() if entry["capability"]}
+        registered = {path for paths in _non_exempt("desktop").values() for path in paths}
+        assert actual == registered, (
+            f"desktop manifest vs CAPABILITIES differ.\n"
+            f"  in manifest but unregistered: {sorted(actual - registered)}\n"
+            f"  registered but not in manifest: {sorted(registered - actual)}\n{_HOW_TO}"
+        )
+
+    def test_route_capabilities_match(self):
+        by_cap = _non_exempt("desktop")
+        for entry in self._manifest_entries():
+            cap = entry["capability"]
+            if cap is None:
+                continue  # pure chrome (home, what's-new) — owned by no capability
+            assert cap in CAPABILITIES, f"manifest route {entry['path']!r} names unknown capability {cap!r}"
+            assert entry["path"] in by_cap.get(cap, set()), (
+                f"manifest route {entry['path']!r} claims capability {cap!r}, "
+                f"but that row's desktop column does not list it\n{_HOW_TO}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 7. Param parity — the engine's keyword surface must reach the MCP tool
 # ---------------------------------------------------------------------------
 
 

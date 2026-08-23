@@ -1,0 +1,292 @@
+/* The desktop shell chrome. Everything tokenized comes from @design — this
+   file only lays out the frame (sidebar + content) and the splash. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-m, 14px);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  height: 100%;
+}
+
+/* ── sidebar ─────────────────────────────────────────────────────────── */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--card);
+  padding: var(--s3) var(--s3) var(--s2);
+  overflow-y: auto;
+  user-select: none;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2) var(--s3);
+}
+
+.sidebar-section {
+  margin-top: var(--s3);
+}
+
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s2);
+  margin-bottom: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sidebar a,
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s2);
+  border-radius: var(--r-m);
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--fs-s);
+}
+
+.sidebar a:hover {
+  background: var(--panel-2);
+}
+
+.sidebar a[aria-current='page'] {
+  background: var(--panel-2);
+  color: var(--accent);
+}
+
+.sidebar-item.disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.sidebar-item .accent-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  flex: none;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hairline);
+}
+
+.sidebar-version {
+  padding: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+
+/* ── content ─────────────────────────────────────────────────────────── */
+
+.content {
+  overflow-y: auto;
+  padding: var(--s5) var(--s6);
+}
+
+.page-title {
+  margin: 0 0 var(--s4);
+  font-size: var(--fs-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s3);
+}
+
+.mode-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  padding: var(--s3) var(--s4);
+  box-shadow: var(--shadow-1);
+}
+
+.mode-card h3 {
+  margin: 0 0 var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-l);
+}
+
+.mode-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.45;
+}
+
+.category-label {
+  margin: var(--s5) 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tip-ticker {
+  margin-top: var(--s5);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-s);
+  min-height: 2.2em;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* ── what's-new ──────────────────────────────────────────────────────── */
+
+.area-filter {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+
+.area-filter button {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.area-filter button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.release {
+  border-bottom: 1px solid var(--hairline);
+  padding: var(--s3) 0 var(--s4);
+}
+
+.release h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+}
+
+.release .date {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+}
+
+.release .summary {
+  color: var(--muted);
+  margin: var(--s1) 0 var(--s2);
+}
+
+.release ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.release li {
+  margin: 3px 0;
+  line-height: 1.45;
+}
+
+/* ── splash / backend-state overlay ──────────────────────────────────── */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s4);
+  background: var(--bg);
+  z-index: 100;
+}
+
+.splash .status {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+}
+
+.splash .reason {
+  color: var(--muted);
+  max-width: 48ch;
+  text-align: center;
+  font-size: var(--fs-s);
+}
+
+@keyframes splash-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-10px);
+  }
+  55% {
+    transform: translateY(0);
+  }
+}
+
+.splash .duck-hop {
+  animation: splash-hop 1.2s var(--ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash .duck-hop {
+    animation: none;
+  }
+}
+
+.error-box {
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  color: var(--text);
+  padding: var(--s3) var(--s4);
+  max-width: 60ch;
+}

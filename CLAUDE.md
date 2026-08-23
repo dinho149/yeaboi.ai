@@ -186,7 +186,7 @@ Every new feature MUST include all three pillars before it can be considered com
 
 ## REQUIRED: Surface Parity
 
-yeaboi ships on **five surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, and the Claude Code plugin skills. Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, and plugin skills.
+yeaboi ships on **six surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the desktop app (rolling out — its `CAPABILITIES` column uses `Exempt("desktop: scheduled milestone …")` entries as the rollout ledger; burn the relevant one down whenever you land a desktop page). Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, plugin skills, and the desktop route manifest (`src/yeaboi/app/routes_manifest.json`).
 
 The contract:
 
