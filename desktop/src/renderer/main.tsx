@@ -15,14 +15,22 @@ import { AnalysisResults } from './pages/AnalysisResults';
 import { AnalysisSetup } from './pages/AnalysisSetup';
 import { Chat } from './pages/Chat';
 import { Home } from './pages/Home';
+import { Performance } from './pages/Performance';
+import { PerformanceEngineer } from './pages/PerformanceEngineer';
 import { Planning } from './pages/Planning';
 import { Poker } from './pages/Poker';
 import { PokerBoard } from './pages/PokerBoard';
 import { PokerSetup } from './pages/PokerSetup';
+import { Reporting } from './pages/Reporting';
+import { ReportingSetup } from './pages/ReportingSetup';
+import { ReportingStyle } from './pages/ReportingStyle';
 import { Retro } from './pages/Retro';
 import { RetroBoard } from './pages/RetroBoard';
+import { Roadmap } from './pages/Roadmap';
 import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
+import { Ship } from './pages/Ship';
+import { ShipRun } from './pages/ShipRun';
 import { Setup } from './pages/Setup';
 import { Standup } from './pages/Standup';
 import { StandupReview } from './pages/StandupReview';
@@ -38,6 +46,7 @@ const PAGES: Record<string, ComponentType> = {
   '/humans/planning': Planning,
   '/humans/planning/chat': Chat,
   '/humans/planning/sessions': Sessions,
+  '/humans/planning/roadmap': Roadmap,
   '/humans/analysis': Analysis,
   '/humans/analysis/new': AnalysisSetup,
   '/humans/analysis/results': AnalysisResults,
@@ -50,6 +59,13 @@ const PAGES: Record<string, ComponentType> = {
   '/humans/poker': Poker,
   '/humans/poker/new': PokerSetup,
   '/humans/poker/board': PokerBoard,
+  '/humans/performance': Performance,
+  '/humans/performance/engineer': PerformanceEngineer,
+  '/humans/reporting': Reporting,
+  '/humans/reporting/new': ReportingSetup,
+  '/humans/reporting/style': ReportingStyle,
+  '/humans/ship': Ship,
+  '/humans/ship/run': ShipRun,
   '/usage': Usage,
   '/settings/credentials': Settings,
   '/settings/sharing': Settings,

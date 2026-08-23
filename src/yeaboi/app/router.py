@@ -17,7 +17,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 # A path segment placeholder: ``/api/ops/{op_id}``.
 _PARAM_RE = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
@@ -148,7 +148,13 @@ class Router:
                 continue
             if route.auth and not request.authed:
                 return json_response({"error": "unauthorized"}, 401)
-            params = dict(zip(self._param_names(route.template), match.groups(), strict=True))
+            # Percent-decoded: a path parameter is a URL-encoded segment by
+            # definition, and a handler that looked one up raw would miss every
+            # value with a space in it — which is most people's names.
+            params = {
+                name: unquote(value)
+                for name, value in zip(self._param_names(route.template), match.groups(), strict=True)
+            }
             try:
                 return route.handler(replace(request, params=params))
             except HTTPError as exc:

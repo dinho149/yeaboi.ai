@@ -72,6 +72,7 @@ export function Planning() {
         <button type="button" class="primary" disabled={busy || !description.trim()} onClick={() => void start()}>
           {busy ? 'Opening…' : 'Start planning'}
         </button>
+        <a href="#/humans/planning/roadmap">From your roadmap</a>
         <a href="#/humans/planning/sessions">Saved plans</a>
       </div>
     </div>

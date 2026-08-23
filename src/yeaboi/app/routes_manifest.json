@@ -32,6 +32,11 @@
       "title": "Saved plans"
     },
     {
+      "path": "/humans/planning/roadmap",
+      "capability": "roadmap",
+      "title": "Planning · Roadmap intake"
+    },
+    {
       "path": "/humans/analysis",
       "capability": "team-analysis",
       "title": "Analysis"
@@ -90,6 +95,41 @@
       "path": "/humans/poker/board",
       "capability": "scrum-poker",
       "title": "Poker · Table"
+    },
+    {
+      "path": "/humans/performance",
+      "capability": "performance",
+      "title": "Performance"
+    },
+    {
+      "path": "/humans/performance/engineer",
+      "capability": "performance",
+      "title": "Performance · Engineer"
+    },
+    {
+      "path": "/humans/reporting",
+      "capability": "reporting",
+      "title": "Reporting"
+    },
+    {
+      "path": "/humans/reporting/new",
+      "capability": "reporting",
+      "title": "Reporting · New report"
+    },
+    {
+      "path": "/humans/reporting/style",
+      "capability": "reporting",
+      "title": "Reporting · Deck style"
+    },
+    {
+      "path": "/humans/ship",
+      "capability": "ship",
+      "title": "Ship"
+    },
+    {
+      "path": "/humans/ship/run",
+      "capability": "ship",
+      "title": "Ship · Run"
     },
     {
       "path": "/settings/credentials",

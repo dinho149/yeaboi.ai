@@ -1142,3 +1142,18 @@ a.button.primary {
   gap: 4px;
   font-size: 0.85rem;
 }
+
+/* ── ship: the diff the gate approves ────────────────────────────────── */
+
+.diff-pane {
+  max-height: 420px;
+  overflow: auto;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre;
+}

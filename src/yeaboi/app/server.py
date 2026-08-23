@@ -86,17 +86,23 @@ class AppRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _write_stream(self, response: Response) -> None:
-        """Write a chunked streaming response (SSE / NDJSON), flushing per chunk.
+        """Write a streaming response (SSE / NDJSON), flushing per chunk.
+
+        The connection closes when the generator ends. A streamed body has no
+        ``Content-Length``, so on HTTP/1.1 keep-alive the client would have no
+        way to know the last line was the last line — it would keep reading a
+        finished run forever.
 
         A broken pipe means the client went away — the stream generator's
         ``finally`` handles its own cleanup (e.g. the event bus unsubscribe),
         so it is closed, not re-raised.
         """
+        self.close_connection = True
         send_headers(
             self,
             response.code,
             csp=APP_CSP,
-            extra=(("Content-Type", response.content_type), *response.headers),
+            extra=(("Content-Type", response.content_type), ("Connection", "close"), *response.headers),
         )
         self.end_headers()
         assert response.stream is not None

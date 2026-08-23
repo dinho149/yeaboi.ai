@@ -154,7 +154,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "reporting",
         "cli": {"report"},
         "skill": "delivery-report",
-        "desktop": Exempt("desktop: scheduled milestone M8 — generate flow, themes and deck styles"),
+        "desktop": {"/humans/reporting", "/humans/reporting/new", "/humans/reporting/style"},
     },
     "performance": {
         "engines": {
@@ -172,7 +172,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "performance",
         "cli": {"perf"},
         "skill": "performance",
-        "desktop": Exempt("desktop: scheduled milestone M8 — roster, 1:1 flows and the 6-month review"),
+        "desktop": {"/humans/performance", "/humans/performance/engineer"},
     },
     "scrum-poker": {
         # get_poker_perspective: the one LLM call (AI take on a revealed vote
@@ -238,7 +238,7 @@ CAPABILITIES: dict[str, dict] = {
         # carrying a milestone that has shipped: the intake tile needs a
         # roadmap path that is not TUI-only, and no surface has one yet — the
         # same gap the four rows above already track.
-        "desktop": Exempt("desktop: scheduled milestone M8 — needs the headless roadmap path the other rows track"),
+        "desktop": {"/humans/planning/roadmap"},
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every
@@ -422,7 +422,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "ship",
         "cli": {"ship"},
         "skill": "ship",
-        "desktop": Exempt("desktop: scheduled milestone M8 — pick, live stream and the approval gate"),
+        "desktop": {"/humans/ship", "/humans/ship/run"},
     },
 }
 

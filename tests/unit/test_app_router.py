@@ -59,6 +59,13 @@ class TestDispatch:
         resp = self._router().dispatch(Request(method="POST", path="/api/ops/abc123/cancel", authed=True))
         assert b'"op_id":"abc123"' in resp.body
 
+    def test_path_params_are_percent_decoded(self):
+        # A parameter is a URL-encoded segment by definition; a handler that
+        # looked one up raw would miss every value with a space in it — which
+        # is most people's names.
+        resp = self._router().dispatch(Request(method="POST", path="/api/ops/Ada%20Lovelace/cancel", authed=True))
+        assert b'"op_id":"Ada Lovelace"' in resp.body
+
     def test_param_never_spans_segments(self):
         resp = self._router().dispatch(Request(method="POST", path="/api/ops/a/b/cancel", authed=True))
         assert resp.code == 404

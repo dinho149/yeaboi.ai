@@ -165,3 +165,28 @@ class TestBoundServer:
             httpd.shutdown()
             thread.join(timeout=5)
             httpd.server_close()
+
+    def test_a_finished_stream_reaches_end_of_body(self, app):
+        """A streamed body has no Content-Length, so keep-alive would leave the
+        client reading a finished run forever — the read must return EOF."""
+        import urllib.request
+
+        from yeaboi.app.router import Response, Router
+
+        router = Router()
+        router.get("/api/drip", lambda request: Response(content_type="application/x-ndjson", stream=iter([b"1\n"])))
+        app.router = router
+        httpd = serve("127.0.0.1", 0, app=app)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{httpd.server_address[1]}/api/drip",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                assert resp.read() == b"1\n"  # returns rather than blocking
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+            httpd.server_close()
