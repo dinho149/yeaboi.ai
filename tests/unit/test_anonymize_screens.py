@@ -41,8 +41,13 @@ class TestAnonNoteRendersPerBuilder:
         assert "3 masked" in out
 
     def test_performance_detail(self):
-        data = {"view": "detail", "detail_lines": ["• shipped it"], "detail_title": "1:1 — X"}
-        out = _render(_build_performance_screen(data, anon_note=NOTE, sub_reveal=999.0))
+        from yeaboi.agent.state import OneOnOnePrep
+
+        prep = OneOnOnePrep(engineer="X", talking_points=("shipped it",))
+        data = {"view": "detail", "artifact": prep, "kind": "prep", "detail_title": "1:1 — X"}
+        # Tall enough for the talking points to be above the fold: the detail view
+        # now renders every section heading, so a 24-row default cuts them off.
+        out = _render(_build_performance_screen(data, anon_note=NOTE, sub_reveal=999.0, height=40))
         assert "3 masked" in out
         assert "shipped it" in out  # native content still renders
 

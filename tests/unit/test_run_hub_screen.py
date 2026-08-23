@@ -16,7 +16,7 @@ from rich.panel import Panel
 from yeaboi.ui.mode_select.screens._project_cards import RunSummary
 from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
 from yeaboi.ui.shared import _duck_voice
-from yeaboi.ui.shared._components import reporting_title, standup_title
+from yeaboi.ui.shared._components import performance_title, reporting_title, standup_title
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +85,55 @@ class TestHubList:
     def test_small_terminal_does_not_crash(self):
         # Just needs to render without raising at a cramped size.
         _text(_build_run_hub_screen(_runs(8), 5, title_fn=reporting_title), width=60, height=16)
+
+
+class TestPerformanceHubList:
+    """Performance rows are per-engineer artifacts, not one run per date.
+
+    The card's landing lists the whole team, so a row has to say who it is about —
+    otherwise "1:1 Prep — 2026-07-01" appears four times with nothing to tell apart.
+    """
+
+    def _artifacts(self):
+        return [
+            RunSummary(
+                "performance", 1, "1:1 Prep — 2026-07-05", "Ada · Prep", "2 days ago", kind="prep", engineer="Ada"
+            ),
+            RunSummary(
+                "performance",
+                2,
+                "6-Month Review — 2026-01-01..2026-06-30",
+                "Bob · Review",
+                "a week ago",
+                kind="review",
+                engineer="Bob",
+            ),
+        ]
+
+    def test_rows_name_the_engineer(self):
+        out = _text(
+            _build_run_hub_screen(
+                self._artifacts(), 0, title_fn=performance_title, subtitle="Saved artifacts", new_label="+ New artifact"
+            )
+        )
+        assert "Saved artifacts" in out
+        assert "1:1 Prep — 2026-07-05" in out
+        assert "Ada" in out and "Bob" in out
+        assert "+ New artifact" in out
+
+    def test_team_wide_empty_state(self):
+        out = _text(
+            _build_run_hub_screen(
+                [],
+                0,
+                title_fn=performance_title,
+                empty_title="No saved artifacts yet",
+                empty_subtitle="Press Enter to pick an engineer and create one",
+                new_label="+ New artifact",
+            )
+        )
+        assert "No saved artifacts yet" in out
+        assert "pick an engineer" in out
 
 
 class TestHubExtraCard:
@@ -181,12 +230,14 @@ class TestSnapshotRendering:
         assert "By the numbers" in out  # rich metrics section, not flat lines
 
     def test_performance_detail_renders_rich(self):
+        from yeaboi.agent.state import SixMonthReview
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen
 
         panel = _build_performance_screen(
             {
                 "view": "detail",
-                "detail_lines": ["Strengths:", "• ownership"],
+                "artifact": SixMonthReview(engineer="Ada", strengths=("ownership",)),
+                "kind": "review",
                 "detail_title": "6-month review — Ada",
                 "actions": _SNAP_ACTIONS,
             },

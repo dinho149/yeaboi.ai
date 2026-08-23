@@ -1,15 +1,23 @@
 """Unit tests for Performance rendering, export, and delivery."""
 
 import pytest
-from rich.console import Group
 
 from tests._pages import assert_self_contained, island
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import (
+    ActivityEvidence,
+    EvidenceGroup,
+    OneOnOnePrep,
+    OneOnOneRecord,
+    PerfMetric,
+    SixMonthReview,
+)
 from yeaboi.performance import delivery, export, render
 
 
 class TestRender:
-    def test_prep_lines_and_rich(self):
+    """The plaintext surface. The styled one lives in ui/shared/_performance_rows.py."""
+
+    def test_prep_lines(self):
         prep = OneOnOnePrep(
             engineer="Ada",
             date="2026-07-12",
@@ -21,19 +29,16 @@ class TestRender:
         lines = render.format_prep_lines(prep)
         text = "\n".join(lines)
         assert "Ada" in text and "tp" in text and "carry" in text and "w" in text
-        assert isinstance(render.format_prep_rich(prep), Group)
 
-    def test_completion_lines_and_rich(self):
+    def test_completion_lines(self):
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="Hi Ada", action_items=("do x",))
         text = "\n".join(render.format_completion_lines(rec))
         assert "Hi Ada" in text and "do x" in text
-        assert isinstance(render.format_completion_rich(rec), Group)
 
-    def test_review_lines_and_rich(self):
+    def test_review_lines(self):
         rev = SixMonthReview(engineer="Ada", strengths=("s",), overall="great", period_start="a", period_end="b")
         text = "\n".join(render.format_review_lines(rev))
         assert "great" in text and "s" in text
-        assert isinstance(render.format_review_rich(rev), Group)
 
 
 class TestMarkdownLayout:
@@ -105,7 +110,7 @@ class TestDelivery:
         monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "")
         monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: [])
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
-        assert delivery.send_completion_email(rec) is False
+        assert delivery.deliver_completion_email(rec) == "not_configured"
 
     def test_sends_via_smtp(self, monkeypatch):
         sent = {}
@@ -141,8 +146,44 @@ class TestDelivery:
         monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
 
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_subject="1:1", email_summary="hi")
-        assert delivery.send_completion_email(rec) is True
+        assert delivery.deliver_completion_email(rec) == "sent"
         assert sent["to"] == "boss@example.com"
+
+    def test_an_smtp_error_is_failed_not_unconfigured(self, monkeypatch):
+        """The two are different facts, and the page tells the lead which one it was.
+
+        A bool could not carry the difference, so a rejected send used to render
+        the same "email not configured" chip as an .env nobody had filled in.
+        """
+        import smtplib
+
+        def _boom(*a, **kw):
+            raise smtplib.SMTPException("mailbox unavailable")
+
+        monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "smtp.example.com")
+        monkeypatch.setattr("yeaboi.config.get_smtp_port", lambda: 587)
+        monkeypatch.setattr("yeaboi.config.get_smtp_user", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_password", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_sender", lambda: "me@example.com")
+        monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: ["boss@example.com"])
+        monkeypatch.setattr("smtplib.SMTP", _boom)
+
+        rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
+        assert delivery.deliver_completion_email(rec) == "failed"
+
+
+class TestACompletionSaysWhenItsNumbersWereGathered:
+    def test_the_carried_prep_date_rides_in_the_export(self):
+        record = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi", evidence_date="2026-07-01")
+
+        report = export.completion_export_args(record)["report"]
+        assert "prep of 2026-07-01" in str(report["footnote"])
+        assert "prep of 2026-07-01" in export.build_completion_markdown(record)
+
+    def test_a_completion_with_no_carried_evidence_claims_nothing(self):
+        record = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
+
+        assert "footnote" not in export.completion_export_args(record)["report"]
 
 
 class TestSharedDesignSystem:
@@ -172,11 +213,46 @@ class TestPayload:
             boot = island(html)
             assert boot["chrome"]["wordmark"] == wordmark
             assert boot["chrome"]["title"].endswith("Ada Lovelace")
-            # The name is in the title and in the body's avatar row; a third
-            # copy as a header eyebrow is noise, not emphasis.
+            # An artifact grounded in nothing carries no eyebrows at all — the
+            # name is in the title and in the body's avatar row, and a third copy
+            # as a header fact is noise, not emphasis.
             assert "facts" not in boot["chrome"]
             assert boot["report"]["kind"] == "performance"
             assert boot["report"]["engineer"] == "Ada Lovelace"
+
+    def test_the_header_says_what_the_document_was_built_out_of(self):
+        # What the eyebrows add is the one thing the title cannot say.
+        prep = OneOnOnePrep(
+            engineer="Ada Lovelace",
+            evidence_sources=("standup", "analysis"),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    items=(ActivityEvidence(kind="pr", key="#91"), ActivityEvidence(kind="pr", key="#92")),
+                ),
+            ),
+        )
+        facts = dict(tuple(f) for f in island(export.build_prep_html(prep))["chrome"]["facts"])
+        assert facts["SOURCES"] == "Standup, Team analysis"
+        assert facts["EVIDENCE"] == "2 items"
+
+    def test_a_table_of_contents_appears_only_when_it_earns_itself(self):
+        # Below three entries it is a second copy of the headings.
+        short = OneOnOnePrep(engineer="Ada", goals=("a",))
+        assert "nav" not in island(export.build_prep_html(short))["chrome"]
+
+        long = OneOnOnePrep(engineer="Ada", goals=("a",), gaps=("b",), improvements=("c",))
+        nav = island(export.build_prep_html(long))["chrome"]["nav"]
+        assert [entry[0] for entry in nav] == ["goals-to-align-on", "gaps-observed", "areas-to-improve"]
+
+    def test_every_nav_entry_points_at_a_section_that_exists(self):
+        # Two implementations of one slug rule is how a nav link ends up pointing
+        # at nothing, so the exporter owns the id and the component reads it.
+        prep = OneOnOnePrep(engineer="Ada", goals=("a",), gaps=("b",), improvements=("c",))
+        boot = island(export.build_prep_html(prep))
+        ids = {section["id"] for section in boot["report"]["sections"]}
+        assert {entry[0] for entry in boot["chrome"]["nav"]} <= ids
 
     def test_prep_sections_are_titled_bullet_runs_in_order(self):
         prep = OneOnOnePrep(
@@ -190,23 +266,47 @@ class TestPayload:
         report = island(export.build_prep_html(prep))["report"]
         assert report["lead"] == {"title": "Sprint work", "text": "shipped auth"}
         assert report["sections"] == [
-            {"title": "Carried-over action items", "items": ["carry"]},
-            {"title": "Talking points", "items": ["tp"]},
-            {"title": "Goals to align on", "items": ["goal"]},
+            {"id": "carried-over-action-items", "title": "Carried-over action items", "items": ["carry"]},
+            {"id": "talking-points", "title": "Talking points", "items": ["tp"]},
+            {"id": "goals-to-align-on", "title": "Goals to align on", "items": ["goal"]},
         ]
 
-    def test_empty_sections_are_dropped_not_sent_blank(self):
-        # A section with no items draws nothing, so shipping it would put a row
-        # in the payload whose only possible rendering is absence.
+    def test_a_section_that_is_empty_for_no_known_reason_is_dropped(self):
+        # Nothing to draw and nothing to say about why: a row whose only possible
+        # rendering is absence.
         report = island(export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-27")))["report"]
         assert report["sections"] == []
         assert "lead" not in report
+
+    def test_a_section_that_is_empty_for_a_known_reason_rides_and_says_why(self):
+        # "The model found no gaps" and "nobody ever looked" are different facts,
+        # and dropping the row made them the same silence.
+        prep = OneOnOnePrep(
+            engineer="Ada",
+            section_states=(("gaps", "not_configured", "No saved team analysis covers this engineer."),),
+        )
+        report = island(export.build_prep_html(prep))["report"]
+        assert report["sections"] == [
+            {
+                "id": "gaps-observed",
+                "title": "Gaps observed",
+                "items": [],
+                "state": "not_configured",
+                "reason": "No saved team analysis covers this engineer.",
+            }
+        ]
+
+    def test_a_populated_section_carries_no_state(self):
+        # It explains itself; "covered" beside a list of findings is noise.
+        prep = OneOnOnePrep(engineer="Ada", gaps=("thin on deploys",), section_states=(("gaps", "covered", ""),))
+        (section,) = island(export.build_prep_html(prep))["report"]["sections"]
+        assert "state" not in section
 
     def test_review_framework_rides_as_a_footnote(self):
         review = SixMonthReview(engineer="Ada", framework_used="Dreyfus", strengths=("clear writer",))
         report = island(export.build_review_html(review))["report"]
         assert report["footnote"] == "Framework: Dreyfus"
-        assert report["sections"][0] == {"title": "Strengths", "items": ["clear writer"]}
+        assert report["sections"][0] == {"id": "strengths", "title": "Strengths", "items": ["clear writer"]}
 
     def test_completion_subject_is_a_section_not_a_second_prose_slot(self):
         record = OneOnOneRecord(
@@ -218,4 +318,134 @@ class TestPayload:
         )
         report = island(export.build_completion_html(record))["report"]
         assert report["lead"] == {"title": "Summary email", "text": "We agreed on the plan."}
-        assert report["sections"][0] == {"title": "Subject", "items": ["1:1 recap"]}
+        assert report["sections"][0] == {"id": "subject", "title": "Subject", "items": ["1:1 recap"]}
+
+
+class TestMarkdownCarriesTheNumbersAndTheEvidence:
+    """Markdown is the copy that outlives the tool, and what Notion publishes."""
+
+    @staticmethod
+    def _review():
+        return SixMonthReview(
+            engineer="Ada",
+            strengths=("ownership",),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=28.0,
+                    denominator=31.0,
+                    source="analysis",
+                ),
+                PerfMetric(key="tests_rate", label="Changes with tests", value=62.0, unit="%", source="analysis"),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 2 of 118",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add the tenant guard"),),
+                        ),
+                        ActivityEvidence(kind="page", key="Runbook", title="Auth runbook", url="javascript:alert(1)"),
+                    ),
+                ),
+            ),
+        )
+
+    def test_a_ratio_keeps_its_denominator(self):
+        # "28" in a bullet list is not the same fact as "28 of 31", and a table
+        # is the only Markdown structure that keeps the two together.
+        md = export.build_review_markdown(self._review())
+        assert "| Metric | Value | Source |" in md
+        assert "| Stories completed | 28 of 31 | Team analysis |" in md
+        assert "| Changes with tests | 62% | Team analysis |" in md
+
+    def test_a_whole_number_carries_no_trailing_decimal(self):
+        assert "| 28 of 31 |" in export.build_review_markdown(self._review())
+        assert "28.0" not in export.build_review_markdown(self._review())
+
+    def test_evidence_rows_link_and_nest(self):
+        md = export.build_review_markdown(self._review())
+        assert "- [pr] [#91](https://github.com/acme/web/pull/91) Roll SSO out · acme/web · merged" in md
+        assert "  - 78e4201 Add the tenant guard" in md
+        assert "_capped at 2 of 118_" in md
+
+    def test_an_unsafe_url_costs_the_link_and_not_the_row(self):
+        # The key is what the reader is being shown evidence *of*; dropping the
+        # row would silently shrink the evidence behind a judgement.
+        md = export.build_review_markdown(self._review())
+        assert "javascript:" not in md
+        assert "- [page] Runbook Auth runbook" in md
+
+    def test_an_artifact_with_no_numbers_grows_no_empty_table(self):
+        md = export.build_review_markdown(SixMonthReview(engineer="Ada", strengths=("ownership",)))
+        assert "## Measured" not in md
+        assert "## Evidence" not in md
+
+    def test_the_completion_publishes_what_the_prep_gathered(self):
+        record = OneOnOneRecord(
+            engineer="Ada",
+            metrics=(PerfMetric(key="spill_rate", label="Spill rate", value=18.0, unit="%", source="analysis"),),
+        )
+        assert "| Spill rate | 18% | Team analysis |" in export.build_completion_markdown(record)
+
+
+class TestTheEmailBodyStillComesFromHere:
+    """``delivery.py`` is why the plaintext builders survive.
+
+    The styled renderer replaced them on every other surface, and a later reader
+    could reasonably take these for dead code — this is the test that says
+    otherwise, by sending a 1:1 the model wrote no summary for.
+    """
+
+    def test_a_summary_with_no_model_prose_falls_back_to_the_plaintext_rendering(self, monkeypatch):
+        captured = {}
+
+        class _FakeSMTP:
+            def __init__(self, host, port, timeout=20):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def ehlo(self):
+                pass
+
+            def has_extn(self, x):
+                return False
+
+            def login(self, u, p):
+                pass
+
+            def send_message(self, msg):
+                captured["body"] = msg.get_content()
+
+        monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "smtp.example.com")
+        monkeypatch.setattr("yeaboi.config.get_smtp_port", lambda: 587)
+        monkeypatch.setattr("yeaboi.config.get_smtp_user", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_password", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_sender", lambda: "me@example.com")
+        monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: ["boss@example.com"])
+        monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
+
+        record = OneOnOneRecord(
+            engineer="Ada",
+            date="2026-07-12",
+            email_subject="1:1",
+            email_summary="",
+            action_items=("Write the runbook",),
+        )
+        assert delivery.deliver_completion_email(record) == "sent"
+        assert captured["body"].strip() == "\n".join(render.format_completion_lines(record)).strip()
+        assert "Write the runbook" in captured["body"]

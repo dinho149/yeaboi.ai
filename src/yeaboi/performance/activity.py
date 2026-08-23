@@ -60,6 +60,7 @@ def gather_engineer_activity(
     jira_project: str = "",
     azdo_project: str = "",
     sprints: int = 2,
+    aliases: frozenset[str] | None = None,
 ) -> EngineerActivity:
     """Return ``engineer``'s worked tickets across the current + prior sprint.
 
@@ -69,10 +70,13 @@ def gather_engineer_activity(
     configured or the engineer has no recent activity.
 
     Args:
-        engineer: display name to filter activity by (matches the ``author`` field).
+        engineer: display name to filter activity by.
         state: saved session state (for sprint length); may be None.
         jira_project / azdo_project: tracker identifiers (resolved from config if unset).
         sprints: how many sprints back to look.
+        aliases: every handle the engineer works under (performance/identity.py).
+            None resolves them here; the tracker's own emails then close the set,
+            so a ticket touched under an email still attaches to the person.
     """
     state = state or {}
     if not jira_project and not azdo_project:
@@ -104,13 +108,25 @@ def gather_engineer_activity(
 
     items = _collect_items(jira_project, azdo_project, days)
 
-    # Filter to this engineer's tickets and split by the sprint start date.
+    # Identity closure over the fetched items, so a ticket touched under an
+    # email or a tracker login still attaches to the person.
+    from yeaboi.performance import identity
+
+    resolved = identity.resolve_aliases(engineer, items=items) if aliases is None else aliases
+
+    # Filter to this engineer's tickets and split by the sprint start date. One
+    # ticket can arrive as an issue, an update and a comment; keep it once, or a
+    # busy week reads as three times the work.
     stories: list[EngineerStory] = []
     source_counter: Counter[str] = Counter()
-    target = engineer.strip().lower()
+    seen: set[tuple[str, str]] = set()
     for it in items:
-        if (it.get("author") or "").strip().lower() != target:
+        if not identity.matches(it.get("author", ""), resolved):
             continue
+        handle = (it.get("source", ""), it.get("key", ""))
+        if handle[1] and handle in seen:
+            continue
+        seen.add(handle)
         ts = (it.get("timestamp") or "")[:10]
         # A ticket updated on/after the active-sprint start belongs to "current";
         # everything else falls into the prior window. No start date → all current.

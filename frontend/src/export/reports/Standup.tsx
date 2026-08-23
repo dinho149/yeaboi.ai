@@ -52,6 +52,7 @@ import type {
 import { EditableSlot } from '../editing/Editable';
 import { Field } from '../editing/Field';
 import { votePractice, type Verdict } from '../vote';
+import { CoverageDots } from './Coverage';
 import { EvidenceList, EvidenceRow, statusCategory, VISIBLE_ROWS, type EvidenceVariant } from './Evidence';
 import styles from './reports.module.css';
 import { memberSlug, Timeline } from './Timeline';
@@ -63,14 +64,6 @@ const CONFIDENCE_TONE: Record<string, Tone> = {
   'At risk': 'warn',
   Behind: 'danger',
   'Insufficient data': 'low',
-};
-
-/** `category_coverage` statuses. The word always rides beside the dot — never colour alone. */
-const COVERAGE_TONE: Record<string, Tone> = {
-  covered: 'ok',
-  partial: 'warn',
-  failed: 'danger',
-  not_configured: 'low',
 };
 
 /** The three activity categories, in the order every part of this page uses. */
@@ -1027,18 +1020,7 @@ export function Standup({
             {coverage.length ? (
               <li>
                 Coverage —{' '}
-                {coverage.map(([category, status]) => (
-                  <span key={category} className={styles['coverage']}>
-                    {/* The status word always rides beside the dot: colour
-                        alone is not a signal every reader can receive. */}
-                    <i
-                      className={styles['dot']}
-                      style={{ background: toneVar(tone(COVERAGE_TONE, status)) }}
-                      aria-hidden="true"
-                    />
-                    {category} <span className={styles['dim']}>{status.replace(/_/g, ' ')}</span>
-                  </span>
-                ))}
+                <CoverageDots items={coverage.map(([label, status]) => ({ label, status }))} />
               </li>
             ) : null}
             {skipped.length ? (

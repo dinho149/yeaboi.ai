@@ -40,8 +40,16 @@ def _smtp_config() -> dict:
     }
 
 
-def send_completion_email(record: OneOnOneRecord, *, recipients: list[str] | None = None) -> bool:
-    """Send the 1:1 summary email via SMTP. Return True on success, False otherwise.
+def deliver_completion_email(record: OneOnOneRecord, *, recipients: list[str] | None = None) -> str:
+    """Send the 1:1 summary email via SMTP. Return the delivery state.
+
+    One of ``"sent"``, ``"not_configured"`` or ``"failed"`` — the same vocabulary
+    ``OneOnOneRecord.delivery_state`` stores. A bool cannot carry the difference
+    between "nobody set SMTP up" and "the server rejected it", and the page that
+    tells the lead whether their engineer got the email needs it.
+
+    Named for the state it returns rather than the send it attempts: a caller
+    testing the result for truth would read ``"not_configured"`` as success.
 
     Args:
         record: the completed 1:1 whose email_summary is the body.
@@ -51,7 +59,7 @@ def send_completion_email(record: OneOnOneRecord, *, recipients: list[str] | Non
     to = recipients or cfg["recipients"]
     if not (cfg["host"] and to):
         logger.warning("performance[email] skipped — SMTP host or recipients not configured")
-        return False
+        return "not_configured"
 
     msg = EmailMessage()
     msg["Subject"] = record.email_subject or f"1:1 follow-up — {record.date}"
@@ -77,7 +85,7 @@ def send_completion_email(record: OneOnOneRecord, *, recipients: list[str] | Non
             if cfg["user"] and cfg["password"]:
                 smtp.login(cfg["user"], cfg["password"])
             smtp.send_message(msg)
-        return True
+        return "sent"
     except (smtplib.SMTPException, OSError) as e:
         logger.error("performance[email] failed: %s", e)
-        return False
+        return "failed"

@@ -908,6 +908,155 @@ class EngineerRef:
     name: str = ""  # display name, e.g. "Ada Lovelace"
     source: str = ""  # "jira" | "azuredevops" | "manual"
     external_id: str = ""  # accountId / descriptor — best-effort, may be empty
+    email: str = ""  # best-effort; often hidden by tracker privacy settings.
+    # Both of the above are alias seeds: the same person authors commits, pages
+    # and retro cards under handles that are not their tracker display name, so
+    # evidence gathered by display name alone silently misses their work.
+
+
+@dataclass(frozen=True)
+class PerfMetric:
+    """One measured fact about an engineer, kept as a number.
+
+    ``performance/evidence.py`` computes these — stories completed, points
+    delivered, spill rate, cycle time, the share of changes carrying tests — and
+    used to render them straight into English for the prompt, which is where the
+    numbers stopped. Keeping the record means the prompt's sentence and the
+    page's meter are formatted from the same value and cannot disagree.
+
+    **A metric with no sample is omitted, never emitted with a value of 0.** An
+    engineer whose spill rate was never measured has not spilled 0%; the
+    coverage rows are what explain the absence.
+
+    ``denominator`` of 0 means there is no ratio, so a renderer draws a bare
+    count rather than a meter scaled against nothing.
+    """
+
+    key: str = ""  # "stories_completed" | "spill_rate" | "tests_rate" | …
+    label: str = ""  # "Stories completed"
+    value: float = 0.0
+    denominator: float = 0.0
+    unit: str = ""  # "" | "%" | "pts" | "d" — what the number IS, never how to draw it
+    group: str = ""  # "delivery" | "practice" | "ceremony" | "volume"
+    source: str = ""  # an evidence.SOURCE_* id, so a number traces to its coverage row
+    detail: str = ""  # one sentence of context
+
+
+@dataclass(frozen=True)
+class EvidenceGroup:
+    """A titled run of structured evidence rows, tied to the source that produced it.
+
+    Grouped by source rather than by claim, deliberately: nothing in the pipeline
+    maps an LLM-written bullet to a specific pull request, and a per-bullet
+    citation invented on the way out would be indistinguishable from a real one
+    in a document that decides someone's promotion.
+    """
+
+    source: str = ""  # SOURCE_* — pairs with the artifact's evidence_coverage row
+    label: str = ""  # "Code activity"
+    items: tuple[ActivityEvidence, ...] = ()
+    note: str = ""  # "capped at 12 of 47"
+
+
+@dataclass(frozen=True)
+class PerformanceNote:
+    """A lead's private note about an engineer, as an artifact the surfaces can render.
+
+    The store has always returned these as a bare string; carrying who and when
+    alongside is what lets a note be titled, dated, and masked like every other
+    performance artifact.
+    """
+
+    engineer: str = ""
+    date: str = ""
+    text: str = ""
+
+
+def metrics_from(value: object) -> tuple[PerfMetric, ...]:
+    """Rebuild a metric tuple from JSON-parsed dicts (missing → empty).
+
+    Same tolerance as :func:`annotations_from`, and for the same two reasons: an
+    artifact stored before metrics existed must still load, and the anonymize
+    path reconstructs from an ``asdict`` tree whose containers are tuples.
+    """
+    if not isinstance(value, (list, tuple)):
+        return ()
+    out: list[PerfMetric] = []
+    for m in value:
+        if not isinstance(m, dict):
+            continue
+        try:
+            out.append(
+                PerfMetric(
+                    key=str(m.get("key", "")),
+                    label=str(m.get("label", "")),
+                    value=float(m.get("value", 0.0) or 0.0),
+                    denominator=float(m.get("denominator", 0.0) or 0.0),
+                    unit=str(m.get("unit", "")),
+                    group=str(m.get("group", "")),
+                    source=str(m.get("source", "")),
+                    detail=str(m.get("detail", "")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue  # a row that cannot be read is dropped, never raised
+    return tuple(out)
+
+
+def evidence_from(value: object) -> tuple[ActivityEvidence, ...]:
+    """Rebuild an ActivityEvidence tuple from JSON-parsed dicts, children included."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(
+        ActivityEvidence(
+            kind=str(e.get("kind", "")),
+            key=str(e.get("key", "")),
+            title=str(e.get("title", "")),
+            url=str(e.get("url", "")),
+            repository=str(e.get("repository", "")),
+            status=str(e.get("status", "")),
+            timestamp=str(e.get("timestamp", "")),
+            children=evidence_from(e.get("children")),
+            issue_type=str(e.get("issue_type", "")),
+            parent_key=str(e.get("parent_key", "")),
+            subtask=bool(e.get("subtask", False)),
+            ticket_keys=tuple(str(k) for k in e.get("ticket_keys", ()) or ()),
+        )
+        for e in value
+        if isinstance(e, dict)
+    )
+
+
+def evidence_groups_from(value: object) -> tuple[EvidenceGroup, ...]:
+    """Rebuild an evidence-group tuple from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(
+        EvidenceGroup(
+            source=str(g.get("source", "")),
+            label=str(g.get("label", "")),
+            items=evidence_from(g.get("items")),
+            note=str(g.get("note", "")),
+        )
+        for g in value
+        if isinstance(g, dict)
+    )
+
+
+def coverage_from(value: object) -> tuple[tuple[str, str, str], ...]:
+    """Rebuild (source, state, detail) coverage rows from JSON or a masked artifact.
+
+    Both round-trips hand these back as lists of lists, so rows are rebuilt as
+    tuples and anything not three-wide is dropped rather than crashing a reader.
+    """
+    rows: list[tuple[str, str, str]] = []
+    for row in value or ():
+        try:
+            source, state, detail = row
+        except (TypeError, ValueError):
+            continue
+        rows.append((str(source), str(state), str(detail)))
+    return tuple(rows)
 
 
 @dataclass(frozen=True)
@@ -959,6 +1108,23 @@ class OneOnOnePrep:
     carried_action_items: tuple[str, ...] = ()  # open actions from the previous 1:1
     activity_summary: str = ""  # short prose summary of the sprint work reviewed
     warnings: tuple[str, ...] = ()
+    # What fed this artifact, and what did not. ``evidence_coverage`` rows are
+    # (source, state, detail) — state uses the standup coverage vocabulary. Kept
+    # so a reader can tell "did nothing" from "nobody looked"; see
+    # performance/evidence.py. Defaulted for backward-compat.
+    evidence_sources: tuple[str, ...] = ()
+    evidence_coverage: tuple[tuple[str, str, str], ...] = ()
+    # The numbers behind the prose, and the items behind the numbers. See
+    # PerfMetric and EvidenceGroup; both empty on an artifact stored before they
+    # existed, which every renderer treats as "nothing to show", not as zero.
+    metrics: tuple[PerfMetric, ...] = ()
+    evidence_items: tuple[EvidenceGroup, ...] = ()
+    # (section_key, state, reason) using the coverage vocabulary, so an empty
+    # section can say whether nothing was found or nothing was looked at.
+    section_states: tuple[tuple[str, str, str], ...] = ()
+    # The tickets this prep was built from, kept rather than only summarised —
+    # a reader who disagrees with the summary needs the list it came from.
+    activity: EngineerActivity = EngineerActivity()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()
@@ -981,6 +1147,19 @@ class OneOnOneRecord:
     action_items: tuple[str, ...] = ()  # agreed next steps → carried into next prep
     highlights: tuple[str, ...] = ()  # key discussion points recorded
     warnings: tuple[str, ...] = ()
+    # Whether the summary email actually went out, so the page states a fact
+    # rather than inferring one from the absence of a warning.
+    delivery_state: str = ""  # "sent" | "failed" | "not_configured"
+    # Carried forward from the prep this 1:1 was run off. This is the artifact
+    # that gets emailed to the engineer, so it is the one that most needs to be
+    # able to say what it was based on. Empty when there was no recent prep;
+    # ``evidence_date`` is that prep's date, so a reader is never shown a scan
+    # without being told when it was taken.
+    evidence_date: str = ""
+    evidence_sources: tuple[str, ...] = ()
+    evidence_coverage: tuple[tuple[str, str, str], ...] = ()
+    metrics: tuple[PerfMetric, ...] = ()
+    evidence_items: tuple[EvidenceGroup, ...] = ()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()
@@ -1005,6 +1184,14 @@ class SixMonthReview:
     overall: str = ""  # overall summary paragraph
     framework_used: str = ""  # "default" | imported template name
     warnings: tuple[str, ...] = ()
+    # What fed this review, and what did not — see OneOnOnePrep for the shape.
+    # A review that cannot say which sources were scanned cannot be argued with.
+    evidence_sources: tuple[str, ...] = ()
+    evidence_coverage: tuple[tuple[str, str, str], ...] = ()
+    metrics: tuple[PerfMetric, ...] = ()
+    evidence_items: tuple[EvidenceGroup, ...] = ()
+    section_states: tuple[tuple[str, str, str], ...] = ()
+    activity: EngineerActivity = EngineerActivity()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()

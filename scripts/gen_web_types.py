@@ -32,6 +32,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from yeaboi.artifacts.edits import EDIT_OPS
+from yeaboi.performance.evidence import (
+    COVERAGE_STATES,
+    EVIDENCE_SOURCE_LABELS,
+    EVIDENCE_SOURCES,
+    STAT_UNITS,
+)
 from yeaboi.poker.board import DUEL_STATUSES, POKER_DECK, POKER_PHASES
 from yeaboi.retro.board import (
     AVATARS,
@@ -226,6 +232,31 @@ def render() -> str:
             "How a source is named to a user. Generated so the report, the progress "
             'steps and the exports agree — "azdo_repos".title() reads as "Azdo Repos", '
             "which looks like a different source from the one the steps just named.",
+        ),
+        _tuple_const(
+            "COVERAGE_STATES",
+            COVERAGE_STATES,
+            "What one evidence source contributed. Generated because two modes draw the "
+            "same dot from the same word — standup's category coverage and performance's "
+            "per-source coverage — and a hand-written copy in one of them would drift "
+            "with nothing to notice.",
+        ),
+        _tuple_const(
+            "EVIDENCE_SOURCES",
+            EVIDENCE_SOURCES,
+            "Every source a performance artifact can be grounded in.",
+        ),
+        _label_map(
+            "EVIDENCE_SOURCE_LABELS",
+            "EvidenceSources",
+            EVIDENCE_SOURCE_LABELS,
+            "How a source is named to a reader. Generated so the Markdown, the TUI and "
+            "the export cannot call one source three different things.",
+        ),
+        _tuple_const(
+            "STAT_UNITS",
+            STAT_UNITS,
+            "What a measured number IS — a bare count, a percentage, points, or days. Never how to draw it.",
         ),
         _block_glyphs(),
         _wordmark_samples(),

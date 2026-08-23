@@ -58,6 +58,7 @@ class RunSummary:
     subtitle: str = ""
     run_at: str = ""  # relative time, e.g. "2 days ago"
     kind: str = ""  # performance only: "prep" | "completion" | "review" | "note"
+    engineer: str = ""  # performance only: who the artifact is about (team-wide hub rows)
     session_id: str = ""
 
     def to_project(self) -> ProjectSummary:

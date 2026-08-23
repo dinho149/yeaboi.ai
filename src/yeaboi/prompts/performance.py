@@ -26,8 +26,21 @@ def _activity_block(activity: dict) -> str:
         key = s.get("key", "")
         title = s.get("title", "")
         status = s.get("status", "")
-        lines.append(f"- [{sprint}] {key} {title} ({status})".strip())
+        source = s.get("source", "")
+        origin = f" [{source}]" if source else ""
+        lines.append(f"- [{sprint}] {key} {title} ({status}){origin}".strip())
     return "\n".join(lines)
+
+
+# Repeated verbatim in both prompts: the whole point of gathering coverage is
+# that the model must not read an unscanned source as an idle engineer.
+_EVIDENCE_RULES = (
+    "- Ground every claim in the evidence below and name the source it rests on "
+    "(their standup updates, code, documentation, tickets, analysis metrics, retro, poker).\n"
+    "- A source listed as not_configured or partial was NOT fully scanned. That is unknown, not absent. "
+    "NEVER infer that the engineer did not do something from a source that was not scanned, and never "
+    "treat missing coverage as a gap in their performance.\n"
+)
 
 
 def get_one_on_one_prep_prompt(
@@ -36,6 +49,8 @@ def get_one_on_one_prep_prompt(
     activity: dict,
     open_action_items: list[str],
     notes: list[str],
+    evidence_md: str = "",
+    coverage_md: str = "",
 ) -> str:
     """Build the 1:1-prep prompt.
 
@@ -44,6 +59,9 @@ def get_one_on_one_prep_prompt(
         activity: an EngineerActivity as a dict (current + prior sprint tickets).
         open_action_items: unresolved actions carried from the last 1:1.
         notes: the lead's free-text notes about this engineer.
+        evidence_md: the wider per-engineer evidence block (performance/evidence.py) —
+            standup updates, code, docs, practice signals, analysis, retro, poker.
+        coverage_md: which sources were scanned and which were not.
     """
     evidence = _activity_block(activity)
     actions = "\n".join(f"- {a}" for a in open_action_items) or "(none — first 1:1 or no prior actions)"
@@ -57,7 +75,8 @@ def get_one_on_one_prep_prompt(
     )
     requirements = (
         "Requirements:\n"
-        "- Ground EVERY point in the ticket evidence or the prior action items — do not invent work.\n"
+        f"{_EVIDENCE_RULES}"
+        "- Do not invent work.\n"
         "- 'talking_points': 3-6 specific things to discuss (progress, wins, concerns, questions).\n"
         "- 'feedback': 2-4 items of candid feedback to deliver — mix positive recognition with "
         "constructive notes. Be specific about what and why.\n"
@@ -77,6 +96,8 @@ def get_one_on_one_prep_prompt(
         f"- Tickets worked (current + previous sprint):\n{evidence}\n\n"
         f"- Open action items from the last 1:1:\n{actions}\n\n"
         f"- Lead's notes on this engineer:\n{notes_block}"
+        + (f"\n\n{evidence_md}" if evidence_md else "")
+        + (f"\n\n{coverage_md}" if coverage_md else "")
     )
     return f"{ask}\n\n{requirements}\n\n{context}"
 
@@ -141,6 +162,8 @@ def get_six_month_review_prompt(
     notes: list[str],
     framework_text: str,
     custom_template: bool,
+    evidence_md: str = "",
+    coverage_md: str = "",
 ) -> str:
     """Build the 6-month performance-review prompt.
 
@@ -153,6 +176,8 @@ def get_six_month_review_prompt(
         notes: the lead's free-text notes.
         framework_text: the competency framework (bundled default or imported template).
         custom_template: True when framework_text is a lead-imported template to FILL IN.
+        evidence_md: the wider per-engineer evidence block (performance/evidence.py).
+        coverage_md: which sources were scanned and which were not.
     """
     notes_block = "\n".join(f"- {n}" for n in notes) or "(no notes recorded)"
 
@@ -173,6 +198,7 @@ def get_six_month_review_prompt(
     requirements = (
         "Requirements:\n"
         f"{format_req}"
+        f"{_EVIDENCE_RULES}"
         "- 'strengths': 3-5 evidenced strengths.\n"
         "- 'areas_for_improvement': 2-4 growth areas, each specific and actionable.\n"
         "- 'achievements': 3-5 concrete accomplishments from the period (cite the delivery/1:1 evidence).\n"
@@ -191,7 +217,9 @@ def get_six_month_review_prompt(
         f"- Delivery history (Jira/Azure DevOps):\n{delivery_history or '(no delivery data)'}\n\n"
         f"- Team ceremony context:\n{ceremony_summary or '(none)'}\n\n"
         f"- Lead's notes:\n{notes_block}\n\n"
-        f"- Competency framework / template:\n{framework_text or '(none provided)'}"
+        + (f"{evidence_md}\n\n" if evidence_md else "")
+        + (f"{coverage_md}\n\n" if coverage_md else "")
+        + f"- Competency framework / template:\n{framework_text or '(none provided)'}"
     )
     return f"{ask}\n\n{requirements}\n\n{context}"
 

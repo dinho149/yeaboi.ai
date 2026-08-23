@@ -82,8 +82,63 @@ export interface RoadmapProject {
 
 /** A titled run of bullets — the shape all three performance artifacts share. */
 export interface PerfSection {
+  /** Anchor, slugged by the exporter so `chrome.nav` and this heading agree.
+   *  Slugging it here as well would be two implementations of one rule, which
+   *  is how a table-of-contents link ends up pointing at nothing. */
+  id: string;
   title: string;
   items: string[];
+  /** `covered | partial | failed | not_configured` when the section is empty and
+   *  the engine knows why it is; `""` otherwise. The word, never the colour. */
+  state?: string;
+  /** The honest sentence behind a non-covered state. */
+  reason?: string;
+}
+
+/** What one evidence source contributed to an artifact, and — when nothing — why. */
+export interface PerfCoverage {
+  /** An `EVIDENCE_SOURCES` word; an unknown one renders with its raw key. */
+  source: string;
+  /** A `COVERAGE_STATES` word. Word only — which dot it earns is this side's business. */
+  state: string;
+  /** "12 standup runs, none named this engineer." */
+  detail: string;
+}
+
+/** One measured fact. These replace figures that used to exist only inside a sentence. */
+export interface PerfStat {
+  /** Stable id (`stories_completed`, `spill_rate`, …). Drives ordering, never a label. */
+  id: string;
+  label: string;
+  /** The number itself. */
+  value: number;
+  /** The denominator when the number is a ratio; absent when it is not — and a
+   *  metric with no sample is omitted from the list entirely rather than sent
+   *  as 0, because 0 is a finding and "not measured" is not. */
+  of?: number;
+  /** A `STAT_UNITS` word: `""` (a bare count), `%`, `pts`, `d`. What the number
+   *  IS, not how to draw it. */
+  unit: string;
+  /** Which source measured it, so a figure traces to its coverage row. */
+  source: string;
+  /** `delivery | practice | ceremony | volume` — lets a layout group without
+   *  hardcoding a list of metric ids. */
+  group: string;
+  hint?: string;
+}
+
+/** Structured evidence, grouped by the source that produced it.
+ *
+ * Grouped by source and not by claim, deliberately: nothing in the pipeline maps
+ * an LLM-written bullet to a specific pull request, and a per-claim citation
+ * invented on this side would be indistinguishable from a real one.
+ */
+export interface PerfEvidenceGroup {
+  source: string;
+  label: string;
+  items: EvidenceItem[];
+  /** "capped at 12 of 47"; `""` when nothing was dropped. */
+  note: string;
 }
 
 /** One accepted vote. `value` is a `POKER_DECK` card, so `?` and `☕` are legal. */
@@ -435,7 +490,16 @@ export type ExportReport = (
         /** Which artifact field this prose is, for the editor. Served docs only. */
         field?: string;
       };
+      /** `prep` | `completion` | `review`. A word, not a layout. */
+      artifact: string;
+      /** The window the evidence was gathered over; absent on a completion. */
+      period?: { start: string; end: string };
       sections: PerfSection[];
+      /** Always present, `[]` on an artifact stored before evidence existed — an
+       *  absent key would read as a payload bug rather than as "none". */
+      stats: PerfStat[];
+      coverage: PerfCoverage[];
+      evidence: PerfEvidenceGroup[];
       footnote?: string;
       warnings: string[];
       edit?: EditMap;

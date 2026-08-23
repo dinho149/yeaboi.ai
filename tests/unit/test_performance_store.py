@@ -4,7 +4,17 @@ from dataclasses import fields
 
 import pytest
 
-from yeaboi.agent.state import Annotation, OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import (
+    ActivityEvidence,
+    Annotation,
+    EngineerActivity,
+    EngineerStory,
+    EvidenceGroup,
+    OneOnOnePrep,
+    OneOnOneRecord,
+    PerfMetric,
+    SixMonthReview,
+)
 from yeaboi.performance.store import PerformanceStore
 
 
@@ -61,6 +71,61 @@ class TestPrepRoundTrip:
             carried_action_items=("Write the auth runbook",),
             activity_summary="Closed 7 stories across PROJ-101..PROJ-118, mostly auth.",
             warnings=("Only one sprint of history — treat trends as provisional",),
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(
+                ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
+                ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
+            activity=EngineerActivity(
+                engineer="Ada",
+                current_sprint="Sprint 14",
+                previous_sprint="Sprint 13",
+                stories=(
+                    EngineerStory(key="PROJ-118", title="SSO rollout", status="Done", kind="issue", source="jira"),
+                ),
+                total_items=7,
+                sources=(("jira", 7),),
+            ),
             annotations=(
                 Annotation(
                     kind="field",
@@ -123,6 +188,49 @@ class TestCompletionRoundTrip:
             action_items=("Write the auth runbook", "Draft the billing design"),
             highlights=("Auth shipped early", "Wants deployment exposure"),
             warnings=("Transcript was partial — summary covers the second half only",),
+            delivery_state="sent",
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(("code", "covered", "Scanned by 12 of 12 standup run(s)."),),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            evidence_date="2026-07-01",
             annotations=(
                 Annotation(
                     kind="note",
@@ -176,6 +284,61 @@ class TestReviewRoundTrip:
             overall="Strong half, grounded in 14 delivered stories across two teams.",
             framework_used="acme-engineering-ladder-v3",
             warnings=("Half covers 4 sprints of data — narrower than a usual review window",),
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(
+                ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
+                ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
+            activity=EngineerActivity(
+                engineer="Ada",
+                current_sprint="Sprint 14",
+                previous_sprint="Sprint 13",
+                stories=(
+                    EngineerStory(key="PROJ-118", title="SSO rollout", status="Done", kind="issue", source="jira"),
+                ),
+                total_items=7,
+                sources=(("jira", 7),),
+            ),
             annotations=(
                 Annotation(
                     kind="field",
@@ -226,6 +389,45 @@ class TestSavedRunsHub:
         kinds = sorted(r["kind"] for r in rows)
         assert kinds == ["completion", "note", "prep", "review"]
         assert all({"id", "created_at", "title"} <= set(r) for r in rows)
+
+    def test_get_all_history_spans_every_engineer(self, db_path):
+        """The Performance card's landing lists the whole team, each row naming its owner."""
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-05"))
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            store.add_note("Bob", "a note")
+            rows = store.get_all_history()
+        assert sorted(r["engineer"] for r in rows) == ["Ada", "Ada", "Bob", "Bob"]
+        assert sorted(r["kind"] for r in rows) == ["completion", "note", "prep", "review"]
+
+    def test_get_all_history_agrees_with_the_scoped_read(self, db_path):
+        """One engineer's slice of the team-wide read is that engineer's own history.
+
+        The landing hub and the roster's History action must show the same artifact for
+        the same person, or deleting from one would appear to leave it in the other.
+        """
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.add_note("Ada", "a note")
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            scoped = store.get_engineer_history("Ada")
+            mine = [r for r in store.get_all_history() if r["engineer"] == "Ada"]
+        assert [(r["kind"], r["id"], r["title"]) for r in mine] == [(r["kind"], r["id"], r["title"]) for r in scoped]
+
+    def test_get_all_history_is_newest_first_and_respects_limit(self, db_path):
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            store.add_note("Cleo", "a note")
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-05"))
+            stamps = [r["created_at"] for r in store.get_all_history()]
+            assert stamps == sorted(stamps, reverse=True)
+            assert len(store.get_all_history(limit=2)) == 2
+
+    def test_get_all_history_empty_when_nothing_saved(self, db_path):
+        with PerformanceStore(db_path) as store:
+            assert store.get_all_history() == []
 
     def test_one_on_one_by_id_dispatches_on_kind(self, db_path):
         with PerformanceStore(db_path) as store:
@@ -298,3 +500,75 @@ class TestProvenanceSelfHeal:
             for table in ("performance_one_on_ones", "performance_reviews"):
                 cols = {r[1] for r in store._conn.execute(f"PRAGMA table_info({table})")}
                 assert {"origin", "edited_from_id"} <= cols, table
+
+
+class TestMaskingReachesEveryField:
+    """Anonymize rebuilds an artifact through this module's ``_dict_to_*``.
+
+    A field the reconstructor does not read is therefore dropped from every
+    masked artifact — silently, and only on the path whose whole purpose is to
+    make something safe to publish. This is the guard for that.
+    """
+
+    @staticmethod
+    def _spine(**extra):
+        return dict(
+            evidence_sources=("analysis",),
+            evidence_coverage=(("code", "covered", "Ada Lovelace was scanned."),),
+            metrics=(PerfMetric(key="spill_rate", label="Spill rate", value=18.0, unit="%", source="analysis"),),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 9",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Ada Lovelace ships SSO",
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Ada Lovelace fixes it"),),
+                        ),
+                    ),
+                ),
+            ),
+            **extra,
+        )
+
+    _STATES = (("gaps", "partial", "Only Ada Lovelace was covered."),)
+
+    @pytest.mark.parametrize("kind", ["prep", "record", "review"])
+    def test_every_spine_field_survives_a_masking_round_trip(self, kind):
+        from yeaboi.anonymize.apply import mask_artifact
+
+        artifact = {
+            "prep": lambda: OneOnOnePrep(engineer="Ada Lovelace", section_states=self._STATES, **self._spine()),
+            "record": lambda: OneOnOneRecord(
+                engineer="Ada Lovelace", delivery_state="sent", evidence_date="2026-07-01", **self._spine()
+            ),
+            "review": lambda: SixMonthReview(engineer="Ada Lovelace", section_states=self._STATES, **self._spine()),
+        }[kind]()
+
+        masked = mask_artifact(artifact, [("Ada Lovelace", "Engineer A")])
+
+        assert masked.metrics == artifact.metrics  # numbers are not names
+        assert masked.evidence_sources == artifact.evidence_sources
+        assert len(masked.evidence_items) == 1
+        assert masked.evidence_items[0].note == "capped at 1 of 9"
+        # Then each artifact's own spine field: a record carries the date of the
+        # prep it borrowed its numbers from, the other two carry section states.
+        if kind == "record":
+            assert masked.evidence_date == "2026-07-01"
+        else:
+            assert masked.section_states[0][1] == "partial"
+
+    def test_masking_reaches_inside_nested_evidence_rows(self):
+        from yeaboi.anonymize.apply import mask_artifact
+
+        prep = OneOnOnePrep(engineer="Ada Lovelace", section_states=self._STATES, **self._spine())
+        masked = mask_artifact(prep, [("Ada Lovelace", "Engineer A")])
+
+        row = masked.evidence_items[0].items[0]
+        assert row.title == "Engineer A ships SSO"
+        # A commit folded under its PR is a row a reader sees, so it masks too.
+        assert row.children[0].title == "Engineer A fixes it"
+        assert masked.section_states[0][2] == "Only Engineer A was covered."
