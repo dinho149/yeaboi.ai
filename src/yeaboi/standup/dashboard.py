@@ -13,6 +13,10 @@ would advertise a feature rather than report a result.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 #: Card key → the title every surface shows. ``member:<name>`` rows are titled
 #: by the member's own name and so are absent here.
 CARD_TITLES: dict[str, str] = {
@@ -94,3 +98,71 @@ def cards(data: dict) -> list[dict]:
         member = key[len(MEMBER_PREFIX) :] if key.startswith(MEMBER_PREFIX) else ""
         out.append({"key": key, "title": card_title(key, data), "member": member})
     return out
+
+
+def collect(session_id: str = "", *, db_path=None, message: str = "") -> dict:
+    """Everything a standup dashboard draws, for one session.
+
+    ``session_id`` blank targets the most recently modified session, which is
+    what a page opened from the home screen means. Every read is defensive: a
+    dashboard that cannot reach one store should still show the rest, so a
+    failure warns and leaves that key at its empty default.
+    """
+    from yeaboi.config import get_standup_user_name
+    from yeaboi.paths import get_db_path
+
+    db_path = db_path or get_db_path()
+    data: dict = {
+        "message": message,
+        "session_id": session_id,
+        "session_name": "",
+        "my_name": get_standup_user_name(),
+        "config": None,
+        "report": None,
+        "schedule": {},
+        "review": None,
+        "nudge": None,
+        "gap_issues": [],
+    }
+    try:
+        from yeaboi.sessions import SessionStore, make_display_name
+
+        with SessionStore(db_path) as store:
+            if not session_id:
+                session_id = store.get_latest_session_id()
+                if not session_id:
+                    return data
+                data["session_id"] = session_id
+            meta = store.get_session(session_id) or {}
+            data["session_name"] = make_display_name(meta) if meta else session_id
+    except Exception:
+        logger.warning("standup: failed to resolve session", exc_info=True)
+        return data
+
+    try:
+        from yeaboi.standup import transcripts as _transcripts
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            data["config"] = store.load_config(session_id)
+            data["report"] = store.get_latest_report(session_id)
+            # The most recent transcript review + the gap→issue ledger, so the
+            # Transcript Review card can show which gaps are already filed.
+            data["review"] = store.get_latest_review(session_id)
+            data["gap_issues"] = store.get_gap_issues(limit=50)
+        # Two indexed SELECTs, once per page load (never per frame): which
+        # standups ran without ever being checked against their meeting.
+        data["nudge"] = _transcripts.transcript_nudge(session_id, config=data.get("config"), db_path=db_path)
+        # The engine resolves "Me" to the user's real tracker identity (e.g. their
+        # Jira displayName) — the report's my_name drives the "My Update" row.
+        if data["report"] is not None and data["report"].my_name:
+            data["my_name"] = data["report"].my_name
+    except Exception:
+        logger.warning("standup: failed to load standup store data", exc_info=True)
+    try:
+        from yeaboi.ceremonies.scheduler import get_schedule_status
+
+        data["schedule"] = get_schedule_status(session_id)
+    except Exception:
+        logger.warning("standup: failed to read schedule status", exc_info=True)
+    return data

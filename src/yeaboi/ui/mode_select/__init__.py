@@ -2656,66 +2656,11 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
 def _collect_standup_data(message: str = "") -> dict:
     """Gather Daily Standup dashboard data for the most recent session.
 
-    The standup page targets the most recently modified session. Returns the
-    session name, saved standup config, OS-schedule status, and the latest
-    generated StandupReport (if any).
+    Shared with the desktop dashboard — see :func:`yeaboi.standup.dashboard.collect`.
     """
-    from yeaboi.config import get_standup_user_name
+    from yeaboi.standup.dashboard import collect
 
-    data: dict = {
-        "message": message,
-        "session_id": "",
-        "session_name": "",
-        "my_name": get_standup_user_name(),
-        "config": None,
-        "report": None,
-        "schedule": {},
-        "review": None,
-        "gap_issues": [],
-    }
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
-
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id()
-            if not session_id:
-                return data
-            data["session_id"] = session_id
-            meta = store.get_session(session_id) or {}
-            data["session_name"] = make_display_name(meta) if meta else session_id
-    except Exception:
-        logger.warning("standup: failed to resolve latest session", exc_info=True)
-        return data
-
-    session_id = data["session_id"]
-    try:
-        from yeaboi.standup.store import StandupStore
-
-        with StandupStore(_ana_dbp) as store:
-            data["config"] = store.load_config(session_id)
-            data["report"] = store.get_latest_report(session_id)
-            # The most recent transcript review + the gap→issue ledger, so the
-            # Transcript Review card can show which gaps are already filed.
-            data["review"] = store.get_latest_review(session_id)
-            data["gap_issues"] = store.get_gap_issues(limit=50)
-        # Two indexed SELECTs, once per hub refresh (never per frame): which
-        # standups ran without ever being checked against their meeting.
-        from yeaboi.standup import transcripts as _transcripts
-
-        data["nudge"] = _transcripts.transcript_nudge(session_id, config=data.get("config"), db_path=_ana_dbp)
-        # The engine resolves "Me" to the user's real tracker identity (e.g. their
-        # Jira displayName) — the report's my_name drives the "My Update" row.
-        if data["report"] is not None and data["report"].my_name:
-            data["my_name"] = data["report"].my_name
-    except Exception:
-        logger.warning("standup: failed to load standup store data", exc_info=True)
-    try:
-        from yeaboi.standup.scheduler import get_schedule_status
-
-        data["schedule"] = get_schedule_status(session_id)
-    except Exception:
-        logger.warning("standup: failed to read schedule status", exc_info=True)
-    return data
+    return collect(db_path=_ana_dbp, message=message)
 
 
 def _standup_generate(session_id: str, on_progress=None) -> str:

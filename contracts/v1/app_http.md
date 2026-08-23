@@ -123,3 +123,67 @@ A **turn** streams these line types, in order: `op` first, then any number of
 | `done` | `{type, stage}` — the turn landed; `stage` is the new one |
 | `cancelled` | `{type}` — the turn was cancelled; state is unchanged |
 | `error` | `{type, message}` — a classified, one-line provider/integration failure |
+
+## Dashboard routes (M6)
+
+The two run-and-read modes. Their read-only pieces are MCP tools already
+(`standup_history`, `standup_config_get`/`_set`, `standup_members`,
+`standup_repositories`, `standup_review`, `standup_gaps`,
+`standup_practice_feedback`, `team_roster`, `team_profile_get`), reached over
+`POST /api/tool/{name}`; the routes below are what MCP has no shape for.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/standup/dashboard` | query `session_id?` (blank = the most recent session) → the whole dashboard in one read |
+| POST | `/api/standup/run` | body `{session_id, deliver?: false}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere |
+| GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
+| POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs |
+| GET | `/api/analysis/options` | what a setup wizard may offer on this machine |
+| POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run |
+| GET | `/api/analysis/profiles` | the saved team profiles |
+| GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown |
+| POST | `/api/analysis/run` | the setup wizard's payload → a chunked NDJSON run |
+
+The **standup dashboard** is
+`{session_id, session_name, my_name, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
+`cards` is the card vocabulary both surfaces share: `summary`, `my_update`,
+`team`, `member:<name>`, `conflicts`, `activity`, `gaps`, `schedule`,
+`notices` — computed per report, because a card with nothing in it would
+advertise a feature rather than report a result. `active` names the members
+with attributed activity; a report saved before activity counts existed falls
+back to its summary text rather than reading as all-quiet.
+
+An **analysis result** is `{team_id, cards: [{key, title}], profile, examples}`.
+The card keys are `velocity`, `team`, `estimation`, `workflow`, `writing`,
+`trends`, `recommendations`, `code-health`, `ai-adoption`, `documentation`,
+`insights`; the delivery cards appear iff a tracker profile exists and the
+global scan cards iff that scan ran.
+
+A wizard asks `/api/analysis/steps` rather than deciding for itself, so the
+terminal and the desktop walk the same steps: a second copy of the rules is a
+second thing to drift. It carries the answers so far plus `model_offered`
+(whether a local model can be picked — the caller owns that probe).
+
+**Analysis options** is
+`{grid: {delivery, code, docs}, features: [{key, label}], features_available,
+steps, depths, default_depth, window_presets, default_window_days}`.
+The run body is the wizard's answers:
+`{source?, project_key?, team_name?, sprint_count?, features?, components?,
+members_map?, analysis_scope?, depth?, window_days?, model?}`.
+
+A **run** streams: `op` first, then `progress` (and, for standup, `run_id`
+once its history row exists), terminated by `done`, `cancelled` or `error`.
+
+| Line | Shape |
+|---|---|
+| `op` | `{type, op_id}` |
+| `progress` | `{type, phase}` — one pipeline phase, as user-facing text |
+| `run_id` | `{type, run_id}` — standup only; the history row this run writes |
+| `done` | `{type, report}` (standup) or `{type, result}` (analysis) |
+| `cancelled` | `{type}` — analysis only; nothing was persisted |
+| `error` | `{type, message}` — a classified, one-line failure |
+
+An analysis run is cancellable through `POST /api/ops/{op_id}/cancel`, which
+sets the engine's cancel event. **A standup run is not**: `run_standup` has no
+cancel seam, so its `op` line exists only to join progress to a run, and
+cancelling it does nothing.

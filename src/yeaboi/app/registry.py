@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 
-from yeaboi.app import routes_chat, routes_meta, routes_settings
+from yeaboi.app import routes_analysis, routes_chat, routes_meta, routes_settings, routes_standup
 from yeaboi.app.router import Router
 
 #: Routes that may answer without a bearer token. Kept as an explicit,
@@ -62,6 +62,17 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/chat/sessions", routes_chat.create, "planning"),
     AppRoute("GET", "/api/chat/sessions/{project_id}", routes_chat.get, "planning"),
     AppRoute("POST", "/api/chat/sessions/{project_id}/send", routes_chat.send, "planning"),
+    # -- the standup dashboard (capability "standup" — the M6 surface) -------
+    AppRoute("GET", "/api/standup/dashboard", routes_standup.dashboard, "standup"),
+    AppRoute("POST", "/api/standup/run", routes_standup.run, "standup"),
+    AppRoute("GET", "/api/standup/schedule", routes_standup.schedule, "standup"),
+    AppRoute("POST", "/api/standup/schedule", routes_standup.set_schedule, "standup"),
+    # -- team analysis (capability "team-analysis" — the M6 surface) ---------
+    AppRoute("GET", "/api/analysis/options", routes_analysis.options, "team-analysis"),
+    AppRoute("POST", "/api/analysis/steps", routes_analysis.steps, "team-analysis"),
+    AppRoute("GET", "/api/analysis/profiles", routes_analysis.profiles, "team-analysis"),
+    AppRoute("GET", "/api/analysis/result/{team_id}", routes_analysis.result, "team-analysis"),
+    AppRoute("POST", "/api/analysis/run", routes_analysis.run, "team-analysis"),
 )
 
 
