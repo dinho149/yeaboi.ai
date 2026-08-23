@@ -52,6 +52,18 @@ def apply_replacements(text: str, replacements: Replacements) -> str:
     return text
 
 
+def masked_note(result) -> str:
+    """The line a surface shows while it is displaying masked data.
+
+    Empty for ``None`` (real data), so a screen renders exactly as it would
+    without a mask; a count-carrying line otherwise. The "review before sharing"
+    half is the point — a mask is a starting position, not a guarantee.
+    """
+    if result is None:
+        return ""
+    return f"Anonymized · {len(result.replacements)} masked — review before sharing"
+
+
 def mask_lines(lines: Sequence[str], replacements: Replacements) -> list[str]:
     """Mask every line of a pre-rendered ``detail_lines`` / ``content_lines`` list."""
     if not replacements:

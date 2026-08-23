@@ -7,12 +7,10 @@ from pathlib import Path
 import pytest
 from rich.panel import Panel
 
-from yeaboi.ui.shared._export_picker import (
-    _build_export_picker_screen,
-    _dest_description,
-    available_destinations,
-    pick_export_destination,
-)
+# The menu's *rules* moved to yeaboi.exporting so every surface reads one
+# answer; the picker here is the terminal's rendering of them.
+from yeaboi.exporting import available_destinations, destination_description
+from yeaboi.ui.shared._export_picker import _build_export_picker_screen, pick_export_destination
 
 
 @pytest.fixture(autouse=True)
@@ -117,29 +115,40 @@ class TestDestDescription:
         import yeaboi.paths as paths
 
         monkeypatch.setattr(paths, "EXPORTS_DIR", Path("/data/exports"))
-        assert _dest_description("files", "Files", "standup") == "Markdown + HTML → /data/exports/standup"
+        assert (
+            destination_description("files", mode="standup", label="Files") == "Markdown + HTML → /data/exports/standup"
+        )
 
     def test_files_abbreviates_home(self, monkeypatch):
         import yeaboi.paths as paths
 
         monkeypatch.setattr(paths, "EXPORTS_DIR", Path.home() / ".yeaboi" / "exports")
-        assert _dest_description("files", "Files", "analysis") == "Markdown + HTML → ~/.yeaboi/exports/analysis"
+        assert (
+            destination_description("files", mode="analysis", label="Files")
+            == "Markdown + HTML → ~/.yeaboi/exports/analysis"
+        )
 
     def test_notion_unconfigured_points_at_setup(self):
-        assert "set it up" in _dest_description("notion", "Notion", "retro")
+        assert "set it up" in destination_description("notion", mode="retro", label="Notion")
 
     def test_notion_exports_page_configured(self, monkeypatch):
         monkeypatch.setenv("NOTION_EXPORT_PARENT_PAGE_ID", "pg1")
-        assert _dest_description("notion", "Notion", "retro") == "Publish a page under your Notion exports page"
+        assert (
+            destination_description("notion", mode="retro", label="Notion")
+            == "Publish a page under your Notion exports page"
+        )
 
     def test_notion_root_page_fallback_names_yeaboi_container(self, monkeypatch):
         monkeypatch.setenv("NOTION_ROOT_PAGE_ID", "root1")
-        assert _dest_description("notion", "Notion", "retro") == "Publish under the 🤙 yeaboi page in Notion"
+        assert (
+            destination_description("notion", mode="retro", label="Notion")
+            == "Publish under the 🤙 yeaboi page in Notion"
+        )
 
     def test_confluence_fallback_names_yeaboi_container(self, monkeypatch):
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "TEAM")
         assert (
-            _dest_description("confluence", "Confluence", "planning")
+            destination_description("confluence", mode="planning", label="Confluence")
             == "Publish under the 🤙 yeaboi page in space TEAM"
         )
 
@@ -147,16 +156,16 @@ class TestDestDescription:
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "TEAM")
         monkeypatch.setenv("CONFLUENCE_EXPORT_PARENT_PAGE_ID", "999")
         assert (
-            _dest_description("confluence", "Confluence", "planning")
+            destination_description("confluence", mode="planning", label="Confluence")
             == "Publish under your Confluence exports page in TEAM"
         )
 
     def test_confluence_unconfigured_points_at_setup(self):
-        assert "set it up" in _dest_description("confluence", "Confluence", "planning")
+        assert "set it up" in destination_description("confluence", mode="planning", label="Confluence")
 
     def test_back_and_extras(self):
-        assert _dest_description("back", "Back", "planning") == "Return without exporting"
-        assert _dest_description("jira", "Jira", "planning") == "Send to Jira"
+        assert destination_description("back", mode="planning", label="Back") == "Return without exporting"
+        assert destination_description("jira", mode="planning", label="Jira") == "Send to Jira"
 
     def test_subtitle_rendered_on_screen(self):
         from io import StringIO

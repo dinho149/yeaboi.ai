@@ -26,6 +26,8 @@ from yeaboi.analysis import setup as analysis_setup
 from yeaboi.logging_setup import attach_mode_handler, mode_log
 from yeaboi.logging_setup import detach as detach_mode_handler
 from yeaboi.paths import get_db_path as _get_db_path
+from yeaboi.retro.setup import NO_SESSION_MESSAGE
+from yeaboi.sharing.link import SecureLink
 from yeaboi.standup import schedule as schedule_module
 from yeaboi.timeparse import parse_date, parse_datetime
 from yeaboi.ui.mode_select.screens._project_cards import (  # noqa: F401
@@ -2799,14 +2801,10 @@ def _anonymize_files_export(result, *, title: str, project_name: str) -> str:
 
 
 def _anon_note(anon) -> str:
-    """The slim subtitle shown under a mode's banner while its data is anonymized.
+    """The slim subtitle shown under a mode's banner while its data is anonymized."""
+    from yeaboi.anonymize.apply import masked_note
 
-    Empty string when ``anon`` is None (real data) so the screen builder renders exactly
-    as before; a count-carrying line otherwise.
-    """
-    if anon is None:
-        return ""
-    return f"Anonymized · {len(anon.replacements)} masked — review before sharing"
+    return masked_note(anon)
 
 
 def _run_anonymize_pass(
@@ -11166,28 +11164,11 @@ def _run_roadmap_page(
 
 
 def _resolve_retro_session() -> tuple[str, str, str, str]:
-    """Resolve the retro's target session → (session_id, session_name, project_name, sprint_name).
+    """Resolve the retro's target session → (session_id, session_name, project_name, sprint_name)."""
+    from yeaboi.retro.setup import resolve_session
 
-    Like the standup page, the retro targets the most recently modified session.
-    Returns empty strings when there is no session yet.
-    """
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
-
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id()
-            if not session_id:
-                return "", "", "", ""
-            meta = store.get_session(session_id) or {}
-            state = store.load_state(session_id) or {}
-        session_name = make_display_name(meta) if meta else session_id
-        project_name = state.get("project_name", "") or session_name
-        # Sprint name is best-effort: the export/report titles degrade gracefully if blank.
-        sprint_name = str(state.get("sprint_name", "") or "")
-        return session_id, session_name, project_name, sprint_name
-    except Exception:
-        logger.warning("retro: failed to resolve latest session", exc_info=True)
-        return "", "", "", ""
+    target = resolve_session(db_path=_ana_dbp)
+    return target.session_id, target.session_name, target.project_name, target.sprint_name
 
 
 def _run_retro_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -11240,7 +11221,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             # message alone on the page. Without it the screen would offer to
             # share a board that was never started.
             "snapshot": True,
-            "message": "No project session yet — create one in Planning first, then start a retro.",
+            "message": NO_SESSION_MESSAGE,
             "grids": {},
         }
         _render(data, 0, 2)
@@ -11311,139 +11292,24 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("retro: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    # Empty on purpose: the status slot renders `_link_status_text() or message or
-    # remote["status"]`, so an empty message lets the tunnel narrate its own
+    # Empty on purpose: the status slot renders `link.expiry_notice() or message
+    # or link.status`, so an empty message lets the tunnel narrate its own
     # progress, and the first thing the host does takes the slot back — except for
     # a time-critical tunnel event (an expiry warning, or the expiry itself), which
-    # always wins over whatever `message` last held (see `_link_status_text`).
+    # always wins over whatever `message` last held (see `SecureLink`).
     message = ""
 
-    # Tunnel state. The server binds loopback, so the Cloudflare tunnel is the
-    # ONLY way a teammate reaches this board — there is no link to show until it
-    # is up, which is why setup starts by itself below rather than on a button.
-    # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
-    # a worker thread; the frame-timed loop shows its progress and fills in the
-    # participant link the moment it lands.
-
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
-
-    def _start_remote() -> None:
-        def _worker() -> None:
-            try:
-                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
-
-                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
-                binary = ensure_cloudflared()
-                if binary is None:
-                    logger.warning("retro: secure link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
-                    remote["failed"] = True
-                    return
-                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-
-                def _on_expired() -> None:
-                    # Runs on the tunnel's timer thread once TUNNEL_TIMEOUT_MINUTES
-                    # elapses. Reuse the existing "Retry Link" affordance rather than
-                    # inventing a new one — un-publish the URL server-side too, so
-                    # /api/invite and the QR stop handing out a dead link.
-                    remote["tunnel"] = None
-                    remote["url"] = ""
-                    server.set_public_url("")
-                    # So the board's own invite panel stops saying "coming".
-                    server.set_share_state("failed")
-                    remote["status"] = (
-                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
-                    )
-                    remote["failed"] = True
-                    remote["expired"] = True
-                    logger.info("retro: secure link expired (session=%s)", session_id)
-
-                # One call decides the tier. In the quick tier this is the same
-                # CloudflareTunnel as before; in the Access tier it is a named
-                # tunnel plus the identity gate the server verifies against, and
-                # a refusal here NEVER falls back to a public quick tunnel — a
-                # host who configured Access and silently got a trycloudflare.com
-                # URL is worse off than one who got no share at all.
-                transport = open_tunnel(server.port, surface="retro", binary=binary, on_expire=_on_expired)
-                if transport.tunnel is None:
-                    logger.warning("retro: secure link unavailable — %s", transport.error)
-                    remote["status"] = f"Secure link unavailable — {transport.error}"
-                    remote["failed"] = True
-                    return
-                # Armed before start(), so verification is on before the door is.
-                server.set_access_gate(transport.gate)
-                tunnel = transport.tunnel
-                # Published BEFORE start(), which blocks for up to the 45 s
-                # handshake budget (URL + edge registration + a possible
-                # --region retry) plus the ~30 s DNS-propagation gate. The
-                # page's finally stops whatever is in this slot — stop() also
-                # cancels an in-flight start(); assigning after start() (as
-                # this did) meant closing a board during setup — now a routine
-                # path, since setup is no longer a deliberate button press —
-                # orphaned a cloudflared child still forwarding to that port.
-                remote["tunnel"] = tunnel
-                public = tunnel.start(timeout=45)
-                if not public:
-                    tunnel.stop()
-                    remote["tunnel"] = None
-                    # The Access tier's failures are host *setup* errors — a
-                    # credentials file that is not there, a tunnel id Cloudflare
-                    # does not know — so name the one that happened rather than
-                    # sending the host to their router.
-                    detail = getattr(tunnel, "last_error", "")
-                    logger.warning("retro: secure link failed — %s", detail or "tunnel did not start within timeout")
-                    server.set_share_state("failed")
-                    remote["status"] = (
-                        f"Secure link failed — {detail}."
-                        if detail
-                        else "Secure link failed — tunnel did not start (see logs)."
-                    )
-                    remote["failed"] = True
-                    return
-                logger.info("retro: secure link ready (port=%s)", server.port)
-                # Token-free public URL: teammates must still enter the join code
-                # (the token is never handed out in a shareable link).
-                remote["url"] = f"{public}/"
-                # Tell the server its own public address, so /api/invite and the QR
-                # hand out the tunnel URL rather than the loopback one the host's
-                # own browser arrived on.
-                server.set_public_url(remote["url"])
-                # Clears a previous attempt's failure, so Retry Link puts the
-                # board's own panel back to "ready" too.
-                server.set_share_state("pending")
-                remote["status"] = "Link ready — send it and the code to your team."
-                _duck_react("link_ready")
-            except Exception as e:  # never let the worker crash anything
-                logger.error("retro: secure link setup failed: %s", e, exc_info=True)
-                server.set_share_state("failed")
-                remote["status"] = f"Secure link failed — {e}"
-                remote["failed"] = True
-            finally:
-                remote["starting"] = False
-
-        from yeaboi.config import tunnels_disabled
-
-        if tunnels_disabled():
-            # Opt-out for dry runs and offline/locked-down networks. The board
-            # still works for the host on loopback; it just has nothing to share.
-            logger.info("retro: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
-            server.set_share_state("off")
-            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
-            remote["starting"] = False
-            remote["failed"] = False
-            return
-
-        logger.info("retro: starting secure link setup (session=%s)", session_id)
-        remote["starting"] = True
-        remote["failed"] = False
-        remote["expired"] = False
-        remote["status"] = "Setting up the secure link…"
-        duck_working_thread(_worker, name="retro-tunnel-setup").start()
+    # The server binds loopback, so the Cloudflare tunnel is the ONLY way a
+    # teammate reaches this board — there is no link to show until it is up,
+    # which is why setup starts by itself below rather than on a button. Setup is
+    # slow and runs on a worker thread inside SecureLink; the frame-timed loop
+    # reads its status and fills in the participant link the moment it lands.
+    link = SecureLink(server, surface="retro", on_ready=lambda: _duck_react("link_ready"))
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
     _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
-    _start_remote()
+    link.start()
 
     # Anonymize state: None = live board; an AnonymizedOutput = mask card text/authors.
     anon = None
@@ -11468,33 +11334,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         # inserted: a worker thread flips `failed` between a frame being drawn and
         # a keypress being handled, so a button that appeared mid-row would slide
         # every later label one place under the user's cursor.
-        if remote["failed"]:
+        if link.failed:
             base.append("Retry Link")
         return base
-
-    def _link_status_text() -> str:
-        """Time-critical tunnel-health text, or "" when there is none.
-
-        A retro can easily run 60-90 minutes, and a quick tunnel gets a fresh
-        random hostname on every launch — once this one auto-expires, Retry
-        Link hands out a *different* URL, so the invite already sent to
-        everyone is permanently dead. Warn the host with time left to wrap
-        up or re-share, rather than the link just vanishing mid-ceremony.
-
-        Returned text must win over `message` in `_data()`, not just
-        `remote["status"]` — `message` is a sticky action-result string (set
-        by Copy Invite etc. and never cleared per frame) that would otherwise
-        swallow this for the rest of the session the moment the host presses
-        the one button they need to press to share the link at all.
-        """
-        if remote["expired"]:
-            return remote["status"]
-        tunnel = remote.get("tunnel")
-        remaining = tunnel.time_until_expiry() if tunnel is not None else None
-        if remaining is not None and remaining <= 300:
-            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return ""
 
     def _data() -> dict:
         grids = board.cards_by_grid()
@@ -11529,14 +11371,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             "display_code": server.display_code,
             "host_url": server.url,
             "public_url": server.share_url,
-            "link_failed": remote["failed"],
-            # `_link_status_text()` wins first: it is only non-"" for a time-critical
-            # tunnel event (the expiry warning, or the expiry itself), and both must
-            # reach the host even mid-frame after a sticky `message`. Otherwise
-            # `message` wins over the ambient `remote["status"]` — `message` is only
-            # ever set by something the host just did, and reading status first (as
-            # this did) silently swallowed every action result and error on the page.
-            "message": _link_status_text() or message or remote["status"],
+            "link_failed": link.failed,
+            # The expiry notice wins first: it is only non-"" for a time-critical
+            # tunnel event, and it must reach the host even mid-frame after a
+            # sticky `message`. Otherwise `message` wins over the ambient link
+            # status — `message` is only ever set by something the host just did,
+            # and reading status first silently swallowed every action result.
+            "message": link.expiry_notice() or message or link.status,
             "grids": grids,
             "carried": carried,
             "actions": _actions(),
@@ -11630,9 +11471,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     message = copy_markdown_status(server.url)
                     scroll = 0
                 elif label == "Retry Link":  # only present after a failed setup
-                    if not remote["starting"]:
+                    if not link.starting:
                         logger.info("retro: Retry Link pressed (session=%s)", session_id)
-                        _start_remote()
+                        link.start()
                     # Hand the status slot back to the tunnel so its progress is
                     # what the host sees, and step off a button that is about to
                     # disappear from the end of the row.
@@ -11754,8 +11595,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 store.record_run(report)
         except Exception as e:
             logger.warning("retro: flush to store failed: %s", e)
-        if remote.get("tunnel") is not None:
-            remote["tunnel"].stop()
+        link.stop()
         server.stop()
         logger.info("retro: page closed for session=%s", session_id)
 
@@ -11895,6 +11735,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     thread behind the shared progress screen because it makes tracker network
     calls that can take seconds.
     """
+    from yeaboi.poker import setup as poker_setup
     from yeaboi.poker import tickets as poker_tickets
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
 
@@ -12020,84 +11861,63 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
             _render()
 
     # ── Step 1: source (Jira / Azure DevOps / Demo) ───────────────────────
-    sources = poker_tickets.available_sources()
-    options = [(poker_tickets.source_label(s), "") for s in sources]
-    # Demo is always offered last — a no-tracker playground (write-back is a no-op).
-    options.append(("Demo tickets", "no tracker needed — try the flow with sample tickets"))
-    hint = (
-        "Both boards are configured — pick which one this session estimates against."
-        if len(sources) > 1
-        else ("No tracker configured — add Jira or Azure DevOps credentials in Settings." if not sources else "")
+    source_opts = poker_setup.source_options()
+    idx = _pick(
+        poker_setup.STEP_TITLES["source"],
+        poker_setup.source_hint(),
+        [(o["label"], o["sub"]) for o in source_opts],
     )
-    idx = _pick("Where do the tickets come from?", hint, options)
     if idx is None:
         return None
-    source = sources[idx] if idx < len(sources) else poker_tickets.SOURCE_DEMO
+    source = source_opts[idx]["key"]
     logger.info("poker setup: source=%s", source)
 
     sprint = None
-    scope_label = "Demo"
-    if source != poker_tickets.SOURCE_DEMO:
+    scope = ""
+    if poker_setup.step_applies("scope", source=source):
         # ── Step 2: scope (a sprint or the backlog) ───────────────────────
+        scope_opts = poker_setup.scope_options()
+        idx = _pick(poker_setup.STEP_TITLES["scope"], "", [(o["label"], o["sub"]) for o in scope_opts])
+        if idx is None:
+            return None
+        scope = scope_opts[idx]["key"]
+    if poker_setup.step_applies("sprint", source=source, scope=scope):
+        # ── Step 3: sprint list ───────────────────────────────────────────
+        sprints = poker_tickets.list_sprints(source)
+        if not sprints:
+            logger.warning("poker setup: no sprints found for %s", source)
+            _pick(
+                "No sprints found",
+                "Check the board's credentials/logs, or estimate the backlog instead.",
+                [("Back", "")],
+            )
+            return None
         idx = _pick(
-            "Which tickets should the team estimate?",
+            poker_setup.STEP_TITLES["sprint"],
             "",
-            [("A sprint", "pick one from the board's sprint list"), ("The backlog", "open items not in any sprint")],
+            [(o["label"], o["sub"]) for o in poker_setup.sprint_options(sprints)],
+            preselect=poker_setup.default_sprint_index(sprints),
         )
         if idx is None:
             return None
-        if idx == 0:
-            # ── Step 3: sprint list ───────────────────────────────────────
-            sprints = poker_tickets.list_sprints(source)
-            if not sprints:
-                logger.warning("poker setup: no sprints found for %s", source)
-                _pick(
-                    "No sprints found",
-                    "Check the board's credentials/logs, or estimate the backlog instead.",
-                    [("Back", "")],
-                )
-                return None
-            sprint_opts = [
-                (
-                    s.get("name", "?"),
-                    " · ".join(p for p in (s.get("start_date"), s.get("end_date"), s.get("state")) if p),
-                )
-                for s in sprints
-            ]
-            active = next((i for i, s in enumerate(sprints) if s.get("state") == "active"), len(sprints) - 1)
-            idx = _pick("Which sprint?", "", sprint_opts, preselect=active)
-            if idx is None:
-                return None
-            sprint = sprints[idx]
-            scope_label = sprint.get("name", "Sprint")
-        else:
-            scope_label = "Backlog"
+        sprint = sprints[idx]
+    scope_label = poker_setup.scope_label_for(source=source, scope=scope, sprint=sprint)
     logger.info("poker setup: scope=%s", scope_label)
 
     # ── Step 4: ticket types (multi-toggle; demo skips) ───────────────────
     include_types: tuple[str, ...] | None = None
-    if source != poker_tickets.SOURCE_DEMO:
-        if source == poker_tickets.SOURCE_JIRA:
-            sublabels = {"story": "issuetype Story", "bug": "issuetype Bug", "task": "issuetype Task"}
-            type_hint = "Space toggles · Sub-tasks are never included."
-        else:
-            sublabels = {
-                "story": "User Story / Product Backlog Item",
-                "bug": "Bug",
-                "task": "child tasks — usually not estimated",
-            }
-            type_hint = "Space toggles · pick the work-item types to estimate."
-        type_defaults = poker_tickets.default_include_types(source)
+    if poker_setup.step_applies("types", source=source, scope=scope):
+        type_opts = poker_setup.type_options(source)
         checked = _toggle(
-            "Which ticket types should be estimated?",
-            type_hint,
-            [(poker_tickets.TICKET_TYPE_LABELS[t], sublabels[t]) for t in poker_tickets.TICKET_TYPES],
-            {i for i, t in enumerate(poker_tickets.TICKET_TYPES) if t in type_defaults},
+            poker_setup.STEP_TITLES["types"],
+            poker_setup.type_hint(source),
+            [(o["label"], o["sub"]) for o in type_opts],
+            {i for i, o in enumerate(type_opts) if o["checked"]},
         )
         if checked is None:
             return None
-        include_types = tuple(t for i, t in enumerate(poker_tickets.TICKET_TYPES) if i in checked)
-        logger.info("poker setup: include_types=%s", ",".join(include_types))
+        include_types = poker_setup.include_types_for(source, [type_opts[i]["key"] for i in checked])
+        logger.info("poker setup: include_types=%s", ",".join(include_types or ()))
 
     # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
 
@@ -12132,11 +11952,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     tickets = result.get("tickets") or []
     if not tickets:
         logger.warning("poker setup: no tickets fetched (source=%s scope=%s)", source, scope_label)
-        _pick(
-            "No tickets found",
-            f"{poker_tickets.source_label(source)} returned nothing for {scope_label} — check credentials (see logs).",
-            [("Back", "")],
-        )
+        _pick("No tickets found", poker_setup.empty_result_message(source, scope_label), [("Back", "")])
         return None
     logger.info("poker setup: fetched %d ticket(s)", len(tickets))
     return {"source": source, "scope_label": scope_label, "tickets": tickets}
@@ -12232,113 +12048,18 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
     # Empty on purpose — see the retro loop: the status slot renders
-    # `_link_status_text() or message or remote["status"]`, so the tunnel narrates
+    # `link.expiry_notice() or message or link.status`, so the tunnel narrates
     # until the host acts, except a time-critical tunnel event which always wins.
     message = ""
 
-    # Tunnel state — see the retro loop for the full note. The short version: the
-    # server binds loopback, so this tunnel is the only way a teammate reaches the
-    # board, and it therefore starts by itself rather than on a button.
-
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
-
-    def _start_remote() -> None:
-        def _worker() -> None:
-            try:
-                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
-
-                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
-                binary = ensure_cloudflared()
-                if binary is None:
-                    logger.warning("poker: secure link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
-                    remote["failed"] = True
-                    return
-                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-
-                def _on_expired() -> None:
-                    # See the retro loop's _on_expired for the full note: reuses the
-                    # existing "Retry Link" affordance and un-publishes server-side.
-                    remote["tunnel"] = None
-                    remote["url"] = ""
-                    server.set_public_url("")
-                    remote["status"] = (
-                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
-                    )
-                    remote["failed"] = True
-                    remote["expired"] = True
-                    logger.info("poker: secure link expired (session=%s)", session_id)
-
-                # One call decides the tier. In the quick tier this is the same
-                # CloudflareTunnel as before; in the Access tier it is a named
-                # tunnel plus the identity gate the server verifies against, and
-                # a refusal here NEVER falls back to a public quick tunnel — a
-                # host who configured Access and silently got a trycloudflare.com
-                # URL is worse off than one who got no share at all.
-                transport = open_tunnel(server.port, surface="poker", binary=binary, on_expire=_on_expired)
-                if transport.tunnel is None:
-                    logger.warning("poker: secure link unavailable — %s", transport.error)
-                    remote["status"] = f"Secure link unavailable — {transport.error}"
-                    remote["failed"] = True
-                    return
-                # Armed before start(), so verification is on before the door is.
-                server.set_access_gate(transport.gate)
-                tunnel = transport.tunnel
-                # Published BEFORE start() so the page's finally can stop it —
-                # see the retro loop for the orphaned-cloudflared note.
-                remote["tunnel"] = tunnel
-                public = tunnel.start(timeout=45)
-                if not public:
-                    tunnel.stop()
-                    remote["tunnel"] = None
-                    # The Access tier's failures are host *setup* errors — a
-                    # credentials file that is not there, a tunnel id Cloudflare
-                    # does not know — so it names the one that happened rather
-                    # than sending the host to their router.
-                    detail = getattr(tunnel, "last_error", "")
-                    logger.warning("poker: secure link failed — %s", detail or "tunnel did not start within timeout")
-                    remote["status"] = (
-                        f"Secure link failed — {detail}."
-                        if detail
-                        else "Secure link failed — tunnel did not start (see logs)."
-                    )
-                    remote["failed"] = True
-                    return
-                logger.info("poker: secure link ready (port=%s)", server.port)
-                remote["url"] = f"{public}/"
-                # So /api/invite and the QR hand out the tunnel URL rather than the
-                # loopback address the host's own browser arrived on.
-                server.set_public_url(remote["url"])
-                remote["status"] = "Link ready — send it and the code to your team."
-                _duck_react("link_ready")
-            except Exception as e:
-                logger.error("poker: secure link setup failed: %s", e, exc_info=True)
-                remote["status"] = f"Secure link failed — {e}"
-                remote["failed"] = True
-            finally:
-                remote["starting"] = False
-
-        from yeaboi.config import tunnels_disabled
-
-        if tunnels_disabled():
-            # Opt-out for dry runs and offline/locked-down networks. The board
-            # still works for the host on loopback; it just has nothing to share.
-            logger.info("poker: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
-            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
-            remote["starting"] = False
-            remote["failed"] = False
-            return
-
-        logger.info("poker: starting secure link setup (session=%s)", session_id)
-        remote["starting"] = True
-        remote["failed"] = False
-        remote["expired"] = False
-        remote["status"] = "Setting up the secure link…"
-        duck_working_thread(_worker, name="poker-tunnel-setup").start()
+    # See the retro loop for the full note. The short version: the server binds
+    # loopback, so this tunnel is the only way a teammate reaches the board, and
+    # it therefore starts by itself rather than on a button.
+    link = SecureLink(server, surface="poker", on_ready=lambda: _duck_react("link_ready"))
 
     # Start it now — the board is open and the join code is already valid.
     _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
-    _start_remote()
+    link.start()
 
     def _actions() -> list[str]:
         # Same leading pair as the retro board and the Share Online screen.
@@ -12353,24 +12074,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         base.insert(2, f"Duel Mic: {'ON' if server.duel_mic_armed else 'off'}")
         # Appended, not inserted — a worker thread flips `failed` between a frame
         # being drawn and a keypress being handled (see the retro loop).
-        if remote["failed"]:
+        if link.failed:
             base.append("Retry Link")
         return base
-
-    def _link_status_text() -> str:
-        # See the retro loop's _link_status_text for the full note: a quick
-        # tunnel gets a fresh random hostname on every launch, so once this
-        # one auto-expires the invite already sent to the table is
-        # permanently dead. Returns "" when there's nothing urgent — must win
-        # over the sticky `message` in `_data()`, not just `remote["status"]`.
-        if remote["expired"]:
-            return remote["status"]
-        tunnel = remote.get("tunnel")
-        remaining = tunnel.time_until_expiry() if tunnel is not None else None
-        if remaining is not None and remaining <= 300:
-            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return ""
 
     def _data() -> dict:
         return {
@@ -12378,9 +12084,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             "display_code": server.display_code,
             "host_url": server.url,
             "public_url": server.share_url,
-            "link_failed": remote["failed"],
-            # `_link_status_text()` wins first — see the retro loop for why.
-            "message": _link_status_text() or message or remote["status"],
+            "link_failed": link.failed,
+            # The expiry notice wins first — see the retro loop for why.
+            "message": link.expiry_notice() or message or link.status,
             "state": board.state_snapshot(),
             "actions": _actions(),
         }
@@ -12458,9 +12164,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     message = copy_markdown_status(server.url)
                     scroll = 0
                 elif label == "Retry Link":  # only present after a failed setup
-                    if not remote["starting"]:
+                    if not link.starting:
                         logger.info("poker: Retry Link pressed (session=%s)", session_id)
-                        _start_remote()
+                        link.start()
                     # Hand the status slot back to the tunnel, and step off a
                     # button that is about to leave the end of the row.
                     message = ""
@@ -12510,8 +12216,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 _duck_react("poker_done")  # lands on the hub the page returns to
         except Exception as e:
             logger.warning("poker: flush to store failed: %s", e)
-        if remote.get("tunnel") is not None:
-            remote["tunnel"].stop()
+        link.stop()
         server.stop()
         logger.info("poker: page closed for session=%s", session_id)
 

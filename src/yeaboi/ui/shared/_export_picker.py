@@ -23,22 +23,18 @@ space key — and offers to open the setup wizard.
 from __future__ import annotations
 
 import logging
-import os
 
 from rich.align import Align
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.config import (
-    get_confluence_base_url,
-    get_confluence_email,
-    get_confluence_space_key,
-    get_confluence_token,
-    get_notion_export_parent_page_id,
-    get_notion_token,
+from yeaboi.exporting import (
+    DEST_LABELS,
+    available_destinations,
+    destination_blocker,
+    destination_description,
 )
-from yeaboi.export_targets import CONFLUENCE_PATH_HINT, NOTION_PATH_HINT
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
@@ -61,18 +57,6 @@ from yeaboi.ui.shared._components import (
 
 logger = logging.getLogger(__name__)
 
-DEST_FILES = "files"
-DEST_COPY = "copy"
-DEST_NOTION = "notion"
-DEST_CONFLUENCE = "confluence"
-
-_LABELS = {
-    DEST_FILES: "Files",
-    DEST_COPY: "Copy to clipboard",
-    DEST_NOTION: "Notion",
-    DEST_CONFLUENCE: "Confluence",
-}
-
 # Per-mode (title builder, theme) so the picker inherits the look of the page
 # that opened it — same palette rules as every other screen.
 _MODE_STYLES = {
@@ -83,69 +67,6 @@ _MODE_STYLES = {
     "performance": (performance_title, PERFORMANCE_THEME),
     "reporting": (reporting_title, REPORTING_THEME),
 }
-
-
-def available_destinations() -> list[str]:
-    """Return the export destinations available in the current configuration.
-
-    "files" is always available. Notion appears when its token is set;
-    Confluence when base URL + email + token all resolve (the getters already
-    fall back to the JIRA_* credentials, so a Jira-only setup counts).
-    """
-    # Files + Copy are always available (no config); Copy sits second so it's a
-    # prominent, zero-setup way to pull the data out of the terminal.
-    dests = [DEST_FILES, DEST_COPY]
-    if get_notion_token():
-        dests.append(DEST_NOTION)
-    if get_confluence_base_url() and get_confluence_email() and get_confluence_token():
-        dests.append(DEST_CONFLUENCE)
-    return dests
-
-
-def _dest_description(key: str, label: str, mode: str) -> str:
-    """One-line description of what the highlighted destination will do."""
-    if key == DEST_FILES:
-        from yeaboi.paths import EXPORTS_DIR
-
-        base = str(EXPORTS_DIR).replace(str(os.path.expanduser("~")), "~", 1)
-        return f"Markdown + HTML → {base}/{mode}"
-    if key == DEST_COPY:
-        return "Copy the Markdown to your clipboard"
-    if key == DEST_NOTION:
-        # The exports page (raw env — the getter already folds in the root-page
-        # fallback) vs the 🤙 yeaboi container, so the hint names the target.
-        if os.getenv("NOTION_EXPORT_PARENT_PAGE_ID"):
-            return "Publish a page under your Notion exports page"
-        if get_notion_export_parent_page_id():
-            return "Publish under the 🤙 yeaboi page in Notion"
-        return "Needs a Notion page — press Enter to set it up"
-    if key == DEST_CONFLUENCE:
-        space = get_confluence_space_key()
-        if space and os.getenv("CONFLUENCE_EXPORT_PARENT_PAGE_ID"):
-            return f"Publish under your Confluence exports page in {space}"
-        if space:
-            return f"Publish under the 🤙 yeaboi page in space {space}"
-        return "Needs a Confluence space key — press Enter to set it up"
-    if key == "back":
-        return "Return without exporting"
-    if key == "shareonline":
-        return "Publish this saved HTML temporarily behind an access code"
-    if key == "powerpoint":
-        return "A .pptx deck styled by the selected palette (needs the docs extra)"
-    return f"Send to {label}"
-
-
-def _export_path_warning(dest: str) -> str:
-    """Return the Setup hint when publishing to *dest* is impossible, else ''.
-
-    Notion needs *some* page to create under (exports page or root page);
-    Confluence needs a space key. Both come from Setup → Docs.
-    """
-    if dest == DEST_NOTION and not get_notion_export_parent_page_id():
-        return NOTION_PATH_HINT
-    if dest == DEST_CONFLUENCE and not get_confluence_space_key():
-        return CONFLUENCE_PATH_HINT
-    return ""
 
 
 def _build_export_picker_screen(
@@ -220,7 +141,7 @@ def pick_export_destination(
     Without it, any key dismisses the warning (the legacy behaviour).
     """
     dests = available_destinations()
-    labels = [_LABELS[d] for d in dests] + list(extra_options or []) + ["Back"]
+    labels = [DEST_LABELS[d] for d in dests] + list(extra_options or []) + ["Back"]
     keys = dests + [opt.lower().replace(" ", "").replace("azuredevops", "azdevops") for opt in extra_options or []]
     logger.info("Export picker opened (mode=%s, destinations=%s)", mode, labels)
 
@@ -235,7 +156,7 @@ def pick_export_destination(
             subtitle = "Add the destination in Setup, then continue" if wsel == 0 else "Return to the picker"
         else:
             key = keys[sel] if sel < len(keys) else "back"
-            subtitle = _dest_description(key, labels[sel], mode)
+            subtitle = destination_description(key, mode=mode, label=labels[sel])
         w, h = console.size
         panel = _build_export_picker_screen(
             mode=mode,
@@ -286,7 +207,7 @@ def pick_export_destination(
                 if wsel == 0:  # Open Setup → provider setup wizard
                     logger.info("Export picker: opening Setup for %s", warning_choice)
                     open_setup()
-                    if not _export_path_warning(warning_choice):
+                    if not destination_blocker(warning_choice):
                         # Destination configured in Setup — carry on with the export.
                         logger.info("Export destination chosen after Setup: %s", warning_choice)
                         return warning_choice
@@ -306,7 +227,7 @@ def pick_export_destination(
                 logger.info("Export picker cancelled (Back)")
                 return None
             choice = keys[sel]
-            warning = _export_path_warning(choice)
+            warning = destination_blocker(choice)
             if warning:
                 warning_choice = choice
                 wsel = 0
