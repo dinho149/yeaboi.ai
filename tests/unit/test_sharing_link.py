@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 import pytest
@@ -77,16 +78,18 @@ class TestStart:
         assert link.url == "https://x.example/"
 
     def test_on_ready_fires(self):
-        seen: list[int] = []
+        # Waited on directly rather than through _settle: the link publishes its
+        # state before it calls back, so "no longer starting" does not mean the
+        # callback has run yet.
+        fired = threading.Event()
         link = SecureLink(
             FakeServer(),
             surface="retro",
-            on_ready=lambda: seen.append(1),
+            on_ready=fired.set,
             tunnel_factory=lambda _p: "https://x.example",
         )
         link.start()
-        _settle(link)
-        assert seen == [1]
+        assert fired.wait(2.0), "on_ready never fired"
 
     def test_a_failing_on_ready_never_breaks_the_link(self):
         def boom() -> None:
