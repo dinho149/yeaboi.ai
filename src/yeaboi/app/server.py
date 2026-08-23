@@ -22,6 +22,7 @@ from yeaboi.app.chats import ChatSupervisor
 from yeaboi.app.events import EventBus
 from yeaboi.app.ops import OperationTable
 from yeaboi.app.router import Request, Response, Router, parse_request
+from yeaboi.app.supervisor import BoardSupervisor
 from yeaboi.web.security import policy, send_document, send_headers
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,7 @@ class AppServer:
         ops: OperationTable | None = None,
         router: Router | None = None,
         chats: ChatSupervisor | None = None,
+        boards: BoardSupervisor | None = None,
         on_shutdown=None,
     ) -> None:
         self.token = token
@@ -148,6 +150,10 @@ class AppServer:
         # The open planning conversations (routes_chat) — sessions live here
         # so a reloaded window rejoins the one it left.
         self.chats = chats if chats is not None else ChatSupervisor()
+        # The live boards and open shares (routes_boards) — they outlive every
+        # window, and `stop_all` at shutdown is what keeps a tunnel from
+        # outliving the app.
+        self.boards = boards if boards is not None else BoardSupervisor()
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:

@@ -189,3 +189,83 @@ An analysis run is cancellable through `POST /api/ops/{op_id}/cancel`, which
 sets the engine's cancel event. **A standup run is not**: `run_standup` has no
 cancel seam, so its `op` line exists only to join progress to a run, and
 cancelling it does nothing.
+
+## Live boards
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/boards` | every board this process is hosting |
+| POST | `/api/boards/retro` | open a retro board for the latest session; 409 when there is none |
+| POST | `/api/boards/poker` | open a poker table over an already-fetched ticket list |
+| GET | `/api/boards/{board_id}` | one board's host controls and current contents |
+| POST | `/api/boards/{board_id}/link` | try the secure link again after a failure |
+| GET | `/api/boards/{board_id}/invite` | the one link a teammate gets, code in the fragment |
+| POST | `/api/boards/{board_id}/actions` | draft this retro's action items (one LLM call) |
+| POST | `/api/boards/{board_id}/close` | end the board and flush it to its mode's store |
+| GET | `/api/poker/options` | what a poker setup wizard may offer on this machine |
+| GET | `/api/poker/sprints` | one source's sprint list, plus which row the cursor starts on |
+| GET | `/api/poker/types` | the ticket-type toggles for one source, pre-checked to its defaults |
+| POST | `/api/poker/tickets` | fetch the tickets one scope would estimate |
+
+A **board snapshot** is
+`{board_id, kind, title, session_id, project_name, started_at, host_url,
+share_url, display_code, link, state}`. `kind` is `retro` or `poker`.
+`state` is the board's own contents — `{grids, carried}` for a retro, the
+poker table snapshot for poker.
+
+**`host_url` is private.** It carries the admin token that makes its holder the
+host; it is returned because opening the board window needs it, and it must
+never be handed out as an invite. `/api/boards/{id}/invite` is what a teammate
+gets, and it is empty until the tunnel lands — before then there is no address
+that works for a reader.
+
+A **link** is `{state, status, url, failed, expired, starting, notice}`, the
+same shape on a board and on a share. `state` is `idle`, `starting`, `ready`,
+`failed` or `off` (`off` = `YEABOI_NO_TUNNEL`; the board still works on
+loopback for the host). `notice` is non-empty only for a time-critical event —
+the expiry warning, or the expiry itself — and a surface renders it *above* its
+own status text, because that is the one message a sticky action result must
+not swallow.
+
+Closing a board is what records the ceremony: `{closed, board_id, run_id}`,
+`run_id` being the row written to the mode's store.
+
+## Export, share, anonymize
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/export/destinations` | the menu for one mode: `{key, label, description, blocked, local}` |
+| POST | `/api/export` | send one stored artifact to a destination |
+| GET | `/api/shares` | every share this process is publishing |
+| POST | `/api/shares` | publish one stored artifact behind an access code |
+| GET | `/api/shares/{share_id}` | one share's link, code and edit count |
+| GET | `/api/shares/{share_id}/invite` | one link carrying the access code |
+| POST | `/api/shares/{share_id}/discard` | drop corrections from the document (the log keeps them) |
+| POST | `/api/shares/{share_id}/close` | stop sharing; `{commit}` decides whether corrections are kept |
+| GET | `/api/artifacts/{kind}/edits` | a kind's editable fields plus one artifact's recorded corrections |
+| POST | `/api/anonymize` | mask one artifact, streamed as NDJSON |
+
+All four take the same **artifact reference**: `{kind, session_id, run_id}`.
+`kind` is `standup`, `retro` or `analysis` (a team profile is addressed by its
+team id in `session_id`); the rest arrive with their result screens. **Poker has
+no share document in any surface** — a poker session exports, and that is all.
+
+`copy` is a **local** destination: the export returns `{destination, title,
+markdown}` and performs nothing. A clipboard belongs to whatever is in front of
+the person, not to a background process. `blocked` on a destination is the
+Setup hint shown instead of failing after the click; `POST /api/export` refuses
+a blocked destination with 409.
+
+A **share snapshot** is `{share_id, kind, title, session_id, run_id, started_at,
+share_url, display_code, editable, edits, editors, link}`. `edits` is the delta
+recorded *in this session*, not the total — a reopened share replays its whole
+log before anyone joins. `close` carries `{commit}`, defaulting to **false**:
+keeping somebody else's corrections is the host's decision, not a consequence of
+closing a window. A commit appends a corrected row; the generated original
+survives, which is what makes a revert mean anything.
+
+An **anonymize** run streams `op`, `progress`, then
+`done: {note, replacements: [[original, placeholder]], warnings, result}`. The
+*surface* applies the replacements to what it is already showing — masking is a
+view over the same data, never a second copy of it. The pass never fails closed:
+an LLM failure comes back as a warning over the deterministic seed mask.

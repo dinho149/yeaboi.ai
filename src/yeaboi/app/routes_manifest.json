@@ -67,6 +67,31 @@
       "title": "Standup · Transcript review"
     },
     {
+      "path": "/humans/retro",
+      "capability": "retro-board",
+      "title": "Retro"
+    },
+    {
+      "path": "/humans/retro/board",
+      "capability": "retro-board",
+      "title": "Retro · Board"
+    },
+    {
+      "path": "/humans/poker",
+      "capability": "scrum-poker",
+      "title": "Poker"
+    },
+    {
+      "path": "/humans/poker/new",
+      "capability": "scrum-poker",
+      "title": "Poker · New session"
+    },
+    {
+      "path": "/humans/poker/board",
+      "capability": "scrum-poker",
+      "title": "Poker · Table"
+    },
+    {
       "path": "/settings/credentials",
       "capability": "settings",
       "title": "Settings · Credentials"
@@ -85,6 +110,26 @@
       "path": "/setup",
       "capability": "settings",
       "title": "Setup"
+    },
+    {
+      "path": "dialog:export",
+      "capability": "output-sharing",
+      "title": "Export"
+    },
+    {
+      "path": "dialog:share",
+      "capability": "output-sharing",
+      "title": "Share online"
+    },
+    {
+      "path": "action:anonymize",
+      "capability": "anonymize",
+      "title": "Anonymize output"
+    },
+    {
+      "path": "action:edit-artifact",
+      "capability": "artifact-editing",
+      "title": "Correct a shared artifact"
     }
   ]
 }

@@ -17,7 +17,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 
-from yeaboi.app import routes_analysis, routes_chat, routes_meta, routes_settings, routes_standup
+from yeaboi.app import (
+    routes_analysis,
+    routes_boards,
+    routes_chat,
+    routes_meta,
+    routes_settings,
+    routes_share,
+    routes_standup,
+)
 from yeaboi.app.router import Router
 
 #: Routes that may answer without a bearer token. Kept as an explicit,
@@ -74,6 +82,33 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/analysis/profiles", routes_analysis.profiles, "team-analysis"),
     AppRoute("GET", "/api/analysis/result/{team_id}", routes_analysis.result, "team-analysis"),
     AppRoute("POST", "/api/analysis/run", routes_analysis.run, "team-analysis"),
+    # -- live boards (the M7 surface) ----------------------------------------
+    # `boards`/`board`/`link`/`close` serve both kinds, so the row they belong
+    # to is the kind whose board is open. Registered against retro-board, with
+    # scrum-poker owning the poker-specific half.
+    AppRoute("GET", "/api/boards", routes_boards.boards, "retro-board"),
+    AppRoute("POST", "/api/boards/retro", routes_boards.start_retro, "retro-board"),
+    AppRoute("GET", "/api/boards/{board_id}", routes_boards.board, "retro-board"),
+    AppRoute("POST", "/api/boards/{board_id}/link", routes_boards.retry_link, "retro-board"),
+    AppRoute("GET", "/api/boards/{board_id}/invite", routes_boards.invite, "retro-board"),
+    AppRoute("POST", "/api/boards/{board_id}/actions", routes_boards.generate_actions, "retro-board"),
+    AppRoute("POST", "/api/boards/{board_id}/close", routes_boards.close_board, "retro-board"),
+    AppRoute("POST", "/api/boards/poker", routes_boards.start_poker, "scrum-poker"),
+    AppRoute("GET", "/api/poker/options", routes_boards.poker_options, "scrum-poker"),
+    AppRoute("GET", "/api/poker/sprints", routes_boards.poker_sprints, "scrum-poker"),
+    AppRoute("GET", "/api/poker/types", routes_boards.poker_types, "scrum-poker"),
+    AppRoute("POST", "/api/poker/tickets", routes_boards.poker_tickets, "scrum-poker"),
+    # -- export / share / anonymize, on every result screen (the M7 surface) --
+    AppRoute("GET", "/api/export/destinations", routes_share.destinations, "output-sharing"),
+    AppRoute("POST", "/api/export", routes_share.export, "output-sharing"),
+    AppRoute("GET", "/api/shares", routes_share.shares, "output-sharing"),
+    AppRoute("POST", "/api/shares", routes_share.start_share, "output-sharing"),
+    AppRoute("GET", "/api/shares/{share_id}", routes_share.share, "output-sharing"),
+    AppRoute("GET", "/api/shares/{share_id}/invite", routes_share.share_invite, "output-sharing"),
+    AppRoute("POST", "/api/shares/{share_id}/discard", routes_share.discard_edits, "artifact-editing"),
+    AppRoute("POST", "/api/shares/{share_id}/close", routes_share.stop_share, "output-sharing"),
+    AppRoute("GET", "/api/artifacts/{kind}/edits", routes_share.artifact_edits, "artifact-editing"),
+    AppRoute("POST", "/api/anonymize", routes_share.anonymize, "anonymize"),
 )
 
 

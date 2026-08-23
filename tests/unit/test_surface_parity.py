@@ -183,7 +183,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "poker",
         "cli": {"poker"},  # history read-back + export; the live voting board stays TUI-hosted
         "skill": Exempt("live voting session is TUI-hosted by design; history stays readable via poker_history"),
-        "desktop": Exempt("desktop: scheduled milestone M7 — hub plus the poker board window"),
+        "desktop": {"/humans/poker", "/humans/poker/new", "/humans/poker/board"},
     },
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
@@ -200,7 +200,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "retro",
         "cli": {"retro"},  # history read-back + export; the live board itself stays TUI-hosted
         "skill": Exempt("live board is TUI-only by design; history stays readable via retro_history"),
-        "desktop": Exempt("desktop: scheduled milestone M7 — hub plus the retro board window"),
+        "desktop": {"/humans/retro", "/humans/retro/board"},
     },
     "team-learning": {
         "engines": Exempt("lives in tools/team_learning.py as @tool functions — covered by test_tools_registry"),
@@ -249,7 +249,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("an action button on every mode's result screen, not a _MODE_CARDS entry"),
         "cli": Exempt("headless callers anonymize via the anonymize_text MCP tool"),
         "skill": Exempt("post-processing action, not a guided workflow"),
-        "desktop": Exempt("desktop: scheduled milestone M7 — an action on every result screen"),
+        "desktop": {"action:anonymize"},
     },
     "artifact-editing": {
         # Reader-authored corrections to a generated artifact. The browser half
@@ -266,7 +266,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("editing happens on the shared browser document during a Share Online session"),
         "cli": Exempt("a JSON-patch flag would be an unusable surface; headless callers use the MCP tools"),
         "skill": Exempt("correcting one field is a single MCP call, not a multi-step guided workflow"),
-        "desktop": Exempt("desktop: scheduled milestone M7 — the slide-over editor on shared artifacts"),
+        "desktop": {"action:edit-artifact"},
     },
     "output-sharing": {
         "engines": Exempt("transport over already-generated HTML artifacts, not an artifact-generation pipeline"),
@@ -276,7 +276,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Share Online action on existing result screens, not a dedicated mode card"),
         "cli": Exempt("temporary shares intentionally remain visible and cancellable in the interactive TUI"),
         "skill": Exempt("local process and access-code ownership belongs to the human host in the TUI"),
-        "desktop": Exempt("desktop: scheduled milestone M7 — the Share dialog on every result screen"),
+        "desktop": {"dialog:share", "dialog:export"},
     },
     "usage": {
         "engines": Exempt("TUI utility page — reads the local token_usage table"),
