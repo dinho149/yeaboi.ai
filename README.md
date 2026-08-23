@@ -53,7 +53,7 @@ the terminal UI needs a POSIX terminal.
 uv tool install yeaboi                       # already have uv
 uvx yeaboi                                   # try it without installing
 pipx install --python 3.12 --fetch-missing-python yeaboi
-pip install yeaboi                           # needs Python 3.11+ already present
+pip install yeaboi                           # needs Python 3.10+ already present
 ```
 
 `uv tool install` fetches a Python for you if none on the machine qualifies. **`pipx` and `pip`

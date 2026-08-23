@@ -9,7 +9,7 @@ CODE ?= code
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -45,9 +45,22 @@ SLOW_PATHS ?= tests/integration/ tests/contract/
 # ten-plus names and CLAUDE.md forbids editing it.
 PYTEST_PARALLEL ?= -n auto --dist loadfile
 
+# The versions CI's non-required `compat` job covers — everything above the
+# floor, which the required `unit` job already runs. Kept in step with
+# ci.yml's matrix by tests/unit/test_python_floor.py.
+COMPAT_PYTHONS ?= 3.11 3.12 3.13 3.14
+
 test-fast: ## Unit tests only — the tight edit-test loop
 	$(UV) run pytest $(UNIT_LANE) $(PYTEST_PARALLEL) --tb=short -q
 	@echo "✓ Unit tests passed"
+
+test-compat: ## Unit lane on every supported Python above the floor (what CI's `compat` job runs)
+	@for v in $(COMPAT_PYTHONS); do \
+		echo "── Python $$v ──"; \
+		$(UV) run --isolated --extra dev --python $$v python -c "import sys; assert '.'.join(map(str,sys.version_info[:2])) == '$$v', sys.version" || exit 1; \
+		$(UV) run --isolated --extra dev --python $$v pytest $(UNIT_LANE) $(PYTEST_PARALLEL) --tb=short -q || exit 1; \
+	done
+	@echo "✓ Unit lane passed on $(COMPAT_PYTHONS)"
 
 test-slow: ## Integration + contract only — the half `test-fast` does not cover
 	$(UV) run pytest $(SLOW_LANE) --tb=short

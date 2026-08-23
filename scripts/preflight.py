@@ -49,6 +49,7 @@ JOB_TARGETS: dict[str, tuple[str, ...]] = {
     "site": ("site-check",),
     "package": ("package-check",),
     "eval": ("eval",),
+    "compat": ("test-compat",),
 }
 
 # The binary each job needs before it can run at all. A job whose toolchain is

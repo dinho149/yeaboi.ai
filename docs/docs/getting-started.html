@@ -73,7 +73,7 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
       <ul>
         <li>macOS or Linux (on Windows, use <a href="https://learn.microsoft.com/windows/wsl/install">WSL</a>)</li>
         <li>No Python needed — the installer below brings its own. (Installing with <code>pip</code>
-            or <code>pipx</code> instead? Those need Python 3.11+ already present.)</li>
+            or <code>pipx</code> instead? Those need Python 3.10+ already present.)</li>
         <li>An API key for at least one LLM provider:
           <ul>
             <li><a href="https://console.anthropic.com/settings/keys">Anthropic</a> (recommended)</li>
@@ -98,7 +98,7 @@ yeaboi              # launch the interactive TUI</code></pre>
       <pre><code>uv tool install yeaboi                       # already have uv
 uvx yeaboi                                   # try it without installing
 pipx install --python 3.12 --fetch-missing-python yeaboi
-pip install yeaboi                           # needs Python 3.11+ already present</code></pre>
+pip install yeaboi                           # needs Python 3.10+ already present</code></pre>
       <p><code>uv tool install</code> fetches a Python for you when nothing on the machine qualifies.
          <strong><code>pipx</code> and <code>pip</code> do not</strong> — they install with the
          interpreter they are run under, which is why those flags are needed.</p>

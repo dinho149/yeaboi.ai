@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from yeaboi._compat import StrEnum
+from yeaboi._compat import IntEnum, StrEnum
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIRS = ("src", "tests", "scripts", "packaging")
@@ -25,6 +25,10 @@ SOURCE_DIRS = ("src", "tests", "scripts", "packaging")
 class Sample(StrEnum):
     LOWER = "lower"
     MIXED = "Mixed Case"
+
+
+class Points(IntEnum):
+    THREE = 3
 
 
 class HandRolled(str, Enum):
@@ -59,15 +63,46 @@ class TestStrEnumSemantics:
         assert cls.LOWER == "lower"
 
     def test_a_plain_str_enum_would_not_pass_these(self):
-        """The trap this module exists to avoid, stated as a test."""
+        """The trap this module exists to avoid, stated as a test.
+
+        The two dunders fail on different versions, which is why both are assigned:
+        ``str()`` is wrong everywhere, and ``format()`` is additionally wrong from
+        3.11 on. A shim carrying only ``__str__`` would pass its tests on 3.10 and
+        corrupt every f-string on the version most people run.
+        """
 
         class Naive(str, Enum):
             MIXED = "Mixed Case"
 
-        assert f"{Naive.MIXED}" != "Mixed Case"
+        assert str(Naive.MIXED) != "Mixed Case"
+        if sys.version_info >= (3, 11):
+            assert f"{Naive.MIXED}" != "Mixed Case"
 
     def test_generate_next_value_lowercases(self):
         assert StrEnum._generate_next_value_("SOME_NAME", 1, 0, []) == "some_name"
+
+
+class TestIntEnumSemantics:
+    """3.11 also changed IntEnum. StoryPointValue is rendered into tables and
+    written into artifacts, so a member showing as its name is user-visible."""
+
+    def test_str_is_the_number(self):
+        assert str(Points.THREE) == "3"
+
+    def test_format_is_the_number_and_honours_a_spec(self):
+        assert f"{Points.THREE}" == "3"
+        assert f"{Points.THREE:>5}" == "    3"
+
+    def test_repr_still_names_the_member(self):
+        assert repr(Points.THREE) == "<Points.THREE: 3>"
+
+    def test_json_round_trips_as_the_number(self):
+        assert json.dumps({"pts": Points.THREE}) == '{"pts": 3}'
+
+    def test_int_dunder_str_would_have_been_wrong(self):
+        """int defines no __str__, so int.__str__ is object.__str__ and delegates
+        back to Enum's __repr__ — the trap the shim's comment names."""
+        assert int.__str__ is object.__str__
 
 
 def _python_files() -> list[Path]:

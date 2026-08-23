@@ -15,12 +15,16 @@ import subprocess
 import sys
 import threading
 import time
-import tomllib
 from pathlib import Path
 
 import pytest
 
 from yeaboi import voice_install
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
+    import tomli as tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

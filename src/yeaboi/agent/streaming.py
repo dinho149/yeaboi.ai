@@ -15,8 +15,9 @@ callback:
   to provider streaming and surface each ``AIMessageChunk`` here — the node
   code is unchanged. This is the design the "streaming is handled at the REPL
   layer by iterating graph.stream()" comment in nodes.py always anticipated.
-  Config propagates to the node via contextvars (Python 3.11+), so no plumbing
-  is needed.
+  Config reaches the node through the ordinary call chain — ``stream_chat_turn``
+  is a synchronous ``graph.stream()`` on a worker thread, so the async-only
+  contextvars caveat in LangChain's docs does not apply and no plumbing is needed.
 - **Typewriter** (everything else — intake questions, review summaries): the
   text is template-built by the node, not LLM prose, so there is nothing to
   stream. We run a plain ``graph.invoke()`` and then replay the finished text

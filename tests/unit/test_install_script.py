@@ -24,10 +24,15 @@ import os
 import re
 import shutil
 import subprocess
-import tomllib
+import sys
 from pathlib import Path
 
 import pytest
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SH = ROOT / "docs" / "install.sh"
@@ -37,6 +42,10 @@ README = ROOT / "README.md"
 # this string and what the README/landing page actually show is a bug in the
 # funnel, not a formatting nit.
 CURL_COMMAND = "curl -LsSf https://yeaboi.ai/install.sh | sh"
+
+# Read, never hardcoded: the installer's pin and the packaged floor are the same
+# string by design, and a test that spells it out is one more place to forget.
+FLOOR = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
 
 
 def _run(script_env: dict[str, str], *, stdin_closed: bool = True) -> subprocess.CompletedProcess[str]:
@@ -101,10 +110,10 @@ class TestBehaviour:
     def test_installs_with_a_specifier_not_a_pinned_version(self, sandbox):
         result = _run(sandbox["env"])
         assert result.returncode == 0, result.stderr
-        # A specifier, not a version: `--python 3.11` would pin every user to the
+        # A specifier, not a version: a bare `--python 3.10` would pin every user to the
         # oldest supported runtime and download a ~30MB interpreter onto machines
         # that already have a usable one.
-        assert "argv: tool install --python >=3.11 yeaboi" in _log(sandbox)
+        assert f"argv: tool install --python {FLOOR} yeaboi" in _log(sandbox)
 
     def test_forces_automatic_python_downloads(self, sandbox):
         """The one setting the script cannot leave to a default.
@@ -127,7 +136,7 @@ class TestBehaviour:
         env = {**sandbox["env"], "YEABOI_PACKAGE": "yeaboi==9.9.9rc1", "YEABOI_UV_ARGS": "--pre"}
         result = _run(env)
         assert result.returncode == 0, result.stderr
-        assert "argv: tool install --python >=3.11 --pre yeaboi==9.9.9rc1" in _log(sandbox)
+        assert f"argv: tool install --python {FLOOR} --pre yeaboi==9.9.9rc1" in _log(sandbox)
 
     def test_a_failing_uv_fails_the_script(self, sandbox):
         env = {**sandbox["env"], "UV_EXIT": "1"}

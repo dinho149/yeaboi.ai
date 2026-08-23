@@ -10,7 +10,7 @@
 # a first-time user never sees the product.
 #
 # Overridable, all optional:
-#   YEABOI_PYTHON         Python to build the tool env on   (default: >=3.11)
+#   YEABOI_PYTHON         Python to build the tool env on   (default: >=3.10)
 #   YEABOI_PACKAGE        what to install                   (default: yeaboi)
 #   YEABOI_UV_ARGS        extra args for `uv tool install`  (default: none)
 #   UV_INSTALLER_VERSION  uv release used when uv is absent
@@ -28,12 +28,12 @@
 
 set -eu
 
-# A version specifier, not a version. `--python 3.11` pins every user to the
+# A version specifier, not a version. `--python 3.10` pins every user to the
 # oldest supported runtime and downloads a ~30 MB interpreter onto machines that
-# already have a perfectly good one; `--python '>=3.11'` reuses what is there and
+# already have a perfectly good one; `--python '>=3.10'` reuses what is there and
 # downloads only when nothing qualifies. Keep this byte-identical to
 # `requires-python` in pyproject.toml — tests/unit/test_install_script.py asserts it.
-YEABOI_PYTHON="${YEABOI_PYTHON:->=3.11}"
+YEABOI_PYTHON="${YEABOI_PYTHON:->=3.10}"
 YEABOI_PACKAGE="${YEABOI_PACKAGE:-yeaboi}"
 YEABOI_UV_ARGS="${YEABOI_UV_ARGS:-}"
 UV_INSTALLER_VERSION="${UV_INSTALLER_VERSION:-0.11.2}"

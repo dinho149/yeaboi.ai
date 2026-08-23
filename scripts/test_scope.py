@@ -495,6 +495,9 @@ ALWAYS: tuple[str, ...] = (
     # Its guard half AST-scans every module in src/ for a bare fromisoformat,
     # which any file can reintroduce.
     "tests/unit/test_timeparse.py",
+    # Ten surfaces name the supported Python floor and nothing else connects
+    # them — including an OG PNG that is rendered by hand.
+    "tests/unit/test_python_floor.py",
     # The ship gate reads the Makefile, the slash commands and this file. Nothing
     # about a changed module implies it, and its whole subject is the machinery
     # that decides what a scoped run covers — so it has to run on every one.
@@ -591,6 +594,10 @@ JOBS: tuple[Job, ...] = (
     # is no root-level build hook or MANIFEST.in to name.
     Job("package", ("pyproject.toml", "src/yeaboi/web/static/", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
+    # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on the
+    # things that can make one version differ from another: the two shims, the
+    # floor itself, and the lock that resolves per-version forks.
+    Job("compat", ("pyproject.toml", "uv.lock", "src/yeaboi/_compat.py", "src/yeaboi/timeparse.py")),
 )
 
 FULL_UNIT = ("tests/unit/", "tests/test_*.py")

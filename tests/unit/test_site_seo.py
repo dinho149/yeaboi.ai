@@ -11,11 +11,16 @@ the pre-commit hook and both CI jobs at once.
 import importlib.util
 import json
 import re
-import tomllib
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 

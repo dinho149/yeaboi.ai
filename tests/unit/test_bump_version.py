@@ -41,7 +41,7 @@ def test_bump_rejects_bad_version(bad):
 
 def _write_pyproject(tmp_path: Path, version: str) -> Path:
     p = tmp_path / "pyproject.toml"
-    p.write_text(f'[project]\nname = "yeaboi"\nversion = "{version}"\nrequires-python = ">=3.11"\n')
+    p.write_text(f'[project]\nname = "yeaboi"\nversion = "{version}"\nrequires-python = ">=3.10"\n')
     return p
 
 
@@ -56,7 +56,7 @@ def test_write_version_round_trip(tmp_path):
     assert bump_version.read_current(p) == "1.6.0"
     # Only the version line changes; the rest of the file is preserved.
     assert 'name = "yeaboi"' in p.read_text()
-    assert 'requires-python = ">=3.11"' in p.read_text()
+    assert 'requires-python = ">=3.10"' in p.read_text()
 
 
 def test_read_current_missing_version(tmp_path):

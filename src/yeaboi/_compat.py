@@ -7,9 +7,10 @@ that 3.11 added and this codebase used has been rewritten away rather than alias
 import sys
 
 if sys.version_info >= (3, 11):
-    from enum import StrEnum
+    from enum import IntEnum, StrEnum
 else:
     from enum import Enum
+    from enum import IntEnum as _StdIntEnum
 
     class StrEnum(str, Enum):
         """3.11's ``enum.StrEnum``, reproduced exactly.
@@ -27,5 +28,21 @@ else:
         def _generate_next_value_(name, start, count, last_values):
             return name.lower()
 
+    class IntEnum(_StdIntEnum):
+        """3.11's ``enum.IntEnum``, which renders as its value rather than its name.
 
-__all__ = ["StrEnum"]
+        3.11 routed ``str()`` and ``format()`` to the mixed-in type; on 3.10
+        ``str(member)`` still yields ``"StoryPointValue.THREE"``, which reaches a
+        rendered table and a serialized artifact — visible to a user, not internal.
+
+        ``int.__repr__``, not ``int.__str__``: int defines no ``__str__``, so
+        ``int.__str__`` is ``object.__str__`` and delegates straight back to Enum's
+        own ``__repr__`` — leaving ``str(member)`` as ``"<StoryPointValue.THREE: 3>"``,
+        which is worse than the bug it was meant to fix.
+        """
+
+        __str__ = int.__repr__
+        __format__ = int.__format__
+
+
+__all__ = ["IntEnum", "StrEnum"]
