@@ -261,6 +261,31 @@ class TestBehaviour:
         assert "predates" in result.stdout
         assert "could not download" in result.stderr
 
+    def test_the_downloaded_installer_lands_on_an_unguessable_path(self, tmp_path: Path):
+        """Fetch-then-execute is this file's whole job, so the gap between the two
+        is the thing to protect. A PID-named path in a world-writable /tmp can be
+        pre-created as a symlink (curl -o follows it) or swapped after download and
+        before `sh` reads it. mktemp is O_EXCL, 0600 and unguessable."""
+        env, bin_dir, log = self._bare_env(tmp_path)
+        self._fake_installer_curl(bin_dir)
+
+        result = _run(env)
+
+        assert result.returncode == 0, result.stderr
+        target = [line for line in log.read_text().splitlines() if line.startswith("curl:")]
+        assert target, "the installer must have been fetched"
+        written_to = target[0].split(" -o ")[-1].strip()
+        assert "$$" not in written_to and ".sh" not in written_to.rsplit("/", 1)[-1][:20]
+        assert written_to.startswith(str(tmp_path / "home")), (
+            f"the installer must be written under $HOME, not {written_to!r} — the header claims it"
+        )
+
+    def test_no_predictable_temp_path_is_constructed(self):
+        """The static half: a template, never a PID."""
+        code = _code()
+        assert "mktemp" in code
+        assert "$$" not in code, "a PID is not entropy"
+
     @pytest.mark.parametrize("version", ["0.4.30", "0.5.0", "0.11.2", "1.0.0"])
     def test_a_new_enough_uv_is_kept(self, sandbox, version):
         env = dict(sandbox["env"])

@@ -14,6 +14,37 @@ def db_path(tmp_path):
     return tmp_path / "sessions.db"
 
 
+class TestValidateWindowDates:
+    """The window strings arrive verbatim from CLI flags and the MCP tool, and
+    everything downstream compares them as strings — the ordering check here, the
+    `day >= period_start` filter in context.py, and the period label."""
+
+    def test_canonicalises_a_valid_but_non_canonical_spelling(self):
+        from yeaboi.reporting.engine import _validate_window_dates
+
+        assert _validate_window_dates("20260601", "2026-W27-2") == ("2026-06-01", "2026-06-30")
+
+    def test_the_ordering_check_runs_on_the_canonical_form(self):
+        """Lexicographically `"2026-09-01" < "20260818"` is True ('-' is 0x2D,
+        '0' is 0x30), so a mixed-spelling window would pass a backwards range."""
+        from yeaboi.reporting.engine import _validate_window_dates
+
+        with pytest.raises(ValueError, match="before window_start"):
+            _validate_window_dates("2026-09-01", "20260818")
+
+    def test_empty_values_pass_through(self):
+        from yeaboi.reporting.engine import _validate_window_dates
+
+        assert _validate_window_dates("", "") == ("", "")
+
+    @pytest.mark.parametrize("bad", ["next tuesday", "2026-13-45", "01/06/2026"])
+    def test_junk_is_refused_with_the_field_name(self, bad):
+        from yeaboi.reporting.engine import _validate_window_dates
+
+        with pytest.raises(ValueError, match="window_start must be an ISO date"):
+            _validate_window_dates(bad, "")
+
+
 class _FakeResp:
     def __init__(self, content):
         self.content = content

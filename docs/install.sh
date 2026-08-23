@@ -95,7 +95,14 @@ if ! command -v uv >/dev/null 2>&1 || uv_predates_specifiers; then
     # stream — and feeds `sh` a truncated script when a connection drops
     # mid-transfer. The user would then be told uv "is not on PATH", which sends
     # them to do something that cannot help.
-    uv_script="${TMPDIR:-/tmp}/yeaboi-uv-installer.$$.sh"
+    # `mktemp` under $HOME, not a PID-named path in /tmp. Fetch-then-execute is
+    # this file's entire job, so the gap between the two is the thing to protect:
+    # a predictable name in a world-writable directory lets a local attacker
+    # pre-create it as a symlink (curl -o and wget -O both follow, writing the
+    # installer through the link) or swap the file after the download and before
+    # `sh` reads it. mktemp is O_EXCL, mode 0600 and unguessable. Under $HOME so
+    # the header's "writes only under $HOME" is literally true.
+    uv_script=$(mktemp "$HOME/.yeaboi-uv-installer.XXXXXX") || die "could not create a temporary file under $HOME"
     trap 'rm -f "$uv_script"' EXIT INT TERM
     if command -v curl >/dev/null 2>&1; then
         curl -LsSf "$uv_installer" -o "$uv_script" || die "could not download the uv installer from $uv_installer
@@ -123,6 +130,15 @@ if ! command -v uv >/dev/null 2>&1 || uv_predates_specifiers; then
         . "$HOME/.local/bin/env"
     fi
     command -v uv >/dev/null 2>&1 || die "uv installed but is not on PATH — open a new shell and re-run."
+    # The predicate again, not just `command -v`. If the installer honoured a
+    # custom UV_INSTALL_DIR it may not have written the env file above, leaving
+    # the *old* uv still first on PATH — which passes `command -v` and then
+    # rejects `--python '>=3.10'` with a message that explains nothing.
+    if uv_predates_specifiers; then
+        die "the uv on PATH ($(uv --version 2>/dev/null)) is older than 0.4.30 and cannot
+       resolve a Python version specifier. A newer uv was installed but is not
+       first on PATH — open a new shell and re-run, or upgrade with 'uv self update'."
+    fi
 fi
 
 # ---------------------------------------------------------------------------

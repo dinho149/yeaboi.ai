@@ -214,9 +214,15 @@ class CeremonyStore:
         # The guard compares this to a slot's date. An unparseable one would not
         # crash a screen, but it would silently never match — a skip that reads
         # as set and never takes effect.
-        if ceremony.skip_next:
+        skip_next = ceremony.skip_next
+        if skip_next:
             try:
-                parse_date(ceremony.skip_next)
+                # Stored canonical, not verbatim. ISO-8601 has several spellings of
+                # the same day and the guard above compares this as a *string* — so
+                # a valid `20260818` would pass validation, never equal the slot's
+                # `2026-08-18`, and sort after it, leaving a skip that neither fires
+                # nor clears.
+                skip_next = parse_date(skip_next).isoformat()
             except ValueError as exc:
                 raise ValueError(
                     f"invalid skip_next {ceremony.skip_next!r} — use an ISO date, e.g. 2026-08-18"
@@ -225,6 +231,7 @@ class CeremonyStore:
         existing = self.get(ceremony.session_id, ceremony.name)
         stamped = replace(
             ceremony,
+            skip_next=skip_next,
             created_at=ceremony.created_at or (existing.created_at if existing else "") or _now(),
             updated_at=_now(),
         )
