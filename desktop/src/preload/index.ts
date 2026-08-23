@@ -13,6 +13,13 @@ export interface YeaboiBridge {
   ) => Promise<{ status: number; body: unknown }>;
   getBackendState: () => Promise<unknown>;
   onBackendState: (callback: (state: unknown) => void) => void;
+  /** The ambient feed, read once in main and pushed here: consent requests and
+   *  the awareness notices. */
+  onEvent: (callback: (event: unknown) => void) => void;
+  /** Main asking the app to show a route — the tray, or a click on the duck. */
+  onNavigate: (callback: (route: string) => void) => void;
+  /** The desktop pet's on/off, persisted through the backend. */
+  setPetEnabled: (enabled: boolean) => Promise<unknown>;
   /** Open one live board in its own top-level window, by id. */
   openBoard: (boardId: string) => Promise<unknown>;
   platform: string;
@@ -32,6 +39,13 @@ const bridge: YeaboiBridge = {
       .finally(() => ipcRenderer.removeListener(channel, handler));
   },
   getBackendState: () => ipcRenderer.invoke('backend:get-state'),
+  onEvent: (callback) => {
+    ipcRenderer.on('app:event', (_event, payload: unknown) => callback(payload));
+  },
+  onNavigate: (callback) => {
+    ipcRenderer.on('app:navigate', (_event, route: string) => callback(route));
+  },
+  setPetEnabled: (enabled) => ipcRenderer.invoke('pet:set-enabled', enabled),
   openBoard: (boardId) => ipcRenderer.invoke('boards:open', boardId),
   onBackendState: (callback) => {
     ipcRenderer.on('backend:state', (_event, state: unknown) => callback(state));

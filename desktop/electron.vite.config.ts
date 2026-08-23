@@ -22,7 +22,8 @@ export default defineConfig({
   },
   preload: {
     build: {
-      lib: { entry: 'src/preload/index.ts' },
+      // Two preloads: the app's narrow bridge, and the pet's narrower one.
+      lib: { entry: { index: 'src/preload/index.ts', pet: 'src/preload/pet.ts' } },
       rollupOptions: {
         // Sandboxed preloads cannot load ESM — emit CommonJS.
         output: { format: 'cjs', entryFileNames: '[name].cjs' },

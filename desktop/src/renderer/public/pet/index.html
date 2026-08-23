@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
+    <link rel="stylesheet" href="pet.css" />
+    <title>yeaboi duck</title>
+  </head>
+  <body>
+    <!-- The pet. Three aligned sprite layers (same art as the yeaboi.ai
+         landing duck): base body, a gently flapping wing, and sunglasses that
+         fly up the forehead on a startle jump. `.duck-walker` carries the
+         JS-driven translate + scaleX facing flip. -->
+    <div class="duck-walker unloaded" id="duck-walker" aria-hidden="true">
+      <div class="duck-rig" id="duck-rig">
+        <!-- the body is its own transform layer so procedural squash/stretch,
+             lean and jiggle (pet.js springs) never fight the wrapper's walk
+             bob, the wing flap, or the glasses bob. -->
+        <div class="duck-body" id="duck-body">
+          <!-- real feet sliced out of the original sprite, each a full-canvas
+               overlay so it lines up perfectly. They swing from the hip while
+               walking (pet.css) — actual art, actually stepping. -->
+          <img class="d-foot d-foot-back" src="assets/duck-foot-back.png" alt="" />
+          <img class="d-foot d-foot-front" src="assets/duck-foot-front.png" alt="" />
+          <img class="d-base" src="assets/duck-body.png" alt="" />
+          <img class="d-wing" src="assets/duck-wing.png" alt="" />
+          <img class="d-glasses2" src="assets/duck-glasses.png" alt="" />
+          <img class="d-glasses" src="assets/duck-glasses.png" alt="" />
+        </div>
+      </div>
+    </div>
+    <div class="duck-bubble" id="duck-bubble"></div>
+
+    <script src="pet.js"></script>
+  </body>
+</html>

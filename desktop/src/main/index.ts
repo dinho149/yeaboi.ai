@@ -3,15 +3,25 @@
 // navigation off the app, external links to the OS browser. Live boards get
 // their own top-level windows (boards.ts) because a board page refuses to be
 // framed and its host URL carries an admin token.
+//
+// Since M10 the app also persists in the tray with the window closed: the duck
+// pet is a window of its own, and awareness is only worth anything if the app
+// is still there to notice.
 
 import { join } from 'node:path';
 import { BrowserWindow, app, ipcMain, shell } from 'electron';
-import { registerApiProxy } from './api-proxy';
+import { callApi, registerApiProxy } from './api-proxy';
 import { closeAllBoardWindows, registerBoardWindows } from './boards';
+import { EventReader, broadcast } from './events';
+import { Pet, type PetNotice } from './pet';
 import { Sidecar } from './sidecar';
+import { AppTray } from './tray';
 
 const sidecar = new Sidecar();
+const pet = new Pet();
+const events = new EventReader(sidecar);
 let mainWindow: BrowserWindow | null = null;
+let tray: AppTray | null = null;
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -47,7 +57,33 @@ function createMainWindow(): void {
   }
 }
 
-// Global hardening for every webContents this app ever creates (boards later).
+/** Bring the app forward, optionally at a route. Used by the tray and by a
+ *  click on a duck that is holding a question. */
+function openApp(route = ''): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+  const window = mainWindow;
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  if (route) window.webContents.send('app:navigate', route);
+}
+
+/** The pet's on/off state lives in the backend so the terminal, the tray and
+ *  the app's own settings cannot disagree about it. */
+async function loadPetPreference(): Promise<boolean> {
+  const result = await callApi(sidecar, '/api/ambience');
+  if (result.status !== 200) return false;
+  return Boolean((result.body as { pet?: { enabled?: boolean } }).pet?.enabled);
+}
+
+async function setPetPreference(enabled: boolean): Promise<void> {
+  pet.setEnabled(enabled);
+  tray?.setPetEnabled(enabled);
+  await callApi(sidecar, '/api/ambience', { method: 'POST', body: { pet_enabled: enabled } });
+}
+
+// Global hardening for every webContents this app ever creates (boards, pet).
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', (event, url) => {
     const allowed =
@@ -61,16 +97,12 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', () => openApp());
 
   void app.whenReady().then(() => {
     registerApiProxy(sidecar);
     registerBoardWindows(sidecar);
+    pet.register((route) => openApp(route));
     // The pull half (a window that mounted after 'ready' would otherwise wait
     // forever for a transition that already happened) and the push half.
     ipcMain.handle('backend:get-state', () => {
@@ -79,6 +111,10 @@ if (!gotLock) {
       if (state.kind !== 'ready') return state;
       return { kind: 'ready' };
     });
+    ipcMain.handle('pet:set-enabled', async (_event, enabled: unknown) => {
+      await setPetPreference(Boolean(enabled));
+      return { enabled: pet.on };
+    });
     sidecar.onState((state) => {
       console.log(`[backend] ${state.kind}${state.kind === 'down' ? `: ${state.reason}` : ''}`);
       // Same stripping as the pull half: the handshake (token) stays in main.
@@ -86,20 +122,44 @@ if (!gotLock) {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send('backend:state', safe);
       }
+      // The duck stays on screen when the backend falls over — he just stops
+      // knowing anything, which is the honest degradation.
+      if (state.kind === 'ready') {
+        void loadPetPreference().then((enabled) => {
+          pet.setEnabled(enabled);
+          tray?.setPetEnabled(enabled);
+        });
+      }
     });
+
+    // One reader for the ambient feed: the renderer gets everything (the
+    // consent modal lives there), the duck gets only what he can say.
+    events.start();
+    broadcast(events, () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []));
+    events.on((event) => {
+      if (event.type !== 'notice') return;
+      pet.notify({
+        quip: String(event['quip'] ?? ''),
+        sticky: Boolean(event['sticky']),
+        route: String(event['route'] ?? ''),
+      } satisfies PetNotice);
+    });
+
     void sidecar.start();
     createMainWindow();
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    tray = new AppTray(pet, {
+      open: () => openApp(),
+      togglePet: (enabled) => void setPetPreference(enabled),
+      quit: () => app.quit(),
     });
+    tray.create(false);
+
+    app.on('activate', () => openApp());
   });
 
   app.on('window-all-closed', () => {
-    // Tray persistence (pet + awareness) lands in M10; until then closing the
-    // last window quits — including on macOS, where a dockless zombie with no
-    // windows and no tray would be unreachable.
-    app.quit();
+    // Deliberately no quit: the tray is the app's other home, and the duck may
+    // still be on the desktop with the window shut. Quit is the tray's Quit.
   });
 
   let cleanShutdown = false;
@@ -110,6 +170,9 @@ if (!gotLock) {
     // underneath them, and a window left pointing at a dead port shows an
     // error page on the way out.
     closeAllBoardWindows();
+    pet.hide();
+    events.stop();
+    tray?.destroy();
     void sidecar.stop().finally(() => {
       cleanShutdown = true;
       app.quit();
