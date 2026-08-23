@@ -7420,87 +7420,34 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 def _collect_performance_data(message: str = "") -> dict:
     """Gather Performance page data: latest session + the Jira/AzDO engineer roster.
 
-    The roster is the real people who did work on the board (assignees) — see
-    performance/roster.py. Session context (sprint length/project) is best-effort;
-    the page still works with no session.
+    A thin shim over ``performance.setup`` — the roster, its tracker/plan
+    fallback and the per-engineer hints are surface-neutral decisions the
+    desktop reads the same way.
     """
-    data: dict = {"message": message, "session_id": "", "session_name": "", "roster": [], "roster_hints": []}
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
+    from yeaboi.performance.setup import collect_roster
 
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id() or ""
-            data["session_id"] = session_id
-            if session_id:
-                meta = store.get_session(session_id) or {}
-                data["session_name"] = make_display_name(meta) if meta else session_id
-    except Exception:
-        logger.warning("performance: failed to resolve latest session", exc_info=True)
-    try:
-        from yeaboi.performance.roster import fetch_roster
-
-        data["roster"] = [r.name for r in fetch_roster()]
-    except Exception:
-        logger.warning("performance: failed to fetch roster", exc_info=True)
-    # Fallback: no live Jira/AzDO roster → use the planning session's own team
-    # members (also board-derived) so Performance is usable without a live tracker.
-    if not data["roster"] and data["session_id"]:
-        data["roster"] = _performance_session_team(data["session_id"])
-        if data["roster"]:
-            logger.info("performance: roster fell back to session team members")
-    data["roster_hints"] = _performance_roster_hints(data["roster"])
-    logger.info("performance: %d engineer(s) in roster", len(data["roster"]))
-    return data
+    data = collect_roster(db_path=_ana_dbp)
+    return {
+        "message": message,
+        "session_id": data["session_id"],
+        "session_name": data["session_name"],
+        "roster": data["roster"],
+        "roster_hints": data["hints"],
+    }
 
 
 def _performance_session_team(session_id: str) -> list[str]:
-    """Return the session's team-member names (fallback roster when no tracker).
+    """The session's team-member names (fallback roster when no tracker)."""
+    from yeaboi.performance.setup import session_team
 
-    Reads ``selected_team_members`` from the saved plan state — the same
-    board-derived roster the standup uses. Best-effort: any error → []. Names are
-    de-duplicated preserving order and sorted for a stable page.
-    """
-    try:
-        from yeaboi.sessions import SessionStore
-
-        with SessionStore(_ana_dbp) as store:
-            state = store.load_state(session_id) or {}
-    except Exception:
-        logger.warning("performance: failed to load session team members", exc_info=True)
-        return []
-    names = [str(n).strip() for n in (state.get("selected_team_members") or ()) if str(n).strip()]
-    return sorted(dict.fromkeys(names), key=str.lower)
+    return session_team(session_id, db_path=_ana_dbp)
 
 
 def _performance_roster_hints(roster: list[str]) -> list[str]:
-    """Build a one-line status hint per engineer (open 1:1 actions + review on file).
+    """One status line per engineer (open 1:1 actions + review on file)."""
+    from yeaboi.performance.setup import roster_hints
 
-    Shown as the description under the selected engineer's big ASCII name. Best-effort
-    — a store error just yields the generic hint so the page always renders.
-    """
-    generic = "1:1 prep · completion · 6-month review"
-    if not roster:
-        return []
-    try:
-        from yeaboi.performance.store import PerformanceStore
-
-        with PerformanceStore(_ana_dbp) as store:
-            open_actions = store.get_all_open_action_items()
-            hints: list[str] = []
-            for name in roster:
-                n = len(open_actions.get(name, ()))
-                has_review = store.get_latest_review(name) is not None
-                if n:
-                    hint = f"{n} open 1:1 action{'s' if n != 1 else ''}"
-                else:
-                    hint = "no open 1:1 actions"
-                if has_review:
-                    hint += " · review on file"
-                hints.append(hint)
-            return hints
-    except Exception:
-        logger.warning("performance: failed to build roster hints", exc_info=True)
-        return [generic for _ in roster]
+    return roster_hints(roster, db_path=_ana_dbp)
 
 
 def _performance_get_transcript(console, live, read_key, frame_time, supports_timeout) -> tuple[str, list[str]] | None:
@@ -9638,19 +9585,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     # See docs: "Reporting Mode" — TUI page
     """
-    from datetime import date as _date
-    from datetime import timedelta as _timedelta
-
-    from yeaboi.reporting.activity import (
-        PERIOD_LABELS,
-        PERIOD_LAST_MONTH,
-        PERIOD_LAST_SPRINT,
-        PERIOD_LAST_WEEK,
-        PERIOD_QUARTER,
-        PERIOD_WINDOW,
-        available_report_sources,
-    )
-    from yeaboi.reporting.sprints import list_sprints, mark_in_quarter, quarter_bounds
+    from yeaboi.reporting import setup as report_setup
+    from yeaboi.reporting.activity import PERIOD_QUARTER, PERIOD_WINDOW
+    from yeaboi.reporting.sprints import quarter_bounds
     from yeaboi.reporting.style import (
         COLOR_ROLES,
         CONTENT_FITS,
@@ -9672,18 +9609,12 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     session_name = base["session_name"]
 
     q_label, q_start, q_end = quarter_bounds()
-    periods = [
-        (PERIOD_LAST_WEEK, PERIOD_LABELS[PERIOD_LAST_WEEK], "The last 7 days of completed work"),
-        (PERIOD_LAST_SPRINT, PERIOD_LABELS[PERIOD_LAST_SPRINT], "The most recent sprint's completed work"),
-        (PERIOD_LAST_MONTH, PERIOD_LABELS[PERIOD_LAST_MONTH], "The last ~4 weeks across ~2 sprints"),
-        (PERIOD_QUARTER, f"Whole quarter ({q_label})", "Pick the sprints that make up the quarter"),
-        (PERIOD_WINDOW, PERIOD_LABELS[PERIOD_WINDOW], "Pick explicit start and end dates"),
-    ]
+    periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
     # the source grid probes which trackers / code hosts / doc platforms have creds.
     palettes = all_palettes()
     theme_names = list(palettes)
-    source_grid = available_report_sources()
+    source_grid = report_setup.source_grid()
 
     state = {
         "view": "picker",
@@ -9801,23 +9732,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         plural = "s" if n != 1 else ""
         return f"Report generated — {n} item{plural} delivered. Auto-saved (md/html/slides)."
 
-    source_titles = {
-        "jira": "Jira",
-        "azuredevops": "Azure DevOps",
-        "github": "GitHub",
-        "confluence": "Confluence",
-        "notion": "Notion",
-    }
-
     def _sources_summary() -> str:
         """One status line for the picker: what the next Generate will consult."""
-        sel = state["sources"] if state["sources"] is not None else source_grid
-
-        def _fmt(component: str) -> str:
-            chosen = [source_titles.get(s, s) for s in sel.get(component, [])]
-            return " + ".join(chosen) if chosen else "—"
-
-        return f"Sources: {_fmt('delivery')}  ·  Code: {_fmt('code')}  ·  Docs: {_fmt('docs')}"
+        return report_setup.sources_summary(state["sources"], source_grid)
 
     def _confirm_sources(*, force: bool = False) -> dict | None:
         """Confirm which data sources feed the report (analysis-style grid).
@@ -9830,19 +9747,18 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         """
         from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
 
-        grid = {c: list(v) for c, v in source_grid.items() if v}
-        total = sum(len(v) for v in grid.values())
+        grid = report_setup.offerable_grid(source_grid)
         if not grid:
             # Nothing configured — the engine surfaces the "no board" warning.
             if force:
-                state["message"] = "No data sources configured — connect a tracker in Settings."
+                state["message"] = report_setup.NO_SOURCES_MESSAGE
             state["sources"] = {}
             return {}
-        if not force and total <= 1:
+        if not force and not report_setup.sources_step_applies(source_grid):
             logger.info("reporting: single configured source — skipping sources step")
             state["sources"] = grid
             return grid
-        logger.info("reporting: sources select opened (%d source(s))", total)
+        logger.info("reporting: sources select opened (%d source(s))", sum(len(v) for v in grid.values()))
         result = _run_component_select(
             live,
             console,
@@ -9850,26 +9766,18 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             frame_time,
             supports_timeout,
             grid,
-            descriptions={
-                "delivery": "where completed tickets come from",
-                "code": "merged PRs/commits as supporting context",
-                "docs": "doc updates as supporting context",
-            },
+            descriptions=report_setup.COMPONENT_DESCRIPTIONS,
             initial=state["sources"],
             theme=REPORTING_THEME,
             brand="REPORTING SETUP",
             title_builder=lambda w, h: reporting_title(width=w),
             footer_verb="report on",
-            required={"delivery": "Select at least one ticketing source."} if grid.get("delivery") else None,
+            required={"delivery": report_setup.NO_DELIVERY_MESSAGE} if grid.get("delivery") else None,
         )
         if result == "cancel":
             logger.info("reporting: sources selection cancelled")
             return None
-        # A fully-unchecked component comes back absent from the picker result;
-        # store it as an explicit empty list — a missing key means "auto" to
-        # normalize_sources, which would silently re-enable what the user just
-        # deselected.
-        result = {c: result.get(c, []) for c in grid}
+        result = report_setup.normalize_selection(result, source_grid)
         state["sources"] = result
         logger.info("reporting: sources confirmed — %s", result)
         return result
@@ -9969,13 +9877,13 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
         _run_report_generate(_make)
 
-    def _run_quarter(window_start: str, window_end: str, names: tuple, label: str) -> None:
+    def _run_quarter(*, window_start: str, window_end: str, sprint_names: tuple, period_label_override: str) -> None:
         """Generate a quarter report over an explicit sprint-derived window (threaded)."""
         logger.info(
             "reporting: generating quarter report %s → %s over %d sprint(s) (session=%s)",
             window_start,
             window_end,
-            len(names),
+            len(sprint_names),
             session_id,
         )
         from yeaboi.reporting.engine import run_delivery_report
@@ -9987,8 +9895,8 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
-                sprint_names=names,
-                period_label_override=label,
+                sprint_names=sprint_names,
+                period_label_override=period_label_override,
                 theme=state["theme"],
                 sources=state["sources"],
                 on_progress=on_progress,
@@ -10030,12 +9938,12 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     def _generate_window() -> None:
         """Prompt for explicit start/end dates, then generate over that window (threaded)."""
-        today = _date.today()
-        start_iso = _ask_date("Custom range — start date", (today - _timedelta(days=28)).isoformat())
+        default_start, default_end = report_setup.default_window()
+        start_iso = _ask_date("Custom range — start date", default_start)
         if start_iso is None:
             state["message"] = ""
             return
-        end_iso = _ask_date("Custom range — end date", today.isoformat(), not_before=start_iso)
+        end_iso = _ask_date("Custom range — end date", default_end, not_before=start_iso)
         if end_iso is None:
             state["message"] = ""
             return
@@ -10063,25 +9971,16 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         When no sprint list is available (no tracker, no plan sprints), skip the
         picker and report straight over the calendar-quarter dates.
         """
-        plan_state = {}
-        try:
-            from yeaboi.sessions import SessionStore
-
-            with SessionStore(_ana_dbp) as store:
-                plan_state = store.load_state(session_id) or {}
-        except Exception:  # noqa: BLE001 — plan state is only the fallback source
-            logger.warning("reporting: could not load plan state for sprint list", exc_info=True)
-        refs = mark_in_quarter(list_sprints(plan_state), q_start, q_end)
+        refs = report_setup.sprint_options(session_id, db_path=_ana_dbp)
         if not refs:
             logger.info("reporting: no sprint list available — reporting over the calendar quarter")
-            today_iso = _date.today().isoformat()
-            _run_quarter(q_start, min(q_end, today_iso), (), q_label)
+            _run_quarter(**report_setup.calendar_quarter_window())
             state["message"] = "No sprint list available — reported over the calendar quarter. " + state["message"]
             return
         logger.info("reporting: sprint multi-select opened (%d sprint(s))", len(refs))
+        inq = report_setup.default_checked(refs)
         state["sprints"] = refs
-        state["sprint_checked"] = {i for i, s in enumerate(refs) if s.in_quarter}
-        inq = [i for i, s in enumerate(refs) if s.in_quarter]
+        state["sprint_checked"] = set(inq)
         state["sprint_cursor"] = inq[0] if inq else 0
         state["view"] = "sprint_select"
         state["sel"], state["scroll"], state["message"] = 0, 0, ""
@@ -10089,22 +9988,15 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     def _generate_from_selection() -> None:
         """Compute the window from the checked sprints and generate the quarter report."""
         refs = state["sprints"]
-        checked = sorted(i for i in state["sprint_checked"] if 0 <= i < len(refs))
-        if not checked:
+        window = report_setup.window_from_sprints(refs, state["sprint_checked"])
+        if not window:
             logger.info("reporting: sprint selection confirmed with no sprints checked")
-            state["message"] = "Select at least one sprint (Space to toggle)."
+            state["message"] = report_setup.NO_SPRINTS_CHECKED_MESSAGE
             return
-        logger.info("reporting: sprint selection confirmed (%d of %d sprint(s))", len(checked), len(refs))
-        sel = [refs[i] for i in checked]
-        starts = [s.start_date for s in sel if s.start_date]
-        ends = [s.end_date for s in sel if s.end_date]
-        today_iso = _date.today().isoformat()
-        window_start = min(starts) if starts else q_start
-        window_end = min(max(ends) if ends else q_end, today_iso)
-        names = tuple(s.name for s in sel)
-        detected = {i for i, s in enumerate(refs) if s.in_quarter}
-        label = q_label if set(checked) == detected else f"{q_label} (custom)"
-        _run_quarter(window_start, window_end, names, label)
+        logger.info(
+            "reporting: sprint selection confirmed (%d of %d sprint(s))", len(window["sprint_names"]), len(refs)
+        )
+        _run_quarter(**window)
 
     def _tilde(p) -> str:
         """Abbreviate $HOME to ~ so export paths survive the banner's ellipsis."""
@@ -10120,17 +10012,11 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         Only asks when expanding actually costs slides; the answer applies to this
         export only (the saved preference stays "ask").
         """
-        style = state["style"]
-        report = state.get("report")
-        if style.content_fit != "ask" or report is None:
-            return style
-        from yeaboi.reporting.layout import count_fit_slides
         from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
 
-        tight_n, expand_n = count_fit_slides(report, style)
-        if expand_n <= tight_n:  # everything fits without extra slides — nothing to ask
-            return dataclasses.replace(style, content_fit="expand")
-        extra = expand_n - tight_n
+        style, extra = report_setup.resolve_fit(state.get("report"), state["style"])
+        if not extra:
+            return style
         raw = _standup_read_line(
             console,
             live,
@@ -10145,9 +10031,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         )
         if raw is None:
             return None
-        chosen = "tight" if raw.strip().lower().startswith("n") else "expand"
-        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, chosen)
-        return dataclasses.replace(state["style"], content_fit=chosen)
+        expand = not raw.strip().lower().startswith("n")
+        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, "expand" if expand else "tight")
+        return report_setup.apply_fit(state["style"], expand)
 
     def _export_files() -> str:
         report = state.get("report")
@@ -10710,8 +10596,8 @@ def _run_roadmap_page(
 
     # See docs: "Roadmap Intake" — TUI page
     """
-    from yeaboi.roadmap.engine import intake_mode_for, run_roadmap_analysis
-    from yeaboi.roadmap.ingest import RoadmapSource, parse_confluence_locator, parse_notion_locator
+    from yeaboi.roadmap import setup as roadmap_setup
+    from yeaboi.roadmap.engine import run_roadmap_analysis
     from yeaboi.roadmap.store import RoadmapStore
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_roadmap_screen
 
@@ -10719,19 +10605,7 @@ def _run_roadmap_page(
 
     def _sources() -> list[tuple[str, str, str]]:
         """Source options with configured-status hints (still selectable when unset)."""
-        from yeaboi.config import get_confluence_base_url, get_notion_token
-
-        conf_hint = "Read a page by URL, ID, or title"
-        if not get_confluence_base_url():
-            conf_hint = "Not configured — set CONFLUENCE_* (or JIRA_*) in .env"
-        notion_hint = "Read a page by URL or ID"
-        if not get_notion_token():
-            notion_hint = "Not configured — set NOTION_TOKEN in .env"
-        return [
-            ("confluence", "Confluence page", conf_hint),
-            ("notion", "Notion page", notion_hint),
-            ("local", "Local file (.md .txt .rst .pdf .docx .pptx)", "Read a roadmap document from disk"),
-        ]
+        return [(o["key"], o["label"], o["hint"]) for o in roadmap_setup.source_options()]
 
     state = {
         "view": "source",
@@ -10886,12 +10760,7 @@ def _run_roadmap_page(
 
     def _enter_locator() -> None:
         """Ask for the selected source's locator, then analyze."""
-        key = _sources()[state["selected"]][0]
-        prompts = {
-            "confluence": "Confluence page URL, ID, or title",
-            "notion": "Notion page URL or ID",
-            "local": "Roadmap file path (.md .txt .rst .pdf .docx .pptx)",
-        }
+        option = roadmap_setup.source_options()[state["selected"]]
         from yeaboi.ui.shared._components import PLANNING_THEME, planning_title
 
         raw = _standup_read_line(
@@ -10900,7 +10769,7 @@ def _run_roadmap_page(
             read_key,
             frame_time,
             supports_timeout,
-            prompt=prompts[key],
+            prompt=option["prompt"],
             step="Roadmap source",
             theme=PLANNING_THEME,
             title=planning_title(),
@@ -10908,13 +10777,13 @@ def _run_roadmap_page(
         if raw is None or not raw.strip():
             state["message"] = ""
             return  # Esc / empty — stay on the source view
-        raw = raw.strip()
+        key = option["key"]
         logger.info("roadmap source entered: type=%s", key)
+        source, problem = roadmap_setup.resolve_source(key, raw)
+        if source is None:
+            state["message"] = problem
+            return
         if key == "local":
-            path = Path(raw).expanduser()
-            if not path.exists() or not path.is_file():
-                state["message"] = f"File not found: {path}"
-                return
             # Sandbox pre-flight (main thread): consent before the engine reads
             # the file, so a denial is a status line, not an exception mid-run.
             from yeaboi.ui.shared._consent import _preflight_path_consent
@@ -10925,29 +10794,19 @@ def _run_roadmap_page(
                 read_key,
                 frame_time,
                 supports_timeout,
-                path,
+                Path(source.locator),
                 mode="read",
                 context="Roadmap intake — local file",
             ):
-                state["message"] = f"Access to {path} denied — allow it via Settings → Paths."
+                state["message"] = f"Access to {source.locator} denied — allow it via Settings → Paths."
                 return
-            source = RoadmapSource(source_type="local", locator=str(path), label=path.name)
-        elif key == "confluence":
-            source = RoadmapSource(source_type="confluence", locator=parse_confluence_locator(raw), label=raw)
-        else:
-            source = RoadmapSource(source_type="notion", locator=parse_notion_locator(raw), label=raw)
         _analyze(source)
 
     def _plan_selected() -> tuple[str, str] | None:
-        analysis = state["analysis"]
-        projects = tuple(getattr(analysis, "projects", ()) or ())
-        if not projects:
-            state["message"] = "No projects to plan — Re-analyze or Change Source."
-            return None
-        project = projects[max(0, min(state["cursor"], len(projects) - 1))]
-        description = project.description or project.name
-        logger.info("roadmap: Plan This → %r (size=%s)", project.name, project.size)
-        return (intake_mode_for(project), description)
+        picked = roadmap_setup.project_choice(state["analysis"], state["cursor"])
+        if picked is None:
+            state["message"] = roadmap_setup.NO_PROJECTS_MESSAGE
+        return picked
 
     _stay = object()  # sentinel: _source_back handled the key, keep the page running
 

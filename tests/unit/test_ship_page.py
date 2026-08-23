@@ -16,6 +16,7 @@ import subprocess
 import pytest
 
 from yeaboi.agent.state import ShipRun, ShipValidation
+from yeaboi.ship import setup as ship_setup
 from yeaboi.tools.local_git import git_subprocess_env
 from yeaboi.ui.mode_select import _ship
 
@@ -43,18 +44,18 @@ class TestResolveTarget:
     def test_a_subdirectory_resolves_to_the_toplevel(self, repo):
         # Consent is checked against what comes back, and every write lands on
         # the toplevel — so a subdirectory must not be what gets granted.
-        target, problem = _ship._resolve_target(str(repo / "src"))
+        target, problem = ship_setup.resolve_target(str(repo / "src"))
         assert problem == ""
         assert target == str(repo)
 
     def test_a_dirty_repo_is_refused_by_name(self, repo):
         (repo / "README.md").write_text("changed\n", encoding="utf-8")
-        target, problem = _ship._resolve_target(str(repo))
+        target, problem = ship_setup.resolve_target(str(repo))
         assert target == str(repo)
         assert "uncommitted changes" in problem
 
     def test_a_path_outside_any_repo_has_no_target(self, tmp_path):
-        target, problem = _ship._resolve_target(str(tmp_path))
+        target, problem = ship_setup.resolve_target(str(tmp_path))
         assert target == ""
         assert problem  # git's own words; the caller shows them and stops
 
