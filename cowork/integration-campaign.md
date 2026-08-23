@@ -30,7 +30,7 @@ layers rather than seven thin ones.
 | # | Angle | What lands | Paths |
 |---|---|---|---|
 | 1 | **Edge** | the provider client, its contract cassette, and the credential getters | `tools/<provider>.py`, `tests/contract/`, `config.py` *(Extends)* |
-| 2 | **Connect** | the wizard step, `_verify_<provider>`, and the settings Credentials section | `ui/provider_select/`, `_screens_secondary.py` *(both Extends)* |
+| 2 | **Connect** | the wizard step, `_verify_<provider>`, and the settings Credentials section | `ui/provider_select/`, `provider_verification.py`, `_screens_secondary.py` *(all Extends)* |
 | 3 | **Reach** | per-mode wiring, the `integrations-map.md` row, and a recorded gap for every mode left unwired | `standup/collector.py`, `analysis/engine.py`, `reporting/activity.py`, `roadmap/ingest.py` *(all Extends)* |
 
 Angle 2 is one PR and not two because the probe and its only caller ship together — split, it lands
@@ -39,7 +39,7 @@ a `_verify_*` nothing calls, which is the shape of the gap this whole design exi
 ### Angle 2 has a prerequisite, and it is not the campaign's to build
 
 **Verification exists only in the wizard.** `_verify_jira`, `_verify_azdevops`, `_verify_notion`,
-`_verify_confluence` and `_verify_vc_token` all live in `ui/provider_select/_verification.py`, and
+`_verify_confluence` and `_verify_vc_token` all live in `provider_verification.py`, and
 the settings Credentials tab calls none of them — so a credential that expires is discovered by a
 failed run rather than by the screen that shows it. `integrations-map.md` records that as an open
 gap owned by **tui-ux**, and it stays theirs: it is one surface every provider then reuses, so
@@ -67,7 +67,7 @@ strongest property this fleet has. Every angle has a filesystem answer:
 |---|---|
 | 1 | `src/yeaboi/tools/<provider>.py` exists and `tests/contract/test_<provider>_contract.py` passes |
 | 1 | `config.py` has the credential getters, and `pyproject.toml` carries the extra |
-| 2 | `_verification.py` has `_verify_<provider>`, and `ui/provider_select/` has its step |
+| 2 | `provider_verification.py` has `_verify_<provider>`, and `ui/provider_select/` has its step |
 | 2 | `_screens_secondary.py`'s `_SETTINGS_TAB_SECTIONS["Credentials"]` names it |
 | 3 | `integrations-map.md` has a `**<Provider>**` matrix row with no bare `—`, and a Per-provider section |
 

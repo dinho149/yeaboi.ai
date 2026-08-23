@@ -107,6 +107,8 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "description": "View API token usage, session history, and cost estimates.",
         "available": True,
         "color": "rgb(220,160,60)",
+        # A local dashboard over the usage DB — no LLM call, so no credential gate.
+        "llm": False,
     },
     {
         "key": "settings",
@@ -114,6 +116,9 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "description": "Manage API keys, LLM provider, and board configuration.",
         "available": True,
         "color": "rgb(160,160,180)",
+        # Makes no LLM call, and is where a broken key gets fixed — gating it
+        # would lock the user out of the only screen that helps them.
+        "llm": False,
     },
 ]
 

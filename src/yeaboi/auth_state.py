@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _stale = False
 _reason = ""
+# (provider, credential) whose live ping last came back good, so the happy path
+# does not pay a round trip on every mode entry. Only ever holds a *success*;
+# see check_llm_credentials.
+_verified_provider: tuple[str, str] | None = None
 
 # Display name per LLM_PROVIDER value, for messages like "Your Anthropic API key
 # looks invalid" — a lookup table because config.get_llm_provider() only ever
@@ -168,12 +172,21 @@ def _current_credential(provider: str) -> str:
     Bedrock and Ollama don't use an API key — Bedrock authenticates via IAM and
     is pinged with its region, Ollama is a local server pinged by its base URL.
     """
-    import os
-
-    from yeaboi.config import get_bedrock_region, get_google_api_key, get_ollama_base_url, get_openai_api_key
+    from yeaboi.config import (
+        get_anthropic_api_key,
+        get_bedrock_region,
+        get_google_api_key,
+        get_ollama_base_url,
+        get_openai_api_key,
+    )
 
     if provider == "anthropic":
-        return os.getenv("ANTHROPIC_API_KEY", "")
+        # Raises when unset, which cannot happen here — is_llm_configured()
+        # gates this call — but a probe must not be the thing that crashes.
+        try:
+            return get_anthropic_api_key()
+        except OSError:
+            return ""
     if provider == "openai":
         return get_openai_api_key() or ""
     if provider == "google":
@@ -183,6 +196,13 @@ def _current_credential(provider: str) -> str:
     if provider == "ollama":
         return get_ollama_base_url()
     return ""
+
+
+def clear_credential_cache() -> None:
+    """Forget a cached good result — call after credentials change in Settings."""
+    global _verified_provider
+    with _lock:
+        _verified_provider = None
 
 
 def check_llm_credentials() -> CredentialStatus:
@@ -196,7 +216,19 @@ def check_llm_credentials() -> CredentialStatus:
     API-key: the same one-token request the setup wizard verifies with) so an
     expired or revoked credential is caught before it silently degrades a
     mode's output to its deterministic fallback.
+
+    **Only a definite rejection counts as a failure.** A timeout, a proxy or an
+    unexpected status returns ``ok=True``: an inconclusive probe must not
+    accuse a working key, which is the rule ``probe_subscription_token`` has
+    always followed and the reason this does not simply negate the wizard's
+    pass/fail.
+
+    A *good* answer is cached for the process (keyed on the credential, so
+    editing it in Settings re-checks), which keeps the happy path off the
+    network on every single mode entry. A bad answer is never cached — a still
+    broken key must be reported every time it is still broken.
     """
+    global _verified_provider
     from yeaboi.config import get_anthropic_subscription_token, get_llm_provider, is_llm_configured
 
     provider = get_llm_provider()
@@ -204,6 +236,7 @@ def check_llm_credentials() -> CredentialStatus:
 
     configured, message = is_llm_configured()
     if not configured:
+        logger.warning("credential check: %s not configured (%s)", label, message)
         return CredentialStatus(ok=False, configured=False, reason=message, provider_label=label)
 
     if provider == "anthropic" and get_anthropic_subscription_token():
@@ -211,8 +244,34 @@ def check_llm_credentials() -> CredentialStatus:
         reason = None if ok else (stale_reason() or "Subscription token looks expired")
         return CredentialStatus(ok=ok, configured=True, reason=reason, provider_label=label)
 
-    from yeaboi.provider_verification import _verify_api_key
+    from yeaboi.provider_verification import credential_verdict
 
     credential = _current_credential(provider)
-    ok, message = _verify_api_key({"provider_val": provider, "models": {}}, credential)
-    return CredentialStatus(ok=ok, configured=True, reason=None if ok else message, provider_label=label)
+    fingerprint = (provider, credential)
+    with _lock:
+        if _verified_provider == fingerprint:
+            return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
+
+    from yeaboi.agent.llm import resolve_model_name
+
+    logger.info("credential check: pinging %s", label)
+    # The model the modes will actually call, not the verifier's hardcoded
+    # default — otherwise this proves the wrong thing, and blocks on a 404 the
+    # day that default retires.
+    provider_spec = {"provider_val": provider, "models": {"default": resolve_model_name()}}
+    verdict, message = credential_verdict(provider_spec, credential)
+    logger.info("credential check: %s → %s (%s)", label, verdict, message)
+
+    if verdict == "ok":
+        with _lock:
+            _verified_provider = fingerprint
+        return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
+    if verdict == "inconclusive":
+        logger.warning("credential check inconclusive for %s (%s) — not blocking", label, message)
+        return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
+
+    from yeaboi.redaction import redact
+
+    # Redacted: a provider message can quote the request, and Google's carries
+    # the API key in the URL. Logs go through RedactingFormatter; a screen does not.
+    return CredentialStatus(ok=False, configured=True, reason=redact(message), provider_label=label)

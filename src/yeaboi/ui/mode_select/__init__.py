@@ -13291,19 +13291,20 @@ def select_mode(
             # ── Phase 2: Transition ───────────────────────────────────────────
             chosen = cards[selected]
 
-            # Every mode uses the LLM somewhere, so every card passes through
-            # here before its transition animation starts — one chokepoint that
-            # covers a mode added later automatically, unlike show_beta_notice's
-            # per-branch calls below. Two exemptions: "settings" makes no LLM
-            # call and is where a broken key gets fixed; --dry-run promises no
-            # LLM calls at all, so live-pinging the provider there would both
-            # break that promise and fail outright on the fixture key it runs
-            # with (see scripts/record_demo.py).
+            # Every card passes through here before its transition animation
+            # starts — one chokepoint, so a mode added later is gated by
+            # default rather than by its author remembering, which is what left
+            # show_beta_notice's per-branch calls covering two of a dozen modes.
+            # A card opts out with "llm": False (see _MODE_CARDS); --dry-run
+            # opts the whole run out, since it promises no LLM calls at all and
+            # runs on a fixture key (see scripts/record_demo.py).
             if (
-                chosen["key"] != "settings"
+                chosen.get("llm", True)
                 and not dry_run
                 and not show_llm_gate(live, console, read_key, _FRAME_TIME, _supports_timeout)
             ):
+                _restart_mode_select = True
+                _skip_fade_in = True
                 continue
 
             all_indices = list(range(n))

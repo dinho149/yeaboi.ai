@@ -17,8 +17,10 @@ from yeaboi import auth_state
 @pytest.fixture(autouse=True)
 def _clean_flag():
     auth_state.clear_subscription_stale()
+    auth_state.clear_credential_cache()
     yield
     auth_state.clear_subscription_stale()
+    auth_state.clear_credential_cache()
 
 
 @pytest.fixture
@@ -221,6 +223,137 @@ class TestCheckLlmCredentials:
         assert status.ok is True
         assert status.provider_label == "OpenAI"
         assert seen == {"provider_val": "openai", "credential": "sk-openai-good"}
+
+    def test_it_pings_the_model_the_modes_will_actually_call(self, monkeypatch):
+        # Not the verifier's hardcoded default: that proves the wrong thing, and
+        # blocks a good key with a 404 the day that default retires.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-good")
+        monkeypatch.setenv("LLM_MODEL", "claude-opus-4-9")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        seen = {}
+
+        def _fake_verify(provider, _credential):
+            seen["model"] = (provider.get("models") or {}).get("default")
+            return True, "Key verified"
+
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", _fake_verify)
+
+        auth_state.check_llm_credentials()
+
+        assert seen["model"] == "claude-opus-4-9"
+
+
+class TestInconclusiveChecksDoNotAccuse:
+    """Being offline is not an expired key.
+
+    `probe_subscription_token` has always refused to call an inconclusive probe
+    a failure; this is the same rule for the provider-agnostic path, which
+    otherwise reports "your API key looks invalid" to anyone on a train.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _on_api_key_auth(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fine")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Connection error: [Errno 8] nodename nor servname provided",
+            "Unexpected response: 503",
+            "Unexpected response from Bedrock",
+        ],
+    )
+    def test_an_inconclusive_answer_passes_the_user_through(self, monkeypatch, message):
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (False, message))
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is True
+        assert status.reason is None
+
+    @pytest.mark.parametrize("message", ["Invalid API key", "Key lacks permissions"])
+    def test_a_definite_rejection_still_blocks(self, monkeypatch, message):
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (False, message))
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is False
+        assert status.reason == message
+
+    def test_a_local_ollama_failure_is_definite(self, monkeypatch):
+        # A local server answers or it does not — no network to blame, and the
+        # message names the fix.
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key",
+            lambda *_a, **_kw: (False, "Ollama is installed but not running — start it with: ollama serve"),
+        )
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is False
+        assert "ollama serve" in status.reason
+
+    def test_the_reason_is_redacted_before_it_reaches_a_screen(self, monkeypatch):
+        # Google puts the API key in the request URL, so a provider message can
+        # carry it. Logs go through RedactingFormatter; a rendered screen does not.
+        monkeypatch.setenv("LLM_PROVIDER", "google")
+        monkeypatch.setenv("GOOGLE_API_KEY", "AIzaSyTOPSECRETVALUE1234567890")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key",
+            lambda *_a, **_kw: (False, "Invalid API key"),
+        )
+        monkeypatch.setattr(
+            "yeaboi.redaction.redact", lambda text: text.replace("AIzaSyTOPSECRETVALUE1234567890", "***")
+        )
+
+        status = auth_state.check_llm_credentials()
+
+        assert "AIzaSyTOPSECRETVALUE1234567890" not in (status.reason or "")
+
+
+class TestCredentialCache:
+    """A good answer is cached for the process; a bad one never is."""
+
+    @pytest.fixture(autouse=True)
+    def _on_api_key_auth(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-good")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+
+    def _counting_verify(self, monkeypatch, result):
+        calls = []
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key",
+            lambda *_a, **_kw: (calls.append(1), result)[1],
+        )
+        return calls
+
+    def test_a_good_result_is_not_re_pinged(self, monkeypatch):
+        calls = self._counting_verify(monkeypatch, (True, "Key verified"))
+
+        assert auth_state.check_llm_credentials().ok is True
+        assert auth_state.check_llm_credentials().ok is True
+
+        assert len(calls) == 1  # the happy path stays off the network
+
+    def test_a_bad_result_is_re_pinged_every_time(self, monkeypatch):
+        # A still-broken key must be reported every time it is still broken.
+        calls = self._counting_verify(monkeypatch, (False, "Invalid API key"))
+
+        assert auth_state.check_llm_credentials().ok is False
+        assert auth_state.check_llm_credentials().ok is False
+
+        assert len(calls) == 2
+
+    def test_changing_the_credential_re_checks(self, monkeypatch):
+        calls = self._counting_verify(monkeypatch, (True, "Key verified"))
+        auth_state.check_llm_credentials()
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-rotated")
+        auth_state.check_llm_credentials()
+
+        assert len(calls) == 2  # the cache is keyed on the credential itself
 
 
 class TestSettingsJump:

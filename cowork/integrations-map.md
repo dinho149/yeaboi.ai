@@ -23,7 +23,7 @@ Every provider is worth what its weakest link is worth:
 
 ```
 credential (config.py getter)
-   → verification (ui/provider_select/_verification.py — wizard only)
+   → verification (provider_verification.py — wizard + the pre-mode credential gate)
       → scope discovery (code_scope.py, TEAM_ANALYSIS_* vars, _available_*_sources)
          → per-mode consumption (the matrix below)
             → what the user finally sees

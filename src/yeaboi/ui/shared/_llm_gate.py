@@ -11,12 +11,19 @@ a live credential check, shown as a blocking screen the user must act on,
 Modelled on :mod:`yeaboi.ui.shared._beta_notice`: one modal run-loop that takes
 the caller's Live/console/read_key, so it composes with any frame-timed page
 loop. Unlike the beta notice, nothing here is ever acknowledged-once-and-done —
-a broken key is a transient problem, not a standing preference, so this checks
-live and asks again every single time it is still broken. There is exactly one
-call site (``ui.mode_select``, right before any mode is entered), so a mode
-added later inherits this automatically instead of needing its author to
-remember a per-mode call, the same gap that left the beta notice covering only
-two of a dozen modes.
+a broken key is a transient problem, not a standing preference, so a *failure*
+is re-reported every time it is still a failure. There is exactly one call site
+(``ui.mode_select``, right before any mode is entered), so a mode added later
+inherits this automatically instead of needing its author to remember a
+per-mode call, the same gap that left the beta notice covering only two of a
+dozen modes.
+
+Three rules keep a gate meant to prevent a broken mode from *being* one: the
+probe never blocks on an inconclusive answer (see
+:func:`yeaboi.auth_state.check_llm_credentials`), it is capped by a wall clock
+because the TUI holds the terminal with ``ISIG`` cleared and an unbounded probe
+would be unkillable from inside, and a probe that raises passes the user
+through rather than taking the app down.
 """
 
 from __future__ import annotations
@@ -31,8 +38,8 @@ from rich.text import Text
 from yeaboi.auth_state import CredentialStatus, check_llm_credentials
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
+    LLM_GATE_THEME,
     PAD,
-    Theme,
     build_action_buttons,
     build_ascii_title,
     build_page_panel,
@@ -41,20 +48,21 @@ from yeaboi.ui.shared._components import (
 logger = logging.getLogger(__name__)
 
 _ACTIONS = ["Continue anyway", "Back"]
-
-# Rose/alert accent — already registered in COLOR_RGB (it's Agent Security's
-# accent) so the shimmer path works without a new registration. Not reusing
-# AGENT_SECURITY_THEME itself: this screen isn't that mode's, it just wants the
-# same "something's wrong" hue. A standalone Theme, like CHANGELOG_THEME /
-# FEEDBACK_THEME, for a page that doesn't belong to one tinted mode.
-_LLM_GATE_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
-_LLM_GATE_COLOR = "rgb(230,90,120)"
+# "Back" is pre-selected: proceeding accepts placeholder output in place of a
+# written analysis, so a stray keypress must not be what chooses it.
+_DEFAULT_ACTION = 1
+_GATE_COLOR = "rgb(230,90,120)"
+# Wall clock for the probe. The httpx paths cap themselves at 5-10s, but the
+# subscription path goes through the Anthropic SDK (600s default plus retries)
+# and Bedrock through boto3's retry policy — long enough that a black-holed
+# network would freeze the hub on a keypress that used to be instant.
+_PROBE_TIMEOUT_S = 12.0
 
 
 def _build_checking_screen(*, provider_label: str, width: int = 80, height: int = 24) -> Panel:
     """A brief "checking your key" frame while the live ping is in flight."""
-    theme = _LLM_GATE_THEME
-    title = build_ascii_title("Checking", _LLM_GATE_COLOR, width=width)
+    theme = LLM_GATE_THEME
+    title = build_ascii_title("Checking", _GATE_COLOR, width=width)
     lines: list = [
         Text(""),
         title,
@@ -68,13 +76,13 @@ def _build_checking_screen(*, provider_label: str, width: int = 80, height: int 
 def _build_llm_gate_screen(
     status: CredentialStatus,
     *,
-    action_sel: int = 0,
+    action_sel: int = _DEFAULT_ACTION,
     width: int = 80,
     height: int = 24,
 ) -> Panel:
     """Render the blocking "your key looks broken" page."""
-    theme = _LLM_GATE_THEME
-    title = build_ascii_title("Warning", _LLM_GATE_COLOR, width=width)
+    theme = LLM_GATE_THEME
+    title = build_ascii_title("Warning", _GATE_COLOR, width=width)
 
     headline = (
         f"No {status.provider_label} API key is configured."
@@ -109,29 +117,46 @@ def _build_llm_gate_screen(
     return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
 
 
+def _passing_status() -> CredentialStatus:
+    """The conservative answer: let the user through, blame nothing."""
+    from yeaboi.auth_state import provider_label
+
+    return CredentialStatus(ok=True, configured=True, reason=None, provider_label=provider_label())
+
+
 def _check_with_spinner(live, console, frame_time: float) -> CredentialStatus:
     """Run the live credential check off the render thread so the UI stays live.
 
-    The ping can take up to several seconds (a real network round trip); a
-    plain blocking call here would freeze input handling for that whole window.
+    Returns a passing status when the probe raises or outruns
+    ``_PROBE_TIMEOUT_S``: neither is evidence about the user's key, and a gate
+    that crashed or hung the hub would be a worse bug than the one it exists to
+    catch. A timed-out probe is left running as a daemon thread rather than
+    joined — it cannot be cancelled, and nothing downstream reads its result.
     """
-    from yeaboi.auth_state import provider_label as _provider_label
+    from yeaboi.auth_state import provider_label
     from yeaboi.ui.shared._music_bar import duck_working_thread
 
-    label = _provider_label()
+    label = provider_label()
     result_box: list = [None]
 
     def _work() -> None:
-        result_box[0] = check_llm_credentials()
+        try:
+            result_box[0] = check_llm_credentials()
+        except Exception:  # noqa: BLE001 — a probe must never take the app down
+            logger.exception("credential probe raised — passing the user through")
 
     thread = duck_working_thread(_work, name="llm-gate-probe")
     thread.start()
+    deadline = time.monotonic() + _PROBE_TIMEOUT_S
     while thread.is_alive():
+        if time.monotonic() >= deadline:
+            logger.warning("credential probe exceeded %.0fs — not blocking", _PROBE_TIMEOUT_S)
+            return _passing_status()
         w, h = console.size
         live.update(_build_checking_screen(provider_label=label, width=w, height=h))
         time.sleep(frame_time)
     thread.join()
-    return result_box[0]
+    return result_box[0] or _passing_status()
 
 
 def show_llm_gate(
@@ -147,15 +172,23 @@ def show_llm_gate(
 
     ``check`` is an injection seam for tests (a callable returning
     ``CredentialStatus``); real callers should omit it and get the live probe.
-    On an OK status this renders nothing at all and returns immediately — the
-    common case stays exactly as fast and invisible as before this gate existed.
+    An OK status returns without rendering the warning at all — the probe
+    itself paints a brief "checking" frame on a cold check, and nothing once
+    the process has a verified credential cached.
     """
     status = (check or (lambda: _check_with_spinner(live, console, frame_time)))()
     if status.ok:
         return True
 
     logger.warning("LLM gate blocked mode entry: provider=%s reason=%s", status.provider_label, status.reason)
-    sel = 0
+
+    # Anything typed during the probe was aimed at the menu, not at a warning
+    # the user has not seen yet — without this, a second Enter dismisses it.
+    from yeaboi.ui.shared._input import drain_pending_input
+
+    drain_pending_input()
+
+    sel = _DEFAULT_ACTION
     while True:
         w, h = console.size
         panel = _build_llm_gate_screen(status, action_sel=sel, width=w, height=h)

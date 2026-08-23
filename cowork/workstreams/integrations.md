@@ -15,7 +15,8 @@ and the four hand-written credential probes); `standup/collector.py`, `code_scop
 `collect_recent_activity`);
 `reporting/activity.py` (`SOURCE_COMPONENTS`, `_canonical_source()`); `roadmap/ingest.py`
 (`RoadmapSource` and `ingest_source()`); `agent/repo_signals.py` and the tool-calling sites in
-`agent/nodes.py`; `ui/provider_select/` (the wizard's four steps and `_verification.py`);
+`agent/nodes.py`; `ui/provider_select/` (the wizard's four steps) and `provider_verification.py`
+(the `_verify_*` probes those steps call);
 `ui/mode_select/screens/_screens_secondary.py` (the Credentials settings sections); and
 `config.py`'s credential getters and `TEAM_ANALYSIS_*` scope variables.
 
@@ -25,7 +26,8 @@ and the four hand-written credential probes); `standup/collector.py`, `code_scop
 **standup**); `analysis/engine.py` (`_COMPONENTS` and the `_available_*_sources` probes —
 **analysis**); `reporting/activity.py` (`SOURCE_COMPONENTS`, `_canonical_source()` —
 **reporting**); `roadmap/ingest.py` (`RoadmapSource`, `ingest_source()` — **roadmap**);
-`ui/provider_select/` (one wizard step and one `_verify_*` probe — **tui-ux**);
+`ui/provider_select/` (one wizard step — **tui-ux**); `provider_verification.py` (one `_verify_*`
+probe — **tui-ux**);
 `ui/mode_select/screens/_screens_secondary.py` (one Credentials section — **tui-ux**). Nothing else
 in those files, ever, and nothing at all outside a campaign. Altering existing behaviour at one of
 those sites is a proposal for the owner, exactly as `**Reads**` always was.
@@ -123,7 +125,7 @@ Three axes run through every campaign, and none of them is optional:
 ### Surface
 
 - **Verification exists only in the wizard.** `_verify_jira`, `_verify_azdevops`, `_verify_notion`,
-  `_verify_confluence` and `_verify_vc_token` all live in `ui/provider_select/_verification.py`. The
+  `_verify_confluence` and `_verify_vc_token` all live in `provider_verification.py`. The
   settings page has no equivalent, so a credential that expires is discovered by a failed run rather
   than by the screen that shows it.
 - **Setup steps that could self-verify** instead of failing on first use.
