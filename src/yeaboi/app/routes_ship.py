@@ -90,10 +90,12 @@ def launch(app, request: Request) -> Response:
     resolved, problem = setup.resolve_target(str(payload.get("repo", "")))
     if problem:
         raise HTTPError(400, problem)
-    if not fs_policy.is_allowed(resolved, mode="write"):
+    if not fs_policy.request_consent(resolved, mode="write", context="ship run"):
         # Stated up front rather than discovered by the coding agent: the run
         # would fail deep inside a worktree write, after spending real money.
-        raise HTTPError(403, f"{resolved} is outside the allowed paths — add it in Settings → Paths")
+        # Asking rather than only refusing — the consent modal opens alongside
+        # this answer, and answering it makes the retry work.
+        raise HTTPError(403, f"{resolved} is outside the allowed paths — allow it and try again")
     snapshot = _ships(app).start(
         story_id=story_id,
         story_title=str(payload.get("story_title", "")),

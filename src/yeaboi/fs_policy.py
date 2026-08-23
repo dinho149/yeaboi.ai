@@ -194,6 +194,27 @@ def apply_consent(choice: str, req: ConsentRequest) -> bool:
     return False
 
 
+def request_consent(path: str | Path, *, mode: Mode = "read", context: str = "") -> bool:
+    """Queue a consent request for ``path`` unless it is already allowed.
+
+    Returns True when nothing needed asking. This is the pre-flight half of
+    :func:`resolve_and_check`: a surface that checks a path *before* using it
+    would otherwise refuse with no way to say yes, because only the actual
+    access queues a request. The TUI's own pre-flight asks the same question,
+    from a popup rather than a queue.
+
+    Nothing is raised — the caller decides what a refusal means for its flow.
+    """
+    if is_allowed(path, mode=mode):
+        return True
+    resolved = _resolve(path)
+    with _lock:
+        if _interactive:
+            _pending.append(ConsentRequest(resolved, mode, context))
+    logger.info("sandbox consent requested: %s %s (%s)", mode, resolved, context or "-")
+    return False
+
+
 def grant_session(path: str | Path) -> None:
     """Allow `path` (and everything under it) for the rest of this process."""
     resolved = _resolve(path)

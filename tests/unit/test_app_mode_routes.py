@@ -286,13 +286,23 @@ class TestRoadmapAnalyze:
         assert response.code == 400
         assert b"File not found" in response.body
 
-    def test_a_file_outside_the_sandbox_is_a_403_naming_the_remedy(self, app, monkeypatch, tmp_path):
+    def test_a_file_outside_the_sandbox_is_refused_and_asked_about(self, app, monkeypatch, tmp_path):
+        # Refusing without asking would leave the person with a 403 and no way
+        # to say yes — the pre-flight queues the request the modal answers.
+        from yeaboi import fs_policy
+
         path = tmp_path / "roadmap.md"
         path.write_text("# Q3\n", encoding="utf-8")
         monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda p, mode="read": False)
-        response = request(app, "POST", "/api/roadmap/analyze", {"source_type": "local", "locator": str(path)})
-        assert response.code == 403
-        assert b"Settings" in response.body
+        fs_policy.set_interactive(True)
+        try:
+            response = request(app, "POST", "/api/roadmap/analyze", {"source_type": "local", "locator": str(path)})
+            assert response.code == 403
+            assert b"try again" in response.body
+            assert [req.context for req in fs_policy.pop_pending_denials()] == ["roadmap intake"]
+        finally:
+            fs_policy.set_interactive(False)
+            fs_policy.pop_pending_denials()
 
     def test_an_analysis_streams_op_progress_then_done(self, app, monkeypatch):
         @dataclass
@@ -382,12 +392,21 @@ class TestShipLaunch:
         assert response.code == 400
         assert b"not a git repository" in response.body
 
-    def test_an_ungranted_repo_is_a_403_before_any_money_is_spent(self, app, monkeypatch):
+    def test_an_ungranted_repo_is_refused_and_asked_about(self, app, monkeypatch):
+        from yeaboi import fs_policy
+
         monkeypatch.setattr("yeaboi.ship.setup.resolve_target", lambda repo: ("/repos/api", ""))
         monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda p, mode="read": False)
-        response = request(app, "POST", "/api/ship/runs", {"story_id": "US-1", "repo": "/repos/api"})
-        assert response.code == 403
-        assert b"Settings" in response.body
+        fs_policy.set_interactive(True)
+        try:
+            response = request(app, "POST", "/api/ship/runs", {"story_id": "US-1", "repo": "/repos/api"})
+            assert response.code == 403  # before any money is spent
+            assert b"try again" in response.body
+            pending = fs_policy.pop_pending_denials()
+            assert [(req.mode, req.context) for req in pending] == [("write", "ship run")]
+        finally:
+            fs_policy.set_interactive(False)
+            fs_policy.pop_pending_denials()
 
 
 class TestShipRunReads:

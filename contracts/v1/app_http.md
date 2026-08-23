@@ -503,6 +503,16 @@ The raise still happens: the access that triggered the request has already
 failed, and consent is for the retry, exactly as in the TUI. `granted` in the
 answer is what the sandbox now believes, not what the person clicked.
 
+Two routes check a path **before** using it — `POST /api/roadmap/analyze` for a
+local file and `POST /api/ship/runs` for a repository — because discovering the
+refusal later means a sandbox traceback mid-stream, or a coding agent failing
+deep inside a worktree write after spending real money. Those two call
+`fs_policy.request_consent`, which queues the request without raising: they
+still answer 403, and the modal is open by the time it arrives, so answering it
+makes the retry work. `GET`-shaped probes (`/api/ship/target`, which validates a
+repo path as it is typed) deliberately do not ask — a modal per keystroke is not
+consent, it is a nag.
+
 ## Awareness
 
 `app/awareness.py` publishes `notice` events onto the same feed for the things

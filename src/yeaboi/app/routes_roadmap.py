@@ -90,11 +90,13 @@ def analyze(app, request: Request) -> Response:
     source, problem = setup.resolve_source(kind, str(payload.get("locator", "")))
     if source is None:
         raise HTTPError(400, problem)
-    if kind == "local" and not fs_policy.is_allowed(source.locator, mode="read"):
+    if kind == "local" and not fs_policy.request_consent(source.locator, mode="read", context="roadmap intake"):
         # Stated before the run rather than discovered mid-analysis: the engine
         # would raise inside the worker and the stream would carry a sandbox
-        # traceback instead of the one thing that fixes it.
-        raise HTTPError(403, f"{source.locator} is outside the allowed paths — add it in Settings → Paths")
+        # traceback instead of the one thing that fixes it. Asking rather than
+        # only refusing — the consent modal is already open by the time this
+        # answer arrives, and answering it makes the retry work.
+        raise HTTPError(403, f"{source.locator} is outside the allowed paths — allow it and try again")
     roadmap_id = int(payload.get("roadmap_id", 0) or 0)
     op = app.ops.create()
     logger.info("Roadmap analyze start: type=%s roadmap_id=%s", kind, roadmap_id or "(new)")

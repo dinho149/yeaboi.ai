@@ -194,6 +194,28 @@ class TestApplyConsent:
         assert is_allowed(req.path)
 
 
+class TestRequestConsent:
+    """The pre-flight half: a surface that checks before it acts still asks."""
+
+    def test_an_allowed_path_asks_nothing(self, tmp_path):
+        target = tmp_path / "home" / ".yeaboi" / "exports"
+        set_interactive(True)
+        assert fs_policy.request_consent(target) is True
+        assert pop_pending_denials() == []
+
+    def test_a_path_outside_queues_a_request_without_raising(self, tmp_path):
+        set_interactive(True)
+        assert fs_policy.request_consent(tmp_path / "repo", mode="write", context="ship run") is False
+        pending = pop_pending_denials()
+        assert len(pending) == 1
+        assert pending[0].mode == "write"
+        assert pending[0].context == "ship run"
+
+    def test_headless_still_refuses_but_queues_nothing(self, tmp_path):
+        assert fs_policy.request_consent(tmp_path / "repo") is False
+        assert pop_pending_denials() == []
+
+
 class TestViolationMessage:
     def test_names_every_remedy(self, tmp_path):
         with pytest.raises(SandboxViolationError) as exc_info:
