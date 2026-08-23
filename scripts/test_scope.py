@@ -352,6 +352,10 @@ AREAS: tuple[Area, ...] = (
         "platform",
         src=(
             "src/yeaboi/cli.py",
+            # The desktop backend: the loopback API server `yeaboi app` binds.
+            # Cross-mode shared infrastructure like mcp/ below — it dispatches
+            # into every mode's tools without owning any of them.
+            "src/yeaboi/app/",
             "src/yeaboi/telemetry.py",
             "src/yeaboi/feedback.py",
             "src/yeaboi/setup_wizard.py",
@@ -377,6 +381,7 @@ AREAS: tuple[Area, ...] = (
         ),
         tests=(
             "tests/unit/test_cli_*.py",
+            "tests/unit/test_app_*.py",
             "tests/unit/test_feedback.py",
             "tests/unit/test_setup_wizard.py",
             "tests/unit/test_update_*.py",

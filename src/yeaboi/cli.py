@@ -1260,6 +1260,17 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     analyze_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    app_p = subparsers.add_parser(
+        "app",
+        help="Run the local desktop backend (spawned by the yeaboi desktop app)",
+        description=(
+            "Binds a loopback HTTP server over the same engines the TUI, CLI and MCP "
+            "server use, and prints one YEABOI_APP_READY handshake line to stdout. "
+            "Meant to be spawned by the desktop shell, not run by hand."
+        ),
+    )
+    app_p.add_argument("--port", type=int, default=0, help="Port to bind on 127.0.0.1 (default 0 = ephemeral)")
+
     return parser
 
 
@@ -1778,6 +1789,20 @@ def _resolve_cli_session(session_id: str) -> str | None:
         return store.get_latest_session_id()
 
 
+def _cmd_app(args: argparse.Namespace, console) -> int:
+    """`yeaboi app` — run the desktop backend server.
+
+    stdout is reserved for the YEABOI_APP_READY handshake line (the same
+    discipline as the MCP server's stdio rule), so the Rich console is unused
+    and all diagnostics go to ~/.yeaboi/logs/app/.
+    """
+    from yeaboi.app.run import run_app
+    from yeaboi.logging_setup import attach_mode_handler
+
+    attach_mode_handler("app")
+    return run_app(port=args.port)
+
+
 def _run_subcommand(args: argparse.Namespace) -> int:
     """Dispatch `yeaboi <command>` headless runners. Returns a process exit code.
 
@@ -1802,6 +1827,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "ship": _cmd_ship,
         "ceremonies": _cmd_ceremonies,
         "slack": _cmd_slack,
+        "app": _cmd_app,
     }
     try:
         return handlers[args.command](args, console)
