@@ -33,11 +33,34 @@ from rich.console import Console
 from rich.live import Live
 
 from yeaboi.agent.chat_intake import GREETING_TEXT, SIZE_QUESTION_TEXT, parse_size_reply, resolve_intake_mode
+from yeaboi.agent.chat_session import (
+    ACCEPT_WORDS,
+    PIPELINE_NODES,
+    PROGRESS_DONE_KEYS,
+    Accept,
+    AwaitConfirm,
+    SwitchSize,
+    TrackerSync,
+    at_intake_summary,
+    at_prior_art,
+    clear_review_state,
+    next_node,
+    replay_plan,
+    reply_event,
+    review_gate,
+    review_verdict,
+    stage_of,
+)
+
+# The decision layer: which stage the conversation is in, what a reply becomes,
+# how a review verdict reads. This module renders those answers; it does not
+# make them, so every other surface driving the same graph can reuse them.
+from yeaboi.agent.chat_session import CONFIRM_VERDICT_PROMPT as _CONFIRM_VERDICT_PROMPT
+from yeaboi.agent.chat_session import PRIOR_ART_VERDICT_PROMPT as _PRIOR_ART_VERDICT_PROMPT
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
-from yeaboi.agent.streaming import ChatStreamCancelledError, predict_next_node, stream_chat_turn
+from yeaboi.agent.streaming import ChatStreamCancelledError, stream_chat_turn
 from yeaboi.input_guardrails import validate_chat_input
 from yeaboi.persistence import save_project_snapshot
-from yeaboi.prompts.intake import decorate_question_for_chat
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
 from yeaboi.ui.shared._input import set_text_entry, take_paste_dropped
@@ -69,17 +92,6 @@ from ._transcript import ChatTranscript
 
 logger = logging.getLogger(__name__)
 
-_PIPELINE_NODES = (
-    "project_analyzer",
-    "feature_skip",
-    "feature_generator",
-    "story_writer",
-    "task_decomposer",
-    "sprint_planner",
-)
-
-_ACCEPT_WORDS = frozenset({"accept", "a", "ok", "yes", "looks good", "lgtm", "continue"})
-
 # What the duck quacks as each pipeline stage completes.
 _STAGE_QUIPS = {
     "project_analyzer": "Analysis done!",
@@ -89,33 +101,6 @@ _STAGE_QUIPS = {
     "task_decomposer": "Tasks sliced!",
     "sprint_planner": "Sprints packed!",
 }
-
-# Which state key proves a pipeline step has produced its artifact.
-_PROGRESS_DONE_KEYS = {
-    "project_analyzer": "project_analysis",
-    "epic_review": "_epic_reviewed",
-    "feature_generator": "features",
-    "story_writer": "stories",
-    "task_decomposer": "tasks",
-    "sprint_planner": "sprints",
-}
-# The line that stands in for the node's markdown summary once the card has
-# rendered it. A module constant because the resume replay writes it too, and
-# the two must not drift.
-_CONFIRM_VERDICT_PROMPT = (
-    "Here's everything I've got. Pick an option below — or type **accept**, **edit N**, or just tell me what's off."
-)
-
-_PRIOR_ART_VERDICT_PROMPT = (
-    "You already own these. **Space** picks the relevant ones, **←/→** browses the details, "
-    "**X** hides a repo forever, **Enter** confirms — or type e.g. **1 3**, **all**, or **none**."
-)
-
-
-def _prior_art_verdict_prompt(qs) -> str:
-    """The one bubble under the prior-art card — the whole batch, one line."""
-    return _PRIOR_ART_VERDICT_PROMPT
-
 
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
@@ -570,7 +555,7 @@ class _ChatDriver:
             # The intake node's review path consumes "edit N" itself.
             self._run_turn(f"edit {q_num}", echo_user=True)
             return
-        if self.state.get("pending_review") in _PIPELINE_NODES:
+        if self.state.get("pending_review") in PIPELINE_NODES:
             self.edit_armed = True
             self._note("Edit mode — describe what you'd like changed and press Enter.")
         else:
@@ -632,7 +617,7 @@ class _ChatDriver:
         self, text: str, *, echo_user: bool, images: list[str] | None = None, synthetic: bool = False
     ) -> bool:
         """One graph turn. Returns False when nothing ran (guardrail block, no graph)."""
-        intake_turn = predict_next_node(self.state) == "project_intake"
+        intake_turn = next_node(self.state) == "project_intake"
         if echo_user and not synthetic:
             # Regex layers only, on every turn. No topical classification here:
             # every message that reaches _run_turn answers something the agent
@@ -779,80 +764,21 @@ class _ChatDriver:
                 self._paste_truncated(event)
 
     def _at_intake_summary(self) -> bool:
-        """True when the newest reply is the intake summary awaiting a verdict.
-
-        One predicate for both paths that render it: the live turn
-        (:meth:`_append_reply`) and the resume replay
-        (:meth:`_rebuild_transcript`). They must agree, or reopening a session
-        parked on the gate resurrects the markdown wall the card replaced.
-        The sub-states are excluded because each one re-asks something instead
-        of re-showing the summary — a PTO prompt, a velocity prompt, the
-        prior-art verdict, or the re-ask of the answer being edited.
-        """
-        qs = self._qs()
-        return (
-            qs is not None
-            and qs.awaiting_confirmation
-            and not qs._awaiting_leave_input
-            and not qs._awaiting_velocity_input
-            and not self._at_prior_art()
-            and qs.editing_question is None
-            and qs.current_question > TOTAL_QUESTIONS
-        )
+        return at_intake_summary(self.state)
 
     def _at_prior_art(self) -> bool:
-        """True while the prior-art sub-loop owns the turn.
-
-        The summary card's condition is defined as "not this", so the two can
-        never drift into both claiming the same turn.
-        """
-        qs = self._qs()
-        return qs is not None and getattr(qs, "_prior_art_stage", "") in ("ask", "reason", "empty")
+        return at_prior_art(self.state)
 
     def _append_reply(self, *, streamed: str) -> None:
-        """Append the assistant's reply bubble (or a review card + prompt)."""
-        messages = self.state.get("messages", [])
-        reply = messages[-1].content if messages and isinstance(messages[-1], AIMessage) else ""
-        if not reply:
+        """Render whatever the newest reply turned out to be."""
+        event = reply_event(self.state)
+        if event is None:
             return
-
-        qs = self._qs()
-        # Intake confirmation summary → card + short bubble instead of the
-        # node's markdown wall (the card is the same data, rendered properly).
-        if self._at_intake_summary():
-            self.transcript.add_artifact("intake_summary")
-            self._say(_CONFIRM_VERDICT_PROMPT)
+        if isinstance(event, AwaitConfirm):
+            self.transcript.add_artifact(event.kind)
+            self._say(event.prompt)
             return
-
-        # Prior-art verdict → card + one line. The node's prompt already
-        # contains the numbered shortlist and the answer grammar; the card
-        # renders the same data properly and the choice rows carry the keys.
-        if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask":
-            # Lazy for the same reason as apply_size_switch: nodes is heavy.
-            from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
-
-            if reply.strip() == _PRIOR_ART_GRAMMAR_HINT:
-                # The node rejected a typed answer. Swallowing this and
-                # re-posting the same card would read as a no-op — the one
-                # chat turn where the node's own words must go out as prose.
-                self._say(reply)
-                return
-            self.transcript.add_artifact("prior_art")
-            self._say(_prior_art_verdict_prompt(qs))
-            return
-
-        # Nothing found — the node's message is already the whole statement, so
-        # it goes out as prose. Explicit branch rather than falling through:
-        # the tail of this method decorates replies as intake questions, and
-        # this one is not a question.
-        if qs is not None and getattr(qs, "_prior_art_stage", "") == "empty":
-            self._say(reply)
-            return
-
-        if qs is not None and not qs.completed:
-            mode = qs.intake_mode or self.state.get("_intake_mode") or None
-            reply = decorate_question_for_chat(qs.current_question, reply, intake_mode=mode)
-        self._say(reply)
+        self._say(event.text)
 
     def _drain_consents(self) -> None:
         from yeaboi.ui.session.phases._phases import _drain_sandbox_consents
@@ -868,27 +794,7 @@ class _ChatDriver:
     # ---------------------------------------------------------------- stages
 
     def _stage(self) -> str:
-        if self.state.get("capacity_override_target", 0) < -1 and not self.dry_run:
-            return "capacity"
-        if self.state.get("_spike_prompt") and not self.state.get("spike_choice") and not self.dry_run:
-            return "spike"
-        pending = self.state.get("pending_review")
-        if pending == "project_intake":
-            return "intake"  # confirmation gate — the node consumes the reply
-        if pending in _PIPELINE_NODES:
-            return "review"
-        next_node = predict_next_node(self.state) if not self.dry_run else self._dry_next_node()
-        if next_node == "project_intake":
-            return "intake"
-        if next_node in _PIPELINE_NODES:
-            if (
-                next_node in ("feature_generator", "feature_skip")
-                and self.state.get("project_analysis")
-                and not self.state.get("_epic_reviewed")
-            ):
-                return "epic"
-            return "pipeline"
-        return "chat"
+        return stage_of(self.state, dry_run=self.dry_run)
 
     def _stage_meta(self, node: str) -> tuple[str, str]:
         from yeaboi.repl._ui import _PIPELINE_STEPS, _SPINNER_MESSAGES
@@ -911,7 +817,7 @@ class _ChatDriver:
             label = "Formatting epic" if step_node == "epic_review" else _SPINNER_MESSAGES.get(step_node, step_node)
             if step_node == active:
                 status = "active"
-            elif self.state.get(_PROGRESS_DONE_KEYS.get(step_node, "")):
+            elif self.state.get(PROGRESS_DONE_KEYS.get(step_node, "")):
                 # .get twice: a pipeline step added to repl/_ui without a row
                 # here must render as pending, not KeyError a build mid-run.
                 status = "done"
@@ -928,7 +834,7 @@ class _ChatDriver:
 
     def _run_pipeline_stage(self) -> bool:
         """Run one pipeline stage. Returns False when the turn failed/was cancelled."""
-        node = predict_next_node(self.state) if not self.dry_run else self._dry_next_node()
+        node = next_node(self.state, dry_run=self.dry_run)
         label, progress = self._stage_meta(node)
         self.subtitle = self._fast_prefix() + f"{label}… {progress}"
         self._refresh_progress(node)
@@ -950,7 +856,7 @@ class _ChatDriver:
         if self.bell:
             self.console.bell()
         pending = self.state.get("pending_review")
-        if pending in _PIPELINE_NODES and not self.state.get("_chat_fast_forward"):
+        if pending in PIPELINE_NODES and not self.state.get("_chat_fast_forward"):
             # Fast mode: the run loop's auto-accept shows the card itself —
             # showing it here too would duplicate it and prompt for a reply
             # nobody is going to give.
@@ -959,25 +865,10 @@ class _ChatDriver:
         return True
 
     def _show_review_card(self, pending: str, *, prompt: bool = True) -> None:
-        kind = {
-            "project_analyzer": "analysis",
-            "feature_generator": "features",
-            "feature_skip": "features",
-            "story_writer": "stories",
-            "task_decomposer": "tasks",
-            "sprint_planner": "sprints",
-        }.get(pending, "analysis")
-        self.transcript.add_artifact(kind)
+        gate = review_gate(self.state, pending)
+        self.transcript.add_artifact(gate.kind)
         if prompt:
-            prompts = [
-                "Reply **accept** to continue",
-                "**edit** + your changes to refine",
-                "/export to save",
-                "/finish auto-accepts the rest",
-            ]
-            if pending == "project_analyzer" and self.state.get("_small_project_oversized"):
-                prompts.insert(1, "**switch to large** for a fuller plan (this looks bigger than a small project)")
-            self._say(" · ".join(prompts) + ".")
+            self._say(gate.prompt)
         self._prompted.add(pending)
 
     def _fast_prefix(self) -> str:
@@ -1008,14 +899,7 @@ class _ChatDriver:
         self._note("Auto-accepted (fast mode).")
         self._bubble("Auto-accepted!")
         logger.info("Review decision (chat): auto-accept %s (fast mode)", pending)
-        for key in (
-            "pending_review",
-            "last_review_decision",
-            "last_review_feedback",
-            "review_feedback_images",
-            "_small_project_oversized",
-        ):
-            self.state.pop(key, None)
+        clear_review_state(self.state)
         self._prompted.discard(pending)
         self._save()
         self._pin_bottom()
@@ -1081,7 +965,7 @@ class _ChatDriver:
                 if self.state.get("_chat_fast_forward"):
                     return  # /finish at the epic gate — proceed without a verdict
                 continue
-            if text.lower() in _ACCEPT_WORDS:
+            if text.lower() in ACCEPT_WORDS:
                 self.transcript.add_user(text)
                 self._pin_bottom()
                 return
@@ -1198,7 +1082,6 @@ class _ChatDriver:
 
     def _review_reply(self, text: str) -> None:
         pending = self.state.get("pending_review", "")
-        lowered = text.lower().strip()
         block = validate_chat_input(text)
         if block is not None:
             logger.info("Chat input blocked: layer=%s len=%d", block.layer, len(text))
@@ -1208,30 +1091,20 @@ class _ChatDriver:
             self.edit_armed = False
             self._apply_edit_feedback(pending, text)
             return
-        if lowered in _ACCEPT_WORDS:
+        verdict = review_verdict(text, pending)
+        if isinstance(verdict, Accept):
             self.transcript.add_user(text)
             logger.info("Review decision (chat): accept %s", pending)
-            for key in (
-                "pending_review",
-                "last_review_decision",
-                "last_review_feedback",
-                "review_feedback_images",
-                "_small_project_oversized",
-            ):
-                self.state.pop(key, None)
+            clear_review_state(self.state)
             self._save()
             self._pin_bottom()
-            return
-        if lowered in ("switch to large", "switch") and pending == "project_analyzer":
+        elif isinstance(verdict, SwitchSize):
             self.transcript.add_user(text)
-            self._switch_size("smart")
-            return
-        if lowered in ("sync jira", "sync azure", "sync azure devops", "sync"):
-            self._tracker_sync(lowered, pending)
-            return
-        # Everything else is edit feedback — "refine by chatting".
-        feedback = text.removeprefix("edit").removeprefix("regenerate").strip() or text
-        self._apply_edit_feedback(pending, feedback)
+            self._switch_size(verdict.target)
+        elif isinstance(verdict, TrackerSync):
+            self._tracker_sync(verdict.tracker, pending)
+        else:
+            self._apply_edit_feedback(pending, verdict.text)
 
     def _apply_edit_feedback(self, pending: str, feedback: str) -> None:
         from yeaboi.repl._review import _clear_downstream_artifacts, _serialize_artifacts_for_review
@@ -1255,14 +1128,14 @@ class _ChatDriver:
         self._pin_bottom()
         # The next loop pass re-runs the stage with the feedback.
 
-    def _tracker_sync(self, lowered: str, pending: str) -> None:
+    def _tracker_sync(self, requested: str, pending: str) -> None:
         from yeaboi.ui.session.phases._phases import _get_active_trackers, _handle_tracker_sync
 
         trackers = _get_active_trackers()
         if not trackers:
             self._note("No tracker configured — connect Jira or Azure DevOps first.")
             return
-        tracker = "azdevops" if "azure" in lowered else ("jira" if "jira" in lowered else trackers[0])
+        tracker = requested or trackers[0]
         if tracker not in trackers:
             self._note(f"{tracker} is not configured.")
             return
@@ -1679,58 +1552,19 @@ class _ChatDriver:
             else:
                 self.transcript.add_assistant(entry.get("text", ""))
         messages = self.state.get("messages", [])
-        # The summary is a card in a live turn (_append_reply); replaying its
-        # markdown would hand a resumed session the wall of text the card
-        # exists to replace. It is the newest assistant reply whenever the
-        # questionnaire is parked on the verdict gate.
-        summary_at = -1
-        newest_reply_at = max(
-            (
-                i
-                for i, m in enumerate(messages)
-                if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content
-            ),
-            default=-1,
-        )
-        if self._at_intake_summary():
-            summary_at = newest_reply_at
-        # Same replacement for a session parked mid prior-art: the live turn
-        # rendered a card + one line (_append_reply), so replaying the node's
-        # markdown here would resurrect the wall the card replaced. Mutually
-        # exclusive with summary_at — _at_intake_summary excludes prior art.
-        # Only the "ask" stage gets the card; "empty" went out as prose, and a
-        # legacy "reason" reply has no card to rebuild (the node re-asks the
-        # batch on the next input, which posts a fresh one).
-        # The card belongs to the newest reply that is NOT the grammar hint:
-        # a rejected typed answer leaves [..., AI(batch prompt), Human, AI(hint)],
-        # and pinning to the newest reply outright would card the one-liner
-        # while the batch-prompt wall above it replayed raw.
-        prior_art_at = -1
-        qs = self._qs()
-        if qs is not None and getattr(qs, "_prior_art_stage", "") == "ask" and qs._prior_art_candidates:
-            from yeaboi.agent.nodes import _PRIOR_ART_GRAMMAR_HINT
-
-            prior_art_at = max(
-                (
-                    i
-                    for i, m in enumerate(messages)
-                    if isinstance(m, AIMessage)
-                    and isinstance(m.content, str)
-                    and m.content
-                    and m.content.strip() != _PRIOR_ART_GRAMMAR_HINT
-                ),
-                default=-1,
-            )
+        # Which stored replies come back as cards rather than as the markdown
+        # wall the cards exist to replace — the same routing the live turn used.
+        plan = replay_plan(self.state)
         for i, message in enumerate(messages):
             if isinstance(message, HumanMessage) and isinstance(message.content, str):
                 self.transcript.add_user(message.content)
             elif isinstance(message, AIMessage) and isinstance(message.content, str) and message.content:
-                if i == summary_at:
+                if i == plan.summary_at:
                     self.transcript.add_artifact("intake_summary")
                     self.transcript.add_assistant(_CONFIRM_VERDICT_PROMPT)
-                elif i == prior_art_at:
+                elif i == plan.prior_art_at:
                     self.transcript.add_artifact("prior_art")
-                    self.transcript.add_assistant(_prior_art_verdict_prompt(qs))
+                    self.transcript.add_assistant(_PRIOR_ART_VERDICT_PROMPT)
                 else:
                     self.transcript.add_assistant(message.content)
         for kind, key in (
@@ -1753,16 +1587,7 @@ class _ChatDriver:
     # --------------------------------------------------------------- dry run
 
     def _dry_next_node(self) -> str:
-        for key, node in (
-            ("project_analysis", "project_analyzer"),
-            ("features", "feature_generator"),
-            ("stories", "story_writer"),
-            ("tasks", "task_decomposer"),
-            ("sprints", "sprint_planner"),
-        ):
-            if not self.state.get(key):
-                return node
-        return "agent"
+        return next_node(self.state, dry_run=True)
 
     def _dry_run_bootstrap(self) -> None:
         from yeaboi.ui.session._dry_run import load_dry_run_state

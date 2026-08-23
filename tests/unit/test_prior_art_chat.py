@@ -253,9 +253,9 @@ class TestSummaryCard:
 
 class TestVerdictPrompt:
     def test_one_static_line_names_the_keys_and_the_grammar(self):
-        from yeaboi.ui.session.chat._driver import _prior_art_verdict_prompt
+        from yeaboi.agent.chat_session import PRIOR_ART_VERDICT_PROMPT
 
-        prompt = _prior_art_verdict_prompt(_qs("ask"))
+        prompt = PRIOR_ART_VERDICT_PROMPT
         assert "**Space**" in prompt
         assert "**X**" in prompt
         assert "**all**" in prompt
