@@ -525,3 +525,63 @@ class TestEmptinessCountsTheNumbers:
         ev = evidence.EngineerEvidence(engineer="Ada", metrics=(PerfMetric(key="spill_rate", value=18.0),))
 
         assert not ev.is_empty, "a gathered number is evidence even with no prose line behind it"
+
+
+class TestTheGapFillNoteCountsWhatSurvived:
+    """The paid scan may contribute nothing; the sentence must say so.
+
+    Saved lines are already truncated when the live results are appended, so a
+    dense standup history swallows every scanned row. Counting what was *found*
+    made the one block whose job is coverage honesty claim items no reader could
+    see — on the opt-in path a lead paid a live multi-source fetch for.
+    """
+
+    def test_rows_that_survived_are_the_rows_reported(self):
+        assert "added 3 code and 2 documentation item(s)" in evidence._gap_note(found=5, added_code=3, added_docs=2)
+
+    def test_a_scan_swallowed_by_the_cap_says_so_instead_of_claiming_nine(self):
+        note = evidence._gap_note(found=9, added_code=0, added_docs=0)
+
+        assert "found 9 item(s)" in note and "none of which fit" in note
+        assert "added 9" not in note
+
+    def test_a_scan_that_found_nothing_says_that(self):
+        assert "found nothing" in evidence._gap_note(found=0, added_code=0, added_docs=0)
+
+
+class TestASourceThatNamesSomebodyElseIsAnAttributionGap:
+    """`not_configured` means nobody looked. It must not mean "looked, found others"."""
+
+    def test_a_delivery_report_crediting_others_is_partial(self, db_path):
+        with ReportingStore(db_path) as store:
+            store.record_run(
+                DeliveryReport(
+                    delivered_items=(DeliveredItem(key="P-8", title="Bob's work", status="Done", assignee="Bob Jones"),)
+                )
+            )
+
+        row = _coverage(_gather(db_path), evidence.SOURCE_DELIVERY)
+
+        assert row.state == evidence.PARTIAL, "a report exists and names someone else — that is a gap, not absence"
+        assert "attribution gap" in row.detail
+
+    def test_no_delivery_report_at_all_is_not_configured(self, db_path):
+        row = _coverage(_gather(db_path), evidence.SOURCE_DELIVERY)
+
+        assert row.state == evidence.NOT_CONFIGURED
+        assert "No delivery report" in row.detail
+
+
+class TestStandupRunsAreCountedOnce:
+    def test_two_matching_member_rows_in_one_run_are_one_run(self):
+        report = StandupReport(
+            date="2026-07-10",
+            member_updates=(
+                MemberUpdate(name="Ada Lovelace", summary="Shipped the parser"),
+                MemberUpdate(name="ada", summary="Reviewed the guard"),
+            ),
+        )
+
+        stats = evidence._standup_lines([report], frozenset({"ada lovelace", "ada"}))
+
+        assert stats["matched"] == 1, "one standup named her; 'N of M runs' must never exceed M"

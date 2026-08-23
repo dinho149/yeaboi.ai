@@ -198,10 +198,17 @@ def _standup_lines(reports, aliases: frozenset[str]) -> dict[str, list[str]]:
         if coverage.get("documentation") in (COVERED, PARTIAL):
             docs_covered += 1
 
+        # Once per run, not once per matching member row: ``matched`` is reported
+        # as "N of M run(s)", and the alias closure exists precisely so one person
+        # can match two entries in the same standup — which is how it produced
+        # "13 of 12".
+        named_here = False
         for member in getattr(report, "member_updates", ()) or ():
             if not identity.matches(getattr(member, "name", ""), aliases):
                 continue
-            matched += 1
+            if not named_here:
+                matched += 1
+                named_here = True
             date = getattr(report, "date", "")
             if member.self_report:
                 out["standup"].append(f"{date} — their own update: {_clip(member.self_report)}")
@@ -648,17 +655,22 @@ def gather_engineer_evidence(
 
     # ── Analysis — delivery stats + practice hygiene + AI markers. ───────────
     try:
-        analysis_lines, analysis_metrics = _read_analysis(db_path, aliases, jira_project, azdo_project)
+        analysis_lines, analysis_metrics, profiles_seen = _read_analysis(db_path, aliases, jira_project, azdo_project)
         metrics.extend(analysis_metrics)
-        coverage.append(
-            SourceCoverage(
-                SOURCE_ANALYSIS,
-                COVERED if analysis_lines else NOT_CONFIGURED,
-                "Team analysis metrics for this engineer."
-                if analysis_lines
-                else "No saved team analysis covers this engineer.",
+        # A profile that exists and names somebody else is an attribution gap,
+        # not an unconfigured source — the same distinction every other source
+        # here draws, and the reason ``partial`` is in the vocabulary at all.
+        if analysis_lines:
+            analysis_state, analysis_detail = COVERED, "Team analysis metrics for this engineer."
+        elif profiles_seen:
+            analysis_state = PARTIAL
+            analysis_detail = (
+                f"{profiles_seen} saved team analysis profile(s), none carrying a row for this engineer "
+                "— an attribution gap, not an idle period."
             )
-        )
+        else:
+            analysis_state, analysis_detail = NOT_CONFIGURED, "No saved team analysis to read."
+        coverage.append(SourceCoverage(SOURCE_ANALYSIS, analysis_state, analysis_detail))
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: analysis read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_ANALYSIS, FAILED, "The team analysis profile could not be read."))
@@ -755,18 +767,20 @@ def gather_engineer_evidence(
                 )
             )
             groups.append(_delivery_group(shipped))
-        coverage.append(
-            SourceCoverage(
-                SOURCE_DELIVERY,
-                COVERED if shipped else NOT_CONFIGURED,
-                # ``shipped``, not the display list: ``delivery_lines`` is capped
-                # for the prompt, and counting the cap is how a tile saying 23
-                # ended up beside a sentence saying 8.
-                f"{len(shipped)} shipped item(s) credited to this engineer."
-                if shipped
-                else "No delivery report credits this engineer.",
+        # Three different facts, three different words. ``shipped``, not the
+        # display list: ``delivery_lines`` is capped for the prompt, and counting
+        # the cap is how a tile saying 23 ended up beside a sentence saying 8.
+        if shipped:
+            delivery_state, delivery_detail = COVERED, f"{len(shipped)} shipped item(s) credited to this engineer."
+        elif delivered:
+            delivery_state = PARTIAL
+            delivery_detail = (
+                f"{len(delivered)} shipped item(s) in the latest delivery report, none credited to this "
+                "engineer — an attribution gap, not an idle period."
             )
-        )
+        else:
+            delivery_state, delivery_detail = NOT_CONFIGURED, "No delivery report to read."
+        coverage.append(SourceCoverage(SOURCE_DELIVERY, delivery_state, delivery_detail))
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: reporting read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_DELIVERY, FAILED, "The delivery report could not be read."))
@@ -776,8 +790,15 @@ def gather_engineer_evidence(
         extra_code, extra_docs, gap_note, gap_outcome = _gap_fill(
             aliases, db_path=db_path, period_start=period_start, period_end=period_end
         )
+        had_code, had_docs = len(code_lines), len(doc_lines)
         code_lines = (code_lines + extra_code)[:_MAX_CODE_LINES]
         doc_lines = (doc_lines + extra_docs)[:_MAX_DOC_LINES]
+        if gap_outcome == "ok":
+            gap_note = _gap_note(
+                found=len(extra_code) + len(extra_docs),
+                added_code=len(code_lines) - had_code,
+                added_docs=len(doc_lines) - had_docs,
+            )
         if gap_note:
             coverage = _amend_coverage(coverage, SOURCE_CODE, gap_note, gap_outcome, bool(code_lines))
 
@@ -827,6 +848,27 @@ def gather_engineer_evidence(
         len(ev.delivery_lines),
     )
     return ev
+
+
+def _gap_note(*, found: int, added_code: int, added_docs: int) -> str:
+    """What the live scan contributed — counted after the display caps, not before.
+
+    The saved lines are already truncated when the scan's results are appended, so
+    a dense standup history can swallow every live row. Counting what was found
+    rather than what survived is how the one block whose job is coverage honesty
+    came to claim nine items a reader could not see.
+    """
+    if added_code or added_docs:
+        return (
+            f"Live scan of the last {_MAX_GAP_DAYS} day(s) added "
+            f"{added_code} code and {added_docs} documentation item(s)."
+        )
+    if found:
+        return (
+            f"Live scan of the last {_MAX_GAP_DAYS} day(s) found {found} item(s), none of which fit past "
+            "the saved history already listed here."
+        )
+    return f"Live scan of the last {_MAX_GAP_DAYS} day(s) found nothing the saved history had missed."
 
 
 def _amend_coverage(
@@ -892,11 +934,13 @@ def _resolve_db(db_path):
 
 def _read_analysis(
     db_path, aliases: frozenset[str], jira_project: str, azdo_project: str
-) -> tuple[list[str], list[PerfMetric]]:
+) -> tuple[list[str], list[PerfMetric], int]:
     """Per-member analysis signals from the newest profile that carries them.
 
-    Returns the prompt's prose and the same facts as numbers — both projected
-    from one row match, so they cannot disagree.
+    Returns the prompt's prose, the same facts as numbers — both projected from
+    one row match, so they cannot disagree — and how many profiles were read.
+    The count is what lets the caller tell "no analysis has ever been saved" from
+    "analysis exists and names somebody else".
     """
     from yeaboi.team_profile import TeamProfileStore
 
@@ -914,8 +958,8 @@ def _read_analysis(
             rows = _analysis_rows(examples or {}, aliases)
             lines = _analysis_lines(*rows)
             if lines:
-                return lines, _analysis_metrics(*rows)
-    return [], []
+                return lines, _analysis_metrics(*rows), len(profiles)
+        return [], [], len(profiles)
 
 
 def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end: str):
@@ -962,11 +1006,10 @@ def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end
             f"{str(i.get('timestamp', ''))[:10]} — {_clip(i.get('title', ''))}"
             for i in split.get(categories.CATEGORY_DOCUMENTATION, [])
         ]
-        note = (
-            f"Live scan of the last {_MAX_GAP_DAYS} day(s) added "
-            f"{len(code)} code and {len(docs)} documentation item(s)."
-        )
-        return code, docs, note, "ok"
+        # No note on the success path: what the scan *found* is not what the
+        # artifact ends up carrying, and only the caller knows which of these
+        # survive its display caps.
+        return code, docs, "", "ok"
     except Exception:  # noqa: BLE001 — a gap-fill failure must not fail the run
         logger.debug("performance evidence: gap-fill scan failed (non-fatal)", exc_info=True)
         return [], [], "The live gap-fill scan failed; only saved history was used.", "failed"
