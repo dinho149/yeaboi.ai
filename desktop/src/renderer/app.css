@@ -850,6 +850,21 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* An in-table affordance that is a button to the browser and a link to the eye
+   — a chunky button in a data cell reads as a form control, not a drill-down. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--duck);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.link-button:hover {
+  text-decoration: underline;
+}
 .dash-actions a.button,
 .dash-actions button {
   border-radius: 8px;

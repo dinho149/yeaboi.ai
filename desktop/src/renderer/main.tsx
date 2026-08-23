@@ -10,15 +10,19 @@ import { Wordmark } from '@design/primitives/Wordmark';
 import { type ComponentType, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getBackendState, onBackendState } from './api';
+import { Agents } from './pages/Agents';
 import { Analysis } from './pages/Analysis';
 import { AnalysisResults } from './pages/AnalysisResults';
 import { AnalysisSetup } from './pages/AnalysisSetup';
+import { Ceremonies } from './pages/Ceremonies';
+import { CeremoniesSlack } from './pages/CeremoniesSlack';
 import { Chat } from './pages/Chat';
 import { Home } from './pages/Home';
 import { Performance } from './pages/Performance';
 import { PerformanceEngineer } from './pages/PerformanceEngineer';
 import { Planning } from './pages/Planning';
 import { Poker } from './pages/Poker';
+import { Provenance } from './pages/Provenance';
 import { PokerBoard } from './pages/PokerBoard';
 import { PokerSetup } from './pages/PokerSetup';
 import { Reporting } from './pages/Reporting';
@@ -66,6 +70,14 @@ const PAGES: Record<string, ComponentType> = {
   '/humans/reporting/style': ReportingStyle,
   '/humans/ship': Ship,
   '/humans/ship/run': ShipRun,
+  // One page over four modes — it reads its kind from the hash.
+  '/agents/usage': Agents,
+  '/agents/advisor': Agents,
+  '/agents/standup': Agents,
+  '/agents/security': Agents,
+  '/ceremonies': Ceremonies,
+  '/ceremonies/slack': CeremoniesSlack,
+  '/provenance': Provenance,
   '/usage': Usage,
   '/settings/credentials': Settings,
   '/settings/sharing': Settings,
@@ -89,11 +101,24 @@ function useHashRoute(): string {
   return routeFor(path) ? path : DEFAULT_ROUTE;
 }
 
-/** A route two levels under /humans/<mode> is a sub-page, not a nav entry. */
-const SUB_PAGE = /^\/humans\/[^/]+\/.+/;
-// The registry also carries non-route affordances — `dialog:share`,
-// `action:anonymize` — which are parity entries for buttons, not destinations.
-// The nav filter above keeps them out by requiring a leading slash.
+/**
+ * Which sidebar group a route belongs to, or null when it is not a destination.
+ *
+ * Three things are deliberately not in the nav: a mode's sub-pages (the chat
+ * and saved plans off Planning, the stepper off Analysis, the Slack tab off
+ * Ceremonies), the settings and setup routes (they live in the footer like the
+ * TUI's secondary row), and the registry's non-route affordances —
+ * `dialog:share`, `action:anonymize` — which are parity entries for buttons.
+ */
+function navGroup(path: string): string | null {
+  if (!path.startsWith('/') || path.startsWith('/settings/') || path === '/setup') return null;
+  if (/^\/humans\/[^/]+$/.test(path)) return 'Humans';
+  if (/^\/agents\/[^/]+$/.test(path)) return 'Agents';
+  if (path === '/ceremonies' || path === '/provenance') return 'Ops';
+  return /^\/[^/]+$/.test(path) ? '' : null;
+}
+
+const NAV_GROUPS = ['', 'Humans', 'Agents', 'Ops'] as const;
 
 type Backend = { kind: 'starting' } | { kind: 'ready' } | { kind: 'down'; reason?: string };
 
@@ -116,35 +141,35 @@ function Splash({ backend }: { backend: Backend }) {
 }
 
 function Sidebar({ active }: { active: string }) {
-  // The three /settings/* routes collapse into one nav entry (the page owns
-  // its own tab bar), and Setup + Settings live in the footer like the TUI's
-  // secondary row rather than among the modes.
-  // A mode's sub-pages hang off the mode rather than standing in the nav: the
-  // chat and saved plans off Planning, the setup/schedule/review pages off
-  // Standup, the stepper and results off Analysis. Setup and Settings live in
-  // the footer like the TUI's secondary row rather than among the modes.
-  const primary = APP_ROUTES.filter(
-    (route) =>
-      route.path.startsWith('/') &&
-      !route.path.startsWith('/settings/') &&
-      route.path !== '/setup' &&
-      !SUB_PAGE.test(route.path),
-  );
+  // The three /settings/* routes collapse into one footer entry — the page owns
+  // its own tab bar. Everything else is grouped by navGroup above.
   return (
     <nav class="sidebar">
       <div class="sidebar-brand">
         <Duck state="idle" size={36} />
         <Wordmark text="YEABOI" label="yeaboi" size="110px" />
       </div>
-      {primary.map((route) => (
-        <a
-          key={route.path}
-          href={`#${route.path}`}
-          aria-current={active === route.path || active.startsWith(`${route.path}/`) ? 'page' : undefined}
-        >
-          {route.title}
-        </a>
-      ))}
+      {NAV_GROUPS.map((group) => {
+        const routes = APP_ROUTES.filter((route) => navGroup(route.path) === group);
+        if (routes.length === 0) return null;
+        return (
+          <div key={group || 'top'} class="sidebar-section">
+            {group && <div class="sidebar-heading">{group}</div>}
+            {routes.map((route) => (
+              <a
+                key={route.path}
+                class="sidebar-item"
+                href={`#${route.path}`}
+                aria-current={
+                  active === route.path || active.startsWith(`${route.path}/`) ? 'page' : undefined
+                }
+              >
+                {route.title}
+              </a>
+            ))}
+          </div>
+        );
+      })}
       <div class="sidebar-footer">
         <a href="#/setup" aria-current={active === '/setup' ? 'page' : undefined}>
           Setup

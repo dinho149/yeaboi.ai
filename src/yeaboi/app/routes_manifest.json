@@ -132,6 +132,41 @@
       "title": "Ship · Run"
     },
     {
+      "path": "/agents/usage",
+      "capability": "agent-usage",
+      "title": "Agent Usage"
+    },
+    {
+      "path": "/agents/advisor",
+      "capability": "agent-advisor",
+      "title": "Agent Advisor"
+    },
+    {
+      "path": "/agents/standup",
+      "capability": "agent-standup",
+      "title": "Agent Standup"
+    },
+    {
+      "path": "/agents/security",
+      "capability": "agent-security",
+      "title": "Agent Security"
+    },
+    {
+      "path": "/ceremonies",
+      "capability": "ceremonies",
+      "title": "Ceremonies"
+    },
+    {
+      "path": "/ceremonies/slack",
+      "capability": "slack-inbound",
+      "title": "Ceremonies · Slack"
+    },
+    {
+      "path": "/provenance",
+      "capability": "provenance",
+      "title": "Provenance"
+    },
+    {
       "path": "/settings/credentials",
       "capability": "settings",
       "title": "Settings · Credentials"

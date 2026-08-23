@@ -319,9 +319,9 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a welcome-screen keycap (s), not a card — an 11th card breaks the 84x40 layout"),
         "cli": {"ceremonies"},
         "skill": "ceremonies",
-        "desktop": Exempt(
-            "desktop: scheduled milestone M9 — a full page; the 84x40 card constraint does not exist here"
-        ),
+        # A full page rather than a card: the 84x40 constraint that kept it off
+        # the TUI menu does not exist here.
+        "desktop": {"/ceremonies"},
     },
     # The inbound half of that clock: a team reacting or replying in Slack, read
     # back on a schedule and applied to the run the post was about.
@@ -342,7 +342,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("a Slack column and a link hint on the Ceremonies page — no 11th card (84x40)"),
         "cli": {"slack"},
         "skill": "slack-inbound",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the Slack tab on the ceremonies page"),
+        "desktop": {"/ceremonies/slack"},
     },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
@@ -357,7 +357,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-usage",
         "cli": {"agents"},
         "skill": "agents-usage",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
+        "desktop": {"/agents/usage"},
     },
     "agent-advisor": {
         # advisor.py, not engine.py: the mirrored engine surface is served by
@@ -369,7 +369,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-advisor",
         "cli": {"agents"},
         "skill": "agents-advisor",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
+        "desktop": {"/agents/advisor"},
     },
     "agent-standup": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
@@ -377,7 +377,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-standup",
         "cli": {"agents"},
         "skill": "agents-standup",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
+        "desktop": {"/agents/standup"},
     },
     "agent-security": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_security")},
@@ -385,7 +385,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "agent-security",
         "cli": {"agents"},
         "skill": "agents-security",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the four Agents pages land together"),
+        "desktop": {"/agents/security"},
     },
     "provenance": {
         "engines": {
@@ -400,7 +400,8 @@ CAPABILITIES: dict[str, dict] = {
         ),
         "cli": {"provenance"},
         "skill": "provenance",
-        "desktop": Exempt("desktop: scheduled milestone M9 — the audit + trace explorer closes this tracked gap"),
+        # The audit + trace explorer — the first surface with a page for this.
+        "desktop": {"/provenance"},
     },
     "ship": {
         # The supervised story → PR pipeline. run_ship is the one entry point;
