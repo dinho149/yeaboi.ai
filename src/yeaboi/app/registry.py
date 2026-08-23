@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 
-from yeaboi.app import routes_meta, routes_settings
+from yeaboi.app import routes_chat, routes_meta, routes_settings
 from yeaboi.app.router import Router
 
 #: Routes that may answer without a bearer token. Kept as an explicit,
@@ -58,6 +58,10 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/settings/signin", routes_settings.signin_status, "settings"),
     AppRoute("POST", "/api/settings/signin/code", routes_settings.signin_code, "settings"),
     AppRoute("POST", "/api/settings/signin/cancel", routes_settings.signin_cancel, "settings"),
+    # -- the planning chat (capability "planning" — the M5 surface) ----------
+    AppRoute("POST", "/api/chat/sessions", routes_chat.create, "planning"),
+    AppRoute("GET", "/api/chat/sessions/{project_id}", routes_chat.get, "planning"),
+    AppRoute("POST", "/api/chat/sessions/{project_id}/send", routes_chat.send, "planning"),
 )
 
 

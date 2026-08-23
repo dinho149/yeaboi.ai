@@ -18,6 +18,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from yeaboi.app.auth import check_bearer
+from yeaboi.app.chats import ChatSupervisor
 from yeaboi.app.events import EventBus
 from yeaboi.app.ops import OperationTable
 from yeaboi.app.router import Request, Response, Router, parse_request
@@ -133,6 +134,7 @@ class AppServer:
         bus: EventBus | None = None,
         ops: OperationTable | None = None,
         router: Router | None = None,
+        chats: ChatSupervisor | None = None,
         on_shutdown=None,
     ) -> None:
         self.token = token
@@ -143,6 +145,9 @@ class AppServer:
         # `claude setup-token` child, driven a poll at a time over the API.
         self.signin = None
         self.signin_lock = threading.Lock()
+        # The open planning conversations (routes_chat) — sessions live here
+        # so a reloaded window rejoins the one it left.
+        self.chats = chats if chats is not None else ChatSupervisor()
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:

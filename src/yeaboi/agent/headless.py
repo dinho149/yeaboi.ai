@@ -81,22 +81,27 @@ def _predict_next_node(state: dict) -> str:
 def _next_auto_input(graph_state: dict) -> str | None:
     """Decide the synthetic input for the current state, or None when complete.
 
-    This is the auto-drive decision table from run_repl's export-only branch,
-    including the review-intercept bookkeeping that normally happens between
-    prompts (clearing pending_review before the next invoke).
+    An auto-responder over the same stage machine the chat drives
+    (agent/chat_session.py): every gate a human would answer gets the answer
+    nobody is there to give, plus the review-intercept bookkeeping that
+    normally happens between prompts.
 
     Raises:
         HeadlessPipelineError: when the state needs a human to progress
             (questionnaire mid-intake, neither complete nor awaiting
             confirmation).
     """
+    # Lazily, because chat_session reaches this module through streaming.
+    from yeaboi.agent.chat_session import clear_review_state, stage_of
+
+    stage = stage_of(graph_state)
+
     # Capacity warning — sprint_planner found the stories exceed the sprint
-    # target and parked a negative "recommended count" in state. The REPL asks
-    # the user [1] accept / [2] keep; headless always accepts the
+    # target and parked a negative "recommended count" in state. The chat asks
+    # extend / grow the team / overload; headless always accepts the
     # recommendation, same as --export-only.
-    cap = graph_state.get("capacity_override_target", 0)
-    if cap < -1:
-        recommended = abs(cap)
+    if stage == "capacity":
+        recommended = abs(graph_state.get("capacity_override_target", 0))
         logger.info("Capacity warning auto-accepted: %d sprints", recommended)
         graph_state["capacity_override_target"] = recommended
         return "accept recommended sprints"
@@ -106,10 +111,10 @@ def _next_auto_input(graph_state: dict) -> str | None:
     # nobody to ask, so it applies the confidence auto-rule: validate unless
     # the analyzer's confidence is high. Callers override via
     # run_planning_pipeline(architecture_spike=...).
-    spike_prompt = graph_state.get("_spike_prompt")
-    if spike_prompt:
+    if stage == "spike":
         from yeaboi.agent.nodes import spike_recommended
 
+        spike_prompt = graph_state.get("_spike_prompt") or {}
         choice = "include" if spike_recommended(spike_prompt.get("confidence", "")) else "skip"
         logger.info("Spike question auto-answered: %s (confidence=%s)", choice, spike_prompt.get("confidence", ""))
         graph_state["spike_choice"] = choice
@@ -117,28 +122,30 @@ def _next_auto_input(graph_state: dict) -> str | None:
         return f"{choice} the architecture spike"
 
     # Review checkpoint — a generation node produced artifacts and set
-    # pending_review. The REPL's intercept clears the review fields on accept
+    # pending_review. The chat's intercept clears the review fields on accept
     # and re-invokes; we do the same. project_intake's pending_review is the
     # intake confirmation gate — the intake node itself consumes the "accept"
     # (via _is_confirm_intent), so only the pipeline checkpoints clear the
     # review-feedback fields here.
     pending = graph_state.get("pending_review")
     if pending:
-        graph_state.pop("pending_review", None)
-        if pending != "project_intake":
-            graph_state.pop("last_review_decision", None)
-            graph_state.pop("last_review_feedback", None)
-            graph_state.pop("review_feedback_images", None)
+        if pending == "project_intake":
+            graph_state.pop("pending_review", None)
+        else:
+            clear_review_state(graph_state)
             if _predict_next_node(graph_state) == "agent":
                 return None  # accepted the final artifact — plan complete
         return "accept"
 
-    qs = graph_state.get("questionnaire")
-    if isinstance(qs, QuestionnaireState) and qs.completed:
-        if _predict_next_node(graph_state) == "agent":
-            return None  # pipeline complete
+    # The epic step is a chat affordance (it reformats before the feature
+    # stage); headless never sets _epic_reviewed, so it reads as one more
+    # pipeline step and gets the same "continue".
+    if stage in ("pipeline", "epic"):
         return "continue"
+    if stage == "chat":
+        return None  # pipeline complete
 
+    qs = graph_state.get("questionnaire")
     if isinstance(qs, QuestionnaireState) and qs.awaiting_confirmation:
         # Prior-art sub-loop — the intake is asking which existing repositories
         # are relevant. Headless has nobody to ask, so it answers "none":
@@ -148,6 +155,7 @@ def _next_auto_input(graph_state: dict) -> str | None:
         # that DO know pass them in via run_planning_pipeline(prior_art=...).
         # A legacy "reason" stage (resumed old session) gets "none" too: the
         # node re-asks the batch on that input and the next pass answers it.
+        # "empty" is not a question, so it falls through to the confirmation.
         if qs._prior_art_stage in ("ask", "reason"):
             logger.info("Headless: skipping the prior-art step (no user to ask)")
             return "none"

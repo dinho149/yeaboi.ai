@@ -28,37 +28,38 @@ import logging
 import threading
 import time
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 from rich.console import Console
 from rich.live import Live
 
 from yeaboi.agent.chat_intake import GREETING_TEXT, SIZE_QUESTION_TEXT, parse_size_reply, resolve_intake_mode
+
+# The decision layer: which stage the conversation is in, what a reply becomes,
+# how a review verdict reads. This module renders those answers; it does not
+# make them, so every other surface driving the same graph can reuse them.
 from yeaboi.agent.chat_session import (
     ACCEPT_WORDS,
+    CONFIRM_VERDICT_PROMPT,
     PIPELINE_NODES,
     PROGRESS_DONE_KEYS,
     Accept,
     AwaitConfirm,
     ChatSession,
     Done,
+    ShowArtifact,
     SwitchSize,
     Token,
     TrackerSync,
+    UserSaid,
     at_intake_summary,
     at_prior_art,
     clear_review_state,
     next_node,
-    replay_plan,
+    replay,
     reply_event,
     review_gate,
     review_verdict,
 )
-
-# The decision layer: which stage the conversation is in, what a reply becomes,
-# how a review verdict reads. This module renders those answers; it does not
-# make them, so every other surface driving the same graph can reuse them.
-from yeaboi.agent.chat_session import CONFIRM_VERDICT_PROMPT as _CONFIRM_VERDICT_PROMPT
-from yeaboi.agent.chat_session import PRIOR_ART_VERDICT_PROMPT as _PRIOR_ART_VERDICT_PROMPT
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
 from yeaboi.agent.streaming import ChatStreamCancelledError
 from yeaboi.input_guardrails import validate_chat_input
@@ -484,8 +485,7 @@ class _ChatDriver:
             self._append_reply(streamed="")
         elif changed and self._at_intake_summary():
             # Dry-run edits move answers without messages — re-post the card.
-            self.transcript.add_artifact("intake_summary")
-            self._say(_CONFIRM_VERDICT_PROMPT)
+            self._render_reply(AwaitConfirm(kind="intake_summary", prompt=CONFIRM_VERDICT_PROMPT))
         self._save()
         self._drain_consents()
         logger.info("Chat: answer browser end (changed=%s)", changed)
@@ -1552,41 +1552,16 @@ class _ChatDriver:
     # ---------------------------------------------------------------- resume
 
     def _rebuild_transcript(self) -> None:
-        for entry in self.state.get("_chat_preamble") or []:
-            if entry.get("role") == "user":
-                self.transcript.add_user(entry.get("text", ""))
+        for item in replay(self.state):
+            if isinstance(item, UserSaid):
+                self.transcript.add_user(item.text)
+            elif isinstance(item, ShowArtifact):
+                self.transcript.add_artifact(item.kind)
+            elif isinstance(item, AwaitConfirm):
+                self.transcript.add_artifact(item.kind)
+                self.transcript.add_assistant(item.prompt)
             else:
-                self.transcript.add_assistant(entry.get("text", ""))
-        messages = self.state.get("messages", [])
-        # Which stored replies come back as cards rather than as the markdown
-        # wall the cards exist to replace — the same routing the live turn used.
-        plan = replay_plan(self.state)
-        for i, message in enumerate(messages):
-            if isinstance(message, HumanMessage) and isinstance(message.content, str):
-                self.transcript.add_user(message.content)
-            elif isinstance(message, AIMessage) and isinstance(message.content, str) and message.content:
-                if i == plan.summary_at:
-                    self.transcript.add_artifact("intake_summary")
-                    self.transcript.add_assistant(_CONFIRM_VERDICT_PROMPT)
-                elif i == plan.prior_art_at:
-                    self.transcript.add_artifact("prior_art")
-                    self.transcript.add_assistant(_PRIOR_ART_VERDICT_PROMPT)
-                else:
-                    self.transcript.add_assistant(message.content)
-        for kind, key in (
-            ("analysis", "project_analysis"),
-            ("features", "features"),
-            ("stories", "stories"),
-            ("tasks", "tasks"),
-            ("sprints", "sprints"),
-        ):
-            if self.state.get(key):
-                self.transcript.add_artifact(kind)
-        if self.state.get("sprints"):
-            # A finished plan resumes with its recap card — silently: the
-            # celebration (quack + shades) fired when the build completed and
-            # must not replay on every resume (_built_this_session gates it).
-            self.transcript.add_artifact("recap")
+                self.transcript.add_assistant(item.text)
         self._pin_bottom()
         logger.info("Chat transcript rebuilt: %d messages", len(self.transcript.messages))
 

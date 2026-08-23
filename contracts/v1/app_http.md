@@ -87,3 +87,37 @@ Request-scoped streams (chat send, engine runs — from M5) return chunked
 bodies of NDJSON, one JSON object per line, terminated by a `{"type":"done"}`
 or `{"type":"error"}` line. The ambient SSE feed is never used for
 request-scoped data.
+
+## Chat routes (M5)
+
+The planning conversation. Sessions live in the backend (one `ChatSession` per
+project id, the same project store the TUI resumes from), so a reloaded window
+rejoins the conversation it left rather than restarting it.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/chat/sessions` | body `{description, intake_mode?: "small_project"\|"smart"}` → 201 with the session view. An absent `intake_mode` is classified from the description. |
+| GET | `/api/chat/sessions/{project_id}` | the session view; 404 when no such conversation is open or stored |
+| POST | `/api/chat/sessions/{project_id}/send` | body `{text, images?: [..]}` → a chunked NDJSON turn; 409 while a turn is already running |
+
+The **session view** is
+`{project_id, stage, transcript: [<event>], question: {question_text, choices, multi_select, auto_submit, prior_art, suggestion, progress, phase_label, current_question, preamble_lines}}`.
+`stage` is one of `intake`, `review`, `pipeline`, `epic`, `capacity`, `spike`,
+`chat` — the one predicate every surface routes on.
+
+A **turn** streams these line types, in order: `op` first, then any number of
+`token`/`assistant`/`question`/`await_confirm`/`artifact`, terminated by
+`done`, `cancelled` or `error`. Consumers must ignore unknown types.
+
+| Line | Shape |
+|---|---|
+| `op` | `{type, op_id}` — cancel the turn with `POST /api/ops/{op_id}/cancel` |
+| `token` | `{type, text}` — a chunk of the reply as it forms |
+| `assistant` | `{type, text}` — the finished reply, as prose |
+| `user` | `{type, text}` — replay only |
+| `question` | `{type, text, number}` — an intake question, decorated for chat |
+| `await_confirm` | `{type, kind, prompt}` — an artifact card plus the line asking for a verdict |
+| `artifact` | `{type, kind}` — a card rendered from state (replay only) |
+| `done` | `{type, stage}` — the turn landed; `stage` is the new one |
+| `cancelled` | `{type}` — the turn was cancelled; state is unchanged |
+| `error` | `{type, message}` — a classified, one-line provider/integration failure |

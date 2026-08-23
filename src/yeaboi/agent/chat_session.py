@@ -115,6 +115,13 @@ class Assistant:
 
 
 @dataclass(frozen=True)
+class UserSaid:
+    """Something the user said — only ever produced by the replay."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class AskQuestion:
     """An intake question, decorated for chat."""
 
@@ -348,6 +355,55 @@ def replay_plan(state: dict) -> ReplayPlan:
     return ReplayPlan(summary_at=summary_at, prior_art_at=prior_art_at)
 
 
+# Which artifact card each stored artifact resumes as, in pipeline order.
+ARTIFACT_STATE_KEYS = (
+    ("analysis", "project_analysis"),
+    ("features", "features"),
+    ("stories", "stories"),
+    ("tasks", "tasks"),
+    ("sprints", "sprints"),
+)
+
+ReplayItem = UserSaid | Assistant | AwaitConfirm | ShowArtifact
+
+
+def replay(state: dict) -> list[ReplayItem]:
+    """Rebuild the whole conversation from stored state, in order.
+
+    The greeting exchange lives in ``_chat_preamble`` rather than in messages
+    (project_intake reads ``messages[0]`` as the description), so it leads;
+    then the messages, with the gate replies routed through
+    :func:`replay_plan`; then the artifacts the session already holds. A
+    finished plan ends on its recap card — silently, because the celebration
+    fired when the build completed and must not replay on every resume.
+    """
+    items: list[ReplayItem] = []
+    for entry in state.get("_chat_preamble") or []:
+        text = entry.get("text", "")
+        items.append(UserSaid(text) if entry.get("role") == "user" else Assistant(text))
+
+    plan = replay_plan(state)
+    for i, message in enumerate(state.get("messages", [])):
+        if not isinstance(message.content, str):
+            continue
+        if isinstance(message, HumanMessage):
+            items.append(UserSaid(message.content))
+        elif isinstance(message, AIMessage) and message.content:
+            if i == plan.summary_at:
+                items.append(AwaitConfirm(kind="intake_summary", prompt=CONFIRM_VERDICT_PROMPT))
+            elif i == plan.prior_art_at:
+                items.append(AwaitConfirm(kind="prior_art", prompt=PRIOR_ART_VERDICT_PROMPT))
+            else:
+                items.append(Assistant(message.content))
+
+    for kind, key in ARTIFACT_STATE_KEYS:
+        if state.get(key):
+            items.append(ShowArtifact(kind))
+    if state.get("sprints"):
+        items.append(ShowArtifact("recap"))
+    return items
+
+
 # ------------------------------------------------------------ review verdicts
 
 
@@ -397,6 +453,36 @@ def clear_review_state(state: dict) -> None:
     """Drop the review bookkeeping so the next invoke runs the next stage."""
     for key in _REVIEW_STATE_KEYS:
         state.pop(key, None)
+
+
+def start_state(description: str, *, intake_mode: str = "") -> dict:
+    """The state a fresh conversation starts from.
+
+    The greeting and the size pick belong to ``_chat_preamble``, never to
+    ``messages`` — project_intake reads ``messages[0]`` as the description, so
+    anything else in front of it would be planned instead of the project. An
+    unstated size is classified from the description, exactly as the chat's
+    greeting does.
+    """
+    from yeaboi.agent.chat_intake import GREETING_TEXT, resolve_intake_mode
+
+    mode = intake_mode
+    if not mode:
+        mode = resolve_intake_mode(description)[0] or "smart"
+    label = "Small" if mode == "small_project" else "Large"
+    logger.info("Chat session opened: mode=%s description_len=%d", mode, len(description))
+    return {
+        "messages": [],
+        "questionnaire": None,
+        "_intake_mode": mode,
+        "_chat_greeting_done": True,
+        # The description is deliberately absent: it becomes messages[0] on the
+        # first turn, and replaying it here too would show it twice.
+        "_chat_preamble": [
+            {"role": "ai", "text": GREETING_TEXT},
+            {"role": "ai", "text": f"Sounds like a {label} plan — switch any time with /small · /large."},
+        ],
+    }
 
 
 # --------------------------------------------------------------- the session
