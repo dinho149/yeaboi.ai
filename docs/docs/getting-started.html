@@ -30,7 +30,7 @@
 <meta name="twitter:description" content="Install yeaboi, run the first-time setup wizard, configure API keys, and pick an intake mode." />
 <meta name="twitter:image" content="https://yeaboi.ai/assets/og-card.png" />
 <meta name="twitter:image:alt" content="yeaboi — best friend to engineers and agents" />
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","@id":"https://yeaboi.ai/docs/getting-started.html#article","url":"https://yeaboi.ai/docs/getting-started.html","headline":"Getting Started","name":"Getting Started — yeaboi docs","description":"Install yeaboi, run the first-time setup wizard, configure API keys, and pick an intake mode.","articleSection":"Start","inLanguage":"en","image":"https://yeaboi.ai/assets/og-card.png","license":"https://opensource.org/licenses/MIT","publisher":{"@type":"Organization","@id":"https://yeaboi.ai/#organization","name":"yeaboi","alternateName":"yeaboi.ai","url":"https://yeaboi.ai/","logo":{"@type":"ImageObject","url":"https://yeaboi.ai/assets/duck-base.png","width":480,"height":509},"sameAs":["https://github.com/dinho149/yeaboi.ai","https://pypi.org/project/yeaboi/"]},"about":{"@type":"SoftwareApplication","@id":"https://yeaboi.ai/#software","name":"yeaboi","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Linux, Windows"},"isPartOf":{"@type":"WebSite","@id":"https://yeaboi.ai/#website","url":"https://yeaboi.ai/","name":"yeaboi"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://yeaboi.ai/docs/getting-started.html"}},{"@type":"BreadcrumbList","@id":"https://yeaboi.ai/docs/getting-started.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://yeaboi.ai/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://yeaboi.ai/docs/index.html"},{"@type":"ListItem","position":3,"name":"Getting Started"}]}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","@id":"https://yeaboi.ai/docs/getting-started.html#article","url":"https://yeaboi.ai/docs/getting-started.html","headline":"Getting Started","name":"Getting Started — yeaboi docs","description":"Install yeaboi, run the first-time setup wizard, configure API keys, and pick an intake mode.","articleSection":"Start","inLanguage":"en","image":"https://yeaboi.ai/assets/og-card.png","license":"https://opensource.org/licenses/MIT","publisher":{"@type":"Organization","@id":"https://yeaboi.ai/#organization","name":"yeaboi","alternateName":"yeaboi.ai","url":"https://yeaboi.ai/","logo":{"@type":"ImageObject","url":"https://yeaboi.ai/assets/duck-base.png","width":480,"height":509},"sameAs":["https://github.com/dinho149/yeaboi.ai","https://pypi.org/project/yeaboi/"]},"about":{"@type":"SoftwareApplication","@id":"https://yeaboi.ai/#software","name":"yeaboi","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Linux"},"isPartOf":{"@type":"WebSite","@id":"https://yeaboi.ai/#website","url":"https://yeaboi.ai/","name":"yeaboi"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://yeaboi.ai/docs/getting-started.html"}},{"@type":"BreadcrumbList","@id":"https://yeaboi.ai/docs/getting-started.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://yeaboi.ai/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://yeaboi.ai/docs/index.html"},{"@type":"ListItem","position":3,"name":"Getting Started"}]}]}</script>
 <!-- Google Analytics 4 (G-K9HLPT5ZMP). In <head> because navigateTo() swaps
      #page-content with outerHTML, so a body script would never execute after a
      client-side nav. Cookieless (client_storage:'none'), so no consent banner is
@@ -71,7 +71,9 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
 
       <h2 id="prerequisites">Prerequisites</h2>
       <ul>
-        <li>Python 3.11+</li>
+        <li>macOS or Linux (on Windows, use <a href="https://learn.microsoft.com/windows/wsl/install">WSL</a>)</li>
+        <li>No Python needed — the installer below brings its own. (Installing with <code>pip</code>
+            or <code>pipx</code> instead? Those need Python 3.11+ already present.)</li>
         <li>An API key for at least one LLM provider:
           <ul>
             <li><a href="https://console.anthropic.com/settings/keys">Anthropic</a> (recommended)</li>
@@ -82,7 +84,26 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
         </li>
       </ul>
 
-      <h2 id="installation">Installation (development)</h2>
+      <h2 id="installation">Installation</h2>
+      <pre><code>curl -LsSf https://yeaboi.ai/install.sh | sh
+yeaboi --setup      # configure your API key
+yeaboi              # launch the interactive TUI</code></pre>
+      <p>The script installs <a href="https://docs.astral.sh/uv/">uv</a> if it is missing, then gives
+         yeaboi its own isolated environment on a Python that uv downloads — so the Python already on
+         your machine does not matter. It writes only under your home directory and never uses
+         <code>sudo</code>. You can
+         <a href="https://github.com/dinho149/yeaboi.ai/blob/main/docs/install.sh">read it first</a>.</p>
+
+      <h3 id="other-install-methods">Other ways to install</h3>
+      <pre><code>uv tool install yeaboi                       # already have uv
+uvx yeaboi                                   # try it without installing
+pipx install --python 3.12 --fetch-missing-python yeaboi
+pip install yeaboi                           # needs Python 3.11+ already present</code></pre>
+      <p><code>uv tool install</code> fetches a Python for you when nothing on the machine qualifies.
+         <strong><code>pipx</code> and <code>pip</code> do not</strong> — they install with the
+         interpreter they are run under, which is why those flags are needed.</p>
+
+      <h2 id="installation-development">Installing from source (development)</h2>
       <pre><code>make install        # installs uv, creates venv, installs dependencies
 make env            # creates .env from .env.example
 make pre-commit     # installs pre-commit hooks</code></pre>

@@ -484,6 +484,11 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_hygiene_lens.py",
     "tests/unit/test_wt_script.py",
     "tests/unit/test_wt_issue_script.py",
+    # docs/install.sh is served straight off main by GitHub Pages — no build, no
+    # deploy job — so nothing else in the pipeline notices it breaking. It also
+    # guards the install commands the README and landing page advertise, and
+    # README.md is INERT: without this entry a README-only change runs nothing.
+    "tests/unit/test_install_script.py",
     # The ship gate reads the Makefile, the slash commands and this file. Nothing
     # about a changed module implies it, and its whole subject is the machinery
     # that decides what a scoped run covers — so it has to run on every one.

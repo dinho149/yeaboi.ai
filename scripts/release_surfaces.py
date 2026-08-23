@@ -63,6 +63,14 @@ BASELINE: tuple[Item, ...] = (
         why="the wheel is the artefact users get; the repo checkout proves nothing about it",
     ),
     Item(
+        label="bootstrap",
+        what="in a container with no uv and a Python below the floor "
+        "(`docker run --rm -it python:3.9-slim`), run "
+        "`curl -fsSL https://yeaboi.ai/install.sh | sh`, then `yeaboi --version`",
+        why="the installer is served straight off main by GitHub Pages — no build, no deploy job — "
+        "so a broken script is invisible to every test, and it is the first thing a new user runs",
+    ),
+    Item(
         label="boot",
         what="`yeaboi --dry-run` — splash, landing split, a mode card, then `q`",
         why="`q` must restore the terminal: raw mode, alt-screen and mouse tracking are only exercised by a real tty",

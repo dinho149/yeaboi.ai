@@ -123,7 +123,8 @@ def detect_upgrade_command() -> str:
     """Best-effort detection of how yeaboi was installed (uv tool vs pipx).
 
     uv tool venvs live under ``~/.local/share/uv/tools/``; pipx venvs under
-    ``~/.local/pipx/venvs/``. Falls back to the documented uv install method.
+    ``~/.local/pipx/venvs/``; an ephemeral ``uvx`` run lives in uv's cache under
+    ``archive-v0/``. Falls back to the documented uv install method.
 
     One asymmetry, and it is deliberate: dictation installed from inside the app
     goes in with ``uv pip install``, which uv's *tool receipt* does not record —
@@ -138,6 +139,11 @@ def detect_upgrade_command() -> str:
         exe = sys.executable or ""
     if "/pipx/venvs/" in exe:
         return "pipx upgrade yeaboi"
+    # A `uvx yeaboi` run is a throwaway cache environment, so there is nothing to
+    # upgrade — `uv tool upgrade` would answer "yeaboi is not installed". The
+    # honest next step for an ephemeral user is to make the install permanent.
+    if "/archive-v0/" in exe:
+        return "uv tool install yeaboi"
     if "/uv/tools/" in exe and _voice_is_live():
         return "uv tool install --force 'yeaboi[voice]'"
     return "uv tool upgrade yeaboi"
