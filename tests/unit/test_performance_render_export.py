@@ -1,7 +1,6 @@
 """Unit tests for Performance rendering, export, and delivery."""
 
 import pytest
-from rich.console import Group
 
 from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
@@ -9,7 +8,9 @@ from yeaboi.performance import delivery, export, render
 
 
 class TestRender:
-    def test_prep_lines_and_rich(self):
+    """The plaintext surface. The styled one lives in ui/shared/_performance_rows.py."""
+
+    def test_prep_lines(self):
         prep = OneOnOnePrep(
             engineer="Ada",
             date="2026-07-12",
@@ -21,19 +22,16 @@ class TestRender:
         lines = render.format_prep_lines(prep)
         text = "\n".join(lines)
         assert "Ada" in text and "tp" in text and "carry" in text and "w" in text
-        assert isinstance(render.format_prep_rich(prep), Group)
 
-    def test_completion_lines_and_rich(self):
+    def test_completion_lines(self):
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="Hi Ada", action_items=("do x",))
         text = "\n".join(render.format_completion_lines(rec))
         assert "Hi Ada" in text and "do x" in text
-        assert isinstance(render.format_completion_rich(rec), Group)
 
-    def test_review_lines_and_rich(self):
+    def test_review_lines(self):
         rev = SixMonthReview(engineer="Ada", strengths=("s",), overall="great", period_start="a", period_end="b")
         text = "\n".join(render.format_review_lines(rev))
         assert "great" in text and "s" in text
-        assert isinstance(render.format_review_rich(rev), Group)
 
 
 class TestMarkdownLayout:
@@ -219,3 +217,56 @@ class TestPayload:
         report = island(export.build_completion_html(record))["report"]
         assert report["lead"] == {"title": "Summary email", "text": "We agreed on the plan."}
         assert report["sections"][0] == {"title": "Subject", "items": ["1:1 recap"]}
+
+
+class TestTheEmailBodyStillComesFromHere:
+    """``delivery.py`` is why the plaintext builders survive.
+
+    The styled renderer replaced them on every other surface, and a later reader
+    could reasonably take these for dead code — this is the test that says
+    otherwise, by sending a 1:1 the model wrote no summary for.
+    """
+
+    def test_a_summary_with_no_model_prose_falls_back_to_the_plaintext_rendering(self, monkeypatch):
+        captured = {}
+
+        class _FakeSMTP:
+            def __init__(self, host, port, timeout=20):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def ehlo(self):
+                pass
+
+            def has_extn(self, x):
+                return False
+
+            def login(self, u, p):
+                pass
+
+            def send_message(self, msg):
+                captured["body"] = msg.get_content()
+
+        monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "smtp.example.com")
+        monkeypatch.setattr("yeaboi.config.get_smtp_port", lambda: 587)
+        monkeypatch.setattr("yeaboi.config.get_smtp_user", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_password", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_sender", lambda: "me@example.com")
+        monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: ["boss@example.com"])
+        monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
+
+        record = OneOnOneRecord(
+            engineer="Ada",
+            date="2026-07-12",
+            email_subject="1:1",
+            email_summary="",
+            action_items=("Write the runbook",),
+        )
+        assert delivery.send_completion_email(record) is True
+        assert captured["body"].strip() == "\n".join(render.format_completion_lines(record)).strip()
+        assert "Write the runbook" in captured["body"]

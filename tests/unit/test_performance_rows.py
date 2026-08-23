@@ -24,8 +24,8 @@ from yeaboi.agent.state import (
     PerformanceNote,
     SixMonthReview,
 )
-from yeaboi.ui.mode_select.screens._performance_sections import performance_detail_rows
 from yeaboi.ui.shared._components import PERFORMANCE_THEME
+from yeaboi.ui.shared._performance_rows import performance_detail_rows
 
 WIDTH = 100
 

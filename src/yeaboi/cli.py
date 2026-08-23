@@ -1777,6 +1777,22 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         return 1
 
 
+def _print_perf(console, artifact, kind: str) -> None:
+    """Print a performance artifact through the same renderer the TUI page uses.
+
+    One artifact, one rendering: the CLI used to have its own Rich formatter that
+    duplicated the layout and hardcoded the mode accent as a literal, with a
+    comment admitting it had to be kept in sync by hand.
+    """
+    from rich.console import Group
+
+    from yeaboi.ui.shared._components import PERFORMANCE_THEME
+    from yeaboi.ui.shared._performance_rows import performance_detail_rows
+
+    rows, _heights = performance_detail_rows(artifact, kind=kind, theme=PERFORMANCE_THEME, width=console.width)
+    console.print(Group(*rows))
+
+
 def _strict_exit(strict: bool, warnings, empty: bool = False) -> int:
     """--strict maps a degraded run (warnings, or an empty result) to exit 3 —
     so CI can tell a real report from a deterministic fallback. Default runs
@@ -2122,7 +2138,6 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
 
     if args.perf_command == "prep":
         from yeaboi.performance.engine import run_one_on_one_prep
-        from yeaboi.performance.render import format_prep_rich
 
         prep = run_one_on_one_prep(
             args.engineer,
@@ -2133,7 +2148,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
         )
         for warning in prep.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
-        console.print(format_prep_rich(prep))
+        _print_perf(console, prep, "prep")
         return _strict_exit(args.strict, prep.warnings)
 
     if args.perf_command == "complete":
@@ -2149,7 +2164,6 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
                 return 1
             transcript = path.read_text().strip()
         from yeaboi.performance.engine import complete_one_on_one
-        from yeaboi.performance.render import format_completion_rich
 
         record = complete_one_on_one(
             args.engineer,
@@ -2161,12 +2175,11 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
         )
         for warning in record.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
-        console.print(format_completion_rich(record))
+        _print_perf(console, record, "completion")
         return _strict_exit(args.strict, record.warnings)
 
     if args.perf_command == "review":
         from yeaboi.performance.engine import run_six_month_review
-        from yeaboi.performance.render import format_review_rich
 
         review = run_six_month_review(
             args.engineer,
@@ -2178,7 +2191,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
         )
         for warning in review.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
-        console.print(format_review_rich(review))
+        _print_perf(console, review, "review")
         return _strict_exit(args.strict, review.warnings)
 
     # note

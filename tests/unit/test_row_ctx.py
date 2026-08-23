@@ -15,8 +15,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.ui.mode_select.screens._row_ctx import RowCtx, max_scroll_for, pack_viewport
 from yeaboi.ui.shared._components import PERFORMANCE_THEME
+from yeaboi.ui.shared._row_ctx import RowCtx, max_scroll_for, pack_viewport
 
 
 def _rendered_height(renderable, width: int) -> int:

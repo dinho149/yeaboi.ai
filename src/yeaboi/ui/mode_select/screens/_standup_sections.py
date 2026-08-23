@@ -32,8 +32,8 @@ from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
-from yeaboi.ui.mode_select.screens._row_ctx import RowCtx
 from yeaboi.ui.shared._components import PAD, Theme
+from yeaboi.ui.shared._row_ctx import RowCtx
 
 _TEASER_W = 46  # max teaser length on an overview section row
 _TITLE_W = 22  # section-title column width — teasers align to it, as does the summary continuation row

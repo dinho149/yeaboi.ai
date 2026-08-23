@@ -27,8 +27,8 @@ from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
-from yeaboi.ui.mode_select.screens._row_ctx import RowCtx
 from yeaboi.ui.shared._components import PAD, Theme, build_meter
+from yeaboi.ui.shared._row_ctx import RowCtx
 
 # Coverage state → (glyph, theme attribute). The word always renders beside the
 # glyph; colour alone is not a signal every reader can receive. An unrecognised

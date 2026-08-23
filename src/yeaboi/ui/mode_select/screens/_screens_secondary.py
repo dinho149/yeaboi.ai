@@ -2713,7 +2713,6 @@ def _build_standup_screen(
 
     # See docs: "Daily Standup" — TUI page
     """
-    from yeaboi.ui.mode_select.screens._row_ctx import max_scroll_for, pack_viewport
     from yeaboi.ui.mode_select.screens._standup_sections import (
         _confidence_style,
         _StandupCtx,
@@ -2722,6 +2721,7 @@ def _build_standup_screen(
         standup_card_title,
     )
     from yeaboi.ui.shared._components import STANDUP_THEME, build_meter, build_reveal_subtitle, standup_title
+    from yeaboi.ui.shared._row_ctx import max_scroll_for, pack_viewport
 
     theme = STANDUP_THEME
     title = standup_title(shimmer_tick)
@@ -3953,8 +3953,6 @@ def _build_performance_screen(
 
     # See docs: "Performance Mode" — TUI page
     """
-    from yeaboi.ui.mode_select.screens._performance_sections import performance_detail_rows
-    from yeaboi.ui.mode_select.screens._row_ctx import max_scroll_for, pack_viewport
     from yeaboi.ui.mode_select.screens._screens import _build_mode_row
     from yeaboi.ui.shared._components import (
         PERFORMANCE_THEME,
@@ -3963,6 +3961,8 @@ def _build_performance_screen(
         build_reveal_subtitle,
         performance_title,
     )
+    from yeaboi.ui.shared._performance_rows import performance_detail_rows
+    from yeaboi.ui.shared._row_ctx import max_scroll_for, pack_viewport
 
     theme = PERFORMANCE_THEME
     _accent = "rgb(220,110,90)"  # PERFORMANCE_THEME accent — the mode-row colour key
