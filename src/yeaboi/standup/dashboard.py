@@ -100,12 +100,13 @@ def cards(data: dict) -> list[dict]:
     return out
 
 
-def collect(session_id: str = "", *, db_path=None, message: str = "") -> dict:
+def collect(session_id: str = "", *, db_path=None, message: str = "", run_id: int = 0) -> dict:
     """Everything a standup dashboard draws, for one session.
 
     ``session_id`` blank targets the most recently modified session, which is
-    what a page opened from the home screen means. Every read is defensive: a
-    dashboard that cannot reach one store should still show the rest, so a
+    what a page opened from the home screen means. ``run_id`` opens one past
+    run from the saved-runs hub instead of the latest. Every read is defensive:
+    a dashboard that cannot reach one store should still show the rest, so a
     failure warns and leaves that key at its empty default.
     """
     from yeaboi.config import get_standup_user_name
@@ -123,6 +124,8 @@ def collect(session_id: str = "", *, db_path=None, message: str = "") -> dict:
         "review": None,
         "nudge": None,
         "gap_issues": [],
+        "history": [],
+        "run_id": run_id,
     }
     try:
         from yeaboi.sessions import SessionStore, make_display_name
@@ -145,7 +148,8 @@ def collect(session_id: str = "", *, db_path=None, message: str = "") -> dict:
 
         with StandupStore(db_path) as store:
             data["config"] = store.load_config(session_id)
-            data["report"] = store.get_latest_report(session_id)
+            data["report"] = store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
+            data["history"] = store.get_history(session_id, limit=30)
             # The most recent transcript review + the gap→issue ledger, so the
             # Transcript Review card can show which gaps are already filed.
             data["review"] = store.get_latest_review(session_id)

@@ -134,8 +134,9 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/standup/dashboard` | query `session_id?` (blank = the most recent session) → the whole dashboard in one read |
+| GET | `/api/standup/dashboard` | query `session_id?` (blank = the most recent session), `run_id?` (open one past run instead of the latest) → the whole dashboard in one read |
 | POST | `/api/standup/run` | body `{session_id, deliver?: false}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere |
+| POST | `/api/standup/runs/{run_id}/delete` | drop one run from the saved-runs hub; 404 when unknown |
 | GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
 | POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs |
 | GET | `/api/analysis/options` | what a setup wizard may offer on this machine |
@@ -145,7 +146,8 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | POST | `/api/analysis/run` | the setup wizard's payload → a chunked NDJSON run |
 
 The **standup dashboard** is
-`{session_id, session_name, my_name, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
+`{session_id, session_name, my_name, run_id, history, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
+`history` is the saved-runs hub — every run this session has done, newest first.
 `cards` is the card vocabulary both surfaces share: `summary`, `my_update`,
 `team`, `member:<name>`, `conflicts`, `activity`, `gaps`, `schedule`,
 `notices` — computed per report, because a card with nothing in it would

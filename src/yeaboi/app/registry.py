@@ -65,6 +65,7 @@ ROUTES: tuple[AppRoute, ...] = (
     # -- the standup dashboard (capability "standup" — the M6 surface) -------
     AppRoute("GET", "/api/standup/dashboard", routes_standup.dashboard, "standup"),
     AppRoute("POST", "/api/standup/run", routes_standup.run, "standup"),
+    AppRoute("POST", "/api/standup/runs/{run_id}/delete", routes_standup.delete_run, "standup"),
     AppRoute("GET", "/api/standup/schedule", routes_standup.schedule, "standup"),
     AppRoute("POST", "/api/standup/schedule", routes_standup.set_schedule, "standup"),
     # -- team analysis (capability "team-analysis" — the M6 surface) ---------

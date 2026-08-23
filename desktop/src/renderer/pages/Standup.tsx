@@ -11,6 +11,7 @@ import {
   type MemberUpdate,
   type RunLine,
   type StandupDashboard,
+  deleteRun,
   emptyRun,
   loadStandup,
   ratePractice,
@@ -30,17 +31,26 @@ export function Standup() {
   const [run, setRun] = useState(emptyRun());
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState('summary');
+  const [runId, setRunId] = useState(0);
+  const [showRuns, setShowRuns] = useState(false);
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    void refresh(runId);
+  }, [runId]);
 
-  async function refresh() {
+  async function refresh(id = runId) {
     try {
-      setData(await loadStandup());
+      setData(await loadStandup('', id));
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  async function drop(id: number) {
+    await deleteRun(id);
+    // Deleting the run that is open puts the page back on the latest one.
+    if (id === runId) setRunId(0);
+    else await refresh();
   }
 
   async function generate(deliver: boolean) {
@@ -86,10 +96,44 @@ export function Standup() {
           <button type="button" disabled={busy || !report} onClick={() => void generate(true)}>
             Generate &amp; deliver
           </button>
+          <button type="button" onClick={() => setShowRuns(!showRuns)}>
+            {showRuns ? 'Hide past runs' : `Past runs (${data.history.length})`}
+          </button>
+          <a href="#/humans/standup/setup">Setup</a>
           <a href="#/humans/standup/schedule">Schedule</a>
           <a href="#/humans/standup/review">Transcript review</a>
         </div>
       </header>
+
+      {showRuns && (
+        <Card title="Past runs">
+          <ul class="member-list">
+            {data.history.map((entry) => (
+              <li key={entry.id}>
+                <span class={entry.id === runId || (!runId && entry === data.history[0]) ? 'dot active' : 'dot'} />
+                <button type="button" class="rail-tab" onClick={() => setRunId(entry.id)}>
+                  {entry.standup_date} · day {entry.sprint_day} · {entry.confidence_pct}%
+                </button>
+                <span>
+                  {entry.status}
+                  <button type="button" onClick={() => void drop(entry.id)}>
+                    Delete
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!data.history.length && <p>No runs yet.</p>}
+          {runId ? (
+            <p class="dash-note">
+              Showing a past run.{' '}
+              <button type="button" class="rail-tab" onClick={() => setRunId(0)}>
+                Back to the latest
+              </button>
+            </p>
+          ) : null}
+        </Card>
+      )}
 
       {busy && (
         <Card title="Working">
@@ -132,7 +176,7 @@ export function Standup() {
         ))}
       </div>
 
-      <CardBody card={data.cards.find((c) => c.key === open) ?? data.cards[0]!} data={data} onRated={refresh} />
+      <CardBody card={data.cards.find((c) => c.key === open) ?? data.cards[0]!} data={data} onRated={() => void refresh()} />
     </div>
   );
 }

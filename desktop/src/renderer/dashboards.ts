@@ -55,8 +55,21 @@ export interface StandupDashboard {
   review: { gaps: unknown[]; config_suggestions: unknown[] } | null;
   nudge: { missed_dates: string[] } | null;
   gap_issues: { issue_number?: number }[];
+  /** Every run this session has done, newest first — the saved-runs hub. */
+  history: RunSummary[];
+  /** Non-zero when a past run is open instead of the latest. */
+  run_id: number;
   /** Members with activity attributed today, by the rule both surfaces share. */
   active: string[];
+}
+
+export interface RunSummary {
+  id: number;
+  run_at: string;
+  standup_date: string;
+  sprint_day: number;
+  confidence_pct: number;
+  status: string;
 }
 
 export interface ScheduleView {
@@ -70,9 +83,17 @@ export interface ScheduleView {
   valid_channels: string[];
 }
 
-export function loadStandup(sessionId = ''): Promise<StandupDashboard> {
-  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
-  return apiGet<StandupDashboard>(`/api/standup/dashboard${query}`);
+export function loadStandup(sessionId = '', runId = 0): Promise<StandupDashboard> {
+  const query = new URLSearchParams();
+  if (sessionId) query.set('session_id', sessionId);
+  if (runId) query.set('run_id', String(runId));
+  const suffix = query.toString();
+  return apiGet<StandupDashboard>(`/api/standup/dashboard${suffix ? `?${suffix}` : ''}`);
+}
+
+/** Drop one run from the saved-runs hub. */
+export function deleteRun(runId: number): Promise<{ deleted: boolean }> {
+  return apiPost<{ deleted: boolean }>(`/api/standup/runs/${runId}/delete`);
 }
 
 export function loadSchedule(sessionId: string): Promise<ScheduleView> {

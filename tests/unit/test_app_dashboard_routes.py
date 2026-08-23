@@ -60,6 +60,8 @@ def _collected(**kw) -> dict:
         "review": None,
         "nudge": None,
         "gap_issues": [],
+        "history": [{"id": 4, "standup_date": "2026-07-10"}],
+        "run_id": 0,
     }
     return {**base, **kw}
 
@@ -89,6 +91,24 @@ class TestStandupDashboard:
         assert [c["key"] for c in body["cards"]] == ["schedule"]
         assert body["active"] == []
 
+    def test_the_saved_runs_hub_rides_along(self, app, monkeypatch):
+        monkeypatch.setattr("yeaboi.standup.dashboard.collect", lambda *a, **k: _collected())
+        assert json.loads(request(app, "GET", "/api/standup/dashboard").body)["history"] == [
+            {"id": 4, "standup_date": "2026-07-10"}
+        ]
+
+    def test_a_run_id_opens_that_past_run(self, app, monkeypatch):
+        seen: list = []
+        monkeypatch.setattr(
+            "yeaboi.standup.dashboard.collect",
+            lambda session_id="", run_id=0, **k: seen.append(run_id) or _collected(run_id=run_id),
+        )
+        body = json.loads(request(app, "GET", "/api/standup/dashboard?run_id=4").body)
+        assert seen == [4] and body["run_id"] == 4
+
+    def test_a_nonsense_run_id_is_refused(self, app):
+        assert request(app, "GET", "/api/standup/dashboard?run_id=latest").code == 400
+
     def test_a_blank_session_id_means_the_latest(self, app, monkeypatch):
         seen: list = []
         monkeypatch.setattr(
@@ -96,6 +116,15 @@ class TestStandupDashboard:
         )
         request(app, "GET", "/api/standup/dashboard")
         assert seen == [""]
+
+
+class TestDeleteRun:
+    def test_an_unknown_run_is_a_404(self, app, monkeypatch, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        assert request(app, "POST", "/api/standup/runs/99/delete").code == 404
+
+    def test_a_nonsense_run_id_is_refused(self, app):
+        assert request(app, "POST", "/api/standup/runs/latest/delete").code == 400
 
 
 class TestStandupSchedule:

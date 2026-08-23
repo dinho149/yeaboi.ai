@@ -34,12 +34,19 @@ def dashboard(app, request: Request) -> Response:
     """``GET /api/standup/dashboard`` — every card of one session's standup."""
     from yeaboi.standup import dashboard as view
 
-    data = view.collect(_session_id(request))
+    try:
+        run_id = int(request.query.get("run_id", "0") or 0)
+    except ValueError:
+        raise HTTPError(400, "run_id must be a number") from None
+    data = view.collect(_session_id(request), run_id=run_id)
     return json_response(
         {
             "session_id": data["session_id"],
             "session_name": data["session_name"],
             "my_name": data["my_name"],
+            "run_id": data["run_id"],
+            # The saved-runs hub: every run this session has done, newest first.
+            "history": data["history"],
             "cards": view.cards(data),
             "report": to_jsonable(data["report"]) if data["report"] is not None else None,
             "config": data["config"],
@@ -54,6 +61,23 @@ def dashboard(app, request: Request) -> Response:
             ],
         }
     )
+
+
+def delete_run(app, request: Request) -> Response:
+    """``POST /api/standup/runs/{run_id}/delete`` — drop one run from the hub."""
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.store import StandupStore
+
+    try:
+        run_id = int(request.params.get("run_id", ""))
+    except ValueError:
+        raise HTTPError(400, "run_id must be a number") from None
+    with StandupStore(get_db_path()) as store:
+        deleted = store.delete_run(run_id)
+    if not deleted:
+        raise HTTPError(404, f"no standup run {run_id}")
+    logger.info("Standup run deleted: id=%s", run_id)
+    return json_response({"deleted": True, "run_id": run_id})
 
 
 def schedule(app, request: Request) -> Response:
