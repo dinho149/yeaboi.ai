@@ -7,6 +7,8 @@ the two ways it goes back out again.
 
 from __future__ import annotations
 
+import logging
+
 import anthropic
 import httpx
 import pytest
@@ -424,3 +426,40 @@ class TestAcknowledgeSettling:
         finally:
             os.close(master)
             os.close(slave)
+
+
+class TestCredentialNeverReachesALogRecord:
+    """The rebuttal to CodeQL's `py/clear-text-logging-sensitive-data` on the
+    two credential-check log lines.
+
+    The provider's failure text quotes the request it failed on, so it *can*
+    carry the key — the alert names a real path. What closes it is that the
+    message is redacted where it is built (`_connection_error`) and again where
+    it is bound, by exact env value and by token shape. CodeQL does not model
+    `redaction.redact` as a barrier, so this asserts the property directly.
+    """
+
+    def _records(self, caplog, monkeypatch, *, key, message):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (False, message))
+        with caplog.at_level(logging.DEBUG, logger="yeaboi.auth_state"):
+            auth_state.check_llm_credentials()
+        return "\n".join(r.getMessage() for r in caplog.records)
+
+    def test_an_inconclusive_message_quoting_the_key_is_scrubbed(self, caplog, monkeypatch):
+        key = "sk-ant-api03-EXAMPLEKEYVALUE0123456789abcdefghij"
+        logged = self._records(
+            caplog, monkeypatch, key=key, message=f"Connection error: POST https://api.anthropic.com (x-api-key: {key})"
+        )
+
+        assert key not in logged
+        assert "credential check" in logged  # still logged the result, per the observability rule
+
+    def test_a_key_of_an_unknown_shape_is_still_caught_by_exact_value(self, caplog, monkeypatch):
+        # Shape patterns cannot cover every provider; the env-value match is what
+        # makes the guarantee hold for a credential that looks like nothing.
+        key = "totally-bespoke-credential-value-1234"
+        logged = self._records(caplog, monkeypatch, key=key, message=f"Connection error: {key} rejected")
+
+        assert key not in logged
