@@ -9,6 +9,7 @@ reads a search result.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -79,6 +80,16 @@ class TestUserFacingSurfaces:
         stale = {f"3.{minor}+" for minor in range(FLOOR_TUPLE[1] + 1, int(CEILING.split(".")[1]) + 1)}
         found = sorted(marker for marker in stale if f"Python {marker}" in text)
         assert not found, f"{page} advertises {found}; the floor is {FLOOR}"
+
+    def test_the_og_card_generator_reads_the_real_floor(self):
+        """The static check below proves the literal is gone; this proves the thing
+        that replaced it returns the right answer. Pillow is imported lazily inside
+        the drawing helpers, so the module loads without the `charts` extra."""
+        spec = importlib.util.spec_from_file_location("gen_og_card", ROOT / "scripts" / "gen_og_card.py")
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        assert module._floor() == FLOOR
 
     def test_the_og_card_derives_the_floor_rather_than_naming_it(self):
         """The rendered PNG is not checked by anything, so the generator must not

@@ -130,16 +130,30 @@ class TestFloorGuard:
                     offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
         assert not offenders, "datetime.UTC is 3.11+. Use `timezone.utc`:\n  " + "\n  ".join(offenders)
 
-    def test_no_module_imports_strenum_from_enum(self):
+    @pytest.mark.parametrize("name", ["StrEnum", "IntEnum"])
+    def test_no_module_imports_a_shimmed_enum_from_enum(self, name):
+        """Both render a member as its qualified name below 3.11 — StrEnum because
+        it does not exist there at all, IntEnum because 3.11 changed its __str__.
+        Guarding only one leaves the other free to reappear."""
         offenders = []
         for path in _python_files():
             if path.name == "_compat.py":
                 continue
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 if isinstance(node, ast.ImportFrom) and node.module == "enum":
-                    if any(alias.name == "StrEnum" for alias in node.names):
+                    if any(alias.name == name for alias in node.names):
                         offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
-        assert not offenders, "enum.StrEnum is 3.11+. Import it from `yeaboi._compat`:\n  " + "\n  ".join(offenders)
+        assert not offenders, (
+            f"enum.{name} behaves differently below 3.11. Import it from `yeaboi._compat`:\n  " + "\n  ".join(offenders)
+        )
+
+    def test_the_shim_module_exports_exactly_what_the_guard_bans(self):
+        """A construct added to __all__ without a guard arm is a silent hole; a
+        guard arm for a name the shim does not export is a dead assertion."""
+        from yeaboi import _compat
+
+        banned = set(self.test_no_module_imports_a_shimmed_enum_from_enum.pytestmark[0].args[1])
+        assert set(_compat.__all__) == banned
 
     def test_the_shim_is_the_stdlib_type_on_a_modern_interpreter(self):
         import enum

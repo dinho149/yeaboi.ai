@@ -594,10 +594,13 @@ JOBS: tuple[Job, ...] = (
     # is no root-level build hook or MANIFEST.in to name.
     Job("package", ("pyproject.toml", "src/yeaboi/web/static/", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
-    # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on the
-    # things that can make one version differ from another: the two shims, the
-    # floor itself, and the lock that resolves per-version forks.
-    Job("compat", ("pyproject.toml", "uv.lock", "src/yeaboi/_compat.py", "src/yeaboi/timeparse.py")),
+    # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any
+    # Python at all, not just the two shims: `unit` and `integration` now pin the
+    # floor, so a narrower trigger would leave a change to an ordinary module
+    # tested on 3.10 and nowhere else — less coverage above the floor than before
+    # this job existed. It is non-required with `fail-fast: false`, so the cost of
+    # the wide trigger is runner minutes, never merge risk.
+    Job("compat", ("src/", "tests/", "pyproject.toml", "uv.lock")),
 )
 
 FULL_UNIT = ("tests/unit/", "tests/test_*.py")

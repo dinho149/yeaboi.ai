@@ -1,8 +1,11 @@
 """ISO-8601 parsing, and the guard that keeps ``src/`` off the stdlib constructors.
 
-Every case here is a real provider format. On 3.11+ these assertions also hold for
-the bare stdlib call — that is the point: the module is a no-op on a modern
-interpreter and only earns its keep on 3.10.
+Most cases here are real provider formats; the compact and week-date ones are not,
+and are here because 3.11 accepts them and 3.10 does not, so a value that works for
+a maintainer on 3.13 must not blow up for a user on the floor.
+
+On 3.11+ every assertion also holds for the bare stdlib call — that is the point:
+the module is a no-op on a modern interpreter and only earns its keep on 3.10.
 """
 
 from __future__ import annotations
@@ -44,10 +47,29 @@ class TestParseDatetime:
                 datetime(2024, 1, 15, 10, 30, tzinfo=timezone(-timedelta(hours=5, minutes=30))),
             ),
             ("2024-01-15T10:30:00+05", datetime(2024, 1, 15, 10, 30, tzinfo=timezone(timedelta(hours=5)))),
+            # A comma fractional separator — legal ISO-8601, emitted by some Java
+            # and Atlassian stacks.
+            ("2024-01-15T10:30:00,123Z", datetime(2024, 1, 15, 10, 30, 0, 123000, tzinfo=UTC)),
+            # Compact ("basic") forms, with and without seconds.
+            ("20240115T103000Z", datetime(2024, 1, 15, 10, 30, tzinfo=UTC)),
+            ("20240115T103000", datetime(2024, 1, 15, 10, 30)),
+            ("2024-01-15T1030", datetime(2024, 1, 15, 10, 30)),
+            ("20240115", datetime(2024, 1, 15)),
+            # An ISO week date carrying a time.
+            ("2024-W03-1T10:30:00Z", datetime(2024, 1, 15, 10, 30, tzinfo=UTC)),
         ],
     )
     def test_provider_formats(self, raw, expected):
+        """Every case here parses on 3.11+ and raises on a bare 3.10, which is the
+        whole reason this module exists."""
         assert parse_datetime(raw) == expected
+
+    @pytest.mark.parametrize("bad", [None, 1700000000, b"2024-01-15", object()])
+    def test_a_non_string_raises_typeerror_not_attributeerror(self, bad):
+        """`.strip()` on None raises AttributeError, which every call site whose
+        handler names TypeError would silently stop catching."""
+        with pytest.raises(TypeError):
+            parse_datetime(bad)
 
     def test_surrounding_whitespace_is_tolerated(self):
         assert parse_datetime("  2024-01-15T10:30:00Z  ") == datetime(2024, 1, 15, 10, 30, tzinfo=UTC)
@@ -77,10 +99,28 @@ class TestParseDate:
         with pytest.raises(ValueError):
             parse_date("2024-01-15T10:30:00Z")
 
-    @pytest.mark.parametrize("raw", ["", "nope", "15/01/2024"])
+    @pytest.mark.parametrize("raw", ["", "nope", "15/01/2024", "2024-015"])
     def test_junk_raises_valueerror(self, raw):
         with pytest.raises(ValueError):
             parse_date(raw)
+
+    @pytest.mark.parametrize("bad", [None, 20240115, b"2024-01-15"])
+    def test_a_non_string_raises_typeerror(self, bad):
+        with pytest.raises(TypeError):
+            parse_date(bad)
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("20240115", date(2024, 1, 15)),
+            ("2024-W03-1", date(2024, 1, 15)),
+            ("2024W031", date(2024, 1, 15)),
+            ("2024-W03", date(2024, 1, 15)),
+        ],
+    )
+    def test_compact_and_week_forms(self, raw, expected):
+        """3.11 accepts all four; 3.10's parser accepts none of them."""
+        assert parse_date(raw) == expected
 
 
 class TestNoBareStdlibCallsInSrc:

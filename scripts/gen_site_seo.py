@@ -51,9 +51,8 @@ import json
 import logging
 import re
 import sys
+from enum import Enum
 from pathlib import Path
-
-from yeaboi._compat import StrEnum
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
@@ -106,8 +105,13 @@ _GENERATED_NOTE = (
 )
 
 
-class Kind(StrEnum):
-    """How a page is treated for schema and indexing purposes."""
+class Kind(Enum):
+    """How a page is treated for schema and indexing purposes.
+
+    A plain ``Enum``, not a string one: every use is an ``is`` identity check, and
+    keeping this generator importable with nothing but the standard library is
+    worth more than a mixin nothing reads.
+    """
 
     LANDING = "landing"  # docs/index.html — the marketing page at /
     HUB = "hub"  # a section index that lists its children

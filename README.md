@@ -8,7 +8,7 @@
 **Best friend to engineers and agents — plans, standups, retros, performance & reporting for your team, plus cost, digests and security posture for the AI agents working alongside it. All from your terminal.**
 
 [![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/yeaboi/)
-[![Python](https://img.shields.io/badge/Python-included-green?style=for-the-badge&logo=python&logoColor=white)](https://yeaboi.ai/install.sh)
+[![Python](https://img.shields.io/badge/Python-included-green?style=for-the-badge&logo=python&logoColor=white)](https://yeaboi.ai/docs/getting-started.html)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 [![Powered by Claude](https://img.shields.io/badge/Powered%20by-Claude-ff6600?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com)
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-00CED1?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)

@@ -59,20 +59,62 @@ esac
 # ---------------------------------------------------------------------------
 # uv
 # ---------------------------------------------------------------------------
-if ! command -v uv >/dev/null 2>&1; then
-    say "Installing uv (the Python package manager yeaboi installs through)..."
+# uv gained PEP 440 specifier support for `--python` in 0.4.30 (measured, not
+# assumed). An older uv already on PATH would reject `--python '>=3.10'` outright,
+# so it is replaced rather than used — the whole premise of this script is that
+# what the machine already has must not decide whether the install works.
+uv_predates_specifiers() {
+    _v=$(uv --version 2>/dev/null | awk '{print $2}')
+    [ -n "$_v" ] || return 0
+    _major=${_v%%.*}
+    _rest=${_v#*.}
+    _minor=${_rest%%.*}
+    _patch=${_rest#*.}
+    _patch=${_patch%%[!0-9]*}
+    case "$_major$_minor$_patch" in *[!0-9]*) return 0 ;; esac
+    [ "$_major" -gt 0 ] && return 1
+    [ "$_minor" -gt 4 ] && return 1
+    [ "$_minor" -lt 4 ] && return 0
+    [ "${_patch:-0}" -lt 30 ] && return 0
+    return 1
+}
+
+if ! command -v uv >/dev/null 2>&1 || uv_predates_specifiers; then
+    if command -v uv >/dev/null 2>&1; then
+        say "Your uv ($(uv --version 2>/dev/null)) predates \`--python\` version specifiers; installing a newer one..."
+    else
+        say "Installing uv (the Python package manager yeaboi installs through)..."
+    fi
     uv_installer="https://astral.sh/uv/${UV_INSTALLER_VERSION}/install.sh"
     # Pinned rather than tracking latest, for the same reason this repo pins its
     # GitHub Actions by SHA. uv's own installer checksum-verifies the binary it
     # downloads, so that half is already covered.
+    # Downloaded to a file and checked, never piped straight into `sh`. POSIX sh
+    # has no `pipefail` and `set -e` takes the LAST command's status, so
+    # `curl ... | sh` reports success when curl 404s and `sh` reads an empty
+    # stream — and feeds `sh` a truncated script when a connection drops
+    # mid-transfer. The user would then be told uv "is not on PATH", which sends
+    # them to do something that cannot help.
+    uv_script="${TMPDIR:-/tmp}/yeaboi-uv-installer.$$.sh"
+    trap 'rm -f "$uv_script"' EXIT INT TERM
     if command -v curl >/dev/null 2>&1; then
-        curl -LsSf "$uv_installer" | sh
+        curl -LsSf "$uv_installer" -o "$uv_script" || die "could not download the uv installer from $uv_installer
+       Check your network or a proxy, or install uv yourself:
+       https://docs.astral.sh/uv/getting-started/installation/"
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$uv_installer" | sh
+        wget -qO "$uv_script" "$uv_installer" || die "could not download the uv installer from $uv_installer
+       Check your network or a proxy, or install uv yourself:
+       https://docs.astral.sh/uv/getting-started/installation/"
     else
         die "neither curl nor wget is available — install one, or install uv yourself:
        https://docs.astral.sh/uv/getting-started/installation/"
     fi
+    # A short file is a truncated transfer, not an installer.
+    [ -s "$uv_script" ] || die "the uv installer downloaded empty from $uv_installer — try again."
+    sh "$uv_script" || die "the uv installer failed. Install uv yourself and re-run:
+       https://docs.astral.sh/uv/getting-started/installation/"
+    rm -f "$uv_script"
+    trap - EXIT INT TERM
 
     # Make uv usable in *this* run rather than telling the user to open a new
     # shell. The uv installer writes this env file for exactly this purpose.

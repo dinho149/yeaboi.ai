@@ -74,8 +74,11 @@ def sandbox(tmp_path: Path) -> dict[str, object]:
     log = tmp_path / "log"
 
     uv = bin_dir / "uv"
+    # It answers `--version` because the script gates on it: a uv older than
+    # 0.4.30 cannot parse a `--python` specifier and is replaced rather than used.
     uv.write_text(
         "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "uv ${UV_FAKE_VERSION:-0.11.2} (abc 2026-01-01)"; exit 0; fi\n'
         'echo "argv: $*" >> "$LOG"\n'
         'echo "downloads: ${UV_PYTHON_DOWNLOADS:-UNSET}" >> "$LOG"\n'
         'exit "${UV_EXIT:-0}"\n'
@@ -160,35 +163,112 @@ class TestBehaviour:
         assert "WSL" in result.stderr
         assert _log(sandbox) == "", "uv must not be invoked on a platform that cannot run yeaboi"
 
-    def test_bootstraps_uv_from_a_pinned_url_when_missing(self, tmp_path: Path):
-        """uv absent is the case that matters: it must become usable in this same run."""
+    @staticmethod
+    def _fake_installer_curl(bin_dir: Path, *, mode: str = "ok") -> Path:
+        """Stand in for Astral's installer.
+
+        `mode` picks the failure being exercised: "ok" writes a working installer,
+        "fail" exits non-zero (a 404 or a dead proxy), "empty" exits 0 having
+        written nothing (a connection dropped before the first byte).
+        """
+        # The payload the real installer would have been: drop a uv on PATH and
+        # write the env file the script sources to pick it up mid-run.
+        payload = bin_dir / "uv-installer-payload.sh"
+        payload.write_text(
+            "#!/bin/sh\n"
+            'mkdir -p "$HOME/.local/bin"\n'
+            "cat > \"$HOME/.local/bin/uv\" <<'EOF'\n"
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then echo "uv 0.11.2 (abc 2026-01-01)"; exit 0; fi\n'
+            'echo "argv: $*" >> "$LOG"\n'
+            "exit 0\n"
+            "EOF\n"
+            'chmod +x "$HOME/.local/bin/uv"\n'
+            'printf \'export PATH="$HOME/.local/bin:$PATH"\\n\' > "$HOME/.local/bin/env"\n'
+        )
+
+        take_output_path = 'while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\n'
+        bodies = {
+            "ok": take_output_path + f'cat "{payload}" > "$out"\nexit 0\n',
+            "fail": "exit 22\n",
+            "empty": take_output_path + ': > "$out"\nexit 0\n',
+        }
+        curl = bin_dir / "curl"
+        curl.write_text('#!/bin/sh\necho "curl: $*" >> "$LOG"\nout=""\n' + bodies[mode])
+        curl.chmod(0o755)
+        return curl
+
+    @staticmethod
+    def _bare_env(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
         home = tmp_path / "home"
         home.mkdir()
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         log = tmp_path / "log"
+        return {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", "LOG": str(log)}, bin_dir, log
 
-        # Stand in for Astral's installer: drop a uv on PATH and write the env
-        # file the real one writes, which is how the script picks it up mid-run.
-        curl = bin_dir / "curl"
-        curl.write_text(
-            "#!/bin/sh\n"
-            'echo "curl: $*" >> "$LOG"\n'
-            'mkdir -p "$HOME/.local/bin"\n'
-            'printf \'#!/bin/sh\\necho "argv: $*" >> "$LOG"\\nexit 0\\n\' > "$HOME/.local/bin/uv"\n'
-            'chmod +x "$HOME/.local/bin/uv"\n'
-            'printf \'export PATH="$HOME/.local/bin:$PATH"\\n\' > "$HOME/.local/bin/env"\n'
-            "echo ':'\n"
-        )
-        curl.chmod(0o755)
+    def test_bootstraps_uv_from_a_pinned_url_when_missing(self, tmp_path: Path):
+        """uv absent is the case that matters: it must become usable in this same run."""
+        env, bin_dir, log = self._bare_env(tmp_path)
+        self._fake_installer_curl(bin_dir)
 
-        env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", "LOG": str(log)}
         result = _run(env)
 
         assert result.returncode == 0, result.stderr
         body = log.read_text()
         assert "https://astral.sh/uv/" in body, "the uv installer must be fetched"
         assert "argv: tool install" in body, "uv must be usable in the same run, not after a reshell"
+
+    def test_a_failed_installer_download_says_so_instead_of_blaming_path(self, tmp_path: Path):
+        """`curl ... | sh` reported success when curl 404'd — POSIX sh has no
+        pipefail and `set -e` takes the last command's status — and the user was
+        then told uv "is not on PATH", which sends them somewhere that cannot help."""
+        env, bin_dir, log = self._bare_env(tmp_path)
+        self._fake_installer_curl(bin_dir, mode="fail")
+
+        result = _run(env)
+
+        assert result.returncode != 0
+        assert "could not download" in result.stderr
+        assert "not on PATH" not in result.stderr, "the misleading message this replaced"
+        assert "argv: tool install" not in (log.read_text() if log.exists() else "")
+
+    def test_a_truncated_installer_download_is_not_executed(self, tmp_path: Path):
+        """A connection dropped mid-transfer would otherwise feed `sh` a partial
+        script — the exact hazard the header comment guards this script's own body against."""
+        env, bin_dir, log = self._bare_env(tmp_path)
+        self._fake_installer_curl(bin_dir, mode="empty")
+
+        result = _run(env)
+
+        assert result.returncode != 0
+        assert "empty" in result.stderr
+
+    def test_a_uv_too_old_for_specifiers_is_replaced_not_used(self, sandbox, tmp_path: Path):
+        """uv gained `--python` specifier support in 0.4.30 (measured). An older one
+        would reject `--python '>=3.10'`, and the point of this script is that what
+        the machine already has must not decide whether the install works."""
+        env = dict(sandbox["env"])
+        env["UV_FAKE_VERSION"] = "0.4.29"
+        bin_dir = sandbox["bin"]
+        assert isinstance(bin_dir, Path)
+        self._fake_installer_curl(bin_dir, mode="fail")
+
+        result = _run(env)
+
+        # The bootstrap is attempted (and here, fails) rather than the old uv used.
+        assert result.returncode != 0
+        assert "predates" in result.stdout
+        assert "could not download" in result.stderr
+
+    @pytest.mark.parametrize("version", ["0.4.30", "0.5.0", "0.11.2", "1.0.0"])
+    def test_a_new_enough_uv_is_kept(self, sandbox, version):
+        env = dict(sandbox["env"])
+        env["UV_FAKE_VERSION"] = version
+        result = _run(env)
+        assert result.returncode == 0, result.stderr
+        assert "predates" not in result.stdout
+        assert "argv: tool install" in _log(sandbox)
 
     def test_is_idempotent(self, sandbox):
         first = _run(sandbox["env"])
@@ -263,7 +343,9 @@ class TestDocumentedCommands:
         pipx uses the interpreter it is running under and will not fetch one
         unless asked, so it may only appear with --python or --fetch-missing-python.
         """
-        surfaces = [README, ROOT / "docs" / "index.html", *(ROOT / "docs" / "docs").glob("*.html")]
+        # rglob, not glob: docs/docs/modes/ and docs/docs/agents/ carry install
+        # snippets too, and a plain glob left both unscanned.
+        surfaces = [README, ROOT / "docs" / "index.html", *(ROOT / "docs" / "docs").rglob("*.html")]
         for path in surfaces:
             for line in path.read_text().splitlines():
                 if "pipx install" not in line:
