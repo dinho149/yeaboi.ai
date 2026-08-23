@@ -19,10 +19,13 @@ from functools import partial
 
 from yeaboi.app import (
     routes_agents,
+    routes_ambience,
     routes_analysis,
     routes_boards,
     routes_ceremonies,
     routes_chat,
+    routes_consent,
+    routes_feedback,
     routes_meta,
     routes_performance,
     routes_reporting,
@@ -157,6 +160,19 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/agents/{kind}/latest", routes_agents.latest, "agent-usage"),
     AppRoute("POST", "/api/agents/{kind}/run", routes_agents.run, "agent-usage"),
     AppRoute("POST", "/api/agents/{kind}/export", routes_agents.export, "agent-usage"),
+    # -- the shell's own furniture (the M10 surface) --------------------------
+    # No capability owns these: ambience, the beta gate, the feedback form and
+    # the sandbox consent modal are things the shell needs to draw itself, not
+    # work anyone would ask an agent to do.
+    AppRoute("GET", "/api/ambience", routes_ambience.ambience),
+    AppRoute("POST", "/api/ambience", routes_ambience.set_ambience),
+    AppRoute("GET", "/api/beta", routes_ambience.beta),
+    AppRoute("POST", "/api/beta/{mode_key}/ack", routes_ambience.ack_beta),
+    AppRoute("GET", "/api/feedback/options", routes_feedback.options),
+    AppRoute("POST", "/api/feedback", routes_feedback.submit),
+    AppRoute("POST", "/api/feedback/polish", routes_feedback.polish),
+    AppRoute("GET", "/api/consent", routes_consent.pending),
+    AppRoute("POST", "/api/consent/{req_id}", routes_consent.resolve),
 )
 
 

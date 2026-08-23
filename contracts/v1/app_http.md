@@ -458,3 +458,70 @@ Provenance has no routes here. `provenance_audit` and `provenance_trace` are
 request/response reads with no progress, no cancel and no page-shaped gap, so
 the desktop's audit and trace explorer goes through the dispatcher like every
 other tool-served capability.
+
+## The shell's own furniture
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/ambience` | duck, music, saver and pet preferences, plus the station catalogue |
+| POST | `/api/ambience` | persist any subset of them |
+| GET | `/api/beta` | the one-time entry gates and which have been acknowledged |
+| POST | `/api/beta/{mode_key}/ack` | record that a gate was accepted |
+| GET | `/api/feedback/options` | the feedback type and area vocabularies |
+| POST | `/api/feedback` | file the issue, or hand back a pre-filled browser URL |
+| POST | `/api/feedback/polish` | one LLM rewrite of the draft, for review |
+| GET | `/api/consent` | sandbox-consent requests still waiting on an answer |
+| POST | `/api/consent/{req_id}` | `allow_once`, `allow_always` or `deny` |
+
+None of these carries a `capability`. There is no ambience engine and no
+ambience MCP tool because none of it is work anyone would ask an agent to do;
+feedback has none on purpose, since filing an issue on a public repository under
+the user's own token is not something an arbitrary tool client should do on
+their behalf.
+
+`/api/ambience` serves music as a **catalogue and a preference only**. The
+terminal hands a station URL to `ffplay`; the desktop hands the same URL to an
+`<audio>` element and needs no binary, so playback state lives in the renderer
+and never round-trips. A bad channel index is refused rather than clamped, and
+`true` is not accepted as an index — `bool` is an `int` in Python, and silently
+selecting station 1 is worse than a 400.
+
+`polish` never submits and never fails: `polished` is null when no LLM is
+configured or the call failed, `status` says why, and the draft the person wrote
+is what stands.
+
+## Consent
+
+The asking half is not a route. `fs_policy` in interactive mode queues a
+`ConsentRequest` for every sandbox denial; `app/consent.py` drains that queue on
+its own thread and publishes `consent_request` on the ambient feed. There is no
+turn to be between here — a denial can come from a tool call, a native route, a
+board thread or a run that is streaming NDJSON at the time — which is why it is
+polled rather than drained after each handler.
+
+The raise still happens: the access that triggered the request has already
+failed, and consent is for the retry, exactly as in the TUI. `granted` in the
+answer is what the sandbox now believes, not what the person clicked.
+
+## Awareness
+
+`app/awareness.py` publishes `notice` events onto the same feed for the things
+that happen while nobody is looking: a ceremony that fired from an OS job, and a
+ship run that reached its approval gate. Both are polled, because neither
+happens in this process.
+
+| Field | Meaning |
+|---|---|
+| `kind` | `ceremony_ran`, `ceremony_failed`, `ship_gate` |
+| `quip` | the line the duck says, ≤ 40 characters |
+| `sticky` | stays up until answered instead of fading |
+| `route` | the desktop route that answers it |
+
+Only `ship_gate` is sticky: a ceremony that fired is news, an unapproved diff is
+a question, and a question that fades out unanswered is worse than one never
+asked. The first poll after start announces nothing — it records where things
+stand, so launching the app does not greet you with a week of stale news.
+
+Things you did and watched happen are **not** here. A run's own NDJSON stream
+already says when it finished, and the renderer's duck quips off that; the
+ambient feed is for what the window missed.

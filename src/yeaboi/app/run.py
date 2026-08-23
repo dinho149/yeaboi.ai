@@ -6,7 +6,9 @@ Startup order matters and is the contract the desktop shell relies on:
 2. ``fs_policy.set_interactive(True)`` — the desktop session is interactive;
    denials queue consent requests instead of hard-failing forever
 3. MCP dispatcher (optional — tool routes 503 without the ``mcp`` extra)
-4. bind ``127.0.0.1``, write the handshake file, print the one stdout line
+4. the consent desk and the awareness watcher — the two things that publish
+   onto the ambient feed without a request waiting on them
+5. bind ``127.0.0.1``, write the handshake file, print the one stdout line
 
 stdout carries the handshake line and nothing else — logs go to
 ``~/.yeaboi/logs/app/`` via the central logging setup. Shutdown (SIGTERM,
@@ -23,6 +25,7 @@ import threading
 
 from yeaboi.app import instancelock
 from yeaboi.app.auth import mint_token
+from yeaboi.app.awareness import AwarenessWatcher
 from yeaboi.app.dispatch import DispatcherUnavailableError, McpDispatcher
 from yeaboi.app.events import EventBus
 from yeaboi.app.handshake import Handshake, clear_handshake, ready_line, write_handshake
@@ -65,6 +68,12 @@ def run_app(port: int = 0, *, host: str = "127.0.0.1", _emit=None) -> int:
 
     stop_event = threading.Event()
     app = AppServer(token=mint_token(), dispatcher=dispatcher, bus=bus, ops=ops, on_shutdown=stop_event.set)
+    # Both watch for things no request is waiting on: a sandbox denial raised on
+    # a worker thread, and a ceremony or ship gate that moved while the window
+    # was closed. Started after the app so they publish onto a live bus.
+    app.consent.start()
+    awareness = AwarenessWatcher(bus, ships=app.ships)
+    awareness.start()
     httpd = serve(host, port, app=app)
     bound_port = httpd.server_address[1]
 
@@ -106,6 +115,8 @@ def run_app(port: int = 0, *, host: str = "127.0.0.1", _emit=None) -> int:
         httpd.shutdown()
         server_thread.join(timeout=10)
         httpd.server_close()
+        awareness.stop()
+        app.consent.stop()
         if dispatcher is not None:
             dispatcher.stop()
         clear_handshake()

@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from yeaboi.app.auth import check_bearer
 from yeaboi.app.chats import ChatSupervisor
+from yeaboi.app.consent import ConsentDesk
 from yeaboi.app.events import EventBus
 from yeaboi.app.ops import OperationTable
 from yeaboi.app.router import Request, Response, Router, parse_request
@@ -145,6 +146,7 @@ class AppServer:
         chats: ChatSupervisor | None = None,
         boards: BoardSupervisor | None = None,
         ships: ShipSupervisor | None = None,
+        consent: ConsentDesk | None = None,
         on_shutdown=None,
     ) -> None:
         self.token = token
@@ -165,6 +167,9 @@ class AppServer:
         # The live ship runs (routes_ship) — a run lasts tens of minutes and
         # stops halfway to ask a human, so it must not belong to a window.
         self.ships = ships if ships is not None else ShipSupervisor()
+        # The open sandbox-consent requests (routes_consent) — a denial can come
+        # from any thread, so the desk drains the queue rather than a handler.
+        self.consent = consent if consent is not None else ConsentDesk(self.bus)
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:
