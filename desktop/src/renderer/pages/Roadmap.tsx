@@ -6,6 +6,7 @@
 import { Card, Lozenge, NoticeBlock } from '@design/primitives';
 import { Duck } from '@design/primitives/Duck';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import { maskText } from '../boards';
 import { createChat } from '../chat';
 import {
@@ -65,6 +66,7 @@ export function Roadmap() {
       if (state.done) {
         setAnalysis((state.done.analysis as RoadmapAnalysisView) ?? null);
         setRoadmapId(Number(state.done.roadmap_id ?? 0));
+        quip('roadmap_done');
       }
     } catch (e) {
       setError((e as Error).message);

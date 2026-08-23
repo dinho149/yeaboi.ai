@@ -7,9 +7,15 @@ import './app.css';
 
 import { Duck } from '@design/primitives/Duck';
 import { Wordmark } from '@design/primitives/Wordmark';
-import { type ComponentType, useEffect, useState } from 'react';
+import { type ComponentType, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { getBackendState, onBackendState } from './api';
+import { getBackendState, onAmbientEvent, onBackendState, onNavigate, setPetEnabled } from './api';
+import { type AmbienceState, betaKeyFor, duckVoice, getAmbience, loadQuips } from './ambience';
+import { BetaGate } from './components/BetaGate';
+import { ConsentModal } from './components/ConsentModal';
+import { DuckChrome } from './components/DuckChrome';
+import { MusicPlayer } from './components/MusicPlayer';
+import { Screensaver } from './components/Screensaver';
 import { Agents } from './pages/Agents';
 import { Analysis } from './pages/Analysis';
 import { AnalysisResults } from './pages/AnalysisResults';
@@ -17,6 +23,7 @@ import { AnalysisSetup } from './pages/AnalysisSetup';
 import { Ceremonies } from './pages/Ceremonies';
 import { CeremoniesSlack } from './pages/CeremoniesSlack';
 import { Chat } from './pages/Chat';
+import { Feedback } from './pages/Feedback';
 import { Home } from './pages/Home';
 import { Performance } from './pages/Performance';
 import { PerformanceEngineer } from './pages/PerformanceEngineer';
@@ -47,6 +54,7 @@ import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from './routes';
 const PAGES: Record<string, ComponentType> = {
   '/home': Home,
   '/whats-new': WhatsNew,
+  '/feedback': Feedback,
   '/humans/planning': Planning,
   '/humans/planning/chat': Chat,
   '/humans/planning/sessions': Sessions,
@@ -112,6 +120,7 @@ function useHashRoute(): string {
  */
 function navGroup(path: string): string | null {
   if (!path.startsWith('/') || path.startsWith('/settings/') || path === '/setup') return null;
+  if (path === '/feedback') return null; // a footer entry, beside Settings
   if (/^\/humans\/[^/]+$/.test(path)) return 'Humans';
   if (/^\/agents\/[^/]+$/.test(path)) return 'Agents';
   if (path === '/ceremonies' || path === '/provenance') return 'Ops';
@@ -140,13 +149,28 @@ function Splash({ backend }: { backend: Backend }) {
   );
 }
 
-function Sidebar({ active }: { active: string }) {
+interface SidebarProps {
+  active: string;
+  ambience: AmbienceState | null;
+  offline: boolean;
+  jamming: boolean;
+  onJamming: (playing: boolean) => void;
+  onAnswer: () => void;
+  onPet: (enabled: boolean) => void;
+}
+
+function Sidebar({ active, ambience, offline, jamming, onJamming, onAnswer, onPet }: SidebarProps) {
   // The three /settings/* routes collapse into one footer entry — the page owns
   // its own tab bar. Everything else is grouped by navGroup above.
   return (
     <nav class="sidebar">
       <div class="sidebar-brand">
-        <Duck state="idle" size={36} />
+        <DuckChrome
+          muted={!(ambience?.duck.enabled ?? true)}
+          jamming={jamming}
+          offline={offline}
+          onAnswer={onAnswer}
+        />
         <Wordmark text="YEABOI" label="yeaboi" size="110px" />
       </div>
       {NAV_GROUPS.map((group) => {
@@ -177,6 +201,26 @@ function Sidebar({ active }: { active: string }) {
         <a href="#/settings/credentials" aria-current={active.startsWith('/settings/') ? 'page' : undefined}>
           Settings
         </a>
+        <a href="#/feedback" aria-current={active === '/feedback' ? 'page' : undefined}>
+          Feedback
+        </a>
+        {ambience && (
+          <>
+            <MusicPlayer
+              channels={ambience.music.channels}
+              channel={ambience.music.channel}
+              onPlaying={onJamming}
+            />
+            <label class="pet-toggle">
+              <input
+                type="checkbox"
+                checked={ambience.pet.enabled}
+                onChange={(event) => onPet((event.target as HTMLInputElement).checked)}
+              />
+              <span>Duck on the desktop</span>
+            </label>
+          </>
+        )}
         <div class="sidebar-version">yeaboi desktop</div>
       </div>
     </nav>
@@ -186,23 +230,102 @@ function Sidebar({ active }: { active: string }) {
 function App() {
   const path = useHashRoute();
   const [backend, setBackend] = useState<Backend>({ kind: 'starting' });
+  const [ambience, setAmbienceState] = useState<AmbienceState | null>(null);
+  const [jamming, setJamming] = useState(false);
+  const [saver, setSaver] = useState(false);
+  const [consentSignal, setConsentSignal] = useState(0);
+  // Where a sticky notice sends you when the duck is clicked.
+  const [answerRoute, setAnswerRoute] = useState('');
+  // Cleared when the person accepts the gate, so the page mounts once.
+  const [gatePassed, setGatePassed] = useState('');
 
   useEffect(() => {
     // Pull once (the backend may have become ready before this window
     // subscribed), then follow transitions.
     void getBackendState().then((state) => setBackend(state as Backend));
     onBackendState((state) => setBackend(state as Backend));
+    onNavigate((route) => {
+      window.location.hash = route;
+    });
+    onAmbientEvent((event) => {
+      if (event.type === 'consent_request') {
+        setConsentSignal((signal) => signal + 1);
+        return;
+      }
+      if (event.type !== 'notice') return;
+      // The same rule the pet follows: a question holds the bubble until it is
+      // answered, everything else fades.
+      const quip = String(event['quip'] ?? '');
+      setAnswerRoute(String(event['route'] ?? ''));
+      if (event['sticky']) duckVoice().saySticky(quip);
+      else duckVoice().say(quip);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (backend.kind !== 'ready') return;
+    getAmbience().then((state) => {
+      setAmbienceState(state);
+      loadQuips(state.duck.quips);
+    }, () => setAmbienceState(null));
+  }, [backend.kind]);
+
+  useEffect(() => {
+    // Cmd/Ctrl+Y calls the ducks out early — the terminal's shortcut, kept.
+    const onKey = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        setSaver((on) => !on);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const answer = useCallback(() => {
+    if (answerRoute) window.location.hash = answerRoute;
+  }, [answerRoute]);
+
+  const onPet = useCallback((enabled: boolean) => {
+    setAmbienceState((state) => (state ? { ...state, pet: { enabled } } : state));
+    // Main owns the window and persists the choice; one write, not two.
+    void setPetEnabled(enabled);
   }, []);
 
   if (backend.kind !== 'ready') return <Splash backend={backend} />;
 
+  const gateKey = betaKeyFor(path);
+  const gated = gateKey !== '' && gatePassed !== gateKey;
   const Page = PAGES[path] ?? Home;
   return (
     <div class="shell">
-      <Sidebar active={path} />
-      <main class="content">
-        <Page />
-      </main>
+      <Sidebar
+        active={path}
+        ambience={ambience}
+        offline={false}
+        jamming={jamming}
+        onJamming={setJamming}
+        onAnswer={answer}
+        onPet={onPet}
+      />
+      <main class="content">{gated ? null : <Page />}</main>
+      {gated && (
+        <BetaGate
+          path={path}
+          onContinue={() => setGatePassed(gateKey)}
+          onBack={() => {
+            window.location.hash = DEFAULT_ROUTE;
+          }}
+        />
+      )}
+      <ConsentModal signal={consentSignal} />
+      {ambience && (
+        <Screensaver
+          idleSeconds={ambience.saver.idle_seconds}
+          forced={saver}
+          onDismiss={() => setSaver(false)}
+        />
+      )}
     </div>
   );
 }

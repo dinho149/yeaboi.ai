@@ -12,6 +12,7 @@
 
 import { NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import { type BoardSnapshot, boardInvite, closeBoard, loadBoard, openBoardWindow, retryLink } from '../boards';
 
 /** How often a live board is re-read. The board itself pushes to the browsers
@@ -65,6 +66,9 @@ export function BoardHost({ board, onClosed }: { board: BoardSnapshot; onClosed:
     setBusy(true);
     const result = await closeBoard(board.board_id);
     setBusy(false);
+    // A finished poker table has a number to show for it; a retro's result is
+    // the actions, which are drafted on the board rather than at the close.
+    if (board.kind === 'poker') quip('poker_done');
     onClosed(result.run_id);
   }
 

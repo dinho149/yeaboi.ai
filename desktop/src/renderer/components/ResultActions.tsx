@@ -11,6 +11,7 @@
 
 import { Card, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import {
   type AnonLine,
   type AnonState,
@@ -153,9 +154,11 @@ function ExportDialog({
         // The clipboard belongs to whoever is in front of the screen, not to a
         // background process — the backend hands over the text and stops there.
         await navigator.clipboard.writeText(result.markdown);
+        quip('export_done');
         onDone('Copied the Markdown to your clipboard.');
         return;
       }
+      quip('export_done');
       onDone(result.message ?? 'Exported.');
     } catch (e) {
       setError((e as Error).message);
@@ -229,6 +232,7 @@ function ShareDialog({ refer, onClose }: { refer: ArtifactRef; onClose: () => vo
     setError('');
     try {
       setShare(await startShare(refer));
+      quip('link_ready');
     } catch (e) {
       setError((e as Error).message);
     }
@@ -353,7 +357,10 @@ function AnonymizeDialog({
       setState(next);
     }
     setBusy(false);
-    if (!next.error) onDone(next.replacements, next.note);
+    if (!next.error) {
+      quip('anonymize_done');
+      onDone(next.replacements, next.note);
+    }
   }
 
   return (

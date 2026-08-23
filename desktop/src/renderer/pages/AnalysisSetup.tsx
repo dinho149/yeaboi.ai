@@ -6,6 +6,7 @@
 
 import { Card, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import {
   type AnalysisOptions,
   type RunLine,
@@ -120,6 +121,7 @@ export function AnalysisSetup() {
     }
     setBusy(false);
     if (state.error) setError(state.error);
+    else quip('analysis_done');
   }
 
   if (busy || run.finished) {

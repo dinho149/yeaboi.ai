@@ -12,6 +12,11 @@
       "title": "What's New"
     },
     {
+      "path": "/feedback",
+      "capability": null,
+      "title": "Feedback"
+    },
+    {
       "path": "/usage",
       "capability": "usage",
       "title": "Usage"

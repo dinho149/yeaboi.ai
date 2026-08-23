@@ -6,6 +6,7 @@
 
 import { Card, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import {
   type ModeRunState,
   type ReportingOptions,
@@ -97,7 +98,10 @@ export function ReportingSetup() {
         state = reduceModeRun(state, line);
         setRun(state);
       });
-      if (state.done) window.location.hash = '#/humans/reporting';
+      if (state.done) {
+        quip('report_done');
+        window.location.hash = '#/humans/reporting';
+      }
     } catch (e) {
       setError((e as Error).message);
     }

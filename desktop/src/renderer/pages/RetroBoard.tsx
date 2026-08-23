@@ -6,6 +6,7 @@
 
 import { Card, NoticeBlock } from '@design/primitives';
 import { useState } from 'react';
+import { quip } from '../ambience';
 import { type RetroBoardState, type RetroCard, generateActionItems, maskText } from '../boards';
 import { BoardHost, boardIdFromHash, useBoard } from '../components/BoardHost';
 import { ResultActions } from '../components/ResultActions';
@@ -32,6 +33,7 @@ export function RetroBoard() {
     try {
       const result = await generateActionItems(board.board_id);
       setMessage(result.message);
+      quip('actions_done');
       refresh();
     } catch (e) {
       setMessage((e as Error).message);

@@ -1172,3 +1172,224 @@ a.button.primary {
   line-height: 1.45;
   white-space: pre;
 }
+
+/* --- Ambience: the duck's bubble, the music bar, the pet toggle ----------- */
+
+.duck-chrome {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Drawn above the duck rather than beside him: the sidebar is narrow, and a
+   bubble that grows sideways would push the wordmark off the rail. */
+.duck-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 3;
+  max-width: 22ch;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  font-size: var(--fs-xs);
+  color: var(--text);
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-1);
+  cursor: default;
+  animation: bubble-in 160ms ease-out;
+}
+
+.duck-bubble.sticky {
+  border-color: var(--duck);
+  cursor: pointer;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.music-player {
+  display: flex;
+  gap: var(--s1);
+  align-items: center;
+  margin-top: var(--s2);
+}
+
+.music-toggle,
+.music-channel {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.music-toggle[aria-pressed='true'] {
+  color: var(--duck);
+  border-color: var(--duck);
+}
+
+.music-error {
+  font-size: var(--fs-xs);
+  color: var(--warn);
+}
+
+.pet-toggle {
+  display: flex;
+  gap: var(--s1);
+  align-items: center;
+  margin-top: var(--s1);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* --- Modals: the beta gate and the consent prompt ------------------------ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s4);
+  background: rgb(0 0 0 / 62%);
+}
+
+.modal {
+  width: min(64ch, 100%);
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  box-shadow: var(--shadow-2);
+}
+
+.modal-head {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+}
+
+.modal-head h2 {
+  font-size: var(--fs-l);
+  margin: 0;
+}
+
+.modal-sub,
+.modal-foot {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.modal p {
+  margin: var(--s2) 0;
+}
+
+.consent-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: var(--s1) var(--s2);
+}
+
+.modal-actions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.modal-actions button,
+.field + .modal-actions button {
+  font-size: var(--fs-s);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.modal-actions button.primary {
+  color: var(--bg);
+  background: var(--duck);
+  border-color: var(--duck);
+}
+
+.modal-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.field {
+  display: block;
+  margin-top: var(--s3);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  margin-top: var(--s1);
+  font: inherit;
+  font-size: var(--fs-s);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: var(--s1) var(--s2);
+}
+
+/* --- Screensaver --------------------------------------------------------- */
+
+.screensaver {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.screensaver-duck {
+  position: absolute;
+  animation-name: drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes drift {
+  from {
+    transform: translate(-6vw, 4vh) rotate(-8deg);
+  }
+  to {
+    transform: translate(7vw, -5vh) rotate(9deg);
+  }
+}
+
+/* The point is that the screen is idle, which reads fine standing still. */
+@media (prefers-reduced-motion: reduce) {
+  .screensaver-duck {
+    animation: none;
+  }
+}

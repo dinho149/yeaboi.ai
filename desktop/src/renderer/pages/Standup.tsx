@@ -6,6 +6,7 @@
 import { Card, Lozenge, NoticeBlock, StatGrid, StatTile } from '@design/primitives';
 import { Duck } from '@design/primitives/Duck';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import { maskText } from '../boards';
 import { ArtifactEditor } from '../components/ArtifactEditor';
 import { ResultActions } from '../components/ResultActions';
@@ -77,7 +78,10 @@ export function Standup() {
     if (state.error) setError(state.error);
     // The report is re-read rather than taken off the stream: the run also
     // wrote the review, the nudge and the history this page shows.
-    else await refresh();
+    else {
+      quip('standup_done');
+      await refresh();
+    }
   }
 
   if (error && !data) return <NoticeBlock title="Could not load the standup" items={[error]} />;

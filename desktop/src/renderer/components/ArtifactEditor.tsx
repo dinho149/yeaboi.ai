@@ -13,6 +13,7 @@
 
 import { Card, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
+import { quip } from '../ambience';
 import { type ArtifactEdits, type ArtifactRef, applyArtifactEdits, loadArtifactEdits } from '../boards';
 
 export function ArtifactEditor({ refer, onApplied }: { refer: ArtifactRef; onApplied?: () => void }) {
@@ -50,6 +51,7 @@ export function ArtifactEditor({ refer, onApplied }: { refer: ArtifactRef; onApp
       } else {
         setMessage(`Applied ${result.applied ?? 0}.`);
         setValue('');
+        quip('artifact_done');
         onApplied?.();
       }
       await refresh();
