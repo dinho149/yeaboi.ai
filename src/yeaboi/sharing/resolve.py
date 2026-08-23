@@ -14,11 +14,10 @@ over the same stores.
 Not every kind can do all four, and :func:`capabilities` says so rather than
 leaving a caller to discover it by being refused. **Poker exports and nothing
 else**: it has no share document in any surface, because the estimates go back
-to the tracker rather than out as a page.
-
-Known gap, stated rather than discovered: reporting, the three performance
-artifacts and roadmap have share adapters in :mod:`yeaboi.sharing.documents` but
-no row here yet — they arrive with their result screens.
+to the tracker rather than out as a page. Roadmap, a team profile and the
+performance artifacts publish read-only shares, which is the same gap
+``artifacts.engine.SHARED_KINDS`` reports — corrections with nowhere to be
+written back to would be collected and dropped when the tunnel closed.
 """
 
 from __future__ import annotations
@@ -31,18 +30,26 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Artifact kinds this module can read back. Every one of them exports.
-RESOLVABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis", "poker")
+RESOLVABLE_KINDS: tuple[str, ...] = (
+    "standup",
+    "retro",
+    "analysis",
+    "poker",
+    "reporting",
+    "performance",
+    "roadmap",
+)
 
 #: Of those, the ones that can be published as a document at all. Poker is
 #: absent by design — see the module docstring.
-SHAREABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis")
+SHAREABLE_KINDS: tuple[str, ...] = ("standup", "retro", "analysis", "reporting", "performance", "roadmap")
 
 #: Of the shareable ones, those a reader may correct. Mirrors
 #: ``artifacts.engine.SHARED_KINDS`` for the kinds we can resolve — a team
 #: profile publishes read-only, because every number on it is computed from
 #: tracker data and correcting one in place would make the page disagree with
 #: the run that produced it.
-EDITABLE_KINDS: tuple[str, ...] = ("standup", "retro")
+EDITABLE_KINDS: tuple[str, ...] = ("standup", "retro", "reporting")
 
 
 def capabilities() -> list[dict]:
@@ -87,6 +94,11 @@ def _db(db_path: Path | None) -> Path:
     from yeaboi.paths import get_db_path
 
     return db_path or get_db_path()
+
+
+def _sub_kind(resolved: Resolved) -> str:
+    """Which of the three performance artifacts this is: prep, completion or review."""
+    return (resolved.extras or {}).get("artifact_kind", "prep")
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +186,82 @@ def _load_analysis(team_id: str, db_path: Path) -> Resolved | None:
     )
 
 
+def _load_reporting(session_id: str, run_id: int, db_path: Path) -> Resolved | None:
+    from yeaboi.reporting.export import _title
+    from yeaboi.reporting.store import ReportingStore
+
+    with ReportingStore(db_path) as store:
+        base = store.get_base_run(session_id=session_id, run_id=run_id)
+        if base is None:
+            return None
+        base_id, report = base
+        history = tuple(store.get_history(session_id, limit=30))
+    return Resolved(
+        kind="reporting",
+        artifact=report,
+        title=_title(report),
+        project_name=getattr(report, "project_name", "") or "",
+        run_id=base_id,
+        session_id=session_id,
+        history=history,
+    )
+
+
+def _load_performance(engineer: str, db_path: Path) -> Resolved | None:
+    """The engineer's most recent artifact, by the priority every surface uses.
+
+    Review beats completion beats prep — usefulness order, not recency: a
+    6-month review is what someone asks for by name, and it is written over the
+    1:1s that came before it.
+    """
+    from yeaboi.performance.store import PerformanceStore
+
+    if not engineer:
+        return None
+    with PerformanceStore(db_path) as store:
+        review = store.get_latest_review(engineer)
+        completions = store.get_recent_completions(engineer, limit=1)
+        prep = store.get_latest_prep(engineer)
+    if review is not None:
+        artifact, sub_kind, label = review, "review", "6-Month Review"
+    elif completions:
+        artifact, sub_kind, label = completions[0], "completion", "1:1 Summary"
+    elif prep is not None:
+        artifact, sub_kind, label = prep, "prep", "1:1 Prep"
+    else:
+        return None
+    return Resolved(
+        kind="performance",
+        artifact=artifact,
+        title=f"{label} — {engineer}",
+        project_name="",
+        session_id=engineer,
+        extras={"engineer": engineer, "artifact_kind": sub_kind},
+    )
+
+
+def _load_roadmap(roadmap_id: int, db_path: Path) -> Resolved | None:
+    from yeaboi.roadmap.export import _title
+    from yeaboi.roadmap.store import RoadmapStore
+
+    with RoadmapStore(db_path) as store:
+        analysis = None
+        if roadmap_id:
+            row = store.get_roadmap(roadmap_id)
+            analysis = (row or {}).get("analysis")
+        else:
+            analysis = store.get_latest_analysis()
+    if analysis is None:
+        return None
+    return Resolved(
+        kind="roadmap",
+        artifact=analysis,
+        title=_title(analysis),
+        project_name="",
+        run_id=roadmap_id,
+    )
+
+
 def load(
     kind: str,
     *,
@@ -183,9 +271,10 @@ def load(
 ) -> Resolved | None:
     """Read one stored artifact back, or ``None`` when it is no longer there.
 
-    ``session_id`` addresses a team profile by its team id and a run by its
-    session; with a ``run_id`` the run wins. Raises for a kind this module has
-    no row for — an unknown kind is a caller bug, while a missing run is not.
+    ``session_id`` addresses a team profile by its team id, a performance
+    artifact by its engineer, and a run by its session; with a ``run_id`` the
+    run wins. Raises for a kind this module has no row for — an unknown kind is
+    a caller bug, while a missing run is not.
     """
     if kind not in RESOLVABLE_KINDS:
         raise ValueError(f"{kind!r} cannot be resolved — one of {', '.join(RESOLVABLE_KINDS)}")
@@ -198,6 +287,12 @@ def load(
         return _load_retro(session_id, run_id, path)
     if kind == "poker":
         return _load_poker(session_id, run_id, path)
+    if kind == "reporting":
+        return _load_reporting(session_id, run_id, path)
+    if kind == "performance":
+        return _load_performance(session_id, path)
+    if kind == "roadmap":
+        return _load_roadmap(run_id, path)
     return _load_analysis(session_id, path)
 
 
@@ -220,6 +315,27 @@ def markdown(resolved: Resolved) -> str:
         from yeaboi.poker.export import build_poker_markdown
 
         return build_poker_markdown(resolved.artifact)
+    if resolved.kind == "reporting":
+        from yeaboi.paths import get_reporting_export_dir
+        from yeaboi.reporting.export import _slug, build_report_markdown
+
+        # charts_dir gives the delivered-work chart an on-disk home so a
+        # publish layer can upload it alongside the page.
+        charts_dir = get_reporting_export_dir(_slug(resolved.project_name or "report"))
+        return build_report_markdown(resolved.artifact, charts_dir=charts_dir)
+    if resolved.kind == "performance":
+        from yeaboi.performance import export as perf_export
+
+        builders = {
+            "prep": perf_export.build_prep_markdown,
+            "completion": perf_export.build_completion_markdown,
+            "review": perf_export.build_review_markdown,
+        }
+        return builders[_sub_kind(resolved)](resolved.artifact)
+    if resolved.kind == "roadmap":
+        from yeaboi.roadmap.export import build_roadmap_markdown
+
+        return build_roadmap_markdown(resolved.artifact)
     from yeaboi.team_profile_exporter import build_team_profile_markdown
 
     return build_team_profile_markdown(resolved.artifact, examples=(resolved.extras or {}).get("examples"))
@@ -238,6 +354,12 @@ def document(resolved: Resolved, *, anon=None):
         return documents.standup_document(resolved.artifact, anon=anon, history=resolved.history)
     if resolved.kind == "retro":
         return documents.retro_document(resolved.artifact, anon=anon, history=resolved.history)
+    if resolved.kind == "reporting":
+        return documents.reporting_document(resolved.artifact, anon=anon, history=resolved.history)
+    if resolved.kind == "performance":
+        return documents.performance_document(resolved.artifact, kind=_sub_kind(resolved), anon=anon)
+    if resolved.kind == "roadmap":
+        return documents.roadmap_document(resolved.artifact, anon=anon)
     return documents.analysis_document(resolved.artifact, examples=(resolved.extras or {}).get("examples"), anon=anon)
 
 
@@ -255,6 +377,32 @@ def export_files(resolved: Resolved) -> dict[str, Path]:
         from yeaboi.poker.export import export_poker
 
         return export_poker(resolved.artifact, project_name=resolved.project_name)
+    if resolved.kind == "reporting":
+        from yeaboi.reporting.export import export_report
+        from yeaboi.reporting.style import load_deck_style
+
+        extras = resolved.extras or {}
+        # The deck style customises only the presentation outputs; the caller
+        # passes one when it has already answered the content-fit question.
+        return export_report(
+            resolved.artifact,
+            project_name=resolved.project_name,
+            theme=str(extras.get("theme") or "midnight"),
+            history=list(resolved.history),
+            style=extras.get("style") or load_deck_style(),
+        )
+    if resolved.kind == "performance":
+        from yeaboi.performance.export import export_artifact
+
+        return export_artifact(
+            resolved.artifact,
+            engineer=(resolved.extras or {}).get("engineer", ""),
+            kind=_sub_kind(resolved),
+        )
+    if resolved.kind == "roadmap":
+        from yeaboi.roadmap.export import export_roadmap
+
+        return export_roadmap(resolved.artifact)
     from yeaboi.team_profile_exporter import export_team_profile_html, export_team_profile_md
 
     examples = (resolved.extras or {}).get("examples")

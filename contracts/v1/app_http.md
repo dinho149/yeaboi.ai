@@ -247,16 +247,19 @@ Closing a board is what records the ceremony: `{closed, board_id, run_id}`,
 | POST | `/api/anonymize` | mask one artifact, streamed as NDJSON |
 
 All four take the same **artifact reference**: `{kind, session_id, run_id}`.
-`kind` is `standup`, `retro`, `analysis` or `poker` (a team profile is addressed
-by its team id in `session_id`); reporting, performance and roadmap arrive with
-their result screens.
+`kind` is `standup`, `retro`, `analysis`, `poker`, `reporting`, `performance`
+or `roadmap`. A team profile is addressed by its team id in `session_id`, a
+performance artifact by its engineer's name in `session_id`, and a roadmap by
+its saved id in `run_id`.
 
 Not every kind can do all four, and `/api/artifacts/kinds` is what says so —
 a surface reads it rather than keeping its own table, so it never offers an
 action the backend would refuse. **Poker exports and nothing else**: it has no
 share document in any surface, because the estimates go back to the tracker
-rather than out as a page. A team profile shares read-only. Only a standup or a
-retro is correctable.
+rather than out as a page. A team profile, a roadmap and the performance
+artifacts share read-only — corrections with nowhere to be written back to
+would be collected and dropped when the tunnel closed. Only a standup, a retro
+or a delivery report is correctable.
 
 `copy` is a **local** destination: the export returns `{destination, title,
 markdown}` and performs nothing. A clipboard belongs to whatever is in front of
@@ -277,3 +280,116 @@ An **anonymize** run streams `op`, `progress`, then
 *surface* applies the replacements to what it is already showing — masking is a
 view over the same data, never a second copy of it. The pass never fails closed:
 an LLM failure comes back as a warning over the deterministic seed mask.
+
+## Reporting
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/reporting/options` | periods, configured sources, palettes, the deck style and its vocabulary |
+| GET | `/api/reporting/sprints` | the quarter's sprints for `?session_id=`, pre-checked |
+| POST | `/api/reporting/window` | the window a set of checked sprints makes |
+| POST | `/api/reporting/run` | one delivery report, streamed as NDJSON |
+| POST | `/api/reporting/style` | persist the deck style, or `{reset: true}` |
+| POST | `/api/reporting/fit` | how many extra slides fitting everything costs |
+| POST | `/api/reporting/export` | the styled deck outputs a plain export cannot write |
+
+`report_delivery`, `reporting_history` and `reporting_export` are MCP tools, so
+the report itself is already reachable headlessly. These routes are what MCP has
+no shape for.
+
+A **period** is `last_week`, `last_sprint`, `last_month`, `quarter` or `window`.
+Only `quarter` earns the sprint multi-select and only `window` earns the two
+dates — `/api/reporting/options` says which, so no surface keeps its own copy of
+the rule. `window` refuses without both dates; a reversed or non-ISO range is a
+400 naming the field.
+
+`/api/reporting/window` is a round-trip for the same reason: which selection
+leaves the quarter's plain label and which makes it `(custom)`, and the fact
+that the window never runs past today, are one answer on every surface.
+
+A **run** streams `op`, `progress`, then `done: {report, delivered}`; cancelling
+the op raises at the next stage boundary, before anything is persisted, and the
+stream ends `cancelled`.
+
+`/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
+there is nothing to ask — the style that comes back is the one to export with.
+Otherwise the surface asks, and posts `{expand}` to `/api/reporting/export`.
+The saved preference stays `ask`: the answer applies to that export only.
+Markdown and HTML come from `/api/export` like every other kind; the slide deck
+and the `.pptx` are styled, so they come from here. `pptx_only` without
+python-pptx is a 503 naming the extra that installs it.
+
+## Performance
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/performance/roster` | who can be reviewed, and the status line under each name |
+| GET | `/api/performance/engineer/{name}` | everything on file for one engineer |
+
+The three workflows and the note are MCP tools (`perf_one_on_one_prep`,
+`perf_one_on_one_complete`, `perf_six_month_review`, `perf_note_add`) — each is
+a single LLM call with no progress or cancel seam, which is what the dispatcher
+serves well. These two routes are the parts MCP has no shape for.
+
+The roster is the people who did work on the board; with no tracker reachable it
+falls back to the saved plan's team members. `latest` on an engineer is the
+artifact a result screen opens — **review beats completion beats prep**, which
+is usefulness order, not recency.
+
+## Roadmap intake
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/roadmap/options` | the three sources and whether each is configured |
+| GET | `/api/roadmap/saved` | the saved roadmaps, as the project list shows them |
+| GET | `/api/roadmap/saved/{roadmap_id}` | one saved roadmap and its analysis |
+| POST | `/api/roadmap/analyze` | one roadmap analysis, streamed as NDJSON |
+| POST | `/api/roadmap/plan` | what Plan This hands to the planning chat |
+
+The roadmap has no MCP tool and no CLI flag; both are tracked gaps older than
+this surface. An unconfigured source stays offered — the hint names the setting
+that fixes it, because hiding the option hides the fix.
+
+`analyze` takes `{source_type, locator, roadmap_id}` and answers `op`,
+`progress`, then `done: {analysis, roadmap_id}` — `roadmap_id` is the row it
+inserted or updated. A `local` source outside the allowed paths is a **403 up
+front** naming the path, not a sandbox failure discovered mid-analysis. The
+engine never raises on a bad roadmap: an ingest or LLM failure comes back as an
+analysis carrying warnings, so `error` on this stream means the process broke.
+
+`plan` answers `{intake_mode, description}` — which projects are large enough
+for the full intake is a backend decision, not a renderer one.
+
+## Ship
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/ship/stories` | the latest saved plan's stories, and the default repo |
+| POST | `/api/ship/target` | resolve a typed path to the repo a run will touch |
+| GET | `/api/ship/runs` | every run this app session has launched |
+| POST | `/api/ship/runs` | start one supervised run |
+| GET | `/api/ship/runs/{key}` | one run's phases, gate and result |
+| POST | `/api/ship/runs/{key}/gate` | approve or reject the diff |
+| POST | `/api/ship/runs/{key}/cancel` | wind the run down cooperatively |
+
+`ship_history` and `ship_status` stay MCP-read-only. Launching is not a tool: a
+run holds a coding-agent subprocess for many minutes behind the engine lock, and
+the gate is a human decision — which a human-owned desktop app satisfies.
+
+**A ship run does not stream.** It lives in the backend and a surface polls
+`GET /api/ship/runs/{key}`, because a renderer reload must not be able to
+abandon a coding agent mid-diff. A snapshot is `{key, run_id, story_id,
+story_title, repo, check_command, started_at, finished, cancelling, phases,
+gate, result, failure, board}`. `key` is this process's handle; `run_id` is the
+engine's own, and it is empty until the engine mints it — a gate is only ever
+read by `run_id`, never by "the newest row", so a surface can never open a gate
+over a diff its user did not launch.
+
+`target` resolves to the git **toplevel**, which is where every write lands and
+what the sandbox must have granted — the typed path is never what gets checked.
+A repo outside the allowed paths is a 403 before the run, not a failure deep
+inside a worktree write after real money has been spent.
+
+The gate answers `{taken, resolution}`. `taken: false` is not an error: the
+store's compare-and-swap means another surface answered first, so the honest
+move is to re-read rather than retry.

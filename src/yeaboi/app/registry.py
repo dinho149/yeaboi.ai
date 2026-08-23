@@ -22,8 +22,12 @@ from yeaboi.app import (
     routes_boards,
     routes_chat,
     routes_meta,
+    routes_performance,
+    routes_reporting,
+    routes_roadmap,
     routes_settings,
     routes_share,
+    routes_ship,
     routes_standup,
 )
 from yeaboi.app.router import Router
@@ -110,6 +114,31 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/artifacts/kinds", routes_share.artifact_kinds, "output-sharing"),
     AppRoute("GET", "/api/artifacts/{kind}/edits", routes_share.artifact_edits, "artifact-editing"),
     AppRoute("POST", "/api/anonymize", routes_share.anonymize, "anonymize"),
+    # -- reporting (the M8 surface) ------------------------------------------
+    AppRoute("GET", "/api/reporting/options", routes_reporting.options, "reporting"),
+    AppRoute("GET", "/api/reporting/sprints", routes_reporting.sprints, "reporting"),
+    AppRoute("POST", "/api/reporting/window", routes_reporting.window, "reporting"),
+    AppRoute("POST", "/api/reporting/run", routes_reporting.run, "reporting"),
+    AppRoute("POST", "/api/reporting/style", routes_reporting.style, "reporting"),
+    AppRoute("POST", "/api/reporting/fit", routes_reporting.fit, "reporting"),
+    AppRoute("POST", "/api/reporting/export", routes_reporting.export_deck, "reporting"),
+    # -- performance (the M8 surface) ----------------------------------------
+    AppRoute("GET", "/api/performance/roster", routes_performance.roster, "performance"),
+    AppRoute("GET", "/api/performance/engineer/{name}", routes_performance.engineer, "performance"),
+    # -- roadmap intake (the M8 surface) -------------------------------------
+    AppRoute("GET", "/api/roadmap/options", routes_roadmap.options, "roadmap"),
+    AppRoute("GET", "/api/roadmap/saved", routes_roadmap.roadmaps, "roadmap"),
+    AppRoute("GET", "/api/roadmap/saved/{roadmap_id}", routes_roadmap.roadmap, "roadmap"),
+    AppRoute("POST", "/api/roadmap/analyze", routes_roadmap.analyze, "roadmap"),
+    AppRoute("POST", "/api/roadmap/plan", routes_roadmap.plan, "roadmap"),
+    # -- ship (the M8 surface) -----------------------------------------------
+    AppRoute("GET", "/api/ship/stories", routes_ship.stories, "ship"),
+    AppRoute("POST", "/api/ship/target", routes_ship.target, "ship"),
+    AppRoute("GET", "/api/ship/runs", routes_ship.runs, "ship"),
+    AppRoute("POST", "/api/ship/runs", routes_ship.launch, "ship"),
+    AppRoute("GET", "/api/ship/runs/{key}", routes_ship.run, "ship"),
+    AppRoute("POST", "/api/ship/runs/{key}/gate", routes_ship.gate, "ship"),
+    AppRoute("POST", "/api/ship/runs/{key}/cancel", routes_ship.cancel, "ship"),
 )
 
 

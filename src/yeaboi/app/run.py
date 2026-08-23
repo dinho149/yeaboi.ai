@@ -100,6 +100,9 @@ def run_app(port: int = 0, *, host: str = "127.0.0.1", _emit=None) -> int:
         # Boards and shares first: they own cloudflared children, and a tunnel
         # that outlives the app keeps forwarding to a port nothing answers on.
         app.boards.stop_all()
+        # Ship runs next: each owns a coding-agent subprocess and possibly a
+        # board of its own, and the cancel is cooperative.
+        app.ships.stop_all()
         httpd.shutdown()
         server_thread.join(timeout=10)
         httpd.server_close()

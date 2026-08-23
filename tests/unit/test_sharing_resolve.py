@@ -31,7 +31,7 @@ def _standup(**kw) -> StandupReport:
 class TestKinds:
     def test_an_unknown_kind_is_a_caller_bug(self, db):
         with pytest.raises(ValueError, match="cannot be resolved"):
-            resolve.load("roadmap", session_id="s1")
+            resolve.load("ceremonies", session_id="s1")
 
     def test_poker_exports_and_nothing_else(self):
         """The estimates go back to the tracker rather than out as a page, so
@@ -127,3 +127,119 @@ class TestBaseRun:
             base_id = store.record_run(_standup())
             store.record_run(_standup(team_summary="corrected"), origin="edited", edited_from_id=base_id)
         assert resolve.load("standup", session_id="s1").run_id == base_id
+
+
+class TestReporting:
+    def _report(self):
+        from yeaboi.agent.state import DeliveryReport
+
+        return DeliveryReport(
+            period_label="Last month",
+            period_start="2026-07-01",
+            period_end="2026-07-28",
+            project_name="Apollo",
+            headline="Billing shipped",
+        )
+
+    def test_a_missing_run_is_none(self, db):
+        from yeaboi.reporting.store import ReportingStore
+
+        with ReportingStore(db):
+            pass
+        assert resolve.load("reporting", session_id="s1") is None
+
+    def test_resolves_the_generated_run_and_is_correctable(self, db):
+        from yeaboi.reporting.store import ReportingStore
+
+        with ReportingStore(db) as store:
+            run_id = store.record_run(self._report(), session_id="s1")
+        resolved = resolve.load("reporting", session_id="s1")
+        assert resolved is not None
+        assert resolved.run_id == run_id
+        assert resolved.editable
+        assert resolved.title == "Delivery Report — Apollo"
+
+    def test_the_markdown_is_the_export_markdown(self, db):
+        from yeaboi.reporting.store import ReportingStore
+
+        with ReportingStore(db) as store:
+            store.record_run(self._report(), session_id="s1")
+        assert "Billing shipped" in resolve.markdown(resolve.load("reporting", session_id="s1"))
+
+
+class TestPerformance:
+    def _prep(self, engineer: str = "Ada"):
+        from yeaboi.agent.state import OneOnOnePrep
+
+        return OneOnOnePrep(engineer=engineer, date="2026-07-10", talking_points=("Search latency",))
+
+    def _review(self, engineer: str = "Ada"):
+        from yeaboi.agent.state import SixMonthReview
+
+        return SixMonthReview(engineer=engineer, period_start="2026-01-01", period_end="2026-06-30")
+
+    def test_nothing_on_file_is_none(self, db):
+        from yeaboi.performance.store import PerformanceStore
+
+        with PerformanceStore(db):
+            pass
+        assert resolve.load("performance", session_id="Ada") is None
+
+    def test_a_nameless_engineer_is_nothing_to_resolve(self, db):
+        assert resolve.load("performance", session_id="") is None
+
+    def test_resolves_the_prep_when_it_is_all_there_is(self, db):
+        from yeaboi.performance.store import PerformanceStore
+
+        with PerformanceStore(db) as store:
+            store.record_prep(self._prep())
+        resolved = resolve.load("performance", session_id="Ada")
+        assert resolved.title == "1:1 Prep — Ada"
+        assert (resolved.extras or {})["artifact_kind"] == "prep"
+
+    def test_a_review_outranks_a_prep(self, db):
+        # Usefulness order, not recency: the review is written over the 1:1s.
+        from yeaboi.performance.store import PerformanceStore
+
+        with PerformanceStore(db) as store:
+            store.record_review(self._review())
+            store.record_prep(self._prep())
+        resolved = resolve.load("performance", session_id="Ada")
+        assert (resolved.extras or {})["artifact_kind"] == "review"
+
+    def test_a_performance_artifact_shares_read_only(self):
+        row = next(r for r in resolve.capabilities() if r["kind"] == "performance")
+        assert row["share"] and not row["edit"]
+
+
+class TestRoadmap:
+    def _analysis(self):
+        from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject
+
+        return RoadmapAnalysis(
+            source_type="local",
+            source_locator="/tmp/roadmap.md",
+            source_label="roadmap.md",
+            summary="Three bets for Q3",
+            projects=(RoadmapProject(name="Billing", description="Rebuild billing"),),
+        )
+
+    def test_nothing_analyzed_is_none(self, db):
+        from yeaboi.roadmap.store import RoadmapStore
+
+        with RoadmapStore(db):
+            pass
+        assert resolve.load("roadmap") is None
+
+    def test_resolves_the_latest_analysis(self, db):
+        from yeaboi.roadmap.store import RoadmapStore
+
+        with RoadmapStore(db) as store:
+            store.record_run(self._analysis())
+        resolved = resolve.load("roadmap")
+        assert resolved is not None
+        assert "Billing" in resolve.markdown(resolved)
+
+    def test_a_roadmap_shares_read_only(self):
+        row = next(r for r in resolve.capabilities() if r["kind"] == "roadmap")
+        assert row["share"] and not row["edit"]

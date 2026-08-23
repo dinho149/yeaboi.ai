@@ -22,6 +22,7 @@ from yeaboi.app.chats import ChatSupervisor
 from yeaboi.app.events import EventBus
 from yeaboi.app.ops import OperationTable
 from yeaboi.app.router import Request, Response, Router, parse_request
+from yeaboi.app.ships import ShipSupervisor
 from yeaboi.app.supervisor import BoardSupervisor
 from yeaboi.web.security import policy, send_document, send_headers
 
@@ -137,6 +138,7 @@ class AppServer:
         router: Router | None = None,
         chats: ChatSupervisor | None = None,
         boards: BoardSupervisor | None = None,
+        ships: ShipSupervisor | None = None,
         on_shutdown=None,
     ) -> None:
         self.token = token
@@ -154,6 +156,9 @@ class AppServer:
         # window, and `stop_all` at shutdown is what keeps a tunnel from
         # outliving the app.
         self.boards = boards if boards is not None else BoardSupervisor()
+        # The live ship runs (routes_ship) — a run lasts tens of minutes and
+        # stops halfway to ask a human, so it must not belong to a window.
+        self.ships = ships if ships is not None else ShipSupervisor()
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:

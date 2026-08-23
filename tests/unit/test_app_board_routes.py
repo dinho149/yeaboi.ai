@@ -288,9 +288,9 @@ class TestExport:
         assert json.loads(response.body)["error"]
 
     def test_an_unresolvable_kind_is_a_400(self, app):
-        response = request(app, "POST", "/api/export", {"destination": "copy", "kind": "roadmap"})
+        response = request(app, "POST", "/api/export", {"destination": "copy", "kind": "ceremonies"})
         assert response.code == 400
-        assert "roadmap" in json.loads(response.body)["error"]
+        assert "ceremonies" in json.loads(response.body)["error"]
 
     def test_a_missing_run_is_a_404(self, app, monkeypatch):
         import yeaboi.sharing.resolve as resolver
