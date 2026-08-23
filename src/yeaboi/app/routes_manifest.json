@@ -15,6 +15,26 @@
       "path": "/usage",
       "capability": "usage",
       "title": "Usage"
+    },
+    {
+      "path": "/settings/credentials",
+      "capability": "settings",
+      "title": "Settings · Credentials"
+    },
+    {
+      "path": "/settings/sharing",
+      "capability": "settings",
+      "title": "Settings · Sharing"
+    },
+    {
+      "path": "/settings/system",
+      "capability": "settings",
+      "title": "Settings · System"
+    },
+    {
+      "path": "/setup",
+      "capability": "settings",
+      "title": "Setup"
     }
   ]
 }

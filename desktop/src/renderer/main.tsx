@@ -11,6 +11,8 @@ import { type ComponentType, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getBackendState, onBackendState } from './api';
 import { Home } from './pages/Home';
+import { Settings } from './pages/Settings';
+import { Setup } from './pages/Setup';
 import { Usage } from './pages/Usage';
 import { WhatsNew } from './pages/WhatsNew';
 import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from './routes';
@@ -19,6 +21,10 @@ const PAGES: Record<string, ComponentType> = {
   '/home': Home,
   '/whats-new': WhatsNew,
   '/usage': Usage,
+  '/settings/credentials': Settings,
+  '/settings/sharing': Settings,
+  '/settings/system': Settings,
+  '/setup': Setup,
 };
 
 function useHashRoute(): string {
@@ -52,18 +58,28 @@ function Splash({ backend }: { backend: Backend }) {
 }
 
 function Sidebar({ active }: { active: string }) {
+  // The three /settings/* routes collapse into one nav entry (the page owns
+  // its own tab bar), and Setup + Settings live in the footer like the TUI's
+  // secondary row rather than among the modes.
+  const primary = APP_ROUTES.filter((route) => !route.path.startsWith('/settings/') && route.path !== '/setup');
   return (
     <nav class="sidebar">
       <div class="sidebar-brand">
         <Duck state="idle" size={36} />
         <Wordmark text="YEABOI" label="yeaboi" size="110px" />
       </div>
-      {APP_ROUTES.map((route) => (
+      {primary.map((route) => (
         <a key={route.path} href={`#${route.path}`} aria-current={active === route.path ? 'page' : undefined}>
           {route.title}
         </a>
       ))}
       <div class="sidebar-footer">
+        <a href="#/setup" aria-current={active === '/setup' ? 'page' : undefined}>
+          Setup
+        </a>
+        <a href="#/settings/credentials" aria-current={active.startsWith('/settings/') ? 'page' : undefined}>
+          Settings
+        </a>
         <div class="sidebar-version">yeaboi desktop</div>
       </div>
     </nav>

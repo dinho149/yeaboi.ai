@@ -278,12 +278,20 @@ CAPABILITIES: dict[str, dict] = {
         "desktop": {"/usage"},
     },
     "settings": {
-        "engines": Exempt("TUI utility page — writes ~/.yeaboi/.env via config"),
-        "mcp_tools": Exempt("TUI utility page; MCP servers must not rewrite host credentials"),
+        "engines": {
+            ("yeaboi.settings.engine", "get_settings"),
+            ("yeaboi.settings.engine", "set_setting"),
+            ("yeaboi.settings.engine", "set_allowed_paths"),
+            ("yeaboi.settings.engine", "set_data_dir"),
+            ("yeaboi.settings.engine", "provider_catalog"),
+            ("yeaboi.settings.engine", "verify_provider"),
+            ("yeaboi.settings.engine", "discover_models"),
+        },
+        "mcp_tools": Exempt("MCP servers must not rewrite host credentials"),
         "tui_mode": "settings",
         "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice", "--setup-access"},
         "skill": Exempt("TUI utility page"),
-        "desktop": Exempt("desktop: scheduled milestone M4 — all three settings tabs plus the setup wizard"),
+        "desktop": {"/settings/credentials", "/settings/sharing", "/settings/system", "/setup"},
     },
     # Ceremonies are the clock other modes run on, not a mode of their own: the
     # engine fires a catalogued mode and delivers its output.

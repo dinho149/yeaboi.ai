@@ -30,6 +30,12 @@ export async function apiGet<T>(path: string): Promise<T> {
   return body as T;
 }
 
+export async function apiPost<T>(path: string, body: object = {}): Promise<T> {
+  const { status, body: resp } = await bridge().api(path, { method: 'POST', body });
+  if (status !== 200) throw new Error((resp as { error?: string }).error ?? `POST ${path} → ${status}`);
+  return resp as T;
+}
+
 export async function callTool<T = unknown>(name: string, args: object = {}): Promise<Envelope<T>> {
   const { status, body } = await bridge().api(`/api/tool/${name}`, {
     method: 'POST',

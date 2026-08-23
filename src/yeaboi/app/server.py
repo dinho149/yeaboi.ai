@@ -139,6 +139,10 @@ class AppServer:
         self.dispatcher = dispatcher
         self.bus = bus if bus is not None else EventBus()
         self.ops = ops if ops is not None else OperationTable()
+        # The one subscription sign-in session (routes_settings) — a running
+        # `claude setup-token` child, driven a poll at a time over the API.
+        self.signin = None
+        self.signin_lock = threading.Lock()
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:

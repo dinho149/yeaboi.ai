@@ -3,6 +3,10 @@
   "routes": [
     { "path": "/home", "capability": null, "title": "Home" },
     { "path": "/whats-new", "capability": null, "title": "What's New" },
-    { "path": "/usage", "capability": "usage", "title": "Usage" }
+    { "path": "/usage", "capability": "usage", "title": "Usage" },
+    { "path": "/settings/credentials", "capability": "settings", "title": "Settings · Credentials" },
+    { "path": "/settings/sharing", "capability": "settings", "title": "Settings · Sharing" },
+    { "path": "/settings/system", "capability": "settings", "title": "Settings · System" },
+    { "path": "/setup", "capability": "settings", "title": "Setup" }
   ]
 }

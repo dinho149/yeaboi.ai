@@ -45,6 +45,27 @@ The token never appears in URLs. Missing/wrong token → `401 {"error":"unauthor
 Errors are always `{"error": "<message>"}` with 400 (bad input), 401, 404,
 405 (right path, wrong method), 503.
 
+## Settings routes (M4)
+
+Reads are masked: a secret field's `value` is a `abcd••••`-style preview and
+the raw credential **never** appears in any response — secrets are write-only
+over this wire. Writes are allowlisted to the engine's field registry
+(`yeaboi.settings.engine`); an unknown key or an off-list choice value is a 400.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/settings` | `{fields: [{env, label, section, secret, value, is_set, choices, choice_labels, active_choice, default, action, help_url, help_scope}], sections, config_path, voice: {state, detail, devices}}` |
+| GET | `/api/settings/providers` | the setup-wizard catalog: `{providers, anthropic_auth_modes, token_help}` |
+| POST | `/api/settings/set` | body `{key, value}` (`""` clears) → `{ok, key, message, restart_required}` |
+| POST | `/api/settings/allowed-paths` | body `{paths: [..]}` → same write shape |
+| POST | `/api/settings/data-dir` | body `{value, move?: bool}` → same write shape with `restart_required: true` |
+| POST | `/api/settings/provider/verify` | body `{provider, credential, model?}` → `{ok, message}` (network, up to ~8s) |
+| POST | `/api/settings/provider/models` | body `{provider, credential}` → `{models, default, hints}` (discovered-first merge) |
+| POST | `/api/settings/signin/start` | spawn `claude setup-token` → `{started, message}` |
+| GET | `/api/settings/signin` | poll → `{active, url?, awaiting_code?, done?, ok?, saved?, message?}`; on first token sighting the credential is persisted before `saved: true` is reported — the token itself is never in the body |
+| POST | `/api/settings/signin/code` | body `{code}` → `{ok: true}`; 404 with no session |
+| POST | `/api/settings/signin/cancel` | stop and discard the session → `{ok: true}` |
+
 ## Event feed (SSE)
 
 `GET /api/events` holds one `text/event-stream` response open. Frames:

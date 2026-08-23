@@ -361,6 +361,9 @@ AREAS: tuple[Area, ...] = (
             # claiming it here keeps a desktop-only diff from forcing the full
             # Python suite as "unrecognised path".
             "desktop/",
+            # The headless settings service the desktop settings pages write
+            # through — allowlisted config writes, masked reads.
+            "src/yeaboi/settings/",
             "src/yeaboi/telemetry.py",
             "src/yeaboi/feedback.py",
             "src/yeaboi/setup_wizard.py",
@@ -387,6 +390,7 @@ AREAS: tuple[Area, ...] = (
         tests=(
             "tests/unit/test_cli_*.py",
             "tests/unit/test_app_*.py",
+            "tests/unit/test_settings_*.py",
             "tests/unit/test_feedback.py",
             "tests/unit/test_setup_wizard.py",
             "tests/unit/test_update_*.py",

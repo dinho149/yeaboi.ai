@@ -290,3 +290,312 @@ body {
   padding: var(--s3) var(--s4);
   max-width: 60ch;
 }
+
+/* ── settings ────────────────────────────────────────────────────────── */
+
+.settings-tabs {
+  display: flex;
+  gap: var(--s4);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s4);
+}
+
+.settings-tabs a {
+  padding: var(--s1) 0 var(--s2);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--fs-s);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.settings-tabs a[aria-current='page'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.settings-box {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s4);
+  max-width: 72ch;
+}
+
+.settings-box h2 {
+  margin: 0 0 var(--s2);
+  font-size: var(--fs-l);
+  font-weight: 600;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--fs-s);
+}
+
+.settings-box .settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  flex: 0 0 12rem;
+  color: var(--muted);
+}
+
+.settings-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.settings-value.unset {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.settings-value.good {
+  color: var(--accent);
+}
+
+.settings-row button,
+.settings-dialog button,
+.signin-panel button {
+  font-size: var(--fs-xs);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.settings-choices {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+
+.settings-choices .choice.active,
+.settings-row button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-edit,
+.signin-code {
+  display: flex;
+  gap: var(--s2);
+  flex: 1;
+}
+
+.settings-edit input,
+.signin-code input,
+.wizard-credential,
+.settings-paths-editor input,
+.settings-row select {
+  flex: 1;
+  min-width: 12rem;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.settings-help {
+  flex-basis: 100%;
+  padding-left: 12rem;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+
+.settings-help a {
+  color: var(--muted);
+}
+
+.settings-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.settings-banner {
+  border: 1px solid var(--accent);
+  border-radius: var(--r-m);
+  padding: var(--s2) var(--s3);
+  margin-bottom: var(--s3);
+  font-size: var(--fs-s);
+  max-width: 72ch;
+}
+
+.settings-dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s3);
+  max-width: 72ch;
+}
+
+.settings-dialog-actions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+
+.settings-paths-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.settings-paths-editor form {
+  display: flex;
+  gap: var(--s2);
+}
+
+.settings-path {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-xs);
+}
+
+/* ── sign-in panel ───────────────────────────────────────────────────── */
+
+.signin-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s3);
+  max-width: 72ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  font-size: var(--fs-s);
+}
+
+.signin-url {
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.signin-url a {
+  color: var(--accent);
+}
+
+.signin-waiting {
+  color: var(--muted);
+}
+
+.signin-ok {
+  color: var(--accent);
+}
+
+.signin-error {
+  color: var(--bad, #d66);
+}
+
+/* ── setup wizard ────────────────────────────────────────────────────── */
+
+.wizard-steps {
+  display: flex;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.wizard-steps .step {
+  color: var(--muted);
+}
+
+.wizard-steps .step.active {
+  color: var(--accent);
+}
+
+.wizard-steps .step.complete {
+  color: var(--text);
+}
+
+.provider-card {
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.provider-card:hover {
+  border-color: var(--accent);
+}
+
+.provider-instructions {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.wizard-pane {
+  max-width: 72ch;
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin: var(--s2) 0;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  cursor: pointer;
+  font-size: var(--fs-s);
+  flex-wrap: wrap;
+}
+
+.model-option.active {
+  border-color: var(--accent);
+}
+
+.model-tag {
+  color: var(--accent);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+}
+
+.model-hint {
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+
+.wizard-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  text-align: center;
+}

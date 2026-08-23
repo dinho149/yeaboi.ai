@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import registry from '../src/renderer/routes.json';
 import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from '../src/renderer/routes';
+import { SETTINGS_TABS } from '../src/renderer/settings-tabs';
 
 const MANIFEST = resolve(import.meta.dirname, '../../src/yeaboi/app/routes_manifest.json');
 
@@ -31,5 +32,18 @@ describe('routes manifest', () => {
 
   it('the default route exists', () => {
     expect(routeFor(DEFAULT_ROUTE)).toBeDefined();
+  });
+});
+
+describe('settings tabs', () => {
+  it('every /settings/* route is a tab, and every tab is a route', () => {
+    const routePaths = APP_ROUTES.filter((r) => r.path.startsWith('/settings/')).map((r) => r.path);
+    const tabRoutes = SETTINGS_TABS.map((t) => t.route);
+    expect(new Set(tabRoutes)).toEqual(new Set(routePaths));
+  });
+
+  it('no section is claimed by two tabs', () => {
+    const sections = SETTINGS_TABS.flatMap((t) => [...t.sections]);
+    expect(new Set(sections).size).toBe(sections.length);
   });
 });

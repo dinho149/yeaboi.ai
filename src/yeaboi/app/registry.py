@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 
-from yeaboi.app import routes_meta
+from yeaboi.app import routes_meta, routes_settings
 from yeaboi.app.router import Router
 
 #: Routes that may answer without a bearer token. Kept as an explicit,
@@ -46,6 +46,18 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/events", routes_meta.events),
     AppRoute("POST", "/api/ops/{op_id}/cancel", routes_meta.cancel_op),
     AppRoute("POST", "/api/shutdown", routes_meta.shutdown),
+    # -- settings (capability "settings" — the M4 surface) -------------------
+    AppRoute("GET", "/api/settings", routes_settings.get_settings, "settings"),
+    AppRoute("GET", "/api/settings/providers", routes_settings.providers, "settings"),
+    AppRoute("POST", "/api/settings/set", routes_settings.set_setting, "settings"),
+    AppRoute("POST", "/api/settings/allowed-paths", routes_settings.allowed_paths, "settings"),
+    AppRoute("POST", "/api/settings/data-dir", routes_settings.data_dir, "settings"),
+    AppRoute("POST", "/api/settings/provider/verify", routes_settings.provider_verify, "settings"),
+    AppRoute("POST", "/api/settings/provider/models", routes_settings.provider_models, "settings"),
+    AppRoute("POST", "/api/settings/signin/start", routes_settings.signin_start, "settings"),
+    AppRoute("GET", "/api/settings/signin", routes_settings.signin_status, "settings"),
+    AppRoute("POST", "/api/settings/signin/code", routes_settings.signin_code, "settings"),
+    AppRoute("POST", "/api/settings/signin/cancel", routes_settings.signin_cancel, "settings"),
 )
 
 
