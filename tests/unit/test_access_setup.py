@@ -148,6 +148,30 @@ class TestTheNoDomainRemedies:
         assert code == "NO_ZONE"
 
 
+class TestValidAud:
+    """A wrong AUD is the one setup mistake nothing later catches loudly —
+    verify() never reads it, so it must be caught at the prompt."""
+
+    def test_a_real_tag_passes(self):
+        assert setup.valid_aud("ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace")
+        assert setup.valid_aud(
+            "  BA3BA4F9A828505C0B06379D14B961165696F2E31A3925256C32645B16371ACE  "
+        )  # pasted with whitespace/case
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "",
+            "aud-tag",
+            "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ac",
+            "My Application",
+            "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371acex",
+        ],
+    )
+    def test_everything_else_is_refused(self, bad):
+        assert not setup.valid_aud(bad)
+
+
 class TestBoardsHostname:
     """The express default: the host types a domain, the boards live at boards.<domain>."""
 
@@ -442,19 +466,21 @@ class TestTheCliTwinResumes:
         run, saved = self._wire(
             monkeypatch,
             missing=("CLOUDFLARE_ACCESS_TEAM", "CLOUDFLARE_ACCESS_AUD"),
-            answers=["aud-tag", "acme"],
+            answers=["ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace", "acme"],
         )
         assert run() == 0
         out = capsys.readouterr().out
         assert "set the application domain to boards.yeaboi.ai" in out
         assert saved["CLOUDFLARE_ACCESS_TEAM"] == "acme"
-        assert saved["CLOUDFLARE_ACCESS_AUD"] == "aud-tag"
+        assert saved["CLOUDFLARE_ACCESS_AUD"] == "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"
 
     def test_a_detected_team_is_not_asked_for(self, monkeypatch, capsys):
         run, saved = self._wire(
             monkeypatch,
             missing=("CLOUDFLARE_ACCESS_TEAM", "CLOUDFLARE_ACCESS_AUD"),
-            answers=["aud-tag"],  # an exhausted iterator would raise on a team ask
+            answers=[
+                "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"
+            ],  # an exhausted iterator would raise on a team ask
         )
         monkeypatch.setattr(setup, "discover_app", lambda *a, **kw: ("acme", ""))
         assert run() == 0

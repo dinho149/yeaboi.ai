@@ -262,6 +262,19 @@ def discover_app(hostname: str, *, timeout: float = 8.0) -> tuple[str, str]:
     return "", ""
 
 
+def valid_aud(value: str) -> bool:
+    """An Application Audience tag: 64 hex characters, always.
+
+    Applied to typed input as well as the detected default, because a wrong AUD
+    is the one setup mistake nothing later catches loudly: ``verify()`` never
+    reads it (the JWKS is keyed on the team), so the wizard would end on
+    "Verified" and every teammate's real token would then die on
+    ``InvalidAudienceError`` as a bare 403. A truncated paste or a copied
+    application *name* fails here instead.
+    """
+    return bool(_AUD_RE.match(value.strip().lower()))
+
+
 def boards_hostname(value: str) -> str:
     """The express default hostname: ``boards.<domain>``.
 

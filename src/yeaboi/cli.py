@@ -1553,6 +1553,9 @@ def _setup_access() -> int:
         if aud_hint:
             print("  An AUD tag was detected too — confirm it matches the application's Overview tab.")
         aud = _ask("The application's AUD tag", default=aud_hint)
+        while not access_setup.valid_aud(aud):
+            print("  That is not an AUD tag (64 hex characters, from the application's Overview tab).")
+            aud = _ask("The application's AUD tag", default=aud_hint)
         if not team:
             team = _ask("Your Zero Trust team name")
         access_setup.save(CLOUDFLARE_ACCESS_TEAM=team, CLOUDFLARE_ACCESS_AUD=aud)

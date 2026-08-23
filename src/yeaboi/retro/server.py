@@ -140,15 +140,20 @@ class _RetroHandler(BaseHTTPRequestHandler):
         them without a new check at the top of ``do_GET``/``do_POST`` that a
         future route could forget to inherit.
 
-        In the Access tier a tunnel-borne request must present a token this
-        process verified locally against Cloudflare's signing keys — the board
-        token is not consulted at all, so a leaked link is not a way in. The
-        host's own loopback requests stay token-gated exactly as before, because
+        In the Access tier a tunnel-borne request must present **both** a token
+        this process verified locally against Cloudflare's signing keys *and*
+        the board token. The JWT arrives ambiently — the edge injects the
+        header, and the ``CF_Authorization`` cookie rides on any request the
+        browser makes — so alone it is forgeable by a cross-site form POST; the
+        unguessable ``?token=`` stays required as the CSRF barrier it always
+        was (the browser holds it from ``/api/join``). A leaked link is still
+        not a way in: identity is still required on top. The host's own
+        loopback requests stay token-gated exactly as before, because
         cloudflared connects from ``127.0.0.1`` and requiring a JWT on every
         request would lock the host out of their own board.
         """
-        if identity_required(self):
-            return verified_user(self) is not None
+        if identity_required(self) and verified_user(self) is None:
+            return False
         return secret_equal(self._query("token"), self._token)
 
     def _admin_authed(self, admin: str) -> bool:

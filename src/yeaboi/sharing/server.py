@@ -125,15 +125,19 @@ class _OutputHandler(BaseHTTPRequestHandler):
         check at the top of ``do_GET``/``do_POST`` that a future route could
         forget to inherit.
 
-        In the Access tier a tunnel-borne request must present a token this
-        process verified locally against Cloudflare's signing keys; the share
-        token is not consulted, so a leaked link is not a way in. Requests
-        arriving on loopback are the host's own browser and stay token-gated,
-        because cloudflared connects from ``127.0.0.1`` and there is no other
-        way to tell the two apart.
+        In the Access tier a tunnel-borne request must present **both** a token
+        this process verified locally against Cloudflare's signing keys *and*
+        the share token: the JWT arrives ambiently (edge-injected header, or
+        the ``CF_Authorization`` cookie), so alone it is forgeable by a
+        cross-site form POST — the unguessable token stays required as the
+        CSRF barrier it always was. A leaked link is still not a way in:
+        identity is still required on top. Requests arriving on loopback are
+        the host's own browser and stay token-gated, because cloudflared
+        connects from ``127.0.0.1`` and there is no other way to tell the two
+        apart.
         """
-        if identity_required(self):
-            return verified_user(self) is not None
+        if identity_required(self) and verified_user(self) is None:
+            return False
         supplied = self._query("token")
         token = self.server.token  # type: ignore[attr-defined]
         return bool(supplied) and secret_equal(supplied, token)

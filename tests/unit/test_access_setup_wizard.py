@@ -115,26 +115,38 @@ class TestTheHappyWalk:
         """The whole point of the express flow: hostname, team, AUD — nothing else."""
         saved, calls = wired
         # access app: "I've created it"; verify: Done
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud-tag-123"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         result = _run()
         assert "ready" in result.lower()
         assert saved["CLOUDFLARE_TUNNEL_ID"] == "uuid-1"
         assert saved["CLOUDFLARE_ACCESS_HOSTNAME"] == "boards.example.com"
         assert saved["CLOUDFLARE_ACCESS_TEAM"] == "acme"
-        assert saved["CLOUDFLARE_ACCESS_AUD"] == "aud-tag-123"
+        assert saved["CLOUDFLARE_ACCESS_AUD"] == "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"
         assert saved["YEABOI_SHARE_MODE"] == "access"
         assert "route" in calls
 
     def test_the_done_screen_points_at_settings(self, monkeypatch, wired):
         """The defaults the wizard decided must advertise where to change them."""
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud-tag-123"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         assert "Settings ▸ Sharing" in _run()
 
     def test_admin_emails_are_never_asked(self, monkeypatch, wired):
         """Blank means "no remote visitor gets host powers" — a safe default the
         Settings row can change later, not a question worth a setup stop."""
         saved, _ = wired
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud-tag-123"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert "CLOUDFLARE_ACCESS_ADMIN_EMAILS" not in saved
         assert not any("email" in p.lower() for p in seen["prompts"])
@@ -146,7 +158,7 @@ class TestEveryPromptCarriesItsOwnFraming:
         wizard's first screen — a bare input box there explains nothing."""
         seen: list[dict] = []
         choice_iter = iter([1, 0])
-        line_iter = iter(["example.com", "acme", "aud"])
+        line_iter = iter(["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"])
         monkeypatch.setattr(
             "yeaboi.ui.mode_select._run_schedule_choice_step", lambda *a, **kw: next(choice_iter, "back")
         )
@@ -166,7 +178,11 @@ class TestEveryPromptCarriesItsOwnFraming:
 class TestTheTunnelIsDecidedNotAsked:
     def test_a_single_tunnel_is_used_without_a_picker(self, monkeypatch, wired):
         saved, _ = wired
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert saved["CLOUDFLARE_TUNNEL_ID"] == "uuid-1"
         assert not any("Which tunnel" in h for h in seen["headings"])
@@ -181,7 +197,11 @@ class TestTheTunnelIsDecidedNotAsked:
             return access_setup.TunnelInfo(id="uuid-new", name=name), access_setup.Outcome(True, "created")
 
         monkeypatch.setattr(access_setup, "create_tunnel", _create)
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert created == [access_setup.DEFAULT_TUNNEL_NAME]
         assert saved["CLOUDFLARE_TUNNEL_ID"] == "uuid-new"
@@ -203,7 +223,11 @@ class TestTheTunnelIsDecidedNotAsked:
             ),
         )
         # picker: take the second; access app: continue; verify: Done
-        seen = _spy_screens(monkeypatch, choices=[1, 1, 0], lines=["example.com", "acme", "aud"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert any("Which tunnel" in h for h in seen["headings"])
         assert saved["CLOUDFLARE_TUNNEL_ID"] == "uuid-b"
@@ -215,14 +239,22 @@ class TestSkippedStepsAreTransparent:
         a browser for a file they already have."""
         spawned: list[str] = []
         monkeypatch.setattr(access_setup, "login", lambda **kw: spawned.append("login"))
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert spawned == []
 
     def test_pyjwt_install_is_skipped_when_installed(self, monkeypatch, wired):
         installs: list[str] = []
         monkeypatch.setattr(access_setup, "install_jwt", lambda **kw: installs.append("install"))
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert installs == []
 
@@ -235,7 +267,11 @@ class TestSkippedStepsAreTransparent:
             "install_jwt",
             lambda **kw: installs.append("install") or access_setup.Outcome(True, "installed"),
         )
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         result = _run()
         assert installs == ["install"]
         assert "ready" in result.lower()
@@ -287,12 +323,39 @@ class TestTheAccessAppScreenOpensTheDashboard:
             return next(choice_iter, "back")
 
         monkeypatch.setattr("yeaboi.ui.mode_select._run_schedule_choice_step", _choice_spy)
-        line_iter = iter(["example.com", "acme", "aud"])
+        line_iter = iter(["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"])
         monkeypatch.setattr("yeaboi.ui.mode_select._standup_read_line", lambda *a, **kw: next(line_iter, None))
         _run()
         assert opened == [access_setup.ACCESS_APP_ADD_URL]
         app_screens = [h for h in headings if "Access application" in h]
         assert len(app_screens) == 2  # shown again after the browser opened
+
+
+class TestPickAnotherHostnameDoesWhatItSays:
+    def test_the_collision_choice_re_prompts_instead_of_closing_the_wizard(self, monkeypatch, wired):
+        """With sign-in skipped, "back" from this step walks off the front of
+        the wizard and closes it silently — the labelled action must instead
+        show the hostname prompt again, and a second hostname must succeed."""
+        saved, _ = wired
+        routes: list[str] = []
+
+        def _route_dns(tid, host, **kw):
+            routes.append(host)
+            if host == "boards.taken.com":
+                return access_setup.Outcome(False, "already exists", "DNS_EXISTS")
+            return access_setup.Outcome(True, "routed")
+
+        monkeypatch.setattr(access_setup, "route_dns", _route_dns)
+        # collision: "Pick another hostname"; then app continue; verify Done
+        _drive(
+            monkeypatch,
+            choices=[1, 1, 0],
+            lines=["taken.com", "free.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
+        result = _run()
+        assert "ready" in result.lower()
+        assert routes == ["boards.taken.com", "boards.free.com"]
+        assert saved["CLOUDFLARE_ACCESS_HOSTNAME"] == "boards.free.com"
 
 
 class TestTheDomainPrerequisite:
@@ -353,7 +416,11 @@ class TestTheTeamNameIsReadNotAsked:
         to transcribe it is one more screen than the truth requires."""
         saved, _ = wired
         monkeypatch.setattr(access_setup, "discover_app", lambda *a, **kw: ("acme", ""))
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["example.com", "aud-tag"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         result = _run()
         assert "ready" in result.lower()
         assert saved["CLOUDFLARE_ACCESS_TEAM"] == "acme"
@@ -384,7 +451,11 @@ class TestTheTeamNameIsReadNotAsked:
 
     def test_detection_failure_falls_back_to_asking(self, monkeypatch, wired):
         saved, _ = wired
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         _run()
         assert saved["CLOUDFLARE_ACCESS_TEAM"] == "acme"
         assert any("team name" in p.lower() for p in seen["prompts"])
@@ -405,7 +476,11 @@ class TestReRunsResumeAtTheFirstMissingFact:
             ),
         )
         monkeypatch.setattr("yeaboi.config.access_hostname", lambda: "boards.yeaboi.ai")
-        seen = _spy_screens(monkeypatch, choices=[1, 0], lines=["acme", "aud"])
+        seen = _spy_screens(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         result = _run()
         assert "ready" in result.lower()
         assert not any("domain" in p.lower() for p in seen["prompts"])
@@ -440,7 +515,11 @@ class TestReRunsResumeAtTheFirstMissingFact:
             "route_dns",
             lambda tid, host, **kw: routed.append((tid, host)) or access_setup.Outcome(True, "routed"),
         )
-        _drive(monkeypatch, choices=[1, 0], lines=["example.com", "acme", "aud"])
+        _drive(
+            monkeypatch,
+            choices=[1, 0],
+            lines=["example.com", "acme", "ba3ba4f9a828505c0b06379d14b961165696f2e31a3925256c32645b16371ace"],
+        )
         result = _run()
         assert "ready" in result.lower()
         assert listed == []  # never re-resolved

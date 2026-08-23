@@ -2188,7 +2188,14 @@ def _run_access_setup(console: Console, live, read_key, frame_time: float, suppo
         return "next"
 
     def _route(host: str) -> str:
-        """Point DNS at the picked tunnel and store the hostname. "next" or "back"."""
+        """Point DNS at the picked tunnel and store the hostname.
+
+        "next", or "retry" to re-show the hostname prompt. Never "back": with
+        the earlier steps skipped (signed in, tunnel stored), stepping backwards
+        out of here walks off the front of the wizard and closes it with no
+        message — a labelled action like "Pick another hostname" must instead
+        do what it says.
+        """
         outcome = _work(
             "Hostname",
             1,
@@ -2197,8 +2204,8 @@ def _run_access_setup(console: Console, live, read_key, frame_time: float, suppo
         )
         if outcome is not None and not outcome.ok:
             if outcome.code != "DNS_EXISTS":
-                _choice([("Back", outcome.message)], 1, "Hostname")
-                return "back"
+                _choice([("Try another hostname", "")], 1, "That hostname did not route", message=outcome.message)
+                return "retry"
             # The record may already point at this very tunnel (a re-run), or at
             # something else entirely. We refuse to overwrite either way, so the
             # only honest move is to say so and let the host decide.
@@ -2214,7 +2221,7 @@ def _run_access_setup(console: Console, live, read_key, frame_time: float, suppo
                 )
                 != 0
             ):
-                return "back"
+                return "retry"
         picked["hostname"] = host.strip().lower()
         access_setup.save(CLOUDFLARE_ACCESS_HOSTNAME=picked["hostname"])
         return "next"
@@ -2231,68 +2238,85 @@ def _run_access_setup(console: Console, live, read_key, frame_time: float, suppo
         from yeaboi.config import access_hostname
 
         saved = access_hostname()
-        domain = _ask(
-            "Your domain on Cloudflare (e.g. acme.com)",
-            1,
-            default=saved if saved.startswith(f"{access_setup.BOARDS_SUBDOMAIN}.") else "",
-            validate=lambda v: access_setup.valid_hostname(access_setup.boards_hostname(v)),
-            message=(
-                "Boards will be served at boards.<your domain> — you own acme.com, they "
-                "appear at https://boards.acme.com. Type just the domain; the boards. part "
-                "is added for you, and the full hostname can be changed any time in "
-                "Settings ▸ Sharing. yeaboi points it at a tunnel in your Cloudflare "
-                "account (yours, or one it creates named 'yeaboi') and puts a verified "
-                "sign-in in front."
-            ),
-        )
-        if domain is None:
-            return "back"
-        host = access_setup.boards_hostname(domain)
-        from yeaboi.config import access_credentials_file, access_tunnel_id
 
-        if access_tunnel_id() and access_credentials_file():
-            # The tunnel facts are already stored — this step is only running for
-            # the hostname. Re-resolving could pick a *different* tunnel and
-            # silently overwrite the stored id, so the stored one is kept;
-            # changing tunnels is the Settings ▸ Sharing rows' job.
-            picked["id"] = access_tunnel_id()
-            return _route(host)
-        found = _work(
-            "Hostname", 1, "finding your tunnel…", lambda on_line, cancel: access_setup.list_tunnels(cancel=cancel)
-        )
-        tunnels, listed = found if isinstance(found, tuple) else ((), access_setup.Outcome(False, "Cancelled."))
-        if not listed.ok:
-            _choice([("Back", listed.message)], 1, "Hostname")
-            return "back"
-        info = access_setup.resolve_tunnel(tunnels)
-        if info is None and tunnels:
-            chosen = _choice([(t.name, t.id) for t in tunnels], 1, "Which tunnel should serve your boards?")
-            if chosen == "back":
-                return "back"
-            info = tunnels[chosen]
-        if info is None:
-            created = _work(
-                "Hostname",
+        def _ask_domain() -> str | None:
+            return _ask(
+                "Your domain on Cloudflare (e.g. acme.com)",
                 1,
-                f"creating tunnel '{access_setup.DEFAULT_TUNNEL_NAME}'…",
-                lambda on_line, cancel: access_setup.create_tunnel(
-                    access_setup.DEFAULT_TUNNEL_NAME, on_line=on_line, cancel=cancel
+                default=saved if saved.startswith(f"{access_setup.BOARDS_SUBDOMAIN}.") else "",
+                validate=lambda v: access_setup.valid_hostname(access_setup.boards_hostname(v)),
+                message=(
+                    "Boards will be served at boards.<your domain> — you own acme.com, they "
+                    "appear at https://boards.acme.com. Type just the domain; the boards. part "
+                    "is added for you, and the full hostname can be changed any time in "
+                    "Settings ▸ Sharing. yeaboi points it at a tunnel in your Cloudflare "
+                    "account (yours, or one it creates named 'yeaboi') and puts a verified "
+                    "sign-in in front."
                 ),
             )
-            # _work returns an Outcome (not a pair) if the step raised, so this
-            # cannot unpack blindly — doing so would throw through the Live,
-            # which is the failure _work's handler exists to prevent.
-            if isinstance(created, tuple):
-                info, outcome = created
-            else:
-                info, outcome = None, created
+
+        domain = _ask_domain()
+        from yeaboi.config import access_credentials_file, access_tunnel_id
+
+        while domain is not None:
+            host = access_setup.boards_hostname(domain)
+            if access_tunnel_id() and access_credentials_file():
+                # The tunnel facts are already stored — this step is only running
+                # for the hostname. Re-resolving could pick a *different* tunnel
+                # and silently overwrite the stored id, so the stored one is
+                # kept; changing tunnels is the Settings ▸ Sharing rows' job.
+                picked["id"] = access_tunnel_id()
+                if _route(host) == "next":
+                    return "next"
+                domain = _ask_domain()
+                continue
+            found = _work(
+                "Hostname", 1, "finding your tunnel…", lambda on_line, cancel: access_setup.list_tunnels(cancel=cancel)
+            )
+            tunnels, listed = found if isinstance(found, tuple) else ((), access_setup.Outcome(False, "Cancelled."))
+            if not listed.ok:
+                _choice([("Try again", "")], 1, "Could not list your tunnels", message=listed.message)
+                domain = _ask_domain()
+                continue
+            info = access_setup.resolve_tunnel(tunnels)
+            if info is None and tunnels:
+                chosen = _choice([(t.name, t.id) for t in tunnels], 1, "Which tunnel should serve your boards?")
+                if chosen == "back":
+                    domain = _ask_domain()
+                    continue
+                info = tunnels[chosen]
             if info is None:
-                _choice([("Back", outcome.message if outcome else "Could not create the tunnel")], 1, "Hostname")
-                return "back"
-        credentials = info.credentials or access_setup.default_credentials(info.id)
-        picked["id"] = info.id
-        access_setup.save(CLOUDFLARE_TUNNEL_ID=info.id, CLOUDFLARE_TUNNEL_CREDENTIALS=credentials)
-        return _route(host)
+                created = _work(
+                    "Hostname",
+                    1,
+                    f"creating tunnel '{access_setup.DEFAULT_TUNNEL_NAME}'…",
+                    lambda on_line, cancel: access_setup.create_tunnel(
+                        access_setup.DEFAULT_TUNNEL_NAME, on_line=on_line, cancel=cancel
+                    ),
+                )
+                # _work returns an Outcome (not a pair) if the step raised, so
+                # this cannot unpack blindly — doing so would throw through the
+                # Live, which is the failure _work's handler exists to prevent.
+                if isinstance(created, tuple):
+                    info, outcome = created
+                else:
+                    info, outcome = None, created
+                if info is None:
+                    _choice(
+                        [("Try again", "")],
+                        1,
+                        "Could not create the tunnel",
+                        message=outcome.message if outcome else "Could not create the tunnel",
+                    )
+                    domain = _ask_domain()
+                    continue
+            credentials = info.credentials or access_setup.default_credentials(info.id)
+            picked["id"] = info.id
+            access_setup.save(CLOUDFLARE_TUNNEL_ID=info.id, CLOUDFLARE_TUNNEL_CREDENTIALS=credentials)
+            if _route(host) == "next":
+                return "next"
+            domain = _ask_domain()
+        return "back"
 
     def _step_app(_direction: int) -> str:
         """The one step yeaboi does not do for you, and why.
@@ -2364,6 +2388,7 @@ def _run_access_setup(console: Console, live, read_key, frame_time: float, suppo
             "The application's AUD tag",
             2,
             default=aud_hint,
+            validate=access_setup.valid_aud,
             message=(
                 (
                     f"Team '{team}' and the tag below were detected from {host}'s sign-in "

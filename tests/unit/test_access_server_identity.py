@@ -91,16 +91,24 @@ class TestTheBoardTokenStopsBeingAWayIn:
         """The single most important assertion in this file.
 
         In the quick tier this exact request is served — the token *is* the
-        boundary. Here the token is not consulted at all, which is what makes a
+        boundary. Here identity is required on top, which is what makes a
         leaked link stop being a way in.
         """
         server, _, _ = board_with_access
         status, _ = _call(server, "/api/cards", host=HOSTNAME, token=server.token)
         assert status == 403
 
-    def test_a_tunnel_request_with_identity_and_no_token_is_served(self, board_with_access):
+    def test_identity_alone_is_not_enough_either(self, board_with_access):
+        """The JWT arrives ambiently — edge-injected header, CF_Authorization
+        cookie — so a cross-site form POST can carry it. The unguessable board
+        token stays required as the CSRF barrier it always was."""
         server, _, _ = board_with_access
-        status, data = _call(server, "/api/cards", host=HOSTNAME, jwt=GOOD)
+        status, _ = _call(server, "/api/cards", host=HOSTNAME, jwt=GOOD)
+        assert status == 403
+
+    def test_identity_plus_the_token_is_served(self, board_with_access):
+        server, _, _ = board_with_access
+        status, data = _call(server, "/api/cards", host=HOSTNAME, jwt=GOOD, token=server.token)
         assert status == 200
         assert "cards" in data
 
@@ -139,6 +147,7 @@ class TestImpersonationStops:
             "/api/cards",
             host=HOSTNAME,
             jwt=jwt,
+            token=server.token,
             body={"grid": "went_well", "text": text, "author": "Not Me", "pid": pid},
         )
 
@@ -169,6 +178,7 @@ class TestImpersonationStops:
             "/api/card/edit",
             host=HOSTNAME,
             jwt="bobs-token",
+            token=server.token,
             body={"card_id": card_id, "text": "rewritten", "pid": "cf:sub-ada"},
         )
         assert status == 403
@@ -183,6 +193,7 @@ class TestImpersonationStops:
             "/api/card/delete",
             host=HOSTNAME,
             jwt="bobs-token",
+            token=server.token,
             body={"card_id": card_id, "pid": "cf:sub-ada"},
         )
         assert status == 403
@@ -198,6 +209,7 @@ class TestImpersonationStops:
             "/api/card/edit",
             host=HOSTNAME,
             jwt=GOOD,
+            token=server.token,
             body={"card_id": card_id, "text": "second thoughts", "pid": "anything at all"},
         )
         assert status == 200
@@ -213,6 +225,7 @@ class TestAdminByEmail:
             "/api/admin/lock",
             host=HOSTNAME,
             jwt=jwt,
+            token=server.token,
             body={"locked": True, "admin": admin, "pid": "p"},
         )
 
@@ -402,10 +415,11 @@ class TestTheReadPathsUseTheVerifiedIdentityToo:
             "/api/cards",
             host=HOSTNAME,
             jwt=GOOD,
+            token=server.token,
             body={"grid": "went_well", "text": "mine", "author": "Not Me", "pid": "someone-else"},
         )
         # The browser keeps polling with its own generated id, not the verified one.
-        _status, state = _call(server, "/api/state?pid=someone-else", host=HOSTNAME, jwt=GOOD)
+        _status, state = _call(server, "/api/state?pid=someone-else", host=HOSTNAME, jwt=GOOD, token=server.token)
         cards = state.get("cards", [])
         assert cards, "the card should be visible"
         assert all(c.get("mine") for c in cards), "a verified author must own their own card on the read path"

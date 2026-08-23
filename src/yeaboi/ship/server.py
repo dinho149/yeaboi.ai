@@ -98,8 +98,12 @@ class _ShipHandler(BaseHTTPRequestHandler):
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
 
     def _authed(self) -> bool:
-        if identity_required(self):
-            return verified_user(self) is not None
+        # Both factors in the Access tier: the ambient JWT (cookie / edge
+        # header) is forgeable by a cross-site form POST, so the unguessable
+        # ``?token=`` stays required as the CSRF barrier — same rule as the
+        # retro/poker/share servers.
+        if identity_required(self) and verified_user(self) is None:
+            return False
         return secret_equal(self._query("token"), self._token)
 
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
