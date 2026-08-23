@@ -1152,12 +1152,14 @@ class OneOnOneRecord:
     delivery_state: str = ""  # "sent" | "failed" | "not_configured"
     # Carried forward from the prep this 1:1 was run off. This is the artifact
     # that gets emailed to the engineer, so it is the one that most needs to be
-    # able to say what it was based on. Empty when there was no prior prep.
+    # able to say what it was based on. Empty when there was no recent prep;
+    # ``evidence_date`` is that prep's date, so a reader is never shown a scan
+    # without being told when it was taken.
+    evidence_date: str = ""
     evidence_sources: tuple[str, ...] = ()
     evidence_coverage: tuple[tuple[str, str, str], ...] = ()
     metrics: tuple[PerfMetric, ...] = ()
     evidence_items: tuple[EvidenceGroup, ...] = ()
-    section_states: tuple[tuple[str, str, str], ...] = ()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()

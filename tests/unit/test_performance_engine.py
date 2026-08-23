@@ -332,3 +332,76 @@ class TestCompletionCarriesTheEvidence:
         record = engine.complete_one_on_one("Ada", "we talked", db_path=db_path, deliver=False, today=date(2026, 7, 12))
         assert record.metrics == ()
         assert record.evidence_coverage == ()
+
+
+class TestCarriedEvidenceIsBounded:
+    """``get_latest_prep`` knows nothing about which meeting a prep was for.
+
+    Unbounded, a 1:1 run months after the last prep inherits that prep's numbers
+    and evidence rows and prints them as facts about today — in the artifact that
+    gets emailed to the engineer.
+    """
+
+    @staticmethod
+    def _prep(date_str: str):
+        from yeaboi.agent.state import OneOnOnePrep, PerfMetric
+
+        return OneOnOnePrep(
+            engineer="Ada",
+            date=date_str,
+            metrics=(PerfMetric(key="tickets_total", label="Tickets worked", value=12.0),),
+            evidence_sources=("tickets",),
+            section_states=(("gaps", "partial", "Only two months were scanned."),),
+        )
+
+    @staticmethod
+    def _record(date_str: str = "2026-07-12"):
+        from yeaboi.agent.state import OneOnOneRecord
+
+        return OneOnOneRecord(engineer="Ada", date=date_str)
+
+    def test_a_recent_prep_is_carried_and_dated(self):
+        got = engine._carry_evidence(self._record(), self._prep("2026-07-10"))
+
+        assert got.metrics and got.evidence_sources == ("tickets",)
+        assert got.evidence_date == "2026-07-10", "the reader must be told when the scan was taken"
+
+    def test_a_stale_prep_is_not_carried_at_all(self):
+        got = engine._carry_evidence(self._record(), self._prep("2026-01-05"))
+
+        assert got.metrics == () and got.evidence_sources == ()
+        assert got.evidence_date == ""
+
+    def test_a_prep_dated_after_the_meeting_is_not_this_meetings_prep(self):
+        got = engine._carry_evidence(self._record(), self._prep("2026-08-01"))
+
+        assert got.metrics == ()
+
+    def test_an_unreadable_prep_date_is_not_carried(self):
+        got = engine._carry_evidence(self._record(), self._prep("not-a-date"))
+
+        assert got.metrics == (), "a prep we cannot date is a prep we cannot claim is this one's"
+
+    def test_no_prep_at_all_is_left_alone(self):
+        record = self._record()
+
+        assert engine._carry_evidence(record, None) is record
+
+    def test_the_preps_section_states_are_not_carried(self):
+        got = engine._carry_evidence(self._record(), self._prep("2026-07-10"))
+
+        assert not hasattr(got, "section_states"), "their keys are the prep's sections; nothing on a record reads them"
+
+
+class TestWithinDays:
+    def test_the_window_is_inclusive_at_both_ends(self):
+        assert engine._within_days("2026-07-01", "2026-07-01", 45)
+        assert engine._within_days("2026-06-01", "2026-07-16", 45)
+        assert not engine._within_days("2026-06-01", "2026-07-17", 45)
+
+    def test_out_of_order_is_false(self):
+        assert not engine._within_days("2026-07-02", "2026-07-01", 45)
+
+    def test_garbage_is_false_not_an_exception(self):
+        assert not engine._within_days("", "2026-07-01", 45)
+        assert not engine._within_days("2026-07-01", "yesterday", 45)

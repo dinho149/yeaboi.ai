@@ -9330,6 +9330,14 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             acts[i : i + 1] = ["Adjust", "Revert"]
         return acts
 
+    # One masked artifact, kept until the artifact, the title or the replacement
+    # set changes. _data() runs every frame and mask_artifact walks the whole
+    # object — now the metrics, the evidence groups and their nested rows — and
+    # rebuilds it through the store's reconstructors. That is a per-action cost,
+    # not a per-frame one. The source artifact is held in the entry so an id()
+    # freed and reissued can never look like a hit.
+    mask_cache: list = []
+
     def _data() -> dict:
         artifact = state["detail_artifact"]
         title = state["detail_title"]
@@ -9340,8 +9348,15 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         if anon is not None and state["view"] == "detail" and artifact is not None:
             from yeaboi.anonymize.apply import apply_replacements, mask_artifact
 
-            artifact = mask_artifact(artifact, anon.replacements)
-            title = apply_replacements(title, anon.replacements)
+            key = (id(artifact), title, tuple(anon.replacements))
+            if not (mask_cache and mask_cache[0] == key and mask_cache[1] is artifact):
+                mask_cache[:] = [
+                    key,
+                    artifact,
+                    mask_artifact(artifact, anon.replacements),
+                    apply_replacements(title, anon.replacements),
+                ]
+            artifact, title = mask_cache[2], mask_cache[3]
         return {
             "session_name": session_name,
             "view": state["view"],

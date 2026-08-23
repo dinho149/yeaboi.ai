@@ -431,3 +431,97 @@ class TestCeremonyEvidenceStaysPrivate:
         masked = mask_artifact(prep, [("Ada Lovelace", "Engineer A")])
         assert len(masked.evidence_coverage) == 1
         assert len(masked.evidence_coverage[0]) == 3
+
+
+class TestOneSourceKeepsOneCoverageRow:
+    """A second pass over a source amends its row; it never adds a rival one.
+
+    Two rows for one source repeat the word in ``contributing_sources``, hand the
+    browser duplicate keys, and draw two chips with different states for the same
+    thing — while the reader has no way to tell which one is current.
+    """
+
+    def _rows(self):
+        return [
+            evidence.SourceCoverage(evidence.SOURCE_CODE, evidence.COVERED, "8 of 9 standup runs scanned code."),
+            evidence.SourceCoverage(evidence.SOURCE_POKER, evidence.COVERED, "Voted in 4 session(s)."),
+        ]
+
+    def test_a_successful_scan_folds_into_the_existing_row(self):
+        out = evidence._amend_coverage(self._rows(), evidence.SOURCE_CODE, "Live scan added 3 item(s).", "ok", True)
+
+        assert [r.source for r in out] == [evidence.SOURCE_CODE, evidence.SOURCE_POKER]
+        assert out[0].state == evidence.COVERED
+        assert out[0].detail == "8 of 9 standup runs scanned code. Live scan added 3 item(s)."
+
+    def test_a_failed_scan_over_a_covered_source_is_partial_not_failed(self):
+        out = evidence._amend_coverage(self._rows(), evidence.SOURCE_CODE, "The live scan failed.", "failed", True)
+
+        assert out[0].state == evidence.PARTIAL, "saved history still covered it; only the extra pass failed"
+
+    def test_a_failed_scan_with_nothing_else_covering_the_source_is_failed(self):
+        rows = [evidence.SourceCoverage(evidence.SOURCE_CODE, evidence.NOT_CONFIGURED, "No standup history.")]
+
+        out = evidence._amend_coverage(rows, evidence.SOURCE_CODE, "The live scan failed.", "failed", False)
+
+        assert out[0].state == evidence.FAILED, "we looked and got nothing — 'partly scanned' would overstate it"
+
+    def test_a_skipped_scan_leaves_the_state_alone(self):
+        out = evidence._amend_coverage(self._rows(), evidence.SOURCE_CODE, "Nothing to scan with.", "skipped", True)
+
+        assert out[0].state == evidence.COVERED
+        assert "Nothing to scan with." in out[0].detail
+
+    def test_a_source_with_no_row_yet_gets_one(self):
+        out = evidence._amend_coverage([], evidence.SOURCE_CODE, "Live scan added 3 item(s).", "ok", True)
+
+        assert len(out) == 1 and out[0].source == evidence.SOURCE_CODE
+
+
+class TestPokerCountsSessionsNotTickets:
+    """``5 of 20`` must mean five sessions, not five tickets in one session."""
+
+    @staticmethod
+    def _report(date: str, voters: list[str]):
+        return PokerReport(
+            date=date,
+            tickets=tuple(
+                PokerTicketResult(
+                    key=f"PROJ-{i}",
+                    summary="Ship it",
+                    final_points=3.0,
+                    votes=tuple(PokerVote(voter=v, value="3") for v in voters),
+                )
+                for i in range(3)
+            ),
+        )
+
+    def test_three_votes_in_one_session_is_one_session_attended(self):
+        reports = [self._report("2026-07-01", ["Ada"]), self._report("2026-07-08", [])]
+
+        _lines, voted, total, attended = evidence._poker_lines(reports, frozenset({"ada"}))
+
+        assert (voted, total, attended) == (3, 2, 1), "three tickets, two sessions, one of them attended"
+
+    def test_attending_every_session_counts_every_session(self):
+        reports = [self._report("2026-07-01", ["Ada"]), self._report("2026-07-08", ["Ada"])]
+
+        _lines, _voted, total, attended = evidence._poker_lines(reports, frozenset({"ada"}))
+
+        assert attended == total == 2
+
+    def test_never_voting_attends_nothing(self):
+        _lines, voted, _total, attended = evidence._poker_lines(
+            [self._report("2026-07-01", ["Grace"])], frozenset({"ada"})
+        )
+
+        assert (voted, attended) == (0, 0)
+
+
+class TestEmptinessCountsTheNumbers:
+    def test_evidence_with_only_metrics_is_not_empty(self):
+        from yeaboi.agent.state import PerfMetric
+
+        ev = evidence.EngineerEvidence(engineer="Ada", metrics=(PerfMetric(key="spill_rate", value=18.0),))
+
+        assert not ev.is_empty, "a gathered number is evidence even with no prose line behind it"

@@ -13,7 +13,7 @@ annotations that its exporters silently drop.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from yeaboi.agent.state import Annotation
 from yeaboi.html_theme import safe_url
@@ -165,13 +165,29 @@ def _ev_seq(evidence: object, field: str) -> tuple[str, ...]:
     return tuple(str(v).strip() for v in values if str(v).strip())
 
 
-def evidence_payload(evidence: Sequence[object]) -> list[dict]:
+def evidence_payload(evidence: Sequence[object], *, dedupe_key: Callable[[object], str] | None = None) -> list[dict]:
     """Structured evidence rows for the browser: words and numbers, no markup.
 
     An unsafe scheme degrades the URL to ``""`` but the row survives — the
     kind/key/title are what the reader is being shown evidence *of*, and dropping
     the row would silently shrink that.
+
+    ``dedupe_key`` drops later rows sharing a non-empty key, and applies at every
+    level of the tree — a caller's grammar for "these two rows are the same thing"
+    does not stop being true one level down.
     """
+    rows = list(evidence or ())
+    if dedupe_key is not None:
+        seen: set[str] = set()
+        kept: list[object] = []
+        for e in rows:
+            key = dedupe_key(e)
+            if key:
+                if key in seen:
+                    continue
+                seen.add(key)
+            kept.append(e)
+        rows = kept
     return [
         {
             "kind": ev_field(e, "kind"),
@@ -181,7 +197,7 @@ def evidence_payload(evidence: Sequence[object]) -> list[dict]:
             "repo": ev_field(e, "repository"),
             "status": ev_field(e, "status"),
             "time": ev_field(e, "timestamp"),
-            "children": evidence_payload(ev_children(e)),
+            "children": evidence_payload(ev_children(e), dedupe_key=dedupe_key),
             # Story/subtask facts — the browser nests from these (words, not
             # layout): the tracker's type word, its parent's key, its own
             # subtask flag, and the exact ticket keys a change's text names.
@@ -190,5 +206,5 @@ def evidence_payload(evidence: Sequence[object]) -> list[dict]:
             "subtask": _ev_flag(e, "subtask"),
             "tickets": list(_ev_seq(e, "ticket_keys")),
         }
-        for e in evidence or ()
+        for e in rows
     ]

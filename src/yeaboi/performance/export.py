@@ -148,6 +148,8 @@ def build_completion_markdown(record: OneOnOneRecord) -> str:
     lines += _md_measured(record)
     lines += _md_evidence(record)
     lines += _md_section("Evidence coverage", coverage_lines(record))
+    if record.evidence_date:
+        lines += [f"_Numbers and evidence carried from the 1:1 prep of {record.evidence_date}._", ""]
     lines += _md_section("⚠ Notices", record.warnings)
     return "\n".join(lines + annotations_markdown(record.annotations) + _md_footer())
 
@@ -398,6 +400,12 @@ def completion_export_args(record: OneOnOneRecord, *, editable: bool = False) ->
             ("Highlights", record.highlights, "highlights"),
         ],
         warnings=record.warnings,
+        # A completion's numbers and evidence rows were gathered for its prep, on
+        # a different day. Saying which day is the difference between evidence and
+        # an assertion — this document is the one the engineer receives.
+        footnote=(
+            f"Numbers and evidence carried from the 1:1 prep of {record.evidence_date}." if record.evidence_date else ""
+        ),
         artifact=record,
         editable=editable,
         lead_field="email_summary",

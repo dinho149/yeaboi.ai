@@ -377,19 +377,11 @@ def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
     """Structured evidence rows for the browser, with merge commits deduped.
 
     The projection itself is shared (``artifacts.render.evidence_payload``); what
-    is standup's own is the dedupe above it, which depends on this mode's
-    reference grammar.
+    is standup's own is the dedupe it is handed, which depends on this mode's
+    reference grammar. Passing it in rather than filtering first is what keeps it
+    applying to a PR's nested commits, as it always has.
     """
-    seen_merges: set[str] = set()
-    rows: list[object] = []
-    for e in evidence or ():
-        merge_key = _pr_merge_dedupe_key(e)
-        if merge_key:
-            if merge_key in seen_merges:
-                continue
-            seen_merges.add(merge_key)
-        rows.append(e)
-    return evidence_payload(rows)
+    return evidence_payload(evidence, dedupe_key=_pr_merge_dedupe_key)
 
 
 def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:

@@ -230,7 +230,7 @@ class TestCompletionRoundTrip:
                     ),
                 ),
             ),
-            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
+            evidence_date="2026-07-01",
             annotations=(
                 Annotation(
                     kind="note",
@@ -531,18 +531,21 @@ class TestMaskingReachesEveryField:
                     ),
                 ),
             ),
-            section_states=(("gaps", "partial", "Only Ada Lovelace was covered."),),
             **extra,
         )
+
+    _STATES = (("gaps", "partial", "Only Ada Lovelace was covered."),)
 
     @pytest.mark.parametrize("kind", ["prep", "record", "review"])
     def test_every_spine_field_survives_a_masking_round_trip(self, kind):
         from yeaboi.anonymize.apply import mask_artifact
 
         artifact = {
-            "prep": lambda: OneOnOnePrep(engineer="Ada Lovelace", **self._spine()),
-            "record": lambda: OneOnOneRecord(engineer="Ada Lovelace", delivery_state="sent", **self._spine()),
-            "review": lambda: SixMonthReview(engineer="Ada Lovelace", **self._spine()),
+            "prep": lambda: OneOnOnePrep(engineer="Ada Lovelace", section_states=self._STATES, **self._spine()),
+            "record": lambda: OneOnOneRecord(
+                engineer="Ada Lovelace", delivery_state="sent", evidence_date="2026-07-01", **self._spine()
+            ),
+            "review": lambda: SixMonthReview(engineer="Ada Lovelace", section_states=self._STATES, **self._spine()),
         }[kind]()
 
         masked = mask_artifact(artifact, [("Ada Lovelace", "Engineer A")])
@@ -551,12 +554,17 @@ class TestMaskingReachesEveryField:
         assert masked.evidence_sources == artifact.evidence_sources
         assert len(masked.evidence_items) == 1
         assert masked.evidence_items[0].note == "capped at 1 of 9"
-        assert masked.section_states[0][1] == "partial"
+        # Then each artifact's own spine field: a record carries the date of the
+        # prep it borrowed its numbers from, the other two carry section states.
+        if kind == "record":
+            assert masked.evidence_date == "2026-07-01"
+        else:
+            assert masked.section_states[0][1] == "partial"
 
     def test_masking_reaches_inside_nested_evidence_rows(self):
         from yeaboi.anonymize.apply import mask_artifact
 
-        prep = OneOnOnePrep(engineer="Ada Lovelace", **self._spine())
+        prep = OneOnOnePrep(engineer="Ada Lovelace", section_states=self._STATES, **self._spine())
         masked = mask_artifact(prep, [("Ada Lovelace", "Engineer A")])
 
         row = masked.evidence_items[0].items[0]

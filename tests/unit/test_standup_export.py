@@ -1020,6 +1020,21 @@ class TestEvidence:
         md = build_standup_markdown(rep)
         assert md.count("Merge pull request 48780") == 1
 
+    def test_duplicate_merges_collapse_under_a_pr_too(self):
+        # The dedupe is standup's reference grammar, not a top-level tidy-up: two
+        # rows are the same merge wherever they sit, including folded under the PR
+        # they belong to. The projection is shared, so the grammar is handed to it.
+        dupes = (
+            _evidence(key="e8bc280c", url="https://a/c/1", title="Merge pull request 48780 from psot/x"),
+            _evidence(key="31a595f1", url="https://a/c/2", title="Merge pull request 48780 from psot/x"),
+            _evidence(key="abc123", url="https://a/c/3", title="Bound the history table"),
+        )
+        parent = _evidence(kind="pr", key="#48780", url="https://a/pr/1", title="Ship it", children=dupes)
+
+        (row,) = export._evidence_payload([parent])
+
+        assert [c["key"] for c in row["children"]] == ["e8bc280c", "abc123"]
+
     def test_markdown_renders_nested_evidence_bullets_with_cap(self):
         rows = tuple(_evidence(key=f"#{i}", url=f"https://g/pr/{i}", title=f"Change {i}") for i in range(6))
         rep = _report(

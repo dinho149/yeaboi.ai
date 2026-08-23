@@ -327,3 +327,19 @@ class TestDegradesRatherThanRaises:
         prep = OneOnOnePrep(engineer="Ada", metrics=TestNumbers.METRICS, evidence_items=(TestEvidenceRows.GROUP,))
         rows, heights = _rows(prep, "prep", width)
         assert rows and len(rows) == len(heights)
+
+
+class TestACompletionSaysWhoseScanItIs:
+    """The numbers on a completion were gathered for its prep, on another day."""
+
+    def test_the_carried_prep_date_is_shown(self):
+        record = OneOnOneRecord(engineer="Ada", date="2026-07-12", evidence_date="2026-07-01")
+
+        rows, _h = _rows(record, "completion")
+
+        assert "carried from the prep of 2026-07-01" in _text(rows)
+
+    def test_a_completion_with_no_carried_evidence_says_nothing(self):
+        rows, _h = _rows(OneOnOneRecord(engineer="Ada", date="2026-07-12"), "completion")
+
+        assert "carried from the prep" not in _text(rows)

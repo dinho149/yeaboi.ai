@@ -110,7 +110,7 @@ class TestDelivery:
         monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "")
         monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: [])
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
-        assert delivery.send_completion_email(rec) is False
+        assert delivery.deliver_completion_email(rec) == "not_configured"
 
     def test_sends_via_smtp(self, monkeypatch):
         sent = {}
@@ -146,8 +146,44 @@ class TestDelivery:
         monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
 
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_subject="1:1", email_summary="hi")
-        assert delivery.send_completion_email(rec) is True
+        assert delivery.deliver_completion_email(rec) == "sent"
         assert sent["to"] == "boss@example.com"
+
+    def test_an_smtp_error_is_failed_not_unconfigured(self, monkeypatch):
+        """The two are different facts, and the page tells the lead which one it was.
+
+        A bool could not carry the difference, so a rejected send used to render
+        the same "email not configured" chip as an .env nobody had filled in.
+        """
+        import smtplib
+
+        def _boom(*a, **kw):
+            raise smtplib.SMTPException("mailbox unavailable")
+
+        monkeypatch.setattr("yeaboi.config.get_smtp_host", lambda: "smtp.example.com")
+        monkeypatch.setattr("yeaboi.config.get_smtp_port", lambda: 587)
+        monkeypatch.setattr("yeaboi.config.get_smtp_user", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_password", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_smtp_sender", lambda: "me@example.com")
+        monkeypatch.setattr("yeaboi.config.get_standup_email_recipients", lambda: ["boss@example.com"])
+        monkeypatch.setattr("smtplib.SMTP", _boom)
+
+        rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
+        assert delivery.deliver_completion_email(rec) == "failed"
+
+
+class TestACompletionSaysWhenItsNumbersWereGathered:
+    def test_the_carried_prep_date_rides_in_the_export(self):
+        record = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi", evidence_date="2026-07-01")
+
+        report = export.completion_export_args(record)["report"]
+        assert "prep of 2026-07-01" in str(report["footnote"])
+        assert "prep of 2026-07-01" in export.build_completion_markdown(record)
+
+    def test_a_completion_with_no_carried_evidence_claims_nothing(self):
+        record = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_summary="hi")
+
+        assert "footnote" not in export.completion_export_args(record)["report"]
 
 
 class TestSharedDesignSystem:
@@ -410,6 +446,6 @@ class TestTheEmailBodyStillComesFromHere:
             email_summary="",
             action_items=("Write the runbook",),
         )
-        assert delivery.send_completion_email(record) is True
+        assert delivery.deliver_completion_email(record) == "sent"
         assert captured["body"].strip() == "\n".join(render.format_completion_lines(record)).strip()
         assert "Write the runbook" in captured["body"]

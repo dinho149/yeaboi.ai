@@ -356,6 +356,11 @@ def _completion_rows(ctx: RowCtx, record) -> None:
         chip = Text(PAD + "  ", justify="left")
         chip.append(f" {word} ", style=f"bold {getattr(theme, tone)}")
         ctx.add(chip)
+    # The numbers below were gathered for the prep, not for this meeting. Saying
+    # whose scan they are is the difference between evidence and an assertion.
+    carried = str(getattr(record, "evidence_date", "") or "")
+    if carried:
+        ctx.line(f"carried from the prep of {carried}", theme.dim)
     _coverage_strip(ctx, getattr(record, "evidence_coverage", ()))
 
     states = _states(record)

@@ -174,11 +174,11 @@ def _dict_to_record(d: dict) -> OneOnOneRecord:
         highlights=tuple(d.get("highlights", ())),
         warnings=tuple(d.get("warnings", ())),
         delivery_state=d.get("delivery_state", ""),
+        evidence_date=d.get("evidence_date", ""),
         evidence_sources=tuple(d.get("evidence_sources", ())),
         evidence_coverage=coverage_from(d.get("evidence_coverage")),
         metrics=metrics_from(d.get("metrics")),
         evidence_items=evidence_groups_from(d.get("evidence_items")),
-        section_states=coverage_from(d.get("section_states")),
         annotations=annotations_from(d.get("annotations")),
     )
 

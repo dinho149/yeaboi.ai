@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 # sprints of tickets it quotes, so a practice signal or a retro action item from
 # last month still surfaces in the conversation.
 _PREP_EVIDENCE_DAYS = 60
+# How old the latest prep may be and still count as *this* 1:1's prep. Wide
+# enough for a monthly cadence that slipped, narrow enough that last quarter's
+# scan never becomes this meeting's evidence.
+_CARRY_PREP_DAYS = 45
 
 
 # ---------------------------------------------------------------------------
@@ -360,12 +364,14 @@ def complete_one_on_one(
     # a warning on the returned record so the lead knows it wasn't sent.
     if deliver:
         try:
-            from yeaboi.performance.delivery import send_completion_email
+            from yeaboi.performance.delivery import deliver_completion_email
 
-            sent = send_completion_email(record, recipients=recipients)
-            if not sent:
+            state = deliver_completion_email(record, recipients=recipients)
+            if state == "not_configured":
                 record = _with_warning(record, "Summary email not sent — SMTP not configured (see .env).")
-            record = replace(record, delivery_state="sent" if sent else "not_configured")
+            elif state == "failed":
+                record = _with_warning(record, "Summary email failed to send (see logs).")
+            record = replace(record, delivery_state=state)
         except Exception as e:  # noqa: BLE001 — delivery never crashes the run
             logger.error("complete_one_on_one: email delivery raised: %s", e)
             record = _with_warning(record, "Summary email failed to send (see logs).")
@@ -384,22 +390,56 @@ def complete_one_on_one(
 
 
 def _carry_evidence(record: OneOnOneRecord, prior_prep) -> OneOnOneRecord:
-    """Copy the prep's evidence onto the completion it was run off.
+    """Copy a recent prep's evidence onto the completion it was run off.
 
     Not re-gathered: the prep for this 1:1 already paid for it, and a summary
     that cites a different scan from the prep it followed would be worse than
     one that cites none.
+
+    Bounded, because ``get_latest_prep`` knows nothing about which meeting a prep
+    was for. Unbounded, a 1:1 run months after the last prep silently inherits
+    that prep's numbers and evidence rows and prints them as facts about today —
+    in the one artifact that gets emailed to the engineer. The prep's date rides
+    along so the page can say where the numbers came from.
+
+    ``section_states`` is deliberately not carried: its keys are the prep's
+    sections, and nothing on a record ever looks them up.
     """
     if prior_prep is None:
         return record
+    prep_date = str(getattr(prior_prep, "date", "") or "")
+    if not _within_days(prep_date, record.date, _CARRY_PREP_DAYS):
+        logger.info(
+            "complete_one_on_one: prep %s is not within %d days of %s — evidence not carried",
+            prep_date or "(undated)",
+            _CARRY_PREP_DAYS,
+            record.date,
+        )
+        return record
     return replace(
         record,
+        evidence_date=prep_date,
         evidence_sources=getattr(prior_prep, "evidence_sources", ()),
         evidence_coverage=getattr(prior_prep, "evidence_coverage", ()),
         metrics=getattr(prior_prep, "metrics", ()),
         evidence_items=getattr(prior_prep, "evidence_items", ()),
-        section_states=getattr(prior_prep, "section_states", ()),
     )
+
+
+def _within_days(earlier: str, later: str, days: int) -> bool:
+    """True when two ISO dates are in order and no more than ``days`` apart.
+
+    An unparseable date is False, not zero days: a prep whose date we cannot read
+    is a prep we cannot say is this meeting's.
+    """
+    from yeaboi.timeparse import parse_date
+
+    try:
+        start = parse_date(earlier)
+        end = parse_date(later)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= (end - start).days <= days
 
 
 def _with_evidence(artifact, evidence):

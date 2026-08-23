@@ -141,6 +141,8 @@ class EngineerEvidence:
     def is_empty(self) -> bool:
         return not any(
             (
+                self.metrics,
+                self.groups,
                 self.activity.total_items,
                 self.code_lines,
                 self.documentation_lines,
@@ -371,15 +373,22 @@ def _retro_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]
     return lines, participated, len(reports)
 
 
-def _poker_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]:
-    """Estimation behaviour: their vote against where the team landed."""
+def _poker_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int, int]:
+    """Estimation behaviour: their vote against where the team landed.
+
+    Returns (lines, tickets_voted_on, sessions, sessions_attended). The last two
+    are a pair — tickets and sessions are different units, and dividing one by
+    the other is how "voted on 40 tickets" became "1 of 20 sessions".
+    """
     lines: list[str] = []
     voted = 0
     agreed = 0
+    attended = 0
     outliers: list[str] = []
 
     for report in reports:
         date = getattr(report, "date", "")
+        voted_here = voted
         for ticket in getattr(report, "tickets", ()) or ():
             mine = next(
                 (v for v in getattr(ticket, "votes", ()) or () if identity.matches(getattr(v, "voter", ""), aliases)),
@@ -402,6 +411,8 @@ def _poker_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]
                 outliers.append(
                     f"{date} — {ticket.key}: estimated {mine.value}, team settled on {final:g} ({direction})"
                 )
+        if voted > voted_here:
+            attended += 1
         for ticket in getattr(report, "tickets", ()) or ():
             for field in ("duel_low", "duel_high"):
                 position = getattr(ticket, field, "")
@@ -415,7 +426,7 @@ def _poker_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]
             0, f"Estimated on {voted} ticket(s); matched the team's final points {_pct(agreed, voted)} of the time."
         )
     lines.extend(outliers)
-    return lines, voted, len(reports)
+    return lines, voted, len(reports), attended
 
 
 def _activity_group(activity: EngineerActivity) -> EvidenceGroup:
@@ -566,6 +577,24 @@ def gather_engineer_evidence(
         )
     )
 
+    # Built before the no-database exit below: the tickets came from the tracker,
+    # not from saved history, so they are evidence on a machine that has never
+    # run a standup too. Deriving them after that exit is what made the same
+    # tickets produce a metric on one machine and only a coverage row on another.
+    metrics: list[PerfMetric] = []
+    groups: list[EvidenceGroup] = []
+    if activity.total_items:
+        metrics.append(
+            PerfMetric(
+                key="tickets_total",
+                label="Tickets worked",
+                value=float(activity.total_items),
+                group="volume",
+                source=SOURCE_TICKETS,
+            )
+        )
+        groups.append(_activity_group(activity))
+
     db_path = _resolve_db(db_path)
     if db_path is None:
         ev = EngineerEvidence(
@@ -574,6 +603,8 @@ def gather_engineer_evidence(
             period_start=period_start,
             period_end=period_end,
             activity=activity,
+            metrics=tuple(metrics),
+            groups=tuple(groups),
             coverage=tuple(coverage),
         )
         return replace(ev, summary_md=format_evidence_md(ev))
@@ -587,8 +618,6 @@ def gather_engineer_evidence(
     poker_lines: list[str] = []
     delivery_lines: list[str] = []
     standup_stats: dict = {}
-    metrics: list[PerfMetric] = []
-    groups: list[EvidenceGroup] = []
 
     # ── Standup — per-member code, docs, self-reports, blockers, practices. ──
     try:
@@ -678,14 +707,14 @@ def gather_engineer_evidence(
                 report = store.get_run_by_id(int(row.get("id", 0)))
                 if report is not None:
                     reports.append(report)
-        lines, voted, total = _poker_lines(reports, aliases)
+        lines, voted, total, attended = _poker_lines(reports, aliases)
         poker_lines = lines[:_MAX_POKER_LINES]
         if total:
             metrics.append(
                 PerfMetric(
                     key="poker_sessions",
                     label="Estimation sessions joined",
-                    value=float(1 if voted else 0),
+                    value=float(attended),
                     denominator=float(total),
                     group="ceremony",
                     source=SOURCE_POKER,
@@ -729,9 +758,12 @@ def gather_engineer_evidence(
         coverage.append(
             SourceCoverage(
                 SOURCE_DELIVERY,
-                COVERED if delivery_lines else NOT_CONFIGURED,
-                f"{len(delivery_lines)} shipped item(s) credited to this engineer."
-                if delivery_lines
+                COVERED if shipped else NOT_CONFIGURED,
+                # ``shipped``, not the display list: ``delivery_lines`` is capped
+                # for the prompt, and counting the cap is how a tile saying 23
+                # ended up beside a sentence saying 8.
+                f"{len(shipped)} shipped item(s) credited to this engineer."
+                if shipped
                 else "No delivery report credits this engineer.",
             )
         )
@@ -741,13 +773,13 @@ def gather_engineer_evidence(
 
     # ── Live gap-fill — only when asked, only over what nothing covered. ─────
     if deep_scan:
-        extra_code, extra_docs, gap_note = _gap_fill(
+        extra_code, extra_docs, gap_note, gap_outcome = _gap_fill(
             aliases, db_path=db_path, period_start=period_start, period_end=period_end
         )
         code_lines = (code_lines + extra_code)[:_MAX_CODE_LINES]
         doc_lines = (doc_lines + extra_docs)[:_MAX_DOC_LINES]
         if gap_note:
-            coverage.append(SourceCoverage(SOURCE_CODE, PARTIAL, gap_note))
+            coverage = _amend_coverage(coverage, SOURCE_CODE, gap_note, gap_outcome, bool(code_lines))
 
     if standup_stats.get("runs"):
         metrics.append(
@@ -760,18 +792,6 @@ def gather_engineer_evidence(
                 source=SOURCE_STANDUP,
             )
         )
-    if activity.total_items:
-        metrics.append(
-            PerfMetric(
-                key="tickets_total",
-                label="Tickets worked",
-                value=float(activity.total_items),
-                group="volume",
-                source=SOURCE_TICKETS,
-            )
-        )
-        groups.append(_activity_group(activity))
-
     ev = EngineerEvidence(
         engineer=engineer,
         aliases=tuple(sorted(aliases)),
@@ -807,6 +827,40 @@ def gather_engineer_evidence(
         len(ev.delivery_lines),
     )
     return ev
+
+
+def _amend_coverage(
+    rows: list[SourceCoverage], source: str, note: str, outcome: str, has_lines: bool
+) -> list[SourceCoverage]:
+    """Fold a second pass over one source into that source's existing row.
+
+    One source, one row. Appending a second is what made ``contributing_sources``
+    repeat a word, gave the browser duplicate keys, and drew two chips with
+    different states for the same thing.
+
+    The merged state is the honest one: a failed extra scan is only ``failed``
+    when nothing else covered the source — when saved history did, the source is
+    ``partial`` (we have some, we tried for more and could not get it).
+    """
+    if outcome == "failed":
+        state = FAILED if not has_lines else PARTIAL
+    elif outcome == "ok":
+        state = COVERED if has_lines else ""
+    else:
+        state = ""  # skipped: the extra pass says nothing about the source
+
+    out: list[SourceCoverage] = []
+    merged = False
+    for row in rows:
+        if row.source != source or merged:
+            out.append(row)
+            continue
+        detail = f"{row.detail.rstrip()} {note}".strip() if row.detail else note
+        out.append(SourceCoverage(source, state or row.state, detail))
+        merged = True
+    if not merged:
+        out.append(SourceCoverage(source, state or NOT_CONFIGURED, note))
+    return out
 
 
 def _category_coverage(source: str, covered_runs: int, total_runs: int, has_lines: bool) -> SourceCoverage:
@@ -868,7 +922,9 @@ def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end
     """One capped live multi-source scan, reusing the standup's saved scope.
 
     The lead configures sources once, in standup; this borrows that scope rather
-    than asking again. Returns (code_lines, doc_lines, coverage_note).
+    than asking again. Returns (code_lines, doc_lines, note, outcome), where
+    outcome is "ok" | "skipped" | "failed" — the caller needs the difference to
+    choose a coverage word, and a note alone cannot carry it.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -879,7 +935,7 @@ def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end
             session_id = store.get_latest_configured_session()
             config = store.load_config(session_id) if session_id else None
         if not config:
-            return [], [], "No saved standup scope to scan with; the live gap-fill was skipped."
+            return [], [], "No saved standup scope to scan with; the live gap-fill was skipped.", "skipped"
 
         since = datetime.now(timezone.utc) - timedelta(days=_MAX_GAP_DAYS)
         from yeaboi.standup import categories, collector
@@ -910,7 +966,7 @@ def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end
             f"Live scan of the last {_MAX_GAP_DAYS} day(s) added "
             f"{len(code)} code and {len(docs)} documentation item(s)."
         )
-        return code, docs, note
+        return code, docs, note, "ok"
     except Exception:  # noqa: BLE001 — a gap-fill failure must not fail the run
         logger.debug("performance evidence: gap-fill scan failed (non-fatal)", exc_info=True)
-        return [], [], "The live gap-fill scan failed; only saved history was used."
+        return [], [], "The live gap-fill scan failed; only saved history was used.", "failed"

@@ -251,8 +251,11 @@ class TestCloudflareTunnel:
         monkeypatch.setattr(tunnel, "_REGISTER_GRACE", 1.0)
         binary = _fake_cloudflared(tmp_path, emit_url=True, register=False)
         t = tunnel.CloudflareTunnel(5173, binary=binary)
+        # The timeout must outlast a loaded machine's process spawn, or the fake
+        # never prints its URL and the test passes for the wrong reason — the
+        # grace period is what keeps this fast, not the deadline.
         with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
-            assert t.start(timeout=1) is None
+            assert t.start(timeout=10) is None
         assert t.public_url == ""
         assert any("1033" in r.getMessage() for r in caplog.records)
 
