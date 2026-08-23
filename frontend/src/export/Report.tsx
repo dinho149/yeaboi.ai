@@ -52,8 +52,12 @@ function Body({ report }: { report: ExportReport }) {
       return (
         <Performance
           engineer={report.engineer}
+          {...(report.period ? { period: report.period } : {})}
           {...(report.lead ? { lead: report.lead } : {})}
           sections={report.sections}
+          stats={report.stats}
+          coverage={report.coverage}
+          evidence={report.evidence}
           {...(report.footnote ? { footnote: report.footnote } : {})}
           warnings={report.warnings}
           {...(report.edit ? { edit: report.edit } : {})}
