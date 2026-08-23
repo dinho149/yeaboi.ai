@@ -7,6 +7,7 @@ verdict reads — so they are tested here once rather than through a renderer.
 
 from __future__ import annotations
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from yeaboi.agent.chat_session import (
@@ -18,8 +19,11 @@ from yeaboi.agent.chat_session import (
     AskQuestion,
     Assistant,
     AwaitConfirm,
+    ChatSession,
+    Done,
     EditFeedback,
     SwitchSize,
+    Token,
     TrackerSync,
     at_intake_summary,
     at_prior_art,
@@ -271,3 +275,115 @@ class TestReplayPlan:
         qs = _done_qs(_prior_art_stage="ask")
         plan = replay_plan({"questionnaire": qs, "messages": [AIMessage(content="1. acme/auth")]})
         assert plan.prior_art_at == -1
+
+
+class FakeGraph:
+    """Returns a scripted state per invoke, recording what it was invoked with."""
+
+    def __init__(self, results: list[dict] | None = None):
+        self.results = list(results or [])
+        self.invocations: list[dict] = []
+
+    def invoke(self, state: dict) -> dict:
+        self.invocations.append(state)
+        return {**state, **(self.results.pop(0) if self.results else {})}
+
+    def stream(self, state: dict, *, stream_mode=None):
+        """The agent node's real-streaming path — one values frame, no chunks."""
+        yield "values", self.invoke(state)
+
+
+class TestChatSessionSend:
+    def _session(self, results=None, state=None):
+        graph = FakeGraph(results)
+        qs = QuestionnaireState(intake_mode="smart", current_question=6)
+        return ChatSession(graph, state if state is not None else {"questionnaire": qs}), graph
+
+    def _events(self, session, text="two engineers", **kwargs):
+        events: list = []
+        assert session.send(text, events.append, **kwargs) is True
+        return events
+
+    def test_a_turn_streams_tokens_then_the_reply_then_done(self):
+        session, _graph = self._session([{"messages": [AIMessage(content="What stack?")]}])
+        events = self._events(session)
+        assert all(isinstance(e, Token) for e in events[:-2])
+        assert "".join(e.text for e in events if isinstance(e, Token)) == "What stack?"
+        assert isinstance(events[-2], AskQuestion)
+        assert isinstance(events[-1], Done)
+
+    def test_the_text_is_appended_as_the_newest_human_message(self):
+        session, graph = self._session()
+        self._events(session, "two engineers")
+        assert graph.invocations[0]["messages"][-1].content == "two engineers"
+
+    def test_an_empty_send_invokes_without_adding_a_message(self):
+        # The size switch re-enters the node with nothing to say.
+        session, graph = self._session()
+        self._events(session, "")
+        assert graph.invocations[0]["messages"] == []
+
+    def test_the_intake_gate_is_dropped_before_the_invoke(self):
+        # pending_review is a LastValue channel: left set, it survives the
+        # invoke, the gate never closes and the stage stays "intake" forever.
+        qs = _done_qs()
+        session, graph = self._session(state={"questionnaire": qs, "pending_review": "project_intake"})
+        self._events(session, "accept")
+        assert "pending_review" not in graph.invocations[0]
+        assert "pending_review" not in session.state
+
+    def test_images_ride_the_intake_channel_during_intake(self):
+        session, graph = self._session()
+        self._events(session, "like this", images=["shot-1.png"])
+        assert graph.invocations[0]["pasted_images"] == ["shot-1.png"]
+        assert "chat_images" not in graph.invocations[0]
+
+    def test_images_ride_the_chat_channel_after_intake(self):
+        state = {
+            "questionnaire": _done_qs(completed=True, awaiting_confirmation=False),
+            "project_analysis": _ANALYSIS,
+            "_epic_reviewed": True,
+            "features": [1],
+            "stories": [1],
+            "tasks": [1],
+            "sprints": [1],
+        }
+        session, graph = self._session(state=state)
+        self._events(session, "match this", images=["shot-1.png"])
+        assert graph.invocations[0]["chat_images"] == ["shot-1.png"]
+        assert "pasted_images" not in graph.invocations[0]
+
+    def test_the_returned_state_replaces_the_session_state(self):
+        session, _graph = self._session([{"project_analysis": _ANALYSIS}])
+        self._events(session)
+        assert session.state["project_analysis"] is _ANALYSIS
+
+    def test_a_summary_turn_ends_on_the_confirmation_gate(self):
+        qs = _done_qs()
+        session, _graph = self._session(
+            [{"messages": [AIMessage(content="# Everything I've got")], "questionnaire": qs}],
+            state={"questionnaire": QuestionnaireState(intake_mode="smart", current_question=30)},
+        )
+        events = self._events(session, "the last answer")
+        assert events[-2] == AwaitConfirm(kind="intake_summary", prompt=CONFIRM_VERDICT_PROMPT)
+
+    def test_a_provider_error_propagates_for_the_caller_to_classify(self):
+        class Boom(FakeGraph):
+            def invoke(self, state):
+                raise RuntimeError("provider said no")
+
+        session = ChatSession(Boom(), {"questionnaire": QuestionnaireState(current_question=6)})
+        before = session.state
+        with pytest.raises(RuntimeError):
+            session.send("hi", lambda _event: None)
+        assert session.state is before  # nothing was merged
+
+
+class TestChatSessionAwaiting:
+    def test_awaiting_names_the_stage(self):
+        session = ChatSession(None, {"pending_review": "story_writer"})
+        assert session.awaiting == "review"
+
+    def test_dry_run_sessions_carry_the_flag(self):
+        session = ChatSession(None, {"capacity_override_target": -4}, dry_run=True)
+        assert session.awaiting != "capacity"

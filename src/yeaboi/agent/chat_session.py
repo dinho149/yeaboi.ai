@@ -1,26 +1,32 @@
-"""The chat session's decision layer — what the conversation needs next.
+"""One planning conversation, as a decision layer and an event stream.
 
 # See docs: "Architecture" — the four layers; "The ReAct Loop"
 # See docs: "Guardrails" — human-in-the-loop review gates
 
-Pure functions over a planning graph_state, plus the typed events they
-return. Everything here answers "what does this conversation need next?"
-without knowing whether the answer becomes a Rich panel, an NDJSON line or a
-React component — the TUI driver (``ui/session/chat/_driver.py``) renders
-these events today and the desktop's chat route will stream the same ones.
+Everything here answers "what does this conversation need next?" without
+knowing whether the answer becomes a Rich panel, an NDJSON line or a React
+component — the TUI driver (``ui/session/chat/_driver.py``) renders these
+events today and the desktop's chat route will stream the same ones.
 
-Nothing in this module renders, reads keys, touches the duck, or invokes the
-graph: those stay with the caller that owns a screen.
+:class:`ChatSession` owns the graph state and runs one turn at a time,
+emitting typed events as they happen; everything above it is a pure function
+of that state. Nothing in this module renders, reads keys or touches the
+duck: those stay with the caller that owns a screen.
 """
 
 from __future__ import annotations
 
+import logging
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
-from yeaboi.agent.streaming import predict_next_node
+from yeaboi.agent.streaming import predict_next_node, stream_chat_turn
+
+logger = logging.getLogger(__name__)
 
 # The generation nodes that produce an artifact and park on a review gate.
 PIPELINE_NODES = (
@@ -90,6 +96,18 @@ _DRY_NODE_ORDER = (
 
 
 @dataclass(frozen=True)
+class Token:
+    """One streamed chunk of the reply being written."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class Done:
+    """The turn finished — state has moved on."""
+
+
+@dataclass(frozen=True)
 class Assistant:
     """A plain assistant bubble — the node's own words."""
 
@@ -129,6 +147,8 @@ class AwaitReview:
 
 
 ReplyEvent = Assistant | AskQuestion | AwaitConfirm
+ChatEvent = Token | ReplyEvent | Done
+EventSink = Callable[["ChatEvent"], None]
 
 
 # ----------------------------------------------------------------- predicates
@@ -377,3 +397,75 @@ def clear_review_state(state: dict) -> None:
     """Drop the review bookkeeping so the next invoke runs the next stage."""
     for key in _REVIEW_STATE_KEYS:
         state.pop(key, None)
+
+
+# --------------------------------------------------------------- the session
+
+
+class ChatSession:
+    """One planning conversation over the graph, driven a turn at a time.
+
+    Owns the graph state; the caller owns the screen (or the socket) and
+    decides what each event becomes. :meth:`send` blocks, so the TUI runs it
+    on a worker thread and paints meanwhile while an HTTP route streams the
+    events out as they arrive.
+    """
+
+    def __init__(self, graph, state: dict, *, dry_run: bool = False) -> None:
+        self.graph = graph
+        self.state = state
+        self.dry_run = dry_run
+
+    @property
+    def awaiting(self) -> str:
+        """The stage this conversation is parked on — see :func:`stage_of`."""
+        return stage_of(self.state, dry_run=self.dry_run)
+
+    def send(
+        self,
+        text: str,
+        on_event: EventSink,
+        *,
+        images: list[str] | None = None,
+        cancel: threading.Event | None = None,
+    ) -> bool:
+        """Run one graph turn, emitting events as they happen.
+
+        The first turn is an ordinary send: the description is ``messages[0]``
+        and the graph builds the questionnaire from it. Returns True once the
+        state has moved; provider and cancellation errors propagate, so the
+        caller classifies them for its own surface.
+        """
+        messages = list(self.state.get("messages", []))
+        if text:
+            messages.append(HumanMessage(content=text))
+        intake_turn = next_node(self.state) == "project_intake"
+        if intake_turn:
+            # The intake confirmation is the one turn sent while a review gate
+            # is still open — project_intake consumes the reply itself rather
+            # than a review card doing it. Its confirm branch returns no
+            # "pending_review", and pending_review is a plain LastValue channel
+            # (agent/state.py), so whatever is in the input state survives the
+            # invoke: leave it set and the gate never closes and the stage
+            # stays "intake" forever. Safe to drop unconditionally — the node
+            # re-sets it when the summary needs showing again ("edit").
+            self.state.pop("pending_review", None)
+        invoke_state = {**self.state, "messages": messages}
+        if images:
+            if intake_turn:
+                invoke_state["pasted_images"] = list(self.state.get("pasted_images") or []) + images
+            else:
+                invoke_state["chat_images"] = images
+
+        result = stream_chat_turn(self.graph, invoke_state, lambda chunk: on_event(Token(chunk)), cancel=cancel)
+        if result is None:
+            # stream_chat_turn either returns a state or raises; a None here
+            # would silently blank the session.
+            logger.error("Chat turn produced no state")
+            return False
+        self.state = result
+        event = reply_event(self.state)
+        if event is not None:
+            on_event(event)
+        on_event(Done())
+        return True

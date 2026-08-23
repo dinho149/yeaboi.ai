@@ -10,6 +10,7 @@ carousel highlights, and a submission in the node's index grammar.
 
 from __future__ import annotations
 
+from yeaboi.agent.chat_session import ChatSession, at_intake_summary, at_prior_art
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
 from yeaboi.ui.session.chat._question_view import (
     CONFIRM_ACCEPT,
@@ -262,26 +263,19 @@ class TestVerdictPrompt:
 
 
 class TestDriverGuards:
-    def _driver(self, qs):
-        from yeaboi.ui.session.chat._driver import _ChatDriver
-
-        driver = object.__new__(_ChatDriver)
-        driver.state = {"questionnaire": qs}
-        return driver
-
     def test_summary_card_is_withheld_during_the_subloop(self):
         # Without this the markdown wall the card replaced comes back, on top
         # of the prior-art card.
         for stage in ("ask", "reason"):
-            assert self._driver(_qs(stage))._at_intake_summary() is False
+            assert at_intake_summary({"questionnaire": _qs(stage)}) is False
 
     def test_summary_card_returns_once_the_subloop_is_done(self):
-        assert self._driver(_qs("done"))._at_intake_summary() is True
+        assert at_intake_summary({"questionnaire": _qs("done")}) is True
 
     def test_at_prior_art_tracks_the_live_stages(self):
-        assert self._driver(_qs("ask"))._at_prior_art() is True
-        assert self._driver(_qs("reason"))._at_prior_art() is True
-        assert self._driver(_qs("done"))._at_prior_art() is False
+        assert at_prior_art({"questionnaire": _qs("ask")}) is True
+        assert at_prior_art({"questionnaire": _qs("reason")}) is True
+        assert at_prior_art({"questionnaire": _qs("done")}) is False
 
 
 class TestPickMapping:
@@ -289,7 +283,7 @@ class TestPickMapping:
         from yeaboi.ui.session.chat._driver import _ChatDriver
 
         driver = object.__new__(_ChatDriver)
-        driver.state = {"_prior_art_preview": 1}
+        driver.session = ChatSession(None, {"_prior_art_preview": 1})
         return driver
 
     def test_continue_maps_to_the_nodes_ok(self):

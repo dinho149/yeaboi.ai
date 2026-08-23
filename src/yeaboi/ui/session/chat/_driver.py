@@ -39,7 +39,10 @@ from yeaboi.agent.chat_session import (
     PROGRESS_DONE_KEYS,
     Accept,
     AwaitConfirm,
+    ChatSession,
+    Done,
     SwitchSize,
+    Token,
     TrackerSync,
     at_intake_summary,
     at_prior_art,
@@ -49,7 +52,6 @@ from yeaboi.agent.chat_session import (
     reply_event,
     review_gate,
     review_verdict,
-    stage_of,
 )
 
 # The decision layer: which stage the conversation is in, what a reply becomes,
@@ -58,7 +60,7 @@ from yeaboi.agent.chat_session import (
 from yeaboi.agent.chat_session import CONFIRM_VERDICT_PROMPT as _CONFIRM_VERDICT_PROMPT
 from yeaboi.agent.chat_session import PRIOR_ART_VERDICT_PROMPT as _PRIOR_ART_VERDICT_PROMPT
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
-from yeaboi.agent.streaming import ChatStreamCancelledError, stream_chat_turn
+from yeaboi.agent.streaming import ChatStreamCancelledError
 from yeaboi.input_guardrails import validate_chat_input
 from yeaboi.persistence import save_project_snapshot
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
@@ -169,8 +171,8 @@ class _ChatDriver:
     ) -> None:
         self.live = live
         self.console = console
-        self.graph = graph
-        self.state = graph_state
+        # The session owns the graph and the state; this class owns the screen.
+        self.session = ChatSession(graph, graph_state, dry_run=dry_run)
         self._key = _key
         self.project_id = project_id
         self.bell = bell
@@ -209,6 +211,20 @@ class _ChatDriver:
         self._idle_since = time.monotonic()  # last keypress — feeds hints + idle tips
 
     # ------------------------------------------------------------------ utils
+
+    @property
+    def state(self) -> dict:
+        return self.session.state
+
+    @state.setter
+    def state(self, value: dict) -> None:
+        # The modal takeovers (form mode, the answer browser, dry-run stage
+        # snapshots) hand back a whole new state — one owner, one assignment.
+        self.session.state = value
+
+    @property
+    def graph(self):
+        return self.session.graph
 
     def _qs(self) -> QuestionnaireState | None:
         qs = self.state.get("questionnaire")
@@ -617,7 +633,6 @@ class _ChatDriver:
         self, text: str, *, echo_user: bool, images: list[str] | None = None, synthetic: bool = False
     ) -> bool:
         """One graph turn. Returns False when nothing ran (guardrail block, no graph)."""
-        intake_turn = next_node(self.state) == "project_intake"
         if echo_user and not synthetic:
             # Regex layers only, on every turn. No topical classification here:
             # every message that reaches _run_turn answers something the agent
@@ -642,35 +657,23 @@ class _ChatDriver:
         if self.graph is None:
             return self._dry_run_turn(text)
 
-        messages = list(self.state.get("messages", []))
-        if text:
-            messages.append(HumanMessage(content=text))
-        if intake_turn:
-            # The intake confirmation is the one turn the chat sends while a
-            # review gate is still open — project_intake consumes the reply
-            # itself rather than a review card doing it. Its confirm branch
-            # returns no "pending_review", and pending_review is a plain
-            # LastValue channel (agent/state.py), so whatever is in the input
-            # state survives the invoke: leave it set and the gate never
-            # closes, _stage() stays "intake" forever and the handoff below
-            # never fires. The card path pops it for exactly this reason
-            # (phases/_phases_review.py). Safe to drop unconditionally — the
-            # node re-sets it when the summary needs showing again ("edit").
-            self.state.pop("pending_review", None)
-        invoke_state = {**self.state, "messages": messages}
-        if images:
-            if intake_turn:
-                invoke_state["pasted_images"] = list(self.state.get("pasted_images") or []) + images
-            else:
-                invoke_state["chat_images"] = images
-
+        # The turn runs on a worker thread so this one keeps painting 30fps
+        # frames. on_event only appends to plain lists (GIL-atomic) and never
+        # touches Rich — the reply events are rendered below, after the join.
         buffer: list[str] = []
+        replies: list = []
         cancel = threading.Event()
         result_box: list = [None, None]
 
+        def on_event(event) -> None:
+            if isinstance(event, Token):
+                buffer.append(event.text)
+            elif not isinstance(event, Done):
+                replies.append(event)
+
         def worker() -> None:
             try:
-                result_box[0] = stream_chat_turn(self.graph, invoke_state, buffer.append, cancel=cancel)
+                result_box[0] = self.session.send(text, on_event, images=images, cancel=cancel)
             except Exception as exc:  # noqa: BLE001 — classified below on the main thread
                 result_box[1] = exc
 
@@ -709,16 +712,16 @@ class _ChatDriver:
             self._note(message)
             return False
 
-        if result_box[0] is None:
+        if not result_box[0]:
             # Worker died without a result or an Exception (BaseException) —
             # state must never become None.
             logger.error("Chat turn produced no result — worker died without raising")
             self._note("Something went wrong — nothing was changed. Try again.")
             return False
 
-        self.state = result_box[0]
         self.transcript.invalidate_artifacts()
-        self._append_reply(streamed="".join(buffer))
+        for event in replies:
+            self._render_reply(event)
         logger.info("Chat turn done: %.1fs", time.monotonic() - start)
         self._save()
         self._drain_consents()
@@ -770,10 +773,13 @@ class _ChatDriver:
         return at_prior_art(self.state)
 
     def _append_reply(self, *, streamed: str) -> None:
-        """Render whatever the newest reply turned out to be."""
+        """Render the newest reply after a modal takeover drove the graph."""
         event = reply_event(self.state)
-        if event is None:
-            return
+        if event is not None:
+            self._render_reply(event)
+
+    def _render_reply(self, event) -> None:
+        """Draw one reply event: a card and its prompt, or a bubble."""
         if isinstance(event, AwaitConfirm):
             self.transcript.add_artifact(event.kind)
             self._say(event.prompt)
@@ -794,7 +800,7 @@ class _ChatDriver:
     # ---------------------------------------------------------------- stages
 
     def _stage(self) -> str:
-        return stage_of(self.state, dry_run=self.dry_run)
+        return self.session.awaiting
 
     def _stage_meta(self, node: str) -> tuple[str, str]:
         from yeaboi.repl._ui import _PIPELINE_STEPS, _SPINNER_MESSAGES
