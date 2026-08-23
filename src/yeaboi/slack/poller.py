@@ -335,7 +335,15 @@ def run_poll(
 
                 new = applied = 0
                 for event in events:
-                    result = _handle(store, event, allowed=allowed, bot_id=bot_id, apply_event=apply_event, now=moment)
+                    result = _handle(
+                        store,
+                        event,
+                        allowed=allowed,
+                        bot_id=bot_id,
+                        apply_event=apply_event,
+                        now=moment,
+                        db_path=db_path,
+                    )
                     if result is None:
                         continue
                     new += 1
@@ -371,13 +379,19 @@ def run_poll(
             handle.close()
 
 
-def _handle(store, event, *, allowed, bot_id, apply_event, now) -> ApplyResult | None:
+def _handle(store, event, *, allowed, bot_id, apply_event, now, db_path=None) -> ApplyResult | None:
     """Claim and settle one event. None when a previous poll already had it.
 
     The returned ``outcome`` is always the settled word, so the caller never
     re-derives it — and ``speak``/``applied`` are what it uses to decide the ✅
     and the thread line, which are two different questions: a deferral earns
     both, an unauthorised reaction earns neither.
+
+    ``db_path`` goes to the applier for the same reason every other store here
+    takes it: without it a poll reads its anchors and writes its ledger in one
+    database while pausing a ceremony and casting a verdict in another, and the
+    claim row saying the event was handled lands on the wrong side — so the
+    same window replayed against the real database would apply it twice.
     """
     anchor = event.anchor
     # Authorisation first, and silently: the channel is not the place to
@@ -401,7 +415,7 @@ def _handle(store, event, *, allowed, bot_id, apply_event, now) -> ApplyResult |
         return ApplyResult(False, reason, outcome=outcome)
 
     try:
-        result = apply_event(event)
+        result = apply_event(event, db_path=db_path)
     except Exception as exc:  # noqa: BLE001 — one bad event must not stop the rest
         logger.error("slack: applying %s raised", event.event_key, exc_info=True)
         reason = f"{type(exc).__name__}: {exc}"

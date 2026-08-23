@@ -126,13 +126,13 @@ class TestDeclines:
     def test_no_token_never_calls_slack(self, db, monkeypatch):
         monkeypatch.setenv("SLACK_BOT_TOKEN", "")
         api = FakeApi()
-        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert result.outcome == POLL_NO_TOKEN
         assert result.declined
 
     def test_no_channel_declines(self, db, monkeypatch):
         monkeypatch.setenv("SLACK_CHANNEL_ID", "")
-        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert result.outcome == POLL_NO_CHANNEL
 
     def test_an_empty_allowlist_declines_without_calling_slack(self, db, monkeypatch):
@@ -146,7 +146,7 @@ class TestDeclines:
                 called.append("auth")
                 return super().auth_test()
 
-        result = run_poll(db_path=db, now=NOW, api=_Counting(), apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=_Counting(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert result.outcome == POLL_NO_ALLOWLIST
         assert called == []
 
@@ -154,19 +154,19 @@ class TestDeclines:
         # A half-filled list LOOKS configured, which is why one bad entry voids
         # all of it rather than quietly dropping itself.
         monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", f"{ACTOR},oops")
-        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert result.outcome == POLL_NO_ALLOWLIST
 
     def test_a_declined_poll_is_still_recorded(self, db, monkeypatch):
         monkeypatch.setenv("SLACK_BOT_TOKEN", "")
-        run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: ApplyResult(True, ""))
+        run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         with SlackStore(db) as store:
             assert store.polls()[0]["outcome"] == POLL_NO_TOKEN
 
     def test_a_second_poll_backs_off_rather_than_racing(self, db, monkeypatch):
         # launchd will not double-run a loaded label; cron absolutely will.
         monkeypatch.setattr(poller, "_lock", lambda path: None)
-        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert result.outcome == POLL_LOCKED
 
 
@@ -178,7 +178,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react()),
-            apply_event=lambda e: (seen.append(e.intent), ApplyResult(True, "paused"))[1],
+            apply_event=lambda e, **_kw: (seen.append(e.intent), ApplyResult(True, "paused"))[1],
         )
         assert result.outcome == POLL_OK
         assert result.events_applied == 1
@@ -191,7 +191,12 @@ class TestApplying:
         api = FakeApi(reactions=_react())
         applied = []
         for _ in range(3):
-            run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1])
+            run_poll(
+                db_path=db,
+                now=NOW,
+                api=api,
+                apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
+            )
         assert len(applied) == 1
 
     def test_an_unauthorised_actor_is_ignored_silently_but_recorded(self, db):
@@ -201,7 +206,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react(users=["U5555555555"])),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
         with SlackStore(db) as store:
@@ -216,7 +221,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react(users=["UBOT000000"])),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
 
@@ -227,7 +232,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react(emoji="tada")),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
         with SlackStore(db) as store:
@@ -242,7 +247,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react()),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
         with SlackStore(db) as store:
@@ -255,7 +260,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react(emoji="+1")),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
 
@@ -272,7 +277,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(thread={"1723800000.000100": [_signal_reply()]}),
-            apply_event=lambda e: (
+            apply_event=lambda e, **_kw: (
                 seen.append((e.act, e.intent, e.anchor.member, e.anchor.rule)),
                 ApplyResult(True),
             )[1],
@@ -295,7 +300,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=_Counting(thread={"1723800000.000100": [_signal_reply()]}),
-            apply_event=lambda e: ApplyResult(True),
+            apply_event=lambda e, **_kw: ApplyResult(True),
         )
         # Only the post's. The signal's came out of the thread read.
         assert reads == ["1723800000.000100"]
@@ -323,7 +328,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=_Counting(thread={"1723800000.000100": [reply]}),
-            apply_event=lambda e: (seen.append(e.slack_user), ApplyResult(True))[1],
+            apply_event=lambda e, **_kw: (seen.append(e.slack_user), ApplyResult(True))[1],
         )
         assert "1723800001.0002" in reads
         assert seen == [ACTOR]  # the allowlisted voter the inline list had hidden
@@ -334,7 +339,7 @@ class TestApplying:
             db_path=db,
             now=NOW,
             api=FakeApi(reactions=_react()),
-            apply_event=lambda e: ApplyResult(False, "already paused"),
+            apply_event=lambda e, **_kw: ApplyResult(False, "already paused"),
         )
         with SlackStore(db) as store:
             row = store.history()[0]
@@ -345,7 +350,7 @@ class TestApplying:
         _anchor(db, ts="1723800009.0009")
         calls = []
 
-        def _apply(event):
+        def _apply(event, **_kw):
             calls.append(event.anchor_ts)
             if event.anchor_ts.endswith("0009"):
                 raise RuntimeError("boom")
@@ -376,7 +381,7 @@ class TestReplies:
             db_path=db,
             now=NOW,
             api=FakeApi(thread={"1723800000.000100": [{"ts": "1723800005.5", "user": ACTOR, "text": "pause"}]}),
-            apply_event=lambda e: (seen.append(e.intent), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (seen.append(e.intent), ApplyResult(True, ""))[1],
         )
         assert seen == ["pause"]
 
@@ -390,7 +395,7 @@ class TestReplies:
             api=FakeApi(
                 thread={"1723800000.000100": [{"ts": "1723800005.5", "bot_id": "B1", "user": ACTOR, "text": "pause"}]}
             ),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
 
@@ -407,7 +412,7 @@ class TestReplies:
                     ]
                 }
             ),
-            apply_event=lambda e: (applied.append(e), ApplyResult(True, ""))[1],
+            apply_event=lambda e, **_kw: (applied.append(e), ApplyResult(True, ""))[1],
         )
         assert applied == []
 
@@ -447,28 +452,28 @@ class TestAck:
         # refuse, and this is a read feature.
         _anchor(db)
         api = FakeApi(reactions=_react())
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, ""))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert api.acks == []
 
     def test_ticks_the_message_when_configured(self, db, monkeypatch):
         monkeypatch.setenv("SLACK_ACK_REACTION", "white_check_mark")
         _anchor(db)
         api = FakeApi(reactions=_react())
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, ""))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert api.acks == [("C123", "1723800000.000100", "white_check_mark")]
 
     def test_never_ticks_something_it_did_not_apply(self, db, monkeypatch):
         monkeypatch.setenv("SLACK_ACK_REACTION", "white_check_mark")
         _anchor(db)
         api = FakeApi(reactions=_react())
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(False, "nope"))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(False, "nope"))
         assert api.acks == []
 
 
 class TestFailures:
     def test_a_revoked_token_fails_the_poll_with_slacks_own_code(self, db):
         api = FakeApi(auth=SlackResponse(ok=False, error="token_revoked"))
-        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert (result.outcome, result.error) == ("failed", "token_revoked")
 
     def test_an_unreadable_message_does_not_lose_the_rest_of_the_window(self, db):
@@ -480,7 +485,7 @@ class TestFailures:
                 "1723800009.0009": [{"name": "pause_button", "users": [ACTOR]}],
             }
         )
-        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "ok"))
+        result = run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, "ok"))
         assert result.events_applied == 1
 
     def test_a_gap_longer_than_the_window_is_reported_not_widened(self, db):
@@ -488,7 +493,7 @@ class TestFailures:
         # engine already ruled against; doing it silently is worse.
         with SlackStore(db) as store:
             store.record_poll({"polled_at": (NOW - timedelta(days=4)).isoformat(timespec="seconds"), "outcome": "ok"})
-        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e: ApplyResult(True, ""))
+        result = run_poll(db_path=db, now=NOW, api=FakeApi(), apply_event=lambda e, **_kw: ApplyResult(True, ""))
         assert "exceeds the 48h window" in result.detail
 
 
@@ -512,7 +517,9 @@ class TestSpeaking:
             db_path=db,
             now=NOW,
             api=api,
-            apply_event=lambda e: ApplyResult(True, "recorded — someone is correcting this report", "deferred", True),
+            apply_event=lambda e, **_kw: ApplyResult(
+                True, "recorded — someone is correcting this report", "deferred", True
+            ),
         )
         assert api.acks and api.said
         assert "recorded" in api.said[0][1]
@@ -523,7 +530,7 @@ class TestSpeaking:
         # answered all of them is one nobody leaves switched on.
         _anchor(db)
         api = FakeApi(reactions=_react())
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(False, "nothing correctable"))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(False, "nothing correctable"))
         assert api.said == []
 
     def test_an_unauthorised_actor_is_never_answered(self, db):
@@ -531,7 +538,7 @@ class TestSpeaking:
         # bot that answers unknown users is one anybody can make spam it.
         _anchor(db)
         api = FakeApi(reactions=_react(users=["U5555555555"]))
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "", speak=True))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, "", speak=True))
         assert api.said == []
         assert api.acks == []
 
@@ -544,7 +551,7 @@ class TestSpeaking:
             db, kind=KIND_SIGNAL, ts="1723800001.0002", root_ts="1723800000.000100", member="Ada", rule="wip-sprawl"
         )
         api = FakeApi(thread={"1723800000.000100": [_signal_reply()]})
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "noted", speak=True))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, "noted", speak=True))
         assert api.said == [("1723800000.000100", "noted")]
 
 
@@ -558,7 +565,7 @@ class TestCorrectionsReachApply:
             db_path=db,
             now=NOW,
             api=FakeApi(thread={"1723800000.000100": [_human_reply(text)]}),
-            apply_event=lambda e: (seen.append(e), ApplyResult(True, "noted", speak=True))[1],
+            apply_event=lambda e, **_kw: (seen.append(e), ApplyResult(True, "noted", speak=True))[1],
         )
         return seen
 
@@ -585,5 +592,31 @@ class TestCorrectionsReachApply:
         # signal whatsoever that it worked.
         _anchor(db, artifact_kind="standup")
         api = FakeApi(thread={"1723800000.000100": [_human_reply()]})
-        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e: ApplyResult(True, "noted", speak=True))
+        run_poll(db_path=db, now=NOW, api=api, apply_event=lambda e, **_kw: ApplyResult(True, "noted", speak=True))
         assert api.said == [("1723800000.000100", "noted")]
+
+
+class TestOnePollReadsAndWritesOneDatabase:
+    """``db_path`` reaches the applier, not just the poller's own stores.
+
+    It used to stop at ``_handle``: the poll read anchors and wrote its ledger
+    into the database it was handed, while the applier fell back to
+    ``get_db_path()`` and paused a ceremony, cast a verdict and appended a note
+    in the operator's real one. The claim row saying the event was handled
+    landed on the wrong side, so replaying the same window against the real
+    database would apply it a second time.
+
+    Nothing shipping hit it — both callers leave ``db_path`` at None — and
+    nothing could see it either, because every stub here took ``event`` alone.
+    """
+
+    def test_the_applier_is_handed_the_polls_own_database(self, db):
+        seen: list = []
+
+        def _apply(event, *, db_path=None):
+            seen.append(db_path)
+            return ApplyResult(True, "")
+
+        _anchor(db)
+        run_poll(db_path=db, now=NOW, api=FakeApi(reactions=_react()), apply_event=_apply)
+        assert seen == [db], "the applier writes where the poll reads, or the claim row lies"
