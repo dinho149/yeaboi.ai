@@ -41,7 +41,6 @@ SHIP_PICK_ACTIONS = ["Launch", "Back"]
 SHIP_GATE_ACTIONS = ["Approve", "Reject", "Cancel Run"]
 SHIP_RESULT_ACTIONS = ["Copy", "Back"]
 
-_MAX_STORY_ROWS = 8
 _MAX_DIFF_ROWS = 8
 _MAX_TAIL_ROWS = 6
 _MAX_FINDING_ROWS = 4
@@ -77,10 +76,80 @@ def _field_row(label: str, value: str, *, editing: bool, theme) -> Text:
     return row
 
 
+# What a launch produces. "one" is one branch and one PR for the whole item;
+# "split" fans an epic out into one stacked run per story.
+SCOPE_ONE = "one"
+SCOPE_SPLIT = "split"
+
+_GLYPH = {"epic": "◆", "story": "○", "task": "·"}
+
+# Every row the pick screen spends outside the outline: the panel border and
+# padding (4), the title (2) and subtitle (1), the two overflow markers, the
+# Repo/Check/Scope rows, the hint, the message, the three button rows, and the
+# five blank separators. A Panel of fixed height crops from the bottom, so
+# under-counting here is what pushes the button row off screen.
+_PICK_CHROME_ROWS = 23
+_MIN_OUTLINE_ROWS = 3
+
+
+def outline_window(total: int, selected: int, height: int) -> tuple[int, int]:
+    """(start, count) of the outline slice to draw — a window that follows the selection.
+
+    Height-derived rather than a constant: a three-level tree is far taller than
+    the flat story list this replaced, and the one invariant the gate and pick
+    screens share is that the button row always renders.
+    """
+    rows = max(_MIN_OUTLINE_ROWS, height - _PICK_CHROME_ROWS)
+    if total <= rows:
+        return 0, total
+    start = max(0, min(selected - rows // 2, total - rows))
+    return start, rows
+
+
+def _outline_row(row, *, selected: bool, expanded: bool, has_children: bool, width: int, theme) -> Text:
+    """One tree line: indent, chevron, id, title, detail. Never wraps."""
+    text = Text(no_wrap=True, overflow="ellipsis")
+    text.append(PAD)
+    text.append("▸ " if selected else "  ", style=theme.accent_bright if selected else "dim")
+    text.append("  " * row.depth, style="dim")
+    # The expand state rides at the END of the row, as standup's team row does:
+    # a leading chevron would be the same glyph as the selection cursor, and on
+    # a selected collapsed row the two are indistinguishable.
+    text.append(f"{_GLYPH.get(row.level, '·')} ", style="dim")
+    text.append(row.id, style=theme.id if selected else "rgb(120,140,160)")
+    budget = max(10, width - 36 - row.depth * 2 - len(row.id))
+    text.append(f"  {row.title[:budget]}", style="bold white" if selected else "rgb(160,160,175)")
+    if row.detail:
+        text.append(f"  · {row.detail}", style=theme.muted)
+    if has_children:
+        text.append("  ▾" if expanded else "  ▸", style=theme.accent if selected else "dim")
+    return text
+
+
+def _scope_value(row, scope_mode: str, split_count: int) -> str:
+    """What the Scope field says, given what is selected.
+
+    Only an epic can split — a story and a task have no child stories — so on
+    anything else the field states that rather than offering a toggle that
+    would silently do nothing.
+    """
+    if row is None:
+        return ""
+    if row.level != "epic":
+        return f"Together — one branch, one PR (a {row.level} is a single unit)"
+    if scope_mode == SCOPE_SPLIT:
+        return f"Separately — one stacked PR per story ({split_count} runs)"
+    return "Together — one branch, one PR for the whole epic"
+
+
 def _build_ship_pick_screen(
-    stories: list,
+    rows: list,
     selected: int,
     *,
+    expanded: set | None = None,
+    has_children: set | None = None,
+    scope_mode: str = SCOPE_ONE,
+    split_count: int = 0,
     repo: str,
     check_command: str,
     width: int = 80,
@@ -91,50 +160,48 @@ def _build_ship_pick_screen(
     edit_field: str = "",
     edit_buf: str = "",
 ) -> Panel:
-    """The launch screen: pick a story, confirm repo + check command.
+    """The launch screen: pick any plan item, confirm repo, check command and scope.
 
-    ``stories`` is a list of ``UserStory``; ``edit_field`` is ``""`` (not
-    editing), ``"repo"`` or ``"check"``, with ``edit_buf`` as the live buffer.
+    ``rows`` is the *visible* outline (``ship.scope.OutlineRow``) — the page loop
+    has already dropped the children of collapsed parents. ``expanded`` and
+    ``has_children`` are key sets used only for the chevrons.
     """
     theme = SHIP_THEME
+    expanded = expanded or set()
+    has_children = has_children or set()
+    inner = max(20, width - _PANEL_SIDE_COLS)
     parts: list = [
         Text(""),
         ship_title(shimmer_tick, width=width),
-        build_reveal_subtitle("A story from your plan, implemented behind your approval", None, justify="center"),
+        build_reveal_subtitle("Any epic, story or task — implemented behind your approval", None, justify="center"),
         Text(""),
     ]
-    if not stories:
+    if not rows:
         parts.append(Text(""))
-        parts.append(Text("No stories found in your latest plan.", style="rgb(200,200,210)", justify="center"))
+        parts.append(Text("No plan found.", style="rgb(200,200,210)", justify="center"))
         parts.append(
-            Text("Generate a plan in Planning first — Ship implements its stories.", style="dim", justify="center")
+            Text("Generate a plan in Planning first — Ship implements its items.", style="dim", justify="center")
         )
     else:
-        # A window that follows the selection, not a hard cap: a sprint plan
-        # routinely has more than eight stories and every one must be
-        # launchable from here.
-        start = max(0, min(selected - _MAX_STORY_ROWS // 2, len(stories) - _MAX_STORY_ROWS))
-        shown = stories[start : start + _MAX_STORY_ROWS]
+        selected = max(0, min(selected, len(rows) - 1))
+        start, count = outline_window(len(rows), selected, height)
         if start:
-            parts.append(Text(f"{PAD}… {start} earlier", style="dim"))
-        for offset, story in enumerate(shown):
-            index = start + offset
-            row = Text()
-            row.append(PAD)
-            marker = "▸ " if index == selected else "  "
-            row.append(marker, style=theme.accent_bright if index == selected else "dim")
-            row.append(f"{story.id}", style=theme.id if index == selected else "rgb(120,140,160)")
-            title = getattr(story, "title", "") or getattr(story, "goal", "")
-            row.append(
-                f"  {title[: max(10, width - 30)]}", style="bold white" if index == selected else "rgb(160,160,175)"
+            parts.append(Text(f"{PAD}… {start} above", style="dim", no_wrap=True))
+        for index in range(start, start + count):
+            row = rows[index]
+            parts.append(
+                _outline_row(
+                    row,
+                    selected=index == selected,
+                    expanded=row.key in expanded,
+                    has_children=row.key in has_children,
+                    width=inner,
+                    theme=theme,
+                )
             )
-            points = getattr(story, "story_points", None)
-            if points is not None:
-                row.append(f"  · {int(points)} pts", style=theme.muted)
-            parts.append(row)
-        remaining = len(stories) - (start + len(shown))
+        remaining = len(rows) - (start + count)
         if remaining > 0:
-            parts.append(Text(f"{PAD}… and {remaining} more", style="dim"))
+            parts.append(Text(f"{PAD}… and {remaining} more", style="dim", no_wrap=True))
         parts.append(Text(""))
         parts.append(
             _field_row("Repo", edit_buf if edit_field == "repo" else repo, editing=edit_field == "repo", theme=theme)
@@ -147,7 +214,10 @@ def _build_ship_pick_screen(
                 theme=theme,
             )
         )
-        parts.append(Text(f"{PAD}↑/↓ story · r edit repo · c edit check command", style="dim"))
+        parts.append(
+            _field_row("Scope", _scope_value(rows[selected], scope_mode, split_count), editing=False, theme=theme)
+        )
+        parts.append(Text(f"{PAD}↑/↓ move · space expand · s scope · r repo · c check", style="dim", no_wrap=True))
     parts.append(Text(""))
     parts.append(Text(message, style=theme.warn if message else "", justify="center"))
     parts.append(Text(""))
@@ -164,6 +234,7 @@ def _build_ship_progress_screen(
     status: str = "",
     board_link: str = "",
     board_code: str = "",
+    batch_note: str = "",
 ) -> Panel:
     """The in-flight page: the phase checklist fed by the engine's events."""
     theme = SHIP_THEME
@@ -172,6 +243,10 @@ def _build_ship_progress_screen(
         ship_title(None, width=width),
         build_reveal_subtitle("Supervising the coding agent", None, justify="center"),
     ]
+    if batch_note:
+        # The checklist is keyed by phase, so a batch overwrites it per member;
+        # without this the screen looks like one run restarting over and over.
+        parts.append(Text(batch_note, style=theme.accent, justify="center", no_wrap=True))
     if board_link:
         # The shareable board line, once the tunnel is up. It carries no secret
         # (the join code is separate), so it is safe to render.
@@ -260,6 +335,28 @@ def _diff_viewport(run: ShipRun, *, width: int, rows: int, offset: int, theme) -
     return shell, start, max_start
 
 
+_SNAPSHOT_SUBTITLES = {
+    "approved": "Shipped — this diff was approved and pushed",
+    "rejected": "Rejected — the agent ran out of rework attempts",
+    "failed": "Failed — nothing was pushed",
+    "cancelled": "Cancelled — nothing was pushed",
+    "awaiting_approval": "Still waiting at the gate — resume to finish it",
+}
+
+
+# The gate rows are hand-aligned to a six-column label.
+_LEVEL_LABEL = {"epic": "Epic  ", "story": "Story ", "task": "Task  "}
+
+
+def _item_label(run: ShipRun) -> str:
+    return _LEVEL_LABEL.get(run.level, "Item  ")
+
+
+def _snapshot_subtitle(run: ShipRun) -> str:
+    """What a saved run's header says instead of asking for a decision."""
+    return _SNAPSHOT_SUBTITLES.get(run.status, f"Saved run — {run.status}")
+
+
 def _build_ship_gate_screen(
     run: ShipRun,
     *,
@@ -270,6 +367,8 @@ def _build_ship_gate_screen(
     message: str = "",
     diff_offset: int = 0,
     scroll_meta: dict | None = None,
+    actions: list[str] | None = None,
+    snapshot: bool = False,
 ) -> Panel:
     """The approval gate: what the agent did, what was proven, your call.
 
@@ -279,16 +378,25 @@ def _build_ship_gate_screen(
     the change itself and the worktree path, never just a file count — and the
     builder publishes the pane's real geometry into ``scroll_meta`` so the
     loop's offset can never run past what is on screen.
+
+    ``snapshot=True`` re-uses this exact layout to show a *saved* run in the
+    hub: same rows, same patch pane, a subtitle that says the run is finished
+    rather than asking for a decision. ``actions`` lets the caller supply its own
+    button row (the hub's is Export/Delete/Back, not Approve/Reject); it defaults
+    to the live gate's.
     """
     theme = SHIP_THEME
+    subtitle = _snapshot_subtitle(run) if snapshot else "Review the diff like a stranger wrote it — one did"
     head: list = [
         Text(""),
         ship_title(None, width=width),
-        build_reveal_subtitle("Review the diff like a stranger wrote it — one did", None, justify="center"),
+        build_reveal_subtitle(subtitle, None, justify="center"),
         Text(""),
-        _gate_line("Story ", run.story_id, width=width),
+        _gate_line(_item_label(run), run.item_id, width=width),
         _gate_line("Branch", run.branch, style=theme.id, width=width),
     ]
+    if run.batch_total:
+        head.append(_gate_line("Batch ", f"story {run.batch_index} of {run.batch_total}", width=width))
     if run.worktree:
         # Where to look when the pane is not enough — the patch is capped, the
         # checkout is not.
@@ -346,7 +454,7 @@ def _build_ship_gate_screen(
         )
     foot.append(Text(message, style=theme.warn if message else "", justify="center"))
     foot.append(Text(""))
-    foot.extend(build_action_buttons(SHIP_GATE_ACTIONS, action_sel))
+    foot.extend(build_action_buttons(actions or SHIP_GATE_ACTIONS, action_sel))
 
     # PANEL_CHROME_ROWS is what build_page_panel's border and padding cost;
     # calc_viewport documents the same 4 for the screens that can use it.
@@ -432,8 +540,10 @@ def _build_ship_result_screen(
         Text(f"{PAD}{headline[0]}", style=f"bold {headline[1]}" if not headline[1].startswith("bold") else headline[1]),
         Text(""),
     ]
-    if run.story_id:
-        parts.append(_gate_line("Story ", run.story_id))
+    if run.item_id:
+        parts.append(_gate_line(_item_label(run), run.item_id))
+    if run.batch_total:
+        parts.append(_gate_line("Batch ", f"story {run.batch_index} of {run.batch_total}"))
     if run.branch:
         parts.append(_gate_line("Branch", run.branch, style=theme.id))
     if run.pr_url:

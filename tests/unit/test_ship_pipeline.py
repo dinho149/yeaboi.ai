@@ -12,8 +12,16 @@ import subprocess
 
 import pytest
 
-from yeaboi.agent.state import AcceptanceCriterion, Priority, ShipValidation, StoryPointValue, Task, UserStory
-from yeaboi.ship import pipeline, worktree
+from yeaboi.agent.state import (
+    AcceptanceCriterion,
+    Feature,
+    Priority,
+    ShipValidation,
+    StoryPointValue,
+    Task,
+    UserStory,
+)
+from yeaboi.ship import pipeline, scope, worktree
 from yeaboi.tools.local_git import git_subprocess_env
 
 
@@ -42,27 +50,77 @@ def _task(task_id="T-001", story_id="US-001"):
     )
 
 
-class TestFindStory:
-    def test_finds_story_and_its_tasks(self):
-        state = {"stories": [_story()], "tasks": [_task(), _task("T-9", story_id="US-999")]}
-        story, tasks = pipeline.find_story(state, "US-001")
-        assert story.id == "US-001"
-        assert [t.id for t in tasks] == ["T-001"]
+def _epic(feature_id="F-001"):
+    return Feature(id=feature_id, title="Core Functionality", description="The primary flow.", priority=Priority.HIGH)
 
-    def test_missing_story_names_the_available_ids(self):
-        with pytest.raises(ValueError, match="US-001"):
-            pipeline.find_story({"stories": [_story()], "tasks": []}, "US-404")
+
+def _state():
+    return {
+        "features": [_epic()],
+        "stories": [_story()],
+        "tasks": [_task(), _task("T-9", story_id="US-999")],
+        "project_name": "Bookmarks",
+    }
 
 
 class TestBuildPrompt:
-    def test_carries_story_criteria_tasks_and_the_run_contract(self):
-        prompt = pipeline.build_prompt(_story(), [_task()])
+    def test_a_story_carries_its_criteria_tasks_and_the_run_contract(self):
+        prompt = pipeline.build_prompt(scope.find_target(_state(), "US-001"))
         assert "As a developer" in prompt
         assert "Given a plan, when I run ship, then a PR opens." in prompt
         assert "You are implementing the wiring." in prompt
         assert "Test plan: run the tests" in prompt
         assert "do not attempt git or gh commands" in prompt
         assert "no shell" in prompt
+
+    def test_a_story_names_the_epic_it_belongs_to(self):
+        # An item handed to an agent with no context is a guess; the epic is the
+        # cheapest grounding the plan already has.
+        prompt = pipeline.build_prompt(scope.find_target(_state(), "US-001"), project_name="Bookmarks")
+        assert "Project: Bookmarks" in prompt
+        assert "Epic: Core Functionality" in prompt
+
+    def test_a_task_carries_its_own_prompt_and_the_story_it_serves(self):
+        prompt = pipeline.build_prompt(scope.find_target(_state(), "T-001"))
+        assert "implementation task" in prompt
+        assert "You are implementing the wiring." in prompt
+        assert "Test plan: run the tests" in prompt
+        # A task says what to change; only its story says what "correct" means.
+        assert "Given a plan, when I run ship, then a PR opens." in prompt
+        assert "User story: Ship pipeline" in prompt
+        assert "Only this task is in scope" in prompt
+
+    def test_an_epic_names_every_story_beneath_it(self):
+        state = _state()
+        state["stories"].append(dataclasses.replace(_story("US-002"), title="Second story"))
+        prompt = pipeline.build_prompt(scope.find_target(state, "F-001"))
+        assert "Implement the following epic" in prompt
+        assert "The primary flow." in prompt
+        assert "All 2 user stories below are in scope" in prompt
+        assert "1. Ship pipeline" in prompt
+        assert "2. Second story" in prompt
+        assert "You are implementing the wiring." in prompt
+
+    def test_an_epic_with_no_stories_says_so_rather_than_shipping_a_bare_title(self):
+        prompt = pipeline.build_prompt(scope.find_target({"features": [_epic()]}, "F-001"))
+        assert "has no stories in the plan" in prompt
+
+    def test_free_text_criteria_reach_the_agent_intact(self):
+        # A plan generated with ac_format == "bullets" carries its criteria in
+        # AcceptanceCriterion.text with the triple empty. Reading the triple
+        # directly turned every one of them into "Given , when , then ." by the
+        # time it reached the coding agent.
+        story = dataclasses.replace(
+            _story(), acceptance_criteria=(AcceptanceCriterion(text="Search results return within 200ms"),)
+        )
+        prompt = pipeline.build_prompt(scope.find_target({"stories": [story]}, "US-001"))
+        assert "Search results return within 200ms" in prompt
+        assert "Given , when , then" not in prompt
+
+    def test_an_empty_criterion_is_dropped_not_rendered_blank(self):
+        story = dataclasses.replace(_story(), acceptance_criteria=(AcceptanceCriterion(),))
+        prompt = pipeline.build_prompt(scope.find_target({"stories": [story]}, "US-001"))
+        assert "Acceptance criteria" not in prompt
 
     def test_rework_prompt_carries_the_reviewers_words_and_the_failure(self):
         validation = ShipValidation(configured=True, command="make test", passed=False, exit_code=2, output_tail="boom")

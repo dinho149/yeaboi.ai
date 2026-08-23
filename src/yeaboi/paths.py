@@ -104,6 +104,7 @@ PLANNING_EXPORTS_DIR = EXPORTS_DIR / "planning"
 STANDUP_EXPORTS_DIR = EXPORTS_DIR / "standup"
 RETRO_EXPORTS_DIR = EXPORTS_DIR / "retro"
 POKER_EXPORTS_DIR = EXPORTS_DIR / "poker"
+SHIP_EXPORTS_DIR = EXPORTS_DIR / "ship"
 PERFORMANCE_EXPORTS_DIR = EXPORTS_DIR / "performance"
 REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
@@ -306,6 +307,13 @@ def get_retro_export_dir(project_key: str) -> Path:
 def get_poker_export_dir(project_key: str) -> Path:
     """Return the Scrum Poker export directory for a project, creating it if needed."""
     d = POKER_EXPORTS_DIR / _safe_key(project_key, "project")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_ship_export_dir(project_key: str) -> Path:
+    """Return the Ship export directory for a repository, creating it if needed."""
+    d = SHIP_EXPORTS_DIR / _safe_key(project_key, "repo")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

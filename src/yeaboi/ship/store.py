@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
@@ -37,6 +38,11 @@ from pathlib import Path
 from yeaboi.agent.state import SHIP_STATUSES, ShipPhase, ShipRun, ShipValidation
 
 logger = logging.getLogger(__name__)
+
+# How far back a batch lookup reads. A batch is at most a few runs and is
+# continued within hours, so this is generous; the alternative is a story
+# column on a table that deliberately stores the artifact as one JSON blob.
+_BATCH_SCAN = 200
 
 _SHIP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ship_runs (
@@ -79,6 +85,10 @@ def listing_dict(run: ShipRun) -> dict:
     """
     payload = asdict(run)
     payload.pop("diff_text", None)
+    # The artifact renamed story_id → item_id when ship learned to target an
+    # epic or a task. Listings keep emitting the old key, mirrored, because the
+    # MCP ship_history payload and the plugin skill document it.
+    payload["story_id"] = payload.get("item_id", "")
     return payload
 
 
@@ -87,7 +97,9 @@ def _dict_to_run(data: dict) -> ShipRun:
     validation = data.get("validation") or {}
     return ShipRun(
         run_id=str(data.get("run_id", "")),
-        story_id=str(data.get("story_id", "")),
+        # Old rows wrote the id under story_id; new ones under item_id.
+        item_id=str(data.get("item_id") or data.get("story_id") or ""),
+        level=str(data.get("level") or "story"),
         session_id=str(data.get("session_id", "")),
         agent_session_id=str(data.get("agent_session_id", "")),
         repo=str(data.get("repo", "")),
@@ -125,6 +137,11 @@ def _dict_to_run(data: dict) -> ShipRun:
         gate_resolution=str(data.get("gate_resolution", "")),
         gate_comment=str(data.get("gate_comment", "")),
         rejection_count=int(data.get("rejection_count", 0)),
+        batch_id=str(data.get("batch_id", "")),
+        batch_item_id=str(data.get("batch_item_id", "")),
+        batch_index=int(data.get("batch_index", 0) or 0),
+        batch_total=int(data.get("batch_total", 0) or 0),
+        owner_pid=int(data.get("owner_pid", 0) or 0),
         created_at=str(data.get("created_at", "")),
         updated_at=str(data.get("updated_at", "")),
         warnings=tuple(str(w) for w in data.get("warnings") or ()),
@@ -167,7 +184,14 @@ class ShipStore:
         """Insert a new run; stamps created_at/updated_at."""
         # `replace`, never ShipRun(**asdict(...)): asdict recurses into the
         # nested frozen dataclasses and would rebuild them as plain dicts.
-        stamped = replace(run, created_at=run.created_at or _now(), updated_at=_now())
+        # The owning pid is stamped here so a run abandoned at the gate can later
+        # be told apart from one a live process is still driving.
+        stamped = replace(
+            run,
+            owner_pid=run.owner_pid or os.getpid(),
+            created_at=run.created_at or _now(),
+            updated_at=_now(),
+        )
         self._conn.execute(
             "INSERT INTO ship_runs (run_id, status, gate_resolution, run_json, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -270,6 +294,32 @@ class ShipStore:
         logger.info("Gate for %s resolved: %s", run_id, resolution)
         return True
 
+    def delete_run(self, run_id: str) -> bool:
+        """Forget a run: its row, its gate trail, and its checkout. True if a row went.
+
+        The worktree removal is best-effort and deliberately keeps the branch
+        (``worktree.remove``'s default): the row is bookkeeping, the branch is the
+        work, and discarding a listing must never discard commits.
+        """
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = self._conn.execute("DELETE FROM ship_runs WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM ship_gate_events WHERE run_id = ?", (run_id,))
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        if cursor.rowcount == 0:
+            return False
+        try:
+            from yeaboi.ship import worktree
+
+            worktree.remove(run_id)
+        except Exception as exc:  # noqa: BLE001 — a stuck checkout must not fail the delete
+            logger.warning("Could not remove the worktree for %s: %s", run_id, exc)
+        logger.info("Deleted ship run %s", run_id)
+        return True
+
     # -- reads -------------------------------------------------------------
 
     def get_run(self, run_id: str) -> ShipRun | None:
@@ -295,6 +345,38 @@ class ShipStore:
             except ValueError:
                 continue
         return out
+
+    def batch_runs(self, batch_id: str) -> list[ShipRun]:
+        """Every member of *batch_id*, oldest first — batch order."""
+        if not batch_id:
+            return []
+        return [r for r in reversed(self.list_runs(limit=_BATCH_SCAN)) if r.batch_id == batch_id]
+
+    def open_batch_id(self, item_id: str, repo: str) -> str:
+        """The newest unfinished batch for *item_id* in *repo*, or "".
+
+        "Unfinished" means at least one member did not end approved. Relaunching
+        an epic continues that batch instead of opening a second one over the
+        same stories — which is what makes a batch stopped by the launch budget
+        resumable with no new command.
+        """
+        if not item_id:
+            return ""
+        # One listing, grouped in memory: each row carries the run's stored patch,
+        # so re-reading per candidate batch would be megabytes of JSON per call.
+        grouped: dict[str, list[ShipRun]] = {}
+        order: list[str] = []
+        for run in self.list_runs(limit=_BATCH_SCAN):  # newest first
+            if not run.batch_id or run.batch_item_id != item_id or run.repo != repo:
+                continue
+            if run.batch_id not in grouped:
+                order.append(run.batch_id)
+            grouped.setdefault(run.batch_id, []).append(run)
+        for batch_id in order:
+            members = grouped[batch_id]
+            if len(members) < members[0].batch_total or any(m.status != "approved" for m in members):
+                return batch_id
+        return ""
 
     def gate_events(self, run_id: str) -> list[tuple[str, str, str]]:
         """(event, detail, created_at) oldest first — the gate's audit trail."""

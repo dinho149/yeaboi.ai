@@ -1104,18 +1104,31 @@ def build_parser() -> argparse.ArgumentParser:
     ptrace_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     ship_desc = (
-        "Hand a story from your saved sprint plan to a supervised coding agent (Claude Code headless): "
+        "Hand an epic, story or task from your saved plan to a supervised coding agent (Claude Code headless): "
         "isolated worktree and branch, deterministic validation, a human approval gate at the terminal, "
         "and a PR only after approval. A user-global launch budget caps runs."
     )
     ship_p = subparsers.add_parser(
         "ship",
-        help="Implement a story from your plan via a supervised coding agent",
+        help="Implement an epic, story or task from your plan via a supervised coding agent",
         description=ship_desc,
     )
-    ship_sub = ship_p.add_subparsers(dest="ship_command", metavar="{run,status,history}", required=True)
-    srun_p = ship_sub.add_parser("run", help="Run one story through the pipeline", description=ship_desc)
-    srun_p.add_argument("story_id", metavar="STORY", help="Story id from the plan (e.g. US-001)")
+    ship_sub = ship_p.add_subparsers(dest="ship_command", metavar="{run,resume,status,history}", required=True)
+    srun_p = ship_sub.add_parser("run", help="Run one plan item through the pipeline", description=ship_desc)
+    srun_p.add_argument(
+        "item_id", metavar="ITEM", help="Epic, story or task id from the plan (e.g. F1, US-001, T-US-001-01)"
+    )
+    srun_p.add_argument(
+        "--level",
+        choices=["epic", "story", "task"],
+        default="",
+        help="Disambiguate a colliding id; inferred from the plan by default",
+    )
+    srun_p.add_argument(
+        "--split",
+        action="store_true",
+        help="Epics only: one stacked PR per story instead of one PR for the whole epic",
+    )
     srun_p.add_argument("--repo", default=".", metavar="PATH", help="Target git repository (default: current dir)")
     srun_p.add_argument("--session", default="", metavar="ID", help="Planning session id (default: latest)")
     srun_p.add_argument(
@@ -1125,6 +1138,26 @@ def build_parser() -> argparse.ArgumentParser:
     srun_p.add_argument("--dry-run", action="store_true", help="Canned run — no agent, no git, no network")
     srun_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     srun_p.add_argument("--strict", action="store_true", help="Exit 3 when the run did not end approved")
+    sresume_p = ship_sub.add_parser(
+        "resume",
+        help="Finish a run left waiting at the approval gate",
+        description=(
+            "Re-attach to a run whose process died at the approval gate. Its branch, worktree and diff "
+            "are still on disk; this re-asks the gate and, on approval, pushes and opens the PR."
+        ),
+    )
+    sresume_p.add_argument("run_id", metavar="RUN", help="Run id from `yeaboi ship history`")
+    sresume_p.add_argument(
+        "--check",
+        default="",
+        metavar="CMD",
+        help="Re-run this validation command before the gate (default: reuse the recorded verdict)",
+    )
+    sresume_p.add_argument(
+        "--timeout-minutes", type=int, default=30, metavar="N", help="Agent run timeout (default 30)"
+    )
+    sresume_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    sresume_p.add_argument("--strict", action="store_true", help="Exit 3 when the run did not end approved")
     sstatus_p = ship_sub.add_parser("status", help="The latest run and the launch budget", description=ship_desc)
     sstatus_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     shistory_p = ship_sub.add_parser("history", help="Recent runs, newest first", description=ship_desc)
@@ -2673,21 +2706,18 @@ def _cmd_ship(args: argparse.Namespace, console: Console) -> int:
             console.print(format_budget_rich(posture))
         return 0
 
+    if args.ship_command == "resume":
+        return _ship_resume(args, console)
+
     # run
     return _ship_run(args, console)
 
 
 def _ship_run(args: argparse.Namespace, console: Console) -> int:
     """`yeaboi ship run` — engine on a worker thread, the gate answered here."""
-    import json
-    import threading
-    import time
-    from dataclasses import asdict
 
     from yeaboi import fs_policy
     from yeaboi.ship import engine, worktree
-    from yeaboi.ship.render import format_run_rich
-    from yeaboi.ship.store import ShipStore
 
     repo = str(Path(args.repo).expanduser().resolve())
     if not args.dry_run:
@@ -2711,25 +2741,103 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
             print("✗ ship run needs an interactive terminal — the approval gate prompts here.", file=sys.stderr)
             return 2
 
-    result_box: list = [None]
-    cancel = threading.Event()
     # The engine hands its run id back the moment it exists. Anything else in
     # the store belongs to ANOTHER session (a TUI in another terminal, a stale
     # process) — prompting for one of those would let this user approve, and
     # push, a diff they are not looking at.
     mine: list[str] = [""]
 
-    def _work() -> None:
-        result_box[0] = engine.run_ship(
-            args.story_id,
+    if args.split and args.dry_run:
+        print("✗ --split has no dry run — a batch is a sequence of real runs.", file=sys.stderr)
+        return 2
+
+    batch: list = []
+
+    def _work(cancel, on_run_id):
+        if args.split:
+            members = engine.run_ship_batch(
+                args.item_id,
+                repo,
+                level=args.level,
+                session_id=args.session,
+                check_command=args.check,
+                timeout_minutes=args.timeout_minutes,
+                on_run_id=on_run_id,
+                cancel_event=cancel,
+            )
+            batch.extend(members)
+            return members[-1] if members else None
+        return engine.run_ship(
+            args.item_id,
             repo,
+            level=args.level,
             session_id=args.session,
             check_command=args.check,
             timeout_minutes=args.timeout_minutes,
             dry_run=args.dry_run,
-            on_run_id=lambda run_id: mine.__setitem__(0, run_id),
+            on_run_id=on_run_id,
             cancel_event=cancel,
         )
+
+    run = _ship_supervise(console, _work, mine=mine)
+    if batch:
+        _print_batch(console, batch)
+    return _ship_report(args, console, run)
+
+
+def _print_batch(console: Console, members: list) -> None:
+    """One line per story: what shipped, what stopped it, what was never reached."""
+    shipped = sum(1 for m in members if m.status == "approved")
+    console.print(f"\nBatch: {shipped} of {len(members)} stories shipped")
+    for member in members:
+        detail = member.pr_url or (member.warnings[-1] if member.warnings else "")
+        console.print(f"  {member.batch_index}. {member.item_id:22} {member.status:18} {detail}")
+
+
+def _ship_resume(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi ship resume` — finish a run abandoned at the gate.
+
+    No repository consent prompt: the repo was granted when the run was launched,
+    the worktree already exists, and resume writes nowhere new.
+    """
+    from yeaboi.ship import engine
+
+    if not sys.stdin.isatty():
+        print("✗ ship resume needs an interactive terminal — the approval gate prompts here.", file=sys.stderr)
+        return 2
+
+    def _work(cancel, _on_run_id):
+        return engine.resume_ship(
+            args.run_id,
+            check_command=args.check,
+            timeout_minutes=args.timeout_minutes,
+            cancel_event=cancel,
+        )
+
+    # The run id is known up front here, unlike a fresh run — resume is addressed
+    # at exactly one run, so the gate loop can watch it from the first tick.
+    return _ship_report(args, console, _ship_supervise(console, _work, mine=[args.run_id]))
+
+
+def _ship_supervise(console: Console, run_engine, *, mine: list[str]):
+    """Drive one engine call on a worker thread, answering its gate at this terminal.
+
+    ``run_engine(cancel, on_run_id)`` makes the call; ``mine`` carries the run id —
+    pre-seeded by resume, filled by the callback for a fresh run — so this loop only
+    ever opens the gate for its own run. Returns the ShipRun, or None if the engine
+    reported nothing.
+    """
+    import threading
+    import time
+
+    from yeaboi.ship.render import format_run_rich
+    from yeaboi.ship.store import ShipStore
+
+    result_box: list = [None]
+    cancel = threading.Event()
+
+    def _work() -> None:
+        result_box[0] = run_engine(cancel, lambda run_id: mine.__setitem__(0, run_id))
 
     worker = threading.Thread(target=_work, daemon=True)
     worker.start()
@@ -2773,14 +2881,25 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
         print("Cancelling the run — the agent is stopped and nothing is pushed…", file=sys.stderr)
         worker.join(timeout=60)
     worker.join(timeout=5)
-    run = result_box[0]
+    return result_box[0]
+
+
+def _ship_report(args: argparse.Namespace, console: Console, run) -> int:
+    """Print a finished run and pick the exit code. Shared by run and resume."""
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.ship.render import format_run_rich
+
     if run is None:
         print("✗ the run did not report a result — see logs", file=sys.stderr)
         return 1
     for warning in run.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
     if args.format == "json":
-        print(json.dumps(asdict(run), indent=2))
+        payload = asdict(run)
+        payload["story_id"] = payload["item_id"]  # the legacy mirror every ship payload carries
+        print(json.dumps(payload, indent=2))
     else:
         console.print(format_run_rich(run))
     if args.strict and run.status != "approved":

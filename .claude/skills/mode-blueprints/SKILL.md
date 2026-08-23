@@ -9,6 +9,8 @@ All four modes follow one blueprint: a self-contained package (`engine` + `store
 
 Adding a mode also means adding its **discoverability tip**: a `FeatureTip` in `src/yeaboi/ui/shared/_tips.py` (`_FEATURE_TIPS`) keyed by the capability name, with a `mode_key` when it owns a `_MODE_CARDS` card (so the welcome-screen `g` key jumps into it) and `is_new=True` for a release or two. `TestTips` in `tests/unit/test_surface_parity.py` fails until the tip exists (or a `TIP_EXEMPT` entry with a reason is recorded).
 
+It also means adding a **saved-sessions hub**, because every one of these modes stores its runs: the card lands on `_run_mode_hub(...)` (`ui/mode_select/__init__.py`), which takes the mode's behaviour as injected callables — `load_runs` → `RunSummary`s, `make_detail` (or `open_snapshot` when the snapshot needs its own buttons), `files_export`, `get_document`, `delete_run`, `run_new` — and the card key is registered in `SAVED_SESSION_HUBS`. Render the snapshot through the mode's own screen builder so a saved run looks like the live view. `TestSavedSessions` fails until the hub exists or a `SAVED_SESSIONS_EXEMPT` reason is recorded.
+
 ## Daily Standup Mode
 
 The `src/yeaboi/standup/` package implements a daily scrum that detects team activity, scores sprint progress, and delivers a summary — runnable from the TUI or headlessly on an OS schedule.

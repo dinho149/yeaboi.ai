@@ -1300,7 +1300,9 @@ class TestShipCommand:
         args = build_parser().parse_args(["ship", "run", "US-001"])
         assert args.command == "ship"
         assert args.ship_command == "run"
-        assert args.story_id == "US-001"
+        assert args.item_id == "US-001"
+        assert args.level == ""
+        assert args.split is False
         assert args.repo == "."
         assert args.check == ""
         assert args.timeout_minutes == 30
@@ -1373,6 +1375,14 @@ class TestShipCommand:
         # git's own words when the rev-parse fails, ours when it returns empty.
         assert "not a git" in capsys.readouterr().err
 
+    def test_run_accepts_an_epic_with_split(self):
+        args = build_parser().parse_args(["ship", "run", "F1", "--level", "epic", "--split"])
+        assert (args.item_id, args.level, args.split) == ("F1", "epic", True)
+
+    def test_run_accepts_a_task_id(self):
+        args = build_parser().parse_args(["ship", "run", "T-US-F1-001-01"])
+        assert args.item_id == "T-US-F1-001-01"
+
     def test_consent_is_checked_against_the_toplevel_not_the_typed_path(self, monkeypatch, tmp_path):
         # fs_policy containment is `is_relative_to`, and every write lands on
         # the toplevel — so pointing --repo at a subdirectory must still ask
@@ -1391,9 +1401,9 @@ class TestShipCommand:
 
         from yeaboi.agent.state import ShipRun
 
-        def _fake_run_ship(story_id, target, **kw):
+        def _fake_run_ship(item_id, target, **kw):
             launched.append(target)
-            return ShipRun(run_id="r", story_id=story_id, status="failed")
+            return ShipRun(run_id="r", item_id=item_id, status="failed")
 
         monkeypatch.setattr("yeaboi.ship.engine.run_ship", _fake_run_ship)
         args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(sub)])
@@ -1420,13 +1430,13 @@ class TestShipCommand:
 
         monkeypatch.setattr("builtins.input", _refuse_to_prompt)
 
-        def _fake_run_ship(story_id, target, **kw):
+        def _fake_run_ship(item_id, target, **kw):
             # Another session's run opens its gate while ours is working.
             with ShipStore(db) as store:
-                store.record_run(ShipRun(run_id="someone-else", story_id="US-999", status="awaiting_approval"))
+                store.record_run(ShipRun(run_id="someone-else", item_id="US-999", status="awaiting_approval"))
             kw["on_run_id"]("ours")
             time.sleep(1.2)  # long enough for the loop to poll the store
-            return ShipRun(run_id="ours", story_id=story_id, status="failed")
+            return ShipRun(run_id="ours", item_id=item_id, status="failed")
 
         monkeypatch.setattr("yeaboi.ship.engine.run_ship", _fake_run_ship)
         args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo)])
@@ -1442,7 +1452,7 @@ class TestShipCommand:
         monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
         monkeypatch.setattr(
             "yeaboi.ship.engine.run_ship",
-            lambda *a, **k: ShipRun(run_id="r", story_id="US-001", status="failed", warnings=("boom",)),
+            lambda *a, **k: ShipRun(run_id="r", item_id="US-001", status="failed", warnings=("boom",)),
         )
         args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo), "--strict"])
         assert _run_subcommand(args) == 3

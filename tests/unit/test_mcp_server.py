@@ -1303,10 +1303,14 @@ class TestShipTools:
         from yeaboi.ship.store import ShipStore
 
         with ShipStore(tmp_db) as store:
-            store.record_run(ShipRun(run_id="run-1", story_id="US-001", status="approved", pr_url="https://x/pr/1"))
+            store.record_run(ShipRun(run_id="run-1", item_id="US-001", status="approved", pr_url="https://x/pr/1"))
         out = call_tool("ship_history")
         assert out["ok"] is True
+        # story_id is the legacy mirror of item_id, kept because this payload
+        # and the ship plugin skill both document it.
+        assert out["data"]["runs"][0]["item_id"] == "US-001"
         assert out["data"]["runs"][0]["story_id"] == "US-001"
+        assert out["data"]["runs"][0]["level"] == "story"
         assert out["data"]["runs"][0]["pr_url"] == "https://x/pr/1"
 
     def test_status_reports_latest_run_and_budget(self, tmp_db):
@@ -1325,7 +1329,7 @@ class TestShipTools:
             store.record_run(
                 ShipRun(
                     run_id="run-1",
-                    story_id="US-001",
+                    item_id="US-001",
                     status="approved",
                     diff_stat="1 file changed",
                     diff_text="@@ -1 +1 @@\n+enormous\n",

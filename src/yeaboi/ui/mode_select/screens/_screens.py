@@ -92,7 +92,7 @@ _MODE_CARDS: list[dict[str, Any]] = [
     {
         "key": "ship",
         "title": "Ship",
-        "description": "Hand a plan story to a supervised coding agent: isolated branch, your approval, then a PR.",
+        "description": "Hand any epic, story or task to a coding agent: isolated branch, your approval, then a PR.",
         # Beta like Performance: the mode runs end to end, but it drives a
         # coding agent against the user's own repository — "available" stays
         # True (it gates Enter, click, and the tip jump), the badge carries

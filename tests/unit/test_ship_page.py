@@ -99,7 +99,7 @@ def _keys(*sequence):
 def _gated_run(**overrides):
     base = {
         "run_id": "run-1",
-        "story_id": "US-001",
+        "item_id": "US-001",
         "branch": "ship/run-1",
         "worktree": "/tmp/wt/run-1",
         "status": "awaiting_approval",

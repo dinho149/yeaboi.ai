@@ -204,7 +204,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "ship",
-        "\U0001f6a2 Tip: Ship hands a story from your plan to a coding agent — your approval gates the PR",
+        "\U0001f6a2 Tip: Ship hands any epic, story or task to a coding agent — your approval gates the PR",
         mode_key="ship",
         is_beta=True,
     ),

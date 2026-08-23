@@ -45,15 +45,19 @@ class ProjectSummary:
 class RunSummary:
     """One saved run in a mode's saved-runs hub (standup / retro / reporting / performance).
 
-    A run is a stored report snapshot — not a resumable graph session — so it carries
-    only what the hub list needs: the store row ``run_id`` (+ ``kind`` for performance's
-    mixed artifact table), a ``title``/``subtitle`` for the card, and ``run_at`` for the
-    relative-time line. ``to_project`` maps it onto a ProjectSummary so the existing
+    A run is a stored report snapshot, so it carries only what the hub list needs:
+    the store row ``run_id`` (+ ``kind`` for performance's mixed artifact table), a
+    ``title``/``subtitle`` for the card, and ``run_at`` for the relative-time line.
+    ``to_project`` maps it onto a ProjectSummary so the existing
     ``_build_project_card`` renders it identically to a planning/analysis card.
+
+    ``run_id`` is whatever key the mode's own store uses — an integer row id for the
+    modes with an autoincrement table, a string for ship, whose run ids are minted
+    identities. The shared hub never interprets it; only the mode's own callbacks do.
     """
 
-    mode: str  # "standup" | "retro" | "reporting" | "performance"
-    run_id: int
+    mode: str  # "standup" | "retro" | "reporting" | "performance" | "poker" | "ship"
+    run_id: int | str
     title: str
     subtitle: str = ""
     run_at: str = ""  # relative time, e.g. "2 days ago"

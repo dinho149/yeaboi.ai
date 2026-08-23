@@ -1835,7 +1835,7 @@ def prior_art_from_dicts(rows) -> tuple[PriorArtRef, ...]:
 
 
 # ---------------------------------------------------------------------------
-# Ship artifacts (the supervised story → PR pipeline)
+# Ship artifacts (the supervised plan-item → PR pipeline)
 # ---------------------------------------------------------------------------
 
 
@@ -1879,7 +1879,7 @@ class ShipValidation:
 
 @dataclass(frozen=True)
 class ShipRun:
-    """One supervised story → PR run, end to end.
+    """One supervised plan-item → PR run, end to end.
 
     Frozen like every artifact: the store persists status transitions, and the
     engine returns a fresh copy per phase. The gate fields mirror archon's
@@ -1888,8 +1888,13 @@ class ShipRun:
     """
 
     run_id: str = ""
-    story_id: str = ""
-    session_id: str = ""  # the *planning* session the story came from
+    # The plan item this run implements, at whichever level it lives. Stored
+    # runs written before ship could target an epic or a task carry it under
+    # the old key ``story_id``; the store reads both and keeps emitting the old
+    # one, so the MCP payload and the plugin skill's contract are unchanged.
+    item_id: str = ""
+    level: str = "story"  # "epic" | "story" | "task"
+    session_id: str = ""  # the *planning* session the item came from
     agent_session_id: str = ""  # the coding agent's own session (transcript key)
     repo: str = ""
     branch: str = ""
@@ -1907,6 +1912,18 @@ class ShipRun:
     gate_resolution: str = ""  # "" (open) | approved | rejected
     gate_comment: str = ""  # the approver's words; lands in the PR body
     rejection_count: int = 0
+    # Batch membership: N runs from one epic launched as "one PR per story",
+    # each stacked on the branch before it. "" and 0 for a single run.
+    batch_id: str = ""
+    # The epic the batch was launched from. A member's own item_id is its
+    # story, so without this nothing can find a batch by what the user picked.
+    batch_item_id: str = ""
+    batch_index: int = 0  # 1-based position within the batch
+    batch_total: int = 0
+    # The pid driving this run, stamped at record time and re-stamped on resume.
+    # A run left at the gate is resumable only once that process is gone, so a
+    # reused pid reads as "still owned" and refuses — the harmless direction.
+    owner_pid: int = 0
     created_at: str = ""
     updated_at: str = ""
     warnings: tuple[str, ...] = ()
