@@ -7,8 +7,10 @@ import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +82,9 @@ def _load_cache(db_path: Path, provider: str, project: str, days: int) -> tuple[
             ).fetchone()
         if not row:
             return None
-        fetched_at = datetime.fromisoformat(row[1])
+        fetched_at = parse_datetime(row[1])
         if fetched_at.tzinfo is None:
-            fetched_at = fetched_at.replace(tzinfo=UTC)
+            fetched_at = fetched_at.replace(tzinfo=timezone.utc)
         return list(json.loads(row[0])), fetched_at
     except Exception:
         logger.warning("Could not read roster cache", exc_info=True)
@@ -90,7 +92,7 @@ def _load_cache(db_path: Path, provider: str, project: str, days: int) -> tuple[
 
 
 def _save_cache(db_path: Path, provider: str, project: str, days: int, members: list[dict]) -> str:
-    fetched_at = datetime.now(UTC).isoformat()
+    fetched_at = datetime.now(timezone.utc).isoformat()
     try:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(str(db_path)) as conn:
@@ -139,7 +141,7 @@ def _fetch_source(
     cached = _load_cache(db_path, provider, project, days)
     if cached and not force_refresh:
         rows, fetched = cached
-        if datetime.now(UTC) - fetched <= timedelta(seconds=cache_ttl_seconds):
+        if datetime.now(timezone.utc) - fetched <= timedelta(seconds=cache_ttl_seconds):
             return RosterSourceResult(
                 provider,
                 project,

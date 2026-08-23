@@ -11,11 +11,16 @@ the pre-commit hook and both CI jobs at once.
 import importlib.util
 import json
 import re
-import tomllib
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -251,6 +256,30 @@ class TestJsonLd:
         assert "softwareVersion" not in json.dumps(graph)
         # Self-issued ratings on your own product are a manual-action risk.
         assert "aggregateRating" not in json.dumps(graph)
+
+    def test_runtime_platform_agrees_with_pyproject(self) -> None:
+        """The advertised Python floor is derived, not restated.
+
+        It used to be a literal in gen_site_seo.py, so `requires-python` could move
+        and the site would keep advertising the old floor with CI fully green.
+        """
+        requires = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
+        floor = requires.lstrip(">=").split(",")[0].strip()
+        head = _head(_read(DOCS / "index.html"))
+        graph = json.loads(re.search(r'ld\+json">(.*?)</script>', head, re.DOTALL).group(1))["@graph"]
+        app = next(n for n in graph if n["@type"] == "SoftwareApplication")
+        assert app["runtimePlatform"] == f"Python {floor}+"
+
+    def test_does_not_claim_native_windows(self) -> None:
+        """ui/shared/_input.py imports termios and tty at module scope.
+
+        The TUI cannot start on native Windows, so advertising it in structured
+        data is a promise the product does not keep. WSL is the documented path.
+        """
+        head = _head(_read(DOCS / "index.html"))
+        graph = json.loads(re.search(r'ld\+json">(.*?)</script>', head, re.DOTALL).group(1))["@graph"]
+        app = next(n for n in graph if n["@type"] == "SoftwareApplication")
+        assert "Windows" not in app["operatingSystem"]
 
     def test_urls_agree_with_pyproject(self) -> None:
         meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]

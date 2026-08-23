@@ -24,6 +24,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from yeaboi.timeparse import parse_date
+
 logger = logging.getLogger(__name__)
 
 # Confidence buckets (percent of ideal burn achieved).
@@ -80,7 +82,7 @@ def _parse_date(value: str) -> date | None:
     if not value:
         return None
     try:
-        return date.fromisoformat(value[:10])
+        return parse_date(value[:10])
     except (ValueError, TypeError):
         return None
 

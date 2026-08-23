@@ -21,7 +21,8 @@
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
+
+from yeaboi._compat import StrEnum
 
 # ---------------------------------------------------------------------------
 # All 30 intake questions, keyed by question number (1-based).

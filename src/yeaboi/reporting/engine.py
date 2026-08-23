@@ -26,6 +26,7 @@ from datetime import date, timedelta
 
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import activity as activity_mod
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -250,18 +251,29 @@ def _fallback_report(
 # ---------------------------------------------------------------------------
 
 
-def _validate_window_dates(window_start: str, window_end: str) -> None:
+def _validate_window_dates(window_start: str, window_end: str) -> tuple[str, str]:
     """Fail fast with a friendly message instead of a deep strptime error —
-    the window strings arrive verbatim from the CLI flags and the MCP tool."""
+    the window strings arrive verbatim from the CLI flags and the MCP tool.
+
+    Returns them canonicalised. Everything downstream — the ordering check below,
+    the ``day >= period_start`` filter in ``context.py`` and the period label —
+    compares these as *strings*, and ISO-8601 has several spellings of the same
+    day, so a valid ``20260818`` would validate and then order wrongly against a
+    ``2026-08-18`` it should equal.
+    """
+    canonical = {}
     for name, value in (("window_start", window_start), ("window_end", window_end)):
         if not value:
+            canonical[name] = value
             continue
         try:
-            date.fromisoformat(value)
+            canonical[name] = parse_date(value).isoformat()
         except ValueError:
             raise ValueError(f"{name} must be an ISO date (YYYY-MM-DD) — got {value!r}") from None
-    if window_start and window_end and window_end < window_start:
-        raise ValueError(f"window_end ({window_end}) is before window_start ({window_start})")
+    start, end = canonical["window_start"], canonical["window_end"]
+    if start and end and end < start:
+        raise ValueError(f"window_end ({end}) is before window_start ({start})")
+    return start, end
 
 
 def run_delivery_report(
@@ -307,7 +319,7 @@ def run_delivery_report(
         cancel_event: optional ``threading.Event``; when set between stages the
             pipeline raises ``ReportCancelledError`` without persisting anything.
     """
-    _validate_window_dates(window_start, window_end)
+    window_start, window_end = _validate_window_dates(window_start, window_end)
     delivery_sel, code_sel, docs_sel = activity_mod.normalize_sources(sources)
     today = today or date.today()
     period_end = today.isoformat()
@@ -330,7 +342,7 @@ def run_delivery_report(
     if use_window:
         # Explicit window: the selected sprints / custom dates define the date span.
         try:
-            days = max(1, (today - date.fromisoformat(window_start)).days)
+            days = max(1, (today - parse_date(window_start)).days)
         except (TypeError, ValueError):
             days = activity_mod.period_days(activity_mod.PERIOD_LAST_MONTH)
         period_start = window_start

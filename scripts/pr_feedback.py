@@ -54,7 +54,7 @@ import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # scripts/ is not a package, so the sibling transport is imported by path.
@@ -466,7 +466,7 @@ def parse_timestamp(value: str | None) -> datetime | None:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def responses(body: str) -> dict[str, Response]:
@@ -1387,7 +1387,7 @@ def fetch_snapshot(number: int, slug: str) -> Snapshot | None:
             id=int(item.get("id", 0)),
             author=(item.get("user") or {}).get("login", ""),
             body=item.get("body") or "",
-            created_at=parse_timestamp(item.get("created_at")) or datetime.min.replace(tzinfo=UTC),
+            created_at=parse_timestamp(item.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc),
             updated_at=parse_timestamp(item.get("updated_at")),
             association=item.get("author_association") or "NONE",
         )
@@ -1469,7 +1469,7 @@ def fetch_reviews(slug: str, number: int) -> tuple[Comment, ...]:
             # Reviews expose no edited-at, so a verdict written into one is dated
             # by submission. Producers post comments, not reviews; this path is
             # for the maintainer who typed the ack into the review box.
-            created_at=parse_timestamp(item.get("submitted_at")) or datetime.min.replace(tzinfo=UTC),
+            created_at=parse_timestamp(item.get("submitted_at")) or datetime.min.replace(tzinfo=timezone.utc),
             association=item.get("author_association") or "NONE",
             kind="review",
         )
@@ -1893,7 +1893,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if head:
                 post_status(slug, head, unreadable_verdict(meta), args.target_url)
         return 2
-    verdict = classify(snapshot, datetime.now(UTC))
+    verdict = classify(snapshot, datetime.now(timezone.utc))
 
     if args.status:
         # The step succeeds whatever the verdict — the *status* is what blocks a

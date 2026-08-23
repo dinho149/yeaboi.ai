@@ -18,7 +18,7 @@
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC
+from datetime import timezone
 from types import SimpleNamespace
 from urllib.parse import quote
 
@@ -430,7 +430,7 @@ def azdevops_read_board(project: str = "") -> str:
         from datetime import datetime as _dt
 
         all_iterations = work_client.get_team_iterations(team_context) or []
-        now = _dt.now(UTC)
+        now = _dt.now(timezone.utc)
         current_iter = None
         past_iters: list = []
 
@@ -535,7 +535,7 @@ def azdevops_fetch_velocity(project: str = "") -> str:
         from datetime import datetime as _dt
 
         all_iterations = work_client.get_team_iterations(team_context) or []
-        now = _dt.now(UTC)
+        now = _dt.now(timezone.utc)
         past_iterations = [
             it
             for it in all_iterations
@@ -634,7 +634,7 @@ def azdevops_fetch_active_iteration(project: str = "") -> str:
         from datetime import datetime as _dt
 
         all_iterations = work_client.get_team_iterations(team_context) or []
-        now = _dt.now(UTC)
+        now = _dt.now(timezone.utc)
         current_iterations = [
             it
             for it in all_iterations
@@ -693,7 +693,7 @@ def fetch_team_iterations_meta(
     _, work_client = _make_azdo_clients(org_url, token)
     team = get_azure_devops_team() or f"{project} Team"
     team_context = TeamContext(project=project, team=team)
-    now = _dt.now(UTC)
+    now = _dt.now(timezone.utc)
 
     items: list[dict] = []
     for it in work_client.get_team_iterations(team_context) or []:
@@ -1431,20 +1431,20 @@ def azdevops_analysis_inventory(
 
 def _repo_activity_cutoff(days: int, since):
     """Tz-aware UTC window start (since wins, else now − days)."""
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     if since is not None:
-        return since.astimezone(UTC) if since.tzinfo else since.replace(tzinfo=UTC)
-    return datetime.now(UTC) - timedelta(days=int(days))
+        return since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - timedelta(days=int(days))
 
 
 def _aware(dt):
     """Coerce an SDK datetime to tz-aware UTC for safe comparison; None stays None."""
-    from datetime import UTC
+    from datetime import timezone
 
     if dt is None:
         return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _activity_repo_web_url(repo, project: str) -> str:
@@ -2660,7 +2660,7 @@ def azdevops_active_sprint_progress(project: str = "") -> dict:
         team_context = TeamContext(project=project, team=team)
 
         all_iterations = work_client.get_team_iterations(team_context) or []
-        now = _dt.now(UTC)
+        now = _dt.now(timezone.utc)
         current = [
             it
             for it in all_iterations
@@ -2739,7 +2739,7 @@ def azdevops_list_sprints(project: str = "", limit: int = 30) -> list[dict]:
         team_context = TeamContext(project=project, team=team)
 
         all_iterations = work_client.get_team_iterations(team_context) or []
-        now = _dt.now(UTC)
+        now = _dt.now(timezone.utc)
         out: list[dict] = []
         for it in all_iterations:
             attrs = getattr(it, "attributes", None)

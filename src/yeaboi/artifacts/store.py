@@ -32,10 +32,11 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.artifacts.edits import Edit
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,7 @@ class ArtifactEditStore:
         self.close()
 
     def _now(self) -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     # ── Writing ───────────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ class ArtifactEditStore:
         dead holder forever would block deferral for nothing. Re-taking one this
         caller already holds is a refresh, not a conflict.
         """
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         try:
             row = self._conn.execute(
                 "SELECT holder, expires_at FROM artifact_leases WHERE kind = ? AND ref = ?", (kind, ref)
@@ -399,13 +400,13 @@ class ArtifactEditStore:
         if row is None:
             return False
         try:
-            deadline = datetime.fromisoformat(str(row["expires_at"]))
+            deadline = parse_datetime(str(row["expires_at"]))
         except ValueError:
             # Unparseable reads as expired, matching SlackAnchor.expired: a row
             # nobody can date must not block a write forever.
             logger.warning("Lease on %s/%s has an unparseable expires_at", kind, ref)
             return False
-        return (now or datetime.now(UTC)) < deadline
+        return (now or datetime.now(timezone.utc)) < deadline
 
     # ── Reading ───────────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ import os
 import platform
 import uuid
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ def build_telemetry_payload(graph_state: dict) -> dict | None:
 
     return {
         "event_id": str(uuid.uuid4()),
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "agent_version": __version__,
         "platform": platform.system(),
         "python_version": platform.python_version(),

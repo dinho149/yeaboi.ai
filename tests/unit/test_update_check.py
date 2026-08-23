@@ -157,6 +157,20 @@ class TestDetectUpgradeCommand:
         monkeypatch.setattr(update_check.sys, "executable", "/Users/x/.local/pipx/venvs/yeaboi/bin/python")
         assert update_check.detect_upgrade_command() == "pipx upgrade yeaboi"
 
+    def test_uvx_is_told_to_make_the_install_permanent(self, monkeypatch):
+        """`uvx yeaboi` runs from a throwaway cache env — there is nothing to upgrade.
+
+        Without this branch the version row hands an ephemeral user
+        `uv tool upgrade yeaboi`, which answers "yeaboi is not installed".
+        """
+        monkeypatch.setattr(
+            update_check.sys,
+            "executable",
+            "/Users/x/.cache/uv/archive-v0/9fT2mQ/bin/python",
+        )
+        monkeypatch.setattr(update_check, "_voice_is_live", lambda: False)
+        assert update_check.detect_upgrade_command() == "uv tool install yeaboi"
+
     def test_unknown_falls_back_to_uv(self, monkeypatch):
         monkeypatch.setattr(update_check.sys, "executable", "/usr/bin/python3")
         monkeypatch.setattr(update_check, "_voice_is_live", lambda: False)

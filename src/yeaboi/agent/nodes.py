@@ -87,6 +87,7 @@ from yeaboi.prompts.story_writer import (
 )
 from yeaboi.prompts.system import get_system_prompt  # noqa: E402 — direct submodule imports avoid circular import
 from yeaboi.prompts.task_decomposer import get_task_decomposer_prompt
+from yeaboi.timeparse import parse_date, parse_datetime
 from yeaboi.tools import detect_platform
 from yeaboi.tools.risk import high_risk_tool_names
 
@@ -1816,7 +1817,7 @@ def _assign_holidays_to_sprints(
         return {}
 
     try:
-        start = date.fromisoformat(sprint_start_date) if sprint_start_date else date.today()
+        start = parse_date(sprint_start_date) if sprint_start_date else date.today()
     except (ValueError, TypeError):
         start = date.today()
 
@@ -1830,7 +1831,7 @@ def _assign_holidays_to_sprints(
         # Convert string dates to date objects
         if isinstance(h_date, str):
             try:
-                h_date = date.fromisoformat(h_date)
+                h_date = parse_date(h_date)
             except ValueError:
                 continue
 
@@ -1923,7 +1924,7 @@ def _assign_leave_to_sprints(
         return {}
 
     try:
-        start = date.fromisoformat(sprint_start_date) if sprint_start_date else date.today()
+        start = parse_date(sprint_start_date) if sprint_start_date else date.today()
     except (ValueError, TypeError):
         start = date.today()
 
@@ -1933,8 +1934,8 @@ def _assign_leave_to_sprints(
     for entry in leave_entries:
         person = entry.get("person", "")
         try:
-            leave_start = date.fromisoformat(entry["start_date"])
-            leave_end = date.fromisoformat(entry["end_date"])
+            leave_start = parse_date(entry["start_date"])
+            leave_end = parse_date(entry["end_date"])
         except (ValueError, TypeError, KeyError):
             continue
 
@@ -2421,10 +2422,8 @@ def _extract_answers_from_profile(profile, examples: dict | None = None) -> dict
                 start = sd.get("start", "")
                 end = sd.get("end", "")
                 if start and end:
-                    from datetime import datetime
-
-                    s_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                    e_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                    s_dt = parse_datetime(start)
+                    e_dt = parse_datetime(end)
                     days = (e_dt - s_dt).days
                     durations.append(days)
             if durations:
@@ -2957,7 +2956,7 @@ def _detect_bank_holidays_for_window(
 
     # Build summary with holiday names and sprint mapping
     try:
-        start_dt = date.fromisoformat(start)
+        start_dt = parse_date(start)
     except ValueError:
         start_dt = date.today()
 
@@ -3024,7 +3023,7 @@ def _resolve_sprint_start_date(questionnaire: QuestionnaireState) -> str:
             # Use Jira's actual start date as anchor when available
             anchor = questionnaire._active_sprint_start_date
             if anchor:
-                anchor_date = date.fromisoformat(anchor)
+                anchor_date = parse_date(anchor)
             else:
                 anchor_date = date.today()
             return (anchor_date + timedelta(weeks=offset_sprints * sprint_weeks)).isoformat()
@@ -3039,7 +3038,7 @@ def _get_planning_window(questionnaire: QuestionnaireState):
     Returns (start_date, end_date) as datetime.date objects, or (None, None)
     if the window can't be determined (missing answers).
     """
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     q8 = questionnaire.answers.get(8, "")
     sprint_weeks = _parse_first_int(q8)
@@ -3053,7 +3052,7 @@ def _get_planning_window(questionnaire: QuestionnaireState):
         return None, None
 
     start_str = _resolve_sprint_start_date(questionnaire)
-    start = date.fromisoformat(start_str)
+    start = parse_date(start_str)
     end = start + timedelta(weeks=sprint_weeks * num_sprints)
     return start, end
 
@@ -5251,9 +5250,8 @@ def project_intake(state: ScrumState) -> dict:
                             )
                         ],
                     }
-                from datetime import date as _date
 
-                start = _date.fromisoformat(questionnaire._leave_input_buffer["start_date"])
+                start = parse_date(questionnaire._leave_input_buffer["start_date"])
                 # Validate end date within planning window
                 _, window_end = _get_planning_window(questionnaire)
                 if window_end and parsed > window_end:

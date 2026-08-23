@@ -31,6 +31,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -97,6 +98,20 @@ def _duck(height: int):
     return out
 
 
+def _floor() -> str:
+    """The supported Python floor, read from pyproject rather than restated.
+
+    Nothing guards the rendered PNG, so a hardcoded version here goes stale
+    silently and search engines quote it for as long as it takes someone to
+    notice. tests/unit/test_python_floor.py asserts this agrees.
+    """
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^requires-python\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    if not match:
+        raise SystemExit("gen_og_card: no requires-python in pyproject.toml")
+    return match.group(1).lstrip(">=").split(",")[0].strip()
+
+
 def build():
     from PIL import Image, ImageDraw
 
@@ -128,7 +143,7 @@ def build():
 
     small = _font("DejaVuSans.ttf", 22)
     draw.text((x, 528), "planning · standups · retros · poker · reports · agents", font=small, fill=DIM)
-    draw.text((x, 562), "MIT · Python 3.11+ · yeaboi.ai", font=small, fill=DIM)
+    draw.text((x, 562), f"MIT · Python {_floor()}+ · yeaboi.ai", font=small, fill=DIM)
     return card
 
 

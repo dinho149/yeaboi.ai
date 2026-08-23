@@ -28,7 +28,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import (
@@ -563,7 +563,7 @@ class StandupStore:
         self.close()
 
     def _now(self) -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     # ── Config ────────────────────────────────────────────────────────────
 

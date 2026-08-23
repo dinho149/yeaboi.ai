@@ -1,7 +1,7 @@
 """Tests for project history persistence."""
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -405,23 +405,23 @@ class TestMigrateHistoryFile:
 
 class TestRelativeTime:
     def test_just_now(self):
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         assert _relative_time(now) == "just now"
 
     def test_minutes_ago(self):
-        past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         assert _relative_time(past) == "5 minutes ago"
 
     def test_hours_ago(self):
-        past = (datetime.now(UTC) - timedelta(hours=3)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
         assert _relative_time(past) == "3 hours ago"
 
     def test_days_ago(self):
-        past = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
         assert _relative_time(past) == "2 days ago"
 
     def test_singular(self):
-        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         assert _relative_time(past) == "1 hour ago"
 
     def test_empty_string(self):

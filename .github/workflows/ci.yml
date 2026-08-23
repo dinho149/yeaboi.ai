@@ -50,6 +50,7 @@ jobs:
       site: ${{ steps.scope.outputs.site }}
       package: ${{ steps.scope.outputs.package }}
       eval: ${{ steps.scope.outputs.eval }}
+      compat: ${{ steps.scope.outputs.compat }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -109,6 +110,7 @@ jobs:
               echo "site=true"
               echo "package=true"
               echo "eval=true"
+              echo "compat=true"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -130,14 +132,50 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv python install 3.11
-      - run: uv sync --extra dev
+      # The floor, not a middle version: 3.10 is where a version difference can
+      # actually break, and running the required job there costs nothing extra.
+      # The `--python` pin is mandatory — runners ship 3.12/3.13 preinstalled and
+      # `uv sync` will happily pick one, leaving a "3.10 job" that proves nothing.
+      - run: uv python install 3.10
+      - run: uv sync --extra dev --python 3.10
+      - run: uv run python -c "import sys; assert sys.version_info[:2] == (3, 10), sys.version"
       # UNIT_PATHS is the scope job's selection. A command-line make variable
       # beats the Makefile's `?=`, so an empty output would NOT fall back to the
       # default — `UNIT_LANE` in the Makefile resolves the empty case instead.
       - env:
           UNIT_PATHS: ${{ needs.scope.outputs.unit_paths }}
         run: make test-fast UNIT_PATHS="$UNIT_PATHS"
+
+  # ── Version compatibility ────────────────────────────────────────────────
+  # The unit lane on every supported version ABOVE the floor. `unit` already
+  # covers 3.10, so this is the ceiling and the middle.
+  #
+  # This job carries an `if:` and MUST NOT become a required context. That is
+  # the whole reason the matrix lives here instead of on `unit`: `strategy.matrix`
+  # renames a check to "Unit tests (3.12)", and a required context nothing posts
+  # blocks every PR forever — the outage described above this file's `unit` job.
+  compat:
+    name: Python ${{ matrix.python }}
+    needs: scope
+    if: needs.scope.outputs.compat == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # One version failing must not hide the others: which versions break is
+      # the entire signal this job exists to produce.
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv python install ${{ matrix.python }}
+      - run: uv sync --extra dev --python ${{ matrix.python }}
+      - env:
+          EXPECTED: ${{ matrix.python }}
+        run: uv run python -c "import os,sys; assert '.'.join(map(str,sys.version_info[:2])) == os.environ['EXPECTED'], sys.version"
+      # The whole unit lane, not the scoped selection: this job is gated on the
+      # version surfaces, so when it runs at all it should run everything.
+      - run: make test-fast
 
   # ── Slow suite ───────────────────────────────────────────────────────────
   # Integration + contract tests (marked @pytest.mark.slow) — too slow for
@@ -149,8 +187,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv python install 3.11
-      - run: uv sync --extra dev
+      - run: uv python install 3.10
+      - run: uv sync --extra dev --python 3.10
+      - run: uv run python -c "import sys; assert sys.version_info[:2] == (3, 10), sys.version"
       # `make test-slow`, not `make test`. This job ran `make test`, which is
       # tests/unit + tests/integration + tests/contract — so it re-ran, in full,
       # the same 11,000 unit tests the job above had just run. 310 of its 408

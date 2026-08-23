@@ -8,7 +8,7 @@
 **Best friend to engineers and agents — plans, standups, retros, performance & reporting for your team, plus cost, digests and security posture for the AI agents working alongside it. All from your terminal.**
 
 [![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/yeaboi/)
-[![Python](https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-included-green?style=for-the-badge&logo=python&logoColor=white)](https://yeaboi.ai/docs/getting-started.html)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 [![Powered by Claude](https://img.shields.io/badge/Powered%20by-Claude-ff6600?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com)
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-00CED1?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
@@ -30,15 +30,40 @@
 
 ## 🚀 Quick Start
 
-### Recommended: uv or pipx
-
-The most reliable way to install — pulls the full dependency tree from PyPI and isolates it in its own environment:
+### Install (it brings its own Python)
 
 ```bash
-uv tool install yeaboi          # or: pipx install yeaboi
+curl -LsSf https://yeaboi.ai/install.sh | sh
 yeaboi --setup                  # configure your API key
 yeaboi                          # launch the interactive TUI
 ```
+
+**You do not need to install Python first.** The script installs [uv](https://docs.astral.sh/uv/)
+if it is missing, then gives yeaboi its own isolated environment on a Python that uv downloads —
+so whatever is (or isn't) on your machine does not matter. It writes only under your home
+directory and never uses `sudo`. Read it first if you like: [`docs/install.sh`](docs/install.sh).
+
+macOS and Linux. On Windows, install inside [WSL](https://learn.microsoft.com/windows/wsl/install) —
+the terminal UI needs a POSIX terminal.
+
+<details>
+<summary><b>Other ways to install</b></summary>
+
+```bash
+uv tool install yeaboi                       # already have uv
+uvx yeaboi                                   # try it without installing
+pipx install --python 3.12 --fetch-missing-python yeaboi
+pip install yeaboi                           # needs Python 3.10+ already present
+```
+
+`uv tool install` fetches a Python for you if none on the machine qualifies. **`pipx` and `pip`
+do not** — they use the interpreter they are run with, which is why the flags above are needed
+and why the `curl` line is the one to give someone who just wants to see the product.
+
+`uvx yeaboi` runs without installing anything permanent; your API key and sessions still live in
+`~/.yeaboi`, so `yeaboi --setup` persists across runs.
+
+</details>
 
 > **Note on names:** the package was previously published as **`scrum-agent`**. It is now **`yeaboi`** on PyPI, matching the command. A final `scrum-agent` release remains as a thin redirect that installs `yeaboi`, and the legacy `scrum-agent` command still works as an alias for that release — but new installs should use `yeaboi`.
 
@@ -60,7 +85,7 @@ Optional extras can still be requested at install time if you prefer:
 uv tool install "yeaboi[voice]"                # 🎤 dictation, pre-installed rather than on demand
 uv tool install "yeaboi[all-providers]"        # OpenAI, Google, and Bedrock providers
 uv tool install "yeaboi[core]"                 # ⚡ prebuilt Go engine for the Agents pages
-pipx install "yeaboi[voice]"                   # equivalent with pipx
+pipx install --python 3.12 --fetch-missing-python "yeaboi[voice]"   # equivalent with pipx
 ```
 
 > **The `core` extra** installs `yeaboi-core`, a small prebuilt Go binary that serves the
@@ -79,8 +104,8 @@ pipx install "yeaboi[voice]"                   # equivalent with pipx
 
 > **Homebrew is not supported.** A required dependency (`sqlite-vec`) ships no
 > source distribution, which Homebrew's source-build model can't handle, so
-> `brew install yeaboi` is intentionally disabled. Use `uv tool install`
-> or `pipx install` above instead.
+> `brew install yeaboi` is intentionally disabled. Use the `curl` line or
+> `uv tool install` above instead.
 
 ### From source
 

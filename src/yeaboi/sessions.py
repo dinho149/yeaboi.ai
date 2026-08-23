@@ -19,7 +19,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import asdict
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from pathlib import Path
 from uuid import uuid4
@@ -1030,7 +1030,7 @@ class SessionStore:
     # ── Internal helpers ──────────────────────────────────────────────────
 
     def _now(self) -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     # ── Write operations ──────────────────────────────────────────────────
 

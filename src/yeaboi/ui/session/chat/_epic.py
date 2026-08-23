@@ -20,6 +20,8 @@ import re
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta
 
+from yeaboi.timeparse import parse_datetime
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,7 +57,7 @@ def _quarter_label_for(graph_state: dict, analysis) -> str:
     target_sprints = getattr(analysis, "target_sprints", 0)
     sprint_weeks = getattr(analysis, "sprint_length_weeks", 2)
     try:
-        start_dt = datetime.fromisoformat(sprint_start) if sprint_start else datetime.now()
+        start_dt = parse_datetime(sprint_start) if sprint_start else datetime.now()
     except Exception:
         start_dt = datetime.now()
     start_q = ((start_dt.month - 1) // 3) + 1

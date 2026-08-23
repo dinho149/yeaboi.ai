@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "3.26.0"
+version = "3.27.0"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{name = "Omar Din"}]
 license = {text = "MIT"}
 # Dropped "yeaboi" (the brand name collides with a musician, a food truck and a
@@ -23,9 +23,11 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
@@ -119,6 +121,9 @@ dev = [
     # numpy arrives transitively with faster-whisper at runtime; naming it here
     # keeps the resample tests runnable without the (heavy) voice extra.
     "numpy>=1.24,<3",
+    # tomllib is stdlib from 3.11; four guard tests read pyproject.toml and the
+    # packaging manifests, and they have to run on the floor too.
+    "tomli; python_version < '3.11'",
     # tests/unit/test_workflow_concurrency.py and tests/contract/ parse YAML.
     # It arrives transitively via langchain anyway; naming it here keeps a
     # dependency reshuffle from breaking unit-test *collection*.
@@ -174,6 +179,9 @@ markers = [
 [tool.ruff]
 src = ["src"]
 line-length = 120
+# Explicit rather than inferred from requires-python: pyupgrade (UP) rewrites are
+# gated on it, so the version the linter targets is a decision, not a side effect.
+target-version = "py310"
 
 [tool.ruff.lint]
 # "S" = flake8-bandit security rules (SAST). See `make security`.
@@ -190,6 +198,10 @@ ignore = [
     "S603",  # subprocess-without-shell — all calls are argv lists, never shell=True (audited)
     "S607",  # partial-executable-path — git/osascript/sudo/crontab resolved via PATH by design
 ]
+
+[tool.ruff.lint.isort]
+# tomllib is stdlib from 3.11; below target-version ruff files it as third-party.
+extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.per-file-ignores]
 # Both board pages and the reporting slide deck used to be listed here as

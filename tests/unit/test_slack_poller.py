@@ -9,7 +9,7 @@ of them say so in the ledger. And **one bad event never costs the rest**.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -28,7 +28,7 @@ from yeaboi.slack.store import (
 )
 from yeaboi.tools.slack import SlackResponse
 
-NOW = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
 ACTOR = "U0123456789"
 
 

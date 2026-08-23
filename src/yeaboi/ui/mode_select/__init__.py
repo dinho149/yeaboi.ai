@@ -25,6 +25,7 @@ from rich.console import Console
 from yeaboi.logging_setup import attach_mode_handler, mode_log
 from yeaboi.logging_setup import detach as detach_mode_handler
 from yeaboi.paths import get_db_path as _get_db_path
+from yeaboi.timeparse import parse_date, parse_datetime
 from yeaboi.ui.mode_select.screens._project_cards import (  # noqa: F401
     ProfileSummary,
     ProjectSummary,
@@ -4001,7 +4002,7 @@ def _standup_last_run_label(row: dict, today: date) -> str | None:
     """
     raw = str(row.get("standup_date") or "").strip() or str(row.get("run_at") or "")[:10]
     try:
-        when = date.fromisoformat(raw)
+        when = parse_date(raw)
     except ValueError:
         return None
     days = (today - when).days
@@ -10061,7 +10062,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 return None
             raw = (raw or "").strip() or default
             try:
-                value = _date.fromisoformat(raw).isoformat()
+                value = parse_date(raw).isoformat()
             except ValueError:
                 prompt = f"{raw!r} isn't a date — enter YYYY-MM-DD"
                 continue
@@ -13451,7 +13452,7 @@ def select_mode(
                 # Load existing team profiles
                 _profiles_for_analysis: list = []
                 try:
-                    from datetime import UTC, datetime
+                    from datetime import datetime, timezone
 
                     from yeaboi.team_profile import TeamProfileStore
 
@@ -13463,8 +13464,8 @@ def select_mode(
                             days = 0
                             if _rp.updated_at:
                                 try:
-                                    _up = datetime.fromisoformat(_rp.updated_at)
-                                    days = (datetime.now(UTC) - _up).days
+                                    _up = parse_datetime(_rp.updated_at)
+                                    days = (datetime.now(timezone.utc) - _up).days
                                 except Exception:
                                     pass
                             # Check if preview flow was completed for this profile
@@ -14184,7 +14185,7 @@ def select_mode(
 
                         # Reload profiles and restart analysis list
                         try:
-                            from datetime import UTC, datetime
+                            from datetime import datetime, timezone
 
                             from yeaboi.team_profile import TeamProfileStore
 
@@ -14197,8 +14198,8 @@ def select_mode(
                                     days = 0
                                     if _rp.updated_at:
                                         try:
-                                            _up = datetime.fromisoformat(_rp.updated_at)
-                                            days = (datetime.now(UTC) - _up).days
+                                            _up = parse_datetime(_rp.updated_at)
+                                            days = (datetime.now(timezone.utc) - _up).days
                                         except Exception:
                                             pass
                                     _profiles_for_analysis.append(
@@ -14269,14 +14270,14 @@ def select_mode(
                             elif _azdevops_ok and _tpp.source == "azdevops":
                                 _matching_profiles.append(_tpp)
                         if _matching_profiles:
-                            from datetime import UTC
                             from datetime import datetime as _dt
+                            from datetime import timezone
 
                             _latest = _matching_profiles[0]
                             if _latest.updated_at:
                                 try:
-                                    _up = _dt.fromisoformat(_latest.updated_at)
-                                    _staleness_days = (_dt.now(UTC) - _up).days
+                                    _up = parse_datetime(_latest.updated_at)
+                                    _staleness_days = (_dt.now(timezone.utc) - _up).days
                                 except Exception:
                                     pass
                 except Exception:

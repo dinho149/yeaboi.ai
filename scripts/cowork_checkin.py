@@ -60,7 +60,7 @@ import os
 import re
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -213,7 +213,7 @@ def _moment(stamp: str) -> datetime | None:
         moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
     except ValueError:
         return None
-    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
 
 
 def _span(starts: list[str], ends: list[str]) -> int:
@@ -366,7 +366,7 @@ def ledger_title(now: datetime | None = None) -> str:
     twenty-four-a-day check-ins is nine thousand comments on one issue, and
     monthly rather than daily because the reader would then page thirty issues to
     answer one question."""
-    return f"fleet ledger {(now or datetime.now(UTC)).strftime('%Y-%m')}"
+    return f"fleet ledger {(now or datetime.now(timezone.utc)).strftime('%Y-%m')}"
 
 
 def ledger_body(facts: dict, usage: dict) -> str:
@@ -459,10 +459,10 @@ def _day_start(now: datetime | None = None) -> datetime:
     `DISPLAY_TZ`. Keying the gate on the UTC day would open a fresh day in the
     middle of a London morning.
     """
-    moment = (now or datetime.now(UTC)).astimezone(UTC)
+    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     zone, _ = display_zone()
     local = moment.astimezone(zone) if zone else moment
-    return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 def already_checked_in(name: str, status: str, *, now: datetime | None = None) -> tuple[bool, str]:

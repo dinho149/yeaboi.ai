@@ -20,7 +20,7 @@ latest record behind each of its inputs.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from yeaboi.agent.state import ProvenanceAuditReport, ProvenanceDecisionRow, ProvenanceTrace
 from yeaboi.provenance.records import DecisionRecord
@@ -88,7 +88,7 @@ def run_provenance_audit(
     # mode fail exactly when the feature is being used.
 
     report = ProvenanceAuditReport(
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
         window_days=window_days,
         chain_valid=verdict.valid,
         total_records=total,

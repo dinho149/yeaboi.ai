@@ -21,7 +21,8 @@ from __future__ import annotations
 import base64
 import binascii
 import uuid as _uuid
-from datetime import datetime
+
+from yeaboi.timeparse import parse_datetime
 
 # Length profile for hex hash detection: MD5 = 32 hex chars, SHA1 = 40,
 # SHA256 = 64.
@@ -71,7 +72,7 @@ def _is_iso8601(token: str) -> bool:
         return False
     candidate = token[:-1] + "+00:00" if token.endswith("Z") else token
     try:
-        datetime.fromisoformat(candidate)
+        parse_datetime(candidate)
     except (ValueError, TypeError):
         return False
     return True

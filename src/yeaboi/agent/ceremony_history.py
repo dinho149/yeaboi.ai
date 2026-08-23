@@ -28,6 +28,8 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 
+from yeaboi.timeparse import parse_datetime
+
 logger = logging.getLogger(__name__)
 
 # Minimum times a normalised card text must recur to count as a "theme".
@@ -73,7 +75,7 @@ def _normalise(text: str) -> str:
 def _parse_ts(value: str) -> datetime | None:
     """Parse an ISO-8601 timestamp, tolerating a trailing 'Z'."""
     try:
-        return datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+        return parse_datetime(value or "")
     except (ValueError, TypeError):
         return None
 

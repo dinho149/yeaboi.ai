@@ -26,7 +26,7 @@ import logging
 import threading
 import time
 from collections import deque
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from yeaboi.agent.state import RetroCard, RetroReport
@@ -131,7 +131,7 @@ _MAX_TIMER = 3600  # cap a shared countdown at one hour
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class RetroBoard:

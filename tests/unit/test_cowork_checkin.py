@@ -15,7 +15,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -311,7 +311,7 @@ class TestTheLedger:
         wrote, error = checkin.record(
             {"name": "security-sweep", "status": "ok", "note": "1 PR"},
             {"cost_usd": 0.98, "total_tokens": 263000, "duration_seconds": 244, "available": True},
-            now=datetime(2026, 8, 14, tzinfo=UTC),
+            now=datetime(2026, 8, 14, tzinfo=timezone.utc),
         )
         assert (wrote, error) == (True, "")
         assert [c[:2] for c in calls] == [("POST", "/repos/o/r/issues/7/comments")]
@@ -323,7 +323,9 @@ class TestTheLedger:
         # the month they would otherwise have nowhere to write.
         calls: list = []
         self._transport(monkeypatch, calls, issues=[])
-        assert checkin.record({"name": "cd-deploy", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=UTC))[0]
+        assert checkin.record({"name": "cd-deploy", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=timezone.utc))[
+            0
+        ]
         assert calls[0][0:2] == ("POST", "/repos/o/r/issues")
         assert calls[0][2]["title"] == "fleet ledger 2026-09"
         assert calls[1][1] == "/repos/o/r/issues/42/comments"
@@ -334,7 +336,7 @@ class TestTheLedger:
         # its dedupe corpus. Either would swallow this issue whole.
         calls: list = []
         self._transport(monkeypatch, calls, issues=[])
-        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=UTC))
+        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 9, 1, tzinfo=timezone.utc))
         assert calls[0][2]["labels"] == ["fleet-ledger"]
 
     def test_a_pull_request_is_never_mistaken_for_the_ledger(self, monkeypatch):
@@ -344,7 +346,7 @@ class TestTheLedger:
         self._transport(
             monkeypatch, calls, issues=[{"number": 9, "title": "fleet ledger 2026-08", "pull_request": {"url": "…"}}]
         )
-        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 8, 2, tzinfo=UTC))
+        checkin.record({"name": "x", "status": "ok"}, {}, now=datetime(2026, 8, 2, tzinfo=timezone.utc))
         assert calls[0][0:2] == ("POST", "/repos/o/r/issues")
 
     def test_an_unreachable_ledger_is_reported_and_never_raises(self, monkeypatch):
@@ -431,7 +433,9 @@ class TestQuietRepeat:
 
     def test_a_second_firing_at_the_same_status_is_a_repeat(self, monkeypatch):
         self._ledger(monkeypatch, [self._comment("cd-deploy", "degraded")])
-        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC)) == (
+        assert checkin.already_checked_in(
+            "cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=timezone.utc)
+        ) == (
             True,
             "",
         )
@@ -441,16 +445,25 @@ class TestQuietRepeat:
         the same day the quiet ones were suppressed — which is the whole reason
         status is in the key and the note is not."""
         self._ledger(monkeypatch, [self._comment("cd-deploy", "degraded")])
-        assert checkin.already_checked_in("cd-deploy", "failed", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+        assert (
+            checkin.already_checked_in("cd-deploy", "failed", now=datetime(2026, 8, 17, 9, tzinfo=timezone.utc))[0]
+            is False
+        )
 
     def test_another_routine_s_check_in_is_not_this_one_s(self, monkeypatch):
         self._ledger(monkeypatch, [self._comment("digest", "degraded")])
-        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+        assert (
+            checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=timezone.utc))[0]
+            is False
+        )
 
     def test_prose_on_the_ledger_is_not_a_check_in(self, monkeypatch):
         # A human answering in the issue must not silence a routine.
         self._ledger(monkeypatch, [{"body": "cd-deploy looks degraded again"}])
-        assert checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=UTC))[0] is False
+        assert (
+            checkin.already_checked_in("cd-deploy", "degraded", now=datetime(2026, 8, 17, 9, tzinfo=timezone.utc))[0]
+            is False
+        )
 
     def test_only_today_is_asked_for(self, monkeypatch):
         """The window is the display day, not the UTC day — the thread a reader
@@ -458,16 +471,22 @@ class TestQuietRepeat:
         fresh day in the middle of a London morning."""
         queries: list = []
         self._ledger(monkeypatch, [], queries=queries)
-        checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, 9, tzinfo=UTC))
+        checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, 9, tzinfo=timezone.utc))
         comment_query = [q for q in queries if "/comments" in q][0]
-        assert f"since={checkin._day_start(datetime(2026, 8, 17, 9, tzinfo=UTC)):%Y-%m-%dT%H:%M:%SZ}" in comment_query
+        assert (
+            f"since={checkin._day_start(datetime(2026, 8, 17, 9, tzinfo=timezone.utc)):%Y-%m-%dT%H:%M:%SZ}"
+            in comment_query
+        )
 
     def test_no_month_issue_yet_is_not_a_repeat_and_creates_nothing(self, monkeypatch):
         # The gate reads before anything has been written this month. Opening the
         # month's ledger from a *lookup* would be a write on a run that may then
         # print nothing and record nothing.
         self._ledger(monkeypatch, [], issues=[])
-        assert checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 9, 1, tzinfo=UTC)) == (False, "")
+        assert checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 9, 1, tzinfo=timezone.utc)) == (
+            False,
+            "",
+        )
 
     def test_outside_a_routine_nothing_is_a_repeat(self, monkeypatch):
         monkeypatch.delenv(checkin.RUN_SESSION_ENV, raising=False)
@@ -485,7 +504,7 @@ class TestQuietRepeat:
         monkeypatch.setattr(
             checkin.transport, "api_paged", lambda path, key=None: checkin.transport.ApiResult(False, error="403")
         )
-        seen, error = checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, tzinfo=UTC))
+        seen, error = checkin.already_checked_in("cd-deploy", "ok", now=datetime(2026, 8, 17, tzinfo=timezone.utc))
         assert seen is False
         assert error == "403"
 

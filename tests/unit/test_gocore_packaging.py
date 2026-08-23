@@ -13,8 +13,13 @@ Both drifts fail the unit suite here instead.
 from __future__ import annotations
 
 import re
-import tomllib
+import sys
 from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
+    import tomli as tomllib
 
 REPO = Path(__file__).resolve().parents[2]
 

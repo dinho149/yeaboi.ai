@@ -17,7 +17,7 @@ preserving the lazy-import property of ``tools/__init__.py``.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from yeaboi._compat import StrEnum
 
 
 class ToolRisk(StrEnum):

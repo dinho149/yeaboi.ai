@@ -569,7 +569,7 @@ class TestActivityFailuresAreSurfaced:
 class TestActivityScanCaps:
     @patch("yeaboi.tools.github._get_github_client")
     def test_commit_iteration_capped(self, mock_client):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
         from yeaboi.tools.github import _MAX_REPO_COMMITS, github_recent_commits
 
@@ -580,7 +580,7 @@ class TestActivityScanCaps:
             c.commit.message = f"change {index}"
             c.commit.author.name = "Alice"
             c.commit.author.email = "a@example.com"
-            c.commit.author.date = datetime(2026, 1, 1, tzinfo=UTC)
+            c.commit.author.date = datetime(2026, 1, 1, tzinfo=timezone.utc)
             return c
 
         repo = mock_client.return_value.get_repo.return_value
@@ -642,9 +642,9 @@ class TestActivityScanCaps:
 
     @staticmethod
     def _pr_with_discussion(number):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         pr = MagicMock()
         pr.number = number
         pr.title = f"PR {number}"
@@ -741,11 +741,11 @@ class TestGithubAnalysisInventory:
 
     @patch("yeaboi.tools.github._get_github_client")
     def test_relevance_flags(self, mock_client):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from yeaboi.tools.github import github_analysis_inventory
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         owner = mock_client.return_value.get_organization.return_value
         owner.get_repos.return_value = [
             self._repo("acme/live", pushed_at=now - timedelta(days=3)),
@@ -778,9 +778,9 @@ class TestGithubRecentReviews:
         return user
 
     def _pr(self, number=7):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         pr = MagicMock()
         pr.number = number
         pr.title = f"PR {number}"

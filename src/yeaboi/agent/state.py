@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import operator
 from dataclasses import dataclass, field
-from enum import IntEnum, StrEnum
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+
+from yeaboi._compat import IntEnum, StrEnum
 
 # ---------------------------------------------------------------------------
 # Enums

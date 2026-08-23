@@ -51,13 +51,28 @@ import json
 import logging
 import re
 import sys
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 SITE_JS = DOCS / "assets" / "site.js"
 SITE = "https://yeaboi.ai"
+
+
+def _runtime_platform() -> str:
+    """The published Python floor, read from pyproject rather than restated here.
+
+    This string used to be a literal, which meant `requires-python` could move and
+    the site would keep advertising the old floor with every test green.
+    """
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^requires-python\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
+    if not match:  # pragma: no cover - pyproject always has one
+        raise SystemExit("gen_site_seo: no requires-python in pyproject.toml")
+    floor = match.group(1).lstrip(">=").split(",")[0].strip()
+    return f"Python {floor}+"
+
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +105,13 @@ _GENERATED_NOTE = (
 )
 
 
-class Kind(StrEnum):
-    """How a page is treated for schema and indexing purposes."""
+class Kind(Enum):
+    """How a page is treated for schema and indexing purposes.
+
+    A plain ``Enum``, not a string one: every use is an ``is`` identity check, and
+    keeping this generator importable with nothing but the standard library is
+    worth more than a mixin nothing reads.
+    """
 
     LANDING = "landing"  # docs/index.html — the marketing page at /
     HUB = "hub"  # a section index that lists its children
@@ -316,7 +336,7 @@ def _software_stub() -> dict:
         "@id": _SOFTWARE_ID,
         "name": "yeaboi",
         "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS, Linux, Windows",
+        "operatingSystem": "macOS, Linux",
     }
 
 
@@ -326,7 +346,7 @@ def _software_full(description: str) -> dict:
         "url": f"{SITE}/",
         "description": description,
         "applicationSubCategory": "Project Management",
-        "runtimePlatform": "Python 3.11+",
+        "runtimePlatform": _runtime_platform(),
         "programmingLanguage": "Python",
         "codeRepository": REPO_URL,
         "downloadUrl": PYPI_URL,

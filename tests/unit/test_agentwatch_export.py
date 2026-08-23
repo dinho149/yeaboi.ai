@@ -154,9 +154,9 @@ class TestProgressScreen:
 
 class TestRefreshingBanner:
     def test_refreshing_report_carries_age_stamp(self):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        as_of = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        as_of = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         out = _render(
             _build_agent_usage_screen(
                 make_report(), width=100, height=40, shimmer_tick=0.5, refreshing=True, as_of=as_of
@@ -173,11 +173,11 @@ class TestRefreshingBanner:
 
 class TestRelativeAge:
     def test_table(self):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
         from yeaboi.ui.mode_select.screens._screens_agents import _relative_age
 
-        now = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 8, 8, 12, 0, 0, tzinfo=timezone.utc)
         cases = [
             ("2026-08-08T11:59:30+00:00", "just now"),
             ("2026-08-08T11:55:00+00:00", "5m ago"),

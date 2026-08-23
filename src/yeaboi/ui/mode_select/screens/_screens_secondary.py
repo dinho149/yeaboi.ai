@@ -20,6 +20,7 @@ from rich.text import Text
 
 from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.config import VALID_LOG_LEVELS
+from yeaboi.timeparse import parse_datetime
 from yeaboi.ui.mode_select.screens._analysis_sections import (
     _TA_CARDS,
     _measure_render_height,
@@ -5797,10 +5798,10 @@ def _build_profile_picker_screen(
         stale = False
         if updated:
             try:
-                from datetime import UTC, datetime
+                from datetime import datetime, timezone
 
-                _up = datetime.fromisoformat(updated)
-                days = (datetime.now(UTC) - _up).days
+                _up = parse_datetime(updated)
+                days = (datetime.now(timezone.utc) - _up).days
                 age_str = "today" if days == 0 else (f"{days}d ago")
                 stale = days > 30
             except Exception:

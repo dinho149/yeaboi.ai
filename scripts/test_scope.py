@@ -484,6 +484,20 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_hygiene_lens.py",
     "tests/unit/test_wt_script.py",
     "tests/unit/test_wt_issue_script.py",
+    # docs/install.sh is served straight off main by GitHub Pages — no build, no
+    # deploy job — so nothing else in the pipeline notices it breaking. It also
+    # guards the install commands the README and landing page advertise, and
+    # README.md is INERT: without this entry a README-only change runs nothing.
+    "tests/unit/test_install_script.py",
+    # AST-scans every .py in the repo for the two 3.11-only constructs the 3.10
+    # floor bans. Any file can reintroduce them, so no path implies this test.
+    "tests/unit/test_compat.py",
+    # Its guard half AST-scans every module in src/ for a bare fromisoformat,
+    # which any file can reintroduce.
+    "tests/unit/test_timeparse.py",
+    # Ten surfaces name the supported Python floor and nothing else connects
+    # them — including an OG PNG that is rendered by hand.
+    "tests/unit/test_python_floor.py",
     # The ship gate reads the Makefile, the slash commands and this file. Nothing
     # about a changed module implies it, and its whole subject is the machinery
     # that decides what a scoped run covers — so it has to run on every one.
@@ -512,6 +526,8 @@ GLOBAL: tuple[str, ...] = (
     ".github/workflows/ci.yml",
     "scripts/test_scope.py",
     "src/yeaboi/__init__.py",
+    "src/yeaboi/_compat.py",  # StrEnum for the 3.10 floor — its members serialize into every artifact
+    "src/yeaboi/timeparse.py",  # every stored and provider timestamp in the app is read through it
     "src/yeaboi/sessions.py",  # CURRENT_SCHEMA_VERSION — every store migrates off it
     "src/yeaboi/persistence.py",
     "src/yeaboi/paths.py",
@@ -578,6 +594,13 @@ JOBS: tuple[Job, ...] = (
     # is no root-level build hook or MANIFEST.in to name.
     Job("package", ("pyproject.toml", "src/yeaboi/web/static/", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
+    # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any
+    # Python at all, not just the two shims: `unit` and `integration` now pin the
+    # floor, so a narrower trigger would leave a change to an ordinary module
+    # tested on 3.10 and nowhere else — less coverage above the floor than before
+    # this job existed. It is non-required with `fail-fast: false`, so the cost of
+    # the wide trigger is runner minutes, never merge risk.
+    Job("compat", ("src/", "tests/", "pyproject.toml", "uv.lock")),
 )
 
 FULL_UNIT = ("tests/unit/", "tests/test_*.py")

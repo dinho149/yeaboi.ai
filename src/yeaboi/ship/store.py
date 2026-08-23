@@ -31,7 +31,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import SHIP_STATUSES, ShipPhase, ShipRun, ShipValidation
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS ship_gate_events (
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _run_to_json(run: ShipRun) -> str:

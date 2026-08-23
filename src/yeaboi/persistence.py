@@ -16,11 +16,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from yeaboi.paths import PLANNING_LOGS_DIR, PROJECTS_FILE, ROOT_DIR, STATES_DIR
+from yeaboi.timeparse import parse_datetime
 from yeaboi.ui.mode_select import ProjectSummary
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def save_project_snapshot(project_id: str, graph_state: dict[str, Any]) -> None:
     data = _load_raw()
     projects = data.get("projects", [])
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     pipeline = _extract_pipeline_progress(graph_state)
     artifacts = _extract_artifact_counts(graph_state)
     jira_sync = _extract_jira_sync(graph_state)
@@ -887,11 +888,11 @@ def _relative_time(iso_str: str) -> str:
         return ""
 
     try:
-        then = datetime.fromisoformat(iso_str)
+        then = parse_datetime(iso_str)
         # Ensure timezone-aware
         if then.tzinfo is None:
-            then = then.replace(tzinfo=UTC)
-        now = datetime.now(UTC)
+            then = then.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
         delta = now - then
     except (ValueError, TypeError):
         return ""

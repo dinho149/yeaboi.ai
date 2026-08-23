@@ -371,7 +371,7 @@ class TestParseProgramBounds:
 class TestBuildPayload:
     """The degradation seams the routines depend on, over stubbed reads."""
 
-    NOW = __import__("datetime").datetime(2026, 8, 25, 9, 0, tzinfo=__import__("datetime").UTC)
+    NOW = __import__("datetime").datetime(2026, 8, 25, 9, 0, tzinfo=__import__("datetime").timezone.utc)
 
     def _stub(self, monkeypatch, tmp_path, *, wave6=True, prs=None, landed=()):
         doc = tmp_path / "program.md"
@@ -500,7 +500,7 @@ class TestHelpers:
     def test_landed_waves_wants_merged_labelled_waves_inside_the_window(self, monkeypatch):
         import datetime as dt
 
-        now = dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC)
+        now = dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.timezone.utc)
         monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
         wave_label = [{"name": progress.LABEL}]
         rows = [
@@ -554,7 +554,7 @@ class TestHelpers:
         seen = {}
         monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
         monkeypatch.setattr(progress, "_get", lambda path: seen.setdefault("path", path) and [])
-        progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC))
+        progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.timezone.utc))
         assert "base=chore%2Fgo-migration" in seen["path"]
 
     def test_landed_waves_is_none_when_the_read_fails(self, monkeypatch):
@@ -562,7 +562,7 @@ class TestHelpers:
 
         monkeypatch.setattr(progress.transport, "resolve_slug", lambda root: "o/r")
         monkeypatch.setattr(progress, "_get", lambda path: None)
-        assert progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.UTC)) is None
+        assert progress._landed_waves(dt.datetime(2026, 8, 25, 9, 0, tzinfo=dt.timezone.utc)) is None
 
     def test_a_full_page_is_blindness_not_an_empty_queue(self, monkeypatch):
         # The page bound is the repo's open-PR count, not the lane's: past 100

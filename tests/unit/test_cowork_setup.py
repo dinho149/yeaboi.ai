@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -745,9 +745,9 @@ class TestAgendaCli:
         Bracketed rather than compared to one clock reading, so a run that
         straddles midnight cannot fail on a technicality.
         """
-        before = datetime.now(UTC).date()
+        before = datetime.now(timezone.utc).date()
         result = self._run()
-        after = datetime.now(UTC).date()
+        after = datetime.now(timezone.utc).date()
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["date"] in {before.isoformat(), after.isoformat()}
 
@@ -2869,7 +2869,7 @@ class TestWebhookPlan:
 
     def _just_created(self, snapshot, name: str):
         """Stamp one entry the way the account stamps a routine made moments ago."""
-        _by_name(snapshot, name)["created_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        _by_name(snapshot, name)["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return snapshot
 
     def test_a_routine_created_this_run_is_postable(self):
@@ -3548,7 +3548,7 @@ class TestProposalSlots:
     nothing downstream would notice.
     """
 
-    NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+    NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
     @staticmethod
     def _issue(number: int, days_old: int = 1, **extra) -> dict:
@@ -5024,7 +5024,7 @@ class TestTheLapseClocks:
     `aged-out` was permanently unreachable.
     """
 
-    NOW = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
+    NOW = datetime(2026, 8, 16, 12, 0, tzinfo=timezone.utc)
 
     def _serve(self, monkeypatch, items, *, events=None, ok=True, error=""):
         monkeypatch.setattr(setup, "TRANSPORT", "api")

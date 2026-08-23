@@ -7,7 +7,7 @@ normalizes into the shared {author, kind, title, timestamp, key} shape.
 import subprocess
 import threading
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -100,7 +100,7 @@ class TestGithubRecentActivity:
             sha="abcdef1234",
             files=[SimpleNamespace(filename="docs/guide.md"), SimpleNamespace(filename="src/app.py")],
             commit=SimpleNamespace(
-                author=SimpleNamespace(name="Bob", date=datetime(2026, 7, 10, 8, 0, tzinfo=UTC)),
+                author=SimpleNamespace(name="Bob", date=datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)),
                 message="Add feature\n\nbody",
             ),
         )
@@ -132,7 +132,7 @@ class TestGithubRecentActivity:
             user=SimpleNamespace(login="carol"),
             # Relative to now so the PR always falls inside the days=1 window —
             # a fixed date made this test fail once the clock passed it.
-            updated_at=datetime.now(UTC) - timedelta(hours=1),
+            updated_at=datetime.now(timezone.utc) - timedelta(hours=1),
             get_files=lambda: [SimpleNamespace(filename="README.md")],
         )
         repo = MagicMock()
@@ -312,7 +312,7 @@ class TestSinceWindow:
         client.get_repo.return_value = repo
         monkeypatch.setattr("yeaboi.tools.github._get_github_client", lambda: client)
         github_recent_commits("owner/repo", since=self._SINCE)
-        assert repo.get_commits.call_args.kwargs["since"] == self._SINCE.astimezone(UTC)
+        assert repo.get_commits.call_args.kwargs["since"] == self._SINCE.astimezone(timezone.utc)
 
     def test_github_prs_cut_at_since(self, monkeypatch):
         old_pr = SimpleNamespace(
@@ -321,7 +321,7 @@ class TestSinceWindow:
             merged=False,
             state="open",
             user=SimpleNamespace(login="x"),
-            updated_at=self._SINCE.astimezone(UTC) - timedelta(days=2),
+            updated_at=self._SINCE.astimezone(timezone.utc) - timedelta(days=2),
         )
         repo = MagicMock()
         repo.get_pulls.return_value = [old_pr]
@@ -346,7 +346,9 @@ class TestSinceWindow:
     def test_notion_cuts_at_since(self, monkeypatch):
         old_page = {
             "id": "p1",
-            "last_edited_time": (self._SINCE.astimezone(UTC) - timedelta(days=2)).isoformat().replace("+00:00", "Z"),
+            "last_edited_time": (self._SINCE.astimezone(timezone.utc) - timedelta(days=2))
+            .isoformat()
+            .replace("+00:00", "Z"),
             "last_edited_by": {"id": ""},
             "properties": {},
         }
@@ -374,7 +376,7 @@ def _jira_issue(key="PROJ-1", summary="Fix login", assignee_name="Alice", assign
 
 
 class TestJiraChangelogItems:
-    _NOW = datetime.now(UTC).isoformat()
+    _NOW = datetime.now(timezone.utc).isoformat()
 
     def _client(self, monkeypatch, issues, wip=None):
         client = MagicMock()
@@ -551,7 +553,7 @@ class TestJiraBotFiltering:
     """App/automation accounts must never be credited as activity authors —
     otherwise they surface as standup team members (e.g. "Automation for Jira")."""
 
-    _NOW = datetime.now(UTC).isoformat()
+    _NOW = datetime.now(timezone.utc).isoformat()
 
     def _client(self, monkeypatch, issues):
         client = MagicMock()
@@ -661,7 +663,7 @@ class TestJiraWip:
 class TestActivityHierarchy:
     """Story/subtask facts ride every tracker item, from fields already fetched."""
 
-    _NOW = datetime.now(UTC).isoformat()
+    _NOW = datetime.now(timezone.utc).isoformat()
 
     def _client(self, monkeypatch, issues, wip=None):
         client = MagicMock()
@@ -893,8 +895,8 @@ class TestAzdoRepoActivity:
             "yeaboi.tools.azure_devops.get_azure_devops_org_url",
             lambda: "https://dev.azure.com/acme",
         )
-        recent = datetime.now(UTC) - timedelta(hours=2)
-        old = datetime.now(UTC) - timedelta(days=30)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(days=30)
         git.get_pull_requests_by_project.return_value = [
             SimpleNamespace(
                 pull_request_id=1,
@@ -942,8 +944,8 @@ class TestAzdoRepoActivity:
 
         repo = SimpleNamespace(id="r1", name="api", web_url="")
         git = self._git_client(monkeypatch, [repo])
-        recent = datetime.now(UTC) - timedelta(hours=2)
-        old = datetime.now(UTC) - timedelta(days=30)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(days=30)
         git.get_pull_requests_by_project.return_value = [
             SimpleNamespace(
                 pull_request_id=1,
@@ -987,7 +989,7 @@ class TestAzdoRepoActivity:
             lambda: "https://acme.visualstudio.com",
         )
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         git.get_pull_requests_by_project.return_value = [
             SimpleNamespace(
                 pull_request_id=42,
@@ -1028,7 +1030,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         git.get_pull_requests_by_project.return_value = [
             SimpleNamespace(
                 pull_request_id=1,
@@ -1080,7 +1082,7 @@ class TestAzdoRepoActivity:
             pull_request_id=pr_id,
             title="Review me",
             status=status,
-            creation_date=created or (datetime.now(UTC) - timedelta(hours=3)),
+            creation_date=created or (datetime.now(timezone.utc) - timedelta(hours=3)),
             closed_date=closed,
             repository=repo,
             reviewers=list(reviewers),
@@ -1115,7 +1117,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
         git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
         git.get_threads.return_value = [self._vote_thread(voter=vic, published=recent)]
@@ -1136,7 +1138,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        old = datetime.now(UTC) - timedelta(days=30)
+        old = datetime.now(timezone.utc) - timedelta(days=30)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
         git.get_pull_requests_by_project.return_value = [self._review_pr(repo, 42)]
         git.get_threads.return_value = [self._vote_thread(voter=vic, published=old)]
@@ -1151,8 +1153,8 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
-        old = datetime.now(UTC) - timedelta(days=30)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(days=30)
         reviewers = [
             SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10),
             SimpleNamespace(display_name="Ann", unique_name="ann@corp.com", id="guid-ann", vote=-10),
@@ -1183,8 +1185,8 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        newest = datetime.now(UTC) - timedelta(hours=1)
-        older = datetime.now(UTC) - timedelta(hours=5)
+        newest = datetime.now(timezone.utc) - timedelta(hours=1)
+        older = datetime.now(timezone.utc) - timedelta(hours=5)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
         git.get_pull_requests_by_project.return_value = [
             self._review_pr(repo, 1, status="completed", created=older, closed=newest),
@@ -1204,7 +1206,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        old = datetime.now(UTC) - timedelta(days=30)
+        old = datetime.now(timezone.utc) - timedelta(days=30)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
         git.get_pull_requests_by_project.return_value = [
             self._review_pr(repo, 3, status="active", created=old, reviewers=[vic])
@@ -1221,8 +1223,8 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        voted_at = datetime.now(UTC) - timedelta(hours=4)
-        closed_at = datetime.now(UTC) - timedelta(hours=1)
+        voted_at = datetime.now(timezone.utc) - timedelta(hours=4)
+        closed_at = datetime.now(timezone.utc) - timedelta(hours=1)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic", vote=10)
         git.get_pull_requests_by_project.return_value = [
             self._review_pr(repo, 8, status="completed", closed=closed_at, reviewers=[vic])
@@ -1242,7 +1244,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         rae = SimpleNamespace(display_name="Rae", unique_name="rae@example.com")
 
         def _thread(tid, cid, content):
@@ -1270,8 +1272,8 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        newest = datetime.now(UTC) - timedelta(hours=1)
-        older = datetime.now(UTC) - timedelta(hours=6)
+        newest = datetime.now(timezone.utc) - timedelta(hours=1)
+        older = datetime.now(timezone.utc) - timedelta(hours=6)
         git.get_pull_requests_by_project.return_value = [
             self._review_pr(repo, 1, created=older),
             self._review_pr(repo, 2, created=newest),
@@ -1298,10 +1300,10 @@ class TestAzdoRepoActivity:
                 repo,
                 1,
                 status="completed",
-                created=datetime.now(UTC) - timedelta(hours=2),
-                closed=datetime.now(UTC) - timedelta(hours=1),
+                created=datetime.now(timezone.utc) - timedelta(hours=2),
+                closed=datetime.now(timezone.utc) - timedelta(hours=1),
             ),
-            self._review_pr(repo, 2, status="active", created=datetime.now(UTC) - timedelta(days=21)),
+            self._review_pr(repo, 2, status="active", created=datetime.now(timezone.utc) - timedelta(days=21)),
         ]
         git.get_threads.return_value = []
 
@@ -1319,7 +1321,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
         thread = self._vote_thread(voter=vic, published=recent)
         del thread.comments[0].comment_type  # the shape where the type never arrives
@@ -1340,7 +1342,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
         thread = self._vote_thread(vote="0", voter=vic, published=recent)
         del thread.comments[0].comment_type
@@ -1358,7 +1360,7 @@ class TestAzdoRepoActivity:
         repo = SimpleNamespace(id="r1", name="api", web_url="https://dev.azure.com/org/Proj/_git/api")
         git = self._git_client(monkeypatch, [repo])
         monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: ["docs/runbook.md"])
-        recent = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
         vic = SimpleNamespace(display_name="Vic", unique_name="vic@corp.com", id="guid-vic")
         ada = SimpleNamespace(display_name="Ada", unique_name="ada@corp.com", id="guid-ada", vote=10)
         git.get_pull_requests_by_project.return_value = [
@@ -1443,7 +1445,7 @@ class TestAzdoVoteWireShapes:
     def _comment(self, author=None, published=None):
         return SimpleNamespace(
             id=70,
-            published_date=published or (datetime.now(UTC) - timedelta(hours=1)),
+            published_date=published or (datetime.now(timezone.utc) - timedelta(hours=1)),
             author=author,
             content="voted",
             comment_type="system",
@@ -1536,7 +1538,7 @@ class TestAzdoVoteWireShapes:
 
 
 class TestConfluenceMultiEditor:
-    _NOW_ISO = datetime.now(UTC).isoformat()
+    _NOW_ISO = datetime.now(timezone.utc).isoformat()
 
     def _page(self, editors_last="Eve", created_by="", created_when=""):
         history = {"lastUpdated": {"by": {"displayName": editors_last}, "when": self._NOW_ISO}}
@@ -1812,12 +1814,12 @@ class TestConfluenceMultiEditor:
         try:
             first = confluence_recent_pages(
                 "SPACE",
-                since=datetime.now(UTC) - timedelta(days=1),
+                since=datetime.now(timezone.utc) - timedelta(days=1),
                 metadata_cache=cache,
             )
             second = confluence_recent_pages(
                 "SPACE",
-                since=datetime.now(UTC) - timedelta(hours=1),
+                since=datetime.now(timezone.utc) - timedelta(hours=1),
                 metadata_cache=cache,
             )
         finally:
@@ -1873,7 +1875,7 @@ class TestConfluenceMultiEditor:
 
 class TestGithubPrBranchCommits:
     def test_open_pr_commits_emitted(self, monkeypatch):
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         pr_commit = SimpleNamespace(
             sha="feedbeef1234",
             commit=SimpleNamespace(
@@ -1904,7 +1906,7 @@ class TestGithubPrBranchCommits:
         assert items[1]["key"] == "feedbeef"
 
     def test_closed_unmerged_pr_commits_skipped(self, monkeypatch):
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         pr = MagicMock()
         pr.number = 8
         pr.title = "Abandoned"
@@ -2044,7 +2046,7 @@ class TestTicketTextFetch:
     def test_comment_items_never_carry_ticket_text(self, monkeypatch):
         # "comment" is one of automation.py's detectable kinds; a description
         # there would go through scanner-marker matching and burst fingerprinting.
-        recent = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+        recent = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
         comment = SimpleNamespace(created=recent, author=SimpleNamespace(displayName="Bob"))
         issue = self._issue(description="Rename the plugins", comment=SimpleNamespace(comments=[comment]))
         client = MagicMock()

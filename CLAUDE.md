@@ -125,7 +125,7 @@ Python is the reference implementation. **Any behaviour change in those files MU
 
 ## Code Style
 
-- Python 3.11+, ruff for linting/formatting (line-length 120)
+- Python 3.10+, ruff for linting/formatting (line-length 120)
 - Imports sorted by ruff (isort rules: stdlib, third-party, local)
 - Tests in `tests/`, source in `src/yeaboi/`
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage
 
@@ -148,7 +148,7 @@ def _fallback_analysis(source: RoadmapSource, label: str, warnings: list[str]) -
         summary="The roadmap could not be analyzed automatically — see the notices below, then Re-analyze.",
         projects=(),
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
@@ -199,7 +199,7 @@ def _dry_run_analysis(source: RoadmapSource) -> RoadmapAnalysis:
             ),
         ),
         warnings=(),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
@@ -248,7 +248,7 @@ def run_roadmap_analysis(
     prompt = get_roadmap_analysis_prompt(
         roadmap_text=text,
         source_label=label,
-        today_iso=datetime.now(UTC).date().isoformat(),
+        today_iso=datetime.now(timezone.utc).date().isoformat(),
     )
     _report("Analyzing with the AI — extracting and ranking projects…")
     parsed, llm_warnings = _invoke_llm(prompt)
@@ -270,7 +270,7 @@ def run_roadmap_analysis(
         summary=str(parsed.get("summary", "")).strip(),
         projects=projects,
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
     logger.info("run_roadmap_analysis: %d project(s) extracted from %r", len(projects), label)
     _record(analysis, db_path)

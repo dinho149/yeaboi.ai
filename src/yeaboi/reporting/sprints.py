@@ -21,6 +21,8 @@ import logging
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
+from yeaboi.timeparse import parse_date
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,7 +109,7 @@ def _from_plan(state: dict, limit: int) -> list[SprintRef]:
     if not plan_sprints or not start_str:
         return []
     try:
-        base = date.fromisoformat(start_str[:10])
+        base = parse_date(start_str[:10])
     except (TypeError, ValueError):
         return []
     try:

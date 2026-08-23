@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.provenance.integrity import compute_checksum, verify_checksum
@@ -250,7 +250,7 @@ class ProvenanceChain:
             "previous_checksum": head["checksum"] if head else "",
         }
         if not record.timestamp:
-            changes["timestamp"] = datetime.now(UTC).isoformat()
+            changes["timestamp"] = datetime.now(timezone.utc).isoformat()
         if not record.previous_version_id and record.entity_id:
             prior = self._conn.execute(
                 "SELECT sequence_id FROM provenance_records WHERE entity_id = ? ORDER BY sequence_id DESC LIMIT 1",

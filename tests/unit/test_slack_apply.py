@@ -11,7 +11,7 @@ listing shows it.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -24,7 +24,7 @@ from yeaboi.slack.store import KIND_SIGNAL, OUTCOME_DEFERRED, InboundEvent, Slac
 from yeaboi.standup import habits
 from yeaboi.standup.store import StandupStore
 
-NOW = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -289,7 +289,7 @@ class TestLease:
         with ArtifactEditStore(db) as edits:
             edits.take_lease("standup", ref, ttl_minutes=1)
             assert edits.lease_held("standup", ref)
-            assert not edits.lease_held("standup", ref, now=datetime(2099, 1, 1, tzinfo=UTC))
+            assert not edits.lease_held("standup", ref, now=datetime(2099, 1, 1, tzinfo=timezone.utc))
 
     def test_a_lease_on_another_run_is_not_this_run_s_problem(self, voted):
         db, run_id = voted

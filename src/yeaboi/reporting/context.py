@@ -23,6 +23,7 @@ from datetime import date, datetime, time
 from yeaboi.agent.state import SupportingSignal
 from yeaboi.analysis.progress import is_component_progress
 from yeaboi.reporting.activity import DELIVERY_AZDO, _emit
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def _within_period(timestamp: str, period_start: str, period_end: str) -> bool:
         return True
     day = ts[:10]  # ISO date prefix of an ISO datetime
     try:
-        date.fromisoformat(day)
+        parse_date(day)
     except ValueError:
         return True
     return (not period_start or day >= period_start) and (not period_end or day <= period_end)
@@ -160,7 +161,7 @@ def _code_signals(
             logger.debug("reporting context: azdo project config probe failed", exc_info=True)
 
     try:
-        since = datetime.combine(date.fromisoformat(period_start), time.min).astimezone()
+        since = datetime.combine(parse_date(period_start), time.min).astimezone()
     except (TypeError, ValueError):
         since = None
 
@@ -218,7 +219,7 @@ def _doc_signals(
     from yeaboi.analysis.doc_quality import collect_doc_pages
 
     try:
-        window_days = max(1, (date.today() - date.fromisoformat(period_start)).days)
+        window_days = max(1, (date.today() - parse_date(period_start)).days)
     except (TypeError, ValueError):
         window_days = 30
 

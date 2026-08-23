@@ -8,7 +8,7 @@ about the two ways an anchor can be absent — never written, or expired.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -95,12 +95,12 @@ class TestExpiry:
         assert not stamped.expired()
 
     def test_the_ttl_is_stamped_on_write(self, store):
-        now = datetime(2026, 8, 17, 9, 0, tzinfo=UTC)
+        now = datetime(2026, 8, 17, 9, 0, tzinfo=timezone.utc)
         stamped = store.record_anchor(_post(), now=now)
         assert stamped.expires_at == (now + timedelta(days=ANCHOR_TTL_DAYS)).isoformat(timespec="seconds")
 
     def test_past_the_ttl_it_is_expired(self, store):
-        now = datetime(2026, 8, 17, 9, 0, tzinfo=UTC)
+        now = datetime(2026, 8, 17, 9, 0, tzinfo=timezone.utc)
         stamped = store.record_anchor(_post(), now=now)
         assert stamped.expired(now + timedelta(days=ANCHOR_TTL_DAYS, seconds=1))
 
@@ -114,7 +114,7 @@ class TestExpiry:
 
 class TestPrune:
     def test_drops_old_anchors_and_keeps_recent_ones(self, store):
-        now = datetime(2026, 8, 17, 9, 0, tzinfo=UTC)
+        now = datetime(2026, 8, 17, 9, 0, tzinfo=timezone.utc)
         store.record_anchor(_post(ts="old"), now=now - timedelta(days=60))
         store.record_anchor(_post(ts="new"), now=now)
         assert store.prune(keep_days=30, now=now) == 1

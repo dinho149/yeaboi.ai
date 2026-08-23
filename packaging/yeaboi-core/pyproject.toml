@@ -11,7 +11,7 @@ name = "yeaboi-core"
 version = "0.4.0"
 description = "Prebuilt yeaboi-core sidecar binary for yeaboi. Install via yeaboi[core]."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{name = "Omar Din"}]
 license = {text = "MIT"}
 classifiers = [
@@ -20,9 +20,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Go",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.urls]

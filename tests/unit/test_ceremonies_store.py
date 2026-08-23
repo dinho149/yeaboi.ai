@@ -231,6 +231,15 @@ class TestSkipNext:
         with pytest.raises(ValueError, match="skip_next"):
             store.set_skip_next("s1", "morning-standup", "next tuesday")
 
+    @pytest.mark.parametrize("spelling", ["20260818", "2026-W34-2"])
+    def test_a_valid_but_non_canonical_date_is_stored_canonical(self, store, spelling):
+        """ISO-8601 spells one day several ways and the guards compare this as a
+        *string*: a raw `20260818` validates, never equals the slot's `2026-08-18`,
+        and sorts after it — a skip that neither fires nor auto-clears."""
+        store.save(_ceremony())
+        assert store.set_skip_next("s1", "morning-standup", spelling).skip_next == "2026-08-18"
+        assert store.get("s1", "morning-standup").skip_next == "2026-08-18"
+
     def test_it_survives_the_json_round_trip(self, store):
         store.save(_ceremony(skip_next="2026-08-18"))
         assert store.get("s1", "morning-standup").skip_next == "2026-08-18"

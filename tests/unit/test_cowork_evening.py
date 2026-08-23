@@ -22,7 +22,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -47,7 +47,7 @@ TITLE = re.compile(r"^(?P<emoji>\S+) \*\*(?P<name>[^*]+)\*\* — .+")
 HEADING = re.compile(r"^\S+ \*\*[^*]+\*\*\s*\(")
 DIVIDER = "───────────────────────────"
 
-NOW = datetime(2026, 8, 16, 18, 0, tzinfo=UTC)
+NOW = datetime(2026, 8, 16, 18, 0, tzinfo=timezone.utc)
 SINCE = NOW - timedelta(hours=24)
 
 
@@ -640,13 +640,13 @@ class TestAChangesRequestedCrossingFires:
         monkeypatch.setattr(evening, "review_verdict", lambda number: ("changes requested", when))
 
     def test_a_block_inside_the_window_fires_a_post(self, monkeypatch):
-        self._blocked(monkeypatch, datetime(2026, 8, 16, 11, 0, tzinfo=UTC))
+        self._blocked(monkeypatch, datetime(2026, 8, 16, 11, 0, tzinfo=timezone.utc))
         _serve(monkeypatch, opened=[pr(9, created_at="2026-08-01T09:00:00Z")])
         assert evening.build(SINCE, NOW)["posts"]
 
     def test_a_block_before_the_window_does_not_re_announce(self, monkeypatch):
         """The standing state must not re-fire nightly."""
-        self._blocked(monkeypatch, datetime(2026, 8, 10, 11, 0, tzinfo=UTC))
+        self._blocked(monkeypatch, datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc))
         _serve(monkeypatch, opened=[pr(9, created_at="2026-08-12T09:00:00Z")])
         assert evening.build(SINCE, NOW)["posts"] == []
 
@@ -663,7 +663,7 @@ class TestAChangesRequestedCrossingFires:
         )
         verdict, when = evening.review_verdict(1)
         assert verdict == "changes requested"
-        assert when == datetime(2026, 8, 14, 9, 0, tzinfo=UTC)
+        assert when == datetime(2026, 8, 14, 9, 0, tzinfo=timezone.utc)
 
     def test_an_approval_carries_no_moment(self, monkeypatch):
         monkeypatch.undo()
@@ -761,7 +761,7 @@ class TestTheEntryPoint:
         assert json.loads(capsys.readouterr().out)["posts"]
 
     def test_a_naive_stamp_is_read_as_utc(self):
-        assert evening._moment("2026-08-16T09:00:00") == datetime(2026, 8, 16, 9, 0, tzinfo=UTC)
+        assert evening._moment("2026-08-16T09:00:00") == datetime(2026, 8, 16, 9, 0, tzinfo=timezone.utc)
 
     def test_no_checked_in_flag_means_no_health_message(self, monkeypatch, capsys):
         import json
